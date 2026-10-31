@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-10-27T22:54:44.071Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search business strategy economy finance",
+          "before": "sider new the long play new watch bi new",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search business insider",
+          "placeholder": "search business insider",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "businessinsider.com",
+  "iframes": [
+    {
+      "origin": "https://markets.businessinsider.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://my.businessinsider.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://businessinsider.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

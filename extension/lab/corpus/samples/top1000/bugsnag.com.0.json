@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-27T23:38:46.491Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "bugsnag.com",
+  "iframes": [
+    {
+      "origin": "https://fast.wistia.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bugsnag.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

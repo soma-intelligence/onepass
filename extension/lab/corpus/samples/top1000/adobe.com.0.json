@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-27T21:56:44.998Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "adobe.com",
+  "iframes": [
+    {
+      "origin": "https://commerce.adobe.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://servedby.flashtalking.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://adobe.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

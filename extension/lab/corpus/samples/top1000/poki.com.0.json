@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-28T00:13:11.889Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "what are you playing today?",
+        "let the world play",
+        "english",
+        "do not sell my data"
+      ],
+      "fields": [
+        {
+          "after": "shooting games car games 2 player games",
+          "before": "what are you playing today?",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "what are you playing today?",
+          "placeholder": "what are you playing today?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "poki.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://poki.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

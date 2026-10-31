@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:14:00.854Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "userapi.com",
+  "source": "rendered",
+  "source_url": "https://userapi.com/",
+  "status": "error: <redacted>"
+}

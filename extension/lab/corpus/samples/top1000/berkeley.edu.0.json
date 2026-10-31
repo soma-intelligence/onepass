@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T23:22:37.553Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "toggle navigation search this site",
+          "ariaLabel": "search term",
+          "before": "rectory bconnected news search this site",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "skyline-site-search-field",
+          "index": 0,
+          "label": "search this site",
+          "name": "q",
+          "placeholder": "search this site",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "map directory bconnected news about abou",
+          "ariaLabel": "search term",
+          "before": "toggle navigation search this site",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "mobile-site-search-field",
+          "index": 0,
+          "label": "search this site",
+          "name": "q",
+          "placeholder": "search this site",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "berkeley.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://berkeley.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

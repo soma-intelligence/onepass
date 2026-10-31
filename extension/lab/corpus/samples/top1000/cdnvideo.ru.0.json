@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-28T00:00:42.576Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "подписаться"
+      ],
+      "fields": [
+        {
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "e-mail",
+          "maxlength": 255,
+          "name": "EMAIL",
+          "placeholder": "e-mail",
+          "required": false,
+          "role": "email",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "найти"
+      ],
+      "fields": [
+        {
+          "after": "найти продолжая использовать наш сайт, в",
+          "autocomplete": "off",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "title-search-input",
+          "index": 0,
+          "label": "найти",
+          "maxlength": 50,
+          "name": "q",
+          "placeholder": "найти",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        ".cls-1 { fill: #222; fill-rule: evenodd; }",
+        ".cls-1 { fill: #222; fill-rule: evenodd; }",
+        "‹",
+        "›",
+        "‹",
+        "›",
+        "подписаться",
+        "найти",
+        "принять"
+      ],
+      "fields": [
+        {
+          "before": "правильную работу са подробнее . принять",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cdnvideo.ru",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "ru",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cdnvideo.ru/",
+  "status": "ok",
+  "webauthnCalls": []
+}

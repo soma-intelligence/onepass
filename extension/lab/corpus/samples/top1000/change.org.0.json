@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-10-28T00:23:37.148Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "skip to main content",
+        "english (united states)",
+        "english (united states)"
+      ],
+      "fields": [
+        {
+          "before": "book tiktok blog english (united states)",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "deutschenglish (australia)english (canada)english (india)eng",
+          "name": "locale",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "f service apply. english (united states)",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 1,
+          "label": "deutschenglish (australia)english (canada)english (india)eng",
+          "name": "locale",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "change.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://change.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

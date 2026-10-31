@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T23:22:52.447Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "products",
+        "downloads",
+        "why mega?",
+        "resources",
+        "en",
+        "cloud storage",
+        "object storage",
+        "chat and meetings",
+        "vpn",
+        "password manager",
+        "transfer.it",
+        "cloud storage"
+      ],
+      "fields": [
+        {
+          "after": "invalid email address, please enter a co",
+          "before": "s and folders straight across - no downl",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter your email",
+          "placeholder": "enter your email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mega.co.nz",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mega.co.nz/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

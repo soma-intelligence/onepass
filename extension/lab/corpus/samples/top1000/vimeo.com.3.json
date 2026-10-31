@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T21:59:31.334Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "pricing log in join register follow regi",
+          "autocomplete": "false",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search all of vimeo",
+          "placeholder": "search all of vimeo",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "log in",
+        "follow",
+        "follow",
+        "follow"
+      ],
+      "fields": [
+        {
+          "before": "duct resources apps vimeo legal language",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "e privacy | copyright | cookies language",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "vimeo.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://vimeo.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

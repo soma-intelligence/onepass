@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:24:25.487Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "change.org",
+  "source": "rendered",
+  "source_url": "https://change.org/signup",
+  "status": "error: http 404"
+}

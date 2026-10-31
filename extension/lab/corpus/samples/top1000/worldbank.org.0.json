@@ -1,0 +1,111 @@
+{
+  "captured_at": "2026-10-28T00:08:48.035Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "our priorities who we are what we do whe",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ñol français العربية русский 中文 view all",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search worldbank.org",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "* your email",
+          "before": "current with our latest data & insights",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "* your email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "your first name",
+          "before": "* your email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "firstname",
+          "index": 1,
+          "label": "your first name",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "news & events news",
+        "work with us",
+        "english",
+        "our priorities",
+        "who we are",
+        "what we do",
+        "where we work",
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "afghanistan albania shqip algeria frança",
+          "autocomplete": "off",
+          "before": "lf cooperation council browse by country",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "nav-search-country",
+          "index": 0,
+          "label": "browse by country",
+          "placeholder": "search by country name...",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "worldbank.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://worldbank.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

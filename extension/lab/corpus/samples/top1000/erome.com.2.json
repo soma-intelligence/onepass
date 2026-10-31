@@ -1,0 +1,97 @@
+{
+  "captured_at": "2026-10-27T23:57:32.357Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "login"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "e-mail address",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "e-mail address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "captcha",
+          "before": "password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "before": "captcha",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password",
+          "index": 2,
+          "name": "captcha",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "- explore please login or register. ok ×",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "label": "search",
+          "maxlength": 100,
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.erome.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.erome.com/user/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

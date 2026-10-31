@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T22:56:20.176Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "contact sales",
+        "sign up free",
+        "contact sales",
+        "sign up free",
+        "×",
+        "do not sell or share my personal information",
+        "reject all",
+        "accept cookies",
+        "allow all",
+        "back button",
+        "filter icon",
+        "clear"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "es to build a pr back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.appsflyer.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.appsflyer.com/customers/papaya/",
+  "status": "ok",
+  "webauthnCalls": []
+}

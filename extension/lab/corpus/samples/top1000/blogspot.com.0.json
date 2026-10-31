@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-27T21:59:35.081Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "change language or region",
+          "before": "terms of service privacy content policy",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "language-switch",
+          "index": 0,
+          "label": "change language or region",
+          "name": "lang-selector",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "blogspot.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://blogspot.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

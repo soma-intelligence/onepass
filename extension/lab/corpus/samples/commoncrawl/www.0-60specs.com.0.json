@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-28T00:56:38.687Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "email",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "zero_size"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.0-60specs.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://www.0-60specs.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

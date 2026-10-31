@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:22:25.682Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "otto.de",
+  "source": "rendered",
+  "source_url": "https://otto.de/register",
+  "status": "error: http 404"
+}

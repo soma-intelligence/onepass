@@ -1,0 +1,109 @@
+{
+  "captured_at": "2026-10-27T23:24:36.782Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "search amazon.fr",
+          "before": "ect the department you want to search in",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchDropdownBox",
+          "index": 0,
+          "label": "select the department you want to search in",
+          "name": "url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "ariaLabel": "search amazon.fr",
+          "autocomplete": "off",
+          "before": "search amazon.fr",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twotabsearchtextbox",
+          "index": 1,
+          "label": "search amazon.fr",
+          "name": "field-keywords",
+          "placeholder": "search amazon.fr",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "and customer service find more solutions",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "helpsearch",
+          "index": 0,
+          "label": "find more solutions",
+          "maxlength": 100,
+          "name": "help_keywords",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "show/hide shortcuts shift + alt + z",
+        "deliver to united states",
+        "go",
+        "all",
+        "back to top",
+        "france"
+      ],
+      "fields": [
+        {
+          "before": "i don't like this policy",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "hmd-Comments",
+          "index": 0,
+          "label": "commentsplaceholdertext",
+          "maxlength": 200,
+          "placeholder": "commentsplaceholdertext",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.fr",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.fr/-/en/gp/help/customer/display.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

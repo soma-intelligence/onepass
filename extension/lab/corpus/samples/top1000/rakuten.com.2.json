@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:55:02.340Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "rakuten.com",
+  "source": "rendered",
+  "source_url": "https://rakuten.com/signin",
+  "status": "error: http 404"
+}

@@ -1,0 +1,150 @@
+{
+  "captured_at": "2026-10-27T22:42:59.107Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "register now"
+      ],
+      "fields": [
+        {
+          "after": "* last name",
+          "before": "fabric with okta cta button * first name",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "FirstName",
+          "index": 0,
+          "label": "*first name",
+          "maxlength": 255,
+          "name": "FirstName",
+          "placeholder": "first name",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* email address",
+          "before": "* last name",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "LastName",
+          "index": 1,
+          "label": "*last name",
+          "maxlength": 255,
+          "name": "LastName",
+          "placeholder": "last name",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* job role",
+          "before": "* email address",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "Email",
+          "index": 2,
+          "label": "*email address",
+          "maxlength": 255,
+          "name": "Email",
+          "placeholder": "your best email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "* company",
+          "before": "* job role",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "Title",
+          "index": 3,
+          "label": "*job role",
+          "name": "Title",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "* phone number",
+          "before": "* company",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "Company",
+          "index": 4,
+          "label": "*company",
+          "maxlength": 255,
+          "name": "Company",
+          "placeholder": "company name",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "* country/region",
+          "before": "* phone number",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "Phone",
+          "index": 5,
+          "label": "*phone number",
+          "maxlength": 255,
+          "name": "Phone",
+          "placeholder": "phone number",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "visible"
+        },
+        {
+          "after": "* select your session",
+          "before": "* country/region",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "Country",
+          "index": 6,
+          "label": "*country/region",
+          "name": "Country",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "pages.okta.com",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pages.okta.com/2026-11WBN-LIVOkta-ISF-Forrester-TEI-Report-LP.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

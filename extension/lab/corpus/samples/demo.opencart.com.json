@@ -8,7 +8,7 @@
   "lang": "en",
   "providerButtons": [],
   "shadowFields": 0,
-  "source_url": "https://demo.opencart.com/index.php?route=checkout/checkout",
+  "source_url": "https://demo.opencart.com/index.php",
   "status": "ok",
   "webauthnCalls": []
 }

@@ -359,7 +359,7 @@
   "lang": "en",
   "providerButtons": [],
   "shadowFields": 0,
-  "source_url": "https://tools.usps.com/zip-code-lookup.htm?byaddress",
+  "source_url": "https://tools.usps.com/zip-code-lookup.htm",
   "status": "ok",
   "webauthnCalls": []
 }

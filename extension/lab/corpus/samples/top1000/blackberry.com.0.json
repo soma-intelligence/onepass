@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:24:38.054Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "blackberry.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://blackberry.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:10:25.011Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "att.com",
+  "source": "rendered",
+  "source_url": "https://att.com/acctmgmt/fastpmt/fastpay",
+  "status": "error: <redacted>"
+}

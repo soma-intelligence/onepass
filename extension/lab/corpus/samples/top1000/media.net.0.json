@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:17:19.359Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "before": "t media.net can do for you! get in touch",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "enter your email address",
+          "maxlength": 256,
+          "name": "Email",
+          "placeholder": "enter your email address",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "media.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://media.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

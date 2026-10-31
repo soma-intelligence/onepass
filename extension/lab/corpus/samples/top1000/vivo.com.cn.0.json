@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:00:21.105Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "vue",
+  "host": "vivo.com.cn",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://vivo.com.cn/",
+  "status": "ok",
+  "webauthnCalls": []
+}

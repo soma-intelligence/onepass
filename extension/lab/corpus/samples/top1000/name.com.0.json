@@ -1,0 +1,114 @@
+{
+  "captured_at": "2026-10-27T22:34:44.521Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "domains, websites, and email built for e",
+          "ariaLabel": "search",
+          "before": "ucts api support ● search domain names .",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "n-input-v-0-0-0",
+          "index": 0,
+          "label": "search",
+          "maxlength": 63,
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "bulk search search read about pauline we",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ame that means business. find my domain.",
+          "depth": 23,
+          "hasPattern": false,
+          "id": "n-input-v-0-2-0",
+          "index": 0,
+          "label": "search",
+          "maxlength": 63,
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "bulk search search built-in security for",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ised for local charities find my domain.",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "n-input-v-0-2-1",
+          "index": 0,
+          "label": "search",
+          "maxlength": 63,
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe you can opt out at any time. b",
+          "before": "uline wee dark mode let's keep in touch.",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "n-input-v-0-3-0",
+          "index": 0,
+          "label": "join our newsletter",
+          "placeholder": "join our newsletter",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "name.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://name.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

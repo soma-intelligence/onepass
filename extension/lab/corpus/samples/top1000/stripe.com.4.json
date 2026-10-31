@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-27T22:09:59.830Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "subscribe",
+        "subscribed"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "ok out for stripe updates in your inbox.",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "get industry insights and updates from stripe",
+          "name": "email",
+          "placeholder": "enter work email",
+          "required": false,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "continue subscribe subscribed please ent",
+          "autocomplete": "url",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "website",
+          "index": 1,
+          "label": "enter your company website",
+          "name": "website",
+          "placeholder": "enter company website",
+          "required": false,
+          "role": "organization",
+          "siblings": 1,
+          "tag": "input",
+          "type": "url",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "stripe.com",
+  "iframes": [
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://stripe.com/atlas",
+  "status": "ok",
+  "webauthnCalls": []
+}

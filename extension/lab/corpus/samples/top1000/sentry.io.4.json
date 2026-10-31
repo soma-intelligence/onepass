@@ -1,0 +1,111 @@
+{
+  "captured_at": "2026-10-27T22:01:19.915Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "i would like to receive updates via email.",
+        "i agree to the terms of service and privacy policy.",
+        "get set up",
+        "got a promo code? redeem"
+      ],
+      "fields": [
+        {
+          "after": "organization",
+          "ariaLabel": "name",
+          "before": "er that. upgrade whenever you want. name",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "name",
+          "name": "name",
+          "placeholder": "your name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "email",
+          "ariaLabel": "organization",
+          "before": "organization",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 1,
+          "label": "organization",
+          "name": "organizationName",
+          "placeholder": "organization name",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password",
+          "ariaLabel": "email",
+          "before": "email",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 2,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "data storage location choose where to st",
+          "ariaLabel": "password",
+          "before": "password",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 3,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password (8+ characters)",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "data storage location",
+          "before": "re sentry docs for data storage location",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 4,
+          "label": "data storage locationchoose where to store your organization",
+          "name": "dataStorageLocation",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "sentry.io",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sentry.io/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

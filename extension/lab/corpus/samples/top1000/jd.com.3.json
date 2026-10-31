@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:25:33.538Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "jd.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jd.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

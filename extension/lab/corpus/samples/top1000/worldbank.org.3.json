@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:09:21.421Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "worldbank.org",
+  "source": "rendered",
+  "source_url": "https://worldbank.org/register",
+  "status": "error: http 404"
+}

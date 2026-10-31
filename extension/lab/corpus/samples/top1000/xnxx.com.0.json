@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-28T00:24:16.487Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search top a - z ? this menu's updates a",
+          "before": "ht 100% free porn movies and sex content",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "k",
+          "index": 0,
+          "label": "search...",
+          "maxlength": 2048,
+          "name": "k",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "xnxx.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xnxx.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

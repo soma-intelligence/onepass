@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-27T22:12:34.408Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for software or solutions",
+          "name": "q",
+          "placeholder": "search for software or solutions",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "20,907,703 downloads 81,935 code commits",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for software, business solutions, or resources",
+          "name": "q",
+          "placeholder": "search for software, business solutions, or resources",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "sourceforge.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sourceforge.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

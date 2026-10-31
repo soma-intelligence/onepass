@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-10-28T00:22:37.205Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "cerca in corriere",
+          "name": "search",
+          "placeholder": "cerca in corriere",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.corriere.it",
+  "iframes": [
+    {
+      "origin": "https://components2.rcsobjects.it",
+      "sameSite": false
+    },
+    {
+      "origin": "https://cdn-gl.imrworldwide.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "it",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.corriere.it/tecnologia/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,162 @@
+{
+  "captured_at": "2026-10-27T23:23:37.236Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "registrieren",
+        "zurücksetzen"
+      ],
+      "fields": [
+        {
+          "after": "nachname",
+          "before": "firma (optional)",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "firma",
+          "index": 0,
+          "label": "firma (optional)",
+          "name": "firma",
+          "placeholder": "optional",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "vorname",
+          "before": "nachname",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "lastname",
+          "index": 1,
+          "label": "nachname",
+          "name": "lastname",
+          "required": true,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "e-mail",
+          "before": "vorname",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "firstname",
+          "index": 2,
+          "label": "vorname",
+          "name": "firstname",
+          "required": true,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "benutzername",
+          "before": "e-mail",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "email",
+          "index": 3,
+          "label": "e-mail",
+          "name": "email",
+          "placeholder": "gültige e-mail-adresse",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "passwort",
+          "before": "benutzername",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "username",
+          "index": 4,
+          "label": "benutzername",
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "passwort wiederholen",
+          "before": "passwort",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password",
+          "index": 5,
+          "label": "passwort",
+          "name": "passwd",
+          "placeholder": "passwort wählen",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "passwortstärke captcha",
+          "before": "passwort wiederholen",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password2",
+          "index": 6,
+          "label": "passwort wiederholen",
+          "name": "passwd2",
+          "placeholder": "passwort bestätigen",
+          "required": true,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "before": "passwortstärke captcha",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 7,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "ddnss.de",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ddnss.de/user_new.php",
+  "status": "ok",
+  "webauthnCalls": []
+}

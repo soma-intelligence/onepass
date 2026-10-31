@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-28T00:04:11.808Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in with email",
+        "continue with orcid"
+      ],
+      "fields": [
+        {
+          "after": "password*",
+          "before": "have an account? register email address*",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "mvrcquohtlotoz6nw7d",
+          "index": 0,
+          "label": "email address*",
+          "name": "emailAddress",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "password*",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "mvrcquoj6shnm772u8",
+          "index": 1,
+          "label": "password*",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "vue",
+  "host": "frontiersin.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://frontiersin.org/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

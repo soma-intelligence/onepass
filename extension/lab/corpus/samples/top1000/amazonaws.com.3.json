@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:53:17.745Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "amazonaws.com",
+  "source": "rendered",
+  "source_url": "https://amazonaws.com/login",
+  "status": "error: http 404"
+}

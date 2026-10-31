@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T21:56:45.617Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in tiktok search for you shop explor",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "orite items. skip to content feed tiktok",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "tiktok.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tiktok.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

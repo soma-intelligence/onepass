@@ -1,0 +1,95 @@
+{
+  "captured_at": "2026-10-27T22:13:45.756Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "view",
+        "view",
+        "checkbox",
+        "checkbox checked",
+        "checkbox checked",
+        "checkbox checked",
+        "sign up for free"
+      ],
+      "fields": [
+        {
+          "after": "first name email",
+          "before": "r channel premium plan sign in or person",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "_R_6dlbsnpaccnopfivb_",
+          "index": 0,
+          "label": "first name",
+          "name": "firstName",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "email locked",
+          "before": "first name email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "_R_adlbsnpaccnopfivb_",
+          "index": 1,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password view locked",
+          "before": "email locked",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "_R_1edlbsnpaccnopfivb_",
+          "index": 2,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "confirm password view morning brief: you",
+          "before": "password view locked",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "_R_2edlbsnpaccnopfivb_",
+          "index": 3,
+          "label": "confirm password",
+          "name": "confirmPassword",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "weather.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://weather.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

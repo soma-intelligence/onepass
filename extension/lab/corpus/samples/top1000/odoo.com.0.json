@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-10-28T00:17:52.722Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "menu",
+        "english"
+      ],
+      "fields": [
+        {
+          "after": "optimized for productivity experience tr",
+          "before": "ceo of sap level up your quality of work",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        },
+        {
+          "after": "automate work, tailor features, perform",
+          "before": "h sap native ai across all your business",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "odoo.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://odoo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

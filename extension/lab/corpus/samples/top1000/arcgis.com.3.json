@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:08:25.545Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "arcgis.com",
+  "source": "rendered",
+  "source_url": "https://arcgis.com/register",
+  "status": "error: http 404"
+}

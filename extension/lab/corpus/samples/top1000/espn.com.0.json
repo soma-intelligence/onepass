@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-27T22:27:32.618Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "skip to main content",
+        "skip to navigation",
+        "create account",
+        "log in",
+        "create account",
+        "log in"
+      ],
+      "fields": [
+        {
+          "before": "skip to main content skip to navigation",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "league-nav",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "menu espn",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "conference-nav",
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "search",
+          "before": "menu espn",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "global-search-input",
+          "index": 2,
+          "label": "search",
+          "placeholder": "search sports, teams or players...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "espn.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://espn.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

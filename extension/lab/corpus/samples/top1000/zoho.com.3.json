@@ -1,0 +1,157 @@
+{
+  "captured_at": "2026-10-27T23:53:44.193Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "please enter your organization name emai",
+          "autocomplete": "organization",
+          "before": "sterisk are required. company * asterisk",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "company* asterisk",
+          "name": "Contact Name",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please enter your email address. phone n",
+          "autocomplete": "email",
+          "before": "ganization name email address * asterisk",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email address* asterisk",
+          "name": "Email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please enter a valid mobile number conve",
+          "autocomplete": "tel",
+          "before": "r email address. phone number * asterisk",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "contact_number",
+          "index": 2,
+          "label": "phone number* asterisk",
+          "name": "Contact Number",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please enter a convenient date and time.",
+          "before": "number convenient date, time * asterisk",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "convenient_time",
+          "index": 3,
+          "label": "convenient date, time* asterisk",
+          "name": "Convenient Time",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please select your industry type. descri",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "industry",
+          "index": 4,
+          "label": "industry type* asterisk",
+          "name": "cars",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please enter a brief description of your",
+          "before": "ur industry type. description * asterisk",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "desc",
+          "index": 5,
+          "label": "description* asterisk",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "products",
+        "solutions",
+        "resources",
+        "products",
+        "solution",
+        "resources",
+        "access zoho payments",
+        "sign up",
+        "request a demo",
+        "pause animation play animation",
+        "access zoho payments",
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "request demo contact support ask zia is",
+          "ariaLabel": "ask me anything",
+          "autocomplete": "off",
+          "before": "or collecting payments? loading response",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "rzia-input",
+          "index": 0,
+          "label": "ask me anything",
+          "placeholder": "ask me anything",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "zoho.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://zoho.com/payments/",
+  "status": "ok",
+  "webauthnCalls": []
+}

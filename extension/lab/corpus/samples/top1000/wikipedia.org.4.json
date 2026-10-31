@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:55:07.883Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "wikipedia.org",
+  "source": "rendered",
+  "source_url": "https://wikipedia.org/signup",
+  "status": "error: http 404"
+}

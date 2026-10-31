@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:30:52.019Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "anthropic.com",
+  "source": "rendered",
+  "source_url": "https://anthropic.com/signin",
+  "status": "error: http 404"
+}

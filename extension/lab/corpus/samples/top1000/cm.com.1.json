@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-27T22:28:59.683Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "next"
+      ],
+      "fields": [
+        {
+          "after": "username or email address next don't hav",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "Username",
+          "index": 0,
+          "label": "username or email address",
+          "name": "Username",
+          "placeholder": "username or email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "login.cm.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 1,
+  "source": "rendered",
+  "source_url": "https://login.cm.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

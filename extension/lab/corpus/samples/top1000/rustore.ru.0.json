@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-27T23:35:57.677Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "ru",
+        "поиск",
+        "найти",
+        "ru",
+        "предложить приложение",
+        "обратиться в поддержку"
+      ],
+      "fields": [
+        {
+          "after": "найти гарантия безопасности доступ к люб",
+          "before": "доступ к популярным играм и приложениям",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "поиск приложений и игр",
+          "placeholder": "поиск приложений и игр",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "rustore.ru",
+  "iframes": [],
+  "lang": "ru",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rustore.ru/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-10-27T21:57:30.252Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "recommended links compare ssl certificat",
+          "ariaLabel": "search digicert.com",
+          "autocomplete": "off",
+          "before": "(traditional) japanese korean português",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search digicert.com",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "digicert.com",
+  "iframes": [
+    {
+      "origin": "https://consent-sync.digicert.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://digicert.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

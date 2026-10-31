@@ -93,8 +93,8 @@ export async function prebuildFixtureCache(dir: string, staged: StagedHost): Pro
     ONEPASS_NATIVE_HOST_CONFIG: config,
   });
   try {
-    // A cold debug host (first build, busy machine) can take over 30 s to answer.
-    const client = new BridgeClient(t, { requestTimeoutMs: 180_000 });
+    // A big vault (the lab's 500-item profiles) takes about half a minute to build, more when several build at once.
+    const client = new BridgeClient(t, { requestTimeoutMs: 180_000, stepTimeoutMs: 180_000 });
     const record = await client.pair("OnePass", "Chromium", async () => true);
     await client.open(record);
     await client.request({ op: "status" });

@@ -1,0 +1,96 @@
+{
+  "captured_at": "2026-10-27T22:44:38.556Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "header-form-search-input",
+          "index": 0,
+          "label": "search",
+          "name": "p",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "email",
+          "autocomplete": "off",
+          "before": "op aol stories, delivered to your inbox.",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email",
+          "name": "newsletter-email",
+          "placeholder": "your email here",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "see all markets yahoo finance coca-cola",
+          "ariaLabel": "company name or ticket",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "company name or ticket",
+          "name": "p",
+          "placeholder": "quote lookup",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "aol.com",
+  "iframes": [
+    {
+      "origin": "https://dispatcher.aol.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://tpc.googlesyndication.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://aol.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

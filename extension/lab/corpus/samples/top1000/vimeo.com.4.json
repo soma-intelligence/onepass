@@ -1,0 +1,77 @@
+{
+  "captured_at": "2026-10-27T21:59:36.334Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "enter email",
+          "autocomplete": "username",
+          "before": "continue with apple or",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "unified_auth_email",
+          "index": 0,
+          "label": "enter email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "enter email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "g-recaptcha-response-016vasz93hzz",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "by logging in to vimeo, you agree to our",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "h-captcha-response-016vasz93hzz",
+          "index": 2,
+          "name": "h-captcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "vimeo.com",
+  "iframes": [
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://vimeo.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:17:40.388Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "miui.com",
+  "source": "rendered",
+  "source_url": "https://miui.com/signin",
+  "status": "error: http 404"
+}

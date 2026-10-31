@@ -32,6 +32,7 @@ import { Planner, type PlanOrigins, framesFromSender, mainRoles } from "./planne
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
+import type { ModelSession } from "./model";
 import { BgError, type BridgeLike, Session } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
 
@@ -483,6 +484,20 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     },
   };
 
+  // Field classifier model (Task 15): model builds only. In the default build the branch, the
+  // dynamic import and everything behind it (model code, onnxruntime-web) are dropped by esbuild.
+  let modelSession: (() => Promise<ModelSession | null>) | null = null;
+  if (__CLASSIFIER__ !== "heuristic") {
+    const kind = __CLASSIFIER__;
+    const service = import("./model-service");
+    let loaded: Promise<ModelSession | null> | null = null;
+    const load = () => (loaded ??= service.then((m) => m.loadClassifierModel(ext, kind)).catch(() => null));
+    modelSession = load;
+    // One handler (and so one budget per tab) for the worker's lifetime.
+    const handler = service.then((m) => m.createClassifyHandler({ kind, frames, session: load }));
+    handlers.cs.classify = async (m, from) => (await handler)(m, from);
+  }
+
   return {
     store,
     session,
@@ -503,6 +518,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     analyses,
     popup,
     handlers,
+    /** The classifier model of a model build (loaded on first use), null in the default build. */
+    modelSession,
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
       store.restrictLocal();

@@ -1,0 +1,152 @@
+{
+  "captured_at": "2026-10-27T23:26:15.356Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search chatbot chatbot games word of the",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "company menu toggle merriam-webster logo",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search-term",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search dictionary",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search chatbot slang & trending words 12",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "my words recents account log out chatbot",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "home-search-term",
+          "index": 0,
+          "label": "search",
+          "placeholder": "search dictionary",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "word of the day email subscribe",
+          "before": "dcast get word of the day in your inbox!",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "word of the day email subscribe",
+          "name": "wod-subscribe",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "subscribe",
+        ">"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "sign up for merriam-webster's word of the day newsletter",
+          "before": "word every day. delivered to your inbox!",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "sign up for merriam-webster's word of the day newsletter",
+          "name": "email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "menu toggle",
+        "search",
+        "more",
+        "menu toggle",
+        "more",
+        "search",
+        "sign up",
+        "play",
+        "play",
+        "play",
+        "play",
+        "select a year"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "search years",
+          "before": "were born ... and beyond! select a year",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search years",
+          "placeholder": "search year",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "merriam-webster.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://merriam-webster.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-28T01:06:51.704Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "login"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "email",
+          "before": "e-mail/username",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "e-mail/username",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "texhub.io",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "http://texhub.io/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

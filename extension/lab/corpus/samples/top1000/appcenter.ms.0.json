@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:06:55.051Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "appcenter.ms",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://appcenter.ms/",
+  "status": "ok",
+  "webauthnCalls": []
+}

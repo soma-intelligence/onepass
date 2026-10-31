@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-27T21:58:27.525Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "continue or continue with google continu",
+          "autocomplete": "username",
+          "before": "spotify welcome back email",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "before": "ivacy policy and terms of service apply.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "spotify.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://spotify.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

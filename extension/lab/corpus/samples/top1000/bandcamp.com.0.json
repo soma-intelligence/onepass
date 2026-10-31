@@ -1,0 +1,103 @@
+{
+  "captured_at": "2026-10-27T23:37:06.898Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search sign up log in digital music viny",
+          "autocomplete": "off",
+          "before": "ch for artist, album or track (optional)",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "v-1-0-1",
+          "index": 0,
+          "label": "search for artist, album or track (optional)",
+          "placeholder": "search and discover music",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "sign up discover music by genre and loca",
+          "before": "ly delivered every friday. email address",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "v-16",
+          "index": 0,
+          "label": "email address",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "accept all",
+        "accept necessary only",
+        "search",
+        "sign up",
+        "pause unpause",
+        "sign up",
+        "cookie settings",
+        "language: english"
+      ],
+      "fields": [
+        {
+          "before": "roid ios language: english bandcamp home",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "bandcamp.com",
+  "iframes": [
+    {
+      "origin": "https://www.googletagmanager.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bandcamp.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:58:11.568Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "opera.com",
+  "source": "rendered",
+  "source_url": "https://opera.com/signin",
+  "status": "error: http 404"
+}

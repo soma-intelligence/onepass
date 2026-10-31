@@ -1,0 +1,111 @@
+{
+  "captured_at": "2026-10-28T00:12:57.357Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "get started",
+        "read our docs",
+        "take pro-code control of your ui",
+        "scale many branded experiences",
+        "offload the security complexity",
+        "no code",
+        "acul",
+        "login/sign-up",
+        "account recovery",
+        "enterprise sso",
+        "multi-factor auth",
+        "device flow"
+      ],
+      "fields": [
+        {
+          "after": "build documentation ai identity docs api",
+          "ariaLabel": "language selector",
+          "before": "for agentic commerce. learn more → login",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "language selector",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "sign up login let's connect build docume",
+          "before": "pers browse resources → pricing language",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 1,
+          "label": "language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "no code acul branded logins, built your",
+          "ariaLabel": "select",
+          "before": "ptions. whether you’re a large enterpris",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "react-aria-:Rp3e6:",
+          "index": 2,
+          "label": "select",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "login/sign-up account recovery enterpris",
+          "ariaLabel": "select",
+          "before": "to build trusted, engaging customer expe",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "react-aria-:Rpbe6:",
+          "index": 3,
+          "label": "select",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "mpanies to build back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 4,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "auth0.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://auth0.com/features/universal-login",
+  "status": "ok",
+  "webauthnCalls": []
+}

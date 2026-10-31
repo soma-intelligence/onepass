@@ -1,0 +1,77 @@
+{
+  "captured_at": "2026-10-27T22:45:21.507Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "contact steam support for help with acco",
+          "before": "te claims for help with account access a",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "authcode",
+          "index": 0,
+          "label": "enter your code here",
+          "placeholder": "enter your code here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "ed, give the browser a friendly name - a",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "friendlyname",
+          "index": 1,
+          "label": "enter a friendly name here",
+          "placeholder": "enter a friendly name here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "contact steam support for help with acco",
+          "autocomplete": "off",
+          "before": "r assistance from a member of our staff.",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twofactorcode_entry",
+          "index": 0,
+          "label": "enter your code here",
+          "placeholder": "enter your code here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "steamcommunity.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://steamcommunity.com/login/home/",
+  "status": "ok",
+  "webauthnCalls": []
+}

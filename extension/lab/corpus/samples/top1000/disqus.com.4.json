@@ -1,0 +1,108 @@
+{
+  "captured_at": "2026-10-28T00:15:08.750Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "google",
+        "facebook",
+        "x (twitter)",
+        "microsoft",
+        "apple",
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "email*",
+          "ariaLabel": "name",
+          "before": "ook x (twitter) microsoft apple or name*",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "display-name-input",
+          "index": 0,
+          "label": "name",
+          "name": "display_name",
+          "placeholder": "e.g. john doe",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password*",
+          "before": "email*",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "email-input",
+          "index": 1,
+          "label": "<redacted>",
+          "name": "email",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "password",
+          "before": "password*",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "password-input",
+          "index": 2,
+          "label": "password",
+          "name": "password",
+          "placeholder": "enter your password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "by clicking submit, i authorize disqus,",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 3,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "disqus.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://disqus.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

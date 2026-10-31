@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:00:04.305Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "consultant.ru",
+  "source": "rendered",
+  "source_url": "https://consultant.ru/account",
+  "status": "error: http 404"
+}

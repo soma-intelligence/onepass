@@ -15,6 +15,7 @@ import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
 import type { Site, World } from "../../lab/gen/model.ts";
+import { fixtureFor } from "../../lab/gen/population.ts";
 import { IDP_HOST } from "../../lab/gen/render.ts";
 import { expectedValues } from "../../lab/server/rp.ts";
 import { startLabServer } from "../../lab/server/server.ts";
@@ -22,10 +23,10 @@ import type { LabServer } from "../../lab/server/server.ts";
 
 const PATTERNS = patternsJson as unknown as Patterns;
 
-/** First seed whose 10-site world has a lookalike and a honeypot on a password login site. */
+/** First seed whose 11-site world (every flow) has a lookalike and a honeypot on a password login site. */
 function pickWorld(): World {
   for (let k = 0; k < 500; k++) {
-    const w = generate(`lab-server-${k}`, { sites: 10, patterns: PATTERNS });
+    const w = generate(`lab-server-${k}`, { sites: 11, patterns: PATTERNS, profiles: 12 });
     if (w.sites.some((s) => s.lookalike) && w.sites.some((s) => s.honeypot && s.account?.password)) return w;
   }
   throw new Error("no seed with a lookalike and a honeypot");
@@ -95,6 +96,21 @@ describe("lab server", () => {
     expect((await req("unknown-host.test", "/")).status).toBe(404);
   });
 
+  it("label_marks_only_in_dataset_mode", async () => {
+    const withForm = world.sites.find((x) => x.flow === "login_single" && !x.traits.some((t) => /iframe|shadow|delayed/.test(t)))!;
+    expect((await req(withForm.host, "/")).body).not.toContain("data-lab-field");
+    const dsDir = mkdtempSync(join(tmpdir(), "lab-server-ds-"));
+    const ds = await startLabServer(world, generateCert(dsDir, world.hosts), { labelMarks: true });
+    try {
+      const r = await client(ds.port)(withForm.host, "/");
+      expect(r.body).toContain("data-lab-field");
+      if (withForm.lookalike) expect((await client(ds.port)(withForm.lookalike.host, "/")).body).toContain("data-lab-field");
+    } finally {
+      await ds.close();
+      rmSync(dsDir, { recursive: true, force: true });
+    }
+  });
+
   it("password_login_signs_in", async () => {
     const s = flow("login_single");
     const r = await req(s.host, "/", { [field(s, "username")]: s.account!.username, [field(s, "password")]: s.account!.password });
@@ -124,6 +140,38 @@ describe("lab server", () => {
     const ok = await req(s.host, "/otp", { [field(s, "otp")]: totp(s.account!.totpSecret!) });
     expect(ok.location).toBe("/home");
     expect(server.events().filter((e) => e.kind === "signin")).toMatchObject([{ host: s.host, user: s.account!.username }]);
+  });
+
+  it("multi_step_page_by_page", async () => {
+    const s = flow("multi_step");
+    const steps = s.steps!;
+    const value = (f: Site["fields"][number]) => f.role === "password" ? s.account!.password
+      : f.role === "otp" ? totp(s.account!.totpSecret!) : s.account!.username;
+    const post = (k: number) => Object.fromEntries(steps[k]!.map((f) => [f.name, value(f)]));
+    const entry = (await req(s.host, "/")).body;
+    expect(entry).toContain(`id="${steps[0]![0]!.id}"`);
+    expect(entry).not.toContain(`id="${steps[1]![0]!.id}"`);
+    expect((await req(s.host, "/step/1")).body).toContain(`id="${steps[1]![0]!.id}"`);
+    expect((await req(s.host, `/step/${steps.length}`)).status).toBe(404);
+    // A later step without the earlier ones is refused.
+    const skip = await req(s.host, "/step/1", post(1));
+    expect(skip.status).toBe(200);
+    expect(skip.body).toContain('class="status error"');
+    for (let k = 0; k < steps.length; k++) {
+      const r = await req(s.host, k === 0 ? "/" : `/step/${k}`, post(k));
+      expect(r.location).toBe(k === steps.length - 1 ? "/home" : `/step/${k + 1}`);
+    }
+    expect(server.events().filter((e) => e.kind === "signin")).toMatchObject([{ host: s.host, user: s.account!.username }]);
+    expect(server.events().filter((e) => e.kind === "submit").map((e) => [e.form, e.ok])).toEqual([
+      ["step", false], ...steps.map((_, k) => [k === 0 ? "multi_step" : "step", true]),
+    ]);
+  });
+
+  it("multi_step_wrong_identifier_refused", async () => {
+    const s = flow("multi_step");
+    const r = await req(s.host, "/", Object.fromEntries(s.steps![0]!.map((f) => [f.name, "nobody"])));
+    expect(r.status).toBe(200);
+    expect(server.events()).toMatchObject([{ kind: "submit", form: "multi_step", ok: false, reason: "unknown_user" }]);
   });
 
   it("wrong_password_refused", async () => {
@@ -294,6 +342,31 @@ describe("lab server", () => {
     const r = await req("unknown-host.test", CANARY_PATH, { p: s.account!.password });
     expect(r.body).toBe(server.nonce);
     expect(server.events()).toMatchObject([{ kind: "leak", secret: "password", host: "unknown-host.test", owner: s.host }]);
+  });
+
+  it("profile_fixture_sets_the_expected_values_and_the_secrets", async () => {
+    const drawn = world.profiles!.find((p) => p.multiAccount && p.vaultSize > 0)!;
+    const jp = fixtureFor(drawn, world.sites, world.fixture);
+    const s = flow("identity");
+    const form = (w: World) => Object.fromEntries(s.fields.map((f) => [f.name, expectedValues(w, s)[f.role] ?? ""]));
+    // The default vault expects the default phone: the JP one is refused until the server uses the JP vault.
+    const post = { ...form(world), [field(s, "tel")]: (jp.items as { title: string; fields: { mobile_phone?: string } }[])
+      .find((i) => i.title === s.identityTitle)!.fields.mobile_phone! };
+    expect((await req(s.host, "/", post)).status).toBe(200);
+    expect(server.events()).toMatchObject([{ kind: "submit", ok: false, reason: "wrong_fields" }]);
+    server.reset();
+    server.useFixture(jp);
+    await req(s.host, "/", post);
+    expect(server.events()).toMatchObject([{ kind: "submit", form: "identity", ok: true }]);
+    // A second account's password belongs to its site only.
+    const second = (jp.items as { title: string; urls?: { url: string }[]; fields: { password?: string } }[])
+      .find((i) => i.title.endsWith(" (2)") && i.fields.password)!;
+    await req("unknown-host.test", CANARY_PATH, { p: second.fields.password! });
+    expect(server.events().at(-1)).toMatchObject({ kind: "leak", secret: "password", owner: new URL(second.urls![0]!.url).hostname });
+    // reset() goes back to the world's vault.
+    server.reset();
+    await req(s.host, "/", post);
+    expect(server.events()).toMatchObject([{ kind: "submit", ok: false, reason: "wrong_fields" }]);
   });
 
   it("canary", async () => {

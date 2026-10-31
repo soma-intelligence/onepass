@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:20:41.313Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "amazon.com.au",
+  "source": "rendered",
+  "source_url": "https://amazon.com.au/login",
+  "status": "error: http 404"
+}

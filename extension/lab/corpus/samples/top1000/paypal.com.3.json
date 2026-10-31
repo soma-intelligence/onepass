@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:06:54.367Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "paypal.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://paypal.com/mobile-app/dashboard",
+  "status": "ok",
+  "webauthnCalls": []
+}

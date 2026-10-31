@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:42:10.463Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "europäische satellitendienste vier europ",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "q1",
+          "index": 0,
+          "label": "suche...",
+          "maxlength": 150,
+          "name": "q",
+          "placeholder": "suche...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "telefonica.de",
+  "iframes": [],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://telefonica.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

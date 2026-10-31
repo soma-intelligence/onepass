@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:43:00.355Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "telefonica.de",
+  "source": "rendered",
+  "source_url": "https://telefonica.de/signin",
+  "status": "error: http 404"
+}

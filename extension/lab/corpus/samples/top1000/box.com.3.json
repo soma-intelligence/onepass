@@ -1,0 +1,99 @@
+{
+  "captured_at": "2026-10-27T23:34:32.861Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "get started"
+      ],
+      "fields": [
+        {
+          "after": "business email address",
+          "before": "bout yourself your information full name",
+          "depth": 24,
+          "hasPattern": false,
+          "id": "input-04e8",
+          "index": 0,
+          "label": "full name",
+          "name": "fullName",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "password",
+          "before": "business email address",
+          "depth": 24,
+          "hasPattern": false,
+          "id": "input-b50a",
+          "index": 1,
+          "label": "business email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "confirm password",
+          "autocomplete": "off",
+          "before": "password",
+          "depth": 25,
+          "hasPattern": false,
+          "id": "input-a298",
+          "index": 2,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "you will receive marketing materials reg",
+          "autocomplete": "off",
+          "before": "confirm password",
+          "depth": 24,
+          "hasPattern": false,
+          "id": "input-f295",
+          "index": 3,
+          "label": "confirm password",
+          "name": "passwordConfirm",
+          "placeholder": "confirm password",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "account.box.com",
+  "iframes": [
+    {
+      "origin": "https://insight.adsrvr.org",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://account.box.com/signup/developer",
+  "status": "ok",
+  "webauthnCalls": []
+}

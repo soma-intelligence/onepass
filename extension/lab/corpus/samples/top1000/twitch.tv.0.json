@@ -1,0 +1,59 @@
+{
+  "captured_at": "2026-10-27T22:10:43.213Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search input",
+          "autocomplete": "twitch-nav-search",
+          "before": "skip to... alt p browse",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "search input",
+          "maxlength": 65,
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        },
+        {
+          "after": "log in sign up ad something went wrong..",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "twitch.tv",
+  "iframes": [
+    {
+      "origin": "https://k.twitchcdn.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://twitch.tv/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-10-27T22:31:37.212Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "close",
+        "platform",
+        "solutions",
+        "resources",
+        "company",
+        "contact us",
+        "do not sell or share my personal information",
+        "do not sell or share my personal information",
+        "accept all cookies",
+        "cookies details",
+        "cookies details",
+        "cookies details"
+      ],
+      "fields": [
+        {
+          "after": "to search repositories and projects, log",
+          "before": "close",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 1,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "gitlab.com",
+  "iframes": [
+    {
+      "origin": "https://<redacted>.cdn.optimizely.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gitlab.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

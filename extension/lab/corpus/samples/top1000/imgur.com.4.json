@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:47:48.574Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "imgur.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://imgur.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:05:17.704Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "nytimes.com",
+  "source": "rendered",
+  "source_url": "https://nytimes.com/",
+  "status": "error: http 403"
+}

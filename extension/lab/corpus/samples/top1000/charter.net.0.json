@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:27:26.270Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "angular",
+  "host": "charter.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://charter.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

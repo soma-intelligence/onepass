@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-28T00:23:35.603Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "türkiye",
+        "germany",
+        "united arab emirates",
+        "saudi arabia",
+        "qatar",
+        "kuwait",
+        "oman",
+        "bahrain",
+        "ukraine",
+        "moldova",
+        "austria",
+        "belgium"
+      ],
+      "fields": [
+        {
+          "after": "free shipping & returns select tanımlama",
+          "before": "please select your country for shopping",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "country-select",
+          "index": 0,
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "satıcı listesi araması",
+          "before": "nı görüntüle‎ back button satıcı listesi",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 1,
+          "label": "satıcı listesi araması",
+          "name": "vendor-search-handler",
+          "placeholder": "satıcıları arayın",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "trendyol.com",
+  "iframes": [],
+  "lang": "tr",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://trendyol.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

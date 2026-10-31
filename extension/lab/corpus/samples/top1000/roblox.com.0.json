@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-10-27T21:57:55.790Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sports & racing",
+        "simulation",
+        "puzzle",
+        "adventure",
+        "shooter",
+        "rpg",
+        "obby & platformer",
+        "survival",
+        "roleplay & avatar simulation",
+        "party & casual",
+        "strategy",
+        "action"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "video progress",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "video progress",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "after": "one platform. millions of games. play im",
+          "ariaLabel": "volume",
+          "depth": 18,
+          "hasPattern": false,
+          "index": 1,
+          "label": "volume",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "roblox.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://roblox.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

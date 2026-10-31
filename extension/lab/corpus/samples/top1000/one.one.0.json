@@ -1,0 +1,122 @@
+{
+  "captured_at": "2026-10-27T23:57:24.694Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search .co.uk £ 0.99 / 1st year .io £ 17",
+          "before": "ht domain read article view all articles",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "find your domain name",
+          "name": "domain",
+          "placeholder": "find your domain name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search .uk £ 0.99 / 1st year * * free wi",
+          "before": "cles aida ai excellent 25,485 reviews on",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "find your domain name",
+          "name": "domain",
+          "placeholder": "find your domain name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "only necessary",
+        "accept all",
+        "only necessary",
+        "allow selection",
+        "24/7 support",
+        "resources",
+        "login",
+        "websitenew",
+        "wordpress",
+        "hosting & vps",
+        "email & office",
+        "domains"
+      ],
+      "fields": [
+        {
+          "after": "start free trial this tool uses ai to ge",
+          "ariaLabel": "describe your idea",
+          "before": "escribe your idea modernise your website",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "describe your idea",
+          "placeholder": "build an online shop for my hot sauce brand with a bold desi",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        },
+        {
+          "after": "start free trial this tool uses ai to ge",
+          "ariaLabel": "describe your idea",
+          "before": "escribe your idea modernise your website",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 1,
+          "label": "describe your idea",
+          "placeholder": "build an online shop for my hot sauce brand with a bold desi",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "one.one",
+  "iframes": [
+    {
+      "origin": "https://consentcdn.cookiebot.eu",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://one.one/",
+  "status": "ok",
+  "webauthnCalls": []
+}

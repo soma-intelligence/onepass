@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:59:08.045Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "www.goodreads.com",
+  "source": "rendered",
+  "source_url": "https://www.goodreads.com/ap/register",
+  "status": "error: timeout"
+}

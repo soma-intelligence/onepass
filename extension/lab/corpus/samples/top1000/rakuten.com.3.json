@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:55:07.341Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "rakuten.com",
+  "source": "rendered",
+  "source_url": "https://rakuten.com/register",
+  "status": "error: http 404"
+}

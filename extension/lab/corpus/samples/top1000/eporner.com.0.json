@@ -1,0 +1,104 @@
+{
+  "captured_at": "2026-10-28T00:22:40.613Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "all ▾",
+        "all ✓",
+        "videos ✓",
+        "photos ✓",
+        "pornstars ✓",
+        "playlists ✓",
+        "×"
+      ],
+      "fields": [
+        {
+          "after": "all ▾ all ✓ videos ✓ photos ✓ pornstars",
+          "before": "live sex search in:",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "srchtype",
+          "index": 0,
+          "label": "search in:",
+          "name": "searchtype",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "× upload sign in register theme light da",
+          "autocomplete": "off",
+          "before": "photos ✓ pornstars ✓ playlists ✓ search",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "srch",
+          "index": 1,
+          "label": "search",
+          "name": "search",
+          "placeholder": "find your favorite porn...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "apply"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "minimum duration",
+          "before": "4k duration (minutes) min 0 min max 1h+",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "home-video-filter-duration-min",
+          "index": 0,
+          "label": "min0 min",
+          "name": "duration_min_minutes",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        },
+        {
+          "after": "0 15m 30m 45m 1h+ apply clear categories",
+          "ariaLabel": "maximum duration",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "home-video-filter-duration-max",
+          "index": 1,
+          "label": "max1h+",
+          "name": "duration_max_minutes",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "range",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "eporner.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://eporner.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

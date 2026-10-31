@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:19:07.188Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "harvard.edu",
+  "source": "rendered",
+  "source_url": "https://harvard.edu/signin",
+  "status": "error: http 404"
+}

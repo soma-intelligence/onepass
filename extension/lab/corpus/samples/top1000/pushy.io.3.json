@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:53:39.706Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "pushy.io",
+  "source": "rendered",
+  "source_url": "https://pushy.io/register",
+  "status": "error: <redacted>"
+}

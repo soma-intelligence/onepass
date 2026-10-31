@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:13:44.838Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "poki.com",
+  "source": "rendered",
+  "source_url": "https://poki.com/register",
+  "status": "error: http 404"
+}

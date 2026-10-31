@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-28T00:04:48.999Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "photos"
+      ],
+      "fields": [
+        {
+          "after": "4 days left feels like fall join 3 days",
+          "autocomplete": "off",
+          "before": "ages & videos shared by creators. photos",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "photos",
+          "name": "s",
+          "placeholder": "search for free photos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "change language",
+        "join",
+        "photos",
+        "join",
+        "join",
+        "trending",
+        "around the world",
+        "around the world",
+        "around the world",
+        "around the world",
+        "around the world",
+        "around the world"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "before": "details‎ back button performance cookies",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "name": "vendor-search-handler",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "pexels.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pexels.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

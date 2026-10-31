@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-10-28T00:56:34.049Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "account bookings orders my account sign",
+          "ariaLabel": "search products",
+          "autocomplete": "off",
+          "before": "ws shop services free careers contact us",
+          "depth": 21,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "search products",
+          "name": "keywords",
+          "placeholder": "search products",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign in",
+        "reset password"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "email",
+          "autocomplete": "email",
+          "before": "ate pages you've been granted access to.",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "placeholder": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "ariaLabel": "password",
+          "autocomplete": "current-password",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "0-0-8studios.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://0-0-8studios.com/m/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

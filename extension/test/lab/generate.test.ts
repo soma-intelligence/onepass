@@ -9,13 +9,19 @@ import type { Patterns } from "../../lab/corpus/types.ts";
 import { expectationFor } from "../../lab/gen/capabilities.ts";
 import { PUBLIC_TEST_CARDS, card, passkey, password, totpSecret } from "../../lab/gen/data.ts";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
-import type { FlowId, Site } from "../../lab/gen/model.ts";
+import { LAYOUTS } from "../../lab/gen/layouts.ts";
+import type { FieldSpec, FlowId, Site } from "../../lab/gen/model.ts";
+import { formHtml, type FormSpec } from "../../lab/gen/render-forms.ts";
+import { extractFeatures } from "../../src/content/detect/features.ts";
 import { Rng } from "../../lab/gen/rng.ts";
 
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
-  "login_passkey", "sso", "signup", "checkout_card", "address", "identity"];
-const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso"];
+  "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
+const PINNED_DIGEST_V2 = "bf1ca5374c32d06d4cd71b082d0b6a33bc1f1306c48ef53a945651f34a9e352a";
+const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
+const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
+const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];
 const PROVIDER_HOSTS = ["accounts.google.com", "appleid.apple.com", "login.microsoftonline.com"];
 
 const big = generate("props", { sites: 200, patterns: FIXED });
@@ -41,10 +47,34 @@ describe("generate", () => {
     expect(JSON.stringify(generate("y", { sites: 40, patterns: FIXED }))).not.toBe(JSON.stringify(a));
   });
 
-  it("pinned_digest", () => {
-    const w = generate("lab-smoke-1", { sites: 12, patterns: FIXED });
-    const digest = createHash("sha256").update(JSON.stringify(w)).digest("hex");
-    expect(digest).toBe("c6b5ee185b34e62143b190973f50bf81477314f616000f5b0b15974785ebb449");
+  it("same seed, same world, version 2", () => {
+    const w = generate("g2", { sites: 50, patterns: FIXED });
+    expect(w.version).toBe(2);
+    expect(digest(w)).toBe(PINNED_DIGEST_V2);
+  });
+
+  it("multi_step sites have at least 2 steps drawn from patterns", () => {
+    const w = generate("ms", { sites: 400, patterns: FIXED });
+    const ms = w.sites.filter((s) => s.flow === "multi_step");
+    expect(ms.length).toBeGreaterThan(0);
+    for (const s of ms) {
+      expect(s.steps!.length).toBeGreaterThanOrEqual(2);
+      // The steps are the site's fields, in order, split by page.
+      expect(s.steps!.flat()).toEqual(s.fields);
+      expect(s.buttons.next).toBeTruthy();
+      expect(s.account!.username).toBeTruthy();
+      expect(!!s.account!.totpSecret).toBe(s.fields.some((f) => f.role === "otp"));
+      for (const t of s.traits) expect(t.startsWith("iframe_")).toBe(false);
+      expect(w.scenarios.filter((x) => x.site === s.index).map((x) => x.driver)).toEqual(["menu_fill"]);
+    }
+    for (const s of w.sites.filter((x) => x.flow !== "multi_step")) expect(s.steps).toBeUndefined();
+  });
+
+  it("layouts_and_frameworks_vary", () => {
+    const w = generate("looks", { sites: 400, patterns: FIXED });
+    expect(new Set(w.sites.map((s) => s.layout))).toEqual(new Set(LAYOUTS));
+    const fw = new Set(w.sites.map((s) => s.framework));
+    for (const f of ["static", "react", "vue", "angular"]) expect(fw.has(f as never)).toBe(true);
   });
 
   it("sso_with_and_without_password_form", () => {
@@ -70,8 +100,8 @@ describe("generate", () => {
     expect(loadPatterns()).toEqual(FIXED);
   });
 
-  it("first_ten_cover_all_flows", () => {
-    const w = generate("cover", { sites: 10, patterns: FIXED });
+  it("first_eleven_cover_all_flows", () => {
+    const w = generate("cover", { sites: 11, patterns: FIXED });
     expect(new Set(w.sites.map((s) => s.flow))).toEqual(new Set(ALL_FLOWS));
   });
 
@@ -192,7 +222,7 @@ describe("generate", () => {
   it("scenarios_per_site", () => {
     for (const s of big.sites) {
       const drivers = big.scenarios.filter((x) => x.site === s.index).map((x) => x.driver);
-      const main = LOGIN_FLOWS.includes(s.flow) ? "one_click" : "menu_fill";
+      const main = LOGIN_FLOWS.includes(s.flow) && s.flow !== "multi_step" ? "one_click" : "menu_fill";
       // The control needs a passkey step on the site's own host: a cross-site widget has none.
       const control = s.flow === "login_passkey" && (s.passkeyOnly === true || !s.traits.includes("iframe_cross_site"));
       const want = [main, ...(s.lookalike ? ["lookalike"] : []), ...(control ? ["passkey_control"] : [])];
@@ -254,6 +284,10 @@ describe("generate", () => {
     expect(expectationFor(site({}), "lookalike").expect).toBe("nofill");
     expect(expectationFor(site({ flow: "login_passkey" }), "passkey_control")).toEqual({ expect: "pass" });
     expect(expectationFor(site({ traits: ["honeypot", "iframe_same_origin"] }), "one_click")).toEqual({ expect: "pass" });
+    // Provider buttons are read in French and English only (src/shared/providers.ts).
+    expect(expectationFor(site({ flow: "sso", labelLang: "es" }), "one_click")).toEqual({ expect: "xfail", reason: "provider button fr/en only (shared/providers.ts)" });
+    expect(expectationFor(site({ flow: "sso", labelLang: "de" }), "one_click").expect).toBe("xfail");
+    expect(expectationFor(site({ flow: "sso", labelLang: "zh" }), "one_click")).toEqual({ expect: "pass" });
   });
 
   it("no_secret_in_scenarios", () => {
@@ -268,5 +302,41 @@ describe("generate", () => {
     for (const it of items(big).filter((i) => i.type === "credit_card")) secrets.push(String(it.fields.number).replace(/ /g, ""), String(it.fields.number));
     expect(secrets.length).toBeGreaterThan(20);
     for (const s of secrets) expect(text).not.toContain(s);
+  });
+});
+
+describe("formHtml layouts and frameworks", () => {
+  const f = (role: FieldSpec["role"], label: string, type = "text"): FieldSpec => ({ role, name: role, id: `f-${role}`, label, type, autocomplete: role });
+  const spec: FormSpec = {
+    action: "/", fields: [f("email", "Adresse e-mail", "email"), f("password", "Mot de passe", "password")],
+    noAutocomplete: false, splitOtp: false, reveal: false, submit: "Connexion",
+  };
+
+  it("every layout renders a label the extractor can read", () => {
+    for (const layout of LAYOUTS) {
+      const fields = extractFeatures(dom(formHtml(spec, { layout }))).forms[0]!.fields;
+      expect(fields.map((x) => x.name)).toEqual(["email", "password"]);
+      for (const x of fields) expect(x.label ?? x.placeholder, layout).toBeTruthy();
+    }
+  });
+
+  it("defaults_render_as_before", () => {
+    expect(formHtml(spec, { layout: "stacked", framework: "static" })).toBe(formHtml(spec));
+    expect(formHtml(spec)).not.toMatch(/data-lab-field|data-v-|_ngcontent|data-reactroot/);
+  });
+
+  it("frameworks_are_detected_by_the_extractor", () => {
+    for (const fw of ["react", "vue", "angular"] as const) {
+      const html = formHtml(spec, { framework: fw });
+      expect(extractFeatures(dom(html)).framework).toBe(fw);
+      // Ids and names stay what the driver and the server use.
+      expect(html).toContain('id="f-email"');
+      expect(html).toContain('name="password"');
+    }
+  });
+
+  it("label_marks_number_the_fields", () => {
+    const fields = extractFeatures(dom(formHtml(spec, { labelMarks: true })), { labField: true }).forms[0]!.fields;
+    expect(fields.map((x) => x.lab)).toEqual(["0", "1"]);
   });
 });

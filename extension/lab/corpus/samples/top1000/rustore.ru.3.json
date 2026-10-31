@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:36:48.856Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "rustore.ru",
+  "source": "rendered",
+  "source_url": "https://rustore.ru/signin",
+  "status": "error: http 404"
+}

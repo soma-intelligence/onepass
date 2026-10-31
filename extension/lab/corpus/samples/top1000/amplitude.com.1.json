@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T22:13:16.428Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "continue with slack",
+        "continue with github"
+      ],
+      "fields": [
+        {
+          "after": "continue or continue with google continu",
+          "before": "r occurred. please try again. work email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": ":r2:-form-item",
+          "index": 0,
+          "label": "work email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "this site is protected by recaptcha and",
+          "before": "continue with slack continue with github",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "app.amplitude.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://app.amplitude.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

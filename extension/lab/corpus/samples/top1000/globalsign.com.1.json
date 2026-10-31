@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:45:18.361Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "atlas.globalsign.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://atlas.globalsign.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

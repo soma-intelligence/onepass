@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-28T00:12:46.079Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "by continuing, you agree to the self ser",
+          "before": "sign up email",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "placeholder": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue",
+        "settings",
+        "reject all",
+        "accept all",
+        "allow all",
+        "back button",
+        "filter icon",
+        "clear",
+        "apply",
+        "cancel",
+        "reject all",
+        "confirm my settings"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "mpanies to build back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "auth0.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://auth0.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

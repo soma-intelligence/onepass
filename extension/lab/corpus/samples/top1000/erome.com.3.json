@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-10-27T23:57:41.578Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "- explore please login or register. ok ×",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "label": "search",
+          "maxlength": 100,
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.erome.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.erome.com/s/creators",
+  "status": "ok",
+  "webauthnCalls": []
+}

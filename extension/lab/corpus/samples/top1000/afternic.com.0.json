@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T22:07:07.943Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search domains"
+      ],
+      "fields": [
+        {
+          "after": "search domains support we're here to hel",
+          "ariaLabel": "search domain",
+          "autocomplete": "off",
+          "before": "ch box to find the perfect domain name a",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "id-3Vbd0RXn26JyeDyamTkqtM",
+          "index": 0,
+          "label": "search domain",
+          "name": "searchText",
+          "placeholder": "type the domain you want",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "afternic.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://afternic.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

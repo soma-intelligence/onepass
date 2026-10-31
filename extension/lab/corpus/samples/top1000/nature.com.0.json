@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-27T22:17:01.093Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "show results from",
+          "before": "h articles by subject, keyword or author",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "keywords",
+          "index": 0,
+          "label": "search articles by subject, keyword or author",
+          "name": "q",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "search advanced search quick links explo",
+          "before": "show results from",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "results-from",
+          "index": 1,
+          "label": "show results from",
+          "name": "journal",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "before": "email address",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "emailAddress",
+          "index": 0,
+          "label": "email address",
+          "name": "emailAddress",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "nature.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://nature.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

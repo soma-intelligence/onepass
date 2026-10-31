@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-10-27T22:09:30.126Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "react",
+  "host": "stripe.com",
+  "iframes": [
+    {
+      "origin": "https://stripe.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://stripe.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-27T23:29:00.292Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "dubai +27° dining groceries malls places",
+          "before": "............ search routes friends guide",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search in 2gis",
+          "placeholder": "search in 2gis",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "2gis.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://2gis.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

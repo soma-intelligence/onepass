@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-27T23:48:53.091Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "welt.de",
+  "iframes": [
+    {
+      "origin": "https://consent.up.welt.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://welt.de/",
+  "status": "ok",
+  "webauthnCalls": []
+}

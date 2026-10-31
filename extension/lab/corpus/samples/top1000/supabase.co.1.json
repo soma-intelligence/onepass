@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-10-28T00:04:15.792Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe product pricing database auth",
+          "ariaLabel": "email for newsletter",
+          "before": "product updates and news from supabase.",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "get product updates and news from supabase.",
+          "placeholder": "your email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "product",
+        "developers",
+        "solutions",
+        "open main menu",
+        "sign up",
+        "sign in",
+        "oauth logins",
+        "session management",
+        "allow read accesspublic profiles are viewable by everyone.",
+        "restrict updatesusers can only update their own rows.",
+        "advanced rulesteam members can update team details using joi",
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "// sign up with email and password const",
+          "before": "' , password : ' secure-password ' , })",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "supabase.co",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://supabase.co/auth",
+  "status": "ok",
+  "webauthnCalls": []
+}

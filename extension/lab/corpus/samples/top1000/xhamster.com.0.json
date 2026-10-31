@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-27T23:34:33.955Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "en login sign up for free videos best vi",
+          "ariaLabel": "search for videos edit text, blank. to perform search, press",
+          "autocomplete": "off",
+          "before": "us",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for videos edit text, blank. to perform search, press",
+          "maxlength": 120,
+          "name": "q",
+          "placeholder": "search for videos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "login",
+        "join now • 50% off",
+        "online venus",
+        "online ebonie rose",
+        "i'm 18 or older - enter xhamster",
+        "ok"
+      ],
+      "fields": [
+        {
+          "after": "american 4k porn hd videos vr porn the h",
+          "before": "riptions liked watch later watch history",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "filter by category...",
+          "placeholder": "filter by category...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "xhamster.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xhamster.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

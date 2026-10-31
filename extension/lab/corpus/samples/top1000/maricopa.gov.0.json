@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:53:03.181Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "ariaLabel": "search site",
+          "before": "perience. do not show this message again",
+          "depth": 22,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search site",
+          "maxlength": 256,
+          "name": "searchPhrase",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "maricopa.gov",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://maricopa.gov/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:07:39.970Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "biblegateway.com",
+  "source": "rendered",
+  "source_url": "https://biblegateway.com/signin",
+  "status": "error: http 404"
+}

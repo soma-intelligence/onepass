@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:04:15.190Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "unpkg.com",
+  "source": "rendered",
+  "source_url": "https://unpkg.com/signup",
+  "status": "error: http 404"
+}

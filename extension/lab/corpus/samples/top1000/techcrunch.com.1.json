@@ -1,0 +1,97 @@
+{
+  "captured_at": "2026-10-27T23:24:46.155Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "email address (required)",
+          "autocomplete": "off",
+          "before": "pecial discounts and other event offers.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "name",
+          "name": "name",
+          "placeholder": "name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        },
+        {
+          "after": "subscribe by submitting your email, you",
+          "before": "email address (required)",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email address (required)",
+          "name": "email",
+          "placeholder": "email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "close",
+        "close",
+        "mobile menu toggle",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile",
+        "view profile"
+      ],
+      "fields": [
+        {
+          "before": "adblocker contact support | we're using",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "techcrunch.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://techcrunch.com/events/techcrunch-founder-summit-2026/",
+  "status": "ok",
+  "webauthnCalls": []
+}

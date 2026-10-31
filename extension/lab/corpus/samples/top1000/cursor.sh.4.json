@@ -1,0 +1,82 @@
+{
+  "captured_at": "2026-10-28T00:05:21.145Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "last name",
+          "autocomplete": "given-name",
+          "before": "first name",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "radix-_R_9ajapaupflb5ubtb_",
+          "index": 0,
+          "label": "first name",
+          "name": "first_name",
+          "placeholder": "your first name",
+          "required": true,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "email",
+          "autocomplete": "family-name",
+          "before": "last name",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "radix-_R_hajapaupflb5ubtb_",
+          "index": 1,
+          "label": "last name",
+          "name": "last_name",
+          "placeholder": "your last name",
+          "required": true,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "continue or continue with google continu",
+          "autocomplete": "email",
+          "before": "email",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "radix-_R_2ajapaupflb5ubtb_",
+          "index": 2,
+          "label": "email",
+          "name": "email",
+          "placeholder": "your email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "cursor.sh",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cursor.sh/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

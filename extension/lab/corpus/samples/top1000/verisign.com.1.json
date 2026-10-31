@@ -1,0 +1,98 @@
+{
+  "captured_at": "2026-10-27T23:25:40.998Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "investor relations login contact us abou",
+          "before": "over investor relations login contact us",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "site search",
+          "name": "vquery",
+          "placeholder": "site search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "verisign support we are here 24 hours a",
+          "before": "ration data access protocol ksk rollover",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "search-menu-input",
+          "index": 0,
+          "label": "site search",
+          "name": "vquery",
+          "placeholder": "site search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "expand all",
+        "what is the verisign customer center?",
+        "what is the verisign account center?",
+        "how do i access the online portals available to registrars?",
+        "how do i become a registrar?",
+        "which domain name extensions are operated by verisign?",
+        "how do i search for domain name suggestions?",
+        "how do i register a domain name?",
+        "how do i register an internationalized domain name (idn)?",
+        "how do i find a domain name registrar?",
+        "can verisign help me renew my expired domain name?",
+        "how can i report dns abuse?"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear filters",
+          "before": "n back performance cookies vendor search",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "vendor search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "verisign.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://verisign.com/support/",
+  "status": "ok",
+  "webauthnCalls": []
+}

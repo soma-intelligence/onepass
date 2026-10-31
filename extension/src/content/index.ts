@@ -22,6 +22,7 @@ import { ext as browserExt } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
 import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
+import { classifierFor, createModelHook, type ModelHook, remoteSession } from "./detect/classifier";
 import { analyzeDocument } from "./detect/forms";
 import { FormLineage, RefRegistry } from "./detect/refs";
 import { domGeometry, type Geometry } from "./detect/visibility";
@@ -30,6 +31,7 @@ import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
+import type { RecorderHooks } from "../dev/recorder-content";
 
 type Sender = { id?: string };
 
@@ -106,6 +108,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
   let shell: Shell | null = null;
   let stopped = false;
   const cleanups: (() => void)[] = [];
+  // Dev-only form flow recorder: loaded only when the build defines it.
+  let recorder: RecorderHooks | null = null;
 
   /** Normalized origin of the frame right now (null when not HTTPS). */
   const currentOrigin = (): string | null => {
@@ -115,9 +119,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   const send = (m: CsToBg): Promise<unknown> => ext.runtime.sendMessage(m).catch(() => null);
 
+  // Model builds only (Task 15): set once the service worker's model answered the handshake.
+  let model: ModelHook | undefined;
+
   const analyze = (): PageAnalysis => {
     refs.prune();
-    const a = analyzeDocument(doc, refs, { url: o.href(), geometry });
+    const a = analyzeDocument(doc, refs, model ? { url: o.href(), geometry, model } : { url: o.href(), geometry });
     lineage.record(a);
     return a;
   };
@@ -321,7 +328,29 @@ export function createContentScript(o: ContentOptions): ContentScript {
           void send({ type: "page_analysis", analysis: a });
         },
       });
-      const filler = createFiller({ refs, geometry, analyze: () => observer.refresh(), resolve: (ref, a) => lineage.resolve(ref, a) });
+      if (__CLASSIFIER__ !== "heuristic") {
+        const kind = __CLASSIFIER__;
+        void classifierFor(kind, { load: () => remoteSession((m) => ext.runtime.sendMessage(m), kind) }).then((c) => {
+          if (c.kind === "heuristic" || stopped || !parts) return;
+          const refresh = () => {
+            if (parts && !stopped) parts.observer.refresh();
+          };
+          model = createModelHook({ classifier: c, onUpdate: refresh });
+          refresh();
+        });
+      }
+      if (__LAB_RECORDER__) {
+        void import("../dev/recorder-content").then((m) => {
+          if (!stopped) recorder = m.default({ doc, send: (msg) => ext.runtime.sendMessage(msg), isTrusted });
+        });
+      }
+      const filler = createFiller({
+        refs,
+        geometry,
+        analyze: () => observer.refresh(),
+        resolve: (ref, a) => lineage.resolve(ref, a),
+        onFill: (el, role) => recorder?.noteFilled(el, role),
+      });
       const submit = createSubmitWatcher({
         doc,
         refs,
@@ -331,6 +360,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         analyze: () => observer.refresh(),
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
+        onStep: (c) => recorder?.step(c),
       });
       parts = { shell: sh, frames, icons, observer, filler, submit };
 
@@ -444,6 +474,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         parts.icons.destroy();
         parts.frames.destroy();
       }
+      recorder?.stop();
       shell?.destroy();
       parts = null;
     },

@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-28T00:25:42.485Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search quick links academic calendar can",
+          "before": "iscrimination and harassment search for:",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "keywords",
+          "index": 0,
+          "label": "search for:",
+          "name": "keywords",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "umich.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://umich.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

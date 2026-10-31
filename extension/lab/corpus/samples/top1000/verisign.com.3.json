@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:25:55.924Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "verisign.com",
+  "source": "rendered",
+  "source_url": "https://verisign.com/signin",
+  "status": "error: http 404"
+}

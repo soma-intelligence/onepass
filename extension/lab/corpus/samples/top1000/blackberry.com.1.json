@@ -1,0 +1,168 @@
+{
+  "captured_at": "2026-10-28T00:25:04.280Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "blackberry online account log in registe",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "maxlength": 250,
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "mplete the form to create a new account.",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "first name",
+          "name": "first_name",
+          "placeholder": "first name",
+          "required": true,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "last name",
+          "name": "last_name",
+          "placeholder": "last name",
+          "required": true,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email",
+          "index": 2,
+          "label": "company email",
+          "name": "mail",
+          "placeholder": "company email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "id": "company",
+          "index": 3,
+          "label": "company",
+          "name": "company",
+          "placeholder": "company",
+          "required": true,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 10,
+          "hasPattern": false,
+          "index": 4,
+          "label": "phone",
+          "name": "phone_number",
+          "placeholder": "phone",
+          "required": true,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 12,
+          "hasPattern": false,
+          "index": 5,
+          "name": "country",
+          "required": true,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "depth": 11,
+          "hasPattern": false,
+          "index": 6,
+          "label": "zip / postal code",
+          "name": "postal_code",
+          "placeholder": "zip / postal code",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "create account to learn more about how y",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "account.blackberry.com",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://account.blackberry.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

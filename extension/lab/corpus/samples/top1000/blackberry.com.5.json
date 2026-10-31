@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:25:40.525Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "blackberry.com",
+  "source": "rendered",
+  "source_url": "https://blackberry.com/register",
+  "status": "error: http 404"
+}

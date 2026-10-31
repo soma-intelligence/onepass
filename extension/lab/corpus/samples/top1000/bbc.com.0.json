@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-10-27T22:10:08.348Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe",
+        "sign in",
+        "home",
+        "news",
+        "sport",
+        "business",
+        "technology",
+        "health",
+        "culture",
+        "arts",
+        "travel",
+        "earth"
+      ],
+      "fields": [
+        {
+          "after": "home news sport business technology heal",
+          "before": "dio video live documentaries site search",
+          "depth": 8,
+          "hasPattern": false,
+          "id": ":R35tbdm:",
+          "index": 0,
+          "label": "site search",
+          "placeholder": "search news, topics and more",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "bbc.com",
+  "iframes": [
+    {
+      "origin": "https://<redacted>.cdn.optimizely.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://cdn.privacy-mgmt.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bbc.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

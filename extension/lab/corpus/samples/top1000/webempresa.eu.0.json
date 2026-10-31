@@ -1,0 +1,251 @@
+{
+  "captured_at": "2026-10-27T23:37:57.275Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "buscar"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "isponible y asegura tu nombre en la web.",
+          "depth": 25,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 0,
+          "label": "obtén el dominio perfecto",
+          "maxlength": 256,
+          "name": "domain",
+          "placeholder": "obtén el dominio perfecto",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 26,
+          "hasPattern": false,
+          "id": "tld",
+          "index": 1,
+          "name": "tld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "buscar"
+      ],
+      "fields": [
+        {
+          "before": "ra lanzar o proteger tu proyecto online.",
+          "depth": 23,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 0,
+          "label": "obtén el dominio perfecto",
+          "maxlength": 256,
+          "name": "domain",
+          "placeholder": "obtén el dominio perfecto",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 24,
+          "hasPattern": false,
+          "id": "tld",
+          "index": 1,
+          "name": "tld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "buscar"
+      ],
+      "fields": [
+        {
+          "before": "isponible para registrarlo cuanto antes.",
+          "depth": 23,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 0,
+          "label": "obtén el dominio perfecto",
+          "maxlength": 256,
+          "name": "domain",
+          "placeholder": "obtén el dominio perfecto",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        },
+        {
+          "depth": 24,
+          "hasPattern": false,
+          "id": "tld",
+          "index": 1,
+          "name": "tld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "buscar"
+      ],
+      "fields": [
+        {
+          "before": "olo 1€/año con constructor web incluido.",
+          "depth": 23,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 0,
+          "label": "obtén el dominio perfecto",
+          "maxlength": 256,
+          "name": "domain",
+          "placeholder": "obtén el dominio perfecto",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 24,
+          "hasPattern": false,
+          "id": "tld",
+          "index": 1,
+          "name": "tld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "buscar"
+      ],
+      "fields": [
+        {
+          "before": "u dominio y asegura tu nombre en la web.",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "domain",
+          "index": 0,
+          "label": "obtén el dominio perfecto",
+          "maxlength": 256,
+          "name": "domain",
+          "placeholder": "obtén el dominio perfecto",
+          "required": true,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 18,
+          "hasPattern": false,
+          "id": "tld-form",
+          "index": 1,
+          "name": "tld",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "suscríbete gratis"
+      ],
+      "fields": [
+        {
+          "before": "implican suscríbete y no te pierdas nada",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "label": "tu nombre",
+          "name": "mauticform[nombre]",
+          "placeholder": "tu nombre",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 17,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "label": "tu email",
+          "name": "mauticform[email]",
+          "placeholder": "tu email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "webempresa.eu",
+  "iframes": [
+    {
+      "origin": "https://widget.trustpilot.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://widget.trustpilot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "es",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://webempresa.eu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

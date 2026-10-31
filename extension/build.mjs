@@ -7,14 +7,42 @@
 // The native messaging host is the OnePass app's (`me.somalabs.onepass`);
 // --dev-host builds for the development host (`me.somalabs.onepass.dev`),
 // as the end-to-end tests and the lab do. Safari ignores it.
+//
+// Field classifier (Task 15, ruling R20): ONEPASS_CLASSIFIER = heuristic (default) | gbm | encoder.
+// A model build takes the model from ONEPASS_MODEL_DIR (gbm.onnx, or encoder.onnx +
+// tokenizer.json), copies it to model/ and the onnxruntime-web WASM file to ort/, and adds
+// 'wasm-unsafe-eval' to the extension pages CSP. The default build holds none of it: no model, no
+// onnxruntime code, today's CSP.
 import { build as esbuild } from "esbuild";
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BROWSERS = ["chromium", "firefox", "safari"];
 const UI_PAGES = ["popup", "menu", "overlay", "save"];
+
+const CLASSIFIERS = ["heuristic", "gbm", "encoder"];
+const DEFAULT_CSP = "script-src 'self'; object-src 'none'";
+const MODEL_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'";
+/** Files of a model build, by classifier kind (in ONEPASS_MODEL_DIR, copied to model/). */
+const MODEL_FILES = { gbm: ["gbm.onnx"], encoder: ["encoder.onnx", "tokenizer.json"] };
+/** The onnxruntime-web WASM binary of the "onnxruntime-web/wasm" entry (single build, SIMD). */
+const ORT_WASM = "ort-wasm-simd-threaded.wasm";
+
+/** Classifier of the build from the environment; throws on an unknown kind or missing model files. */
+export function classifierConfig(env = process.env) {
+  const kind = env.ONEPASS_CLASSIFIER || "heuristic";
+  if (!CLASSIFIERS.includes(kind)) throw new Error(`ONEPASS_CLASSIFIER must be one of ${CLASSIFIERS.join(", ")}, got ${JSON.stringify(kind)}`);
+  if (kind === "heuristic") return { kind };
+  if (!env.ONEPASS_MODEL_DIR) throw new Error(`ONEPASS_CLASSIFIER=${kind} needs ONEPASS_MODEL_DIR`);
+  const dir = resolve(env.ONEPASS_MODEL_DIR);
+  for (const f of MODEL_FILES[kind]) {
+    if (!existsSync(join(dir, f))) throw new Error(`ONEPASS_MODEL_DIR ${dir} has no ${f}`);
+  }
+  return { kind, dir };
+}
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -43,8 +71,9 @@ export function mergeManifest(browser, dir = join(root, "manifests")) {
 export const APP_HOST = "me.somalabs.onepass";
 export const DEV_HOST = "me.somalabs.onepass.dev";
 
-async function buildBrowser(browser, dev, e2e = false, devHost = false) {
-  const out = join(root, "dist", e2e ? `${browser}-e2e` : browser);
+async function buildBrowser(browser, dev, e2e = false, devHost = false, dist = join(root, "dist")) {
+  const classifier = classifierConfig();
+  const out = join(dist, e2e ? `${browser}-e2e` : browser);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   const common = {
@@ -53,7 +82,16 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false) {
     sourcemap: dev ? "inline" : false,
     minify: false,
     logLevel: "warning",
-    define: { __ONEPASS_NATIVE_HOST__: JSON.stringify(devHost ? DEV_HOST : APP_HOST) },
+    // The dev-only form flow recorder (src/dev) exists only in a build made
+    // with ONEPASS_LAB_RECORDER=1; otherwise esbuild drops every branch and
+    // import behind the flag.
+    // __CLASSIFIER__ drops the model code (and onnxruntime-web) from heuristic builds the same way.
+    define: {
+      __LAB_RECORDER__: String(process.env.ONEPASS_LAB_RECORDER === "1"),
+      __CLASSIFIER__: JSON.stringify(classifier.kind),
+      __DEV__: String(dev),
+      __ONEPASS_NATIVE_HOST__: JSON.stringify(devHost ? DEV_HOST : APP_HOST),
+    },
   };
   await esbuild({
     ...common,
@@ -79,14 +117,22 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false) {
   cpSync(join(root, "src/ui/theme.css"), join(out, "theme.css"));
   cpSync(join(root, "src/_locales"), join(out, "_locales"), { recursive: true });
   cpSync(join(root, "src/icons"), join(out, "icons"), { recursive: true });
-  writeFileSync(
-    join(out, "manifest.json"),
-    JSON.stringify(mergeManifest(browser), null, 2) + "\n",
-  );
+  const manifest = mergeManifest(browser);
+  if (manifest.content_security_policy?.extension_pages !== DEFAULT_CSP) throw new Error("manifest CSP changed: update build.mjs");
+  if (classifier.kind !== "heuristic") {
+    mkdirSync(join(out, "model"));
+    for (const f of MODEL_FILES[classifier.kind]) cpSync(join(classifier.dir, f), join(out, "model", f));
+    mkdirSync(join(out, "ort"));
+    const wasm = createRequire(import.meta.url).resolve(`onnxruntime-web/${ORT_WASM}`);
+    cpSync(wasm, join(out, "ort", ORT_WASM));
+    // WebAssembly compilation in the service worker; nothing else changes.
+    manifest.content_security_policy = { ...manifest.content_security_policy, extension_pages: MODEL_CSP };
+  }
+  writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 }
 
-export async function buildAll(browsers = BROWSERS, dev = false, e2e = false, devHost = false) {
-  for (const b of browsers) await buildBrowser(b, dev, e2e, devHost);
+export async function buildAll(browsers = BROWSERS, dev = false, e2e = false, devHost = false, dist = join(root, "dist")) {
+  for (const b of browsers) await buildBrowser(b, dev, e2e, devHost, dist);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-28T00:11:40.973Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "×",
+        "submit search"
+      ],
+      "fields": [
+        {
+          "after": "search sites & people ×",
+          "autocomplete": "off",
+          "before": "content princeton university menu search",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "header-search",
+          "index": 0,
+          "label": "search sites & people",
+          "maxlength": 128,
+          "name": "search",
+          "placeholder": "search princeton",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "princeton.edu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://princeton.edu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

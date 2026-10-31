@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:30:46.513Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "espn.com",
+  "source": "rendered",
+  "source_url": "https://espn.com/signup",
+  "status": "error: <redacted>"
+}

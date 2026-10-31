@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:13:05.000Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "princeton.edu",
+  "source": "rendered",
+  "source_url": "https://princeton.edu/signup",
+  "status": "error: http 404"
+}

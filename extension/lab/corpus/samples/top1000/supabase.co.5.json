@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-10-28T00:04:52.214Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "email",
+          "before": "with chatgpt continue with sso or email",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "_r_1_-form-item",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "new-password",
+          "before": "password",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "_r_2_-form-item",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "placeholder": "••••••••",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "depth": 13,
+          "hasPattern": false,
+          "id": "g-recaptcha-response-00gpqwuu4v75i",
+          "index": 2,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "sign up have an account? sign in by cont",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "h-captcha-response-00gpqwuu4v75i",
+          "index": 3,
+          "name": "h-captcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "supabase.co",
+  "iframes": [
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://supabase.co/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

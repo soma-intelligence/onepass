@@ -1,6 +1,8 @@
 // Internal runtime messages (spec 4, 8). `ref` values are opaque ids assigned
 // by the content script; they are never selectors supplied by the page.
 
+import type { FieldFeatures } from "../content/detect/features";
+
 export type ProviderId =
   | "google"
   | "apple"
@@ -237,7 +239,12 @@ export type CsToBg =
    * absent for the popup and the command (the whole plan runs). The origins
    * of the context are the background's.
    */
-  | { type: "plan_context"; formRef?: string; fieldRef?: string; context: PlanContextBody };
+  | { type: "plan_context"; formRef?: string; fieldRef?: string; context: PlanContextBody }
+  /**
+   * Model builds only (Task 15): features of one form (never a field value), one label per field
+   * back. An empty list is the handshake: the worker answers its model kind, or null.
+   */
+  | { type: "classify"; fields: FieldFeatures[] };
 
 /** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
 export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
@@ -349,6 +356,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "menu_key",
   "fill_salt",
   "plan_context",
+  "classify",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

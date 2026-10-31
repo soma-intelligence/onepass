@@ -1,0 +1,108 @@
+{
+  "captured_at": "2026-10-27T23:32:58.119Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "next"
+      ],
+      "fields": [
+        {
+          "after": "next red hat login",
+          "before": "resubmit your information. red hat login",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "username-verification",
+          "index": 0,
+          "label": "red hat login",
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "edit username",
+        "log in with company single sign-on",
+        "log in with red hat account"
+      ],
+      "fields": [
+        {
+          "after": "edit username log in with company single",
+          "before": "next red hat login",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "rh-af-username",
+          "index": 0,
+          "name": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "edit username",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "edit username password",
+          "before": "og in with red hat account red hat login",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "red hat login",
+          "name": "username",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "log in register for a red hat account fo",
+          "before": "edit username password",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "maxlength": 256,
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "sso.redhat.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/auth",
+  "status": "ok",
+  "webauthnCalls": []
+}

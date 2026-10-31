@@ -1,0 +1,162 @@
+{
+  "captured_at": "2026-10-27T23:42:41.709Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "sie sind hier: telefónica deutschland pr",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "q1",
+          "index": 0,
+          "label": "suche...",
+          "maxlength": 150,
+          "name": "q",
+          "placeholder": "suche...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "abschicken"
+      ],
+      "fields": [
+        {
+          "after": "redaktion/ressort *",
+          "before": "medium *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "medium",
+          "index": 0,
+          "label": "medium *",
+          "name": "medium",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "name *",
+          "before": "redaktion/ressort *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "redaktion",
+          "index": 1,
+          "label": "redaktion/ressort *",
+          "name": "redaktion",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "vorname *",
+          "before": "name *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "name",
+          "index": 2,
+          "label": "name *",
+          "name": "name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "telefon",
+          "before": "vorname *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "vorname",
+          "index": 3,
+          "label": "vorname *",
+          "name": "vorname",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "e-mail-adresse *",
+          "before": "telefon",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "telefon",
+          "index": 4,
+          "label": "telefon",
+          "name": "telefon",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "bitte schicken sie mir pressemitteilunge",
+          "before": "e-mail-adresse *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "email",
+          "index": 5,
+          "label": "e-mail-adresse *",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "abschicken * diese felder sind pflichtfe",
+          "before": "1 + 2 =",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "pre_cap_js",
+          "index": 6,
+          "label": "bitte lösen sie folgende aufgabe: *",
+          "maxlength": 1,
+          "name": "pre_cap_js",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "telefonica.de",
+  "iframes": [],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://telefonica.de/presse/presseverteiler/anmeldung.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

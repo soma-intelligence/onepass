@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-27T22:13:02.275Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "amplitude.com",
+  "iframes": [
+    {
+      "origin": "https://api.vector.co",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amplitude.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

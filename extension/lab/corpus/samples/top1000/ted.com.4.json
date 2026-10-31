@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:57:16.730Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "newsletters the best ideas from ted, in",
+          "ariaLabel": "type to search",
+          "before": "munity sign in membership type to search",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "navigation-search",
+          "index": 0,
+          "label": "type to search",
+          "placeholder": "type to search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "ted.com",
+  "iframes": [
+    {
+      "origin": "https://tedconf.prismic.io",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ted.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

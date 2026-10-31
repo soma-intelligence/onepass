@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T23:44:22.124Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "go a a smaller larger reset socialize li",
+          "before": "n network donate ≡ menu search this site",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "id-search-field",
+          "index": 0,
+          "label": "search this site",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "python.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://python.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

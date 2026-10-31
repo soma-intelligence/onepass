@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-10-27T22:03:10.514Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "dropbox.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dropbox.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

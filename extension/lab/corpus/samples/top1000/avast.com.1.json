@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T22:18:06.795Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "device problems? our experts are here to",
+          "ariaLabel": "start your search here",
+          "autocomplete": "off",
+          "before": "yes no need additional help? contact us",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "searchBoxInput",
+          "index": 0,
+          "label": "start your search here",
+          "maxlength": 95,
+          "placeholder": "start your search here",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "support.avast.com",
+  "iframes": [],
+  "lang": "en_us",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://support.avast.com/en-us/article/Sale-Billing-FAQ/",
+  "status": "ok",
+  "webauthnCalls": []
+}

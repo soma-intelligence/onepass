@@ -7,7 +7,8 @@
 // also the server's event log; events carry field names, hosts and verdict
 // reasons only, never a value.
 import { totp } from "../../e2e/server.ts";
-import type { ProviderId, Role, Site, World } from "../gen/model.ts";
+import type { FixtureFile, ProviderId, Role, Site, World } from "../gen/model.ts";
+import { archiveHostOf } from "../gen/population.ts";
 import { IDP_HOST, PAGE_PATH } from "../gen/render.ts";
 
 export type SecretKind = "password" | "totp" | "card" | "csc";
@@ -18,7 +19,7 @@ export type LabEvent =
 
 // Public test card numbers (and short CVCs) repeat across sites: a secret can have several owners.
 interface Owned { kind: SecretKind; owners: string[] }
-interface CardItem { type?: string; title?: string; fields?: { number?: string; cvv?: string } }
+interface CardItem { type?: string; title?: string; urls?: { url: string }[]; fields?: { number?: string; cvv?: string; password?: string } }
 
 function own(index: Map<string, Owned>, value: string, kind: SecretKind, owner: string): void {
   const known = index.get(value);
@@ -45,7 +46,7 @@ export class Ledger {
   /** Site served under a host: its own host, its lookalike copy, its cross-site frame host. */
   private readonly siteOf = new Map<string, Site>();
 
-  constructor(world: World) {
+  constructor(world: World, fixtures: FixtureFile[] = []) {
     for (const s of world.sites) {
       for (const h of [s.host, s.lookalike?.host, s.frameHost]) if (h) this.siteOf.set(h, s);
       if (s.account?.password) own(this.passwords, s.account.password, "password", s.host);
@@ -54,9 +55,22 @@ export class Ledger {
     for (const [p, accounts] of Object.entries(world.idp) as [ProviderId, World["idp"][ProviderId]][]) {
       for (const a of accounts) if (a.password) own(this.passwords, a.password, "password", IDP_HOST[p]);
     }
-    for (const raw of world.fixture.items as CardItem[]) {
+    // The union of every simulated user's vault: what counts as a secret never depends on the active profile.
+    for (const f of [world.fixture, ...fixtures]) this.index(world, f);
+  }
+
+  /**
+   * Indexes the secrets of one vault: card numbers and CVCs (a world card is owned by its site, a filler card by
+   * its `*-archive.test` host), and the passwords of every login item, owned by the host of its URL.
+   */
+  private index(world: World, fixture: FixtureFile): void {
+    for (const raw of fixture.items as CardItem[]) {
+      if (raw.type === "login" && raw.fields?.password && raw.urls?.[0]) {
+        own(this.passwords, raw.fields.password, "password", new URL(raw.urls[0].url).hostname);
+      }
       if (raw.type !== "credit_card") continue;
-      const owner = world.sites.find((s) => s.cardTitle !== undefined && s.cardTitle === raw.title)?.host;
+      const owner = world.sites.find((s) => s.cardTitle !== undefined && s.cardTitle === raw.title)?.host
+        ?? (raw.title ? archiveHostOf(raw.title) : undefined);
       if (!owner) continue;
       if (raw.fields?.number) own(this.cards, digitsOf(raw.fields.number), "card", owner);
       if (raw.fields?.cvv) own(this.cscs, raw.fields.cvv, "csc", owner);

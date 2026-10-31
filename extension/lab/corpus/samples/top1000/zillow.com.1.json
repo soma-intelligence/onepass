@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:51:05.781Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "zillow.com",
+  "source": "rendered",
+  "source_url": "https://zillow.com/down-payment-assistance/",
+  "status": "error: <redacted>"
+}

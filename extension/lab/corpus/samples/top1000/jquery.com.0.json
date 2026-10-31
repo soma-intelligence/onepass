@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:15:04.197Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "download jquery v4.0.0 only the latest v",
+          "ariaLabel": "search jquery",
+          "autocomplete": "off",
+          "before": "plugins browser support version support",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search jquery",
+          "name": "s",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "jquery.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jquery.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

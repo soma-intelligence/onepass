@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-28T00:15:39.743Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "informe seu cep informe seu cep categori",
+          "autocomplete": "off",
+          "before": "de tudo digite o que você quer encontrar",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "cb1-edit",
+          "index": 0,
+          "label": "digite o que você quer encontrar",
+          "maxlength": 120,
+          "name": "as_word",
+          "placeholder": "buscar produtos, marcas e muito mais...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "mercadolivre.com.br",
+  "iframes": [],
+  "lang": "pt",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mercadolivre.com.br/",
+  "status": "ok",
+  "webauthnCalls": []
+}

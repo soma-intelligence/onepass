@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:07:30.702Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "scorecardresearch.com",
+  "source": "rendered",
+  "source_url": "https://scorecardresearch.com/signup",
+  "status": "error: http 404"
+}

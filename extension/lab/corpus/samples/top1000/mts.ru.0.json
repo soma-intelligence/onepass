@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-10-27T22:07:36.286Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "да, верно",
+        "нет, изменить",
+        "подробнее",
+        "подробнее",
+        "подробнее",
+        "подробнее",
+        "подробнее",
+        "подключить",
+        "перейти в мтс",
+        "подробнее",
+        "подробнее",
+        "подробнее"
+      ],
+      "fields": [
+        {
+          "after": "переходите в мтс со своим номером зафикс",
+          "autocomplete": "on",
+          "before": "м и меняйте на новый через год подробнее",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "поиск",
+          "maxlength": 25,
+          "placeholder": "поиск",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "angular",
+  "host": "mts.ru",
+  "iframes": [],
+  "lang": "ru",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mts.ru/",
+  "status": "ok",
+  "webauthnCalls": []
+}

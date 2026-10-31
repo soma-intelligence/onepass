@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-28T00:16:44.359Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "news ‘back to black’ at 20: revisiting a",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "charts videos promote your music sign up",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search lyrics & more",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "genius.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://genius.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

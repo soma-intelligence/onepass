@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-27T22:08:39.521Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "google-search search",
+          "before": "fitness family travel money search input",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "gu-search-mobile",
+          "index": 0,
+          "label": "search input",
+          "name": "q",
+          "placeholder": "search the guardian",
+          "required": true,
+          "role": "tel",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "google-search search",
+          "before": "s wordiply corrections tips search input",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "gu-search-desktop",
+          "index": 0,
+          "label": "search input",
+          "name": "q",
+          "placeholder": "search the guardian",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "theguardian.com",
+  "iframes": [
+    {
+      "origin": "https://sourcepoint.theguardian.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://theguardian.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

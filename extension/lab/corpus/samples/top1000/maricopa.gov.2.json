@@ -1,0 +1,92 @@
+{
+  "captured_at": "2026-10-27T23:53:51.238Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search",
+        "person my mcto",
+        "i want to",
+        "faqs",
+        "pay online now",
+        "payment options",
+        "parcel /account number",
+        "name",
+        "mailing/situs address",
+        "vin",
+        "search",
+        "go to enoticesonline"
+      ],
+      "fields": [
+        {
+          "after": "parcel number search please provide a se",
+          "before": "ess address vin vin search bar input box",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "SearchBar_txtSearch",
+          "index": 0,
+          "label": "search bar input box",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "treasurer.maricopa.gov",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://treasurer.maricopa.gov/",
+  "status": "ok",
+  "webauthnCalls": []
+}

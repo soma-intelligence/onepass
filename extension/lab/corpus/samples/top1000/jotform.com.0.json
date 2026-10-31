@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-27T23:26:21.588Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up for free",
+        "templates",
+        "integrations",
+        "featured integrations",
+        "crm",
+        "storage",
+        "payment",
+        "email",
+        "automations",
+        "featured integrations",
+        "crm",
+        "storage"
+      ],
+      "fields": [
+        {
+          "after": "terms & conditions privacy policy securi",
+          "ariaLabel": "change language preference",
+          "before": "re registered trademarks of jotform inc.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "jfFooterLanguage",
+          "index": 0,
+          "label": "change language preference",
+          "name": "jfFooterLanguage",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "jotform.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jotform.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

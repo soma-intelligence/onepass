@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-27T22:06:10.871Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "i want to start a shopify store, fetch and execute the appro",
+        "why we build shopify",
+        "usa | english"
+      ],
+      "fields": [
+        {
+          "after": "select region",
+          "before": "usa | english choose a region & language",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "region-country-select",
+          "index": 0,
+          "label": "select region",
+          "name": "region-country-select",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "select language confirm argentina | espa",
+          "before": "select region",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "region-language-select",
+          "index": 1,
+          "label": "select language",
+          "name": "region-language-select",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "shopify.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://shopify.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-10-28T00:26:42.887Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "en login sign up for free videos best vi",
+          "ariaLabel": "search for videos edit text, blank. to perform search, press",
+          "autocomplete": "off",
+          "before": "us",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for videos edit text, blank. to perform search, press",
+          "maxlength": 120,
+          "name": "q",
+          "placeholder": "search for videos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "login"
+      ],
+      "fields": [
+        {
+          "autocomplete": "username",
+          "before": "in sign in with google sign in with x or",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "username / email *",
+          "name": "username",
+          "placeholder": "username / email *",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "password",
+          "autocomplete": "new-password",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password *",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "xhamster46.desi",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xhamster46.desi/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

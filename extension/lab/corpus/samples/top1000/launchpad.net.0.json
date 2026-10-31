@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T22:15:19.936Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search 49,489 projects, 2,117,863 bugs,",
+          "before": "log in / register search",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "search",
+          "name": "field.text",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "launchpad.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://launchpad.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:14:47.198Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "icanhazip.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://icanhazip.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-27T22:52:55.666Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "save"
+      ],
+      "fields": [
+        {
+          "before": "alive and i want to archive its content",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "url",
+          "index": 0,
+          "label": "http://www.domain.com/url",
+          "name": "url",
+          "placeholder": "http://www.domain.com/url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "before": "o search the archive for saved snapshots",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "label": "query",
+          "name": "q",
+          "placeholder": "query",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "archive.is",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://archive.is/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:06:51.990Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "telegram.org",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://telegram.org/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

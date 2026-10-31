@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:46:53.156Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "react",
+  "host": "mlb.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mlb.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

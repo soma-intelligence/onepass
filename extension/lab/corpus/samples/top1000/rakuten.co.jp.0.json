@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T23:16:09.161Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "ん。 javascriptの設定方法は、 楽天市場ヘルプページ をご覧ください。",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "common-header-search-input",
+          "index": 0,
+          "label": "キーワード検索",
+          "name": "sitem",
+          "placeholder": "キーワード検索",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "rakuten.co.jp",
+  "iframes": [
+    {
+      "origin": "https://www.rakuten.co.jp",
+      "sameSite": true
+    }
+  ],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rakuten.co.jp/",
+  "status": "ok",
+  "webauthnCalls": []
+}

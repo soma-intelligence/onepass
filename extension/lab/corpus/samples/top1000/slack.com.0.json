@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T22:18:43.472Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "product",
+        "solutions",
+        "resources",
+        "back",
+        "product",
+        "solutions",
+        "resources",
+        "pause animationplay animation",
+        "turn data into action with slackforce surfaces new",
+        "automate tasks using slackbot skills new",
+        "build together in channels with slack code new",
+        "track and update sales pipelines with slack crm"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "slack.com",
+  "iframes": [
+    {
+      "origin": "https://www.youtube-nocookie.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.cdn.optimizely.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://slack.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

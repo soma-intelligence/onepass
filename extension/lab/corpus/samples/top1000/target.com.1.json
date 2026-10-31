@@ -1,0 +1,142 @@
+{
+  "captured_at": "2026-10-27T23:20:14.607Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search",
+        "ask target"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "what can we help you find? suggestions appear below",
+          "autocomplete": "off",
+          "before": "tores categories deals pickup & delivery",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "what can we help you find? suggestions appear below",
+          "name": "searchTerm",
+          "placeholder": "search for what you need & more",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "search ask target",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "searchMobile",
+          "index": 0,
+          "label": "what can we help you find?",
+          "name": "searchTerm",
+          "placeholder": "what can we help you find?",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "ask target",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchMobile",
+          "index": 0,
+          "label": "what can we help you find?",
+          "name": "searchTerm",
+          "placeholder": "what can we help you find?",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search",
+        "ask target"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "what can we help you find? suggestions appear below",
+          "autocomplete": "off",
+          "before": "ask target",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "what can we help you find? suggestions appear below",
+          "name": "searchTerm",
+          "placeholder": "search for what you need & more",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "email address sign up privacy policy ter",
+          "autocomplete": "on",
+          "before": "get top deals, latest trends, and more.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email-address",
+          "index": 0,
+          "label": "email address",
+          "name": "email-address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "target.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://target.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

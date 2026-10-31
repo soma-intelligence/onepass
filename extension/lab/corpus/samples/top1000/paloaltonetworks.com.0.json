@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:37:18.102Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "paloaltonetworks.com",
+  "source": "rendered",
+  "source_url": "https://paloaltonetworks.com/",
+  "status": "error: timeout"
+}

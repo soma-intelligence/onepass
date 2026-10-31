@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:17:27.906Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "note.com",
+  "iframes": [],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://note.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

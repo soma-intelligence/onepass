@@ -1,0 +1,743 @@
+{
+  "captured_at": "2026-10-28T00:01:45.897Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "or",
+          "autocomplete": "off",
+          "before": "r date, network, and connect with people",
+          "depth": 12,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter a name or artist...",
+          "name": "profile-search",
+          "placeholder": "enter a name or artist...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "or",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "roles",
+          "index": 1,
+          "label": "or",
+          "name": "roles",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "depth": 12,
+          "hasPattern": false,
+          "id": "genres",
+          "index": 2,
+          "name": "genres",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "depth": 12,
+          "hasPattern": false,
+          "id": "genders",
+          "index": 3,
+          "name": "genders",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "location",
+          "index": 4,
+          "label": "enter city or zip...",
+          "name": "location",
+          "placeholder": "enter city or zip...",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "did you mean your search did not return",
+          "autocomplete": "off",
+          "before": "ts shares search myspace start typing...",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "facebook",
+        "twitter",
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "facebook twitter email or username",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "login.email",
+          "index": 0,
+          "label": "email or username",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "forgot password?",
+          "before": "password",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "login.password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "back",
+        "submit"
+      ],
+      "fields": [
+        {
+          "before": "e email you used to create your account.",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "after": "back submit password request sent we've",
+          "before": "r myspace url. ex: myspace.com/ username",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "password forgot login?",
+          "before": "email or username",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "loginPrompt.email",
+          "index": 0,
+          "label": "email or username",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "before": "password forgot login?",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "loginPrompt.password",
+          "index": 1,
+          "label": "password forgot login?",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "select gender ? this helps us keep peopl",
+          "before": "yspace. most people use their real name.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupEmailFullName",
+          "index": 0,
+          "label": "full name ? this is how you’ll be known on myspace. most peo",
+          "maxlength": 50,
+          "name": "fullName",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "username ? this is your profile url. pic",
+          "before": "icians and brands searchable on myspace.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupEmailGender",
+          "index": 1,
+          "label": "select gender ? this helps us keep people, musicians and bra",
+          "name": "gender",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "password ? pick one that's hard-to-crack",
+          "before": "etter. you can throw in numbers, dots an",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupEmailUsername",
+          "index": 2,
+          "label": "username ? this is your profile url. pick one that's 25 char",
+          "maxlength": 25,
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email ? use this to log in to your accou",
+          "before": "by you, and at least 6 characters long.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupEmailPassword",
+          "index": 3,
+          "label": "password ? pick one that's hard-to-crack, only known by you,",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "after": "date of birth ? please enter the account",
+          "before": "fications and get handy updates from us.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupEmailEmail",
+          "index": 4,
+          "label": "email ? use this to log in to your account, receive notifica",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "ter the account owner's birth date here.",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupEmailDobMonth",
+          "index": 5,
+          "label": "date of birth ? please enter the account owner's birth date ",
+          "maxlength": 2,
+          "name": "birthMonth",
+          "placeholder": "mm",
+          "required": true,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupEmailDobDay",
+          "index": 6,
+          "label": "dd",
+          "maxlength": 2,
+          "name": "birthDay",
+          "placeholder": "dd",
+          "required": true,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "zip code ? please enter your zip code he",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupEmailDobYear",
+          "index": 7,
+          "label": "yyyy",
+          "maxlength": 4,
+          "name": "birthYear",
+          "placeholder": "yyyy",
+          "required": true,
+          "role": "cc_exp_year",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "code ? please enter your zip code here.",
+          "depth": 10,
+          "hasPattern": true,
+          "id": "signupEmailZipcode",
+          "index": 8,
+          "label": "zip code ? please enter your zip code here.",
+          "maxlength": 5,
+          "name": "zipcode",
+          "required": true,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "gender ? this helps us keep people, musi",
+          "before": "k one that's 25 characters or less and i",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupFacebookUsername",
+          "index": 0,
+          "label": "username ? this is your profile url. we based it off your fa",
+          "maxlength": 25,
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email ? use this to log in to your accou",
+          "before": "icians and brands searchable on myspace.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupFacebookGender",
+          "index": 1,
+          "label": "gender ? this helps us keep people, musicians and brands sea",
+          "name": "gender",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "password ? pick one that's hard-to-crack",
+          "before": "fications and get handy updates from us.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupFacebookEmail",
+          "index": 2,
+          "label": "email ? use this to log in to your account, receive notifica",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "zip code ? please enter your zip code he",
+          "before": "by you, and at least 6 characters long.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupFacebookPassword",
+          "index": 3,
+          "label": "password ? pick one that's hard-to-crack, only known by you,",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "before": "code ? please enter your zip code here.",
+          "depth": 10,
+          "hasPattern": true,
+          "id": "signupFacebookZipcode",
+          "index": 4,
+          "label": "zip code ? please enter your zip code here.",
+          "maxlength": 5,
+          "name": "zipcode",
+          "required": true,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "date of birth ? please enter the account",
+          "before": "one that's 25 characters or less and in",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupTwitterUsername",
+          "index": 0,
+          "label": "username ? this is your profile url. we based it off your tw",
+          "maxlength": 25,
+          "name": "username",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "ter the account owner's birth date here.",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupTwitterDobMonth",
+          "index": 1,
+          "label": "date of birth ? please enter the account owner's birth date ",
+          "maxlength": 2,
+          "name": "birthMonth",
+          "placeholder": "mm",
+          "required": true,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupTwitterDobDay",
+          "index": 2,
+          "label": "dd",
+          "maxlength": 2,
+          "name": "birthDay",
+          "placeholder": "dd",
+          "required": true,
+          "role": "birth_date",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "gender ? this helps us keep people, musi",
+          "depth": 11,
+          "hasPattern": true,
+          "id": "signupTwitterDobYear",
+          "index": 3,
+          "label": "yyyy",
+          "maxlength": 4,
+          "name": "birthYear",
+          "placeholder": "yyyy",
+          "required": true,
+          "role": "cc_exp_year",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email ? use this to log in to your accou",
+          "before": "icians and brands searchable on myspace.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupTwitterGender",
+          "index": 4,
+          "label": "gender ? this helps us keep people, musicians and brands sea",
+          "name": "gender",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "password ? pick one that's hard-to-crack",
+          "before": "fications and get handy updates from us.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupTwitterEmail",
+          "index": 5,
+          "label": "email ? use this to log in to your account, receive notifica",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "zip code ? please enter your zip code he",
+          "before": "by you, and at least 6 characters long.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signupTwitterPassword",
+          "index": 6,
+          "label": "password ? pick one that's hard-to-crack, only known by you,",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "before": "code ? please enter your zip code here.",
+          "depth": 10,
+          "hasPattern": true,
+          "id": "signupTwitterZipcode",
+          "index": 7,
+          "label": "zip code ? please enter your zip code here.",
+          "maxlength": 5,
+          "name": "zipcode",
+          "required": true,
+          "role": "postal_code",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send"
+      ],
+      "fields": [
+        {
+          "before": "press esc to close. close send a message",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "type friend's name",
+          "name": "search",
+          "placeholder": "type friend's name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "send",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 1,
+          "label": "send a message (optional)",
+          "name": "message",
+          "placeholder": "send a message (optional)",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "camera",
+        "upload video"
+      ],
+      "fields": [
+        {
+          "after": "remove",
+          "autocomplete": "off",
+          "before": "ding your own. press esc to close. close",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "add a song",
+          "name": "superpost_song",
+          "placeholder": "add a song",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "remove post connecting to your webcam. y",
+          "autocomplete": "off",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 1,
+          "label": "add location",
+          "name": "superpost_location",
+          "placeholder": "add location",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up",
+        "sign in",
+        "search",
+        "facebook",
+        "twitter",
+        "sign in",
+        "back",
+        "submit",
+        "go to sign in",
+        "facebook",
+        "twitter",
+        "email"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "f processing you back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "myspace.com",
+  "iframes": [
+    {
+      "origin": "https://x.vindicosuite.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://x.myspacecdn.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://myspace.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -15,9 +15,10 @@ import * as https from "node:https";
 import * as net from "node:net";
 import type { TestCert } from "../../e2e/cert.ts";
 import { CANARY_PATH } from "../../e2e/server.ts";
-import type { Account, ProviderId, Site, World } from "../gen/model.ts";
+import type { Account, FixtureFile, ProviderId, Site, World } from "../gen/model.ts";
 import { IDP_HOST, renderSitePage } from "../gen/render.ts";
 import { handleIdp } from "./idp.ts";
+import { fixtureFor } from "../gen/population.ts";
 import { Ledger } from "./ledger.ts";
 import type { LabEvent } from "./ledger.ts";
 import { handleSite } from "./rp.ts";
@@ -28,6 +29,8 @@ export interface Session {
   user?: string;
   /** Login in progress: the account whose next step (password, OTP) is expected. */
   pending?: string;
+  /** multi_step: index of the step the pending login is expected at. */
+  step?: number;
   /** WebAuthn challenge of the last passkey page. */
   challenge?: string;
   /** Provider sign-in in progress (identity provider hosts only). */
@@ -62,14 +65,21 @@ export interface LabState {
   counters: Map<string, number>;
   /** One-time provider codes. */
   codes: Map<string, { email: string; provider: ProviderId; host: string }>;
+  /** Dataset mode: pages carry data-lab-field marks. Never set by the lab (extension) runs. */
+  labelMarks: boolean;
 }
+
+export interface LabServerOptions { labelMarks?: boolean }
 
 export interface LabServer {
   port: number;
   nonce: string;
   ledger: Ledger;
   events(): LabEvent[];
+  /** Back to the world's own vault and a clean log. */
   reset(): void;
+  /** The vault of the simulated user playing the next scenario: the values the forms expect (until reset). Secrets are indexed for every vault at start. */
+  useFixture(fixture: FixtureFile): void;
   close(): Promise<void>;
 }
 
@@ -100,13 +110,13 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, strin
   return Object.fromEntries(new URLSearchParams(raw));
 }
 
-export async function startLabServer(world: World, cert: TestCert): Promise<LabServer> {
+export async function startLabServer(world: World, cert: TestCert, opts: LabServerOptions = {}): Promise<LabServer> {
   const nonce = randomBytes(16).toString("hex");
-  const ledger = new Ledger(world);
+  const ledger = new Ledger(world, (world.profiles ?? []).map((p) => fixtureFor(p, world.sites, world.fixture)));
   const sessions = new Map<string, Session>();
   const st: LabState = {
     world, ledger, siteHosts: new Set(world.sites.map((s) => s.host)),
-    created: new Map(), counters: new Map(), codes: new Map(),
+    created: new Map(), counters: new Map(), codes: new Map(), labelMarks: opts.labelMarks === true,
   };
   const sites = new Map<string, Site>(world.sites.map((s) => [s.host, s]));
   const traps = new Map<string, Site>();
@@ -176,7 +186,8 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
         ledger.note({ at: Date.now(), host, kind: "submit", form: "trap", ok: false,
           fields: Object.keys(body).filter((k) => body[k]), reason: "trap" });
       }
-      return x.html(renderSitePage(trapped, "trap", { asHost: host, ...(post ? { error: "Identifiant ou mot de passe incorrect" } : {}) }));
+      return x.html(renderSitePage(trapped, "trap", { asHost: host, ...(post ? { error: "Identifiant ou mot de passe incorrect" } : {}) },
+        { labelMarks: st.labelMarks }));
     }
     x.notFound();
   };
@@ -219,6 +230,10 @@ export async function startLabServer(world: World, cert: TestCert): Promise<LabS
       st.counters.clear();
       st.codes.clear();
       ledger.reset();
+      st.world = world;
+    },
+    useFixture(fixture) {
+      st.world = { ...world, fixture };
     },
     close: () =>
       new Promise<void>((resolve) => {

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:24:20.880Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "onet.pl",
+  "source": "rendered",
+  "source_url": "https://onet.pl/account",
+  "status": "error: http 404"
+}

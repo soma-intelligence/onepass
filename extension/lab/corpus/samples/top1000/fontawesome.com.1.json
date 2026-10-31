@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-10-27T23:48:37.874Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "cancel",
+        "cookie preferences",
+        "necessary only",
+        "customize",
+        "accept all cookies"
+      ],
+      "fields": [
+        {
+          "before": "essary only customize accept all cookies",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "fontawesome.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://fontawesome.com/icons/cash-register",
+  "status": "ok",
+  "webauthnCalls": []
+}

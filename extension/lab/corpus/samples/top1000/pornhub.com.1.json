@@ -1,0 +1,153 @@
+{
+  "captured_at": "2026-10-28T00:10:44.771Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "trending searches mewslut ebony homemade",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ght corner to complete the installation.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchInput",
+          "index": 0,
+          "label": "search",
+          "maxlength": 100,
+          "name": "search",
+          "placeholder": "search pornhub",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "post to my stream"
+      ],
+      "fields": [
+        {
+          "after": "hot bitch hitchhikes in tight gym leggin",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "say something...",
+          "name": "caption",
+          "placeholder": "say something...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "customize cookies",
+        "ok",
+        "english",
+        "bulgarian",
+        "croatian",
+        "czech",
+        "danish",
+        "dutch",
+        "estonian",
+        "finnish",
+        "french",
+        "german"
+      ],
+      "fields": [
+        {
+          "after": "united states",
+          "before": "iked videos subscriptions upload english",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "languageMenu",
+          "index": 0,
+          "label": "english english deutsch français italiano português español ",
+          "name": "language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "feed faq contact support home porn video",
+          "before": "united states",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "locationMenu",
+          "index": 1,
+          "label": "united states argentina australia austria belgium brazil bul",
+          "name": "location",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "before": "d videos sign up with your friends embed",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "share-link",
+          "index": 2,
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "copy",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "share-link-start-time",
+          "index": 3,
+          "label": "0:00",
+          "placeholder": "0:00",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "copy",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 4,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "pornhub.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pornhub.com/view_video.php",
+  "status": "ok",
+  "webauthnCalls": []
+}

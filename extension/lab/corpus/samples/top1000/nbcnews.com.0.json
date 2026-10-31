@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-10-28T00:08:05.682Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search sections u.s. news politics world",
+          "before": "preferences subscription sign out search",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search nbc news",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search facebook twitter email sms blue s",
+          "before": "re are no new alerts at this time search",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "q",
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search nbc news",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "nbcnews.com",
+  "iframes": [
+    {
+      "origin": "https://www.nbcnews.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://nbcnews.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

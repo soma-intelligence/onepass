@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T23:21:23.814Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search",
+          "autocomplete": "off",
+          "before": "search",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "search-query",
+          "index": 0,
+          "label": "search",
+          "maxlength": 255,
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search quick links: ai response to crisi",
+          "autocomplete": "off",
+          "before": "search",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "search-query",
+          "index": 0,
+          "label": "search",
+          "maxlength": 255,
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "angular",
+  "host": "unesco.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://unesco.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

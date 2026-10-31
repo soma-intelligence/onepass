@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T23:37:54.886Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "es +34",
+          "autocomplete": "off",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "claim-input-dropdown-select-element",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "enter mobile number or email",
+          "autocomplete": "webauthn",
+          "before": "es +34",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "ap_email_login",
+          "index": 1,
+          "inputmode": "email",
+          "label": "enter mobile number or email",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "enter your mobile number or email invali",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "auth-credential-autofill-hint",
+          "index": 2,
+          "maxlength": 1024,
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 19,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "www.amazon.es",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.amazon.es/-/en/ap/signin",
+  "status": "ok",
+  "webauthnCalls": [
+    "get"
+  ]
+}

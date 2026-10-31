@@ -1,0 +1,146 @@
+{
+  "captured_at": "2026-10-27T23:48:06.433Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search for icons"
+      ],
+      "fields": [
+        {
+          "after": "search for icons see plans start free li",
+          "before": "icon library & toolkit. search for icons",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "icons-search",
+          "index": 0,
+          "label": "search for icons",
+          "name": "icons-search",
+          "placeholder": "find the perfect icon...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search for icons"
+      ],
+      "fields": [
+        {
+          "after": "search for icons classic 15,124 icons ·",
+          "before": "ns. make them your own. search for icons",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "icon-library-search",
+          "index": 0,
+          "label": "search for icons",
+          "name": "icon-library-search",
+          "placeholder": "search classic icons...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "create my free kit"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "our email to get started with a free kit",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "start-free-email",
+          "index": 0,
+          "label": "enter your email to get started with a free kit",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "done.",
+        "search for icons",
+        "watch the font awesome overview video",
+        "search for icons",
+        "solid",
+        "regular",
+        "light",
+        "thin",
+        "create my free kit",
+        "/add-icon",
+        "/suggest-icon",
+        "/setup-fa"
+      ],
+      "fields": [
+        {
+          "after": "browse all icons link to the kit on this",
+          "before": "tone) defaults to 40% opacity. animation",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "animation",
+          "index": 0,
+          "label": "animation",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "essary only customize accept all cookies",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "fontawesome.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://fontawesome.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -153,3 +153,65 @@ export function lookalikeHost(rng: Rng, host: string, kind: "suffix" | "typo" | 
   // domainToASCII returns "" when it cannot convert: no candidate then.
   return domainToASCII(`${label.slice(0, i)}${HOMOGLYPHS[c]}${label.slice(i + 1)}.test`) || null;
 }
+
+// ---- country formats (simulated user population) ----
+
+const letters = (r: Rng, n: number) => Array.from({ length: n }, () => r.pick([..."ABCDEFGHJKLMNPRSTUWXY"])).join("");
+
+interface Country {
+  region: string; streets: string[]; cities: string[];
+  postal: (r: Rng) => string; phone: (r: Rng) => string;
+  /** Street line from a street name and a house number. */
+  line1: (street: string, no: number, r: Rng) => string;
+}
+
+const COUNTRIES: Record<string, Country> = {
+  US: { region: "OR", streets: ["Maple Lane", "Cedar Court", "Harbor Road", "Willow Way"], cities: ["Springfield", "Riverton", "Fairview"],
+    postal: (r) => `97${digits(r, 3)}`, phone: (r) => `+1 555 01${digits(r, 2)}`, line1: (s, n) => `${n} ${s}` },
+  FR: { region: "Rhone", streets: ["rue des Tilleuls", "allee des Cerisiers", "chemin du Moulin", "place de la Fontaine"],
+    cities: ["Lyon", "Valence", "Annecy"], postal: (r) => `69${digits(r, 3)}`,
+    phone: (r) => `+33 6 00 ${digits(r, 2)} ${digits(r, 2)} ${digits(r, 2)}`, line1: (s, n) => `${n} ${s}` },
+  DE: { region: "Bayern", streets: ["Lindenstrasse", "Ahornweg", "Bergstrasse", "Brunnenweg"], cities: ["Augsburg", "Regensburg", "Passau"],
+    postal: (r) => `8${digits(r, 4)}`, phone: (r) => `+49 151 0000 ${digits(r, 3)}`, line1: (s, n) => `${s} ${n}` },
+  ES: { region: "Valencia", streets: ["Calle Mayor", "Avenida del Puerto", "Calle de los Olivos", "Plaza del Sol"],
+    cities: ["Valencia", "Alicante", "Castellon"], postal: (r) => `46${digits(r, 3)}`,
+    phone: (r) => `+34 600 00 ${digits(r, 2)} ${digits(r, 2)}`, line1: (s, n) => `${s} ${n}` },
+  GB: { region: "Greater Manchester", streets: ["Elm Grove", "Station Road", "Mill Lane", "Chapel Street"],
+    cities: ["Salford", "Stockport", "Bolton"],
+    postal: (r) => `${letters(r, r.int(1, 2))}${r.int(1, 9)}${r.chance(0.3) ? letters(r, 1) : ""} ${r.int(1, 9)}${letters(r, 2)}`,
+    phone: (r) => `+44 7700 900${digits(r, 3)}`, line1: (s, n) => `${n} ${s}` },
+  JP: { region: "Tokyo", streets: ["Chuo", "Sakuragaoka", "Higashi", "Midori"], cities: ["Shibuya", "Setagaya", "Nerima"],
+    postal: (r) => `${digits(r, 3)}-${digits(r, 4)}`, phone: (r) => `+81 90 ${digits(r, 4)} ${digits(r, 4)}`,
+    line1: (s, n, r) => `${s} ${r.int(1, 9)}-${r.int(1, 30)}-${n}` },
+};
+
+/** Country codes the population draws from. */
+export const COUNTRY_CODES = Object.keys(COUNTRIES);
+
+const countryOf = (code: string): Country => COUNTRIES[code] ?? COUNTRIES.US!;
+
+/** A postal code as `code`'s country writes it (JP "NNN-NNNN", GB "SW1A 1AA" shape, 5 digits elsewhere). */
+export function postalFor(rng: Rng, code: string): string {
+  return countryOf(code).postal(rng);
+}
+
+/** A fictional mobile number in `code`'s international format (reserved test ranges where they exist). */
+export function phoneFor(rng: Rng, code: string): string {
+  return countryOf(code).phone(rng);
+}
+
+/** A fictional address written the way `code`'s country writes it. */
+export function addressFor(rng: Rng, code: string): Address {
+  const c = countryOf(code);
+  const country = COUNTRIES[code] ? code : "US";
+  return {
+    line1: c.line1(rng.pick(c.streets), rng.int(1, 120), rng),
+    line2: rng.chance(0.3) ? `${rng.int(1, 9)}${rng.pick(["A", "B", "C"])}` : "",
+    city: rng.pick(c.cities), postalCode: c.postal(rng), region: c.region, country,
+  };
+}
+
+/** A synthetic "<adj> <noun> <n>" title and its slug, for vault filler items. */
+export function fillerWords(rng: Rng): [string, string] {
+  return [rng.pick(ADJECTIVES), rng.pick(NOUNS)];
+}

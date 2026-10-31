@@ -3,7 +3,9 @@
 import type { FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis } from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
-import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
+import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
+import { extractFeatures, type FieldFeatures } from "./features";
+import { autocompleteRole, classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
@@ -87,6 +89,8 @@ export interface AnalyzeOptions {
    * open roots of the page (`collectShadowRoots`).
    */
   shadowRoots?: readonly ShadowRoot[];
+  /** Model classifier of a model build (classifier.ts); absent: the heuristics alone, as before. */
+  model?: ModelHook;
 }
 
 interface Classified {
@@ -351,6 +355,31 @@ function identifierStep(fields: Classified[], submit: Element, page: () => boole
 const documentOrder = composedOrder;
 
 /**
+ * Model roles of the visible fields, after the safety rules (classifier.ts). Features come from the
+ * shared extractor without the page-supplied lab mark. A field absent from the map keeps its
+ * heuristic role (no features, e.g. a checkbox, or no answer yet); a field mapped to `unknown`
+ * stays unknown. Never consulted in a cross-site frame, nor for a field whose autocomplete token
+ * the detector recognizes (R21).
+ */
+function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<Element, RoleScore> {
+  const out = new Map<Element, RoleScore>();
+  if (model.crossSite) return out;
+  const elOf = new Map<FieldFeatures, Element>();
+  const page = extractFeatures(doc, { maxFields: MAX_FIELDS, onField: (el, f) => elOf.set(f, el) });
+  for (const form of page.forms) {
+    // Ruling R21: a recognized autocomplete token decides (spec 8.2); such a field is never sent to the model.
+    const asked = form.fields.filter((f) => autocompleteRole(elOf.get(f) as FieldElement) === null);
+    if (asked.length === 0) continue;
+    const els = asked.map((f) => elOf.get(f) as FieldElement);
+    const roles = model.lookup(asked);
+    if (roles === null || model.crossSite) continue;
+    const safe = applySafetyRules(els, roles, { crossSite: model.crossSite }, { geometry, features: asked });
+    els.forEach((el, i) => out.set(el, safe[i] as RoleScore));
+  }
+  return out;
+}
+
+/**
  * Classified forms and field groups of the document and of `roots` (its
  * shadow roots), in page order. `url` defaults to `doc.URL`.
  */
@@ -360,6 +389,7 @@ export function detectForms(
   geometry: Geometry = domGeometry,
   url: string = doc.URL,
   roots: readonly ShadowRoot[] = [],
+  model?: ModelHook,
 ): FormInfo[] {
   const visible: FieldElement[] = [];
   for (const el of queryAll(doc, roots, FIELD_SELECTOR, MAX_FIELDS)) {
@@ -368,14 +398,19 @@ export function detectForms(
   // Split OTP runs are read in page order: roots come after the document.
   if (roots.length > 0) visible.sort(documentOrder);
   const cells = splitOtpCells(visible);
+  // Order (Task 15): features, classifier, safety rules, then the existing logic below.
+  const fromModel = model ? modelRoles(doc, geometry, model) : null;
   const classified: Classified[] = [];
   for (const el of visible) {
     if (cells.has(el)) {
       classified.push({ el, role: "otp", direct: false, cell: true });
       continue;
     }
-    const { role, score } = classifyField(el);
-    if (role !== "unknown") classified.push({ el, role, direct: score === AUTOCOMPLETE_SCORE, cell: false });
+    const heuristic = classifyField(el);
+    const direct = heuristic.score === AUTOCOMPLETE_SCORE;
+    // R21: an autocomplete-decided role is never replaced by the model.
+    const { role } = (direct ? undefined : fromModel?.get(el)) ?? heuristic;
+    if (role !== "unknown") classified.push({ el, role, direct, cell: false });
   }
 
   const byForm = new Map<HTMLFormElement, Classified[]>();
@@ -432,7 +467,7 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const onProvider = host !== null && providerForHost(host) !== null;
   return {
     url,
-    forms: detectForms(doc, refs, geometry, url, opts.shadowRoots ?? collectShadowRoots(doc)),
+    forms: detectForms(doc, refs, geometry, url, opts.shadowRoots ?? collectShadowRoots(doc), opts.model),
     captcha: detectCaptcha(doc, geometry),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),

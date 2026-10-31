@@ -1,0 +1,92 @@
+{
+  "captured_at": "2026-10-27T22:28:23.385Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "terms apply.",
+        "terms apply.",
+        "terms apply.",
+        "additional terms apply.",
+        "additional terms apply.",
+        "in season",
+        "football",
+        "basketball",
+        "studio shows",
+        "soccer",
+        "combat",
+        "more"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "select plan to compare",
+          "before": "ompare plans. switch or cancel* anytime.",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "d7ehp4zeqh6cc13d-column-0",
+          "index": 0,
+          "label": "select plan to compare",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "disney+, hulu, and espn unlimited bundle",
+          "ariaLabel": "select plan to compare",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "d7ehp4zeqh6cc13d-column-1",
+          "index": 1,
+          "label": "select plan to compare",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "ariaLabel": "select plan to compare",
+          "before": "more? explore more bundle options here.",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "d7ehr9zeqh6cc13f-column-0",
+          "index": 2,
+          "label": "select plan to compare",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "disney+, hulu, espn unlimited bundle & n",
+          "ariaLabel": "select plan to compare",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "d7ehr9zeqh6cc13f-column-1",
+          "index": 3,
+          "label": "select plan to compare",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "plus.espn.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://plus.espn.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

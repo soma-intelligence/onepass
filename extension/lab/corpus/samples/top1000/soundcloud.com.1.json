@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-10-27T22:08:46.747Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search sign in create account upload set",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "soundcloud soundcloud home feed library",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search for artists, bands, tracks, podcasts",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search",
+        "sign in",
+        "create account",
+        "settings and more",
+        "language: english (us)",
+        "clear",
+        "skip to previous",
+        "play current",
+        "skip to next",
+        "shuffle",
+        "repeat track",
+        "do not sell or share my personal information"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "ormance of our s back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "soundcloud.com",
+  "iframes": [
+    {
+      "origin": "https://secure.soundcloud.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://soundcloud.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

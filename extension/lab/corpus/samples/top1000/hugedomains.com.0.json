@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-27T23:44:13.823Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "header domain search",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "hdv3HeaderSearchTextID",
+          "index": 0,
+          "label": "header domain search",
+          "name": "domain_name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "home page domain search",
+          "before": "rt find the domain that's right for you:",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "home page domain search",
+          "name": "domain_name",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "customize",
+        "reject all",
+        "accept all",
+        "show more",
+        "necessary",
+        "functional",
+        "analytics",
+        "performance",
+        "advertisement",
+        "others",
+        "accept all",
+        "save my preferences"
+      ],
+      "fields": [
+        {
+          "before": "26 hugedomains.com. all rights reserved.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "hugedomains.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://hugedomains.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:45:49.253Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "bild.de",
+  "source": "rendered",
+  "source_url": "https://bild.de/register",
+  "status": "error: http 404"
+}

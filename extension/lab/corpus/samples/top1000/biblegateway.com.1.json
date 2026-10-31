@@ -1,0 +1,263 @@
+{
+  "captured_at": "2026-10-28T00:07:13.401Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "niv version",
+        "biblegateway",
+        "biblegateway"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "quick search",
+          "autocomplete": "off",
+          "before": "ore bibles deals more bible gateway plus",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "quick search",
+          "name": "quicksearch",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "niv version biblegateway biblegateway bi",
+          "ariaLabel": "biblical version",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "biblical version",
+          "name": "version",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "create an account"
+      ],
+      "fields": [
+        {
+          "depth": 20,
+          "hasPattern": false,
+          "index": 0,
+          "label": "first name",
+          "name": "first_name",
+          "placeholder": "first name",
+          "required": true,
+          "role": "given_name",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 20,
+          "hasPattern": false,
+          "index": 1,
+          "label": "last name",
+          "name": "last_name",
+          "placeholder": "last name",
+          "required": true,
+          "role": "family_name",
+          "siblings": 3,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "depth": 20,
+          "hasPattern": false,
+          "index": 2,
+          "label": "email",
+          "name": "email",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 3,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "depth": 20,
+          "hasPattern": false,
+          "index": 3,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 3,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "log in"
+      ],
+      "fields": [
+        {
+          "before": "log in don't have an account?",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 2,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "depth": 17,
+          "hasPattern": false,
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 2,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "autocomplete": "OFF",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "your email address",
+          "name": "Email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "account",
+        "niv version",
+        "biblegateway",
+        "biblegateway",
+        "bible books bible books",
+        "niv version",
+        "read",
+        "study",
+        "explore",
+        "store",
+        "font size",
+        "log in bg.userinfo.updatefullname(); show menu"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "o share our cont back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "biblegateway.com",
+  "iframes": [
+    {
+      "origin": "https://www.ncaudienceexchange.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.realtor.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.barrons.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.mansionglobal.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.marketwatch.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.wsj.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.nypost.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.decider.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.pagesix.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://tags.penews.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://biblegateway.com/login/",
+  "status": "ok",
+  "webauthnCalls": []
+}

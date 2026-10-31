@@ -1,0 +1,74 @@
+{
+  "captured_at": "2026-10-27T23:43:25.762Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "cookie setting",
+        "reject all",
+        "accept all",
+        "stay here",
+        "switch to the us website",
+        "skip to content",
+        "gaming",
+        "mobile / handhelds",
+        "laptops",
+        "displays / desktops",
+        "motherboards / components",
+        "networking / iot / servers"
+      ],
+      "fields": [
+        {
+          "after": "ai mobile / handhelds laptops displays /",
+          "ariaLabel": "search asus.com",
+          "before": "ibility help gaming business environment",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search asus.com",
+          "maxlength": 250,
+          "placeholder": "search asus.com",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "sign up global / english ©asustek comput",
+          "ariaLabel": "enter email address",
+          "before": "nvironment get the latest deals and more",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 1,
+          "label": "enter email address",
+          "placeholder": "enter email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "vue",
+  "host": "www.asus.com",
+  "iframes": [
+    {
+      "origin": "https://www.googletagmanager.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 1,
+  "source": "rendered",
+  "source_url": "https://www.asus.com/blog/cloud-vs-local-ai-how-a-diy-agentic-ai-pc-can-save-you-thousands/",
+  "status": "ok",
+  "webauthnCalls": []
+}

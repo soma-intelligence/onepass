@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-10-28T00:07:49.787Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "overview pricing map scene help",
+          "before": "overview pricing map scene help",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "esri-header-inline-title-input",
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "sign in arcgis online powered by esri co",
+          "ariaLabel": "search",
+          "before": "overview pricing map scene help",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "esri-header-inlineSearch-input",
+          "index": 1,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "arcgis.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://arcgis.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

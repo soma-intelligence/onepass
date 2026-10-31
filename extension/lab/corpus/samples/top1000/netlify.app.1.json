@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-10-28T00:00:55.246Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "log in with google",
+        "log in with github",
+        "log in with gitlab",
+        "log in with bitbucket",
+        "log in with email"
+      ],
+      "fields": [
+        {
+          "before": "y, support, and more. opens in a new tab",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "netlify.app",
+  "iframes": [
+    {
+      "origin": "https://www.netlify.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://netlify.app/login",
+  "status": "ok",
+  "webauthnCalls": []
+}
