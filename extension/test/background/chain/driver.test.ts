@@ -508,6 +508,39 @@ describe("overlay offer", () => {
     expect(overlays(u)).toEqual([]);
   });
 
+  it("sso_only_overlay_lists_only_linked_items", async () => {
+    // it_01 (password only), it_02 (Google), it_03 (password and Apple).
+    const items = [
+      summary("it_01"),
+      summary("it_02", { title: "Atlas Pro", has_password: false, methods: [{ provider: "google", account_email: "alex.pro@example.com" }] }),
+      summary("it_03", { title: "Atlas Team", methods: [{ provider: "apple", account_email: "team@example.com" }] }),
+    ];
+    const t = await setup(answerWith({ list_for_origin: (r) => ({ items: r.origin === SITE ? items : [] }) }));
+    await analyze(t, `${SITE}/login`, googleOnly());
+    const token = tokenOf(t);
+    const ui = uiSender(`overlay.html#${token}`, 7);
+    const init = (await t.ext.send({ type: "overlay_init", token }, ui)) as { ok: { accounts: { itemId: string; provider?: string }[] } };
+    // Only the Google sign-in: no password login, no method of a provider the page does not show.
+    expect(init.ok.accounts.map((a) => [a.itemId, a.provider])).toEqual([["it_02", "google"]]);
+    // A password start is refused, nothing is filled.
+    expect(await t.ext.send({ type: "overlay_start", token, itemId: "it_01" }, ui)).toEqual({ err: "invalid" });
+    expect(await t.ext.send({ type: "overlay_start", token, itemId: "it_03", provider: "apple" }, ui)).toEqual({ err: "invalid" });
+    expect(ops(t)).not.toContain("fill_login");
+  });
+
+  it("a sign-in page with provider buttons still lists every login", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm], { providerButtons: [{ provider: "google", ref: "g1" }] }));
+    const token = tokenOf(t);
+    const init = (await t.ext.send({ type: "overlay_init", token }, uiSender(`overlay.html#${token}`, 7))) as {
+      ok: { accounts: { itemId: string; provider?: string }[] };
+    };
+    expect(init.ok.accounts.map((a) => [a.itemId, a.provider])).toEqual([
+      ["it_01", undefined],
+      ["it_02", "google"],
+    ]);
+  });
+
   it("chain_starts_with_provider_click", async () => {
     const t = await setup();
     await analyze(t, `${SITE}/login`, googleOnly());

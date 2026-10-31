@@ -28,6 +28,12 @@ export interface ChainDriver {
   state(tabId: number, opening?: boolean): Promise<ChainView | null>;
   /** The user closed the overlay of this top document: not offered again there. */
   closed?(tabId: number, origin: string, documentId?: string): Promise<void>;
+  /**
+   * The providers shown by top document `documentId` when it is a
+   * provider-only page (spec E1), else null: the overlay lists only the
+   * logins linked to one of them.
+   */
+  providerOnly?(tabId: number, documentId?: string): Promise<ProviderId[] | null>;
 }
 
 /** No chain support: start and stop do nothing, no state. */

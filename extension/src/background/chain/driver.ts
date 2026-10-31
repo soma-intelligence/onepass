@@ -293,6 +293,22 @@ export class ChainRunner implements ChainDriver {
     });
   }
 
+  /**
+   * Spec E1: the providers of the top document `documentId` when it is a
+   * provider-only page (no sign-in form, provider buttons); null otherwise,
+   * or when the tab shows another document by now. The overlay then lists
+   * only the logins linked to one of them.
+   */
+  async providerOnly(tabId: number, documentId?: string): Promise<ProviderId[] | null> {
+    return this.serial(tabId, async () => {
+      const view = await this.view(tabId);
+      const a = view?.at?.analysis;
+      if (!view || !a || !sameDoc(view.top.documentId, documentId) || signInShape(a) !== null) return null;
+      const sso = providerShape(a);
+      return sso ? [...sso.providers] : null;
+    });
+  }
+
   /** A chain is running in this tab (the save and link proposals stay quiet). */
   async isRunning(tabId: number): Promise<boolean> {
     return (await this.load(tabId))?.status === "running";

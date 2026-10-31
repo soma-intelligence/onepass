@@ -172,7 +172,10 @@ export class Overlays {
     const rec = await this.record(token, ui);
     const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: rec.origin });
     const choices = this.deps.local ? await signInChoices(this.deps.session, this.deps.local, "overlay", rec.origin, items) : [];
-    const accounts = overlayAccounts(items, choices);
+    // A provider-only page (spec E1): only the sign-ins through the providers it shows.
+    const only = await this.deps.chain.providerOnly?.(rec.tabId, rec.documentId);
+    const all = overlayAccounts(items, choices);
+    const accounts = only ? all.filter((x) => x.provider !== undefined && only.includes(x.provider)) : all;
     const offered: Record<string, OverlayOffer> = {};
     const shown: Record<string, string[]> = {};
     for (const a of accounts) {

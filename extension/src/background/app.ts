@@ -90,6 +90,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     stop: (t) => (chainRef.current ? chainRef.current.stop(t) : Promise.resolve()),
     state: (t, o) => (chainRef.current ? chainRef.current.state(t, o) : Promise.resolve(null)),
     closed: (t, o, d) => chainRef.current?.closed?.(t, o, d) ?? Promise.resolve(),
+    providerOnly: (t, d) => chainRef.current?.providerOnly?.(t, d) ?? Promise.resolve(null),
   };
   const overlays = new Overlays({
     ext,
