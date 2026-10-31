@@ -1,6 +1,8 @@
 // Visibility rules of spec 8.2. Layout goes through a `Geometry` function so
 // tests can stub it (jsdom has no layout engine).
 
+import { composedParent, hostOf, MAX_SHADOW_DEPTH } from "./shadow";
+
 export interface Rect {
   left: number;
   top: number;
@@ -87,7 +89,11 @@ const tooSmall = (r: Rect) => r.width < MIN_SIZE_PX || r.height < MIN_SIZE_PX;
  * (self or ancestor). Applies to any element (buttons, list entries, fields).
  */
 export function isRendered(el: Element, geometry: Geometry = domGeometry): boolean {
-  if (el.closest(ARIA_HIDDEN)) return false;
+  // Ancestors are read across shadow boundaries: a field in a shadow root is
+  // hidden by its host's ancestors too.
+  for (let t: Element | null = el, i = 0; t && i <= MAX_SHADOW_DEPTH; t = hostOf(t), i++) {
+    if (t.closest(ARIA_HIDDEN)) return false;
+  }
   const own = styleOf(el);
   // `visibility` is inherited, so the element's own computed value covers ancestors.
   if (own && (own.visibility === "hidden" || own.visibility === "collapse")) return false;
@@ -99,7 +105,7 @@ export function isRendered(el: Element, geometry: Geometry = domGeometry): boole
   const doc = el.ownerDocument;
   let opacity = 1;
   let n: Element | null = el;
-  for (let i = 0; n && i < MAX_ANCESTORS; n = n.parentElement, i++) {
+  for (let i = 0; n && i < MAX_ANCESTORS; n = composedParent(n), i++) {
     const s = styleOf(n);
     if (!s) continue;
     if (s.display === "none") return false;

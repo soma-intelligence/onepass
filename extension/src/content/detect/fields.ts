@@ -99,7 +99,9 @@ function labelledByText(el: Element): string {
   let out = "";
   for (const id of ids.slice(0, 3)) {
     if (id === "") continue;
-    const ref = el.ownerDocument.getElementById(id);
+    // Ids are scoped to the field's own tree (document or shadow root).
+    const root = el.getRootNode() as Document | ShadowRoot;
+    const ref = typeof root.getElementById === "function" ? root.getElementById(id) : el.ownerDocument.getElementById(id);
     if (ref) out += ` ${ownText(ref)}`;
   }
   return out;

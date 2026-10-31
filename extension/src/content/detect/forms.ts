@@ -7,6 +7,7 @@ import { classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } fr
 import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
+import { collectShadowRoots, composedOrder, queryAll } from "./shadow";
 import { ownText } from "./text";
 import { domGeometry, type Geometry, isRendered, isVisible } from "./visibility";
 
@@ -81,6 +82,11 @@ export interface AnalyzeOptions {
   url?: string;
   /** Layout function; defaults to the real DOM geometry. */
   geometry?: Geometry;
+  /**
+   * Shadow roots queried with the document (spec D1, D2); defaults to the
+   * open roots of the page (`collectShadowRoots`).
+   */
+  shadowRoots?: readonly ShadowRoot[];
 }
 
 interface Classified {
@@ -125,10 +131,9 @@ export function isNavigatingLink(el: Element): boolean {
   return href !== "" && !href.startsWith("#") && !/^javascript:/i.test(href);
 }
 
-/** Buttons that may submit a form group, in document order. */
-function submitCandidates(doc: Document, geometry: Geometry): Element[] {
-  return Array.from(doc.querySelectorAll(BUTTON_SELECTOR))
-    .slice(0, MAX_BUTTONS)
+/** Buttons that may submit a form group, the document's first, then each root's. */
+function submitCandidates(doc: Document, roots: readonly ShadowRoot[], geometry: Geometry): Element[] {
+  return queryAll(doc, roots, BUTTON_SELECTOR, MAX_BUTTONS)
     .filter(
       (el) =>
         !isNavigatingLink(el) &&
@@ -324,15 +329,11 @@ export function formKind(roles: FieldRole[], nextButton: boolean): FormKind | nu
 }
 
 /** Page-level sign-in wording: title, URL, first headings or a "forgot password" link. */
-function signInPage(doc: Document, url: string): boolean {
-  const headings = Array.from(doc.querySelectorAll("h1, h2"))
-    .slice(0, MAX_HEADINGS)
-    .map((h) => ownText(h, 100));
+function signInPage(doc: Document, roots: readonly ShadowRoot[], url: string): boolean {
+  const headings = queryAll(doc, roots, "h1, h2", MAX_HEADINGS).map((h) => ownText(h, 100));
   const texts = [doc.title, url, ...headings];
   if (texts.some((t) => SIGN_IN_TEXT.test(normalizeText(t)))) return true;
-  return Array.from(doc.querySelectorAll("a"))
-    .slice(0, MAX_FORGOT_LINKS)
-    .some((a) => FORGOT_TEXT.test(normalizeText(ownText(a, 100))));
+  return queryAll(doc, roots, "a", MAX_FORGOT_LINKS).some((a) => FORGOT_TEXT.test(normalizeText(ownText(a, 100))));
 }
 
 /**
@@ -346,22 +347,26 @@ function identifierStep(fields: Classified[], submit: Element, page: () => boole
   return page();
 }
 
-function documentOrder(a: Element, b: Element): number {
-  if (a === b) return 0;
-  return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-}
+/** Order in the flattened page: shadow content sits where its host does. */
+const documentOrder = composedOrder;
 
-/** Classified forms and field groups of the document, in document order. `url` defaults to `doc.URL`. */
+/**
+ * Classified forms and field groups of the document and of `roots` (its
+ * shadow roots), in page order. `url` defaults to `doc.URL`.
+ */
 export function detectForms(
   doc: Document,
   refs: RefRegistry,
   geometry: Geometry = domGeometry,
   url: string = doc.URL,
+  roots: readonly ShadowRoot[] = [],
 ): FormInfo[] {
   const visible: FieldElement[] = [];
-  for (const el of Array.from(doc.querySelectorAll(FIELD_SELECTOR)).slice(0, MAX_FIELDS)) {
+  for (const el of queryAll(doc, roots, FIELD_SELECTOR, MAX_FIELDS)) {
     if (isFieldCandidate(el) && isVisible(el, geometry)) visible.push(el);
   }
+  // Split OTP runs are read in page order: roots come after the document.
+  if (roots.length > 0) visible.sort(documentOrder);
   const cells = splitOtpCells(visible);
   const classified: Classified[] = [];
   for (const el of visible) {
@@ -381,7 +386,7 @@ export function detectForms(
     else byForm.set(form, [...(byForm.get(form) ?? []), f]);
   }
 
-  const buttons = submitCandidates(doc, geometry);
+  const buttons = submitCandidates(doc, roots, geometry);
   const groups: { group: Group; isForm: boolean }[] = [
     ...Array.from(byForm, ([container, fields]) => ({ group: { container, fields }, isForm: true })),
     ...groupOrphans(orphans, buttons).map((group) => ({ group, isForm: false })),
@@ -389,7 +394,7 @@ export function detectForms(
   groups.sort((a, b) => documentOrder(a.group.fields[0]!.el, b.group.fields[0]!.el));
 
   let page: boolean | undefined;
-  const isSignInPage = () => (page ??= signInPage(doc, url));
+  const isSignInPage = () => (page ??= signInPage(doc, roots, url));
   const out: FormInfo[] = [];
   for (const { group, isForm } of groups) {
     group.fields.sort((a, b) => documentOrder(a.el, b.el));
@@ -427,7 +432,7 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const onProvider = host !== null && providerForHost(host) !== null;
   return {
     url,
-    forms: detectForms(doc, refs, geometry, url),
+    forms: detectForms(doc, refs, geometry, url, opts.shadowRoots ?? collectShadowRoots(doc)),
     captcha: detectCaptcha(doc, geometry),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),
