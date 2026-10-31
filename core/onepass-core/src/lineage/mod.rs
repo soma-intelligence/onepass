@@ -181,6 +181,13 @@ pub(crate) fn body_bytes<T: Serialize>(body: &T) -> Vec<u8> {
     postcard::to_allocvec(body).expect("lineage body encodes")
 }
 
+/// The record id of the lineage record whose hash is `hash`: `hash[..16]`.
+pub fn record_id_of(hash: &[u8; 32]) -> Id {
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&hash[..16]);
+    Id(id)
+}
+
 impl LineageRecord {
     /// Canonical postcard encoding.
     pub fn encode(&self) -> Vec<u8> {
@@ -206,10 +213,7 @@ impl LineageRecord {
 
     /// `hash()[..16]`.
     pub fn record_id(&self) -> Id {
-        let h = self.hash();
-        let mut id = [0u8; 16];
-        id.copy_from_slice(&h[..16]);
-        Id(id)
+        record_id_of(&self.hash())
     }
 
     /// 0 for a genesis.

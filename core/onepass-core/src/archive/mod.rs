@@ -16,26 +16,12 @@ use std::collections::HashSet;
 
 use crate::Id;
 use crate::model::Item;
-use crate::store::RecordKind;
 use crate::vault::VaultMeta;
 
 pub use format::{
     ArchiveKind, ArchivedVault, CURRENT_SCHEMA, Contents, HeaderInfo, Unlock, backup, export,
     inspect, open, open_retired,
 };
-
-/// Whether a record of `kind` can be written by a restore: the vault
-/// content only. The account records, the lists, the epoch and everything
-/// keyed by the identity (lineage, device intros, key deliveries) belong to
-/// the live account and are never restored from a file (spec 10.7). An
-/// archive carries no record at all, only vaults and items: this names the
-/// boundary a restore must stay inside.
-pub fn restorable_kind(kind: RecordKind) -> bool {
-    matches!(
-        kind,
-        RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Item | RecordKind::Manifest
-    )
-}
 
 /// What restoring an archive into an account does. Nothing is overwritten.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,6 +36,20 @@ pub struct RestorePlan {
     /// Items whose id already exists in any vault of the account (or earlier
     /// in the archive), left untouched.
     pub skipped: u32,
+}
+
+/// State of a restore across attempts and errors
+/// (`Repository::restore_archive_with`).
+#[derive(Debug, Default)]
+pub struct RestoreProgress {
+    /// Vaults created so far: archive vault id to account vault id.
+    pub created: std::collections::HashMap<Id, Id>,
+    /// Items written by the last attempt.
+    pub restored: u32,
+    /// Items the last attempt planned to write.
+    pub total: u32,
+    /// The 1-based plan position of the item `prepare` refused.
+    pub invalid: Option<u32>,
 }
 
 /// What `Repository::restore_archive` did.

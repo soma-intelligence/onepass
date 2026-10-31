@@ -407,12 +407,12 @@ fn reconcile_pin<S: RecordStore>(store: &S, device: &mut DeviceState) -> Result<
     }
     pin.identity_pub = trust.identity_pub.clone();
     device.epoch = 0;
-    let mut id = [0u8; 16];
-    id.copy_from_slice(&trust.head.hash[..16]);
     let mut replaced = Vec::new();
-    if let Some(rec) = store.get(RecordKind::Lineage, Id(id))?
-        && let Ok(r @ crate::lineage::LineageRecord::Rotation(_)) =
-            crate::lineage::LineageRecord::decode(&rec.data)
+    if let Some(rec) = store.get(
+        RecordKind::Lineage,
+        crate::lineage::record_id_of(&trust.head.hash),
+    )? && let Ok(r @ crate::lineage::LineageRecord::Rotation(_)) =
+        crate::lineage::LineageRecord::decode(&rec.data)
         && r.hash() == trust.head.hash
         && let crate::lineage::LineageRecord::Rotation(s) = r
     {
@@ -2080,18 +2080,18 @@ impl<S: RecordStore> Repository<S> {
         let Some(trust) = trust_of(&self.store)? else {
             return Ok(BTreeMap::new());
         };
-        let mut id = [0u8; 16];
-        id.copy_from_slice(&trust.head.hash[..16]);
-        let Some(rec) = self.store.get(RecordKind::Lineage, Id(id))? else {
+        let Some(rec) = self.store.get(
+            RecordKind::Lineage,
+            crate::lineage::record_id_of(&trust.head.hash),
+        )?
+        else {
             return Ok(BTreeMap::new());
         };
         match crate::lineage::LineageRecord::decode(&rec.data) {
-            Ok(r @ crate::lineage::LineageRecord::Rotation(_)) if r.hash() == trust.head.hash => {
-                match r {
-                    crate::lineage::LineageRecord::Rotation(s) => Ok(s.body.from_heads),
-                    _ => Ok(BTreeMap::new()),
-                }
-            }
+            Ok(r) if r.hash() == trust.head.hash => match r {
+                crate::lineage::LineageRecord::Rotation(s) => Ok(s.body.from_heads),
+                crate::lineage::LineageRecord::Genesis(_) => Ok(BTreeMap::new()),
+            },
             _ => Ok(BTreeMap::new()),
         }
     }
@@ -2119,14 +2119,32 @@ impl<S: RecordStore> Repository<S> {
     /// are skipped (`restore_plan`). Every item is validated before the
     /// first write. Only vault content is written: never the account
     /// records, the lists, the lineage, the intros, the deliveries or the
-    /// trust state (spec 10.7, `archive::restorable_kind`). While a
-    /// rotation waits for the user it is `Error::ReadOnly`. The caller
-    /// issues the restore epoch afterwards.
+    /// trust state (spec 10.7). While a rotation waits for the user it is
+    /// `Error::ReadOnly`. The caller issues the restore epoch afterwards.
     pub fn restore_archive(
         &mut self,
         contents: &crate::archive::Contents,
     ) -> Result<crate::archive::RestoreReport> {
+        let mut progress = crate::archive::RestoreProgress::default();
+        self.restore_archive_with(contents, &mut progress, &Ok)
+    }
+
+    /// `restore_archive` for a caller that retries after a conflict or
+    /// reports partial counts: `progress` remembers the vaults created
+    /// (archive id to account id, reused by a retry) and, on an error, how
+    /// many items were written, how many were planned, and which item
+    /// (1-based, in plan order) `prepare` refused, if any. `prepare` checks
+    /// or adjusts each item before the first write.
+    pub fn restore_archive_with(
+        &mut self,
+        contents: &crate::archive::Contents,
+        progress: &mut crate::archive::RestoreProgress,
+        prepare: &dyn Fn(Item) -> Result<Item>,
+    ) -> Result<crate::archive::RestoreReport> {
         self.writable()?;
+        progress.restored = 0;
+        progress.total = 0;
+        progress.invalid = None;
         let mut targets: std::collections::HashMap<Id, Vault> = std::collections::HashMap::new();
         let mut existing = Vec::new();
         for v in self.vaults()? {
@@ -2134,28 +2152,44 @@ impl<S: RecordStore> Repository<S> {
             existing.push((v.id, ids));
             targets.insert(v.id, v);
         }
+        // A vault created by an earlier attempt stands for its archive id.
+        for (archive_id, id) in &progress.created {
+            if let Some(vault) = targets.remove(id) {
+                targets.insert(*archive_id, vault);
+            }
+        }
         let plan = crate::archive::restore_plan(contents, &existing);
-        for (_, item) in &plan.writes {
-            crate::model::validate(item)?;
+        progress.total = u32::try_from(plan.writes.len()).unwrap_or(u32::MAX);
+        let mut writes = Vec::with_capacity(plan.writes.len());
+        for (i, (vault, item)) in plan.writes.into_iter().enumerate() {
+            match prepare(item) {
+                Ok(item) => writes.push((vault, item)),
+                Err(e) => {
+                    progress.invalid = u32::try_from(i + 1).ok();
+                    return Err(e);
+                }
+            }
         }
-        let mut report = crate::archive::RestoreReport {
-            vaults_created: 0,
-            restored: 0,
-            skipped: plan.skipped,
-            made_before_rotation: contents.made_before_rotation,
-        };
         for (archive_id, meta) in plan.new_vaults {
+            if progress.created.contains_key(&archive_id) {
+                continue;
+            }
             let vault = self.create_vault(meta)?;
+            progress.created.insert(archive_id, vault.id);
             targets.insert(archive_id, vault);
-            report.vaults_created = report.vaults_created.saturating_add(1);
         }
-        for (archive_id, mut item) in plan.writes {
+        for (archive_id, mut item) in writes {
             let target = targets.get(&archive_id).ok_or(Error::NotFound)?;
             item.vault_id = target.id;
             self.save_item(target, item)?;
-            report.restored = report.restored.saturating_add(1);
+            progress.restored = progress.restored.saturating_add(1);
         }
-        Ok(report)
+        Ok(crate::archive::RestoreReport {
+            vaults_created: u32::try_from(progress.created.len()).unwrap_or(u32::MAX),
+            restored: progress.restored,
+            skipped: plan.skipped,
+            made_before_rotation: contents.made_before_rotation,
+        })
     }
 }
 
