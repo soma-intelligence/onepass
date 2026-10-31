@@ -133,12 +133,14 @@
 | sharing.pv | `not (event(ItemSealedAfterRemoval(m_16)) && attacker_p1(m_16))` | true | true |
 | sharing.pv | `not (event(GenerationCreated(v_18,g1,k_9)) && attacker(k_9))` | true | true |
 | sharing.pv | `not (event(GenerationCreated(v_18,g2,k_9)) && attacker_p1(k_9))` | true | true |
-| sharing.pv | `event(ManifestAccepted(d,v_18,w_8,g_21)) ==> event(MemberRole(v_18,w_8,role_write,g_21))` | true | true |
-| sharing.pv | `event(MembershipAccepted(d,v_18,n)) ==> event(MembershipSigned(v_18,n,mgr_2)) && event(Manager(v_18,mgr_2))` | true | true |
-| sharing.pv | `event(EnvelopeAccepted(d,v_18,g_21,k_9)) ==> event(GenerationCreated(v_18,g_21,k_9))` | true | true |
 | sharing.pv | `event(MemberAdded(v_18,m_16,r_3,lvl_link)) ==> r_3 = role_read` | true | true |
 | sharing.pv | `not (event(EnvelopeAccepted(bob,vlt,g1,k_9)) && event(ManifestAccepted(carol,v1,bob,g1)) && event(ManifestAccepted(bob,v2,carol,g1)) && event(EnvelopeAccepted(bob,vlt,g2,k2_3)) && event(ItemRead(bob,vlt,g2,m_16)) && event(ItemSealed(bob,g2,m2)))` | false | false |
 | sharing.pv | `not (event(GenerationCreated(v_18,g1,k_9)) && attacker_p1(k_9))` | false | false |
+| sharing_auth.pv | `event(ManifestAccepted(d,v_18,w_8,g_21)) ==> event(MemberRole(v_18,w_8,role_write,g_21))` | true | true |
+| sharing_auth.pv | `not event(ManifestAccepted(bob,v_18,carol,g1))` | false | false |
+| sharing_auth_keys.pv | `event(MembershipAccepted(d,v_18,n)) ==> event(MembershipSigned(v_18,n,mgr_2)) && event(Manager(v_18,mgr_2))` | true | true |
+| sharing_auth_keys.pv | `event(EnvelopeAccepted(d,v_18,g_21,k_9)) ==> event(GenerationCreated(v_18,g_21,k_9))` | true | true |
+| sharing_auth_keys.pv | `not event(EnvelopeAccepted(bob,vlt,g2,k_9))` | false | false |
 | sharing_member_autofollow.pv | `not event(AdoptIdentity(bob_side,acct,pk(idk_x[])))` | false | false |
 | sharing_member_autofollow.pv | `not (event(EnvelopeSealed(d,ip_1,k_5)) && attacker(k_5))` | false | false |
 | sharing_member_autofollow.pv | `not event(AdoptFrom(bob_side,devA,ip_1))` | false | false |
