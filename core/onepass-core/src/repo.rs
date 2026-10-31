@@ -67,6 +67,7 @@ use crate::{Error, Id, IntegrityError, Result};
 
 pub mod follow;
 mod local;
+pub mod replay;
 pub mod rotate;
 pub mod travel;
 
@@ -626,6 +627,10 @@ impl<S: RecordStore> Repository<S> {
         // K9: an unlock never follows a rotation; it reports a pending one,
         // and the session is read-only until the user answers.
         repo.refresh_pending_rotation()?;
+        // Spec 10.4: own writes of an identity left wait for a replay under
+        // the keys followed; each unlock tries again (best effort: the
+        // session opens whatever it finds).
+        let _ = repo.replay_own_writes();
         Ok(repo)
     }
 
@@ -807,8 +812,22 @@ impl<S: RecordStore> Repository<S> {
                 .store
                 .get(RecordKind::VaultMeta, key.id)?
                 .ok_or(Error::InvalidFormat("vault meta"))?;
-            let vault = Vault::open(&self.account, key.id, &key.data, &meta.data)?;
-            self.read_manifest(&vault, None)?;
+            let vault = match Vault::open(&self.account, key.id, &key.data, &meta.data) {
+                Ok(vault) => match self.read_manifest(&vault, None) {
+                    Ok(_) => vault,
+                    Err(Error::Integrity(e)) => {
+                        self.retained_vault(key.id)?.ok_or(Error::Integrity(e))?
+                    }
+                    Err(e) => return Err(e),
+                },
+                // Key rotation v2 (spec 9): a vault a rotation re-sealed
+                // under keys this device has not followed yet is read from
+                // its own copy (`RecordStore::retained_rows`).
+                Err(Error::Integrity(e)) => {
+                    self.retained_vault(key.id)?.ok_or(Error::Integrity(e))?
+                }
+                Err(e) => return Err(e),
+            };
             out.push(vault);
         }
         out.sort_by_key(|v| v.id);
@@ -1246,6 +1265,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
+        self.log_own_write(vault.id, item.id, &loaded.manifest)?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
         let written = self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
@@ -1352,6 +1372,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
+        self.log_own_write(vault.id, item_id, &loaded.manifest)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
         self.delete_ignored(&loaded, item_id)?;
@@ -1392,6 +1413,8 @@ impl<S: RecordStore> Repository<S> {
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
         let dst = self.served(to, Use::Write)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
+        self.log_own_write(to.id, item_id, &dst.manifest)?;
+        self.log_own_write(from.id, item_id, &src.manifest)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
         let written = self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);
@@ -1448,6 +1471,14 @@ impl<S: RecordStore> Repository<S> {
         if use_ != Use::Read {
             self.writable()?;
         }
+        // Key rotation v2 (spec 9): a vault re-sealed by a rotation this
+        // device has not followed is read from its own copy, as it was
+        // before, without touching the server state or the sync health.
+        if use_ == Use::Read && self.reads_own_copy(vault.id)? {
+            let kept = self.store.kept_rows(vault.id)?.unwrap_or_default();
+            let last = self.device.last_seen.get(&vault.id).cloned();
+            return Ok(self.local_copy_from(vault, &kept, last.as_ref())?.loaded);
+        }
         let cause = match self.load(vault) {
             Ok(loaded) => {
                 self.store.vault_event(vault.id, VaultEvent::Clean)?;
@@ -1503,7 +1534,19 @@ impl<S: RecordStore> Repository<S> {
             .device
             .last_seen
             .get(&vault.id)
+            .cloned()
             .ok_or(IntegrityError::ManifestRollback)?;
+        self.local_copy_from(vault, kept, Some(&last))
+    }
+
+    /// `local_copy` checked against `last` (`None`: a vault this device
+    /// never read, its copy accepted without history).
+    fn local_copy_from(
+        &self,
+        vault: &Vault,
+        kept: &[Record],
+        last: Option<&SeenManifest>,
+    ) -> Result<LocalCopy> {
         let of_vault = |r: &Record| {
             split_item_record(&r.data)
                 .ok()
@@ -1554,12 +1597,13 @@ impl<S: RecordStore> Repository<S> {
         &self,
         vault: &Vault,
         record: Record,
-        last: &SeenManifest,
+        last: Option<&SeenManifest>,
         visible: &[(Record, Option<ItemRecord>)],
         held: &[(Record, ItemRecord)],
     ) -> Result<LocalCopy> {
         let sm = SignedManifest::decode(&record.data)?;
-        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, Some(last))?;
+        let manifest = verify_manifest(vault, &self.account.params.signing_pub, &sm, last)?;
+        let foreign = self.tolerates_foreign(vault.id)?;
         let exact = |e: &ManifestEntry, i: &ItemRecord| {
             i.item_id == e.item_id && i.version == e.version && record_hash(i) == e.record_hash
         };
@@ -1584,6 +1628,11 @@ impl<S: RecordStore> Repository<S> {
         for (r, i) in visible.iter().filter(|(r, _)| !used.contains(&r.id)) {
             let opens = i.as_ref().is_some_and(|i| vault.open_item(i).is_ok());
             if !opens {
+                // R21: a record of a foreign key generation is left alone
+                // (never deleted by this copy).
+                if foreign && i.is_some() {
+                    continue;
+                }
                 return Err(IntegrityError::ManifestUnexpectedItem.into());
             }
             unlisted.push(r.id);
@@ -1669,6 +1718,19 @@ impl<S: RecordStore> Repository<S> {
             .into_iter()
             .partition(|(_, r)| current.contains(&r.item_id) && is_leftover(&manifest, r));
         ignored.extend(stale.iter().map(|(blob, r)| (*blob, r.item_id)));
+        // R21: from generation 1 on (or for a vault re-sealed by a rotation
+        // this device reads from its own copy), a record that matches no
+        // entry and does not open under the vault key belongs to a foreign
+        // key generation (the identity left, a sibling): left alone.
+        if self.tolerates_foreign(vault.id)? {
+            records.retain(|(_, r)| {
+                manifest.entries.iter().any(|e| {
+                    e.item_id == r.item_id
+                        && e.version == r.version
+                        && record_hash(r) == e.record_hash
+                }) || vault.open_item(r).is_ok()
+            });
+        }
         records.sort_by_key(|(_, r)| r.item_id);
         let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
         check_records(&manifest, &plain)?;

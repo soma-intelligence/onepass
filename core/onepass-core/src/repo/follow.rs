@@ -19,6 +19,9 @@
 //! - `reject_rotation` ("Ce n'était pas moi"): the record joins `ignored`,
 //!   its signer `excluded` on request, and the device is `Current` again.
 //!
+//! The follow moves the own-write log to its replay list and replays it
+//! under the new keys (`crate::repo::replay`, spec 10.4).
+//!
 //! A normal unlock never follows (K9): it opens the identity the device
 //! is on, and when a prompt is pending the session is read-only
 //! (`Error::ReadOnly`, R10) and reports it (`Repository::pending_prompt`).
@@ -173,7 +176,10 @@ fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
             ctx.update(&sha256(&r.data));
         }
     }
-    if let Some(t) = trust_of(store)? {
+    if let Some(mut t) = trust_of(store)? {
+        // The own-write log changes with every item write and decides no
+        // prompt.
+        t.own_writes = Default::default();
         ctx.update(&t.encode());
     }
     let mut out = [0u8; 32];
@@ -495,6 +501,9 @@ pub fn follow_rotation<S: RecordStore>(
         generation: trust.head.generation,
     });
     next.state = DeviceLineageState::Current;
+    // Spec 10.4: the own writes so far wait for their replay under the new
+    // keys, against the rotation's `from_heads`.
+    next.own_writes.adopt(&body.from_heads);
     let chain = ChainState {
         params_epoch: account.params.epoch,
         device_list: None,
@@ -530,9 +539,12 @@ pub fn follow_rotation<S: RecordStore>(
         lineage_mark: None,
     };
     let mut repo = repo;
-    // Review I2: a child of the new head already known prompts at once
-    // (best effort: nothing fails after the commit; the stored state and
-    // `writable` look again on the first write anyway).
+    // Spec 10.4: replay this device's own writes under the new keys (best
+    // effort: nothing fails after the commit; what waits is tried again at
+    // the next unlock or rebase). Review I2: a child of the new head
+    // already known prompts at once (the replay then waits for it); the
+    // stored state and `writable` look again on the first write anyway.
+    let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
     Ok((repo, auk, secret_key))
 }

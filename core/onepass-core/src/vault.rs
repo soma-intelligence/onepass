@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::account::Account;
-use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal, unwrap_key, wrap_key};
+use crate::crypto::{
+    Aad, BlobKind, HybridKemSecret, SymmetricKey, open, seal, unwrap_key, wrap_key,
+};
 use crate::model::events::{EventKind, ItemTrailer};
 use crate::model::usage::UsageTrailer;
 use crate::model::{Item, validate};
@@ -176,7 +178,18 @@ impl Vault {
 
     /// Open a vault from its stored envelope and meta blob.
     pub fn open(account: &Account, id: Id, key_envelope: &[u8], meta_blob: &[u8]) -> Result<Vault> {
-        let key = unwrap_key(&account.keyset().kem, key_envelope, &kem_context(id))?;
+        Vault::open_with_kem(&account.keyset().kem, id, key_envelope, meta_blob)
+    }
+
+    /// `open` with the KEM secret `kem` (a retired one, to read what a left
+    /// identity sealed: key rotation v2, spec 10.4).
+    pub(crate) fn open_with_kem(
+        kem: &HybridKemSecret,
+        id: Id,
+        key_envelope: &[u8],
+        meta_blob: &[u8],
+    ) -> Result<Vault> {
+        let key = unwrap_key(kem, key_envelope, &kem_context(id))?;
         let plain = open(&key, BlobKind::VaultMeta, &meta_aad(id), meta_blob)?;
         let meta: VaultMeta = match postcard::take_from_bytes(&plain) {
             Ok((meta, [])) => meta,

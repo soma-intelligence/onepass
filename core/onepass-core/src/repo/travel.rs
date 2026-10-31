@@ -134,8 +134,11 @@ impl<S: RecordStore> Repository<S> {
     /// vault the upstream lacks or holds differently is
     /// `InvalidFormat("upstream does not hold the vault")`, and a vault
     /// that fails verification gives the core's error; in both cases the
-    /// device is left unchanged. `upstream` is only read.
+    /// device is left unchanged. `upstream` is only read. While a rotation
+    /// waits for the user it is `Error::ReadOnly` (R10), as are both exits.
     pub fn enter_travel<U: RecordStore>(&mut self, upstream: &U) -> Result<TravelState> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
         let local_items = self.store.list(RecordKind::Item)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
         for vault in self.vaults()? {
@@ -213,6 +216,8 @@ impl<S: RecordStore> Repository<S> {
     /// On failure, the records copied are deleted and the device state is
     /// restored: `state` stays valid for another attempt.
     pub fn exit_travel<U: RecordStore>(&mut self, upstream: &U, state: &TravelState) -> Result<()> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
         let mut todo = Vec::new();
         for (id, seen) in &state.parked {
             let present = self.store.get(RecordKind::VaultKey, *id)?.is_some();
@@ -231,6 +236,8 @@ impl<S: RecordStore> Repository<S> {
     /// manifest would be accepted. Returns the restored vault ids, sorted.
     /// Same rollback on failure as `exit_travel`.
     pub fn exit_travel_unpinned<U: RecordStore>(&mut self, upstream: &U) -> Result<Vec<Id>> {
+        // R10: no write while a rotation waits for the user.
+        self.writable()?;
         let local: BTreeSet<Id> = self
             .store
             .list(RecordKind::VaultKey)?

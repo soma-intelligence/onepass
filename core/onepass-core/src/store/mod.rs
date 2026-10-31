@@ -321,6 +321,50 @@ pub trait RecordStore {
         let _ = (kind, id);
         Ok(false)
     }
+
+    /// The vault key and vault meta rows of `vault` that a fetch replaced
+    /// with other bytes, as this device held them before (key rotation v2,
+    /// spec 9 and 10.4): a device that has not followed a rotation yet
+    /// still reads its own copy of a vault the rotation re-sealed, and the
+    /// replay of its own writes opens them with the retired keys. The
+    /// default keeps none.
+    fn retained_rows(&self, vault: Id) -> Result<Vec<Record>> {
+        let _ = vault;
+        Ok(Vec::new())
+    }
+
+    /// The own writes of `vault` were replayed under the identity this
+    /// device follows now (`crate::repo::replay`): drop the vault's pending
+    /// writes made under the identity it left (manifest, item records and
+    /// tombstones, vault key and meta), their ancestor, the kept rows and
+    /// the retained rows. The default keeps nothing, so it has nothing to
+    /// drop.
+    fn settle_replayed(&mut self, vault: Id) -> Result<()> {
+        let _ = vault;
+        Ok(())
+    }
+
+    /// Drop the retained rows of `vault` (`retained_rows`) and nothing
+    /// else. The default keeps none.
+    fn drop_retained(&mut self, vault: Id) -> Result<()> {
+        let _ = vault;
+        Ok(())
+    }
+
+    /// Open a batch: every write until `batch_commit` or `batch_rollback`
+    /// lands in one transaction where the store can. The default writes as
+    /// it goes (no undo).
+    fn batch_begin(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn batch_commit(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn batch_rollback(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// What the push phases of a rotation need beyond its records (spec 7.1):

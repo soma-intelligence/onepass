@@ -10,8 +10,9 @@
 //!
 //! The encoding is `postcard`, versioned by the first field, decoded
 //! strictly: the whole buffer, a canonical re-encoding equal to the input,
-//! sorted and unique lists, bounded sizes and well-formed keys. A later
-//! change of the layout (the own-write log of milestone 10) bumps `version`.
+//! sorted and unique lists, bounded sizes and well-formed keys. Version 2
+//! added the own-write log (spec 10.4); version 1 is refused (it never
+//! shipped).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,10 +23,11 @@ use crate::crypto::sign::{MLDSA_PUBLIC_LEN, SLH_PUBLIC_LEN};
 use crate::crypto::{HybridVerifyingKey, IdentityVerifyingKey};
 use crate::device_keys::DevicePublic;
 use crate::lineage::{MAX_ROSTER, RosterEntry, check_entry, decode_strict_with};
+use crate::manifest::SeenManifest;
 use crate::{Error, Result};
 
 /// Layout version, the first byte of `TrustState::encode`.
-pub const TRUST_VERSION: u8 = 1;
+pub const TRUST_VERSION: u8 = 2;
 /// Most rotation records kept in `ignored`.
 pub const MAX_IGNORED: usize = 64;
 /// Last phase of a rotation (spec 8.1: phases 1 to 3).
@@ -77,10 +79,115 @@ pub enum DeviceLineageState {
     Orphaned { child: [u8; 32] },
 }
 
-/// Own-write log (spec 10.4). Empty until milestone 10 fills it; that
-/// change bumps `TrustState::version`.
+/// Most intents kept in each list of the own-write log (spec 10.4).
+pub const MAX_OWN_WRITES: usize = 10_000;
+/// Intents older than this, in seconds, leave the own-write log (30 days).
+pub const OWN_WRITE_MAX_AGE_SECS: i64 = 30 * 86_400;
+
+/// One item intent this device wrote (spec 10.4): the item of `vault` it
+/// saved, deleted or moved, the manifest the write was based on, and when
+/// (Unix seconds, device clock).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnWrite {
+    pub vault: Id,
+    pub item: Id,
+    pub based_on: SeenManifest,
+    pub at: i64,
+}
+
+/// Own-write log (spec 10.4, G4, R7). `entries`: the item intents this
+/// device wrote since the last head it adopted, one per item (a later
+/// write of the same item replaces it and goes last), oldest first.
+/// `replay`: the intents of the identity this device left by its last
+/// adoption, waiting to be replayed under the new keys
+/// (`crate::repo::replay`); `replay_heads` are the `from_heads` of that
+/// adoption (empty when two adoptions piled up before a replay finished:
+/// every intent then counts as not reflected). Each list keeps at most
+/// `MAX_OWN_WRITES` intents, none older than `OWN_WRITE_MAX_AGE_SECS`;
+/// `alert` is raised when an intent that may still be needed was dropped
+/// for these bounds (the device keeps its local copy, the app offers
+/// "Réimporter depuis cet appareil").
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OwnWriteLog {}
+pub struct OwnWriteLog {
+    pub entries: Vec<OwnWrite>,
+    pub replay: Vec<OwnWrite>,
+    pub replay_heads: BTreeMap<Id, SeenManifest>,
+    pub alert: bool,
+}
+
+impl OwnWriteLog {
+    /// Remember `w`, replacing an older intent of the same item, then apply
+    /// the bounds (`prune` at `w.at`). `needed`: the device waits on a
+    /// rotation prompt, so a dropped intent raises `alert`.
+    pub fn record(&mut self, w: OwnWrite, needed: bool) {
+        let now = w.at;
+        self.entries
+            .retain(|e| (e.vault, e.item) != (w.vault, w.item));
+        self.entries.push(w);
+        self.prune(now, needed);
+    }
+
+    /// Drop the intents older than `OWN_WRITE_MAX_AGE_SECS` at `now`, then
+    /// the oldest beyond `MAX_OWN_WRITES` in each list. Dropping one of
+    /// `replay`, or one of `entries` when `needed`, raises `alert`.
+    pub fn prune(&mut self, now: i64, needed: bool) {
+        let floor = now.saturating_sub(OWN_WRITE_MAX_AGE_SECS);
+        let entries = bound(&mut self.entries, floor);
+        let replay = bound(&mut self.replay, floor);
+        if replay || (entries && needed) {
+            self.alert = true;
+        }
+    }
+
+    /// The adoption of a new head (spec 10.4): the intents written so far
+    /// wait for the replay, with the rotation's `from_heads`; intents still
+    /// waiting from an earlier adoption stay, and the heads are then
+    /// unknown (empty).
+    pub fn adopt(&mut self, from_heads: &BTreeMap<Id, SeenManifest>) {
+        let fresh = std::mem::take(&mut self.entries);
+        if self.replay.is_empty() {
+            self.replay_heads = from_heads.clone();
+        } else {
+            self.replay_heads.clear();
+        }
+        for w in fresh {
+            self.replay
+                .retain(|e| (e.vault, e.item) != (w.vault, w.item));
+            self.replay.push(w);
+        }
+        let excess = self.replay.len().saturating_sub(MAX_OWN_WRITES);
+        if excess > 0 {
+            self.replay.drain(..excess);
+            self.alert = true;
+        }
+    }
+
+    /// The vaults that still have intents to replay.
+    pub fn replay_vaults(&self) -> BTreeSet<Id> {
+        self.replay.iter().map(|w| w.vault).collect()
+    }
+
+    fn check(&self) -> bool {
+        let unique = |l: &[OwnWrite]| {
+            let keys: BTreeSet<(Id, Id)> = l.iter().map(|w| (w.vault, w.item)).collect();
+            keys.len() == l.len()
+        };
+        self.entries.len() <= MAX_OWN_WRITES
+            && self.replay.len() <= MAX_OWN_WRITES
+            && unique(&self.entries)
+            && unique(&self.replay)
+    }
+}
+
+/// Drop from `l` the intents older than `floor`, then the oldest beyond
+/// `MAX_OWN_WRITES`. Whether any went.
+fn bound(l: &mut Vec<OwnWrite>, floor: i64) -> bool {
+    let before = l.len();
+    l.retain(|w| w.at >= floor);
+    let excess = l.len().saturating_sub(MAX_OWN_WRITES);
+    l.drain(..excess);
+    l.len() != before
+}
 
 /// See the module doc.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,7 +276,7 @@ impl TrustState {
         for e in &self.roster {
             check_entry(e).map_err(|_| BAD)?;
         }
-        if self.ignored.len() > MAX_IGNORED {
+        if self.ignored.len() > MAX_IGNORED || !self.own_writes.check() {
             return Err(BAD);
         }
         let unique: BTreeSet<&[u8; 32]> = self.ignored.iter().collect();
@@ -272,6 +379,20 @@ pub mod tests {
             identity_pub: id.clone(),
             generation: 2,
         });
+        let seen = SeenManifest {
+            seq: 4,
+            hash: [2; 32],
+        };
+        s.own_writes.record(
+            OwnWrite {
+                vault: Id([1; 16]),
+                item: Id([2; 16]),
+                based_on: seen.clone(),
+                at: 1_700_000_000,
+            },
+            false,
+        );
+        s.own_writes.replay_heads.insert(Id([1; 16]), seen);
         s
     }
 
@@ -307,7 +428,10 @@ pub mod tests {
         trailing.push(0);
         assert_eq!(TrustState::decode(&trailing), bad);
         let mut version = good.clone();
-        version[0] = 2;
+        version[0] = 3;
+        assert_eq!(TrustState::decode(&version), bad);
+        // Version 1 (no own-write log) never shipped.
+        version[0] = 1;
         assert_eq!(TrustState::decode(&version), bad);
         version[0] = 0;
         assert_eq!(TrustState::decode(&version), bad);
@@ -362,6 +486,68 @@ pub mod tests {
             TrustState::decode(&back.encode()).unwrap().revoked,
             s.revoked
         );
+    }
+
+    fn write(item: u8, at: i64) -> OwnWrite {
+        OwnWrite {
+            vault: Id([1; 16]),
+            item: Id([item; 16]),
+            based_on: SeenManifest {
+                seq: 1,
+                hash: [0; 32],
+            },
+            at,
+        }
+    }
+
+    #[test]
+    fn own_writes_are_strict() {
+        let bad = Err(Error::InvalidFormat("trust state"));
+        let mut s = sample();
+        s.own_writes.entries.push(s.own_writes.entries[0].clone());
+        assert_eq!(TrustState::decode(&s.encode()), bad);
+        let mut s = sample();
+        s.own_writes.replay = (0..=MAX_OWN_WRITES)
+            .map(|i| OwnWrite {
+                item: Id((i as u128).to_be_bytes()),
+                ..write(0, 0)
+            })
+            .collect();
+        assert_eq!(TrustState::decode(&s.encode()), bad);
+    }
+
+    #[test]
+    fn own_writes_keep_one_intent_per_item() {
+        let mut log = OwnWriteLog::default();
+        log.record(write(1, 10), false);
+        log.record(write(2, 11), false);
+        log.record(write(1, 12), false);
+        let items: Vec<(Id, i64)> = log.entries.iter().map(|w| (w.item, w.at)).collect();
+        assert_eq!(items, vec![(Id([2; 16]), 11), (Id([1; 16]), 12)]);
+        assert!(!log.alert);
+    }
+
+    #[test]
+    fn adopt_moves_entries_to_replay() {
+        let mut log = OwnWriteLog::default();
+        log.record(write(1, 10), false);
+        let heads = BTreeMap::from([(
+            Id([1; 16]),
+            SeenManifest {
+                seq: 3,
+                hash: [3; 32],
+            },
+        )]);
+        log.adopt(&heads);
+        assert!(log.entries.is_empty());
+        assert_eq!(log.replay.len(), 1);
+        assert_eq!(log.replay_heads, heads);
+        // A second adoption before the replay finished: heads unknown.
+        log.record(write(2, 11), false);
+        log.adopt(&heads);
+        assert_eq!(log.replay.len(), 2);
+        assert!(log.replay_heads.is_empty());
+        assert_eq!(log.replay_vaults(), BTreeSet::from([Id([1; 16])]));
     }
 
     #[test]

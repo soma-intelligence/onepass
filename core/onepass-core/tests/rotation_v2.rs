@@ -2068,3 +2068,323 @@ fn follow_refused_while_rotating() {
     assert!(is_validation(&r.map(|_| ())));
     assert_eq!(snapshot(&c.store()), before);
 }
+
+// ---------------------------------------------------------------- own writes
+
+use onepass_core::repo::replay::ReplayReport;
+use onepass_core::trust::{MAX_OWN_WRITES, OWN_WRITE_MAX_AGE_SECS, OwnWrite, OwnWriteLog};
+
+/// A device on the server's account under the identity A leaves, with no
+/// trust state: it cannot tell a rotation from anything else (the revoked
+/// iPad, a device that never updated). Unlocked.
+fn old_device(server: &Server, f: &Fixture) -> Device {
+    let mut d = Device::empty();
+    pull(server, &mut d);
+    d.unlock(&f.sk);
+    d
+}
+
+/// A commits a rotation revoking B (not pushed yet). Then C, unlocked on
+/// the old identity, writes "pushed" and pushes it (so A's content, made
+/// from the view A had, lacks it), and writes "pending" without pushing.
+/// A pushes every phase; C pulls everything, its session still open.
+fn rotation_during_writes() -> (Server, Device, Device, Fixture, RotationOutcome) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let v = c.vault();
+    c.repo()
+        .save_item(&v, login(v.id, "pushed", T0 + 50))
+        .unwrap();
+    sync(&mut server, &mut c).unwrap();
+    c.repo()
+        .save_item(&v, login(v.id, "pending", T0 + 60))
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    pull(&server, &mut c);
+    (server, a, c, f, out)
+}
+
+fn all_users() -> Vec<String> {
+    let mut u: Vec<String> = ["alice", "bob", "carol", "pending", "pushed"]
+        .map(String::from)
+        .to_vec();
+    u.sort();
+    u
+}
+
+#[test]
+fn writes_during_rotation_survive() {
+    let (mut server, mut a, mut c, f, out) = rotation_during_writes();
+    let v = c.vault().id;
+    let trust = c.store().trust_state().unwrap().unwrap();
+    let mine: BTreeSet<Id> = trust.own_writes.entries.iter().map(|w| w.item).collect();
+    assert_eq!(mine.len(), 2, "both writes logged");
+    let old_blobs = item_blobs(&c.store(), v);
+
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(users(&c.items()), all_users());
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert!(trust.own_writes.replay.is_empty());
+    assert!(trust.own_writes.replay_heads.is_empty());
+    assert!(!trust.own_writes.alert);
+    assert!(c.store().retained_rows(v).unwrap().is_empty());
+    // Nothing sealed under the old keys goes out.
+    let outbox = outbox(&c);
+    assert!(!outbox.is_empty());
+    assert!(outbox.iter().all(|(ch, _)| ch.kind != RecordKind::Item
+        || !old_blobs.contains(&ch.id)
+        || ch.data.is_none()));
+    // The replay reaches the others under the new identity.
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    assert_eq!(users(&a.items()), all_users());
+}
+
+/// R11: what another device wrote under the identity left after
+/// `from_heads` is not imported; its author replays it.
+#[test]
+fn other_device_late_write_not_imported() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut ipad = old_device(&server, &f);
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let v = ipad.vault();
+    ipad.repo()
+        .save_item(&v, login(v.id, "forged", T0 + 50))
+        .unwrap();
+    sync(&mut server, &mut ipad).unwrap();
+    c.unlock(&f.sk);
+    pull(&server, &mut c);
+    assert!(users(&c.items()).contains(&"forged".to_string()));
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(
+        users(&c.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+    // A, under the new identity, leaves the forged record alone too.
+    assert_eq!(
+        users(&a.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+}
+
+fn intent(n: u32, at: i64) -> OwnWrite {
+    let mut item = [0u8; 16];
+    item[..4].copy_from_slice(&n.to_be_bytes());
+    OwnWrite {
+        vault: Id([1; 16]),
+        item: Id(item),
+        based_on: SeenManifest {
+            seq: 1,
+            hash: [0; 32],
+        },
+        at,
+    }
+}
+
+#[test]
+fn log_bounds() {
+    let now = T0;
+    let mut log = OwnWriteLog::default();
+    for n in 0..=MAX_OWN_WRITES as u32 {
+        log.record(intent(n, now), false);
+    }
+    assert_eq!(log.entries.len(), MAX_OWN_WRITES);
+    assert_eq!(log.entries[0], intent(1, now), "the oldest went");
+    assert!(!log.alert, "no rotation waits: nothing needed was dropped");
+
+    // Waiting for a replay: intents older than 30 days go, with the alert.
+    let mut log = OwnWriteLog::default();
+    log.record(intent(1, now - OWN_WRITE_MAX_AGE_SECS - 1), false);
+    log.record(intent(2, now - OWN_WRITE_MAX_AGE_SECS), false);
+    log.adopt(&BTreeMap::new());
+    log.prune(now, false);
+    assert_eq!(log.replay, vec![intent(2, now - OWN_WRITE_MAX_AGE_SECS)]);
+    assert!(log.alert);
+
+    // Candidate: an intent written now drops the expired ones, alert raised.
+    let mut log = OwnWriteLog::default();
+    log.record(intent(1, now - OWN_WRITE_MAX_AGE_SECS - 1), false);
+    log.record(intent(2, now), true);
+    assert_eq!(log.entries, vec![intent(2, now)]);
+    assert!(log.alert);
+    // The trust state holds the bounds.
+    let mut trust = TrustState::decode(&{
+        let (_server, _a, c, _f, _out, _sk) = rotated();
+        c.store().trust_state().unwrap().unwrap().encode()
+    })
+    .unwrap();
+    trust.own_writes = log;
+    assert_eq!(TrustState::decode(&trust.encode()).unwrap(), trust);
+}
+
+#[test]
+fn replay_is_idempotent() {
+    let (_server, _a, mut c, f, out) = rotation_during_writes();
+    let before = c.store().trust_state().unwrap().unwrap().own_writes;
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(users(&c.items()), all_users());
+
+    // A second follow is refused and changes nothing; a second replay is
+    // a no-op.
+    let snap = snapshot(&c.store());
+    let again = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
+    assert!(again.is_err());
+    assert_eq!(
+        c.repo().replay_own_writes().unwrap(),
+        ReplayReport::default()
+    );
+    assert_eq!(snapshot(&c.store()), snap);
+
+    // The rebase path replays nothing a second time.
+    c.repo().rebase().unwrap();
+    assert_eq!(snapshot(&c.store()), snap);
+    assert_eq!(users(&c.items()), all_users());
+    assert!(!before.entries.is_empty());
+}
+
+/// The rebase a sync runs while the device waits on the prompt writes
+/// nothing (R10); after the follow, the replay brings each own write in
+/// exactly once.
+#[test]
+fn rebase_while_candidate_then_replay_once() {
+    let (_server, _a, mut c, f, out) = rotation_during_writes();
+    let snap = snapshot(&c.store());
+    let r = c.repo().rebase();
+    assert!(r.is_err() || r == Ok(vec![]), "{r:?}");
+    assert_eq!(snapshot(&c.store()).records, snap.records);
+    assert_eq!(snapshot(&c.store()).outbox, snap.outbox);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    c.repo().rebase().unwrap();
+    let items = c.items();
+    let ids: BTreeSet<Id> = items.iter().map(|i| i.id).collect();
+    assert_eq!(ids.len(), items.len());
+    assert_eq!(users(&items), all_users());
+}
+
+/// I4: a device that has not followed reads its own copy of every vault
+/// after phase 2 re-sealed it; after the follow that copy is gone.
+#[test]
+fn candidate_reads_after_phase_two() {
+    let (_server, _a, mut c, f, out, _sk) = rotated();
+    c.unlock(&f.sk);
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
+    let mut vaults = c.repo().vaults().unwrap();
+    assert_eq!(vaults.len(), 1);
+    let v = vaults.remove(0);
+    assert!(!c.store().retained_rows(v.id).unwrap().is_empty());
+    let mut items = c.repo().items(&v).unwrap();
+    let mut want = f.items.clone();
+    items.sort_by_key(|i| i.id);
+    want.sort_by_key(|i| i.id);
+    assert_eq!(users(&items), users(&want));
+    assert_eq!(
+        c.repo().save_item(&v, login(v.id, "eve", T0 + 80)).err(),
+        Some(Error::ReadOnly)
+    );
+    c.lock();
+
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert!(c.store().retained_rows(v.id).unwrap().is_empty());
+    assert_eq!(users(&c.items()), users(&want));
+}
+
+/// I5: writes made before the prompt are not pushed under the old keys
+/// while the device waits; the replay sends them under the new ones.
+#[test]
+fn candidate_holds_pending_vault_writes() {
+    let (_server, _x, mut c, f, out, _sk) = rotated_with(
+        |_| {},
+        |server, c, f| {
+            c.unlock(&f.sk);
+            let v = c.vault();
+            c.repo().save_item(&v, login(v.id, "eve", T0 + 80)).unwrap();
+            c.lock();
+            let _ = server;
+        },
+        |ch, _, _| {
+            !matches!(
+                ch.kind,
+                RecordKind::VaultKey
+                    | RecordKind::VaultMeta
+                    | RecordKind::Manifest
+                    | RecordKind::Item
+            )
+        },
+    );
+    // The stored state is still `Current` (no session looked yet): the
+    // prompt found now holds the writes anyway.
+    assert_eq!(state(&c), DeviceLineageState::Current);
+    assert!(prompt_of(&c).is_some());
+    let pending: Vec<_> = outbox(&c);
+    assert!(
+        pending.iter().all(|(ch, _)| ch.kind.is_immutable()),
+        "{pending:?}"
+    );
+    c.unlock(&f.sk);
+    assert!(outbox(&c).iter().all(|(ch, _)| ch.kind.is_immutable()));
+    c.lock();
+
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    // Phase 2 is not here: the replay waits, the writes stay held.
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.own_writes.replay.len(), 1);
+    let v = trust.own_writes.replay[0].vault;
+    assert!(outbox(&c).iter().all(|(ch, _)| {
+        let vault_row = matches!(
+            ch.kind,
+            RecordKind::Manifest | RecordKind::VaultKey | RecordKind::VaultMeta
+        ) && ch.id == v;
+        let item_row = ch.kind == RecordKind::Item
+            && ch
+                .data
+                .as_ref()
+                .is_some_and(|d| split_item_record(d).unwrap().0 == v);
+        !vault_row && !item_row
+    }));
+}
+
+/// Travel Mode writes are gated like the others (R10).
+#[test]
+fn travel_refused_while_candidate() {
+    let (_server, _a, mut c, f, out, _sk) = rotated();
+    c.unlock(&f.sk);
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
+    let upstream = c.store();
+    let ro = Some(Error::ReadOnly);
+    assert_eq!(c.repo().enter_travel(&upstream).err(), ro);
+    let parked = TravelState {
+        parked: BTreeMap::new(),
+        entered_at: T0,
+    };
+    assert_eq!(c.repo().exit_travel(&upstream, &parked).err(), ro);
+    assert_eq!(c.repo().exit_travel_unpinned(&upstream).err(), ro);
+}

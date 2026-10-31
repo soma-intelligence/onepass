@@ -65,7 +65,7 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chain::Seen;
 use crate::devices::DeviceEntry;
@@ -306,6 +306,20 @@ impl Repository<SyncStore> {
     /// (the stored epoch's rules, the store).
     pub fn rebase_report(&mut self) -> Result<RebaseReport> {
         let mut first_error = None;
+        // Key rotation v2 (spec 10.4): own writes of an identity left are
+        // replayed first, under the keys followed; their vaults' pending
+        // rows of that identity are never rebased (they were written under
+        // other keys), the replay settles them.
+        if let Err(e) = self.replay_own_writes() {
+            first_error.get_or_insert(e);
+        }
+        let mut replaying = BTreeSet::new();
+        if let Some(t) = crate::repo::trust_of(&self.store)? {
+            replaying = t.own_writes.replay_vaults();
+            if !t.retired.is_empty() {
+                replaying.extend(self.left_signed_vaults()?);
+            }
+        }
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
@@ -318,7 +332,8 @@ impl Repository<SyncStore> {
         if let Err(e) = self.drop_deleted_vault_writes() {
             first_error.get_or_insert(e);
         }
-        let held = self.store.vaults_needing_rebase()?;
+        let mut held = self.store.vaults_needing_rebase()?;
+        held.retain(|v| !replaying.contains(v));
         let pending_epoch = self.store.pending_epoch()?;
         let lost_epoch = pending_epoch.is_some() && (self.store.epoch_held()? || !held.is_empty());
         if let (true, Some(issued)) = (lost_epoch, pending_epoch) {
