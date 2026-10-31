@@ -8,8 +8,9 @@
 //!   data = `postcard(SignedManifest)`;
 //! - item records (`Item`), id = a fresh blob id per written version,
 //!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`;
-//! - signed device list (`DeviceList`) and vault list (`VaultList`), id =
-//!   account id, version = seq (see `lists`, `devices`, `vaultlist`).
+//! - signed device list (`DeviceList`), vault list (`VaultList`) and
+//!   contact book (`ContactBook`), id = account id, version = seq (see
+//!   `lists`, `devices`, `vaultlist`, `contact`).
 //!
 //! - restore epoch (`RestoreEpoch`), id = account id, version = epoch,
 //!   data = `postcard(SignedRestoreEpoch)` (see `crate::epoch`).
@@ -196,6 +197,9 @@ pub struct Repository<S: RecordStore> {
     /// 6.6): params, keyset, restore epoch and lists. The account id for
     /// generation 0, the identity id from generation 1 on.
     pub(crate) records_id: Id,
+    /// The contact book's alerts of this session (`contact_alerts`). In
+    /// memory only.
+    pub(crate) contact_alerts: Vec<crate::contact::ContactAlert>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -463,6 +467,7 @@ impl<S: RecordStore> Repository<S> {
             travel_parked: BTreeSet::new(),
             lists_forced: false,
             records_id: id,
+            contact_alerts: Vec::new(),
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, None, at));
@@ -591,6 +596,7 @@ impl<S: RecordStore> Repository<S> {
             travel_parked: BTreeSet::new(),
             lists_forced: false,
             records_id: params.id,
+            contact_alerts: Vec::new(),
         })
     }
 

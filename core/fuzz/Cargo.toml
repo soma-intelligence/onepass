@@ -179,3 +179,10 @@ path = "fuzz_targets/contact_card.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "contact_book"
+path = "fuzz_targets/contact_book.rs"
+test = false
+doc = false
+bench = false

@@ -1,5 +1,6 @@
 //! Signed, chained, monotone lists (milestone 2b, spec 4.1 and 4.2): the
-//! device list (`devices`) and the vault list (`vaultlist`).
+//! device list (`devices`), the vault list (`vaultlist`) and the contact
+//! book (`contact`, sharing spec 5.4).
 //!
 //! A list is one record per account (id = account id, version = `seq`)
 //! holding `postcard(Wire{body, sig})`, where `body` is the postcard of a
@@ -26,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::account::Account;
 use crate::chain::{ChainState, Seen};
+use crate::contact::ContactAlert;
 use crate::crypto::{HybridSignature, HybridVerifyingKey};
 use crate::devices::DeviceEntry;
 use crate::repo::Repository;
@@ -158,6 +160,8 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 fn rollback(domain: &[u8]) -> Error {
     if domain == DEVICE_LIST_DOMAIN {
         IntegrityError::DeviceListRollback.into()
+    } else if domain == crate::contact::CONTACT_BOOK_DOMAIN {
+        IntegrityError::ContactBookRollback.into()
     } else {
         IntegrityError::VaultListRollback.into()
     }
@@ -188,7 +192,8 @@ pub fn sign<E: MonotoneEntry>(
 /// (`InvalidFormat("signed list")`); then the history against `seen`, as for
 /// manifests: an older seq, the same seq with another hash, or the next seq
 /// that does not chain to `seen` is `DeviceListRollback` (domain
-/// `DEVICE_LIST_DOMAIN`) or `VaultListRollback` (any other domain); a larger
+/// `DEVICE_LIST_DOMAIN`), `ContactBookRollback` (`CONTACT_BOOK_DOMAIN`) or
+/// `VaultListRollback` (any other domain); a larger
 /// gap cannot be chained and is accepted. The account id is the caller's to
 /// check.
 pub fn verify<E: MonotoneEntry>(
@@ -276,13 +281,20 @@ pub(crate) fn rebase_entries<E: MonotoneEntry>(
     out
 }
 
-/// One of the account's two lists: its record kind, signature domain and
-/// slot in the chain state.
+/// One of the account's lists: its record kind, signature domain and slot
+/// in the chain state.
 pub(crate) trait AccountList: MonotoneEntry {
     const KIND: RecordKind;
     const DOMAIN: &'static [u8];
     fn seen(chain: &ChainState) -> Option<Seen>;
     fn set_seen(chain: &mut ChainState, seen: Seen);
+
+    /// What a rebase of `local` over `remote` must report beside the merge
+    /// (the contact book's genesis conflicts). None by default.
+    fn conflicts(local: &[Self], remote: &[Self]) -> Vec<ContactAlert> {
+        let _ = (local, remote);
+        Vec::new()
+    }
 }
 
 /// A list as read from the store: the stored record version (the
@@ -347,7 +359,9 @@ impl<S: RecordStore> Repository<S> {
     /// becomes the accepted one (`None` when there is none). For the
     /// owner's explicit choice of the server's state
     /// (`issue_restore_epoch_take_server`), after the pending lists were
-    /// dropped; the next persist keeps these pins (`lists_forced`).
+    /// dropped; the next persist keeps these pins (`lists_forced`). The
+    /// contact book is not a vault matter: it keeps its pending writes and
+    /// its pin.
     pub(crate) fn take_server_lists(&mut self) -> Result<()> {
         let id = self.records_id;
         let device_list = match self.store.get(RecordKind::DeviceList, id)? {

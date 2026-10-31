@@ -103,7 +103,7 @@ fn forbidden(c: char) -> bool {
         )
 }
 
-fn check_name(name: &str) -> Result<()> {
+pub(super) fn check_name(name: &str) -> Result<()> {
     let n = name.chars().count();
     if n == 0 || n > MAX_CONTACT_NAME_CHARS || name.chars().any(forbidden) {
         return Err(bad("contact card name"));

@@ -24,7 +24,8 @@
 //! for that vault (its signature and vault key are still checked). If the
 //! server manifest is exactly the local one, it is simply adopted.
 //!
-//! The signed lists (device list, vault list) are rebased the same way
+//! The signed lists (device list, vault list, contact book) are rebased
+//! the same way
 //! (`SyncStore::lists_needing_rebase`): the server list must chain to the
 //! ancestor the local list was built on, then the local list is rebuilt as
 //! the union of both (`lists::rebase_entries`), signed at the server's seq
@@ -68,6 +69,7 @@
 use std::collections::BTreeMap;
 
 use crate::chain::Seen;
+use crate::contact::ContactEntry;
 use crate::devices::DeviceEntry;
 use crate::epoch::{EpochReason, RestoreEpoch};
 use crate::lists::{AccountList, Stored, open_record, rebase_entries};
@@ -309,6 +311,7 @@ impl Repository<SyncStore> {
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
+                RecordKind::ContactBook => self.rebase_list::<ContactEntry>(),
                 _ => self.rebase_list::<VaultListEntry>(),
             };
             if let Err(e) = result {
@@ -458,6 +461,7 @@ impl Repository<SyncStore> {
             &local.entries,
             &server.body.entries,
         );
+        let alerts = E::conflicts(&local.entries, &server.body.entries);
         let previous = self.chain.clone();
         let forced = self.lists_forced;
         self.store.begin_batch()?;
@@ -486,6 +490,7 @@ impl Repository<SyncStore> {
             let _ = self.store.rollback_batch();
             return Err(e);
         }
+        self.contact_alerts.extend(alerts);
         Ok(())
     }
 
