@@ -1,0 +1,44 @@
+# Optional CI for the ProVerif models (spec 2026-10-26-formal-model, ruling F-04).
+# Runs by hand and when the models, the harness or this workflow change.
+name: formal
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "formal/**"
+      - "Makefile"
+      - ".github/workflows/formal.yml"
+  pull_request:
+    paths:
+      - "formal/**"
+      - "Makefile"
+      - ".github/workflows/formal.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  proverif:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+      # Same version as the local install (formal/README.md, docs/security/formal/README.md).
+      - name: Install ProVerif 2.05
+        run: opam install proverif.2.05 -y
+      - name: Version
+        run: opam exec -- proverif -help 2>&1 | head -n 1
+      # opam exec puts the opam switch bin (proverif) first in PATH.
+      - name: Run the models
+        run: opam exec -- make formal
+      - name: Upload ProVerif logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-out
+          path: formal/out
+          if-no-files-found: ignore

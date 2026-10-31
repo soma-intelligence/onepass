@@ -5,9 +5,10 @@
    Sources: core/onepass-bridge/src/{kem,transcript,kdf,pairing,session,
    channel,wire}.rs and their TypeScript twins
    extension/src/bridge/{kem,transcript,kdf,pairing,session,channel,
-   wire}.ts (same protocol, cross-checked by the shared test vectors), the host loop core/onepass-native-host/src/host.rs
-   (pairing, session), the extension client extension/src/bridge/client.ts
-   (pair), docs/security/README.md section 12.2, milestone 4 spec
+   wire}.ts (same protocol, cross-checked by the shared test vectors),
+   the host loop core/onepass-native-host/src/host.rs (pairing, session),
+   the extension client extension/src/bridge/client.ts (pair),
+   docs/security/README.md section 12.2, milestone 4 spec
    (docs/superpowers/specs/2026-10-25-milestone-4-extension-design.md)
    section 6.
 
