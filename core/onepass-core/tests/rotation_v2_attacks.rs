@@ -1395,3 +1395,48 @@ fn forged_device_list_revocation_never_erases() {
     a.save(&login(v.id, "erin", T0 + 70));
     assert_eq!(users(&a.items()), names(&["alice", "bob", "carol", "erin"]));
 }
+
+/// Carried item 7: the server serves records at a version above
+/// `i64::MAX` (the restore epoch of the identity left, the vault's
+/// manifest, a lineage record) in the middle of a rotation's fetch. Only
+/// those records are dropped: the fetch goes through, the follower follows
+/// and reads its vault.
+#[test]
+fn version_beyond_i64_never_wedges_a_fetch() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture(&mut server);
+    let mut c = device(&mut server, &a, &f, C);
+    let old_id = records_id(&a);
+    let forged = inflated_epoch(&mut a);
+    let v = a.vault().id;
+    let (ra, _) = rotate_on(&mut a, &f, &f.a.keys, vec![f.b().id()]);
+    sync(&mut server, &mut a).unwrap();
+    let manifest = server.get(RecordKind::Manifest, v).unwrap();
+    let mut lineage = server
+        .get(RecordKind::Lineage, lineage_id(&ra.head))
+        .unwrap();
+    lineage.id = Id::new();
+    for (kind, id, data) in [
+        (RecordKind::RestoreEpoch, old_id, forged),
+        (RecordKind::Lineage, lineage.id, lineage.data),
+        (RecordKind::Manifest, Id::new(), manifest.data),
+    ] {
+        server.replay(Record {
+            id,
+            kind,
+            version: u64::MAX,
+            data,
+        });
+    }
+    // `pull` unwraps every stage and the commit.
+    pull(&server, &mut c);
+    let p = prompt_of(&c).expect("a prompt");
+    assert_eq!(choice_hashes(&p), vec![ra.head]);
+    let (repo, _, _) = follow_rotation(c.store(), ra.head, PASSWORD, &f.c().keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(users(&c.items()), names(&["alice", "bob", "carol"]));
+    assert_eq!(
+        c.store().get(RecordKind::Lineage, lineage.id).unwrap(),
+        None
+    );
+}

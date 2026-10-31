@@ -1336,6 +1336,12 @@ impl SyncStore {
     ///
     /// While the Travel Mode hides vaults (`set_travel_hidden`), their
     /// records are dropped here: a fetch never brings them back.
+    ///
+    /// A change whose version does not fit the store's signed 64-bit
+    /// column (above `i64::MAX`: no honest writer gets there, every local
+    /// write checks it) is dropped here too, write or deletion, and the
+    /// rest of the fetch goes on: one forged record never wedges a fetch
+    /// (Task 19 carried item 7). Dropping a deletion only keeps a row.
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
         let hidden = self.travel_hidden()?;
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
@@ -1348,7 +1354,9 @@ impl SyncStore {
         if c.kind.is_immutable() && c.data.as_deref().is_some_and(|d| check_size(d).is_err()) {
             return Ok(());
         }
-        let v = to_i64(c.version)?;
+        let Ok(v) = to_i64(c.version) else {
+            return Ok(());
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO staging (kind, id, version, data, server_meta)
@@ -4579,6 +4587,39 @@ mod tests {
             };
             assert_eq!(s.put_if_version(r, None), Err(Error::Conflict));
         }
+    }
+
+    /// Carried item 7 (Task 19): a version above `i64::MAX` drops that
+    /// change alone; the others of the fetch commit, and nothing the
+    /// device holds goes.
+    #[test]
+    fn version_above_i64_max_drops_only_that_change() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (kept, bad, next) = (Id::new(), Id::new(), Id::new());
+        s.stage_remote(remote(RecordKind::VaultMeta, kept, 1, Some(vec![1])))
+            .unwrap();
+        s.commit_remote().unwrap();
+        for v in [i64::MAX as u64 + 1, u64::MAX] {
+            s.stage_remote(remote(RecordKind::VaultMeta, bad, v, Some(vec![2])))
+                .unwrap();
+            s.stage_remote(remote(RecordKind::VaultMeta, kept, v, None))
+                .unwrap();
+        }
+        s.stage_remote(remote(
+            RecordKind::VaultMeta,
+            next,
+            i64::MAX as u64,
+            Some(vec![3]),
+        ))
+        .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.get(RecordKind::VaultMeta, bad).unwrap(), None);
+        assert_eq!(
+            s.get(RecordKind::VaultMeta, kept).unwrap().unwrap().data,
+            vec![1]
+        );
+        let n = s.get(RecordKind::VaultMeta, next).unwrap().unwrap();
+        assert_eq!((n.version, n.data), (i64::MAX as u64, vec![3]));
     }
 
     #[test]
