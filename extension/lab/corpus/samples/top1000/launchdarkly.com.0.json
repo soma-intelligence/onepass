@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-10-27T22:20:00.370Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "book a demo"
+      ],
+      "fields": [
+        {
+          "after": "must be valid email. (example@yourdomain",
+          "ariaLabel": "email address",
+          "before": "systems that heal and optimize themselve",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "email address",
+          "name": "EmailInput",
+          "placeholder": "email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "request my demo"
+      ],
+      "fields": [
+        {
+          "before": "ail for a demo. book a demo * work email",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "Email",
+          "index": 0,
+          "label": "*work email",
+          "maxlength": 255,
+          "name": "Email",
+          "placeholder": "*work email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        },
+        {
+          "before": "* company website:",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "companyWebsite",
+          "index": 1,
+          "label": "*company website:",
+          "maxlength": 255,
+          "name": "companyWebsite",
+          "placeholder": "company website: (optional)",
+          "required": false,
+          "role": "organization",
+          "siblings": 0,
+          "tag": "input",
+          "type": "url",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "launchdarkly.com",
+  "iframes": [
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://go.launchdarkly.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://launchdarkly.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

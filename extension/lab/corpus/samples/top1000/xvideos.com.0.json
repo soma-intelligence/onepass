@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-10-27T23:57:48.519Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "login join for free premium best videos",
+          "before": "o language: your location : usa straight",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search x videos",
+          "maxlength": 2048,
+          "name": "k",
+          "placeholder": "search x videos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "sa join live cams live dating girlfriend",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search x videos",
+          "maxlength": 2048,
+          "name": "k",
+          "placeholder": "search x videos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "xvideos.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xvideos.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

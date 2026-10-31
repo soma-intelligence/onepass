@@ -8,11 +8,14 @@
 //
 // Submit events: `form` is the site's flow for the main form (entry or same
 // page in a frame), else the step ("password", "otp", "passkey", "decoy",
-// "oauth"); `fields` lists the fields found wrong.
+// "oauth", "step" for the later pages of a multi_step site); `fields` lists
+// the fields found wrong. A multi_step site checks each page's fields
+// (identifier, password, TOTP code) and serves the next page only to the
+// session that passed the previous one.
 import { randomBytes } from "node:crypto";
 import { totp } from "../../e2e/server.ts";
 import type { Role, Site, World } from "../gen/model.ts";
-import { PAGE_PATH, renderSitePage } from "../gen/render.ts";
+import { PAGE_PATH, renderSitePage, stepPath } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
 import type { Exchange, LabState } from "./server.ts";
 import { verifyAssertion } from "./webauthn.ts";
@@ -142,7 +145,7 @@ function accountOf(site: Site, st: LabState) {
 export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" | "frame"): void {
   const note = (e: { form: string; ok: boolean; fields: string[]; reason?: string }) =>
     st.ledger.note({ at: Date.now(), host: x.host, kind: "submit", ...e });
-  const page = (id: PageId, ctx: PageContext = {}) => x.html(renderSitePage(site, id, ctx));
+  const page = (id: PageId, ctx: PageContext = {}) => x.html(renderSitePage(site, id, ctx, { labelMarks: st.labelMarks }));
   const challenge = () => {
     const c = randomBytes(32).toString("base64url");
     x.session().challenge = c;
@@ -159,7 +162,9 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
   const frameOnly = new Set<string>([PAGE_PATH.frame, PAGE_PATH.password, PAGE_PATH.otp, PAGE_PATH.home, "/logout"]);
   if (mode === "frame" && !frameOnly.has(x.path)) return x.notFound();
 
+  const stepAt = site.steps ? stepIndex(x.path) : undefined;
   if (!x.post) {
+    if (stepAt !== undefined && stepAt > 0) return stepAt < site.steps!.length ? page("step", { step: stepAt }) : x.notFound();
     switch (x.path) {
       case PAGE_PATH.entry: {
         const passkeyEntry = site.flow === "login_passkey" && site.passkeyOnly;
@@ -192,6 +197,7 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
     note({ form: "decoy", ok: false, fields: Object.keys(x.body).filter((k) => x.body[k]), reason: "decoy" });
     return page("entry", { error: MSG.refused });
   }
+  if (site.flow === "multi_step" && stepAt !== undefined) return multiStepPost(site, x, st, stepAt, page, signIn);
   const known = [PAGE_PATH.entry, PAGE_PATH.frame, PAGE_PATH.password, PAGE_PATH.otp] as string[];
   if (!known.includes(x.path) || (x.path === PAGE_PATH.frame && !framed)) return x.notFound();
   const mainForm = formPage === "entry" || formPage === "frame";
@@ -290,6 +296,54 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
   note({ form: formName, ok: otpOk, fields: otpOk ? [] : [otpName], ...(otpOk ? {} : { reason: "wrong_code" }) });
   if (!otpOk) return page("otp", { error: MSG.code });
   return signIn(account.username);
+}
+
+/** Step of a multi_step path: 0 for "/", k for "/step/<k>", undefined otherwise. */
+function stepIndex(path: string): number | undefined {
+  if (path === PAGE_PATH.entry) return 0;
+  const m = /^\/step\/(\d{1,3})$/.exec(path);
+  return m ? Number(m[1]) : undefined;
+}
+
+function multiStepPost(site: Site, x: Exchange, st: LabState, k: number, page: (id: PageId, ctx?: PageContext) => void,
+  signIn: (user: string) => void): void {
+  const steps = site.steps!;
+  const account = accountOf(site, st);
+  if (k >= steps.length || !account) return x.notFound();
+  const pageId: PageId = k === 0 ? "entry" : "step";
+  const formName = k === 0 ? site.flow : "step";
+  const note = (e: { ok: boolean; fields: string[]; reason?: string }) =>
+    st.ledger.note({ at: Date.now(), host: x.host, kind: "submit", form: formName, ...e });
+  const hp = site.honeypot;
+  if (hp && steps[k]!.some((f) => f.role === hp.role) && (x.body[hp.name] ?? "").trim() !== "") {
+    note({ ok: false, fields: [hp.name], reason: "honeypot" });
+    return page(pageId, { step: k, error: MSG.refused });
+  }
+  const s = x.session();
+  if (k > 0 && (s.pending !== account.username || s.step !== k)) {
+    note({ ok: false, fields: [], reason: "no_pending" });
+    return page(pageId, { step: k, error: MSG.session });
+  }
+  let reason: string | undefined;
+  const wrong: string[] = [];
+  for (const f of steps[k]!) {
+    const v = x.body[f.name] ?? "";
+    const ok = f.role === "password" ? v === account.password
+      : f.role === "otp" ? account.totpSecret !== undefined && totpOk(account.totpSecret, v, Date.now())
+        : same(v, account.username);
+    if (ok) continue;
+    wrong.push(f.name);
+    reason ??= f.role === "password" ? "wrong_password" : f.role === "otp" ? "wrong_code" : "unknown_user";
+  }
+  note({ ok: wrong.length === 0, fields: wrong, ...(reason ? { reason } : {}) });
+  if (wrong.length > 0) return page(pageId, { step: k, error: reason === "wrong_code" ? MSG.code : MSG.credentials });
+  if (k === steps.length - 1) {
+    delete s.step;
+    return signIn(account.username);
+  }
+  s.pending = account.username;
+  s.step = k + 1;
+  return x.redirect(stepPath(k + 1));
 }
 
 function passkeyPost(site: Site, x: Exchange, st: LabState): void {

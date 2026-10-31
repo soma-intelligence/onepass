@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-27T22:06:44.144Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "www.paypal.com",
+  "iframes": [
+    {
+      "origin": "https://www.paypalobjects.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.paypal.com/us/digital-wallet/ways-to-pay/buy-now-pay-later",
+  "status": "ok",
+  "webauthnCalls": []
+}

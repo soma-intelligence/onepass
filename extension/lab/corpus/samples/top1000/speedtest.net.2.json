@@ -1,0 +1,97 @@
+{
+  "captured_at": "2026-10-27T22:55:58.744Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "after": "choose a password",
+          "autocomplete": "email",
+          "before": "email address (this will be your login)",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email address (this will be your login)",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "password again",
+          "autocomplete": "new-password",
+          "before": "choose a password",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "choose a password",
+          "name": "password",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "by creating an account you confirm that",
+          "autocomplete": "new-password",
+          "before": "password again",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "password-confirm",
+          "index": 2,
+          "label": "password again",
+          "name": "passwordConfirm",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "create account already have an account?",
+          "before": "scribe from the newsletters at any time.",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 3,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "speedtest.net",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://speedtest.net/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

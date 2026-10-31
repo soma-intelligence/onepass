@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:54:02.551Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "linkedin.com",
+  "source": "rendered",
+  "source_url": "https://linkedin.com/",
+  "status": "error: http 403"
+}

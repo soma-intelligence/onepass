@@ -1,0 +1,193 @@
+{
+  "captured_at": "2026-10-27T22:12:48.381Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "your name*",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "Region",
+          "index": 0,
+          "label": "region*",
+          "name": "Region",
+          "required": true,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "company *",
+          "before": "your name*",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "name",
+          "index": 1,
+          "label": "your name*",
+          "maxlength": 256,
+          "name": "name",
+          "required": true,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "business email *",
+          "before": "company *",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "CompanyName",
+          "index": 2,
+          "label": "company*",
+          "maxlength": 256,
+          "name": "Company",
+          "required": true,
+          "role": "organization",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "any other details we should have? *",
+          "before": "business email *",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "email",
+          "index": 3,
+          "label": "business email*",
+          "maxlength": 256,
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 5,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "do you require urgent onboarding?",
+          "before": "any other details we should have? *",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "AdditionalDetails",
+          "index": 4,
+          "label": "any other details we should have?*",
+          "maxlength": 5000,
+          "name": "Additional-Details",
+          "placeholder": "for example: what is your use case, and approximate monthly ",
+          "required": true,
+          "role": "unknown",
+          "siblings": 5,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "platform",
+        "use cases",
+        "resources",
+        "what is transaction fraud detection? - +",
+        "how are fraudulent transactions detected? + -",
+        "what are the red flags of transaction fraud? + -",
+        "what is the difference between fraud detection and fraud pre",
+        "what is an unusually high chargeback rate? + -",
+        "how does hcaptcha enterprise detect transaction fraud withou",
+        "submit"
+      ],
+      "fields": [
+        {
+          "before": ", and abuse contact sales sign up log in",
+          "depth": 3,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "transaction fraud real-time transaction",
+          "depth": 3,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "h-captcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "before": "ng went wrong while submitting the form.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "g-recaptcha-response-1pbmbwx1fyme",
+          "index": 2,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "by entering your email, you agree to our",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "h-captcha-response-1pbmbwx1fyme",
+          "index": 3,
+          "name": "h-captcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "hcaptcha.com",
+  "iframes": [
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://hcaptcha.com/transaction-fraud",
+  "status": "ok",
+  "webauthnCalls": []
+}

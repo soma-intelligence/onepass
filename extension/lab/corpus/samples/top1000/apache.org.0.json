@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T22:03:46.042Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "clear"
+      ],
+      "fields": [
+        {
+          "after": "clear software for the public good ¶ the",
+          "before": "nclusion newsroom contact sponsor search",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "apache.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://apache.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-10-27T22:13:01.071Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "getting started",
+        "help categories",
+        "sign in",
+        "manage your roku account",
+        "manage subscriptions",
+        "manage payments & review charges"
+      ],
+      "fields": [
+        {
+          "after": "​ facebook twitter youtube tiktok linked",
+          "before": "opeblack stay updated on news and offers",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "enter your email address",
+          "name": "email",
+          "placeholder": "enter your email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "support.roku.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://support.roku.com/category/manage-account-subscription-and-payments",
+  "status": "ok",
+  "webauthnCalls": []
+}

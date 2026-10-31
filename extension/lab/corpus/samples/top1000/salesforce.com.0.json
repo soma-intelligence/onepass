@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-27T22:17:40.704Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "slack",
+        "sales",
+        "service",
+        "marketing",
+        "commerce",
+        "small business",
+        "agentforce",
+        "customer 360",
+        "data 360",
+        "tableau",
+        "salesforce platform",
+        "details"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "salesforce.com",
+  "iframes": [
+    {
+      "origin": "https://play.vidyard.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://<redacted>.fls.doubleclick.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://salesforce.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

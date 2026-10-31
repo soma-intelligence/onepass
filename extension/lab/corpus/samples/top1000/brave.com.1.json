@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-27T22:15:53.788Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "create account"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "full name",
+          "autocomplete": "name",
+          "before": "nt to get started with brave search api.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "name",
+          "index": 0,
+          "label": "full name",
+          "maxlength": 255,
+          "name": "name",
+          "placeholder": "full name",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "email",
+          "autocomplete": "email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email",
+          "index": 1,
+          "label": "email",
+          "name": "email",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "show password create account already hav",
+          "ariaLabel": "password",
+          "autocomplete": "new-password",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "password",
+          "index": 2,
+          "label": "password",
+          "name": "password",
+          "placeholder": "password",
+          "required": true,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "api-dashboard.search.brave.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://api-dashboard.search.brave.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

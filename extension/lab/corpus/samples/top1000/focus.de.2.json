@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:04:28.951Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "focus.de",
+  "source": "rendered",
+  "source_url": "https://focus.de/login",
+  "status": "error: http 404"
+}

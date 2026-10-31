@@ -13,6 +13,14 @@ apple/DerivedData/
 
 # Autofill lab run output
 extension/lab/out/
+extension/dist-lab/
 
 # ProVerif (formal/run.sh logs and intermediate files)
 formal/out/
+
+# Recorded form flows (private corpus)
+extension/lab/corpus/private/
+
+# ML project
+ml/.venv/
+ml/out/

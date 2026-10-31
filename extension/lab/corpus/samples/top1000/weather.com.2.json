@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T22:13:30.756Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up for our newsletterschevron up",
+        "sign in.",
+        "add a city or zip code for your forecast",
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "email address already have an account? s",
+          "autocomplete": "email",
+          "before": "k sign up for our newsletters chevron up",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "_R_3ntbsl66bsnopfivb_",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "weather.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://weather.com/newsletters",
+  "status": "ok",
+  "webauthnCalls": []
+}

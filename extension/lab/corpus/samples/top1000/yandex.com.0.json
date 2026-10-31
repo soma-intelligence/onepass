@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T22:37:27.016Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search with yandex ai",
+          "ariaLabel": "request",
+          "autocomplete": "off",
+          "before": "eo maps translate weather mail games all",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "text",
+          "index": 0,
+          "label": "request",
+          "maxlength": 400,
+          "name": "text",
+          "placeholder": "search with yandex ai",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "yandex.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://yandex.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

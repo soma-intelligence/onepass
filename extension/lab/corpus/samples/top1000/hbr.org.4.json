@@ -1,0 +1,113 @@
+{
+  "captured_at": "2026-10-28T00:12:46.523Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search",
+        "submit"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "search",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "term",
+          "placeholder": "search hbr.org",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "please enter a search term submit sugges",
+          "autocomplete": "off",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 1,
+          "label": "search hbr.org",
+          "name": "term",
+          "placeholder": "search hbr.org",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "skip to content",
+        "subscribe",
+        "sign in",
+        "account menu account menu account menu hi, guest",
+        "search menu",
+        "subscribe",
+        "sign in",
+        "account menu account menu account menu hi, guest",
+        "search menu",
+        "subscribe",
+        "sign in",
+        "account menu account menu account menu hi, guest"
+      ],
+      "fields": [
+        {
+          "after": "your subscriptions you are not subscribe",
+          "before": "tter. preview sign up subscribed filter:",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "filter-newsletter",
+          "index": 0,
+          "label": "filter:",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "hing is an affiliate of harvard business",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "hbr.org",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    },
+    {
+      "origin": "https://platform.twitter.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://hbr.org/email-newsletters",
+  "status": "ok",
+  "webauthnCalls": []
+}

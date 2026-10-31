@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-10-28T00:07:21.890Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "show password",
+        "log in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "before": "username or email",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "username",
+          "index": 0,
+          "label": "username or email",
+          "maxlength": 50,
+          "name": "username",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "show password forgot password?",
+          "autocomplete": "off",
+          "before": "password",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "no-ip.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://no-ip.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

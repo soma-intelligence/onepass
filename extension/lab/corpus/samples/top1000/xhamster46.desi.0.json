@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-28T00:26:12.876Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "en login sign up for free videos best vi",
+          "ariaLabel": "search for videos edit text, blank. to perform search, press",
+          "autocomplete": "off",
+          "before": "us",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for videos edit text, blank. to perform search, press",
+          "maxlength": 120,
+          "name": "q",
+          "placeholder": "search for videos",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "login",
+        "try for free",
+        "online janu wait 1 min plz",
+        "online ebonie rose",
+        "i'm 18 or older - enter xhamster",
+        "ok"
+      ],
+      "fields": [
+        {
+          "after": "american 4k porn hd videos vr porn the h",
+          "before": "026 gifs liked watch later watch history",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "filter by category...",
+          "placeholder": "filter by category...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "xhamster46.desi",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xhamster46.desi/",
+  "status": "ok",
+  "webauthnCalls": []
+}

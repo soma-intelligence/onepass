@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-28T00:18:28.917Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        ""
+      ],
+      "fields": [
+        {
+          "depth": 7,
+          "hasPattern": false,
+          "id": "site-search",
+          "index": 0,
+          "label": "search",
+          "maxlength": 256,
+          "name": "query",
+          "placeholder": "search...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        ""
+      ],
+      "fields": [
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "id": "subscribe-email",
+          "index": 0,
+          "label": "subscribe",
+          "maxlength": 256,
+          "name": "Subscribe-Email",
+          "placeholder": "subscribe",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "classlink.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://classlink.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

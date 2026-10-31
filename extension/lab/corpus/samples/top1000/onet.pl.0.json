@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-28T00:23:31.383Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "react",
+  "host": "onet.pl",
+  "iframes": [
+    {
+      "origin": "https://csr.onet.pl",
+      "sameSite": true
+    }
+  ],
+  "lang": "pl",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://onet.pl/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:36:12.783Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "name.com",
+  "source": "rendered",
+  "source_url": "https://name.com/signin",
+  "status": "error: http 404"
+}

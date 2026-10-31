@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T21:53:21.007Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "search search with your voice sign in tr",
+          "autocomplete": "off",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "search_query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "youtube.com",
+  "iframes": [
+    {
+      "origin": "https://accounts.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://youtube.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

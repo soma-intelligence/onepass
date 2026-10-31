@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:21:13.472Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "character.ai",
+  "source": "rendered",
+  "source_url": "https://character.ai/signup",
+  "status": "error: http 404"
+}

@@ -1,0 +1,66 @@
+{
+  "captured_at": "2026-10-27T23:58:15.380Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up",
+        "manage options",
+        "accept all",
+        "functional only",
+        "reject all"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "dea sign up for a free account. or email",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "<redacted>",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "we value your privacy this site uses coo",
+          "before": "have an account? log in select language",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "trustarc-lang-select",
+          "index": 1,
+          "label": "select language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "mixpanel.com",
+  "iframes": [
+    {
+      "origin": "https://<redacted>.cdn.optimizely.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://ct.pinterest.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mixpanel.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

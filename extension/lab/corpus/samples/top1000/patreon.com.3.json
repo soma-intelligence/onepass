@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-28T00:16:52.107Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in",
+          "ariaLabel": "search",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "query",
+          "index": 0,
+          "label": "search",
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "categories creator topics member topics",
+          "ariaLabel": "search",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "query",
+          "index": 0,
+          "label": "search",
+          "name": "query",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "support.patreon.com",
+  "iframes": [
+    {
+      "origin": "https://cal.assembledhq.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://support.patreon.com/hc/en-us/sections/360012038951-Payments",
+  "status": "ok",
+  "webauthnCalls": []
+}

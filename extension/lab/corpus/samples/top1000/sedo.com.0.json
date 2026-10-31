@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-27T23:53:37.895Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "login my sedo username my sedo add domai",
+          "before": "your keyword",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "search-input",
+          "index": 0,
+          "label": "your keyword",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "omotions and domain news. i can un email",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "footer-newsletter-email",
+          "index": 0,
+          "label": "email",
+          "placeholder": "your email address",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "sedo.com",
+  "iframes": [
+    {
+      "origin": "https://app.usercentrics.eu",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sedo.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

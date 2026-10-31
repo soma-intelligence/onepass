@@ -147,6 +147,8 @@ export interface FillerOptions {
   analyze: () => PageAnalysis;
   /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
+  /** Called with each control written and the role it received (never the value). */
+  onFill?: (el: Element, role: FieldRole) => void;
 }
 
 export interface Filler {
@@ -231,6 +233,7 @@ export function createFiller(opts: FillerOptions): Filler {
       const put = (slot: Slot, part: number | undefined, value: string): boolean => {
         const el = target(slot, part);
         if (!el || !write(el, value, slot.role)) return false;
+        opts.onFill?.(el, slot.role);
         written.push({ slot, part, el, value });
         return true;
       };

@@ -1,0 +1,117 @@
+{
+  "captured_at": "2026-10-27T22:19:18.430Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "when autocomplete results are available use up and down arro",
+          "autocomplete": "off",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "when autocomplete results are available use up and down arro",
+          "name": "s",
+          "placeholder": "search magnite.com",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        },
+        {
+          "after": "stay ahead of what’s next. build with us",
+          "ariaLabel": "filter by tag",
+          "before": "advanced search",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 1,
+          "label": "filter by tag",
+          "name": "swp_tax_limiter[post_tag]",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "after": "sign up already subscribed? click here t",
+          "before": "be to our most recent news and insights.",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "your email address",
+          "name": "email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "search",
+        "login",
+        "language",
+        "open search form",
+        "open menu",
+        "close search",
+        "insights",
+        "topics",
+        "about us",
+        "our company",
+        "careers",
+        "corporate responsibility"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "vendor list search",
+          "before": "vendor details back button vendors list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "vendor list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search vendors",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "rubiconproject.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://rubiconproject.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

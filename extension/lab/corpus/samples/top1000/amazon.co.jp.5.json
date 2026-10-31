@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:02:11.161Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "www.amazon.co.jp",
+  "source": "rendered",
+  "source_url": "https://www.amazon.co.jp/-/en/ap/signin",
+  "status": "error: timeout"
+}

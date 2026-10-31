@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-10-27T22:13:34.267Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "let's get started"
+      ],
+      "fields": [
+        {
+          "after": "*",
+          "before": "y create your free account * work email:",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "Email",
+          "index": 0,
+          "label": "*work email:",
+          "maxlength": 255,
+          "name": "Email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "amplitude.com",
+  "iframes": [
+    {
+      "origin": "https://info.amplitude.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://api.vector.co",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amplitude.com/get-started",
+  "status": "ok",
+  "webauthnCalls": []
+}

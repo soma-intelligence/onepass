@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T23:01:47.399Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "ctrl+k",
+          "ariaLabel": "search statistics, reports...",
+          "autocomplete": "off",
+          "before": "sses & enterprises academia & government",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search statistics, reports...",
+          "name": "q",
+          "placeholder": "search statistics, reports...",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "statista.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://statista.com/accounts/individuals",
+  "status": "ok",
+  "webauthnCalls": []
+}

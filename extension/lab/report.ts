@@ -2,6 +2,7 @@
 // rates and renders a French Markdown report. Results carry field names, hosts
 // and verdicts, never a value, so neither does the report. Type-only import:
 // this module runs under `node --experimental-strip-types` through cli.ts.
+import type { Profile } from "./gen/population.ts";
 import type { Result } from "./run/oracle.ts";
 
 export interface Rate {
@@ -21,6 +22,8 @@ export interface Summary {
   byTrait: Record<string, Rate>;
   byLang: Record<string, Rate>;
   byDriver: Record<string, Rate>;
+  /** Simulated user (population.ts); results without a profile belong to the default one, "p0". */
+  byProfile: Record<string, Rate>;
   /** The bench self-check (driver passkey_control, no extension): out of every rate above but byDriver. */
   control: Rate;
   /** fail, leak and lab_error verdicts of the bench self-check. */
@@ -133,6 +136,7 @@ export function summarize(all: Result[]): Summary {
     byTrait: group(results, (r) => (r.traits.length > 0 ? r.traits : ["(aucun)"])),
     byLang: group(results, (r) => [r.lang]),
     byDriver: group(all, (r) => [r.driver]),
+    byProfile: group(results, (r) => [r.profile ?? "p0"]),
     control,
     controlFailures: bySiteDriver(checks.filter((r) => r.verdict === "fail" || r.verdict === "leak" || r.verdict === "lab_error")),
     failures: bySiteDriver(results.filter((r) => r.verdict === "fail" || r.verdict === "leak")),
@@ -188,6 +192,23 @@ function oneClickTable(s: Summary): string[] {
   return out;
 }
 
+const BEHAVIOUR_FR: Record<Profile["behaviour"], string> = {
+  complete: "va au bout", partial: "vide un champ rempli avant d'envoyer", corrects_field: "corrige un champ rempli avant d'envoyer",
+  abandons_step: "abandonne après la première étape",
+};
+
+/** What each profile is, in one line (nothing when the world has the single default profile). */
+function profileLines(profiles: Profile[] | undefined): string[] {
+  if (!profiles || profiles.length === 0) return [];
+  const out = ["Profils simulés (l'oracle juge le remplissage de l'extension, jamais la correction de l'utilisateur) :", ""];
+  for (const p of profiles) {
+    const vault = p.vaultSize === 0 ? "coffre vide" : p.vaultSize === 1 ? "coffre du monde seul" : `coffre de ${p.vaultSize} éléments`;
+    const extras = [p.duplicates > 0 ? `${p.duplicates} doublon(s)` : "", p.multiAccount ? "plusieurs comptes par site" : ""].filter(Boolean);
+    out.push(`- ${p.id} : ${[vault, ...extras, `pays ${p.country}, langue ${p.lang}`, BEHAVIOUR_FR[p.behaviour]].join(", ")}`);
+  }
+  return [...out, ""];
+}
+
 function scenarioLine(r: Result): string {
   const traits = r.traits.length > 0 ? r.traits.join(", ") : "aucun";
   return `- site ${r.site} (${r.flow}, ${r.driver}, traits : ${traits}, langue ${r.lang}) : ${r.cause ?? "sans cause"}. Rejeu : \`${r.repro}\``;
@@ -202,7 +223,7 @@ function countBy<T>(items: T[], key: (t: T) => string): [string, T[]][] {
   return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 }
 
-export function renderReport(world: { seed: string; sites: number }, s: Summary, meta: { date?: string; commit?: string; durationMin?: number }): string {
+export function renderReport(world: { seed: string; sites: number; profiles?: Profile[] }, s: Summary, meta: { date?: string; commit?: string; durationMin?: number }): string {
   const o = s.overall;
   const l: string[] = [];
   l.push(`# Rapport du laboratoire d'autofill`, "");
@@ -219,7 +240,7 @@ export function renderReport(world: { seed: string; sites: number }, s: Summary,
   l.push(`- Envois automatiques hors connexion (\`auto_submit_outside_login\`) : ${auto}${auto > 0 ? " (le passage est rouge)" : ""}`, "");
   l.push("## Réussite en un clic", "", ...oneClickTable(s));
   l.push("## Taux de réussite", "");
-  l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver));
+  l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver), ...table("Par profil", s.byProfile), ...profileLines(world.profiles));
 
   l.push("## Contrôle du banc", "");
   const c = s.control;

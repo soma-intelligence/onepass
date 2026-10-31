@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:22:16.989Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "ys7.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ys7.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

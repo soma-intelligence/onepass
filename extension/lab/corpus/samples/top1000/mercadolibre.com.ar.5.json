@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:20:25.704Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "mercadolibre.com.ar",
+  "source": "rendered",
+  "source_url": "https://mercadolibre.com.ar/signup",
+  "status": "error: http 404"
+}

@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-10-27T23:27:24.023Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "reject all",
+        "allow all",
+        "show details (necessary)",
+        "show details (preferences)",
+        "show details (marketing)",
+        "show details (statistics)",
+        "show details (unclassified)",
+        "allow selection",
+        "sign up for free",
+        "templates",
+        "gateways",
+        "more"
+      ],
+      "fields": [
+        {
+          "after": "terms & conditions privacy policy securi",
+          "ariaLabel": "change language preference",
+          "before": "re registered trademarks of jotform inc.",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "jfFooterLanguage",
+          "index": 0,
+          "label": "change language preference",
+          "name": "jfFooterLanguage",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "jotform.com",
+  "iframes": [
+    {
+      "origin": "https://www.jotform.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jotform.com/online-payments/",
+  "status": "ok",
+  "webauthnCalls": []
+}

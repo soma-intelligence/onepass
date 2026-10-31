@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-10-27T22:54:41.565Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "speedtest.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://speedtest.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}

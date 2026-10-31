@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-10-27T22:40:44.524Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "united states (en)",
+        "products",
+        "solutions",
+        "learning & support",
+        "developers",
+        "company",
+        "products",
+        "solutions",
+        "learning & support",
+        "developers",
+        "company",
+        "united states (en)"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "mpanies to build back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "okta.com",
+  "iframes": [
+    {
+      "origin": "https://play.vidyard.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.okta.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.okta.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.okta.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://auth0.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://okta.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

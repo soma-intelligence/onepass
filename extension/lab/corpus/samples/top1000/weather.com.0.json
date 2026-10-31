@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-27T22:13:09.326Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "weather.com",
+  "iframes": [
+    {
+      "origin": "https://imasdk.googleapis.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://weather.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

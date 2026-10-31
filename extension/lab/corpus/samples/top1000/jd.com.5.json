@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:26:09.982Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "jd.com",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://jd.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

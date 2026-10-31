@@ -24,6 +24,14 @@ node build.mjs --dev-host  # Chrome et Firefox parlent à l'hôte de développem
 
 Chrome et Firefox parlent par défaut à l'hôte `me.somalabs.onepass`, le relais de l'app Mac (section "App Mac"). `--dev-host` construit pour l'hôte de développement `me.somalabs.onepass.dev` ; les tests de bout en bout et le labo le passent. Un build ne parle qu'à un seul hôte, sans repli.
 
+Classifieur de champs : par défaut l'heuristique (`ONEPASS_CLASSIFIER=heuristic`), sans modèle ni code `onnxruntime-web`, et avec la CSP habituelle. Un build avec modèle prend `ONEPASS_CLASSIFIER=gbm` (modèle A) ou `encoder` (modèle B) et `ONEPASS_MODEL_DIR`, le dossier qui contient `gbm.onnx`, ou `encoder.onnx` et `tokenizer.json` (sortie de `ml/`, jamais commitée) :
+
+```sh
+ONEPASS_CLASSIFIER=gbm ONEPASS_MODEL_DIR=../ml/out/bench-model node build.mjs chromium
+```
+
+Le build copie alors le modèle dans `model/` et le fichier WASM d'`onnxruntime-web` dans `ort/`, et ajoute `'wasm-unsafe-eval'` à la CSP des pages de l'extension. L'inférence tourne dans le service worker ; le content script n'envoie que les traits des champs, jamais leur valeur. Un modèle dont `feature_version`, `vectorizer_version`, la liste des étiquettes ou (pour `gbm`) `vector_dim` ne correspondent pas à ce build est refusé, et l'heuristique reste en place. Les règles de sécurité passent après le modèle : un champ invisible reste `unknown`, le modèle n'est jamais consulté dans le cadre d'un autre site (où tout remplissage est refusé de toute façon), et il ne lève jamais un refus. `npm run e2e` avec ces variables lance aussi `e2e/classifier.spec.ts` (chargement du modèle dans Chromium, temps par formulaire).
+
 ## Identifiant de l'extension
 
 Le manifeste Chromium n'a pas de champ `key` : l'identifiant est calculé par Chrome à partir du chemin du dossier chargé (`dist/chromium`). Il change donc d'une machine à l'autre ; le manifeste de l'hôte natif doit lister l'identifiant effectivement obtenu. Firefox utilise `onepass@somalabs.me`.

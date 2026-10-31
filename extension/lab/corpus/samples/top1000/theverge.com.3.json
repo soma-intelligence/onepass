@@ -1,0 +1,83 @@
+{
+  "captured_at": "2026-10-28T00:03:15.599Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "light system dark tech expand amazon app",
+          "autocomplete": "off",
+          "before": "logo. login / sign up close close search",
+          "depth": 14,
+          "hasPattern": false,
+          "id": ":R56k5mn6:",
+          "index": 0,
+          "label": "search",
+          "maxlength": 255,
+          "name": "query",
+          "placeholder": "search",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "notifications",
+        "notifications",
+        "hamburger navigation button",
+        "notifications",
+        "notifications",
+        "hamburger navigation button",
+        "closeclose",
+        "light",
+        "system",
+        "dark",
+        "techexpand",
+        "reviewsexpand"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "vendor list search",
+          "before": "vendor details back button vendors list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "vendor list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search vendors",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "theverge.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://theverge.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

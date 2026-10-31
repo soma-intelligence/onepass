@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-28T00:04:30.173Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with orcid",
+        "continue with esot",
+        "continue with linkedin",
+        "continue with facebook",
+        "continue with email"
+      ],
+      "fields": [
+        {
+          "after": "continue with email by registering you a",
+          "before": "nue with facebook or enter email address",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "mvrcrauzj0mng4o2oen",
+          "index": 0,
+          "label": "or enter email address",
+          "name": "emailAddress",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "vue",
+  "host": "frontiersin.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://frontiersin.org/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

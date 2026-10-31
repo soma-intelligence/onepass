@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:19:43.724Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "rubiconproject.com",
+  "source": "rendered",
+  "source_url": "https://rubiconproject.com/register",
+  "status": "error: http 404"
+}

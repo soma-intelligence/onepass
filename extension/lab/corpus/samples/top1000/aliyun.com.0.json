@@ -1,0 +1,94 @@
+{
+  "captured_at": "2026-10-27T22:22:38.095Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "models",
+        "overview",
+        "solutions",
+        "pricing",
+        "resources",
+        "partners",
+        "support",
+        "search icon",
+        "see all results for \"\"",
+        "en",
+        "featured products",
+        "ai & machine learning"
+      ],
+      "fields": [
+        {
+          "after": "see all results for \"\" ai assistant en c",
+          "before": "g resources partners support search icon",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search icon",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "contact us sales support live-chat with",
+          "before": "liance reporting channel service notices",
+          "depth": 3,
+          "hasPattern": false,
+          "id": "alicloud-v3-footer-version",
+          "index": 1,
+          "label": "why alibaba cloud about alibaba cloud asia accelerator our g",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "after": "featured products ai & machine learning",
+          "before": "latest news and media releases products",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 2,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "after": "solutions by industry technical solution",
+          "before": "apsara stack featured products solutions",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 3,
+          "label": "search",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "aliyun.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://aliyun.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T22:40:48.859Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "skip navigation",
+        "menu",
+        "more"
+      ],
+      "fields": [
+        {
+          "after": "the walt disney company disney parks my",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchBarNav",
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "go.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://go.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

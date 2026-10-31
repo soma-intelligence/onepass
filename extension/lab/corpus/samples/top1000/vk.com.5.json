@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-27T22:05:14.058Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "ою проблему, и мы постараемся вам помочь",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 0,
+          "label": "напишите сообщение...",
+          "maxlength": 5000,
+          "name": "message",
+          "placeholder": "напишите сообщение...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "vk.com",
+  "iframes": [],
+  "lang": "ru",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://vk.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

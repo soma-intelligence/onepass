@@ -1,0 +1,148 @@
+{
+  "captured_at": "2026-10-27T22:20:31.981Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "services security news tapo store search",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search all",
+          "maxlength": 100,
+          "name": "q",
+          "placeholder": "search all",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "tp-link, reliably smart search menu",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search all",
+          "maxlength": 100,
+          "name": "q",
+          "placeholder": "search all",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "email address email error subscribe",
+          "autocomplete": "off",
+          "before": "the first to get exclusive deals & news",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "tp-follow-subscribe-input",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "your privacy choices",
+        "okay",
+        "close",
+        "where to buy",
+        "more products",
+        "search",
+        "search",
+        "menu",
+        "submit",
+        "recommended",
+        "latest",
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "chinese english japanese vietnamese dutc",
+          "autocomplete": "off",
+          "before": "her tracking your privacy choices . okay",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "请选择",
+          "placeholder": "请选择",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "skip to footer enter ↵ click to skip the",
+          "autocomplete": "off",
+          "before": "ide animation reading guide useful links",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "please choose",
+          "placeholder": "please choose",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "tp-link.com",
+  "iframes": [
+    {
+      "origin": "https://www.youtube.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tp-link.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

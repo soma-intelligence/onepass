@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:01:22.952Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "vivo.com.cn",
+  "source": "rendered",
+  "source_url": "https://vivo.com.cn/account",
+  "status": "error: http 404"
+}

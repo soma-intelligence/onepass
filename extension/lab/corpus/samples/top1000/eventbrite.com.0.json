@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:04:08.100Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "eventbrite.com",
+  "source": "rendered",
+  "source_url": "https://eventbrite.com/",
+  "status": "error: timeout"
+}

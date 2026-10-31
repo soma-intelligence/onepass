@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-10-27T22:08:51.923Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with email"
+      ],
+      "fields": [
+        {
+          "depth": 8,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "email",
+          "before": "email",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "P0-0",
+          "index": 1,
+          "label": "email",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "profile.theguardian.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://profile.theguardian.com/signin",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,42 @@
+{
+  "captured_at": "2026-10-27T22:15:42.594Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search { \"status\": \"fail\" , \"message\": \"",
+          "autocomplete": "off",
+          "before": "on api demo search any ip address/domain",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "query ip/domain",
+          "name": "ip",
+          "placeholder": "query ip/domain",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ip-api.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ip-api.com/register",
+  "status": "ok",
+  "webauthnCalls": []
+}

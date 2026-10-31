@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-10-27T23:45:20.178Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "bild.de",
+  "iframes": [
+    {
+      "origin": "https://www.bild.de",
+      "sameSite": true
+    },
+    {
+      "origin": "https://cmp2.bild.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bild.de/ratgeber/sparfochs/sparfochs/neuer-newsletter-richtig-viel-geld-sparen-mit-dem-sparfochs-jetzt-hier-anmelden-83601926.bild.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

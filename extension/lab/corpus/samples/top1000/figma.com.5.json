@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-28T00:12:30.936Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue with google",
+        "continue with email"
+      ],
+      "fields": [
+        {
+          "after": "continue with email this website uses co",
+          "autocomplete": "username",
+          "before": "e to figma continue with google or email",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email",
+          "name": "email",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "figma.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://figma.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

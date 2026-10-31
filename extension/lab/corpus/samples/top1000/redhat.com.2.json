@@ -1,0 +1,80 @@
+{
+  "captured_at": "2026-10-27T23:33:22.833Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "×"
+      ],
+      "fields": [
+        {
+          "after": "× i'd like to: start a trial buy a learn",
+          "ariaLabel": "search",
+          "before": "tem catalog. console docs support search",
+          "depth": 8,
+          "hasPattern": false,
+          "id": "nav-search-input",
+          "index": 0,
+          "label": "search",
+          "maxlength": 128,
+          "name": "?",
+          "placeholder": "enter your search term",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "×"
+      ],
+      "fields": [
+        {
+          "after": "contact us virtual event series what’s n",
+          "before": "for some services. change page language",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "lang-selection",
+          "index": 0,
+          "label": "change page language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "red hat legal and privacy links about re",
+          "before": "social impact jobs change page language",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "lang-selection-footer",
+          "index": 1,
+          "label": "change page language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.redhat.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 3,
+  "source": "rendered",
+  "source_url": "https://www.redhat.com/en/events/whats-next/open-source-security",
+  "status": "ok",
+  "webauthnCalls": []
+}

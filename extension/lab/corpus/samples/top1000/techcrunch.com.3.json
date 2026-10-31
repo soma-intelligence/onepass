@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T23:25:18.779Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "close",
+        "close",
+        "mobile menu toggle",
+        "buy now",
+        "show pass perks",
+        "buy now",
+        "show pass perks",
+        "buy now",
+        "show pass perks",
+        "buy now",
+        "show pass perks",
+        "buy now"
+      ],
+      "fields": [
+        {
+          "after": "something went wrong. disable your adblo",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 0,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "techcrunch.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://techcrunch.com/events/techcrunch-founder-summit-2026/tickets/",
+  "status": "ok",
+  "webauthnCalls": []
+}

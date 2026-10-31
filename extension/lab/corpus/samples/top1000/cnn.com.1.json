@@ -1,0 +1,138 @@
+{
+  "captured_at": "2026-10-27T22:08:58.144Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "continue with apple",
+        "change",
+        "forgot password?",
+        "continue",
+        "send reset link",
+        "resend the email",
+        "resend the verification link email",
+        "i agree",
+        "i do not agree",
+        "agree and continue"
+      ],
+      "fields": [
+        {
+          "after": "email address continue or by continuing,",
+          "ariaLabel": "email address",
+          "autocomplete": "email",
+          "before": "an account? enter your email to sign up.",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "login-email-input",
+          "index": 0,
+          "label": "email address",
+          "name": "loginEmail",
+          "placeholder": "email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "password forgot password? continue by co",
+          "ariaLabel": "password",
+          "autocomplete": "current-password",
+          "before": "prime video? continue with amazon change",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "login-password-input",
+          "index": 1,
+          "label": "password",
+          "name": "loginPassword",
+          "placeholder": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "after": "email address send reset link didn’t rec",
+          "ariaLabel": "email address",
+          "autocomplete": "email",
+          "before": "f use and have read our privacy policy .",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "login-reset-password-email-input",
+          "index": 2,
+          "label": "email address",
+          "name": "loginEmail",
+          "placeholder": "email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "continue with apple",
+        "change",
+        "forgot password?",
+        "continue",
+        "send reset link",
+        "resend the email",
+        "resend the verification link email",
+        "i agree",
+        "i do not agree",
+        "agree and continue"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "an set your brow back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cnn.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cnn.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

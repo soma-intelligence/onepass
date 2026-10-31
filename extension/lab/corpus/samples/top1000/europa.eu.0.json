@@ -1,0 +1,112 @@
+{
+  "captured_at": "2026-10-27T22:01:06.579Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search",
+          "before": "anguages ru русский uk yкраїнська search",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "edit-keys",
+          "index": 0,
+          "label": "search",
+          "name": "keys",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "language",
+          "before": "documents date",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "wtsr_time",
+          "index": 0,
+          "label": "date",
+          "name": "search_time",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "search on:",
+          "before": "language",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "wtsr_lang",
+          "index": 1,
+          "label": "language",
+          "name": "search_language",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "how do you know?",
+        "englishenglish",
+        "close",
+        "search",
+        "menu",
+        "close",
+        "back",
+        "previous items",
+        "next items",
+        "search",
+        "toggle the filter display",
+        "close"
+      ],
+      "fields": [
+        {
+          "after": "search toggle the filter display close t",
+          "ariaLabel": "search",
+          "before": "ch all eu institutions and bodies search",
+          "depth": 6,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "search_query",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "europa.eu",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://europa.eu/",
+  "status": "ok",
+  "webauthnCalls": []
+}

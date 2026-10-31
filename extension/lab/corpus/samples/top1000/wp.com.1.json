@@ -1,0 +1,74 @@
+{
+  "captured_at": "2026-10-27T22:57:25.622Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue",
+        "continue with google",
+        "continue with apple",
+        "continue with github"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "ss or username email address or username",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "usernameOrEmail",
+          "index": 0,
+          "label": "wordpress.com email address or usernameemail address or user",
+          "name": "usernameOrEmail",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "continue or continue with google continu",
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "wp.com",
+  "iframes": [
+    {
+      "origin": "https://public-api.wordpress.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://blackbox-api.wp.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://wp.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

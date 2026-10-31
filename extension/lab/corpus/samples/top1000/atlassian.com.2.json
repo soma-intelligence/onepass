@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:20:03.456Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "id.atlassian.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://id.atlassian.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

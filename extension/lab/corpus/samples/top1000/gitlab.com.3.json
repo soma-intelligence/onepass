@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:33:07.637Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "gitlab.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gitlab.com/gitlab-org/developer-relations/contributor-success/helper-tools/dws-log-inspector/-/merge_requests",
+  "status": "ok",
+  "webauthnCalls": []
+}

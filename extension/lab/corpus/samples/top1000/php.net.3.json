@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:20:45.785Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "php.net",
+  "source": "rendered",
+  "source_url": "https://php.net/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,149 @@
+{
+  "captured_at": "2026-10-27T22:31:51.039Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "contact us"
+      ],
+      "fields": [
+        {
+          "after": "last name *",
+          "autocomplete": "on",
+          "before": "nd pci compliant contact us first name *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "c680cd0d-first_name",
+          "index": 0,
+          "label": "first name *",
+          "name": "first_name",
+          "placeholder": "first name",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "business email *",
+          "autocomplete": "on",
+          "before": "last name *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "c680cd0d-last_name",
+          "index": 1,
+          "label": "last name *",
+          "name": "last_name",
+          "placeholder": "last name",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "on",
+          "before": "business email *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "c680cd0d-email_business",
+          "index": 2,
+          "label": "business email *",
+          "name": "email_business",
+          "placeholder": "business email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "sign up!"
+      ],
+      "fields": [
+        {
+          "after": "first name",
+          "autocomplete": "on",
+          "before": "r the cm.com payments newsletter email *",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "6d16b270-email",
+          "index": 0,
+          "label": "email *",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "last name",
+          "autocomplete": "on",
+          "before": "first name",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "6d16b270-first_name",
+          "index": 1,
+          "label": "first name",
+          "name": "first_name",
+          "placeholder": "first name",
+          "required": false,
+          "role": "given_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "on",
+          "before": "last name",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "6d16b270-last_name",
+          "index": 2,
+          "label": "last name",
+          "name": "last_name",
+          "placeholder": "last name",
+          "required": false,
+          "role": "family_name",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "vue",
+  "host": "www.cm.com",
+  "iframes": [
+    {
+      "origin": "https://rive.app",
+      "sameSite": false
+    },
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.cm.com/payments/online-payments/",
+  "status": "ok",
+  "webauthnCalls": []
+}

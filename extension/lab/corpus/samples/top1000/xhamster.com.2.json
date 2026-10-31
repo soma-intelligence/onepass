@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:35:17.942Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "xhamster.com",
+  "source": "rendered",
+  "source_url": "https://xhamster.com/signin",
+  "status": "error: http 404"
+}

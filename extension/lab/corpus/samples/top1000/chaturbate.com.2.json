@@ -1,0 +1,318 @@
+{
+  "captured_at": "2026-10-28T00:20:37.138Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "font size",
+          "before": "font",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 0,
+          "label": "font",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "emoticons settings show emoticons",
+          "before": "font size",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 1,
+          "label": "font size",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "users settings highest token color",
+          "before": "autocomplete delay",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 2,
+          "label": "autocomplete delay",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "notifications settings notify on entry f",
+          "before": "users settings highest token color",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 3,
+          "label": "highest token color",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "notify on leave for",
+          "before": "tifications settings notify on entry for",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 4,
+          "label": "notify on entry for",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "other settings tip volume (0%) collapse",
+          "before": "notify on leave for",
+          "depth": 20,
+          "hasPattern": false,
+          "index": 5,
+          "label": "notify on leave for",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "font size",
+          "before": "font",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 0,
+          "label": "font",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "emoticons settings show emoticons",
+          "before": "font size",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 1,
+          "label": "font size",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "users settings highest token color",
+          "before": "autocomplete delay",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 2,
+          "label": "autocomplete delay",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "notifications settings notify on entry f",
+          "before": "users settings highest token color",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 3,
+          "label": "highest token color",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "notify on leave for",
+          "before": "tifications settings notify on entry for",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 4,
+          "label": "notify on entry for",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "other settings tip volume (0%) collapse",
+          "before": "notify on leave for",
+          "depth": 16,
+          "hasPattern": false,
+          "index": 5,
+          "label": "notify on leave for",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send tip",
+        "▼"
+      ],
+      "fields": [
+        {
+          "after": "invalid tip amount! include an optional",
+          "autocomplete": "off",
+          "before": "tip at your own risk! enter tip amount:",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter tip amount:invalid tip amount!",
+          "required": false,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "display_none"
+        },
+        {
+          "after": "toggle this window with ctrl+s send tip",
+          "before": "tip amount! include an optional message:",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 1,
+          "maxlength": 255,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "i agree",
+        "all",
+        "sign up",
+        "log in",
+        "open anonymous user menu",
+        "featured",
+        "women",
+        "men",
+        "couples",
+        "trans",
+        "previous page",
+        "next page"
+      ],
+      "fields": [
+        {
+          "after": "all broadcast sign up log in open anonym",
+          "before": "of the service, especially exit i agree",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search chaturbate",
+          "maxlength": 150,
+          "placeholder": "search chaturbate",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "18 ebony bigboobs squirt asian mature mi",
+          "before": "ize intimate mid-sized high-traffic tags",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 1,
+          "label": "search #tags",
+          "maxlength": 50,
+          "placeholder": "search #tags",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "to",
+          "before": "couple 1 of 22 1 / 22 next ages (reset)",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 2,
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "number",
+          "visibility": "visible"
+        },
+        {
+          "after": "apply private show tokens per minute 6 t",
+          "before": "to",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 3,
+          "label": "to",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "number",
+          "visibility": "visible"
+        },
+        {
+          "after": "newest first price (low to high) price (",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 4,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "chaturbate.com",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://chaturbate.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

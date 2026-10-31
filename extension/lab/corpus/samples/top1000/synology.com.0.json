@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-10-28T00:01:58.281Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "who's using synology today? by using our",
+          "ariaLabel": "ask a question",
+          "before": "ze chat window what can i help you with?",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "ask a question",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "what data protection solutions does synology have?",
+        "how to store mission-critical workloads safely?",
+        "tell me more about synology surveillance solutions",
+        "how to manage unstructured data at scale?",
+        "who's using synology today?",
+        "what data protection solutions does synology have?",
+        "how to store mission-critical workloads safely?",
+        "tell me more about synology surveillance solutions",
+        "how to manage unstructured data at scale?",
+        "who's using synology today?",
+        "what data protection solutions does synology have?",
+        "how to store mission-critical workloads safely?"
+      ],
+      "fields": [
+        {
+          "after": "by using our ai advisor, you agree to sy",
+          "before": "please wait... what can i help you with?",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "home-ai-advisor-textarea",
+          "index": 0,
+          "label": "what can i help you with?",
+          "name": "home-ai-advisor-textarea",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "synology.com",
+  "iframes": [
+    {
+      "origin": "https://us.store.synology.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 3,
+  "source": "rendered",
+  "source_url": "https://synology.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

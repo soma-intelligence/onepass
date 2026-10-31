@@ -1,0 +1,98 @@
+{
+  "captured_at": "2026-10-28T00:10:11.610Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "oink"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "ing up for our newsletter! email address",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "footerNewsletterEmail",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "off",
+          "depth": 17,
+          "hasPattern": false,
+          "index": 1,
+          "name": "website",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "×",
+        "accept all",
+        "reject all",
+        "save choices",
+        "toggle navigation",
+        "✕",
+        "products",
+        "web hosting",
+        "email hosting",
+        "about",
+        "resources",
+        "×"
+      ],
+      "fields": [
+        {
+          "after": "talk to a real human powered by claude a",
+          "ariaLabel": "type your question",
+          "before": "auto-renew enable 2fa type your question",
+          "depth": 5,
+          "hasPattern": false,
+          "id": "supportWidgetInput",
+          "index": 0,
+          "label": "type your question",
+          "placeholder": "type your question...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "opacity"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "porkbun.com",
+  "iframes": [
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://porkbun.com/support/payment_options",
+  "status": "ok",
+  "webauthnCalls": []
+}

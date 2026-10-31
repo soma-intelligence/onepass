@@ -1,0 +1,126 @@
+{
+  "captured_at": "2026-10-27T23:56:23.981Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "love the secret to lasting love homeless",
+          "ariaLabel": "type to search",
+          "before": "munity sign in membership type to search",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "navigation-search",
+          "index": 0,
+          "label": "type to search",
+          "placeholder": "type to search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "k, plus a quick mix of trending content.",
+          "depth": 14,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "email",
+          "siblings": 1,
+          "tag": "input",
+          "type": "email",
+          "visibility": "opacity"
+        },
+        {
+          "after": "subscribe by subscribing, you understand",
+          "depth": 15,
+          "hasPattern": false,
+          "id": "newsletter-email",
+          "index": 1,
+          "label": "what's your email?",
+          "placeholder": "what's your email?",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "close this consent banner",
+        "manage preferences",
+        "watch",
+        "discover",
+        "attend",
+        "participate",
+        "about",
+        "select",
+        "select",
+        "select",
+        "select",
+        "select"
+      ],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "t to your inbox based on your interests.",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "email",
+          "siblings": 2,
+          "tag": "input",
+          "type": "email",
+          "visibility": "opacity"
+        },
+        {
+          "after": "what is your email? subscribe now by sub",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 1,
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "ted.com",
+  "iframes": [
+    {
+      "origin": "https://tedconf.prismic.io",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ted.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

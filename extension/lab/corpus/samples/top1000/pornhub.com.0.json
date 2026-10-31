@@ -1,0 +1,92 @@
+{
+  "captured_at": "2026-10-28T00:10:03.553Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "trending searches mewslut ebony homemade",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ght corner to complete the installation.",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchInput",
+          "index": 0,
+          "label": "search",
+          "maxlength": 100,
+          "name": "search",
+          "placeholder": "search pornhub",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "customize cookies",
+        "ok",
+        "english",
+        "bulgarian",
+        "croatian",
+        "czech",
+        "danish",
+        "dutch",
+        "estonian",
+        "finnish",
+        "french",
+        "german"
+      ],
+      "fields": [
+        {
+          "after": "united states",
+          "before": "iked videos subscriptions upload english",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "languageMenu",
+          "index": 0,
+          "label": "english english deutsch français italiano português español ",
+          "name": "language",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "feed faq contact support home porn video",
+          "before": "united states",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "locationMenu",
+          "index": 1,
+          "label": "united states argentina australia austria belgium brazil bul",
+          "name": "location",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "pornhub.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://pornhub.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

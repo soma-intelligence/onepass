@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:51:08.436Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "airbnb.com",
+  "source": "rendered",
+  "source_url": "https://airbnb.com/signup",
+  "status": "error: <redacted>"
+}

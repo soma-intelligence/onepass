@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-10-27T23:59:02.820Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "найти"
+      ],
+      "fields": [
+        {
+          "before": "вход в систему",
+          "depth": 5,
+          "hasPattern": false,
+          "index": 0,
+          "label": "поиск: кодексы, законы и другие материалы",
+          "name": "q",
+          "placeholder": "поиск: кодексы, законы и другие материалы",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "consultant.ru",
+  "iframes": [
+    {
+      "origin": "https://banner.consultant.ru",
+      "sameSite": true
+    }
+  ],
+  "lang": "ru",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://consultant.ru/",
+  "status": "ok",
+  "webauthnCalls": []
+}

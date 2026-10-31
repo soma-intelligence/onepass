@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:13:20.227Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "roku.com",
+  "source": "rendered",
+  "source_url": "https://roku.com/register",
+  "status": "error: http 404"
+}

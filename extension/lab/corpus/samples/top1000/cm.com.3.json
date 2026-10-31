@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-10-27T22:30:14.068Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "vue",
+  "host": "www.cm.com",
+  "iframes": [
+    {
+      "origin": "https://rive.app",
+      "sameSite": false
+    },
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.cm.com/whatsapp/",
+  "status": "ok",
+  "webauthnCalls": []
+}

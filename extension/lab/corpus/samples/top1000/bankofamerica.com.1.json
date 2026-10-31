@@ -1,0 +1,222 @@
+{
+  "captured_at": "2026-10-28T00:13:15.180Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "go get it on the app store before you le",
+          "autocomplete": "off",
+          "before": "mobile banking app select your device *",
+          "depth": 17,
+          "hasPattern": false,
+          "id": "getAppDeviceSelect",
+          "index": 0,
+          "label": "select your device *",
+          "name": "getAppDeviceSelect",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send"
+      ],
+      "fields": [
+        {
+          "after": "send please enter a valid 10-digit phone",
+          "autocomplete": "off",
+          "depth": 18,
+          "hasPattern": true,
+          "id": "phoneNumberFieldiPhone",
+          "index": 0,
+          "inputmode": "numeric",
+          "label": "<redacted>",
+          "maxlength": 12,
+          "name": "phoneNumberField",
+          "required": true,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send"
+      ],
+      "fields": [
+        {
+          "after": "send please enter a valid email address",
+          "autocomplete": "off",
+          "before": "send you a link by email email address *",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "emailAddressField",
+          "index": 0,
+          "label": "email address *",
+          "name": "emailAddressField",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "send"
+      ],
+      "fields": [
+        {
+          "after": "send please enter a phone number by prov",
+          "autocomplete": "off",
+          "depth": 18,
+          "hasPattern": true,
+          "id": "phoneNumberFieldAndroid",
+          "index": 0,
+          "inputmode": "numeric",
+          "label": "<redacted>",
+          "maxlength": 12,
+          "name": "phoneNumberField",
+          "required": true,
+          "role": "tel",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "go",
+        "send",
+        "send",
+        "send",
+        "go back to bank of america",
+        "ok",
+        "ok",
+        "log in with passkey",
+        "log in",
+        "expand all panels",
+        "collapse all panels",
+        "how do i log in?"
+      ],
+      "fields": [
+        {
+          "after": "display saved user ids user id",
+          "autocomplete": "off",
+          "before": "merrill credentials to verify. user id *",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "oid",
+          "index": 0,
+          "label": "user id *",
+          "maxlength": 32,
+          "name": "oid",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "log in with a different user id password",
+          "autocomplete": "off",
+          "before": "display saved user ids user id",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "prefill-oid",
+          "index": 1,
+          "label": "user id",
+          "name": "prefill-oid",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "off",
+          "before": "g in with a different user id password *",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "pass",
+          "index": 2,
+          "label": "password *",
+          "maxlength": 20,
+          "name": "pass",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "after": "log in with passkey log in log in with p",
+          "autocomplete": "off",
+          "before": "save user id⁠ ⁠ take me to",
+          "depth": 27,
+          "hasPattern": false,
+          "id": "tmt-select",
+          "index": 3,
+          "label": "take me to",
+          "name": "tmt-select",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "rride previous s back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 4,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "vue",
+  "host": "bankofamerica.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://bankofamerica.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

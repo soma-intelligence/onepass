@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:48:08.195Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "mlb.com",
+  "source": "rendered",
+  "source_url": "https://mlb.com/signup",
+  "status": "error: http 404"
+}

@@ -1,0 +1,98 @@
+{
+  "captured_at": "2026-10-27T23:18:22.908Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "submit",
+        "close"
+      ],
+      "fields": [
+        {
+          "after": "submit close services departments about",
+          "before": "translate menu menu custom google search",
+          "depth": 7,
+          "hasPattern": false,
+          "index": 0,
+          "label": "custom google search",
+          "name": "q",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "submit beta try our new service finder!",
+          "before": "ces and information search for a service",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search for a service",
+          "name": "q",
+          "placeholder": "search ca.gov",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "official california website",
+        "menu",
+        "menu",
+        "submit",
+        "close",
+        "submit",
+        "yes",
+        "no",
+        "submit",
+        "back to top"
+      ],
+      "fields": [
+        {
+          "after": "submit thank you for your comments! abou",
+          "before": "for your feedback! what was the problem?",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "add-feedback",
+          "index": 0,
+          "label": "what was the problem?",
+          "name": "add-feedback",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ca.gov",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ca.gov/",
+  "status": "ok",
+  "webauthnCalls": []
+}

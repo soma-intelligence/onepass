@@ -3,6 +3,7 @@ import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
 import { parseCsToBg, parseUiToBg } from "../../src/background/router";
 import { MemoryPairingStore, Store } from "../../src/background/store";
+import { MAX_CLASSIFY_FIELDS } from "../../src/shared/model-labels";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
 
@@ -312,5 +313,48 @@ describe("message validation", () => {
       expect(parseUiToBg({ type, token, password: "x" })).toEqual({ type, token });
       expect(parseUiToBg({ type, token: "short" })).toBeNull();
     }
+  });
+});
+
+describe("classify message (Task 15)", () => {
+  const f = {
+    index: 1, tag: "input", type: "password", name: "pw", id: "pw", autocomplete: "current-password", inputmode: "text",
+    maxlength: 64, hasPattern: false, required: true, label: "password", placeholder: "p", ariaLabel: "a", before: "b",
+    after: "c", depth: 7, siblings: 2, visibility: "visible", width: 120, height: 30, formButtons: ["sign in"],
+    pageTitle: "Login", neighbourLabels: ["email"], lab: "3",
+  };
+
+  it("rebuilds features from validated fields only: never lab, page title or geometry", () => {
+    const m = parseCsToBg({ type: "classify", fields: [{ ...f, evil: 1 }] });
+    expect(m).toEqual({
+      type: "classify",
+      fields: [{
+        index: 1, tag: "input", type: "password", name: "pw", id: "pw", autocomplete: "current-password", inputmode: "text",
+        maxlength: 64, hasPattern: false, required: true, label: "password", placeholder: "p", ariaLabel: "a", before: "b",
+        after: "c", depth: 7, siblings: 2, visibility: "visible", width: 0, height: 0, formButtons: ["sign in"], neighbourLabels: ["email"],
+      }],
+    });
+    expect(parseCsToBg({ type: "classify", fields: [] })).toEqual({ type: "classify", fields: [] });
+  });
+
+  it("rejects malformed or oversize features", () => {
+    const bad = [
+      { ...f, visibility: "hidden" },
+      { ...f, index: -1 },
+      { ...f, index: 1.5 },
+      { ...f, depth: "3" },
+      { ...f, hasPattern: 1 },
+      { ...f, tag: "" },
+      { ...f, name: 7 },
+      { ...f, name: "x".repeat(5000) },
+      { ...f, maxlength: 0 },
+      { ...f, formButtons: Array(13).fill("b") },
+      { ...f, neighbourLabels: Array(5).fill("n") },
+      { ...f, formButtons: [3] },
+    ];
+    for (const b of bad) expect(parseCsToBg({ type: "classify", fields: [b] }), JSON.stringify(b).slice(0, 80)).toBeNull();
+    expect(parseCsToBg({ type: "classify", fields: Array(MAX_CLASSIFY_FIELDS).fill(f) })).not.toBeNull();
+    expect(parseCsToBg({ type: "classify", fields: Array(MAX_CLASSIFY_FIELDS + 1).fill(f) })).toBeNull();
+    expect(parseCsToBg({ type: "classify", fields: f })).toBeNull();
   });
 });

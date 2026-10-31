@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-10-27T22:00:48.641Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "your email:",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "Email",
+          "index": 0,
+          "label": "your email:",
+          "name": "Email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "menu",
+        "platform",
+        "products",
+        "seer",
+        "tracing",
+        "integrations",
+        "solutions",
+        "resources",
+        "learn",
+        "support",
+        "hang out with us",
+        "platform"
+      ],
+      "fields": [
+        {
+          "after": "see -- it's really just one command. bas",
+          "ariaLabel": "installation dropdown 23",
+          "before": "no performance hits, no waiting around.",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "installation-dropdown-23",
+          "index": 0,
+          "label": "installation dropdown 23",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "before": "d trademark of functional software, inc.",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "sentry.io",
+  "iframes": [
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sentry.io/",
+  "status": "ok",
+  "webauthnCalls": []
+}

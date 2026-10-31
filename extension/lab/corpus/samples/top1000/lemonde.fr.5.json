@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-10-27T23:36:44.266Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribed",
+        "see newsletter",
+        "create an account",
+        "à quoi servent les cookies ?",
+        "en savoir plus sur les finalités publicitaires ?",
+        "pourquoi le monde vous demande d'accepter ces traitements de",
+        "accepter et continuer"
+      ],
+      "fields": [
+        {
+          "autocomplete": "email",
+          "before": "nbox. already have an account? sign in .",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "nl-register-email",
+          "index": 0,
+          "label": "<redacted>",
+          "name": "nl_register_email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "before": "uer s’abonner déjà abonné ? se connecter",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "<redacted>",
+          "index": 1,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "www.lemonde.fr",
+  "iframes": [
+    {
+      "origin": "https://www.lemonde.fr",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.google.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "fr",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.lemonde.fr/newsletters/le-monde-in-english/",
+  "status": "ok",
+  "webauthnCalls": []
+}

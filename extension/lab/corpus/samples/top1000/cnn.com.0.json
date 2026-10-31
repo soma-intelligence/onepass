@@ -1,0 +1,146 @@
+{
+  "captured_at": "2026-10-27T22:08:40.996Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "cancel",
+        "submit"
+      ],
+      "fields": [
+        {
+          "after": "cancel submit thank you! your effort and",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "maxlength": 1000,
+          "name": "comment",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "sign in my account settings newsletters",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "cnn account sign in to your cnn account",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search cnn...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "subscribe sign in my account settings ne",
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "s jigsaw challenge in case you missed it",
+          "depth": 8,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "search cnn...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "cancel",
+        "submit",
+        "close icon",
+        "more",
+        "subscribe",
+        "sign in",
+        "sign in",
+        "off",
+        "try again",
+        "go back",
+        "subscribe",
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "subtitles off couldn’t play content plea",
+          "before": "rlimit: 10; stroke-width: .2px; } .st2,",
+          "depth": 32,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "range",
+          "visibility": "display_none"
+        },
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "an set your brow back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 1,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "cnn.com",
+  "iframes": [
+    {
+      "origin": "https://ix.cnn.io",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cnn.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

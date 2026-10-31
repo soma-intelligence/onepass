@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:01:43.890Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "cdnvideo.ru",
+  "source": "rendered",
+  "source_url": "https://cdnvideo.ru/register",
+  "status": "error: http 404"
+}

@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-10-27T22:05:30.128Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "show more",
+        "necessary 24",
+        "kaspersky lab3",
+        "linkedin1",
+        "taboola1",
+        "yandex2",
+        "api-router.kaspersky-labs.comcdn.kaspersky.comcontent.kasper",
+        "api-router.kaspersky-labs.comcontent.kaspersky-labs.comusa.k",
+        "pxv31ld8xe1nnyzw.air360tracker.net1",
+        "sgtm.kaspersky.comconsent.cookiebot.com2",
+        "preferences 11",
+        "kaspersky lab3"
+      ],
+      "fields": [
+        {
+          "after": "recurring searches at frequently asked q",
+          "autocomplete": "off",
+          "before": "ntact us home business partners about us",
+          "depth": 27,
+          "hasPattern": false,
+          "index": 0,
+          "label": "find what you need",
+          "placeholder": "find what you need",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "react",
+  "host": "kaspersky.com",
+  "iframes": [
+    {
+      "origin": "https://consentcdn.cookiebot.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://kaspersky.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

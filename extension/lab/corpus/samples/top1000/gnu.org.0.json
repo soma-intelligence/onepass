@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T22:22:44.489Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "before": "free software supporter :",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "frmEmail",
+          "index": 0,
+          "label": "free software supporter:",
+          "maxlength": 80,
+          "name": "email-Primary",
+          "required": false,
+          "role": "email",
+          "siblings": 5,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "gnu.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://gnu.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

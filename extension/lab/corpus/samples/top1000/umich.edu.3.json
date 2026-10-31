@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:26:19.978Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "umich.edu",
+  "source": "rendered",
+  "source_url": "https://umich.edu/signin",
+  "status": "error: http 403"
+}

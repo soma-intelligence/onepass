@@ -1,0 +1,119 @@
+{
+  "captured_at": "2026-10-27T22:09:40.468Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in",
+        "google",
+        "passkey",
+        "sso"
+      ],
+      "fields": [
+        {
+          "after": "password forgot your password? password",
+          "ariaLabel": "email input",
+          "autocomplete": "username email",
+          "before": "ign in to your account email email input",
+          "depth": 28,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email input",
+          "name": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "remember me on this device",
+          "ariaLabel": "password input",
+          "autocomplete": "current-password",
+          "before": "ord forgot your password? password input",
+          "depth": 31,
+          "hasPattern": false,
+          "id": "old-password",
+          "index": 1,
+          "label": "password input",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "sign in",
+        "google",
+        "passkey",
+        "sso"
+      ],
+      "fields": [
+        {
+          "before": "create account © stripe privacy & terms",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "h-captcha-response-09cl50am5bxg",
+          "index": 0,
+          "name": "h-captcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "dashboard.stripe.com",
+  "iframes": [
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://b.stripecdn.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://js.stripe.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://newassets.hcaptcha.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://dashboard.stripe.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

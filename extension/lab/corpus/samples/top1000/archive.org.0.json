@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:04:21.234Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "archive.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://archive.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

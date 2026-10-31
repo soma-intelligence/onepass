@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-27T22:20:00.937Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "go"
+      ],
+      "fields": [
+        {
+          "after": "search amazon.co.uk",
+          "before": "ect the department you want to search in",
+          "depth": 12,
+          "hasPattern": false,
+          "id": "searchDropdownBox",
+          "index": 0,
+          "label": "select the department you want to search in",
+          "name": "url",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "opacity"
+        },
+        {
+          "ariaLabel": "search amazon.co.uk",
+          "autocomplete": "off",
+          "before": "search amazon.co.uk",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "twotabsearchtextbox",
+          "index": 1,
+          "label": "search amazon.co.uk",
+          "name": "field-keywords",
+          "placeholder": "search amazon.co.uk",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.co.uk",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.co.uk/l/52540014031",
+  "status": "ok",
+  "webauthnCalls": []
+}

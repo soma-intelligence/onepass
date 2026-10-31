@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T21:56:22.218Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "update your account sharing your product",
+          "autocomplete": "off",
+          "before": "gandi.net docs dashboard",
+          "depth": 5,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search docs",
+          "name": "q",
+          "placeholder": "search docs",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "docs.gandi.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://docs.gandi.net/en/billing/means_of_payment/",
+  "status": "ok",
+  "webauthnCalls": []
+}

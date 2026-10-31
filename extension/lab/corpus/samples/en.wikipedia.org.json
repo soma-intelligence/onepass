@@ -3,6 +3,6 @@
   "category": "login",
   "extractor": 1,
   "host": "en.wikipedia.org",
-  "source_url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+  "source_url": "https://en.wikipedia.org/w/index.php",
   "status": "skipped: robots"
 }

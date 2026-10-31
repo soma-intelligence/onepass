@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-27T22:19:04.416Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "left column home videos groups people pu",
+          "autocomplete": "off",
+          "before": "search on ok",
+          "depth": 22,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search on ok",
+          "maxlength": 255,
+          "name": "st.query",
+          "placeholder": "search on ok",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ok.ru",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ok.ru/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-28T00:18:21.900Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "note.com",
+  "iframes": [],
+  "lang": "ja",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://note.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

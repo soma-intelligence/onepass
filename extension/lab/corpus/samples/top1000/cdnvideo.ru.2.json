@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:01:32.865Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "cdnvideo.ru",
+  "source": "rendered",
+  "source_url": "https://cdnvideo.ru/signin",
+  "status": "error: http 404"
+}

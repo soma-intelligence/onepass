@@ -1,0 +1,39 @@
+{
+  "captured_at": "2026-10-27T22:09:39.822Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "text box below and then ‘submit’ to reso",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "nameID",
+          "index": 0,
+          "label": "10.nnnnnn/example",
+          "name": "hdl",
+          "placeholder": "10.nnnnnn/example",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "doi.org",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://doi.org/",
+  "status": "ok",
+  "webauthnCalls": []
+}

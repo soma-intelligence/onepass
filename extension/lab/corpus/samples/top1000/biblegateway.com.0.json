@@ -1,0 +1,145 @@
+{
+  "captured_at": "2026-10-28T00:06:46.856Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "niv version",
+        "biblegateway",
+        "biblegateway"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "quick search",
+          "autocomplete": "off",
+          "before": "ore bibles deals more bible gateway plus",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "quick search",
+          "name": "quicksearch",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "niv version biblegateway biblegateway bi",
+          "ariaLabel": "biblical version",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 1,
+          "label": "biblical version",
+          "name": "version",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe please enter a valid email add",
+          "ariaLabel": "your email address",
+          "depth": 16,
+          "hasPattern": false,
+          "id": "votdEmail",
+          "index": 0,
+          "label": "your email address",
+          "name": "Email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 7,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "sign up"
+      ],
+      "fields": [
+        {
+          "autocomplete": "OFF",
+          "depth": 10,
+          "hasPattern": false,
+          "index": 0,
+          "label": "your email address",
+          "name": "Email",
+          "placeholder": "your email address",
+          "required": false,
+          "role": "email",
+          "siblings": 6,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "account",
+        "niv version",
+        "biblegateway",
+        "biblegateway",
+        "bible books bible books",
+        "niv version",
+        "read",
+        "study",
+        "explore",
+        "store",
+        "font size",
+        "log in bg.userinfo.updatefullname(); show menu"
+      ],
+      "fields": [
+        {
+          "after": "filter button consent leg.interest",
+          "ariaLabel": "cookie list search",
+          "before": "o share our cont back button cookie list",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "biblegateway.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://biblegateway.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:25:48.903Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "thenai.org",
+  "source": "rendered",
+  "source_url": "https://thenai.org/signup",
+  "status": "error: http 404"
+}

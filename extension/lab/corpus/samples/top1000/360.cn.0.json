@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-27T23:36:33.324Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "autocomplete": "off",
+          "before": "网页",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "haosou-input",
+          "index": 0,
+          "name": "q",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "360.cn",
+  "iframes": [],
+  "lang": "zh",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://360.cn/",
+  "status": "ok",
+  "webauthnCalls": []
+}

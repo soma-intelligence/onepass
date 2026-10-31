@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:22:43.469Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "docker.io",
+  "source": "rendered",
+  "source_url": "https://docker.io/register",
+  "status": "error: http 404"
+}

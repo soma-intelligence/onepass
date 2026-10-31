@@ -1,0 +1,112 @@
+{
+  "captured_at": "2026-10-27T21:54:41.481Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "username or email address",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "login_field",
+          "index": 0,
+          "label": "username or email address",
+          "name": "login",
+          "required": true,
+          "role": "username",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "forgot password?",
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 11,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "depth": 9,
+          "hasPattern": false,
+          "index": 2,
+          "name": "<redacted>",
+          "required": false,
+          "role": "unknown",
+          "siblings": 11,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "name": "required_field_f2a7",
+          "required": false,
+          "role": "unknown",
+          "siblings": 12,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "continue with passkey"
+      ],
+      "fields": [
+        {
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "name": "required_field_36ae",
+          "required": false,
+          "role": "unknown",
+          "siblings": 11,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "github.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://github.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

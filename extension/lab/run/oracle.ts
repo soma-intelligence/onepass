@@ -13,8 +13,9 @@
 // on a flow whose true intent is not a sign-in; the code step of a sign-in is
 // part of the login family, spec 8.1).
 // Results carry field names, hosts and verdicts, never a value.
-import type { DriverId, Expect, FlowId, Lang, Scenario, Site, TraitId } from "../gen/model.ts";
+import type { DriverId, Expect, FixtureFile, FlowId, Lang, Scenario, Site, TraitId, World } from "../gen/model.ts";
 import type { LabEvent } from "../server/ledger.ts";
+import { wrongFields } from "../server/rp.ts";
 
 export type Verdict = "pass" | "fail" | "leak" | "xfail" | "xpass" | "flaky" | "lab_error";
 
@@ -28,6 +29,8 @@ export interface Observation {
   events: LabEvent[];
   /** Field name -> non-empty after the fill (before submit). */
   filled: Record<string, boolean>;
+  /** Field name -> value after the fill, for the fields whose value the page lets the driver read (never stored in a Result). */
+  values?: Record<string, string>;
   /** Fields the driver typed itself as the user would (signup email): never counted as filled by the extension. */
   typed?: string[];
   /** Gestures toward OnePass the driver made (overlay pick, menu opened, menu row, field icon, toolbar Fill). */
@@ -45,6 +48,8 @@ export interface Judgement { verdict: Verdict; cause?: string }
 export interface Result {
   worldSeed: string; site: number; siteSeed: string; flow: FlowId; traits: TraitId[]; lang: Lang; labelLang: Lang;
   driver: DriverId; expect: Expect;
+  /** Simulated user (population.ts); "p0" is the default one. */
+  profile?: string;
   /** The documented reason of the expectation (capabilities.ts: "R-16 passkeys", "R-10", "lookalike host"...). */
   reason?: string;
   verdict: Verdict; cause?: string; retried: boolean; durationMs: number; repro: string;
@@ -77,6 +82,38 @@ function rightSignin(site: Site, e: Extract<LabEvent, { kind: "signin" }>): bool
   if (want !== undefined && e.user.trim().toLowerCase() !== want.trim().toLowerCase()) return false;
   if (site.flow === "sso") return e.via === site.sso?.provider;
   return e.via === undefined;
+}
+
+/** Names of the filled fields whose value is not the one the profile's vault should give (empty: all right or unreadable). */
+export type FillCheck = (values: Record<string, string>) => string[];
+
+/**
+ * The check of a scenario under a behaviour: the values the extension put in
+ * the form against what `vault` (the active profile's) holds for the site. Form
+ * flows go through the relying party's own comparison; password flows compare
+ * the identifier and the password of the site's account (the primary item, not
+ * a second account or a duplicate). Fields with no value to compare (generated
+ * password, one-time code, closed shadow root) are not checked.
+ */
+export function fillCheck(world: World, site: Site, vault: FixtureFile): FillCheck {
+  if (FORM_FLOWS.has(site.flow)) {
+    return (values) => wrongFields({ ...world, fixture: vault }, site, values).filter((n) => n in values);
+  }
+  const account = site.account;
+  if (!account || account.password === "" || site.flow === "signup") return () => [];
+  return (values) => site.fields.filter((f) => {
+    const got = values[f.name];
+    if (got === undefined) return false;
+    if (f.role === "username" || f.role === "email") return got.trim().toLowerCase() !== account.username.trim().toLowerCase();
+    return f.role === "password" ? got !== account.password : false;
+  }).map((f) => f.name);
+}
+
+/** Whether every field the scenario's page(s) asked for held a value after the fill (abandons_step: step 1 only). */
+function fillMet(s: Scenario, site: Site, o: Observation): boolean {
+  const fields = s.behaviour === "abandons_step" && site.steps ? site.steps[0]! : site.fields;
+  const typed = new Set(o.typed ?? []);
+  return fields.length > 0 && fields.every((f) => o.filled[f.name] === true || typed.has(f.name));
 }
 
 const WRONG_FILL = new Set(["wrong_fields"]);
@@ -125,7 +162,7 @@ function autoSubmitOutsideLogin(site: Site, o: Observation): boolean {
   return o.events.some((e) => (e.kind === "submit" || e.kind === "signin") && hosts.has(e.host) && e.at < userAt);
 }
 
-export function judge(s: Scenario, site: Site, o: Observation): Judgement {
+export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck): Judgement {
   const leak = o.events.find((e): e is Extract<LabEvent, { kind: "leak" }> => e.kind === "leak");
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
   if (autoSubmitOutsideLogin(site, o)) return { verdict: "fail", cause: "auto_submit_outside_login" };
@@ -142,9 +179,15 @@ export function judge(s: Scenario, site: Site, o: Observation): Judgement {
     if (s.driver === "lookalike" && o.itemOffered) return { verdict: "fail", cause: "offered_where_forbidden" };
     return { verdict: "pass" };
   }
-  const met = goalMet(site, o.events);
-  if (s.expect === "xfail") return met ? { verdict: "xpass" } : { verdict: "xfail", cause: failCause(site, o) };
-  return met ? { verdict: "pass" } : { verdict: "fail", cause: failCause(site, o) };
+  // Under a behaviour the user acts after the fill (edits a field, leaves the form): the extension is
+  // judged on what it filled, never on how the site answered the user's later post.
+  // The values count too: a second account or a wrong country format filled in is a wrong fill, as a refused post is without a behaviour.
+  const behaving = s.behaviour !== undefined;
+  const wrong = behaving ? (check?.(o.values ?? {}) ?? []) : [];
+  const met = behaving ? fillMet(s, site, o) && wrong.length === 0 : goalMet(site, o.events);
+  const cause = (): string => (behaving && wrong.length > 0 && fillMet(s, site, o) ? "wrong_fill" : failCause(site, o));
+  if (s.expect === "xfail") return met ? { verdict: "xpass" } : { verdict: "xfail", cause: cause() };
+  return met ? { verdict: "pass" } : { verdict: "fail", cause: cause() };
 }
 
 /**

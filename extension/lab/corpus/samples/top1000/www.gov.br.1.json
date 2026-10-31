@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-28T00:05:22.614Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continuar",
+        "login com seu banco sua conta será prata",
+        "banco do brasil",
+        "itaú",
+        "caixa econômica",
+        "bradesco",
+        "santander",
+        "picpay/original",
+        "nubank",
+        "sicoob",
+        "sicredi",
+        "banrisul"
+      ],
+      "fields": [
+        {
+          "after": "continuar outras opções de identificação",
+          "autocomplete": "new-password",
+          "before": "ra criar ou acessar sua conta gov.br cpf",
+          "depth": 7,
+          "hasPattern": false,
+          "id": "accountId",
+          "index": 0,
+          "inputmode": "numeric",
+          "label": "cpf",
+          "name": "accountId",
+          "placeholder": "digite seu cpf",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "tel",
+          "visibility": "visible"
+        }
+      ],
+      "step": "password"
+    }
+  ],
+  "framework": "other",
+  "host": "www.gov.br",
+  "iframes": [],
+  "lang": "pt",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.gov.br/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

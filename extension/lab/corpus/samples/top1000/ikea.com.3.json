@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:24:57.488Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "ikea.com",
+  "source": "rendered",
+  "source_url": "https://ikea.com/register",
+  "status": "error: http 404"
+}

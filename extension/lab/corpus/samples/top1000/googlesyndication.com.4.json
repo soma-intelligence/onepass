@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T21:56:34.378Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "googlesyndication.com",
+  "source": "rendered",
+  "source_url": "https://googlesyndication.com/signup",
+  "status": "error: http 404"
+}

@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:20:08.292Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "atlassian.com",
+  "source": "rendered",
+  "source_url": "https://atlassian.com/login",
+  "status": "error: http 404"
+}

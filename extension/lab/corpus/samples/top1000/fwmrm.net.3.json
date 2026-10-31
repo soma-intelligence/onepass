@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:13:52.257Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "fwmrm.net",
+  "source": "rendered",
+  "source_url": "https://fwmrm.net/register",
+  "status": "error: http 404"
+}

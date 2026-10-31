@@ -1,0 +1,193 @@
+{
+  "captured_at": "2026-10-27T23:53:10.632Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign up for free",
+        "google",
+        "linkedin",
+        "microsoft 365",
+        "change",
+        "resend otp",
+        "verify"
+      ],
+      "fields": [
+        {
+          "after": "password *",
+          "ariaLabel": "email",
+          "before": "email *",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "email",
+          "index": 0,
+          "label": "email *",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "enter captcha word*",
+          "ariaLabel": "password",
+          "before": "password *",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "password",
+          "index": 1,
+          "label": "password *",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "country/region",
+          "autocomplete": "off",
+          "before": "enter captcha word*",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 2,
+          "label": "enter captcha word*",
+          "maxlength": 15,
+          "name": "captcha",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "off",
+          "before": "country/region",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "country",
+          "index": 3,
+          "label": "country/region",
+          "name": "country",
+          "placeholder": "select country",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "display_none"
+        },
+        {
+          "after": "your data will be stored in the us data",
+          "ariaLabel": "change the state",
+          "depth": 13,
+          "hasPattern": false,
+          "index": 4,
+          "label": "change the state",
+          "name": "country_state",
+          "required": false,
+          "role": "country",
+          "siblings": 0,
+          "tag": "select",
+          "visibility": "visible"
+        },
+        {
+          "after": "resend otp",
+          "ariaLabel": "enter the one-time password sent to your mobile number.",
+          "before": "sword sent to your email address. change",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "otpfield",
+          "index": 5,
+          "label": "enter the one-time password sent to your mobile number.",
+          "name": "otp",
+          "required": false,
+          "role": "otp",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "search"
+      ],
+      "fields": [
+        {
+          "after": "search sign in all zoho products we're o",
+          "ariaLabel": "search zoho.com",
+          "before": "erved. sign up for free access zoho home",
+          "depth": 9,
+          "hasPattern": false,
+          "index": 0,
+          "label": "search zoho.com",
+          "placeholder": "search zoho.com",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "www.zoho.com",
+  "iframes": [
+    {
+      "origin": "https://www.zoho.in",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.eu",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.uk",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.jp",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.com.au",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zohocloud.ca",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.ae",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.sa",
+      "sameSite": false
+    },
+    {
+      "origin": "https://www.zoho.sg",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.zoho.com/signup.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

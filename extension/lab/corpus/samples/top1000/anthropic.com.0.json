@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-27T22:29:34.523Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "research",
+        "policy",
+        "commitments",
+        "company",
+        "try claude",
+        "research",
+        "policy",
+        "commitments",
+        "company",
+        "products",
+        "models",
+        "solutions"
+      ],
+      "fields": [
+        {
+          "ariaLabel": "search",
+          "autocomplete": "off",
+          "before": "ch policy commitments company try claude",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "base-ui-_R_57aq6btb_",
+          "index": 0,
+          "label": "search",
+          "name": "q",
+          "placeholder": "enter search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "ai research and products that put safety",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "base-ui-_R_57aq6btb_-hidden-input",
+          "index": 1,
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "anthropic.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://anthropic.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

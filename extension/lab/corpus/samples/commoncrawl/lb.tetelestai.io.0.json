@@ -1,0 +1,59 @@
+{
+  "captured_at": "2026-10-28T01:06:25.979Z",
+  "category": "checkout",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "rojects stories making of about us store",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter your search",
+          "name": "s",
+          "placeholder": "enter your search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "e tetelestai project. criado por selke 0",
+          "depth": 5,
+          "hasPattern": false,
+          "index": 0,
+          "label": "enter your search",
+          "name": "s",
+          "placeholder": "enter your search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 2,
+          "tag": "input",
+          "type": "text",
+          "visibility": "zero_size"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "lb.tetelestai.io",
+  "iframes": [],
+  "lang": "pt",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "commoncrawl",
+  "source_url": "https://lb.tetelestai.io/checkout/",
+  "status": "ok",
+  "webauthnCalls": []
+}

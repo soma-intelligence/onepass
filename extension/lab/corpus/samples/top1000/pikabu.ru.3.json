@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:06:31.613Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "pikabu.ru",
+  "source": "rendered",
+  "source_url": "https://pikabu.ru/signin",
+  "status": "error: http 403"
+}

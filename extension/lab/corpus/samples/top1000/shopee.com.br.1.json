@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-10-27T23:49:16.686Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "+ seguir chat selecione seu idioma portu",
+          "ariaLabel": "pesquisar na loja",
+          "autocomplete": "off",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "pesquisar na loja",
+          "name": "keyword",
+          "placeholder": "pesquisar na loja",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "shopee.com.br",
+  "iframes": [],
+  "lang": "pt",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://shopee.com.br/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

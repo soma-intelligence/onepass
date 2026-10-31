@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:48:52.713Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "shopee.com.br",
+  "iframes": [],
+  "lang": "pt",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://shopee.com.br/",
+  "status": "ok",
+  "webauthnCalls": []
+}

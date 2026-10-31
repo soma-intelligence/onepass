@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:33:03.747Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "dns.google",
+  "source": "rendered",
+  "source_url": "https://dns.google/signin",
+  "status": "error: http 404"
+}

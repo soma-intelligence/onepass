@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-27T23:42:28.793Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "menu",
+        "search"
+      ],
+      "fields": [
+        {
+          "before": "the global domain for the united kingdom",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "opacity"
+        },
+        {
+          "after": "search loading results... why choose .uk",
+          "autocomplete": "off",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "ds__form-input",
+          "index": 1,
+          "label": "enter the domain name you want",
+          "name": "search",
+          "placeholder": "enter the domain name you want",
+          "required": false,
+          "role": "unknown",
+          "siblings": 1,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "uk.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://uk.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

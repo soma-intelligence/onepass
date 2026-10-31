@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-10-27T23:41:36.908Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "mediafire.com",
+  "iframes": [
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    },
+    {
+      "origin": "https://www.mediafire.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mediafire.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

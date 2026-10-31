@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:16:44.881Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "datadoghq.com",
+  "source": "rendered",
+  "source_url": "https://datadoghq.com/register",
+  "status": "error: http 404"
+}

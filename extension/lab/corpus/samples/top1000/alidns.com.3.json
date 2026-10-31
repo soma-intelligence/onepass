@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T22:15:06.808Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "alidns.com",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://alidns.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-10-27T23:25:09.666Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "open search",
+        "sign in",
+        "← back",
+        "english (us)",
+        "products",
+        "← back",
+        "defense system overview",
+        "← back",
+        "endpoint security",
+        "← back",
+        "security operations",
+        "← back"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "of our site. th back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "sophos.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://sophos.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-27T22:55:28.801Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "request a demo",
+        "measurement suite",
+        "deep linking suite",
+        "data collaboration suite",
+        "agentic ai suite",
+        "request a demo",
+        "sign up free",
+        "×",
+        "do not sell or share my personal information",
+        "reject all",
+        "accept cookies",
+        "allow all"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "es to build a pr back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "appsflyer.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://appsflyer.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

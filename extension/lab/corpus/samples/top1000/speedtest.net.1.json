@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-27T22:55:31.356Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in with email"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "email",
+          "before": "your results in one place email address",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "login-email",
+          "index": 0,
+          "label": "email address",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "login-password",
+          "index": 1,
+          "label": "password",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "sign in with email don't have an account",
+          "before": "remember me",
+          "depth": 13,
+          "hasPattern": false,
+          "id": "g-recaptcha-response",
+          "index": 2,
+          "name": "g-recaptcha-response",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "textarea",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "speedtest.net",
+  "iframes": [
+    {
+      "origin": "https://www.recaptcha.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://speedtest.net/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-10-27T22:01:04.464Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "subscribe"
+      ],
+      "fields": [
+        {
+          "after": "subscribe terms of service | privacy pol",
+          "depth": 13,
+          "hasPattern": true,
+          "index": 0,
+          "label": "email",
+          "maxlength": 254,
+          "name": "EMAIL",
+          "placeholder": "email",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    },
+    {
+      "buttons": [
+        "start here",
+        "how it works?",
+        "cloud gateways",
+        "switching",
+        "wifi",
+        "physical security",
+        "door access",
+        "integrations",
+        "more from ui",
+        "networking",
+        "physical security",
+        "integrations"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "es to build a pr back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "ui.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://ui.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

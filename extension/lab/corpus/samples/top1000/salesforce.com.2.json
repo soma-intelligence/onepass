@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:18:07.440Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "salesforce.com",
+  "source": "rendered",
+  "source_url": "https://salesforce.com/signin",
+  "status": "error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://sa"
+}

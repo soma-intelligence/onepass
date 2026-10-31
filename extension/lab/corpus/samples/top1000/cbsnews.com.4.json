@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-27T23:37:06.215Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "cbsnews.com",
+  "iframes": [
+    {
+      "origin": "https://cbsi.demdex.net",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "google"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://cbsnews.com/news/paying-off-debt-aggressively-hurt-finances-when-to-slow-down/",
+  "status": "ok",
+  "webauthnCalls": []
+}

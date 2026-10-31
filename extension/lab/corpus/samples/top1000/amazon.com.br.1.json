@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-28T00:02:36.554Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "amazon.com.br",
+  "source": "rendered",
+  "source_url": "https://amazon.com.br/login",
+  "status": "error: http 503"
+}

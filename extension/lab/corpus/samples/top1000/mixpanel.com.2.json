@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-10-27T23:57:56.857Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "continue"
+      ],
+      "fields": [
+        {
+          "after": "password",
+          "autocomplete": "username",
+          "before": "ccount or log in with a passkey or email",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 0,
+          "label": "<redacted>",
+          "name": "emailInput",
+          "required": false,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "continue sign up to create an account re",
+          "autocomplete": "current-password",
+          "before": "password",
+          "depth": 11,
+          "hasPattern": false,
+          "index": 1,
+          "label": "e.g. ····················",
+          "name": "passwordInput",
+          "placeholder": "e.g. ····················",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "react",
+  "host": "mixpanel.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://mixpanel.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

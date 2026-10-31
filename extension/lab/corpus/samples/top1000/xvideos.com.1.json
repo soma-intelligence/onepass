@@ -1,0 +1,185 @@
+{
+  "captured_at": "2026-10-27T23:58:22.596Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "sign in"
+      ],
+      "fields": [
+        {
+          "after": "password:",
+          "before": "your login (email):",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signin-form_login",
+          "index": 0,
+          "label": "your login (email):",
+          "name": "signin-form[login]",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "new password:",
+          "before": "password:",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "signin-form_password",
+          "index": 1,
+          "label": "password:",
+          "name": "signin-form[password]",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        },
+        {
+          "after": "retype password:",
+          "autocomplete": "new-password",
+          "before": "new password:",
+          "depth": 11,
+          "hasPattern": false,
+          "id": "signin-form_new_password",
+          "index": 2,
+          "label": "new password:",
+          "name": "signin-form[new_password]",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        },
+        {
+          "autocomplete": "new-password",
+          "before": "retype password:",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signin-form_new_password_confirm",
+          "index": 3,
+          "label": "retype password:",
+          "name": "signin-form[new_password_confirm]",
+          "required": false,
+          "role": "new_password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "both"
+    },
+    {
+      "buttons": [
+        "create my free account"
+      ],
+      "fields": [
+        {
+          "after": "profile name:",
+          "before": "reate a new account: your email (login):",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signup-form_details_login",
+          "index": 0,
+          "label": "your email (login):",
+          "name": "signup-form[details][login]",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "after": "password:",
+          "before": "profile name:",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signup-form_details_profile_name",
+          "index": 1,
+          "label": "profile name:",
+          "name": "signup-form[details][profile_name]",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        },
+        {
+          "before": "password:",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "signup-form_details_password",
+          "index": 2,
+          "label": "password:",
+          "name": "signup-form[details][password]",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "ask to reset my password"
+      ],
+      "fields": [
+        {
+          "before": "email:",
+          "depth": 10,
+          "hasPattern": false,
+          "id": "lost-password-form_login",
+          "index": 0,
+          "label": "email:",
+          "name": "lost-password-form[login]",
+          "required": true,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "xvideos.com",
+  "iframes": [
+    {
+      "origin": "https://global.frcapi.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://global.frcapi.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://global.frcapi.com",
+      "sameSite": false
+    },
+    {
+      "origin": "https://global.frcapi.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://xvideos.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

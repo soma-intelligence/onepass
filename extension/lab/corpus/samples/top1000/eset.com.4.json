@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-10-27T23:19:45.733Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "enenglish",
+        "log in now",
+        "where can i find my subscription code or activation key?",
+        "i do not have my subscription data. how can i log in?",
+        "my subscription isn't being recognised. what can i do?",
+        "how can i check the subscription expiration date?",
+        "what does the subscription renewal mean? can i renew my subs",
+        "i just renewed my subscription, but nothing changed.",
+        "i ordered from eset partner. how can i renew?",
+        "how long will it take to receive my order confirmation email",
+        "my credit card payment was declined, what should i do?"
+      ],
+      "fields": [
+        {
+          "after": "log in now forgotten subscription detail",
+          "ariaLabel": "example: ab12-cd34-ef56-gh78-ij90 or 11a-abc-d8f",
+          "before": "ab12-cd34-ef56-gh78-ij90 or 11a-abc-d8f",
+          "depth": 15,
+          "hasPattern": false,
+          "index": 0,
+          "label": "example: ab12-cd34-ef56-gh78-ij90 or 11a-abc-d8f",
+          "maxlength": 100,
+          "name": "licenseKey",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "eset.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://eset.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

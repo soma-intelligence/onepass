@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:03:40.741Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "supercell.com",
+  "source": "rendered",
+  "source_url": "https://supercell.com/",
+  "status": "error: timeout"
+}

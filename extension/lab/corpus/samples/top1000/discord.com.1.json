@@ -1,0 +1,66 @@
+{
+  "captured_at": "2026-10-27T22:08:16.993Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "us +1",
+        "forgot your password?",
+        "log in",
+        "register",
+        "or sign in with a passkey"
+      ],
+      "fields": [
+        {
+          "after": "password *",
+          "ariaLabel": "email or phone number",
+          "autocomplete": "username webauthn",
+          "before": "you again! email or phone number * us +1",
+          "depth": 20,
+          "hasPattern": false,
+          "id": "uid_10",
+          "index": 0,
+          "label": "email or phone number*",
+          "maxlength": 999,
+          "name": "email",
+          "required": true,
+          "role": "username",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "after": "forgot your password? log in need an acc",
+          "ariaLabel": "password",
+          "autocomplete": "current-password",
+          "before": "password *",
+          "depth": 19,
+          "hasPattern": false,
+          "id": "uid_12",
+          "index": 1,
+          "label": "password*",
+          "name": "password",
+          "required": true,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "discord.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://discord.com/login",
+  "status": "ok",
+  "webauthnCalls": []
+}

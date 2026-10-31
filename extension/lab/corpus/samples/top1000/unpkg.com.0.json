@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-28T00:03:43.904Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "run this examplerun this example"
+      ],
+      "fields": [
+        {
+          "after": "file: https://unpkg.com/preact metadata:",
+          "before": "ckage@:version/:file try it: build a url",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "url-builder-package",
+          "index": 0,
+          "label": "try it: build a url",
+          "placeholder": "package name, e.g. react",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "unpkg.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://unpkg.com/",
+  "status": "ok",
+  "webauthnCalls": []
+}

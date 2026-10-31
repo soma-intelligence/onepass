@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T22:28:27.698Z",
+  "category": "signup",
+  "extractor": 2,
+  "host": "un.org",
+  "source": "rendered",
+  "source_url": "https://un.org/register",
+  "status": "error: http 404"
+}

@@ -16,6 +16,7 @@ import { CANARY_PATH } from "../../e2e/server.ts";
 import { MOVE_GUARD_MS } from "../../src/content/frames.ts";
 import { CLICK_GUARD_MS } from "../../src/ui/components.ts";
 import type { World } from "../gen/model.ts";
+import { DEFAULT_PROFILE_ID } from "../gen/population.ts";
 import type { LabServer } from "../server/server.ts";
 import { EXT_ROOT, type LabState } from "./global-setup.ts";
 
@@ -227,10 +228,13 @@ export async function focusField(p: Page, scope: Frame, selector: string, timeou
   }
 }
 
-export async function launchLab(state: LabState, world: World, server: LabServer): Promise<Lab> {
+/** A fresh browser of the lab for simulated user `profileId` (default: the single default one) with that user's vault. */
+export async function launchLab(state: LabState, world: World, server: LabServer, profileId: string = DEFAULT_PROFILE_ID): Promise<Lab> {
+  const staged = state.profiles[profileId];
+  if (!staged) throw new Error(`lab: no staged vault for profile ${profileId}`);
   const dir = mkdtempSync(join(tmpdir(), "onepass-lab-profile-"));
   const profile = join(dir, "profile");
-  const extPath = join(EXT_ROOT, "dist", "chromium");
+  const extPath = state.extDir;
   let ctx: BrowserContext | undefined;
   try {
     ctx = await chromium.launchPersistentContext(profile, {
@@ -262,7 +266,7 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       return live ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }));
     };
     const id = new URL((await worker()).url()).host;
-    const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, state.cache, state.host);
+    const host = installHost(dir, join(profile, "NativeMessagingHosts"), id, staged.cache, staged.host);
     const first = context.pages()[0] ?? (await context.newPage());
     await canary(first, server);
 

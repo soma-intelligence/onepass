@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-27T23:09:48.970Z",
+  "category": "login",
+  "extractor": 2,
+  "host": "newrelic.com",
+  "source": "rendered",
+  "source_url": "https://newrelic.com/",
+  "status": "error: timeout"
+}

@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-28T00:19:17.115Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "before": "cerca articoli o argomenti su repubblica",
+          "depth": 6,
+          "hasPattern": false,
+          "id": "repSlimHeaderFormInput",
+          "index": 0,
+          "label": "cerca articoli o argomenti su repubblica",
+          "maxlength": 30,
+          "name": "query",
+          "placeholder": "cerca articoli o argomenti",
+          "required": true,
+          "role": "unknown",
+          "siblings": 3,
+          "tag": "input",
+          "type": "search",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "abbonati scarica l'app sfoglia il quotid",
+          "before": "cerca articoli o argomenti su repubblica",
+          "depth": 4,
+          "hasPattern": false,
+          "id": "repLeftNavFormInput",
+          "index": 0,
+          "label": "cerca articoli o argomenti su repubblica",
+          "name": "query",
+          "placeholder": "ricerca su repubblica",
+          "required": true,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "search",
+          "visibility": "offscreen"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "repubblica.it",
+  "iframes": [
+    {
+      "origin": "https://cdn-gl.imrworldwide.com",
+      "sameSite": false
+    }
+  ],
+  "lang": "it",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://repubblica.it/",
+  "status": "ok",
+  "webauthnCalls": []
+}

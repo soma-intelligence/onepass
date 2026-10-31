@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-27T23:40:32.562Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "get started"
+      ],
+      "fields": [
+        {
+          "after": "get started already an amazon business c",
+          "autocomplete": "email",
+          "before": "nt enter an email. work email preferred.",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "businessEmail-field-id",
+          "index": 0,
+          "label": "enter an email. work email preferred.",
+          "maxlength": 64,
+          "name": "businessEmail",
+          "placeholder": "enter email address",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "identifier"
+    }
+  ],
+  "framework": "other",
+  "host": "amazon.it",
+  "iframes": [],
+  "lang": "und",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://amazon.it/-/en/gp/browse.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

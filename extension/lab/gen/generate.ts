@@ -1,5 +1,6 @@
 // Seeded world generator of the autofill lab: expands a seed into fictional
-// .test sites (flow, traits, fields), mock identity provider accounts, the
+// .test sites (flow, traits, fields, and since version 2 multi-step forms,
+// layouts and simulated frameworks drawn from the corpus), mock identity provider accounts, the
 // vault fixture loaded by the real native host, and the scenarios with their
 // expected outcome. Each site draws from its own forked Rng so adding a trait
 // to one site does not shift the others.
@@ -10,11 +11,13 @@ import type { Patterns } from "../corpus/types.ts";
 import { expectationFor } from "./capabilities.ts";
 import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, password, person, totpSecret } from "./data.ts";
 import { GENERATOR_VERSION } from "./model.ts";
+import { LAYOUTS } from "./layouts.ts";
+import { DEFAULT_PROFILE_ID, drawProfiles, type Profile } from "./population.ts";
 import type {
-  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, HoneypotStyle, IdpAccount, Lang, LoginStyle, LookalikeKind,
-  ProviderId, Role, Scenario, Site, TraitId, World,
+  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, HoneypotStyle, IdpAccount, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, Scenario, Site, TraitId, World,
 } from "./model.ts";
 import { Rng } from "./rng.ts";
+import { pickSteps } from "./steps.ts";
 
 /** Reads the committed distilled corpus next to this module (works under vitest and plain node). */
 export function loadPatterns(): Patterns {
@@ -23,22 +26,28 @@ export function loadPatterns(): Patterns {
 }
 
 const FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey",
-  "sso", "signup", "checkout_card", "address", "identity"];
-// After the first ten sites: login 45 % (split over the five login flows), sso 15 %, the rest 10 % each.
+  "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
+// After the first eleven sites: login 45 % (split over the five login flows), sso 15 %, the rest 10 % each,
+// multi_step 10 more (relative weights: the shares above shrink by a tenth).
 const FLOW_WEIGHTS: [FlowId, number][] = [["login_single", 9], ["login_username_first", 9], ["login_email_then_password", 9],
-  ["login_totp", 9], ["login_passkey", 9], ["sso", 15], ["signup", 10], ["checkout_card", 10], ["address", 10], ["identity", 10]];
+  ["login_totp", 9], ["login_passkey", 9], ["sso", 15], ["signup", 10], ["checkout_card", 10], ["address", 10], ["identity", 10],
+  ["multi_step", 10]];
 const PASSWORD_LOGIN: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp"];
 const ONE_CLICK: FlowId[] = [...PASSWORD_LOGIN, "login_passkey", "sso"];
 
 const TRAITS: TraitId[] = ["iframe_same_origin", "iframe_cross_site", "shadow_open", "shadow_closed", "spa_rerender",
   "delayed_fields", "no_autocomplete", "obfuscated_names", "split_otp", "honeypot", "decoy_form", "lookalike", "mixed_language"];
-const TRAIT_WEIGHTS: Record<TraitId, number> = {
+/** Baseline trait weights (percent): distill.ts nudges them with the corpus into patterns.json `traits`. */
+export const TRAIT_WEIGHTS: Record<TraitId, number> = {
   iframe_same_origin: 6, iframe_cross_site: 6, shadow_open: 4, shadow_closed: 3, spa_rerender: 6, delayed_fields: 8,
   no_autocomplete: 8, obfuscated_names: 8, split_otp: 0, honeypot: 8, decoy_form: 6, lookalike: 8, mixed_language: 6,
 };
 const TRAIT_COUNT: [number, number][] = [[0, 30], [1, 35], [2, 25], [3, 10]];
 const HONEYPOT_STYLES: HoneypotStyle[] = ["display_none", "offscreen", "opacity", "one_pixel", "aria_hidden"];
 const LOOKALIKE_KINDS: LookalikeKind[] = ["suffix", "typo", "hyphen", "idn"];
+// "stacked" is the version 1 look; the other layouts share the rest.
+const LAYOUT_WEIGHTS: [LayoutId, number][] = LAYOUTS.map((l) => [l, l === "stacked" ? 40 : 10]);
+const FRAMEWORKS: FrameworkId[] = ["static", "react", "vue", "angular"];
 
 const PROVIDERS: ProviderId[] = ["google", "apple", "microsoft"];
 const PROVIDER_NAME: Record<ProviderId, string> = { google: "Google", apple: "Apple", microsoft: "Microsoft" };
@@ -64,7 +73,8 @@ const SAFE_TOKEN = /^[a-z][a-z0-9_-]{1,30}$/i;
 const VAULT = "Lab";
 const MAX_LABEL = 40;
 
-export interface GenerateOptions { sites: number; patterns: Patterns }
+/** `profiles`: simulated users (default 1: the historical single user, no profile keys in the world). */
+export interface GenerateOptions { sites: number; patterns: Patterns; profiles?: number }
 
 export function generate(seed: string, opts: GenerateOptions): World {
   const root = new Rng(seed);
@@ -90,7 +100,7 @@ export function generate(seed: string, opts: GenerateOptions): World {
     sites.push(built.site);
     if (built.item) items.push(built.item);
   }
-  const scenarios: Scenario[] = [];
+  const base: Scenario[] = [];
   for (const s of sites) {
     const drivers: DriverId[] = [ONE_CLICK.includes(s.flow) ? "one_click" : "menu_fill"];
     if (s.lookalike) drivers.push("lookalike");
@@ -98,8 +108,12 @@ export function generate(seed: string, opts: GenerateOptions): World {
     // password widget leads to none (its frame host cannot ask for the site's key).
     const crossSiteWidget = !s.passkeyOnly && s.traits.includes("iframe_cross_site");
     if (s.flow === "login_passkey" && !crossSiteWidget) drivers.push("passkey_control");
-    for (const driver of drivers) scenarios.push({ id: `${s.index}:${driver}`, site: s.index, driver, ...expectationFor(s, driver) });
+    for (const driver of drivers) base.push({ id: `${s.index}:${driver}`, site: s.index, driver, ...expectationFor(s, driver) });
   }
+  const nProfiles = opts.profiles ?? 1;
+  if (!Number.isInteger(nProfiles) || nProfiles < 1) throw new Error(`generate: profiles must be a positive integer (${opts.profiles})`);
+  const profiles = nProfiles > 1 ? drawProfiles(seed, nProfiles) : undefined;
+  const scenarios = profiles ? profiles.flatMap((p) => scenariosOf(p, sites, base)) : base;
   const fixture: FixtureFile = {
     _comment: `Fictional data generated by the OnePass autofill lab (seed ${seed}, generator v${GENERATOR_VERSION}). No real account, card or person.`,
     account: "lab@onepass.test",
@@ -108,7 +122,23 @@ export function generate(seed: string, opts: GenerateOptions): World {
   };
   const hosts = new Set<string>(PROVIDERS.map((p) => PROVIDER_HOST[p]));
   for (const s of sites) for (const h of [s.host, s.lookalike?.host, s.frameHost]) if (h) hosts.add(h);
-  return { version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort() };
+  return { version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort(), ...(profiles ? { profiles } : {}) };
+}
+
+/**
+ * The default scenarios as one profile plays them: tagged with the profile (ids of the default profile stay "<site>:<driver>"),
+ * expectations of an empty vault, and the profile's behaviour on menu_fill
+ * (abandons_step only where a form has steps to abandon).
+ */
+function scenariosOf(p: Profile, sites: Site[], base: Scenario[]): Scenario[] {
+  return base.map((s) => {
+    const site = sites[s.site]!;
+    const out: Scenario = { ...s, id: p.id === DEFAULT_PROFILE_ID ? s.id : `${p.id}:${s.id}`, profile: p.id, ...expectationFor(site, s.driver, p) };
+    if (s.driver === "menu_fill" && p.behaviour !== "complete" && (p.behaviour !== "abandons_step" || site.flow === "multi_step")) {
+      out.behaviour = p.behaviour;
+    }
+    return out;
+  });
 }
 
 export const DRIVER_GROUPS: readonly DriverGroup[] = ["current", "smart_fill"];
@@ -178,7 +208,7 @@ function login(title: string, url: string, rule: string, fields: Record<string, 
   return { type: "login", title, vault: VAULT, urls: [{ url, rule }], fields, ...extra };
 }
 
-function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: boolean, splitExp: boolean): Role[] {
+function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: boolean, splitExp: boolean, steps: Role[][]): Role[] {
   const pw = (s: LoginStyle | undefined): Role[] => [s === "email_then_password" ? "email" : "username", "password"];
   switch (flow) {
     case "login_single": return pw("single");
@@ -191,6 +221,7 @@ function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: bool
     case "checkout_card": return ["cc_name", "cc_number", ...(splitExp ? ["cc_exp_month", "cc_exp_year"] as Role[] : ["cc_exp"] as Role[]), "cc_csc"];
     case "address": return ["given_name", "family_name", "address_line1", "address_line2", "postal_code", "city", "country"];
     case "identity": return ["given_name", "family_name", "email", "tel", "birth_date", "organization"];
+    case "multi_step": return steps.flat();
   }
 }
 
@@ -199,6 +230,8 @@ function traitAllowed(t: TraitId, flow: FlowId, roles: Role[], langCount: number
     case "split_otp": return false; // drawn in the site shape (login_totp), never from the pool
     case "lookalike": case "decoy_form": return PASSWORD_LOGIN.includes(flow);
     case "mixed_language": return langCount > 1;
+    // Multi-step pages are served on the site's own host only (no frame route for the later steps).
+    case "iframe_same_origin": case "iframe_cross_site": return flow !== "multi_step" && roles.length > 0;
     // Every other trait alters form fields: none on sso or passkey-only sites.
     default: return roles.length > 0;
   }
@@ -206,14 +239,21 @@ function traitAllowed(t: TraitId, flow: FlowId, roles: Role[], langCount: number
 
 const isStructural = (t: TraitId) => t.startsWith("iframe_") || t.startsWith("shadow_");
 
-function pickTraits(r: Rng, flow: FlowId, roles: Role[], langCount: number, splitOtp: boolean): TraitId[] {
+/** Weight of a trait: the corpus-nudged one of patterns.json (version 2), else the baseline. */
+function traitWeight(patterns: Patterns, t: TraitId): number {
+  if (t === "split_otp") return 0; // drawn in the site shape (login_totp), never from the pool
+  const w = patterns.traits?.[t];
+  return w !== undefined ? w * 100 : TRAIT_WEIGHTS[t];
+}
+
+function pickTraits(r: Rng, patterns: Patterns, flow: FlowId, roles: Role[], langCount: number, splitOtp: boolean): TraitId[] {
   const chosen = new Set<TraitId>(splitOtp ? ["split_otp"] : []);
   const count = Math.min(r.weighted(TRAIT_COUNT), 3 - chosen.size);
   for (let k = 0; k < count; k++) {
     const hasStructural = [...chosen].some(isStructural);
     const pool = TRAITS.filter((t) => !chosen.has(t) && traitAllowed(t, flow, roles, langCount) && !(hasStructural && isStructural(t)));
     if (pool.length === 0) break;
-    chosen.add(r.weighted(pool.map((t) => [t, TRAIT_WEIGHTS[t]] as const)));
+    chosen.add(r.weighted(pool.map((t) => [t, traitWeight(patterns, t)] as const)));
   }
   return TRAITS.filter((t) => chosen.has(t));
 }
@@ -263,6 +303,12 @@ function buildFields(r: Rng, roles: Role[], patterns: Patterns, labelLang: Lang,
   });
 }
 
+/** Framework weights of the corpus ("static" when the corpus has none of the simulated ones). */
+function frameworkWeights(patterns: Patterns): [FrameworkId, number][] {
+  const known = (patterns.frameworks ?? []).filter(([f, w]) => FRAMEWORKS.includes(f as FrameworkId) && w > 0) as [FrameworkId, number][];
+  return known.length > 0 ? known : [["static", 1]];
+}
+
 interface SiteBase { index: number; seed: string; host: string; brand: string }
 
 function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, number][], used: Set<string>,
@@ -277,17 +323,24 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   const splitOtp = flow === "login_totp" && rs.chance(0.35);
   // Half the sso sites also show an identifier + password form next to the provider button (own fork: nothing shifts).
   const ssoForm = flow === "sso" && r.fork("sso-form").chance(0.5);
-  const roles = ssoForm ? rolesFor("login_single", undefined, false, false) : rolesFor(flow, loginStyle, passkeyOnly, splitExp);
+  const stepRoles = flow === "multi_step" ? pickSteps(r.fork("steps"), patterns, lang) : [];
+  const roles = ssoForm ? rolesFor("login_single", undefined, false, false, []) : rolesFor(flow, loginStyle, passkeyOnly, splitExp, stepRoles);
   // Field traits stay off sso sites, form or not: the provider button is what they test.
-  const traits = pickTraits(r.fork("traits"), flow, flow === "sso" ? [] : roles, langs.length, splitOtp);
+  const traits = pickTraits(r.fork("traits"), patterns, flow, flow === "sso" ? [] : roles, langs.length, splitOtp);
   const labelLang = traits.includes("mixed_language")
     ? r.fork("label-lang").weighted(langs.filter(([l]) => l !== lang)) : lang;
   const fields = buildFields(r.fork("fields"), roles, patterns, labelLang, traits);
 
   const rb = r.fork("buttons");
   const site: Site = { ...base, lang, labelLang, flow, traits, fields, buttons: { submit: "" } };
+  if (flow === "multi_step") {
+    let k = 0;
+    site.steps = stepRoles.map((step) => fields.slice(k, (k += step.length)));
+  }
+  site.layout = r.fork("layout").weighted(LAYOUT_WEIGHTS);
+  site.framework = r.fork("framework").weighted(frameworkWeights(patterns));
   if (loginStyle) site.loginStyle = loginStyle;
-  const nextStep = flow === "login_username_first" || flow === "login_email_then_password"
+  const nextStep = flow === "login_username_first" || flow === "login_email_then_password" || flow === "multi_step"
     || (loginStyle !== undefined && loginStyle !== "single" && !passkeyOnly);
   switch (flow) {
     case "signup": site.buttons.submit = buttonLabel(rb, patterns, "signup", labelLang, "Sign up"); break;
@@ -303,11 +356,11 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   const who = person(ra, lang);
   const url = `https://${base.host}`;
   let item: unknown;
-  if (PASSWORD_LOGIN.includes(flow) || flow === "login_passkey") {
+  if (PASSWORD_LOGIN.includes(flow) || flow === "login_passkey" || flow === "multi_step") {
     const usesEmail = roles.includes("email");
     const account: Account = { username: usesEmail ? who.email : who.email.split("@")[0]!, password: password(ra) };
     const extra: Record<string, unknown> = {};
-    if (flow === "login_totp") {
+    if (flow === "login_totp" || roles.includes("otp")) {
       account.totpSecret = totpSecret(ra);
       const enc = encodeURIComponent;
       extra.totp_uri = `otpauth://totp/${enc(base.brand)}:${enc(account.username)}?secret=${account.totpSecret}&issuer=${enc(base.brand)}`;

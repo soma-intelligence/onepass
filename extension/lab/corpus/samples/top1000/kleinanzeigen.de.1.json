@@ -1,0 +1,123 @@
+{
+  "captured_at": "2026-10-28T00:18:55.103Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [
+        "alle kategorien",
+        "ganzer ort",
+        "finden"
+      ],
+      "fields": [
+        {
+          "after": "suchbegriff eingeben. eingabetaste drück",
+          "ariaLabel": "was suchst du?",
+          "autocomplete": "off",
+          "before": "alt springen registrieren oder einloggen",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "site-search-query",
+          "index": 0,
+          "label": "was suchst du?",
+          "name": "keywords",
+          "placeholder": "was suchst du?",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        },
+        {
+          "ariaLabel": "plz oder ort",
+          "autocomplete": "off",
+          "before": "alle kategorien",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "site-search-area",
+          "index": 1,
+          "label": "plz oder ort",
+          "name": "locationStr",
+          "placeholder": "plz oder ort",
+          "required": false,
+          "role": "postal_code",
+          "siblings": 1,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "alle kategorien",
+        "ganzer ort",
+        "finden",
+        "meins",
+        "tab-liste nach links scrollen",
+        "immobilien",
+        "haus & garten",
+        "auto, rad & boot",
+        "mode & beauty",
+        "jobs",
+        "elektronik",
+        "familie, kind & baby"
+      ],
+      "fields": [
+        {
+          "after": "passwort *",
+          "before": "cher starten deine anmeldedaten e-mail *",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "user-email",
+          "index": 0,
+          "label": "e-mail*",
+          "name": "email",
+          "required": false,
+          "role": "email",
+          "siblings": 0,
+          "tag": "input",
+          "type": "email",
+          "visibility": "visible"
+        },
+        {
+          "after": "passwort sollte mindestens beinhalten: 8",
+          "before": "passwort *",
+          "depth": 18,
+          "hasPattern": false,
+          "id": "user-password",
+          "index": 1,
+          "label": "passwort*",
+          "name": "password",
+          "required": false,
+          "role": "password",
+          "siblings": 0,
+          "tag": "input",
+          "type": "password",
+          "visibility": "visible"
+        }
+      ],
+      "step": "both"
+    }
+  ],
+  "framework": "other",
+  "host": "www.kleinanzeigen.de",
+  "iframes": [
+    {
+      "origin": "https://dfme.kleinanzeigen.de",
+      "sameSite": true
+    }
+  ],
+  "lang": "de",
+  "providerButtons": [
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://www.kleinanzeigen.de/m-benutzer-anmeldung.html",
+  "status": "ok",
+  "webauthnCalls": []
+}

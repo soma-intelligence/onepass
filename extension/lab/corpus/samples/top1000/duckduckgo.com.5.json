@@ -1,0 +1,83 @@
+{
+  "captured_at": "2026-10-27T22:45:46.557Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "protection. privacy. peace of mind. open",
+          "autocomplete": "off",
+          "before": "duckduckgo",
+          "depth": 14,
+          "hasPattern": false,
+          "id": "search_form_input",
+          "index": 0,
+          "label": "search privately",
+          "name": "q",
+          "placeholder": "search privately",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "visible"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "open menu",
+        "more",
+        "search settings",
+        "private",
+        "all regions",
+        "safe search: moderate",
+        "any time",
+        "search assist",
+        "morestopresumemore",
+        "more results",
+        "close menu",
+        "share feedback"
+      ],
+      "fields": [
+        {
+          "after": "duckduckgo",
+          "depth": 2,
+          "hasPattern": false,
+          "id": "state_hidden",
+          "index": 0,
+          "name": "state_hidden",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "duckduckgo.com",
+  "iframes": [
+    {
+      "origin": "https://duckduckgo.com",
+      "sameSite": true
+    }
+  ],
+  "lang": "en",
+  "providerButtons": [
+    "apple",
+    "google",
+    "microsoft"
+  ],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://duckduckgo.com/account",
+  "status": "ok",
+  "webauthnCalls": []
+}

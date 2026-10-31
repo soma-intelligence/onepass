@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T21:57:09.446Z",
+  "category": "signup",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "tiktok.com",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://tiktok.com/signup",
+  "status": "ok",
+  "webauthnCalls": []
+}

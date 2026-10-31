@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-27T23:35:56.806Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [],
+  "framework": "other",
+  "host": "abo.lemonde.fr",
+  "iframes": [],
+  "lang": "fr",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://abo.lemonde.fr/",
+  "status": "ok",
+  "webauthnCalls": []
+}

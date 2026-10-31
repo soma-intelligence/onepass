@@ -1,0 +1,77 @@
+{
+  "captured_at": "2026-10-28T00:13:06.336Z",
+  "category": "login",
+  "extractor": 2,
+  "forms": [
+    {
+      "buttons": [],
+      "fields": [
+        {
+          "after": "log in your global privacy control has b",
+          "before": "vices news & press contact log in search",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "search",
+          "index": 0,
+          "label": "search",
+          "name": "s",
+          "placeholder": "search",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    },
+    {
+      "buttons": [
+        "cookie settings",
+        "cookie settings",
+        "cookie preferences",
+        "close log in popup",
+        "allow all",
+        "cookies details",
+        "cookies details",
+        "cookies details",
+        "cookies details",
+        "cookies details",
+        "back button",
+        "filter icon"
+      ],
+      "fields": [
+        {
+          "after": "search icon filter icon clear",
+          "ariaLabel": "cookie list search",
+          "before": "cookies details back button cookie list",
+          "depth": 9,
+          "hasPattern": false,
+          "id": "vendor-search-handler",
+          "index": 0,
+          "label": "cookie list search",
+          "name": "vendor-search-handler",
+          "placeholder": "search...",
+          "required": false,
+          "role": "unknown",
+          "siblings": 0,
+          "tag": "input",
+          "type": "text",
+          "visibility": "display_none"
+        }
+      ],
+      "step": "other"
+    }
+  ],
+  "framework": "other",
+  "host": "fwmrm.net",
+  "iframes": [],
+  "lang": "en",
+  "providerButtons": [],
+  "shadowFields": 0,
+  "source": "rendered",
+  "source_url": "https://fwmrm.net/",
+  "status": "ok",
+  "webauthnCalls": []
+}
