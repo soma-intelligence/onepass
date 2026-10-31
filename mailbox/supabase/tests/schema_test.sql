@@ -95,13 +95,30 @@ select onepass_test.throws(
       values (decode(repeat('a1', 16), 'hex'), 1, decode(repeat('c3', 16), 'hex'), 1, 1, false, 20000, decode(repeat('ab', 31), 'hex'))$$,
     '23514', 'blob_sha_of_31_bytes_refused');
 
+select onepass_test.throws(
+    $$insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, size)
+      values (decode(repeat('a1', 16), 'hex'), 1, decode(repeat('c3', 16), 'hex'), 1, 1, true, 0)$$,
+    '23514', 'tombstone_without_deleted_at_refused');
+select onepass_test.throws(
+    $$insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, deleted_at, size, data)
+      values (decode(repeat('a1', 16), 'hex'), 1, decode(repeat('c3', 16), 'hex'), 1, 1, false, now(), 1, '\x01')$$,
+    '23514', 'live_row_with_deleted_at_refused');
+select onepass_test.throws(
+    $$insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, size, blob_sha256)
+      values (decode(repeat('a1', 16), 'hex'), 1, decode(repeat('c3', 16), 'hex'), 1, 1, false, 16384, decode(repeat('ab', 32), 'hex'))$$,
+    '23514', 'blob_record_of_16384_bytes_refused');
+select onepass_test.ok(
+    (select indexdef like '%(deleted_at) WHERE deleted%' from pg_indexes
+     where schemaname = 'onepass_mailbox' and indexname = 'records_tombstone_purge_idx'),
+    'tombstone_purge_index_is_partial_on_deleted_at');
+
 -- The accepted shapes, at their limits.
 insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, size, data)
 values (decode(repeat('a1', 16), 'hex'), 1, decode(repeat('c4', 16), 'hex'), 1, 1, false, 16384, decode(repeat('00', 16384), 'hex'));
 insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, size, blob_sha256)
 values (decode(repeat('a1', 16), 'hex'), 255, decode(repeat('c5', 16), 'hex'), 1, 2, false, 921600, decode(repeat('ab', 32), 'hex'));
-insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, size)
-values (decode(repeat('a1', 16), 'hex'), 2, decode(repeat('c6', 16), 'hex'), 1, 3, true, 0);
+insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, deleted, deleted_at, size)
+values (decode(repeat('a1', 16), 'hex'), 2, decode(repeat('c6', 16), 'hex'), 1, 3, true, now(), 0);
 select onepass_test.ok(
     (select count(*) from onepass_mailbox.records where mailbox_id = decode(repeat('a1', 16), 'hex')) = 3,
     'inline_16384_blob_921600_and_tombstone_accepted');

@@ -52,6 +52,13 @@ alter default privileges for role postgres in schema onepass_mailbox
     revoke all on sequences from public, anon, authenticated, service_role;
 alter default privileges for role postgres in schema onepass_mailbox
     revoke all on functions from public, anon, authenticated, service_role;
+-- Per schema revokes are no-ops in Postgres (they can only add to the global
+-- defaults); the six above and the one below are kept as explicit intent.
+-- Functions created here by postgres still get PUBLIC EXECUTE by default:
+-- tests/privileges_test.sql is the real guard (owner, no PUBLIC entry,
+-- EXECUTE for api and janitor only on an allowlist).
+alter default privileges for role postgres in schema onepass_mailbox
+    revoke execute on functions from public;
 -- Per schema defaults can only add to the global ones, and the global default
 -- gives EXECUTE on every new function to PUBLIC: take it back for the owner,
 -- which creates objects in this schema only.
@@ -83,6 +90,16 @@ as $$
     from (select current_setting('onepass.rdv', true) as s) c;
 $$;
 
+create function onepass_mailbox.current_invite()
+returns bytea
+language sql
+stable
+set search_path = ''
+as $$
+    select case when s ~ '^[0-9a-fA-F]{64}$' then decode(s, 'hex') end
+    from (select current_setting('onepass.invite', true) as s) c;
+$$;
+
 -- Maintenance (purges, operator gestures) sees every row, but only when the
 -- connection itself belongs to postgres (pg_cron, the operator) or to the
 -- janitor. The edge function role cannot turn it on: its session_user is
@@ -99,6 +116,7 @@ $$;
 
 revoke all on function onepass_mailbox.current_mailbox() from public;
 revoke all on function onepass_mailbox.current_rdv() from public;
+revoke all on function onepass_mailbox.current_invite() from public;
 revoke all on function onepass_mailbox.in_maintenance() from public;
 
 -- Tables of spec 4.5.
@@ -167,6 +185,8 @@ create table onepass_mailbox.records (
     -- Server sequence of the last write.
     seq bigint not null check (seq >= 1),
     deleted boolean not null default false,
+    -- When the row became a tombstone: the 90 day purge ages on it.
+    deleted_at timestamptz,
     size integer not null check (size between 0 and 921600),
     data bytea check (octet_length(data) <= 16384),
     blob_sha256 bytea check (length(blob_sha256) = 32),
@@ -180,9 +200,11 @@ create table onepass_mailbox.records (
     constraint records_size check (
         case when deleted then size = 0
              when data is not null then size = length(data)
-             else size > 0 end
-    )
+             else size between 16385 and 921600 end
+    ),
+    constraint records_deleted_at check (deleted = (deleted_at is not null))
 );
+create index records_tombstone_purge_idx on onepass_mailbox.records (deleted_at) where deleted;
 
 create table onepass_mailbox.blobs (
     mailbox_id bytea not null references onepass_mailbox.mailboxes (id),
@@ -195,6 +217,7 @@ create table onepass_mailbox.blobs (
     orphaned_at timestamptz,
     primary key (mailbox_id, sha256)
 );
+create index blobs_orphaned_idx on onepass_mailbox.blobs (orphaned_at) where refs = 0;
 
 create table onepass_mailbox.nonces (
     credential_id bytea not null references onepass_mailbox.credentials (id) check (length(credential_id) = 16),
@@ -210,6 +233,7 @@ create table onepass_mailbox.used_tickets (
     mailbox_id bytea not null references onepass_mailbox.mailboxes (id),
     used_at timestamptz not null default now()
 );
+create index used_tickets_used_at_idx on onepass_mailbox.used_tickets (used_at);
 
 -- Rate windows. The key is a credential id padded to 32 bytes, or the HMAC of
 -- an IP address: no mailbox to scope it by.
@@ -219,6 +243,7 @@ create table onepass_mailbox.rate (
     count integer not null default 0 check (count >= 0),
     primary key (key, window_start)
 );
+create index rate_window_start_idx on onepass_mailbox.rate (window_start);
 
 -- One entry per mailbox: wake-ups are coalesced.
 create table onepass_mailbox.push_queue (
@@ -233,6 +258,7 @@ create table onepass_mailbox.rdv_sessions (
     bytes bigint not null default 0 check (bytes >= 0),
     closed_at timestamptz
 );
+create index rdv_sessions_created_at_idx on onepass_mailbox.rdv_sessions (created_at);
 
 create table onepass_mailbox.rdv_chunks (
     session_id bytea not null references onepass_mailbox.rdv_sessions (session_id) on delete cascade,
@@ -243,8 +269,13 @@ create table onepass_mailbox.rdv_chunks (
     written_at timestamptz not null default now(),
     primary key (session_id, dir, n)
 );
+create index rdv_chunks_written_at_idx on onepass_mailbox.rdv_chunks (written_at);
 
 -- Row level security, forced so the owner is bound too.
+--
+-- Every helper call in a policy is wrapped in (select ...): the helpers are
+-- not inlinable (they set search_path), so a bare call would run once per
+-- row; as a scalar subquery it runs once per statement (an InitPlan).
 
 alter table onepass_mailbox.plans enable row level security;
 alter table onepass_mailbox.plans force row level security;
@@ -277,49 +308,49 @@ create policy plans_read on onepass_mailbox.plans
     using (true);
 create policy plans_maintenance on onepass_mailbox.plans
     for all to onepass_mailbox_owner
-    using (onepass_mailbox.in_maintenance())
-    with check (onepass_mailbox.in_maintenance());
+    using ((select onepass_mailbox.in_maintenance()))
+    with check ((select onepass_mailbox.in_maintenance()));
 
 -- Invites: only the one whose hash api_create_mailbox put in onepass.invite.
 create policy invites_current on onepass_mailbox.invites
     for all to onepass_mailbox_owner
-    using (token_hash = decode(current_setting('onepass.invite', true), 'hex') or onepass_mailbox.in_maintenance())
-    with check (token_hash = decode(current_setting('onepass.invite', true), 'hex') or onepass_mailbox.in_maintenance());
+    using (token_hash = (select onepass_mailbox.current_invite()) or (select onepass_mailbox.in_maintenance()))
+    with check (token_hash = (select onepass_mailbox.current_invite()) or (select onepass_mailbox.in_maintenance()));
 
 create policy mailboxes_current on onepass_mailbox.mailboxes
     for all to onepass_mailbox_owner
-    using (id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy credentials_current on onepass_mailbox.credentials
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy records_current on onepass_mailbox.records
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy blobs_current on onepass_mailbox.blobs
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy nonces_current on onepass_mailbox.nonces
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy used_tickets_current on onepass_mailbox.used_tickets
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 create policy push_queue_current on onepass_mailbox.push_queue
     for all to onepass_mailbox_owner
-    using (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance())
-    with check (mailbox_id = onepass_mailbox.current_mailbox() or onepass_mailbox.in_maintenance());
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 -- Rate windows carry no mailbox (IP keys come before any mailbox exists):
 -- open to the owner, closed to everyone else by grants.
@@ -330,13 +361,13 @@ create policy rate_owner on onepass_mailbox.rate
 
 create policy rdv_sessions_current on onepass_mailbox.rdv_sessions
     for all to onepass_mailbox_owner
-    using (session_id = onepass_mailbox.current_rdv() or onepass_mailbox.in_maintenance())
-    with check (session_id = onepass_mailbox.current_rdv() or onepass_mailbox.in_maintenance());
+    using (session_id = (select onepass_mailbox.current_rdv()) or (select onepass_mailbox.in_maintenance()))
+    with check (session_id = (select onepass_mailbox.current_rdv()) or (select onepass_mailbox.in_maintenance()));
 
 create policy rdv_chunks_current on onepass_mailbox.rdv_chunks
     for all to onepass_mailbox_owner
-    using (session_id = onepass_mailbox.current_rdv() or onepass_mailbox.in_maintenance())
-    with check (session_id = onepass_mailbox.current_rdv() or onepass_mailbox.in_maintenance());
+    using (session_id = (select onepass_mailbox.current_rdv()) or (select onepass_mailbox.in_maintenance()))
+    with check (session_id = (select onepass_mailbox.current_rdv()) or (select onepass_mailbox.in_maintenance()));
 
 reset role;
 
