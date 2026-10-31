@@ -46,15 +46,20 @@
 -- mailbox-push edge functions, Task 8). Internal functions, not request
 -- entry points: they raise 22023 on a bad argument and return plain rows.
 --   gc_take(limit): up to limit blobs orphaned for 24 hours, marked taken
---     (state 3), oldest first. A take never confirmed is handed out again an
---     hour later. The caller deletes each object through the Storage API,
---     then calls gc_done.
---   gc_done(mailbox, sha): deletes the blob row if it is still taken and
---     unreferenced. While a take is pending nobody can announce or commit
---     the blob, so the row is the one taken; after the hour lease an
---     announce may have taken it back, and gc_done leaves it alone. The
---     caller must delete the object first, then call gc_done, within the
---     lease.
+--     (state 3) under a fresh take token, oldest first; each row gives the
+--     generation, the token and the exact object name. A take never
+--     confirmed is handed out again an hour later under a new token. The
+--     caller deletes exactly that object name through the Storage API, then
+--     calls gc_done.
+--   gc_done(mailbox, sha, gen, take): deletes the blob row only if it is
+--     still taken by that take, at that generation, and unreferenced;
+--     otherwise (an announce revived it under a new generation, or a newer
+--     take replaced this one) it does nothing. While a take is current
+--     nobody can announce or commit the blob.
+--   Task 8 (mailbox-gc), defense in depth: keep a 10 minute timer from each
+--     gc_take reply and drop the takes older than that without deleting
+--     anything (the lease is an hour, generations make a late delete
+--     harmless, the timer keeps it from happening at all).
 --   push_take(limit): removes up to limit mailboxes from the push queue,
 --     oldest first, and returns the push tokens to wake: the active
 --     credentials of each mailbox that is not frozen, without the one the
@@ -178,7 +183,7 @@ $$;
 -- --------------------------------------------------------------- janitor
 
 create function onepass_mailbox.gc_take(p_limit integer)
-returns table (mailbox_id bytea, sha256 bytea)
+returns table (mailbox_id bytea, sha256 bytea, gen bigint, take bigint, object_name text)
 language plpgsql
 security definer
 set search_path = ''
@@ -199,28 +204,31 @@ begin
         limit p_limit
         for update skip locked
     )
-    update onepass_mailbox.blobs b set state = 3, gc_taken_at = now()
+    update onepass_mailbox.blobs b
+    set state = 3, gc_taken_at = now(), gc_take = nextval('onepass_mailbox.blob_gen_seq')
     from t
     where b.mailbox_id = t.mailbox_id and b.sha256 = t.sha256
-    returning b.mailbox_id, b.sha256;
+    returning b.mailbox_id, b.sha256, b.gen, b.gc_take, onepass_mailbox._blob_object(b.mailbox_id, b.sha256, b.gen);
     perform set_config('onepass.maintenance', '', true);
 end
 $$;
 
-create function onepass_mailbox.gc_done(p_mailbox bytea, p_sha bytea)
+create function onepass_mailbox.gc_done(p_mailbox bytea, p_sha bytea, p_gen bigint, p_take bigint)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-    if p_mailbox is null or length(p_mailbox) <> 16 or p_sha is null or length(p_sha) <> 32 then
-        raise exception using errcode = '22023', message = 'gc_done takes a 16 byte mailbox and a 32 byte hash';
+    if p_mailbox is null or length(p_mailbox) <> 16 or p_sha is null or length(p_sha) <> 32
+       or p_gen is null or p_take is null then
+        raise exception using errcode = '22023', message = 'gc_done takes a 16 byte mailbox, a 32 byte hash, a generation and a take';
     end if;
     perform onepass_mailbox._enter(null);
     perform set_config('onepass.maintenance', 'on', true);
     delete from onepass_mailbox.blobs b
-    where b.mailbox_id = p_mailbox and b.sha256 = p_sha and b.state = 3 and b.refs = 0;
+    where b.mailbox_id = p_mailbox and b.sha256 = p_sha and b.state = 3 and b.refs = 0
+      and b.gen = p_gen and b.gc_take = p_take;
     perform set_config('onepass.maintenance', '', true);
 end
 $$;
@@ -287,7 +295,7 @@ revoke all on all functions in schema onepass_mailbox from public, anon, authent
 
 grant execute on function
     onepass_mailbox.gc_take(integer),
-    onepass_mailbox.gc_done(bytea, bytea),
+    onepass_mailbox.gc_done(bytea, bytea, bigint, bigint),
     onepass_mailbox.push_take(integer),
     onepass_mailbox.push_forget(bytea, bytea)
 to onepass_mailbox_janitor;
