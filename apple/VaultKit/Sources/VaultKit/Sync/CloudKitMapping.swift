@@ -145,7 +145,7 @@ public enum CloudKitMapping {
         if let store = error as? RemoteStoreError { return store }
         if error is URLError { return .offline }
         guard let ck = error as? CKError else {
-            return .other(String(localized: "Erreur iCloud inattendue.", bundle: VaultKitStrings.bundle))
+            return .other(ErrorText.describe(error)?.text ?? ErrorText.cloudKit(-1).sentence)
         }
         switch ck.code {
         case .networkUnavailable, .networkFailure:
@@ -159,7 +159,7 @@ public enum CloudKitMapping {
         case .quotaExceeded:
             return .other(String(localized: "Espace iCloud insuffisant.", bundle: VaultKitStrings.bundle))
         default:
-            return .other(String(localized: "Erreur iCloud (\(ck.code.rawValue)).", bundle: VaultKitStrings.bundle))
+            return .other(ErrorText.cloudKit(ck.code.rawValue).text)
         }
     }
 

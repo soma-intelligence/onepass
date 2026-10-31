@@ -876,7 +876,8 @@ struct ImportSheet: View {
         case "attachment_skipped": String(localized: "\(n) pièce(s) jointe(s) non importée(s)")
         case "unsupported_entry": String(localized: "\(n) entrée(s) d'un type non pris en charge, ignorée(s)")
         case "bad_date": String(localized: "\(n) date(s) illisible(s), gardée(s) en texte")
-        default: "\(w.code) : \(n)"
+        // A warning this version does not know yet: counted, never shown as its raw code.
+        default: String(localized: "\(n) élément(s) importé(s) avec une remarque")
         }
     }
 

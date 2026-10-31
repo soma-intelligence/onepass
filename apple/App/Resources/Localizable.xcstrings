@@ -556,6 +556,28 @@
         }
       }
     },
+    "%lld élément(s) importé(s) avec une remarque" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item imported with a note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items imported with a note"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld éléments" : {
       "localizations" : {
         "en" : {

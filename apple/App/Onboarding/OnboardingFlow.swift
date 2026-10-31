@@ -684,7 +684,7 @@ final class OnboardingModel {
                 secretKey: secretKey, accountID: accountID,
                 displayName: model.settings.displayName, createdAt: Date())
         } catch {
-            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "L'Emergency Kit n'a pas pu être préparé."))
         }
     }
 
@@ -705,7 +705,7 @@ final class OnboardingModel {
         do {
             kitURL = try EmergencyKitFile.write(kitData, under: FileManager.default.temporaryDirectory)
         } catch {
-            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être préparé.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "L'Emergency Kit n'a pas pu être préparé."))
         }
         return kitURL
     }
@@ -723,7 +723,7 @@ final class OnboardingModel {
         do {
             try kitData.write(to: url, options: .atomic)
         } catch {
-            errorMessage = String(localized: "L'Emergency Kit n'a pas pu être enregistré.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "L'Emergency Kit n'a pas pu être enregistré."))
         }
     }
 

@@ -20,10 +20,11 @@ public enum KeychainError: Error, Equatable, Sendable {
     /// The write reported success but a lookup right after does not find the item.
     case notReadBack
 
+    /// A sentence for the user (what happened, what to do); the status only as "(code N)" after it.
     public var message: String {
         switch self {
         case .unexpectedStatus(let status):
-            return String(localized: "Erreur du trousseau (code \(status)).", bundle: VaultKitStrings.bundle)
+            return ErrorText.keychain(status).text
         case .notReadBack:
             return String(localized: "Le trousseau n'a pas conservé la donnée.", bundle: VaultKitStrings.bundle)
         }
