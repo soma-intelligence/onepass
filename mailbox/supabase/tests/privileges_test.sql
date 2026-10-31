@@ -95,22 +95,27 @@ select onepass_test.ok(
     'stray_postgres_function_would_be_caught');
 
 -- The wake bridge (Task 5): runs as the migration role, so it is held to
--- the same shape and reachable from the mailbox owner only.
+-- the same shape and reachable from the mailbox owner only. Allow lists:
+-- the only grantees on the schema and its functions are their owner and
+-- onepass_mailbox_owner.
 select onepass_test.ok(
     (select count(*) = 1 from pg_proc p where p.pronamespace = 'onepass_mailbox_wake'::regnamespace)
     and (select bool_and(p.prosecdef and 'search_path=""' = any (coalesce(p.proconfig, '{}'))
-                         and p.proacl is not null
-                         and not exists (select 1 from unnest(p.proacl) a where a::text like '=%')
+                         and p.proowner::regrole::text <> 'onepass_mailbox_owner'
                          and has_function_privilege('onepass_mailbox_owner', p.oid, 'execute'))
          from pg_proc p where p.pronamespace = 'onepass_mailbox_wake'::regnamespace),
-    'wake_bridge_is_security_definer_without_public_execute');
+    'wake_bridge_is_security_definer_owned_by_the_migration_role');
 select onepass_test.ok(
     not exists (
-        select 1
-        from pg_proc p,
-             unnest(array['anon', 'authenticated', 'service_role', 'onepass_mailbox_api', 'onepass_mailbox_janitor']) r
+        select 1 from pg_proc p
         where p.pronamespace = 'onepass_mailbox_wake'::regnamespace
-          and has_function_privilege(r, p.oid, 'execute'))
-    and not has_schema_privilege('onepass_mailbox_api', 'onepass_mailbox_wake', 'usage')
-    and not has_schema_privilege('anon', 'onepass_mailbox_wake', 'usage'),
-    'wake_bridge_reachable_from_the_owner_only');
+          and (p.proacl is null
+               or exists (select 1 from aclexplode(p.proacl) a
+                          where a.grantee not in (p.proowner, 'onepass_mailbox_owner'::regrole))))
+    and not exists (
+        select 1 from pg_namespace n
+        where n.nspname = 'onepass_mailbox_wake'
+          and (n.nspacl is null
+               or exists (select 1 from aclexplode(n.nspacl) a
+                          where a.grantee not in (n.nspowner, 'onepass_mailbox_owner'::regrole)))),
+    'wake_bridge_granted_to_the_owner_only');

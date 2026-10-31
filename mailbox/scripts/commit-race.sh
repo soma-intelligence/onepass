@@ -14,6 +14,9 @@
 #    that took it; the logged seqs must be exactly 1..N, next_seq N + 1, the
 #    counters must match the rows, and no session may fail (a deadlock or a
 #    unique violation stops it).
+# 3. commit_frozen_while_waiting_is_refused: a freeze that commits while a
+#    batch waits on the mailbox lock stops that batch (frozen is read again
+#    under the lock).
 #
 # Prints `ok <name>` per check; exits non-zero on the first failure.
 set -euo pipefail
@@ -203,8 +206,8 @@ ok "$(val "select array_agg(seq order by seq) = array(select generate_series(2, 
     commit_parallel_seqs_have_no_gap
 ok "$(val "select m.next_seq = (select max(seq) + 1 from race.applied) from onepass_mailbox.mailboxes m")" \
     commit_parallel_next_seq_follows_the_last_seq
-ok "$(val "select m.bytes_used = (select sum(size) from onepass_mailbox.records)
-                 and m.records_count = (select count(*) from onepass_mailbox.records where not deleted)
+ok "$(val "select m.bytes_used = (select sum(case when deleted then 128 else size end) from onepass_mailbox.records)
+                 and m.records_count = (select count(*) from onepass_mailbox.records)
                  and (select count(*) from onepass_mailbox.records where kind = 2) = (select count(*) * 2 / 3 from race.applied)
            from onepass_mailbox.mailboxes m")" \
     commit_parallel_counters_match_the_rows
@@ -212,3 +215,54 @@ ok "$(val "select (select seq from onepass_mailbox.records where kind = 1 and id
                  = (select max(seq) from race.applied)")" \
     commit_parallel_shared_key_holds_the_last_write
 echo "# $(val "select count(*) from race.applied") seqs applied, $(val "select $sessions * $batches - count(distinct seq) / 3 from race.applied") batches conflicted"
+
+# ------------------------------------------------------------- phase 3
+
+# commit_frozen_while_waiting_is_refused: A holds the mailbox lock, the
+# operator's freeze queues behind it, then B authenticates (not frozen yet)
+# and queues too. When A commits, the freeze lands first, and B, reading
+# frozen again under the lock, is refused and writes nothing.
+key3="'\\x000000000000000000000000000000cc'::bytea"
+before="$(val "select next_seq from onepass_mailbox.mailboxes")"
+
+q race-a3 -At >"$tmp/a3.out" <<SQL &
+begin;
+select status from race.put($key3, null);
+select pg_sleep(2);
+commit;
+SQL
+pid_a3=$!
+for _ in $(seq 1 100); do
+    [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-a3' and query like '%pg_sleep%'")" = "1" ] && break
+    sleep 0.05
+done
+
+q race-freeze -o /dev/null -c "set onepass.maintenance = 'on'; update onepass_mailbox.mailboxes set frozen = true" &
+pid_f=$!
+for _ in $(seq 1 100); do
+    [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-freeze' and wait_event_type = 'Lock'")" = "1" ] && break
+    sleep 0.05
+done
+ok "$(val "select count(*) = 1 from pg_stat_activity where application_name = 'race-freeze' and wait_event_type = 'Lock'")" \
+    commit_race_freeze_waits_behind_the_batch
+
+q race-b3 -At >"$tmp/b3.out" 2>&1 <<SQL &
+select status from race.put('\\x000000000000000000000000000000dd'::bytea, null);
+SQL
+pid_b3=$!
+for _ in $(seq 1 100); do
+    [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-b3' and wait_event_type = 'Lock'")" = "1" ] && break
+    sleep 0.05
+done
+ok "$(val "select count(*) = 1 from pg_stat_activity where application_name = 'race-b3' and wait_event_type = 'Lock'")" \
+    commit_race_second_batch_waits_after_authenticating
+
+wait "$pid_a3"
+wait "$pid_f"
+wait "$pid_b3" || true
+ok "$(grep -c '^ok$' "$tmp/a3.out" | sed 's/^1$/t/')" commit_race_batch_before_the_freeze_applies
+ok "$(grep -c 'ERROR:  frozen' "$tmp/b3.out" | sed 's/^1$/t/')" commit_race_batch_after_the_freeze_is_refused
+ok "$(val "select frozen and next_seq = $before + 1
+                 and not exists (select 1 from onepass_mailbox.records where id = '\\x000000000000000000000000000000dd'::bytea)
+           from onepass_mailbox.mailboxes")" \
+    commit_frozen_while_waiting_is_refused
