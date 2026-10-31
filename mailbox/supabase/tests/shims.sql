@@ -156,4 +156,39 @@ begin
 end
 $$;
 
+-- Runs `stmt` and passes only if it fails with SQLSTATE `state` and exactly
+-- the message `msg` (the mailbox functions raise `OP<http>` with the snake
+-- case ErrorCode name as message). Effects are rolled back either way.
+create function onepass_test.raises(stmt text, state text, msg text, name text)
+returns void
+language plpgsql
+as $$
+declare
+    got text;
+    got_msg text;
+begin
+    begin
+        execute stmt;
+    exception when others then
+        get stacked diagnostics got = returned_sqlstate, got_msg = message_text;
+    end;
+    if got is null then
+        raise exception 'not ok % (no error)', name using errcode = 'P0001';
+    end if;
+    if got <> state or got_msg <> msg then
+        raise exception 'not ok % (got % %)', name, got, got_msg using errcode = 'P0001';
+    end if;
+    raise notice 'ok %', name;
+end
+$$;
+
+-- A 16 byte nonce from a counter, so tests need no extension.
+create function onepass_test.nonce(i bigint)
+returns bytea
+language sql
+immutable
+as $$
+    select decode(lpad(to_hex(i), 32, '0'), 'hex');
+$$;
+
 grant execute on all functions in schema onepass_test to public;
