@@ -87,6 +87,15 @@ pub enum Error {
     /// The device waits for the user's answer to a key rotation (state
     /// `Candidate`, spec R10): it reads, it does not write.
     ReadOnly,
+    /// An Emergency Kit whose identity has a visible child in the lineage
+    /// (spec 7.5 step 4, R14): the keys changed on `rotator` at `at` (Unix
+    /// seconds, the child's `issued_at`). `rotator` is this device's local
+    /// name for that device, or `repo::kit::UNKNOWN_ROTATOR`, never a name
+    /// read from the server. Restored nothing.
+    OutdatedKit {
+        rotator: String,
+        at: i64,
+    },
 }
 
 impl fmt::Display for Error {
@@ -101,6 +110,9 @@ impl fmt::Display for Error {
             Self::Conflict => f.write_str("concurrent write, retry"),
             Self::Store(_) => f.write_str("store error"),
             Self::ReadOnly => f.write_str("read only until the key rotation is answered"),
+            Self::OutdatedKit { .. } => {
+                f.write_str("emergency kit outdated: the keys changed since")
+            }
         }
     }
 }
@@ -146,6 +158,14 @@ mod tests {
         assert_eq!(
             Error::ReadOnly.to_string(),
             "read only until the key rotation is answered"
+        );
+        let outdated = Error::OutdatedKit {
+            rotator: "iPhone de Quentin".into(),
+            at: 1,
+        };
+        assert_eq!(
+            outdated.to_string(),
+            "emergency kit outdated: the keys changed since"
         );
         assert_eq!(
             IntegrityError::VaultMissing.to_string(),

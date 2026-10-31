@@ -71,6 +71,7 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 pub mod follow;
+pub mod kit;
 mod local;
 pub mod migrate;
 pub mod pairing;
@@ -1190,8 +1191,11 @@ impl<S: RecordStore> Repository<S> {
     /// listed too; if the vaults do not verify, no list is created and the
     /// vault waits for adoption. A list changed by
     /// another writer meanwhile is `Error::Conflict`, and nothing is written.
+    /// A kit-restored device no device pinned yet signs no vault list:
+    /// `Validation("device")` (Task 15).
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
         self.writable()?;
+        self.signs_lists()?;
         self.sync_epoch()?;
         if self.read_list::<VaultListEntry>()?.is_none() {
             // An account from before the lists: migrate on this first write.
@@ -1257,9 +1261,11 @@ impl<S: RecordStore> Repository<S> {
     /// longer returns or expects. The vault leaves `last_seen`. A list
     /// changed by another writer meanwhile is `Error::Conflict`, and nothing
     /// is written. On an account without a vault list (from before it), the
-    /// lists are first brought up to date.
+    /// lists are first brought up to date. Refused on a kit-restored
+    /// device no device pinned yet, as `create_vault`.
     pub fn delete_vault(&mut self, vault: &Vault) -> Result<()> {
         self.writable()?;
+        self.signs_lists()?;
         if self.read_list::<VaultListEntry>()?.is_none() {
             self.maintain_lists(None)?;
         }

@@ -50,6 +50,8 @@ impl From<Error> for PortError {
             Error::ReadOnly => {
                 PortError::Other("read only until the key rotation is answered".into())
             }
+            // Only a kit restore returns it; never reached through a port.
+            Error::OutdatedKit { .. } => PortError::Other("emergency kit outdated".into()),
         }
     }
 }
