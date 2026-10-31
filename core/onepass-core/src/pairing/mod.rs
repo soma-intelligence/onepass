@@ -107,7 +107,7 @@ pub fn sas(k: &SymmetricKey, transcript: &[u8; 32]) -> Result<String> {
 }
 
 /// `SHA-256(qr_text || hello)`.
-fn transcript(qr_text: &str, hello: &[u8]) -> [u8; 32] {
+pub(crate) fn transcript(qr_text: &str, hello: &[u8]) -> [u8; 32] {
     let mut ctx = Context::new(&SHA256);
     ctx.update(qr_text.as_bytes());
     ctx.update(hello);
@@ -116,7 +116,7 @@ fn transcript(qr_text: &str, hello: &[u8]) -> [u8; 32] {
     out
 }
 
-fn sha256(bytes: &[u8]) -> [u8; 32] {
+pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
     out.copy_from_slice(aws_lc_rs::digest::digest(&SHA256, bytes).as_ref());
     out

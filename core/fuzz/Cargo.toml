@@ -186,3 +186,10 @@ path = "fuzz_targets/contact_book.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "contact_frames"
+path = "fuzz_targets/contact_frames.rs"
+test = false
+doc = false
+bench = false
