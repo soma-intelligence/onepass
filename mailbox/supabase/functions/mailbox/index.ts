@@ -3,14 +3,17 @@
 // Storage and the clock.
 //
 // Secrets: MAILBOX_DB_URL (pooler, transaction mode, as onepass_mailbox_api),
-// MAILBOX_IP_HMAC_SECRET (at least 32 characters), MAILBOX_OPEN_SIGNUP
+// MAILBOX_IP_HMAC_SECRET (at least 32 characters), MAILBOX_CLIENT_IP_HEADER
+// and MAILBOX_TRUSTED_HOPS (where the client address is read, ip.ts),
+// MAILBOX_OPEN_SIGNUP
 // ("true" or absent), MAILBOX_PUBLISHABLE_KEY, MAILBOX_REALTIME_URL, and the
 // platform's SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Storage only).
 // MAILBOX_STORAGE_PUBLIC_URL is for a local stack only: the origin and path
 // clients reach Storage at, when SUPABASE_URL is a container address.
 import { connect } from "./db.ts";
 import { storageSigner } from "./storage.ts";
-import { clientIp, handler } from "./routes.ts";
+import { handler } from "./routes.ts";
+import { ipSourceFromEnv } from "./ip.ts";
 
 function required(name: string): string {
   const v = Deno.env.get(name);
@@ -29,6 +32,7 @@ const handle = handler({
     Deno.env.get("MAILBOX_STORAGE_PUBLIC_URL") || undefined,
   ),
   ipSecret: new TextEncoder().encode(ipSecret),
+  ipSource: ipSourceFromEnv(Deno.env.get("MAILBOX_CLIENT_IP_HEADER"), Deno.env.get("MAILBOX_TRUSTED_HOPS")),
   openSignup: Deno.env.get("MAILBOX_OPEN_SIGNUP") === "true",
   publishableKey: Deno.env.get("MAILBOX_PUBLISHABLE_KEY") || undefined,
   realtimeUrl: Deno.env.get("MAILBOX_REALTIME_URL") || undefined,
@@ -36,9 +40,4 @@ const handle = handler({
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 });
 
-Deno.serve((req, info) => {
-  const peer = info.remoteAddr.transport === "tcp" || info.remoteAddr.transport === "udp"
-    ? info.remoteAddr.hostname
-    : "";
-  return handle(req, clientIp(req.headers, peer));
-});
+Deno.serve((req) => handle(req));

@@ -60,6 +60,10 @@ umask 077
     echo "MAILBOX_DB_URL=postgresql://onepass_mailbox_api:${api_pw}@db:5432/postgres"
     echo "MAILBOX_JANITOR_DB_URL=postgresql://onepass_mailbox_janitor:${janitor_pw}@db:5432/postgres"
     echo "MAILBOX_IP_HMAC_SECRET=${ip_secret}"
+    # Kong, the one proxy in front of the function, appends the peer to
+    # X-Forwarded-For: the client address is the rightmost entry.
+    echo "MAILBOX_CLIENT_IP_HEADER=x-forwarded-for"
+    echo "MAILBOX_TRUSTED_HOPS=1"
     echo "MAILBOX_OPEN_SIGNUP=true"
     echo "MAILBOX_PUBLISHABLE_KEY=${publishable}"
     echo "MAILBOX_REALTIME_URL=ws://127.0.0.1:${api_port}/realtime/v1"

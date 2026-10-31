@@ -222,7 +222,7 @@ impl Message for ChangesPage {
 
 /// Query string of `GET /v1/mailboxes/{m}/changes`, in its only accepted
 /// spelling: `after=<seq>&limit=<1..=1000>&full=<0|1>`, decimal without sign
-/// or leading zero. `full` asks for a full fetch (live rows only, tombstones
+/// or leading zero, `after` at most `i64::MAX`. `full` asks for a full fetch (live rows only, tombstones
 /// skipped, `min_cursor` ignored), otherwise the fetch is incremental.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangesQuery {
@@ -271,7 +271,12 @@ impl ChangesQuery {
                 _ => return Err(bad()),
             },
         };
-        if q.limit == 0 || q.limit > PAGE_MAX_RECORDS || q.to_query() != query {
+        // Seqs are Postgres bigint: an after above i64::MAX names no seq.
+        if q.limit == 0
+            || q.limit > PAGE_MAX_RECORDS
+            || q.after > i64::MAX as u64
+            || q.to_query() != query
+        {
             return Err(bad());
         }
         Ok(q)
@@ -1157,7 +1162,7 @@ mod tests {
                 full: false,
             },
             ChangesQuery {
-                after: u64::MAX,
+                after: i64::MAX as u64,
                 limit: PAGE_MAX_RECORDS,
                 full: true,
             },
@@ -1191,6 +1196,8 @@ mod tests {
             "after=+1&limit=1&full=0",
             "after=-1&limit=1&full=0",
             "after=18446744073709551616&limit=1&full=0",
+            "after=18446744073709551615&limit=1&full=0",
+            "after=9223372036854775808&limit=1&full=0",
             "after=1&limit=0&full=0",
             "after=1&limit=1001&full=0",
             "after=1&limit=1&full=2",

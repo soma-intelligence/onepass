@@ -90,12 +90,13 @@ export function refusalFromSqlError(e: unknown): Refusal {
     }
     return new Refusal(err.message, retry);
   }
-  // A bug or a transient fault: the SQLSTATE goes to the function's log
-  // (never request data; the address is not known to SQL anyway).
+  // A bug or a transient fault: the SQLSTATE and the server routine go to
+  // the function's log, never the message (it can echo input values).
+  const e2 = err as { code?: unknown; routine?: unknown } | null;
   console.error(
     "mailbox: SQL call failed",
-    err && typeof err.code === "string" ? err.code : "no SQLSTATE",
-    String(err?.message ?? err).slice(0, 200),
+    e2 && typeof e2.code === "string" ? e2.code : "no SQLSTATE",
+    e2 && typeof e2.routine === "string" ? e2.routine : "",
   );
   return new Refusal("retry");
 }
