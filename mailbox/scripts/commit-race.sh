@@ -21,6 +21,11 @@
 #    holds its transaction; a batch that puts on the same key waits on the
 #    mailbox lock, then inserts a fresh row. The counters must match the
 #    rows (a batch that planned against the tombstone would count it twice).
+# 5. collector_never_takes_a_blob_a_commit_checked: a blob put waits on a
+#    record row another session holds, after it checked the blob; meanwhile
+#    the janitor runs maintenance and drains every grave (deleting each
+#    object). When the batch applies, its blob row must be the one it
+#    checked (same generation, refs 1) and that object must still exist.
 #
 # Prints `ok <name>` per check; exits non-zero on the first failure.
 set -euo pipefail
@@ -323,3 +328,65 @@ ok "$(val "select m.bytes_used = (select sum(case when deleted then 128 else siz
                  and (select not deleted from onepass_mailbox.records where id = $key4)
            from onepass_mailbox.mailboxes m")" \
     purge_and_commit_serialize
+
+# ------------------------------------------------------------- phase 5
+
+q setup -o /dev/null <<'SQL'
+set onepass.maintenance = 'on';
+insert into onepass_mailbox.blobs (mailbox_id, sha256, size, state, refs, orphaned_at)
+select mailbox, extensions.digest('X', 'sha256'), 20000, 2, 0, now() - interval '2 days' from race.fixture;
+insert into storage.objects (bucket_id, name, metadata)
+select 'onepass-mailbox', onepass_mailbox._blob_object(b.mailbox_id, b.sha256, b.gen), '{"size": 20000}'::jsonb
+from onepass_mailbox.blobs b where b.sha256 = extensions.digest('X', 'sha256');
+SQL
+gen5="$(val "select gen from onepass_mailbox.blobs where sha256 = extensions.digest('X', 'sha256')")"
+
+# S holds the record row the batch will write.
+q race-s5 -o /dev/null <<'SQL' &
+begin;
+insert into onepass_mailbox.records (mailbox_id, kind, id, version, seq, size, data)
+select mailbox, 1, '\x000000000000000000000000000000c5'::bytea, 1, 999999, 1, '\x01' from race.fixture;
+select pg_sleep(3);
+rollback;
+SQL
+pid_s5=$!
+for _ in $(seq 1 100); do
+    [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-s5' and query like '%pg_sleep%'")" = "1" ] && break
+    sleep 0.05
+done
+
+q race-c5 -At >"$tmp/c5.out" 2>&1 <<'SQL' &
+select c.status
+from race.fixture f,
+     onepass_mailbox.api_commit(f.credential, extensions.gen_random_bytes(16), now(), f.mailbox,
+         array[1]::smallint[], array['\x000000000000000000000000000000c5'::bytea], array[1]::bigint[], array[1]::smallint[],
+         array[null]::bigint[], array[null]::bytea[], array[extensions.digest('X', 'sha256')], array[20000]) c;
+SQL
+pid_c5=$!
+waited=f
+for _ in $(seq 1 40); do
+    if [ "$(val "select count(*) from pg_stat_activity where application_name = 'race-c5' and wait_event_type = 'Lock'")" = "1" ]; then
+        waited=t
+        break
+    fi
+    sleep 0.05
+done
+ok "$waited" collector_race_batch_waits_after_checking_its_blob
+
+# The janitor: maintenance (collects due blobs), then drain every grave the
+# way mailbox-gc does: delete the object, then confirm.
+q race-g5 -o /dev/null <<'SQL'
+select onepass_mailbox.maintenance();
+create temporary table taken as select * from onepass_mailbox.gc_take(1000);
+delete from storage.objects o using taken t where o.name = t.object_name;
+select onepass_mailbox.gc_done(t.mailbox_id, t.object_name) from taken t;
+SQL
+
+wait "$pid_s5" || true
+wait "$pid_c5"
+ok "$(grep -c '^ok$' "$tmp/c5.out" | sed 's/^1$/t/')" collector_race_batch_applies
+ok "$(val "select b.gen = $gen5 and b.refs = 1 and b.state = 2
+                 and exists (select 1 from storage.objects o
+                             where o.name = onepass_mailbox._blob_object(b.mailbox_id, b.sha256, b.gen))
+           from onepass_mailbox.blobs b where b.sha256 = extensions.digest('X', 'sha256')")" \
+    collector_never_takes_a_blob_a_commit_checked

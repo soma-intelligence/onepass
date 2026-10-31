@@ -22,7 +22,7 @@ insert into t_allow (role, signature) values
     ('onepass_mailbox_api', 'onepass_mailbox.rdv_get(bytea,smallint,integer,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.rdv_close(bytea,bytea)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.gc_take(integer)'),
-    ('onepass_mailbox_janitor', 'onepass_mailbox.gc_done(bytea,bytea,bigint,bigint)'),
+    ('onepass_mailbox_janitor', 'onepass_mailbox.gc_done(bytea,text)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.push_take(integer)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.push_forget(bytea,bytea)');
 
