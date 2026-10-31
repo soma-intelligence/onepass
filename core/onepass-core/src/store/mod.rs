@@ -821,17 +821,17 @@ mod tests {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
         for (kind, code) in [
-            (RecordKind::ContactBook, 13),
-            (RecordKind::Membership, 14),
-            (RecordKind::MemberKey, 15),
-            (RecordKind::MemberLineage, 16),
-            (RecordKind::RekeyRequest, 17),
-            (RecordKind::Family, 18),
-            (RecordKind::RecoverySlot, 19),
-            (RecordKind::RecoveryHalf, 20),
-            (RecordKind::RecoveryMessage, 21),
-            (RecordKind::ItemSend, 22),
-            (RecordKind::ShareInvite, 23),
+            (RecordKind::ContactBook, 14),
+            (RecordKind::Membership, 15),
+            (RecordKind::MemberKey, 16),
+            (RecordKind::MemberLineage, 17),
+            (RecordKind::RekeyRequest, 18),
+            (RecordKind::Family, 19),
+            (RecordKind::RecoverySlot, 20),
+            (RecordKind::RecoveryHalf, 21),
+            (RecordKind::RecoveryMessage, 22),
+            (RecordKind::ItemSend, 23),
+            (RecordKind::ShareInvite, 24),
         ] {
             assert_eq!(kind.code(), code);
         }

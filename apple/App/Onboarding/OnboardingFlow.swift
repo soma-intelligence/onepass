@@ -100,8 +100,37 @@ final class OnboardingModel {
 
     /// The mode asked for on "J'ai déjà OnePass sur un autre appareil" (public included).
     var pairDeviceMode: FfiDeviceMode = .personal
+    /// How this device meets the other one: it scans the code the other device shows, types it, or
+    /// shows its own QR code for an iPhone or an iPad to scan.
+    var pairMethod: PairMethod = PairMethod.preferred
+    /// The code typed on the "Saisir le code" step (`XXXX-XXXX`, forgiving).
+    var joinCode = ""
     /// The running pairing (new device side), from the QR step on.
     private(set) var pairing: PairingNewcomerFlow?
+
+    /// How the new device meets the unlocked one (the first choice of the pairing steps).
+    enum PairMethod: Equatable {
+        /// Scan the QR code the other device shows (iPhone, iPad).
+        case scan
+        /// Type the code the other device shows.
+        case type
+        /// Show a QR code for the other device to scan (the first direction).
+        case showCode
+
+        @MainActor static var preferred: PairMethod { scanAvailable ? .scan : .type }
+
+        /// A camera that reads QR codes (not on the Simulator, not on the Mac).
+        @MainActor static var scanAvailable: Bool {
+            #if os(iOS)
+            SecretKeyScanner.isSupported
+            #else
+            false
+            #endif
+        }
+    }
+
+    /// The method actually used: a guest session has no code to scan or type.
+    var effectivePairMethod: PairMethod { pairDeviceMode == .public ? .showCode : pairMethod }
 
     @ObservationIgnored private let model: AppModel
 
@@ -272,6 +301,9 @@ final class OnboardingModel {
             }
             return String(localized: "Saisis ton mot de passe maître.")
         case .pairing:
+            if pairing == nil, effectivePairMethod == .type {
+                return String(localized: "Saisis le code affiché sur ton autre appareil.")
+            }
             return String(localized: "Saisis ton mot de passe maître.")
         default:
             return nil
@@ -302,11 +334,17 @@ final class OnboardingModel {
     var primaryLabel: String? {
         switch step {
         case .welcome: nil
-        case .pairMode: String(localized: "Afficher le QR code")
+        case .pairMode:
+            switch effectivePairMethod {
+            case .scan: String(localized: "Scanner le QR code")
+            case .type: String(localized: "Saisir le code")
+            case .showCode: String(localized: "Afficher le QR code")
+            }
         case .pairing:
             switch pairing?.state {
             case .receivedFull, .importing: String(localized: "Déverrouiller")
             case .failed, .cancelled: String(localized: "Recommencer")
+            case nil where effectivePairMethod == .type: String(localized: "Rejoindre")
             default: nil
             }
         case .biometrics: String(localized: "Activer \(biometryName)")
@@ -326,10 +364,14 @@ final class OnboardingModel {
         case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
         case .pairing:
             if pairing?.state == .receivedFull { return !restorePassword.isEmpty }
+            if pairing == nil, effectivePairMethod == .type { return joinCodeValid }
             return true
         default: return true
         }
     }
+
+    /// The typed code reads as a pairing code (8 characters of the alphabet).
+    var joinCodeValid: Bool { (try? pairingRendezvousServiceName(code: joinCode)) != nil }
 
     var canSkip: Bool { step == .biometrics && !busy && !biometricsEnabled }
 
@@ -345,13 +387,19 @@ final class OnboardingModel {
         case .restore: await restore()
         case .done: finish()
         case .pairMode:
-            startPairing()
+            if effectivePairMethod == .showCode { startPairing() }
             advance()
         case .pairing:
             if pairing?.state == .receivedFull {
                 await unlockPaired()
-            } else {
+            } else if effectivePairMethod == .showCode {
                 startPairing()
+            } else if pairing == nil {
+                joinPairing(code: joinCode)
+            } else {
+                // Failed or cancelled: back to the code entry.
+                stopPairing()
+                errorMessage = nil
             }
         }
     }
@@ -530,6 +578,17 @@ final class OnboardingModel {
             vault: session, mode: pairDeviceMode, invite: text, connector: LocalNetworkPairingConnector())
         pairing = flow
         flow.start()
+    }
+
+    /// Meets the unlocked device that shows a code: `code` is the scanned QR text or the typed code.
+    /// The flow connects to the service the code names; the code comparison follows.
+    func joinPairing(code: String) {
+        stopPairing()
+        errorMessage = nil
+        if pairDeviceMode != .public { mode = pairDeviceMode == .shared ? .shared : .personal }
+        let flow = PairingNewcomerFlow(vault: session, mode: pairDeviceMode, listener: LocalNetworkPairingListener())
+        pairing = flow
+        flow.join(code: code, connector: LocalNetworkPairingConnector())
     }
 
     private func stopPairing() {
@@ -722,7 +781,7 @@ final class OnboardingModel {
         case .restore: "Emergency Kit"
         case .done: String(localized: "Terminé")
         case .pairMode: String(localized: "Type d'appareil")
-        case .pairing: String(localized: "QR code")
+        case .pairing: String(localized: "Appairage")
         }
     }
 }

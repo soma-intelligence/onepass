@@ -26,6 +26,10 @@ public enum PairingFailure: Error, Equatable, Sendable {
     case tooManyAttempts
     /// The received account waited too long for the master password and was dropped (M3).
     case grantExpired
+    /// The typed or scanned code is not a pairing code.
+    case badCode
+    /// No device showing this code answered on the local network.
+    case hostNotFound
     /// Any other error, already in French.
     case other(String)
 
@@ -63,6 +67,15 @@ public enum PairingFailure: Error, Equatable, Sendable {
         case .grantExpired:
             String(
                 localized: "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage.",
+                bundle: VaultKitStrings.bundle)
+        case .badCode:
+            String(
+                localized: "Ce code n'est pas valide. Vérifie-le : 8 caractères, par exemple K7QM-4XPR.",
+                bundle: VaultKitStrings.bundle)
+        case .hostNotFound:
+            String(
+                localized:
+                    "Aucun appareil n'affiche ce code. Vérifie le code, rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi.",
                 bundle: VaultKitStrings.bundle)
         case .other(let message):
             message

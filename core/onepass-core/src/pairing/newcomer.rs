@@ -11,10 +11,15 @@ use crate::{Id, Result};
 
 use super::channel::Channel;
 use super::invite::signed_hello;
-use super::messages::{DeviceInfo, FullGrantV2, Grant, Hello, KeyExchange, Message, ProfileCard};
+use super::messages::{
+    DeviceInfo, FullGrantV2, Grant, Hello, JoinHello, KeyExchange, Message, ProfileCard,
+};
 use super::qr::{InviteQr, PairingQr, QR_VERSION};
+use super::rendezvous::RendezvousCode;
 use super::snapshot::{check_snapshot, check_trust_for};
-use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
+use super::{
+    KEM_LABEL, KEM_LABEL_RV, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -33,6 +38,7 @@ pub struct Newcomer {
     expires_at: i64,
     mode: DeviceMode,
     transcript: [u8; 32],
+    label: &'static [u8],
     channel: Option<Channel>,
     state: State,
     public_granted: bool,
@@ -80,6 +86,7 @@ impl Newcomer {
             expires_at: qr.expires_at,
             mode,
             transcript: transcript(&qr.to_text(), &hello),
+            label: KEM_LABEL,
             channel: None,
             state: State::AwaitingKey,
             public_granted: false,
@@ -120,6 +127,7 @@ impl Newcomer {
             expires_at: now.checked_add(QR_LIFETIME_SECS).ok_or(refused("time"))?,
             mode,
             transcript: transcript(invite_text, &hello),
+            label: KEM_LABEL,
             channel: None,
             state: State::AwaitingKey,
             public_granted: false,
@@ -131,6 +139,46 @@ impl Newcomer {
             granted_account: None,
         };
         Ok((newcomer, frame))
+    }
+
+    /// Join an approver that shows `code` (reverse pairing): a fresh
+    /// ephemeral key pair and session id, and the `JoinHello` to send once
+    /// connected. Valid `QR_LIFETIME_SECS` from `now`.
+    pub fn join_code(
+        device: DeviceInfo,
+        mode: DeviceMode,
+        code: &RendezvousCode,
+        now: i64,
+    ) -> Result<(Newcomer, Vec<u8>)> {
+        check_name(&device.name)?;
+        let secret = HybridKemSecret::generate()?;
+        let session_id = random_array()?;
+        let hello = Hello {
+            session_id,
+            ephemeral_public: secret.public()?,
+            device: device.clone(),
+            requested_mode: mode,
+        };
+        let proof = code.proof(&JoinHello::signed_part(&hello)?)?;
+        let join_hello = JoinHello { hello, proof }.to_bytes()?;
+        let newcomer = Newcomer {
+            secret: Some(secret),
+            session_id,
+            expires_at: now.checked_add(QR_LIFETIME_SECS).ok_or(refused("time"))?,
+            mode,
+            transcript: transcript(&code.qr_text(), &join_hello),
+            label: KEM_LABEL_RV,
+            channel: None,
+            state: State::AwaitingKey,
+            public_granted: false,
+            acked: false,
+            joined: false,
+            profile: None,
+            device,
+            key: None,
+            granted_account: None,
+        };
+        Ok((newcomer, join_hello))
     }
 
     /// The approver's profile, when it sent one (invite sessions).
@@ -168,7 +216,7 @@ impl Newcomer {
             return Err(refused("qr expired"));
         }
         let kx = KeyExchange::from_bytes(bytes)?;
-        let k = unwrap_key_labeled(&secret, &kx.envelope, KEM_LABEL, &self.transcript)?;
+        let k = unwrap_key_labeled(&secret, &kx.envelope, self.label, &self.transcript)?;
         drop(secret);
         let code = sas(&k, &self.transcript)?;
         self.channel = Some(Channel::newcomer(&k, self.session_id)?);

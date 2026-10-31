@@ -18,7 +18,14 @@ struct PairingStep: View {
                 content(flow)
                     .onChange(of: flow.state, initial: true) { _, state in model.pairingStateChanged(state) }
             } else {
-                ProgressView().frame(maxWidth: .infinity)
+                switch model.effectivePairMethod {
+                case .scan:
+                    ScanCodeStep(model: model)
+                case .type:
+                    TypeCodeStep(model: model)
+                case .showCode:
+                    ProgressView().frame(maxWidth: .infinity)
+                }
             }
         }
     }

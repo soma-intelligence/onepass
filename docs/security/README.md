@@ -660,3 +660,14 @@ Approuver et retirer demandent une présence fraîche : Face ID ou Touch ID, sin
 - Vérifié seulement sur une machine (Mac et Simulateur, transport en boucle locale) : caméra, AWDL, autorisation "Réseau local" d'iOS, Face ID et propagation du retrait par CloudKit demandent deux vrais appareils signés (voir [`apple/README.md`](../apple/README.md), "Jalon 2b dans les apps").
 - Aucun audit externe de l'appairage.
 - La Secret Key passe par une `String` Swift le temps de sceller une autorisation et de la ranger après un import : des copies peuvent rester dans la mémoire du processus jusqu'à ce qu'elle soit réutilisée (ruling A22, risque accepté).
+
+### 15.8 Appairage à code affiché par l'appareil déverrouillé (version 2)
+
+Un Mac ne scanne jamais : l'appareil déverrouillé peut donc aussi **afficher** le code. Le protocole est décrit dans la doc du module `core/onepass-core/src/pairing/mod.rs` ("Rendezvous direction"). L'ancien sens (le nouvel appareil affiche `OPPAIR1:`) reste valable.
+
+- **Le code** : 40 bits aléatoires (`RendezvousCode`), montrés en QR (`OPPAIR2:` + 8 caractères base32, sans URL) et en saisie (`XXXX-XXXX`). Un nouveau code toutes les 30 s, chacun valable 120 s (5 codes vivants au plus). Le premier Hello accepté les épuise tous ; cinq Hello refusés ferment l'hôte (`RV_MAX_FAILURES`). La fenêtre fermée ou le code refusé ferme aussi l'hôte.
+- **Ce que le code prouve** : le nouvel appareil joint le service local nommé par un hash du code et envoie un `JoinHello` dont l'HMAC (clé dérivée du code par HKDF) couvre sa clé éphémère, son nom et son mode. Quelqu'un qui ne connaît pas le code ne peut pas en fabriquer un. Le code n'engage pas la clé du nouvel appareil, contrairement au hash du QR v1 : c'est le code à 6 chiffres qui arrête un homme du milieu.
+- **Ce que le code ne cache pas** : le nom du service et la preuve du Hello sont lisibles sur le réseau local et laissent un voisin retrouver les 40 bits par force brute hors ligne (environ 10^12 hachages, quelques minutes de GPU contre 120 s de validité). Il peut alors se présenter à la place du nouvel appareil, mais il reste devant le code à 6 chiffres (une chance sur un million par tentative, la session meurt à chaque échec). Aucun secret du compte ne part avant les deux confirmations.
+- **Ce qui ne change pas** : échange de clés ML-KEM-1024 + X25519 lié à la transcription (étiquette `onepass/pairing/v2`), code à 6 chiffres, canal scellé à compteurs, autorisation, instantané, présence fraîche (Touch ID, sinon mot de passe maître) sur l'appareil déverrouillé.
+- **Mac et mode public** : un Mac n'ouvre pas de session invitée (le sélecteur d'éléments est sur iPhone et iPad) ; une demande publique reçue d'un code affiché par le Mac est refusée.
+- **Debug** : `-OnePassJoinCode <code>` remplace le clavier du nouvel appareil (le Simulateur n'a pas de caméra) ; absent du build Release.
