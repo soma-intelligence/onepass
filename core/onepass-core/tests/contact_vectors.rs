@@ -26,7 +26,8 @@ use onepass_core::device_keys::{DeviceKeys, DevicePublic, sign_pop};
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
     GENESIS_IDENTITY_DOMAIN, GenesisBody, IntroBody, LINEAGE_FORMAT, LineageRecord, RosterEntry,
-    SignedIntro, identity_id, intro_id, sign_genesis, sign_intro,
+    RotationBody, RotationReason, SignedIntro, identity_id, intro_id, sign_genesis, sign_intro,
+    sign_rotation,
 };
 use onepass_core::store::{Record, RecordKind, RecordStore};
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
@@ -57,85 +58,158 @@ fn entry(keys: &DevicePublic, name: &str) -> RosterEntry {
     }
 }
 
-/// A test account with a signed genesis and, optionally, one intro under
-/// it. SLH-DSA signing is slow: each party is built once per process.
-struct Party {
-    account_id: Id,
-    identity: IdentityKey,
-    params: Vec<u8>,
-    genesis: LineageRecord,
-    intros: Vec<SignedIntro>,
+/// The lineage of the common case (sharing review I-1): the iPhone creates
+/// the account under a first identity (generation 0), introduces the Mac
+/// under the genesis, then the Mac rotates to `head_identity` (generation
+/// 1). The Mac's intro is bound to the genesis, not to the head.
+struct Chain {
+    lineage: Vec<LineageRecord>,
+    mac_intro: SignedIntro,
+    iphone: (DeviceKeys, DevicePublic),
+    mac: (DeviceKeys, DevicePublic),
 }
 
-fn party(device: u8, with_intro: bool) -> Party {
-    let n = Account::create_with_params("Projet Atlas, Camille Durand", kdf()).unwrap();
-    let account_id = n.account.params.account_id;
-    let identity = IdentityKey::from_bytes(&n.account.keyset().identity.to_bytes()).unwrap();
-    let keys = DeviceKeys::generate_software().unwrap();
-    let public = keys.public(id(device)).unwrap();
+fn rotated_chain(account_id: Id, head_identity: &IdentityKey, params: &[u8], first: u8) -> Chain {
+    let first_identity = IdentityKey::generate().unwrap();
+    let iphone_keys = DeviceKeys::generate_software().unwrap();
+    let iphone = iphone_keys.public(id(first)).unwrap();
+    let mac_keys = DeviceKeys::generate_software().unwrap();
+    let mac = mac_keys.public(id(first + 1)).unwrap();
     let genesis = LineageRecord::Genesis(
         sign_genesis(
             GenesisBody {
                 format: LINEAGE_FORMAT,
                 account_id,
-                identity_pub: identity.verifying_key(),
-                creator: entry(&public, "iPhone"),
+                identity_pub: first_identity.verifying_key(),
+                creator: entry(&iphone, "iPhone"),
                 created_at: T0,
             },
-            &keys,
-            &identity,
+            &iphone_keys,
+            &first_identity,
         )
         .unwrap(),
     );
-    let mut intros = Vec::new();
-    if with_intro {
-        let other = DeviceKeys::generate_software().unwrap();
-        let other_pub = other.public(id(device + 1)).unwrap();
-        let mut e = entry(&other_pub, "Mac");
-        e.introduced_by = Some(public.device_id);
-        intros.push(
-            sign_intro(
-                IntroBody {
+    let mut mac_entry = entry(&mac, "Mac");
+    mac_entry.introduced_by = Some(iphone.device_id);
+    let mac_intro = sign_intro(
+        IntroBody {
+            format: LINEAGE_FORMAT,
+            account_id,
+            head: genesis.hash(),
+            entry: mac_entry.clone(),
+            introducer: iphone.device_id,
+            pop: sign_pop(&mac_keys, &account_id.0, &mac).unwrap(),
+        },
+        &iphone_keys,
+        None,
+    )
+    .unwrap();
+    let mut roster = vec![entry(&iphone, "iPhone"), mac_entry];
+    roster.sort_by_key(|e| e.device_id);
+    let deliveries = roster
+        .iter()
+        .filter(|e| e.device_id != mac.device_id)
+        .map(|e| (e.device_id, [0x5A; 32]))
+        .collect();
+    let rotation = LineageRecord::Rotation(
+        sign_rotation(
+            RotationBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                generation: 1,
+                parent: genesis.hash(),
+                rotator: mac.device_id,
+                reason: RotationReason::Rotate,
+                revoked: vec![],
+                roster,
+                identity_pub: head_identity.verifying_key(),
+                params_hash: sha256(&[params]),
+                keyset_hash: [0x4B; 32],
+                deliveries,
+                from_heads: BTreeMap::new(),
+                issued_at: T0 + 30,
+            },
+            &mac_keys,
+            head_identity,
+        )
+        .unwrap(),
+    );
+    Chain {
+        lineage: vec![genesis, rotation],
+        mac_intro,
+        iphone: (iphone_keys, iphone),
+        mac: (mac_keys, mac),
+    }
+}
+
+/// A test account and the lineage of its card. SLH-DSA signing is slow:
+/// each party is built once per process.
+struct Party {
+    account_id: Id,
+    /// The identity of the head.
+    identity: IdentityKey,
+    params: Vec<u8>,
+    lineage: Vec<LineageRecord>,
+    intros: Vec<SignedIntro>,
+}
+
+/// `rotated`: the chain of `rotated_chain`, the Mac's intro carried.
+/// Otherwise a lone genesis by the account's identity, no intro.
+fn party(device: u8, rotated: bool) -> Party {
+    let n = Account::create_with_params("Projet Atlas, Camille Durand", kdf()).unwrap();
+    let account_id = n.account.params.account_id;
+    let identity = IdentityKey::from_bytes(&n.account.keyset().identity.to_bytes()).unwrap();
+    let (lineage, intros) = if rotated {
+        let c = rotated_chain(account_id, &identity, &n.params_record, device);
+        (c.lineage, vec![c.mac_intro])
+    } else {
+        let keys = DeviceKeys::generate_software().unwrap();
+        let public = keys.public(id(device)).unwrap();
+        let genesis = LineageRecord::Genesis(
+            sign_genesis(
+                GenesisBody {
                     format: LINEAGE_FORMAT,
                     account_id,
-                    head: genesis.hash(),
-                    entry: e,
-                    introducer: public.device_id,
-                    pop: sign_pop(&other, &account_id.0, &other_pub).unwrap(),
+                    identity_pub: identity.verifying_key(),
+                    creator: entry(&public, "iPhone"),
+                    created_at: T0,
                 },
                 &keys,
-                None,
+                &identity,
             )
             .unwrap(),
         );
-    }
+        (vec![genesis], vec![])
+    };
     Party {
         account_id,
         identity,
         params: n.params_record,
-        genesis,
+        lineage,
         intros,
     }
 }
 
 fn card_of(p: &Party, name: &str) -> ContactCard {
+    let last = p.lineage.last().unwrap();
     ContactCard {
         format: 1,
         account_id: p.account_id,
-        genesis: p.genesis.hash(),
+        genesis: p.lineage[0].hash(),
         head: LineageHead {
-            generation: 0,
-            hash: p.genesis.hash(),
+            generation: last.generation(),
+            hash: last.hash(),
         },
         identity_pub: p.identity.verifying_key(),
         params: p.params.clone(),
-        lineage: vec![p.genesis.clone()],
+        lineage: p.lineage.clone(),
         intros: p.intros.clone(),
         name: name.into(),
         issued_at: T0 + 60,
     }
 }
 
+/// Alice: generation 1, carrying the Mac's intro under generation 0.
 fn alice() -> &'static (Party, SignedContactCard) {
     static A: OnceLock<(Party, SignedContactCard)> = OnceLock::new();
     A.get_or_init(|| {
@@ -145,6 +219,7 @@ fn alice() -> &'static (Party, SignedContactCard) {
     })
 }
 
+/// Bob: a lone genesis.
 fn bob() -> &'static Party {
     static B: OnceLock<Party> = OnceLock::new();
     B.get_or_init(|| party(0x21, false))
@@ -223,18 +298,68 @@ fn card_shape_refused() {
     refused(&|c| c.lineage.clear());
     refused(&|c| c.genesis = [9; 32]);
     refused(&|c| c.head.hash = [9; 32]);
-    refused(&|c| c.head.generation = 1);
+    refused(&|c| c.head.generation += 1);
+    refused(&|c| c.lineage.truncate(1));
+    refused(&|c| c.lineage.reverse());
     refused(&|c| c.account_id = id(0xEE));
     refused(&|c| c.identity_pub = bob().identity.verifying_key());
     refused(&|c| c.params = vec![1, 2, 3]);
     refused(&|c| c.lineage.push(c.lineage[0].clone()));
     refused(&|c| c.intros.push(c.intros[0].clone()));
+    // An intro bound to a hash that is not in the lineage.
     refused(&|c| c.intros[0].body.head = [9; 32]);
+    refused(&|c| c.intros[0].body.account_id = id(0xEE));
+}
+
+#[test]
+fn card_carries_intros_from_older_generations() {
+    // Generation 1, the Mac's intro bound to generation 0 (review I-1):
+    // the signed card decodes and yields its keys.
+    let (a, signed) = alice();
+    assert_eq!(signed.card.head.generation, 1);
+    assert_eq!(signed.card.intros.len(), 1);
+    assert_eq!(signed.card.intros[0].body.head, a.lineage[0].hash());
+    let back = SignedContactCard::decode(&signed.encode()).unwrap();
+    back.keys().unwrap();
+    // Also bound to the head: accepted.
+    let mut c = card_of(a, "Alice");
+    c.intros[0].body.head = a.lineage[1].hash();
+    SignedContactCard::decode(&unsigned(c).encode()).unwrap();
+}
+
+#[test]
+fn card_intros_capped_per_record() {
+    // 64 intros under one record decode, 65 do not; 64 under each of two
+    // records do.
+    let (a, _) = alice();
+    let many = |head: [u8; 32], n: usize, tag: &str| -> Vec<SignedIntro> {
+        (0..n)
+            .map(|i| {
+                let mut x = a.intros[0].clone();
+                x.body.head = head;
+                x.body.entry.name = format!("{tag}{i}");
+                x
+            })
+            .collect()
+    };
+    let decode = |intros: Vec<SignedIntro>| {
+        let mut intros = intros;
+        intros.sort_by_key(|i| intro_id(&i.body));
+        let mut c = card_of(a, "Alice");
+        c.intros = intros;
+        SignedContactCard::decode(&unsigned(c).encode())
+    };
+    let (g0, g1) = (a.lineage[0].hash(), a.lineage[1].hash());
+    decode(many(g0, 64, "a")).unwrap();
+    assert!(is_format(decode(many(g0, 65, "a"))));
+    let mut both = many(g0, 64, "a");
+    both.extend(many(g1, 64, "b"));
+    decode(both).unwrap();
 }
 
 #[test]
 fn card_intros_sorted() {
-    // Two intros under the head, in both orders: only the sorted one.
+    // Two intros under the genesis, in both orders: only the sorted one.
     let (a, _) = alice();
     let mut second = a.intros[0].clone();
     second.body.entry.name = "iPad".into();
@@ -498,63 +623,77 @@ fn own_card_at_pinned_head() {
         Err(Error::Validation(_))
     ));
 
+    // The session identity is the head of a rotated chain: generation 0
+    // under a first identity, the Mac introduced there, the Mac's rotation
+    // to the session identity at generation 1.
     let account_id = repo.account().params.account_id;
-    let identity = &IdentityKey::from_bytes(&repo.account().keyset().identity.to_bytes()).unwrap();
-    let me_keys = DeviceKeys::generate_software().unwrap();
-    let me = me_keys
-        .public(repo.chain().device_id.unwrap_or_else(Id::new))
-        .unwrap();
-    let mac_keys = DeviceKeys::generate_software().unwrap();
-    let mac = mac_keys.public(Id::new()).unwrap();
-    let ipad_keys = DeviceKeys::generate_software().unwrap();
-    let ipad = ipad_keys.public(Id::new()).unwrap();
-    let genesis = LineageRecord::Genesis(
-        sign_genesis(
-            GenesisBody {
-                format: LINEAGE_FORMAT,
-                account_id,
-                identity_pub: identity.verifying_key(),
-                creator: entry(&me, "iPhone"),
-                created_at: T0,
-            },
-            &me_keys,
-            identity,
-        )
-        .unwrap(),
-    );
-    let intro_of = |p: &DevicePublic, k: &DeviceKeys, name: &str| {
-        let mut e = entry(p, name);
-        e.introduced_by = Some(me.device_id);
-        sign_intro(
-            IntroBody {
-                format: LINEAGE_FORMAT,
-                account_id,
-                head: genesis.hash(),
-                entry: e,
-                introducer: me.device_id,
-                pop: sign_pop(k, &account_id.0, p).unwrap(),
-            },
-            &me_keys,
-            None,
-        )
+    let identity = IdentityKey::from_bytes(&repo.account().keyset().identity.to_bytes()).unwrap();
+    let params = repo
+        .store()
+        .get(RecordKind::AccountParams, account_id)
         .unwrap()
+        .unwrap()
+        .data;
+    let chain = rotated_chain(account_id, &identity, &params, 0x41);
+    let (genesis, rotation) = (&chain.lineage[0], &chain.lineage[1]);
+    let (mac_keys, mac) = &chain.mac;
+    let (iphone_keys, iphone) = &chain.iphone;
+
+    let device = |n: u8| {
+        let k = DeviceKeys::generate_software().unwrap();
+        let p = k.public(id(n)).unwrap();
+        (k, p)
     };
-    // The Mac is in the roster; the iPad's intro was never accepted.
-    let mac_intro = intro_of(&mac, &mac_keys, "Mac");
-    let ipad_intro = intro_of(&ipad, &ipad_keys, "iPad");
-    let mut roster = vec![entry(&me, "iPhone"), {
-        let mut e = entry(&mac, "Mac");
-        e.introduced_by = Some(me.device_id);
-        e
-    }];
+    let intro =
+        |head: [u8; 32], by: (&DeviceKeys, &DevicePublic), new: (&DeviceKeys, &DevicePublic)| {
+            let mut e = entry(new.1, "device");
+            e.introduced_by = Some(by.1.device_id);
+            sign_intro(
+                IntroBody {
+                    format: LINEAGE_FORMAT,
+                    account_id,
+                    head,
+                    entry: e,
+                    introducer: by.1.device_id,
+                    pop: sign_pop(new.0, &account_id.0, new.1).unwrap(),
+                },
+                by.0,
+                None,
+            )
+            .unwrap()
+        };
+    let (ipad_keys, ipad) = device(0x51);
+    let (watch_keys, watch) = device(0x52);
+    let (tv_keys, tv) = device(0x53);
+    let (stranger_keys, stranger) = device(0x54);
+    // Under the head, by the Mac: the iPad (trusted here) and the Watch
+    // (never accepted on this device).
+    let ipad_intro = intro(rotation.hash(), (mac_keys, mac), (&ipad_keys, &ipad));
+    let watch_intro = intro(rotation.hash(), (mac_keys, mac), (&watch_keys, &watch));
+    // Under the genesis: a TV introduced by a device that was never a
+    // member there (signature by a stranger, introducer named as the
+    // iPhone): dropped.
+    let mut forged = intro(genesis.hash(), (iphone_keys, iphone), (&tv_keys, &tv));
+    forged.sig = intro(genesis.hash(), (&stranger_keys, &stranger), (&tv_keys, &tv)).sig;
+    // Bound to a hash outside the lineage: dropped.
+    let elsewhere = intro([9; 32], (iphone_keys, iphone), (&tv_keys, &tv));
+
+    let LineageRecord::Rotation(r) = rotation else {
+        unreachable!()
+    };
+    let mut roster = r.body.roster.clone();
+    let mut ipad_entry = entry(&ipad, "device");
+    ipad_entry.introduced_by = Some(mac.device_id);
+    roster.push(ipad_entry);
     roster.sort_by_key(|e| e.device_id);
     let head = LineageHead {
-        generation: 0,
-        hash: genesis.hash(),
+        generation: 1,
+        hash: rotation.hash(),
     };
+    // This device is the Mac.
     let mut trust = TrustState::new(
         account_id,
-        me.clone(),
+        mac.clone(),
         head,
         identity.verifying_key(),
         roster.clone(),
@@ -574,19 +713,19 @@ fn own_card_at_pinned_head() {
             None,
         )
     };
-    let writes = vec![
+    let mut writes = vec![
         rec(RecordKind::Lineage, genesis.record_id(), genesis.encode()),
-        rec(
-            RecordKind::DeviceIntro,
-            intro_id(&mac_intro.body),
-            mac_intro.encode(),
-        ),
-        rec(
-            RecordKind::DeviceIntro,
-            intro_id(&ipad_intro.body),
-            ipad_intro.encode(),
-        ),
+        rec(RecordKind::Lineage, rotation.record_id(), rotation.encode()),
     ];
+    for i in [
+        &chain.mac_intro,
+        &ipad_intro,
+        &watch_intro,
+        &forged,
+        &elsewhere,
+    ] {
+        writes.push(rec(RecordKind::DeviceIntro, intro_id(&i.body), i.encode()));
+    }
     repo.store_mut()
         .put_all_if_version_with_trust(writes, vec![], None, &trust)
         .unwrap();
@@ -596,8 +735,10 @@ fn own_card_at_pinned_head() {
     assert_eq!(c.account_id, account_id);
     assert_eq!(c.genesis, genesis.hash());
     assert_eq!(c.head, head);
-    assert_eq!(c.lineage, vec![genesis.clone()]);
-    assert_eq!(c.intros, vec![mac_intro]);
+    assert_eq!(c.lineage, chain.lineage);
+    let mut expected = vec![chain.mac_intro.clone(), ipad_intro];
+    expected.sort_by_key(|i| intro_id(&i.body));
+    assert_eq!(c.intros, expected);
     assert_eq!(c.name, "Alice");
     assert_eq!(c.issued_at, T0 + 5);
     assert_eq!(SignedContactCard::decode(&card.encode()).unwrap(), card);

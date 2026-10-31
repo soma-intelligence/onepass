@@ -1,17 +1,20 @@
 //! The signed contact card (spec 5.2, plan ruling A-3) and its strict codec.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::{CONTACT_CARD_DOMAIN, CONTACT_CARD_FORMAT, MAX_CONTACT_NAME_CHARS};
+use super::{
+    CONTACT_CARD_DOMAIN, CONTACT_CARD_FORMAT, MAX_CARD_INTROS_PER_RECORD, MAX_CONTACT_NAME_CHARS,
+};
 use crate::account::AccountParams;
 use crate::crypto::sign::{SLH_PUBLIC_LEN, SLH_SIG_LEN};
 use crate::crypto::{
     HybridKemPublic, HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey,
 };
 use crate::lineage::{
-    LineageRecord, MAX_ROSTER, SignedIntro, decode_strict_with, identity_id, intro_id,
+    LineageRecord, RosterEntry, SignedIntro, decode_strict_with, identity_id, intro_id,
+    verify_intro, verify_intro_identity,
 };
 use crate::repo::Repository;
 use crate::store::{RecordKind, RecordStore};
@@ -25,7 +28,9 @@ fn bad(what: &'static str) -> Error {
 }
 
 /// What an account shows a contact (spec 5.2). The intros accepted under
-/// the head travel beside the lineage (plan ruling A-3).
+/// every record of the lineage travel beside it (plan ruling A-3): a peer
+/// pinned at an older head needs them to check a rotation made by a device
+/// introduced after its pin (spec 5.5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContactCard {
     pub format: u8,
@@ -40,9 +45,12 @@ pub struct ContactCard {
     pub params: Vec<u8>,
     /// Genesis first, then every rotation up to `head`, in order.
     pub lineage: Vec<LineageRecord>,
-    /// Intros accepted under `head`, sorted by intro id, unique.
+    /// Intros accepted under the records of `lineage`, each bound to one of
+    /// them, at most `MAX_CARD_INTROS_PER_RECORD` per record, sorted by
+    /// intro id, unique.
     pub intros: Vec<SignedIntro>,
-    /// Chosen by the holder: 1 to 64 characters, no control character.
+    /// Chosen by the holder: 1 to 64 characters, none of them a control,
+    /// bidi, zero-width or line/paragraph separator character.
     /// Never shown as is: the contact book keeps its own name.
     pub name: String,
     pub issued_at: i64,
@@ -64,9 +72,28 @@ pub struct CardKeys {
     pub identity_id: Id,
 }
 
+/// Control characters (Cc), and the invisible or reordering ones a name
+/// could hide behind: soft hyphen, Arabic letter mark, Mongolian vowel
+/// separator, zero-width and bidi marks, embeddings and isolates, line and
+/// paragraph separators, word joiner and invisible operators, BOM.
+fn forbidden(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'
+                | '\u{061C}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{2028}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
+}
+
 fn check_name(name: &str) -> Result<()> {
     let n = name.chars().count();
-    if n == 0 || n > MAX_CONTACT_NAME_CHARS || name.chars().any(char::is_control) {
+    if n == 0 || n > MAX_CONTACT_NAME_CHARS || name.chars().any(forbidden) {
         return Err(bad("contact card name"));
     }
     Ok(())
@@ -76,7 +103,8 @@ impl ContactCard {
     /// Shape rules (no signature is checked): format, name, key and params
     /// layout, a lineage that starts at a genesis hashing to `genesis`,
     /// chains generation by generation and ends at `head` under
-    /// `identity_pub`, and intros under `head`, sorted and unique.
+    /// `identity_pub`, and intros each bound to a record of the lineage,
+    /// at most `MAX_CARD_INTROS_PER_RECORD` per record, sorted and unique.
     fn check(&self) -> Result<()> {
         if self.format != CONTACT_CARD_FORMAT {
             return Err(bad("contact card format"));
@@ -111,17 +139,21 @@ impl ContactCard {
             return Err(bad("contact card head"));
         }
 
-        if self.intros.len() > MAX_ROSTER {
-            return Err(bad("contact card intros"));
-        }
+        let hashes: BTreeSet<[u8; 32]> = self.lineage.iter().map(LineageRecord::hash).collect();
+        let mut per_record: BTreeMap<[u8; 32], usize> = BTreeMap::new();
         let mut previous: Option<Id> = None;
         for intro in &self.intros {
             SignedIntro::decode(&intro.encode())?;
             let id = intro_id(&intro.body);
             if intro.body.account_id != self.account_id
-                || intro.body.head != self.head.hash
+                || !hashes.contains(&intro.body.head)
                 || previous.is_some_and(|p| p >= id)
             {
+                return Err(bad("contact card intros"));
+            }
+            let n = per_record.entry(intro.body.head).or_default();
+            *n += 1;
+            if *n > MAX_CARD_INTROS_PER_RECORD {
                 return Err(bad("contact card intros"));
             }
             previous = Some(id);
@@ -190,15 +222,17 @@ impl SignedContactCard {
 
 impl<S: RecordStore> Repository<S> {
     /// This account's card at the head pinned by the local trust state:
-    /// the whole lineage from the genesis, the intros accepted under the
-    /// head (their device in the trusted roster with the same keys), the
-    /// params record of the session's identity and `name`, the profile
-    /// name the app keeps (the core stores none). Signed by the identity.
+    /// the whole lineage from the genesis, the intros accepted under each
+    /// of its records (`accepted_intros`), the params record of the
+    /// session's identity and `name`, the profile name the app keeps (the
+    /// core stores none). Signed by the identity, then checked with
+    /// `keys()` before it leaves.
     ///
     /// Refused: no trust state (`Validation("device")`); a trust state of
     /// another account or identity than the session's (`WrongContext`); a
     /// lineage record or the params record missing (`NotFound`); a `name`
-    /// that breaks the card rules (`InvalidFormat`).
+    /// that breaks the card rules (`InvalidFormat`); a params record that
+    /// is not the session identity's (`Integrity`).
     pub fn own_contact_card(&self, name: &str, now: i64) -> Result<SignedContactCard> {
         let trust = self.store.trust_state()?.ok_or_else(|| {
             Error::Validation(ValidationError {
@@ -235,19 +269,31 @@ impl<S: RecordStore> Repository<S> {
         lineage.reverse();
         let genesis = lineage[0].hash();
 
-        let mut intros = BTreeMap::new();
+        let mut by_head: BTreeMap<[u8; 32], Vec<SignedIntro>> = BTreeMap::new();
         for r in self.store.list(RecordKind::DeviceIntro)? {
-            let Ok(intro) = SignedIntro::decode(&r.data) else {
-                continue;
-            };
-            let e = &intro.body.entry;
-            let accepted = trust.roster.iter().any(|t| {
-                t.device_id == e.device_id && t.sign_pub == e.sign_pub && t.kem_pub == e.kem_pub
-            }) && !trust.revoked.contains(&e.device_id)
-                && !trust.excluded.contains(&e.device_id);
-            if intro.body.account_id == account_id && intro.body.head == trust.head.hash && accepted
+            if let Ok(intro) = SignedIntro::decode(&r.data)
+                && intro.body.account_id == account_id
             {
-                intros.insert(intro_id(&intro.body), intro);
+                by_head.entry(intro.body.head).or_default().push(intro);
+            }
+        }
+        let mut intros = BTreeMap::new();
+        for record in &lineage {
+            let pending = by_head.remove(&record.hash()).unwrap_or_default();
+            let at_head = record.hash() == trust.head.hash;
+            for intro in accepted_intros(record, pending) {
+                let e = &intro.body.entry;
+                // Under the head, only what this device trusts now.
+                let trusted = !at_head
+                    || (trust.roster.iter().any(|t| {
+                        t.device_id == e.device_id
+                            && t.sign_pub == e.sign_pub
+                            && t.kem_pub == e.kem_pub
+                    }) && !trust.revoked.contains(&e.device_id)
+                        && !trust.excluded.contains(&e.device_id));
+                if trusted {
+                    intros.insert(intro_id(&intro.body), intro);
+                }
             }
         }
 
@@ -267,8 +313,53 @@ impl<S: RecordStore> Repository<S> {
             name: name.to_string(),
             issued_at: now,
         };
-        SignedContactCard::sign(card, &self.account.keyset().identity)
+        let signed = SignedContactCard::sign(card, &self.account.keyset().identity)?;
+        signed.keys()?;
+        Ok(signed)
     }
+}
+
+/// The intros of `pending` (all bound to `record`) that extend its roster:
+/// the record's roster (the genesis creator, or the rotation's roster),
+/// grown by each intro accepted, until none more is. An intro is accepted
+/// when its device is not yet a member and its signature verifies under
+/// its introducer, a member (`verify_intro`); a kit self-intro (introducer
+/// = the device itself) also needs the record identity's signature. At
+/// most `MAX_CARD_INTROS_PER_RECORD`, in the order accepted.
+fn accepted_intros(record: &LineageRecord, mut pending: Vec<SignedIntro>) -> Vec<SignedIntro> {
+    let mut members: Vec<RosterEntry> = match record {
+        LineageRecord::Genesis(s) => vec![s.body.creator.clone()],
+        LineageRecord::Rotation(s) => s.body.roster.clone(),
+    };
+    let mut accepted = Vec::new();
+    let mut progress = true;
+    while progress && accepted.len() < MAX_CARD_INTROS_PER_RECORD {
+        progress = false;
+        let mut rest = Vec::new();
+        for intro in pending {
+            let b = &intro.body;
+            let ok = accepted.len() < MAX_CARD_INTROS_PER_RECORD
+                && !members.iter().any(|m| m.device_id == b.entry.device_id)
+                && if b.introducer == b.entry.device_id {
+                    verify_intro_identity(&intro, record.identity_pub()).is_ok()
+                        && verify_intro(&intro, &b.entry.sign_pub).is_ok()
+                } else {
+                    members
+                        .iter()
+                        .find(|m| m.device_id == b.introducer)
+                        .is_some_and(|m| verify_intro(&intro, &m.sign_pub).is_ok())
+                };
+            if ok {
+                members.push(b.entry.clone());
+                accepted.push(intro);
+                progress = true;
+            } else {
+                rest.push(intro);
+            }
+        }
+        pending = rest;
+    }
+    accepted
 }
 
 #[cfg(test)]
@@ -283,6 +374,12 @@ mod tests {
         assert!(check_name("a\u{0007}").is_err());
         assert!(check_name("a\nb").is_err());
         assert!(check_name("a\u{7f}").is_err());
+        for c in [
+            '\u{202E}', '\u{200B}', '\u{2028}', '\u{2029}', '\u{FEFF}', '\u{2066}',
+        ] {
+            assert!(check_name(&format!("a{c}b")).is_err(), "{c:?}");
+        }
+        assert!(check_name("Zoë Ångström-Łódź 日本").is_ok());
         assert!(check_name("Camille Durand").is_ok());
     }
 }
