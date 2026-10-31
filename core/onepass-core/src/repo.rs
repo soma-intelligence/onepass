@@ -498,6 +498,7 @@ fn genesis_trust(
         DeviceLineageState::Current,
     );
     trust.levels.insert(entry.device_id, TrustLevel::Verified);
+    trust.migration_listed.insert(entry.device_id);
     Ok(trust)
 }
 

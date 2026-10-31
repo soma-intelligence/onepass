@@ -49,7 +49,7 @@ use crate::lineage::{
 use crate::lists::{AccountList, ListBody, sign};
 use crate::manifest::{Manifest, SeenManifest, record_hash, sign_manifest};
 use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
-use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustState};
+use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
@@ -103,6 +103,12 @@ pub struct RotateRequest<'a> {
     /// This device's keys (they must be the ones the trust state pins).
     pub device_keys: &'a DeviceKeys,
     pub reason: RotationReason,
+    /// Spec 15 step 5 (Task 14 review I2): the `Tofu` roster devices the
+    /// user confirmed to keep (the screen lists every one, none is kept
+    /// silently). Any other `Tofu` device gets no delivery and leaves the
+    /// new roster: it re-pairs. Each must be a `Tofu` roster device, not
+    /// revoked by this request (`Validation("device")`).
+    pub keep_tofu: &'a [Id],
 }
 
 /// A committed rotation. `Debug` never prints the AUK.
@@ -211,6 +217,21 @@ impl<S: RecordStore> Repository<S> {
         if revoke.is_empty() {
             return Ok(None);
         }
+        // A re-apply removes again what this device removed; it drops no
+        // `Tofu` device the winner kept (not an F1 rotation, spec 15 step 5).
+        let keep: Vec<Id> = match self.store.trust_state()? {
+            Some(t) => t
+                .roster
+                .iter()
+                .map(|e| e.device_id)
+                .filter(|id| {
+                    t.levels.get(id) == Some(&TrustLevel::Tofu)
+                        && *id != t.me.device_id
+                        && !revoke.contains(id)
+                })
+                .collect(),
+            None => Vec::new(),
+        };
         self.rotate(RotateRequest {
             revoke,
             new_password: None,
@@ -219,6 +240,7 @@ impl<S: RecordStore> Repository<S> {
             new_secret_key,
             device_keys,
             reason: RotationReason::Reapply,
+            keep_tofu: &keep,
         })
         .map(Some)
     }
@@ -289,6 +311,15 @@ impl<S: RecordStore> Repository<S> {
             .any(|id| !trust.roster.iter().any(|e| e.device_id == *id))
         {
             return Err(refused("device", "not in the roster"));
+        }
+        // Spec 15 step 5: a kept `Tofu` device is one the user confirmed.
+        for id in req.keep_tofu {
+            if trust.levels.get(id) != Some(&TrustLevel::Tofu)
+                || revoked.contains(id)
+                || !trust.roster.iter().any(|e| e.device_id == *id)
+            {
+                return Err(refused("device", "not a kept tofu device"));
+            }
         }
         match req.reason {
             RotationReason::Revoke if revoked.is_empty() => {
@@ -389,6 +420,7 @@ impl<S: RecordStore> Repository<S> {
         ];
 
         // Step 2: the roster and one delivery per member except this one.
+        let tofu = |id: &Id| trust.levels.get(id) == Some(&TrustLevel::Tofu) && *id != me;
         let roster: Vec<RosterEntry> = trust
             .roster
             .iter()
@@ -396,6 +428,7 @@ impl<S: RecordStore> Repository<S> {
                 !revoked.contains(&e.device_id)
                     && !trust.excluded.contains(&e.device_id)
                     && !trust.revoked.contains(&e.device_id)
+                    && (!tofu(&e.device_id) || req.keep_tofu.contains(&e.device_id))
             })
             .cloned()
             .collect();
