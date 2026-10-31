@@ -651,3 +651,23 @@ S0 et S1 : environ 6 jours avec revues. S2 : le plus gros (magasin multi-zones e
 12. **Membres par coffre partagé** : 64 (proposé) ou moins pour borner le coût d'une rotation ? Je choisirais 64 maintenant, l'offre Équipe passera par les groupes.
 13. **Deux organisateurs** : simple recommandation à la création de la famille, ou obligatoire au-delà de deux membres ? Je choisirais une forte recommandation, avec un rappel tant qu'il n'y en a qu'un.
 14. **Ordre de livraison** : attendre la fin de la rotation v2 avant de commencer S0 (proposé), ou commencer les formats et le modèle ProVerif en parallèle ? Je choisirais de faire S0 (formats et modèle) en parallèle, et de ne rien brancher dans l'app avant la fusion de la rotation v2.
+
+## Décisions du fondateur (2026-10-30)
+
+Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
+
+1. **Invitation à distance sans vérification (niveau Lien) : Lire seulement (fondateur).** Modifier, Gérer et la récupération exigent un contact Vérifié (QR ou numéro de sécurité comparé).
+2. **Famille de 6 comptes (fondateur).**
+3. **Délai de récupération : 72 h par défaut, réglable par le membre seul entre 24 h et 7 jours (première passe).** Le fondateur n'a pas encore répondu.
+4. **Remise de la moitié de l'organisateur en personne seulement en v1 (première passe).**
+5. **Liens de partage pour non-utilisateurs plus tard (S5), page statique sur somalabs.me avec hash publié (première passe).**
+6. **Confirmation d'une rotation de membre : code à 6 chiffres pour Lire, QR en personne pour Modifier, Gérer et organisateur (première passe).** Aligné sur la décision 1 : tout ce qui écrit exige le niveau Vérifié.
+7. **Propriétaire protégé, transfert explicite (première passe).**
+8. **Carnet de contacts synchronisé entre mes appareils (première passe).**
+9. **Envoi d'une copie figée juste après les coffres partagés (S5) (première passe).**
+10. **Abonnement Famille payé par l'organisateur, sans lien avec le Partage familial d'Apple (première passe).**
+11. **Rotation automatique de la clé d'un coffre sur `RekeyRequest`, notification après coup (première passe).**
+12. **64 membres par coffre partagé (première passe).**
+13. **Deux organisateurs fortement recommandés, rappel tant qu'il n'y en a qu'un (première passe).**
+14. **S0 (formats, modèle ProVerif) en parallèle de la rotation v2 ; rien dans l'app avant sa fusion (première passe).**
+15. **Transport (première passe, conséquence de la décision Supabase de la spec multi-plateforme).** CloudKit `CKShare` reste le transport tant qu'un compte vit sur CloudKit ; un compte passé sur la boîte aux lettres Supabase partage par elle. Un coffre partagé entre un compte CloudKit et un compte boîte aux lettres passe par la boîte aux lettres.
