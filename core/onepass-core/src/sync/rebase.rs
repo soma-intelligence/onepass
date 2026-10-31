@@ -69,6 +69,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::approvers::ApproverEntry;
 use crate::chain::Seen;
 use crate::devices::DeviceEntry;
 use crate::epoch::{EpochReason, RestoreEpoch};
@@ -325,6 +326,7 @@ impl Repository<SyncStore> {
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
+                RecordKind::ApproverList => self.rebase_list::<ApproverEntry>(),
                 _ => self.rebase_list::<VaultListEntry>(),
             };
             if let Err(e) = result {

@@ -194,3 +194,10 @@ path = "fuzz_targets/enroll_ticket.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "remote_message"
+path = "fuzz_targets/remote_message.rs"
+test = false
+doc = false
+bench = false

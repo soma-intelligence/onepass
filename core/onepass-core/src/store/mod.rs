@@ -37,6 +37,8 @@ pub enum RecordKind {
     DeviceIntro,
     /// A Secret Key delivery envelope, immutable (spec 6.5).
     KeyDelivery,
+    /// The signed approver list, id = account id, version = its seq.
+    ApproverList,
 }
 
 impl RecordKind {
@@ -54,6 +56,7 @@ impl RecordKind {
             Self::Lineage => 10,
             Self::DeviceIntro => 11,
             Self::KeyDelivery => 12,
+            Self::ApproverList => 13,
         }
     }
 
@@ -71,6 +74,7 @@ impl RecordKind {
             10 => Self::Lineage,
             11 => Self::DeviceIntro,
             12 => Self::KeyDelivery,
+            13 => Self::ApproverList,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -660,6 +664,7 @@ mod tests {
             RecordKind::Lineage,
             RecordKind::DeviceIntro,
             RecordKind::KeyDelivery,
+            RecordKind::ApproverList,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -670,8 +675,9 @@ mod tests {
         assert_eq!(RecordKind::RestoreEpoch.code(), 7);
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
+        assert_eq!(RecordKind::ApproverList.code(), 13);
         assert_eq!(
-            RecordKind::from_code(13).unwrap_err(),
+            RecordKind::from_code(14).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

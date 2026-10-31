@@ -31,8 +31,18 @@ final class AppModel {
     /// container only; never with demo data or a UI test store.
     let browserBridge: BrowserBridge?
     @ObservationIgnored private var approvalPanel: ApprovalPanelController?
+    /// The iPhone that approves the agents' requests and unlocks for them (agent-ready spec 5 to 7),
+    /// with the remote unlock coordinator (CloudKit builds only).
+    let phoneApprovals: PhoneApprovals
+    /// "Installer dans un agent": the bundled relay's `install` (spec 8).
+    let agentInstaller: AgentInstaller
     #endif
     @ObservationIgnored private let remote: (any RemoteRecordStore)?
+    #if os(iOS)
+    /// The requests of the Mac's agents this iPhone answers (agent-ready spec 5 to 7). Its transport
+    /// exists in the CloudKit build only; the Agents page says so otherwise.
+    let phoneAgents: PhoneAgents?
+    #endif
 
     /// Built with `ONEPASS_CLOUDKIT` (signed Release-CloudKit configuration, ruling R8).
     let cloudKitEnabled: Bool
@@ -233,10 +243,36 @@ final class AppModel {
         self.remote = remote
         session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
+        #if os(iOS)
+        #if ONEPASS_CLOUDKIT
+        let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel() : nil
+        #else
+        let remoteChannel: (any RemoteChannel)? = nil
+        #endif
+        phoneAgents = storeSplit ? nil : PhoneAgents(
+            vault: session, channel: remoteChannel, sharedDefaults: UserDefaults(suiteName: AppGroup.identifier))
+        #endif
         #if os(macOS)
         browserBridge =
             demo == nil && !isolated && !storeSplit && resolved.isShared
             ? BrowserBridge(session: session, container: resolved) : nil
+        #if ONEPASS_CLOUDKIT
+        let macChannel: (any RemoteChannel)? = demo == nil && !isolated && !storeSplit ? CloudKitRemoteChannel() : nil
+        #else
+        let macChannel: (any RemoteChannel)? = nil
+        #endif
+        let hosts = developer
+        let vault = session
+        let unlockCoordinator = macChannel.map { RemoteUnlockCoordinator(vault: vault, hosts: hosts, channel: $0) }
+        phoneApprovals = PhoneApprovals(vault: vault, hosts: hosts, coordinator: unlockCoordinator)
+        #if DEBUG
+        // Demo data and UI tests never run the real relay against the real home.
+        agentInstaller = demo != nil || isolated
+            ? AgentInstaller(paths: developer.paths, home: URL(fileURLWithPath: "/Users/camille"), runner: DemoHelperRunner())
+            : AgentInstaller(paths: developer.paths)
+        #else
+        agentInstaller = AgentInstaller(paths: developer.paths)
+        #endif
         #endif
         // Demo data never reaches the widgets.
         companion = CompanionCoordinator(
@@ -330,7 +366,15 @@ final class AppModel {
         lockIfRequested()
         #endif
         companion.start()
+        #if os(iOS)
+        // Nothing stays after a quit: the records that expired meanwhile are erased (spec 5.2).
+        if let phoneAgents { tasks.append(Task { await phoneAgents.purgeExpired() }) }
+        #endif
         #if os(macOS)
+        // Before any device refresh, forget or gate use: reads the enrollment, erases the expired
+        // records of a quit or a sleep, and holds the MCP socket of a locked, enrolled Mac.
+        let phoneApprovals = self.phoneApprovals
+        tasks.append(Task { await phoneApprovals.start() })
         if let browserBridge {
             browserBridge.start()
             // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
@@ -705,10 +749,18 @@ final class AppModel {
             resetNavigation()
         }
         companion.sessionChanged()
+        #if os(iOS)
+        // The phone reads its agent requests only while the vault is open.
+        if let phoneAgents { Task { await phoneAgents.sessionChanged() } }
+        #endif
         #if os(macOS)
         if approvalPanel == nil { approvalPanel = ApprovalPanelController(hosts: developer) }
         if state == .unlocked {
-            Task { await developer.sessionUnlocked(session) }
+            Task {
+                await developer.sessionUnlocked(session)
+                // The panel races the iPhone again (the approver goes on every lock).
+                await phoneApprovals.sessionUnlocked()
+            }
         } else {
             developer.sessionLocked()
         }

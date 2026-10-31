@@ -23,6 +23,12 @@ pub(crate) type Repo = onepass_core::repo::Repository<SyncStore>;
 pub struct Session {
     account_id: String,
     inner: Mutex<Option<Repo>>,
+    /// End of the agents-only window (Unix seconds) of a session opened
+    /// from the phone (`RemoteUnlocker`); `None` for a full session. Past
+    /// it the keys are dropped as by `lock`.
+    agent_only: Option<i64>,
+    /// The remote requests this session sent and still waits on.
+    pub(crate) pending: Mutex<onepass_core::remote::PendingRequests>,
 }
 
 /// The account id of the session. After a rotation the store holds one
@@ -65,18 +71,42 @@ impl Session {
     /// A session over an unlocked repository. A store in Travel Mode keeps
     /// its parked vaults parked (`resume_travel`), so `vaults()` does not
     /// expect them; a sealed state that does not verify fails the unlock.
-    pub(crate) fn new(mut repo: Repo) -> Result<Arc<Session>, OnePassError> {
+    pub(crate) fn new(repo: Repo) -> Result<Arc<Session>, OnePassError> {
+        Self::open(repo, None)
+    }
+
+    /// An agents-only session (spec 6.3) that closes at `ends_at`.
+    pub(crate) fn new_agent_only(repo: Repo, ends_at: i64) -> Result<Arc<Session>, OnePassError> {
+        Self::open(repo, Some(ends_at))
+    }
+
+    fn open(mut repo: Repo, agent_only: Option<i64>) -> Result<Arc<Session>, OnePassError> {
         if let Some(state) = crate::travel::open_state(&repo)? {
             repo.resume_travel(&state);
         }
         Ok(Arc::new(Session {
             account_id: id_hex(account_id_of(&repo)?),
             inner: Mutex::new(Some(repo)),
+            agent_only,
+            pending: Mutex::new(onepass_core::remote::PendingRequests::new()),
         }))
     }
 
+    pub(crate) fn agent_window(&self) -> Option<i64> {
+        self.agent_only
+    }
+
+    /// The repository, if unlocked. An agents-only window that has ended
+    /// drops it first (no extension by use).
     pub(crate) fn guard(&self) -> MutexGuard<'_, Option<Repo>> {
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if self
+            .agent_only
+            .is_some_and(|end| OffsetDateTime::now_utc().unix_timestamp() >= end)
+        {
+            guard.take();
+        }
+        guard
     }
 
     /// Run `f` on the unlocked repository. A `Conflict` is retried once. The

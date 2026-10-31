@@ -92,6 +92,18 @@ struct RootView: View {
                 }
             }
             #endif
+            #if os(iOS)
+            // The requests of the Mac's agents: shown as they arrive or when their notification is
+            // tapped, only while the vault is open.
+            .sheet(isPresented: Binding(
+                get: { model.phoneAgents?.showRequests == true && model.session.state == .unlocked },
+                set: { if !$0 { model.phoneAgents?.showRequests = false } }
+            )) {
+                if let agents = model.phoneAgents {
+                    AgentRequestsSheet(agents: agents)
+                }
+            }
+            #endif
             #if os(iOS) || os(visionOS)
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in

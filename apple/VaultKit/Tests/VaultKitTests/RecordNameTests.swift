@@ -14,7 +14,7 @@ struct RecordNameTests {
         #expect(parsed == name)
         #expect(parsed.kind == 5 && parsed.id == Self.hex)
 
-        for kind: UInt8 in [1, 6] {
+        for kind: UInt8 in [1, 6, 8, 9, 10] {
             let other = RecordName(kind: kind, id: Self.hex)
             #expect(RecordName(string: other.string) == other)
         }

@@ -620,3 +620,57 @@ fn remote_list_deletion_ignored() {
     assert_eq!(b.repo().devices().unwrap(), devices);
     assert_eq!(vault_ids(&mut b), vaults);
 }
+
+/// The approver list syncs like the device list: B sees A's key, A and B
+/// both register without losing each other's entry, and revoking a device
+/// voids its key.
+#[test]
+fn approver_list_syncs_and_follows_device_revocation() {
+    use onepass_core::approvers::ApproverRole;
+    use onepass_core::crypto::HybridKemSecret;
+
+    fn keys() -> (
+        onepass_core::crypto::HybridVerifyingKey,
+        onepass_core::crypto::HybridKemPublic,
+    ) {
+        (
+            HybridSigningKey::generate()
+                .unwrap()
+                .verifying_key()
+                .unwrap(),
+            HybridKemSecret::generate().unwrap().public().unwrap(),
+        )
+    }
+
+    let mut server = Server::default();
+    let (mut a, mut b) = two_devices(&mut server);
+    let (sa, ka) = keys();
+    a.repo()
+        .register_this_approver(sa.clone(), ka, ApproverRole::Mac)
+        .unwrap();
+    let (sb, kb) = keys();
+    b.repo()
+        .register_this_approver(sb.clone(), kb, ApproverRole::Phone)
+        .unwrap();
+    // Both wrote seq 1 on their own: the rebase unions them.
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut a);
+    for dev in [&mut a, &mut b] {
+        let keys: Vec<_> = dev
+            .repo()
+            .approvers()
+            .unwrap()
+            .into_iter()
+            .map(|e| e.sign_pub)
+            .collect();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&sa) && keys.contains(&sb));
+    }
+
+    let b_id = b.repo().this_device_id().unwrap();
+    a.repo().revoke_device(b_id).unwrap();
+    let active = a.repo().approvers().unwrap();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].sign_pub, sa);
+}

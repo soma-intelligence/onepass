@@ -289,6 +289,7 @@ fn keeps_ancestor(kind: RecordKind) -> bool {
             | RecordKind::RestoreEpoch
             | RecordKind::DeviceList
             | RecordKind::VaultList
+            | RecordKind::ApproverList
     )
 }
 
@@ -372,13 +373,17 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
             "SELECT p.kind, p.id FROM pending p
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
-             WHERE p.kind IN (?1, ?2) AND p.data IS NOT NULL
+             WHERE p.kind IN (?1, ?2, ?3) AND p.data IS NOT NULL
                AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
     let rows = stmt
         .query_map(
-            params![RecordKind::DeviceList.code(), RecordKind::VaultList.code()],
+            params![
+                RecordKind::DeviceList.code(),
+                RecordKind::VaultList.code(),
+                RecordKind::ApproverList.code()
+            ],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
         )
         .map_err(store_err)?;
@@ -1306,13 +1311,14 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind IN (?1, ?2, ?3, ?4) AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5) AND {missing}"
                 ),
                 params![
                     RecordKind::Manifest.code(),
                     RecordKind::RestoreEpoch.code(),
                     RecordKind::DeviceList.code(),
-                    RecordKind::VaultList.code()
+                    RecordKind::VaultList.code(),
+                    RecordKind::ApproverList.code()
                 ],
             )
             .map_err(store_err)?;
@@ -2037,7 +2043,7 @@ impl SyncStore {
     pub(crate) fn discard_local_changes(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
         tx.execute(
-            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 RecordKind::VaultKey.code(),
                 RecordKind::VaultMeta.code(),
@@ -2045,7 +2051,8 @@ impl SyncStore {
                 RecordKind::Manifest.code(),
                 RecordKind::RestoreEpoch.code(),
                 RecordKind::DeviceList.code(),
-                RecordKind::VaultList.code()
+                RecordKind::VaultList.code(),
+                RecordKind::ApproverList.code()
             ],
         )
         .map_err(store_err)?;
@@ -2489,6 +2496,12 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::ParamsRollback => 13,
         IntegrityError::DeviceListRollback => 14,
         IntegrityError::VaultListRollback => 15,
+        IntegrityError::RemoteSignature => 16,
+        IntegrityError::RemoteExpired => 17,
+        IntegrityError::RemoteReplay => 18,
+        IntegrityError::RemoteUnknownDevice => 19,
+        IntegrityError::RemoteWrongRecipient => 20,
+        IntegrityError::RemoteUnknownRequest => 21,
     }
 }
 
@@ -2510,6 +2523,12 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         13 => IntegrityError::ParamsRollback,
         14 => IntegrityError::DeviceListRollback,
         15 => IntegrityError::VaultListRollback,
+        16 => IntegrityError::RemoteSignature,
+        17 => IntegrityError::RemoteExpired,
+        18 => IntegrityError::RemoteReplay,
+        19 => IntegrityError::RemoteUnknownDevice,
+        20 => IntegrityError::RemoteWrongRecipient,
+        21 => IntegrityError::RemoteUnknownRequest,
         _ => return None,
     })
 }
@@ -2821,7 +2840,10 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 /// records are never deleted either (spec 6.3):
 /// `InvalidFormat("immutable record deletion")`.
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     if kind.is_immutable() {
@@ -2892,6 +2914,7 @@ fn protected_from_remote_deletion(
         | RecordKind::Lineage
         | RecordKind::DeviceIntro
         | RecordKind::KeyDelivery => true,
+        | RecordKind::ApproverList => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -3029,6 +3052,12 @@ pub(crate) fn merge_chain(
             force_lists,
             IntegrityError::VaultListRollback,
         )?,
+        approver_list: seen(
+            mem.approver_list,
+            stored.approver_list,
+            force_lists,
+            IntegrityError::DeviceListRollback,
+        )?,
         device_id,
     })
 }
@@ -3105,7 +3134,10 @@ impl WriteTx<'_> {
 /// `RecordStore::evict` inside a transaction: the row leaves every layer
 /// and nothing is queued for the server.
 fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
-    if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
+    if matches!(
+        kind,
+        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
+    ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
     for table in ["base", "pending", "staging", "ancestor", "kept", "retained"] {
@@ -5350,6 +5382,12 @@ mod tests {
         ParamsRollback,
         DeviceListRollback,
         VaultListRollback,
+        RemoteSignature,
+        RemoteExpired,
+        RemoteReplay,
+        RemoteUnknownDevice,
+        RemoteWrongRecipient,
+        RemoteUnknownRequest,
     );
 
     #[test]
@@ -5415,7 +5453,7 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 16);
+        assert_eq!(ALL_CAUSES.len(), 22);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);
@@ -5582,18 +5620,21 @@ mod tests {
             device_list: seen_at(2, 1),
             vault_list: seen_at(5, 1),
             device_id: None,
+            approver_list: None,
         };
         let newer = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(4, 2),
             device_id: Some(id),
+            approver_list: seen_at(2, 3),
         };
         let merged = ChainState {
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(5, 1),
             device_id: Some(id),
+            approver_list: seen_at(2, 3),
         };
         // Whichever process persists, nothing goes back.
         assert_eq!(merge_chain(&older, &newer, false).unwrap(), merged);
@@ -5637,6 +5678,7 @@ mod tests {
         // A device id is set once: another one is refused, forced or not.
         let mine = ChainState {
             device_id: Some(Id::new()),
+            approver_list: None,
             ..stored.clone()
         };
         let other = ChainState {
@@ -5660,6 +5702,7 @@ mod tests {
             device_list: seen_at(4, 1),
             vault_list: seen_at(6, 1),
             device_id: Some(id),
+            approver_list: None,
         };
         s.set_chain_state(&stored).unwrap();
         // A process that unlocked before those pins persists its own.
@@ -5668,6 +5711,7 @@ mod tests {
             device_list: seen_at(3, 9),
             vault_list: seen_at(5, 9),
             device_id: None,
+            approver_list: None,
         };
         let (_, chain) = s
             .merge_device_state(&DeviceState::default(), &stale, &[], false, false)

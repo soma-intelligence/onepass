@@ -1,5 +1,6 @@
 import DesignKit
 import SwiftUI
+import UserNotifications
 import VaultKit
 
 @main
@@ -70,8 +71,10 @@ struct OnePassApp: App {
 
 /// Remote notifications (CloudKit database subscription) start a sync round.
 /// Registration only happens in the CloudKit build: the unsigned build has no push entitlement.
+/// iPhone: a tapped agent request notification opens the request screen (agent-ready spec 7); the
+/// notification itself has no action.
 #if os(iOS) || os(visionOS)
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     var model: AppModel?
 
     func application(
@@ -81,9 +84,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // visionOS: no push registration (iOS only).
         #if ONEPASS_CLOUDKIT && os(iOS)
         application.registerForRemoteNotifications()
+        UNUserNotificationCenter.current().delegate = self
         #endif
         return true
     }
+
+    #if os(iOS)
+    /// The app on screen reads the request itself: no banner.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        []
+    }
+
+    /// The request screen opens once the vault is unlocked (it may still be locked here).
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) async {
+        // The CloudKit push of a request only (Watchtower's local alerts open the app as before).
+        guard response.notification.request.trigger is UNPushNotificationTrigger else { return }
+        await MainActor.run { self.model?.phoneAgents?.notificationTapped() }
+    }
+    #endif
 
     func application(
         _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]

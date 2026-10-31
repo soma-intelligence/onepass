@@ -14,6 +14,7 @@
 #![deny(unsafe_code)]
 
 use onepass_mcp::{LocalWorkspace, MAX_LINE, Workspace};
+use onepass_mcp_relay::install;
 use onepass_mcp_relay::wire::{
     AppToRelay, ClientHello, Line, LineReader, MAX_WIRE_LINE, RelayToApp, Reply, VERSION, decode,
     encode, run_request,
@@ -29,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use zeroize::Zeroizing;
 
-const USAGE: &str = "usage: onepass-mcp --socket <path>";
+const USAGE: &str = "usage: onepass-mcp --socket <path>\n       onepass-mcp install|uninstall --client <claude-code|claude-desktop|codex|cursor> [--dry-run] [--force] [--with-docs] [--home <dir>] [--socket <path>]";
 
 /// `EX_USAGE` of sysexits.h.
 const EXIT_USAGE: u8 = 64;
@@ -52,6 +53,26 @@ fn socket_arg(args: &[OsString]) -> Option<PathBuf> {
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    // Anything else is the relay itself, which MCP clients launch with
+    // `--socket`; the two subcommands configure those clients.
+    let action = match args.first().and_then(|a| a.to_str()) {
+        Some("install") => Some(install::Action::Install),
+        Some("uninstall") => Some(install::Action::Uninstall),
+        _ => None,
+    };
+    if let Some(action) = action {
+        return match install::run(action, &args[1..], &mut io::stdout()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(install::Error::Usage(m)) => {
+                eprintln!("onepass-mcp: {m}");
+                ExitCode::from(EXIT_USAGE)
+            }
+            Err(install::Error::Failed(m)) => {
+                eprintln!("onepass-mcp: {m}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let Some(socket) = socket_arg(&args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(EXIT_USAGE);

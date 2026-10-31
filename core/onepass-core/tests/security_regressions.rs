@@ -41,7 +41,7 @@ fn find(repo: &Repository<MemoryStore>, id: Id) -> Vault {
         .unwrap()
 }
 
-const ALL: [RecordKind; 9] = [
+const ALL: [RecordKind; 10] = [
     RecordKind::AccountParams,
     RecordKind::Keyset,
     RecordKind::VaultKey,
@@ -51,6 +51,7 @@ const ALL: [RecordKind; 9] = [
     RecordKind::RestoreEpoch,
     RecordKind::DeviceList,
     RecordKind::VaultList,
+    RecordKind::ApproverList,
 ];
 
 /// The owner turns `mcp_access` and `travel_safe` off; the store serves the

@@ -183,6 +183,9 @@ pub struct FfiAuditEntry {
     pub field: Option<String>,
     pub decision: String,
     pub outcome: String,
+    /// Where the answer was given: `mac` or `phone:<device_id>`; `None` for older lines and for
+    /// answers given by nobody (timeout, lock).
+    pub approved_on: Option<String>,
 }
 
 /// The audit log after verification. `problem` set: the chain or its head
@@ -533,6 +536,7 @@ impl Session {
                 field: e.field,
                 decision: e.decision,
                 outcome: e.outcome,
+                approved_on: e.approved_on,
             })
             .collect();
         Ok(FfiAuditReport {
@@ -598,6 +602,7 @@ pub(crate) fn audit_admin(
         field: None,
         decision: "allowed".into(),
         outcome: "ok".into(),
+        approved_on: None,
     });
 }
 

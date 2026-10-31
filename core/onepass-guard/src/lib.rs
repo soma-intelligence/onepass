@@ -23,9 +23,9 @@ mod strong;
 mod strong_macos;
 
 pub use approval::{
-    ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover, GRANT_CHOICES,
-    Surface, Target, TtyApprover, challenge_code, decision_label, dev_auto_approver_from_env,
-    parse_answer, render_prompt,
+    Answer, ApprovalRequest, Approver, CHALLENGE_ALPHABET, Decision, DevAutoApprover,
+    GRANT_CHOICES, Surface, Target, TtyApprover, challenge_code, decision_label,
+    dev_auto_approver_from_env, parse_answer, render_prompt,
 };
 pub use audit::{
     AuditEntry, AuditLog, AuditRecord, AuditSink, AuditVerification, OUTCOME_CLIENT_COOLING_DOWN,
@@ -34,8 +34,8 @@ pub use audit::{
     head_path, verify_log,
 };
 pub use clients::{
-    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired, load_clients,
-    save_clients,
+    CLIENTS_DOMAIN, ClientRecord, ClientRegistry, ClientRegistryLoader, Unpaired,
+    listed_unverified, load_clients, save_clients,
 };
 pub use clock::{Clock, SystemClock};
 pub use control::{

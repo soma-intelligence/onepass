@@ -27,6 +27,19 @@ pub enum IntegrityError {
     /// A vault list older than the one this device already accepted, a
     /// fork of it, or none where one was accepted.
     VaultListRollback,
+    /// A remote approval message whose signature does not verify under any
+    /// active key of its sender.
+    RemoteSignature,
+    /// A remote request or response outside its validity window.
+    RemoteExpired,
+    /// A remote request this device already accepted.
+    RemoteReplay,
+    /// A remote message from a device that is not in the approver list.
+    RemoteUnknownDevice,
+    /// A remote message addressed to another device.
+    RemoteWrongRecipient,
+    /// A remote response to no pending request (or from the wrong phone).
+    RemoteUnknownRequest,
 }
 
 impl fmt::Display for IntegrityError {
@@ -48,6 +61,12 @@ impl fmt::Display for IntegrityError {
             Self::ParamsRollback => "account parameters rollback detected",
             Self::DeviceListRollback => "device list rollback detected",
             Self::VaultListRollback => "vault list rollback detected",
+            Self::RemoteSignature => "remote message signature is invalid",
+            Self::RemoteExpired => "remote message expired",
+            Self::RemoteReplay => "remote request already seen",
+            Self::RemoteUnknownDevice => "remote message from an unknown device",
+            Self::RemoteWrongRecipient => "remote message for another device",
+            Self::RemoteUnknownRequest => "remote response to no pending request",
         };
         f.write_str(s)
     }

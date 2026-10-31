@@ -96,6 +96,22 @@ fn needs_strong(action: &str) -> bool {
     matches!(action, "reveal_secret" | "totp_code")
 }
 
+/// Longest device id a `phone:` origin may name (as the app's audit check).
+const MAX_DEVICE_ID: usize = 64;
+
+/// The approval was given on an enrolled phone (`phone:<device_id>`, ASCII
+/// letters, digits and `-`): Face ID there was its strong gesture (spec
+/// 5.3). `mac`, no origin or anything else is not.
+fn approved_on_phone(approved_on: Option<&str>) -> bool {
+    approved_on
+        .and_then(|o| o.strip_prefix("phone:"))
+        .is_some_and(|id| {
+            !id.is_empty()
+                && id.len() <= MAX_DEVICE_ID
+                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+}
+
 fn invalid(m: &str) -> Refusal {
     Refusal::Invalid(m.to_owned())
 }
@@ -253,7 +269,7 @@ fn otp_config(value: &FieldValue) -> Option<TotpConfig> {
 impl<P: VaultPort> McpTools<P> {
     /// Locates `reference` (vault, live item, field) without reading the
     /// value, and records it as a target of `call`.
-    fn locate(&mut self, reference: &str, call: &mut Call) -> Result<Located, Refusal> {
+    fn locate(&mut self, reference: &str, call: &mut Call<'_>) -> Result<Located, Refusal> {
         let (vault, item, r) = self.locate_restricted(reference)?;
         let field_id = match field_of(&item, &r) {
             Ok(f) => f.id.clone(),
@@ -330,7 +346,7 @@ impl<P: VaultPort> McpTools<P> {
         remember_allowed: bool,
         key: Option<String>,
         vault_id: Option<Id>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> Result<(), Refusal> {
         if self.audit.ready().is_err() {
             return Err(Refusal::AuditUnusable);
@@ -383,8 +399,21 @@ impl<P: VaultPort> McpTools<P> {
             details,
             targets,
             remember_allowed,
+            strong_required: needs_strong(action),
+            // Drawn by the guard right before the prompt.
+            confirm_code: String::new(),
         };
-        let gated = self.gate.approve(&self.client.client_id, &gate_key, &req);
+        // Tell the agent a human is being asked, with the code to confirm,
+        // before waiting for the answer.
+        let notice = &mut call.notice;
+        let gated =
+            self.gate
+                .approve_notifying(&self.client.client_id, &gate_key, &req, &mut |code| {
+                    if let Some(n) = notice.as_mut() {
+                        n.pending(code);
+                    }
+                });
+        call.approved_on = gated.approved_on.clone();
         // A prompt allowed for a tool that also needs strong authentication
         // ends the run of denials only once strong authentication succeeds
         // (see `strong_auth`): a client cannot reset it by having the user
@@ -437,8 +466,20 @@ impl<P: VaultPort> McpTools<P> {
     /// that return a value. The reason names the client and the target. A
     /// failed authentication counts as a user denial (toward the cooling
     /// down period), a success ends the run of denials; `Unavailable` (no
-    /// method could run) counts as neither.
-    fn strong_auth(&mut self, action: &str, l: &Located) -> Result<(), Refusal> {
+    /// method could run) counts as neither. A request that required the
+    /// strong gesture and was approved on a phone (`approved_on`) already
+    /// had Face ID there: the Mac is not asked, and it counts as a success.
+    fn strong_auth(
+        &mut self,
+        action: &str,
+        l: &Located,
+        approved_on: Option<&str>,
+    ) -> Result<(), Refusal> {
+        if needs_strong(action) && approved_on_phone(approved_on) {
+            self.throttle
+                .record_decision(&*self.clock, &self.client.client_id, false);
+            return Ok(());
+        }
         let reason = sanitize_for_display(&format!(
             "{action} for {}: {}",
             self.client.label,
@@ -463,7 +504,7 @@ impl<P: VaultPort> McpTools<P> {
     fn locate_for_use<'n>(
         &mut self,
         refs: impl IntoIterator<Item = &'n str>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> Result<Vec<Located>, Refusal> {
         let mut located = Vec::new();
         for r in refs {
@@ -480,7 +521,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let argv: Vec<String> = args
             .get("command")
@@ -608,7 +649,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let template_path = str_arg(args, "template_path").unwrap_or_default();
         let output_path = str_arg(args, "output_path").unwrap_or_default();
@@ -685,7 +726,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let title = str_arg(args, "title").unwrap_or_default();
         let url = str_arg(args, "url");
@@ -805,7 +846,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let l = self.locate(str_arg(args, "reference").unwrap_or_default(), call)?;
         self.require(&l.vault, Scope::Totp)?;
@@ -830,7 +871,8 @@ impl<P: VaultPort> McpTools<P> {
             Some(l.vault.id),
             call,
         )?;
-        self.strong_auth("totp_code", &l)?;
+        let on = call.approved_on.clone();
+        self.strong_auth("totp_code", &l, on.as_deref())?;
         let code = self.read_value(&l.vault, &l.r)?;
         Ok(json!({
             "code": code.as_str(),
@@ -845,7 +887,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         args: &Map<String, Value>,
-        call: &mut Call,
+        call: &mut Call<'_>,
     ) -> CallResult {
         let l = self.locate(str_arg(args, "reference").unwrap_or_default(), call)?;
         self.require(&l.vault, Scope::Reveal)?;
@@ -859,7 +901,8 @@ impl<P: VaultPort> McpTools<P> {
             Some(l.vault.id),
             call,
         )?;
-        self.strong_auth("reveal_secret", &l)?;
+        let on = call.approved_on.clone();
+        self.strong_auth("reveal_secret", &l, on.as_deref())?;
         let value = self.read_value(&l.vault, &l.r)?;
         Ok(super::untrusted(json!({"value": value.as_str()})))
     }
