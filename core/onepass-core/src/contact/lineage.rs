@@ -18,17 +18,129 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::crypto::IdentityVerifyingKey;
+use crate::account::AccountParams;
+use crate::crypto::{HybridKemPublic, HybridVerifyingKey, IdentityVerifyingKey};
 use crate::lineage::{
-    LineageRecord, RosterEntry, RotationBody, Signed, SignedIntro, verify_intro,
-    verify_intro_identity, verify_rotation,
+    GenesisBody, LineageRecord, RosterEntry, RotationBody, Signed, SignedIntro, SignedLegacyIntro,
+    intro_id, verify_intro, verify_intro_identity, verify_legacy_intro, verify_rotation,
 };
 use crate::trust::LineageHead;
 use crate::{Error, Id, Result};
 
 use super::MAX_CARD_INTROS_PER_RECORD;
 
-/// What a contact pinned of another account.
+/// Most copies of one record (same lineage hash, other signatures) whose
+/// signatures `follow_foreign` checks. Exact duplicates count once. A
+/// server sending more bad copies can only hide the record (`Same`),
+/// which withholding it does anyway.
+pub const MAX_FOREIGN_COPIES: usize = 8;
+
+/// The legacy (TOFU) devices of an account migrated from before key
+/// rotation v2 (rotation spec 15, owner ruling O4), as a card carries
+/// them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LegacyIntros<'a> {
+    /// Legacy intros bound to the genesis.
+    pub intros: &'a [SignedLegacyIntro],
+    /// The `AccountParams` record of the genesis identity, signed by it:
+    /// its account signing key checks `intros`. Without it (or if it does
+    /// not verify under the genesis identity), no legacy intro counts.
+    pub genesis_params: Option<&'a [u8]>,
+}
+
+/// The legacy intros a genesis accepts (`accept_legacy_intros`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LegacyAccepted {
+    /// One entry per device id, sorted by device id.
+    pub entries: Vec<RosterEntry>,
+    /// Ids claimed with two different key pairs: neither key is trusted,
+    /// and the id may not be introduced under the genesis either (spec 15
+    /// step 3: excluded until verified).
+    pub conflicting: BTreeSet<Id>,
+}
+
+fn same_keys(a: &RosterEntry, b: &RosterEntry) -> bool {
+    a.sign_pub == b.sign_pub && a.kem_pub == b.kem_pub
+}
+
+fn keys_of(e: &RosterEntry) -> (&HybridVerifyingKey, &HybridKemPublic) {
+    (&e.sign_pub, &e.kem_pub)
+}
+
+/// Spec 15 step 3, the part a lineage alone can check (the account-signed
+/// device list is the own account's business, not a contact's): an intro
+/// counts when it is bound to `genesis` (its hash and account), strictly
+/// shaped, and verifies under `account_sign`, the account signing key of
+/// the genesis identity (`verify_legacy_intro`). Once per id: an id named
+/// with two different key pairs goes to `conflicting` and is not
+/// accepted; with one key pair and several intros, the entry with the
+/// smallest encoding is kept. The genesis creator's id is never claimed
+/// by a legacy intro (the genesis names its key). At most
+/// `MAX_CARD_INTROS_PER_RECORD` entries, the smallest ids first.
+/// Deterministic: the result depends on the set of intros, not their
+/// order.
+pub fn accept_legacy_intros(
+    genesis: &Signed<GenesisBody>,
+    account_sign: &HybridVerifyingKey,
+    intros: &[SignedLegacyIntro],
+) -> LegacyAccepted {
+    let genesis_hash = LineageRecord::Genesis(genesis.clone()).hash();
+    let creator = genesis.body.creator.device_id;
+    let mut claims: BTreeMap<Id, Vec<RosterEntry>> = BTreeMap::new();
+    for i in intros {
+        let b = &i.body;
+        if b.account_id != genesis.body.account_id
+            || b.genesis_hash != genesis_hash
+            || b.entry.device_id == creator
+            || SignedLegacyIntro::decode(&i.encode()).is_err()
+            || verify_legacy_intro(i, account_sign).is_err()
+        {
+            continue;
+        }
+        claims
+            .entry(b.entry.device_id)
+            .or_default()
+            .push(b.entry.clone());
+    }
+    let mut out = LegacyAccepted::default();
+    for (id, mut entries) in claims {
+        let first = keys_of(&entries[0]);
+        if entries.iter().any(|e| keys_of(e) != first) {
+            out.conflicting.insert(id);
+            continue;
+        }
+        entries.sort_by_key(|e| postcard::to_allocvec(e).expect("roster entry encodes"));
+        if out.entries.len() < MAX_CARD_INTROS_PER_RECORD {
+            out.entries.push(entries.swap_remove(0));
+        }
+    }
+    out
+}
+
+/// `accept_legacy_intros` with the signing key taken from
+/// `legacy.genesis_params`, verified under the genesis identity and of
+/// the genesis account. Nothing when the params do not verify.
+fn legacy_of(genesis: &Signed<GenesisBody>, legacy: &LegacyIntros<'_>) -> LegacyAccepted {
+    if legacy.intros.is_empty() {
+        return LegacyAccepted::default();
+    }
+    let Some(bytes) = legacy.genesis_params else {
+        return LegacyAccepted::default();
+    };
+    match AccountParams::decode_verified(bytes, &genesis.body.identity_pub) {
+        Ok(p) if p.account_id == genesis.body.account_id => {
+            accept_legacy_intros(genesis, &p.signing_pub, legacy.intros)
+        }
+        _ => LegacyAccepted::default(),
+    }
+}
+
+/// What a contact pinned of another account: the last head it confirmed.
+/// The pin moves only after the confirmation of spec 12.3 point 3 (the
+/// rotation code, or QR in person for writer roles, founder decision 6),
+/// never because `follow_foreign` returned `Advanced`. Keeping it at the
+/// last confirmed head is also what lets a sibling revealed later come
+/// back as `Forked`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeignPin {
     pub account_id: Id,
@@ -48,7 +160,11 @@ pub struct ForeignPin {
 pub enum ForeignLineage {
     /// No valid child of the pinned head.
     Same,
-    /// One valid rotation after another from the pinned head.
+    /// One valid rotation after another from the pinned head. Never an
+    /// adoption: it means the old identity is dropped at once and the
+    /// contact goes to `KeysChanged` (spec 12.3 point 1). The new identity
+    /// is used only after the confirmation of 12.3 point 3; until then the
+    /// pin stays where it is.
     Advanced {
         /// Lineage hashes after the pinned head, oldest first.
         chain: Vec<[u8; 32]>,
@@ -65,19 +181,27 @@ pub enum ForeignLineage {
 }
 
 /// The roster of the genesis or rotation whose lineage hash is `head`,
-/// plus the intros bound to `head` that extend it (spec 5.5), sorted by
-/// device id. An intro is accepted when its device is not yet a member and
-/// it verifies under its introducer, a member (`verify_intro`); a kit
-/// self-intro (`introducer == entry.device_id`) also needs the signature
-/// of `head`'s identity. At most `MAX_CARD_INTROS_PER_RECORD` intros.
+/// plus the devices accepted under `head` (spec 5.5), sorted by device id.
 ///
-/// The record's own signatures are not checked here: `follow_foreign`
-/// calls this only on records it has validated. No record hashing to
-/// `head` is `NotFound`; one that breaks the structural rules is
-/// `InvalidFormat`.
+/// Under a genesis, the legacy devices of `legacy` come first
+/// (`accept_legacy_intros`). Then the intros bound to `head`, to a
+/// fixpoint: an intro counts when its device is not yet a member and it
+/// verifies under its introducer, a member (`verify_intro`); a kit
+/// self-intro (`introducer == entry.device_id`) also needs the signature
+/// of `head`'s identity. An id that the intros (or legacy intros) under
+/// `head` name with two different key pairs is never introduced, so the
+/// result depends on the set of intros, not their order. At most
+/// `MAX_CARD_INTROS_PER_RECORD` intros.
+///
+/// This is the roster `head` itself grants: revocations by its ancestors
+/// are not applied (`follow_foreign` applies them), so a caller must not
+/// show its entries as current members. The record's own signatures are
+/// not checked either. No record hashing to `head` is `NotFound`; one
+/// that breaks the structural rules is `InvalidFormat`.
 pub fn roster_at(
     records: &[LineageRecord],
     intros: &[SignedIntro],
+    legacy: &LegacyIntros<'_>,
     head: &[u8; 32],
 ) -> Result<Vec<RosterEntry>> {
     let record = records
@@ -85,7 +209,7 @@ pub fn roster_at(
         .find(|r| r.hash() == *head)
         .ok_or(Error::NotFound)?;
     LineageRecord::decode(&record.encode())?;
-    Ok(roster_with(record, intros, &BTreeSet::new()))
+    Ok(roster_with(record, intros, legacy, &BTreeSet::new()))
 }
 
 /// `roster_at` for a known record, where the devices of `excluded`
@@ -94,6 +218,7 @@ pub fn roster_at(
 fn roster_with(
     record: &LineageRecord,
     intros: &[SignedIntro],
+    legacy: &LegacyIntros<'_>,
     excluded: &BTreeSet<Id>,
 ) -> Vec<RosterEntry> {
     let head = record.hash();
@@ -103,17 +228,26 @@ fn roster_with(
         .filter(|i| SignedIntro::decode(&i.encode()).is_ok())
         .cloned()
         .collect();
-    let (mut members, _) = grow_roster(record, pending, excluded);
+    let legacy = match record {
+        LineageRecord::Genesis(g) => legacy_of(g, legacy),
+        LineageRecord::Rotation(_) => LegacyAccepted::default(),
+    };
+    let (mut members, _) = grow_roster(record, &legacy, pending, excluded);
     members.sort_by_key(|e| e.device_id);
     members
 }
 
-/// The record's roster (the genesis creator, or the rotation's roster)
-/// without `excluded`, grown by each intro of `pending` accepted, until
-/// none more is. Returns the members and the intros accepted, in the order
-/// accepted. `pending` is bound to `record` by the caller.
+/// The record's roster (the genesis creator, or the rotation's roster),
+/// then the accepted legacy entries (genesis only), without `excluded`,
+/// grown by each intro of `pending` accepted, until none more is.
+/// `pending` is bound to `record` by the caller; it is taken in intro id
+/// order, and an id it names with two key pairs (or with keys other than
+/// a legacy entry's, or listed in `legacy.conflicting`) is refused, so
+/// the outcome depends on the set only. Returns the members and the
+/// intros accepted, in the order accepted.
 pub(super) fn grow_roster(
     record: &LineageRecord,
+    legacy: &LegacyAccepted,
     mut pending: Vec<SignedIntro>,
     excluded: &BTreeSet<Id>,
 ) -> (Vec<RosterEntry>, Vec<SignedIntro>) {
@@ -121,7 +255,31 @@ pub(super) fn grow_roster(
         LineageRecord::Genesis(s) => vec![s.body.creator.clone()],
         LineageRecord::Rotation(s) => s.body.roster.clone(),
     };
+    for e in &legacy.entries {
+        if !members.iter().any(|m| m.device_id == e.device_id) {
+            members.push(e.clone());
+        }
+    }
     members.retain(|m| !excluded.contains(&m.device_id));
+
+    // Ids claimed with two key pairs under this record.
+    let mut conflicting = legacy.conflicting.clone();
+    let mut claimed: BTreeMap<Id, &RosterEntry> =
+        legacy.entries.iter().map(|e| (e.device_id, e)).collect();
+    for i in &pending {
+        let e = &i.body.entry;
+        match claimed.get(&e.device_id) {
+            Some(other) if !same_keys(other, e) => {
+                conflicting.insert(e.device_id);
+            }
+            Some(_) => {}
+            None => {
+                claimed.insert(e.device_id, e);
+            }
+        }
+    }
+    pending.sort_by_key(|i| intro_id(&i.body));
+
     let mut accepted = Vec::new();
     let mut progress = true;
     while progress && accepted.len() < MAX_CARD_INTROS_PER_RECORD {
@@ -131,6 +289,7 @@ pub(super) fn grow_roster(
             let b = &intro.body;
             let ok = accepted.len() < MAX_CARD_INTROS_PER_RECORD
                 && !excluded.contains(&b.entry.device_id)
+                && !conflicting.contains(&b.entry.device_id)
                 && !members.iter().any(|m| m.device_id == b.entry.device_id)
                 && if b.introducer == b.entry.device_id {
                     verify_intro_identity(&intro, record.identity_pub()).is_ok()
@@ -167,15 +326,19 @@ pub(super) fn grow_roster(
 /// account, one generation after `p`, that passes the structural rules;
 /// its rotator is in `roster_at(p)` and was revoked by no record from the
 /// genesis to `p`; the rotator's entry in its own roster carries the same
-/// signing key; every device it revokes is in `roster_at(p)` or was
-/// revoked before; and some copy of it verifies under the rotator's key
-/// from `roster_at(p)` and under the identity it names. Devices revoked
-/// by an ancestor can neither introduce nor be introduced. Two valid
-/// children of one record give `Forked`.
+/// signing key; and some copy of it (at most `MAX_FOREIGN_COPIES`
+/// distinct ones are tried) verifies under the rotator's key from
+/// `roster_at(p)` and under the identity it names. The ids a rotation
+/// revokes need not be known: they can only shrink later rosters.
+/// Devices revoked by an ancestor can neither introduce nor be
+/// introduced. Two valid children of one record give `Forked`.
+///
+/// `Advanced` is never an adoption (see [`ForeignLineage::Advanced`]).
 pub fn follow_foreign(
     pin: &ForeignPin,
     records: &[LineageRecord],
     intros: &[SignedIntro],
+    legacy: &LegacyIntros<'_>,
 ) -> ForeignLineage {
     // Every copy of each record of this account that passes the strict
     // checks, by lineage hash; the rotations by parent.
@@ -189,7 +352,10 @@ pub fn follow_foreign(
         if let Some(parent) = r.parent() {
             children.entry(parent).or_default().insert(h);
         }
-        by_hash.entry(h).or_default().push(r);
+        let copies = by_hash.entry(h).or_default();
+        if !copies.contains(&r) {
+            copies.push(r);
+        }
     }
 
     // The pinned path, back to the genesis.
@@ -229,7 +395,7 @@ pub fn follow_foreign(
     let mut generation = pin.head.generation;
     loop {
         let parent = by_hash[&at][0];
-        let roster = roster_with(parent, intros, &revoked);
+        let roster = roster_with(parent, intros, legacy, &revoked);
         let mut valid: Vec<([u8; 32], &Signed<RotationBody>)> = Vec::new();
         for h in children.get(&at).into_iter().flatten() {
             if let Some(s) = valid_child(&by_hash[h], generation, &roster, &revoked) {
@@ -291,12 +457,11 @@ fn valid_child<'a>(
     {
         return None;
     }
-    let known = |id: &Id| roster.iter().any(|e| e.device_id == *id) || revoked.contains(id);
-    if !b.revoked.iter().all(known) {
-        return None;
-    }
-    copies.iter().find_map(|r| match r {
-        LineageRecord::Rotation(s) if verify_rotation(s, &signer.sign_pub).is_ok() => Some(s),
-        _ => None,
-    })
+    copies
+        .iter()
+        .take(MAX_FOREIGN_COPIES)
+        .find_map(|r| match r {
+            LineageRecord::Rotation(s) if verify_rotation(s, &signer.sign_pub).is_ok() => Some(s),
+            _ => None,
+        })
 }

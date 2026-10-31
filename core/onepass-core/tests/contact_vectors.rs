@@ -18,16 +18,19 @@ use common::{Device, kdf};
 use data_encoding::HEXLOWER;
 use onepass_core::account::Account;
 use onepass_core::contact::{
-    CONTACT_CARD_DOMAIN, ContactCard, ForeignLineage, ForeignPin, SignedContactCard, fingerprint,
-    follow_foreign, format_safety_number, pair_id, roster_at, safety_number,
+    CONTACT_CARD_DOMAIN, ContactCard, ForeignLineage, ForeignPin, LegacyIntros, SignedContactCard,
+    accept_legacy_intros, fingerprint, follow_foreign, format_safety_number, pair_id, roster_at,
+    safety_number,
 };
+use onepass_core::crypto::HybridSigningKey;
 use onepass_core::crypto::{IdentityKey, IdentitySignature};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic, sign_pop};
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
-    GENESIS_IDENTITY_DOMAIN, GenesisBody, IntroBody, LINEAGE_FORMAT, LineageRecord, RosterEntry,
-    RotationBody, RotationReason, SignedIntro, identity_id, intro_id, sign_genesis, sign_intro,
-    sign_rotation, verify_rotation,
+    GENESIS_IDENTITY_DOMAIN, GenesisBody, IntroBody, LINEAGE_FORMAT, LegacyIntroBody,
+    LineageRecord, RosterEntry, RotationBody, RotationReason, SignedIntro, SignedLegacyIntro,
+    identity_id, intro_id, sign_genesis, sign_intro, sign_legacy_intro, sign_rotation,
+    verify_rotation,
 };
 use onepass_core::store::{Record, RecordKind, RecordStore};
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
@@ -204,6 +207,8 @@ fn card_of(p: &Party, name: &str) -> ContactCard {
         params: p.params.clone(),
         lineage: p.lineage.clone(),
         intros: p.intros.clone(),
+        legacy_intros: vec![],
+        genesis_params: None,
         name: name.into(),
         issued_at: T0 + 60,
     }
@@ -449,6 +454,8 @@ fn card_params_of_other_identity_refused() {
         params: b.params.clone(),
         lineage: vec![genesis],
         intros: vec![],
+        legacy_intros: vec![],
+        genesis_params: None,
         name: "Bob".into(),
         issued_at: T0,
     };
@@ -948,6 +955,18 @@ fn foreign() -> &'static Foreign {
     })
 }
 
+fn follow(pin: &ForeignPin, records: &[LineageRecord], intros: &[SignedIntro]) -> ForeignLineage {
+    follow_foreign(pin, records, intros, &LegacyIntros::default())
+}
+
+fn roster(
+    records: &[LineageRecord],
+    intros: &[SignedIntro],
+    head: &[u8; 32],
+) -> Result<Vec<RosterEntry>, Error> {
+    roster_at(records, intros, &LegacyIntros::default(), head)
+}
+
 fn pin_at(f: &Foreign, r: &LineageRecord) -> ForeignPin {
     ForeignPin {
         account_id: f.account_id,
@@ -980,11 +999,11 @@ fn same_head_is_same() {
     let f = foreign();
     let records = [f.g.clone(), f.r1.clone()];
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.r1), &records, &all_intros(f)),
+        follow(&pin_at(f, &f.r1), &records, &all_intros(f)),
         ForeignLineage::Same
     );
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.g), std::slice::from_ref(&f.g), &[]),
+        follow(&pin_at(f, &f.g), std::slice::from_ref(&f.g), &[]),
         ForeignLineage::Same
     );
 }
@@ -993,7 +1012,7 @@ fn same_head_is_same() {
 fn one_rotation_advances() {
     let f = foreign();
     let records = [f.g.clone(), f.r1.clone()];
-    let got = follow_foreign(
+    let got = follow(
         &pin_at(f, &f.g),
         &records,
         std::slice::from_ref(&f.intro_b_g),
@@ -1018,11 +1037,9 @@ fn one_rotation_advances() {
     assert_eq!(identity_pub, f.identities[1].verifying_key());
     assert_eq!(last_rotation.revoked, vec![id(0x72)]);
     // Without B's intro, `r1` revokes a device the genesis roster does not
-    // know: not valid (spec 7.2), the pin stays.
-    assert_eq!(
-        follow_foreign(&pin_at(f, &f.g), &records, &[]),
-        ForeignLineage::Same
-    );
+    // know: still valid (an unknown revoked id only shrinks later rosters).
+    let got = follow(&pin_at(f, &f.g), &records, &[]);
+    assert_eq!(advanced_chain(&got), Some(&[f.r1.hash()][..]));
 }
 
 #[test]
@@ -1030,7 +1047,7 @@ fn two_rotations_advance_in_order() {
     let f = foreign();
     // Given out of order: the result follows the generations.
     let records = [f.r2.clone(), f.g.clone(), f.r1.clone()];
-    let got = follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f));
+    let got = follow(&pin_at(f, &f.g), &records, &all_intros(f));
     assert_eq!(advanced_chain(&got), Some(&[f.r1.hash(), f.r2.hash()][..]));
     let ForeignLineage::Advanced {
         head, identity_pub, ..
@@ -1041,7 +1058,7 @@ fn two_rotations_advance_in_order() {
     assert_eq!(head.generation, 2);
     assert_eq!(identity_pub, f.identities[4].verifying_key());
     // From `r1`, one step.
-    let got = follow_foreign(&pin_at(f, &f.r1), &records, &all_intros(f));
+    let got = follow(&pin_at(f, &f.r1), &records, &all_intros(f));
     assert_eq!(advanced_chain(&got), Some(&[f.r2.hash()][..]));
 }
 
@@ -1050,7 +1067,7 @@ fn rotation_by_unknown_device_ignored() {
     let f = foreign();
     let records = [f.g.clone(), f.r1_unknown.clone()];
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        follow(&pin_at(f, &f.g), &records, &all_intros(f)),
         ForeignLineage::Same
     );
 }
@@ -1066,7 +1083,7 @@ fn rotation_signed_with_key_from_body_ignored() {
     verify_rotation(s, &s.body.roster[0].sign_pub).unwrap();
     let records = [f.g.clone(), f.r1_body_key.clone()];
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        follow(&pin_at(f, &f.g), &records, &all_intros(f)),
         ForeignLineage::Same
     );
 }
@@ -1076,7 +1093,7 @@ fn intro_extends_roster() {
     let f = foreign();
     let records = [f.g.clone(), f.r1.clone(), f.r2.clone()];
     // C signs `r2`; C is known only by A's intro under `r1`.
-    let got = follow_foreign(
+    let got = follow(
         &pin_at(f, &f.r1),
         &records,
         std::slice::from_ref(&f.intro_c_r1),
@@ -1084,33 +1101,33 @@ fn intro_extends_roster() {
     assert_eq!(advanced_chain(&got), Some(&[f.r2.hash()][..]));
     // Without it, C is unknown.
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.r1), &records, &[]),
+        follow(&pin_at(f, &f.r1), &records, &[]),
         ForeignLineage::Same
     );
     // An intro bound to another record does not count under `r1`.
     let mut moved = f.intro_c_r1.clone();
     moved.body.head = f.g.hash();
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.r1), &records, &[moved]),
+        follow(&pin_at(f, &f.r1), &records, &[moved]),
         ForeignLineage::Same
     );
 
     // roster_at: the record's roster plus the intros accepted under it.
     let ids = |r: Vec<RosterEntry>| r.into_iter().map(|e| e.device_id).collect::<Vec<_>>();
     assert_eq!(
-        ids(roster_at(&records, &all_intros(f), &f.r1.hash()).unwrap()),
+        ids(roster(&records, &all_intros(f), &f.r1.hash()).unwrap()),
         vec![id(0x71), id(0x72), id(0x73)]
     );
     assert_eq!(
-        ids(roster_at(&records, &[], &f.r1.hash()).unwrap()),
+        ids(roster(&records, &[], &f.r1.hash()).unwrap()),
         vec![id(0x71)]
     );
     assert_eq!(
-        ids(roster_at(&records, &all_intros(f), &f.g.hash()).unwrap()),
+        ids(roster(&records, &all_intros(f), &f.g.hash()).unwrap()),
         vec![id(0x71), id(0x72)]
     );
     assert!(matches!(
-        roster_at(&records, &[], &[9; 32]),
+        roster(&records, &[], &[9; 32]),
         Err(Error::NotFound)
     ));
 }
@@ -1140,13 +1157,13 @@ fn roster_at_identity_intro_rules() {
     // A kit self-intro signed by the identity of `r1`: accepted.
     let good = self_intro(Some(&f.identities[1]));
     assert_eq!(
-        ids(roster_at(&records, &[good], &f.r1.hash()).unwrap()),
+        ids(roster(&records, &[good], &f.r1.hash()).unwrap()),
         vec![id(0x71), id(0x75)]
     );
     // By another identity, or without one: refused.
     for bad in [self_intro(Some(&f.identities[0])), self_intro(None)] {
         assert_eq!(
-            ids(roster_at(&records, &[bad], &f.r1.hash()).unwrap()),
+            ids(roster(&records, &[bad], &f.r1.hash()).unwrap()),
             vec![id(0x71)]
         );
     }
@@ -1161,7 +1178,7 @@ fn sibling_rotations_fork() {
     // `r1` revokes B, the signer of its sibling: never picked, the user
     // decides (spec 12.3 point 4).
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        follow(&pin_at(f, &f.g), &records, &all_intros(f)),
         ForeignLineage::Forked { siblings: expected }
     );
 }
@@ -1172,7 +1189,7 @@ fn revoked_device_rotation_after_revocation_ignored() {
     let records = [f.g.clone(), f.r1.clone(), f.r2_by_b.clone()];
     // B is not in `r1`'s roster.
     assert_eq!(
-        follow_foreign(
+        follow(
             &pin_at(f, &f.r1),
             &records,
             std::slice::from_ref(&f.intro_b_g)
@@ -1182,11 +1199,11 @@ fn revoked_device_rotation_after_revocation_ignored() {
     // B is back under `r1` through an intro: still revoked by an ancestor.
     let intros = [f.intro_b_g.clone(), f.intro_b_r1.clone()];
     assert_eq!(
-        follow_foreign(&pin_at(f, &f.r1), &records, &intros),
+        follow(&pin_at(f, &f.r1), &records, &intros),
         ForeignLineage::Same
     );
     // From the genesis, the walk stops at `r1`.
-    let got = follow_foreign(&pin_at(f, &f.g), &records, &intros);
+    let got = follow(&pin_at(f, &f.g), &records, &intros);
     assert_eq!(advanced_chain(&got), Some(&[f.r1.hash()][..]));
 }
 
@@ -1194,7 +1211,7 @@ fn revoked_device_rotation_after_revocation_ignored() {
 fn older_card_never_replaces_pinned_head() {
     let f = foreign();
     assert_eq!(
-        follow_foreign(
+        follow(
             &pin_at(f, &f.r2),
             &[f.g.clone(), f.r1.clone()],
             &all_intros(f)
@@ -1202,7 +1219,7 @@ fn older_card_never_replaces_pinned_head() {
         ForeignLineage::Unknown
     );
     assert_eq!(
-        follow_foreign(
+        follow(
             &pin_at(f, &f.r1),
             std::slice::from_ref(&f.g),
             &all_intros(f)
@@ -1211,7 +1228,7 @@ fn older_card_never_replaces_pinned_head() {
     );
     // A path that skips a record, or a pin on another genesis.
     assert_eq!(
-        follow_foreign(
+        follow(
             &pin_at(f, &f.r2),
             &[f.g.clone(), f.r2.clone()],
             &all_intros(f)
@@ -1221,21 +1238,21 @@ fn older_card_never_replaces_pinned_head() {
     let mut other = pin_at(f, &f.r1);
     other.genesis = [9; 32];
     assert_eq!(
-        follow_foreign(&other, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        follow(&other, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
         ForeignLineage::Unknown
     );
     // Records of another account are not this one's.
     let mut stranger = pin_at(f, &f.g);
     stranger.account_id = id(0x01);
     assert_eq!(
-        follow_foreign(&stranger, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        follow(&stranger, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
         ForeignLineage::Unknown
     );
     // A pin whose identity is not its head's.
     let mut wrong = pin_at(f, &f.r1);
     wrong.identity_pub = f.identities[0].verifying_key();
     assert_eq!(
-        follow_foreign(&wrong, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        follow(&wrong, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
         ForeignLineage::Unknown
     );
 }
@@ -1256,7 +1273,7 @@ fn withholding_never_yields_another_identity() {
     ];
     let intros = all_intros(f);
     for pin in [pin_at(f, &f.g), pin_at(f, &f.r1)] {
-        let full = follow_foreign(&pin, &records, &intros);
+        let full = follow(&pin, &records, &intros);
         let full_chain = advanced_chain(&full)
             .expect("the full set advances")
             .to_vec();
@@ -1270,7 +1287,7 @@ fn withholding_never_yields_another_identity() {
                     .filter(|i| imask & (1 << i) != 0)
                     .map(|i| intros[i].clone())
                     .collect();
-                match follow_foreign(&pin, &rs, &is) {
+                match follow(&pin, &rs, &is) {
                     ForeignLineage::Same | ForeignLineage::Unknown => {}
                     ForeignLineage::Advanced {
                         chain,
@@ -1310,7 +1327,7 @@ fn withholding_a_sibling_stays_on_a_branch() {
             .filter(|i| rmask & (1 << i) != 0)
             .map(|i| records[i].clone())
             .collect();
-        match follow_foreign(&pin, &rs, &intros) {
+        match follow(&pin, &rs, &intros) {
             ForeignLineage::Advanced { chain, .. } => {
                 assert!(branches.iter().any(|b| b.starts_with(&chain)), "{rmask:b}");
             }
@@ -1322,4 +1339,451 @@ fn withholding_a_sibling_stays_on_a_branch() {
             ForeignLineage::Same | ForeignLineage::Unknown => {}
         }
     }
+}
+
+// ------------------------------------------------- legacy (TOFU) devices
+
+/// An account migrated from before key rotation v2 (rotation spec 15,
+/// owner ruling O4): a legacy genesis by A under the account's identity,
+/// the Mac L added by a legacy intro signed by the account signing key.
+///
+/// - `lintro_l`: L, by the account key.
+/// - `lintro_l_other_keys`: L's id with M's keys, by the account key
+///   (two key pairs for one id).
+/// - `forged_m`: M, by a key that is not the account's.
+/// - `r_revokes_l`: generation 1 by A, revokes L.
+/// - `r_by_l`: generation 1 by L.
+/// - `intro_n`, `intro_n_other_keys`: A introduces N under the genesis,
+///   once with N's keys, once with M's keys under N's id.
+struct Legacy {
+    account_id: Id,
+    identity: IdentityKey,
+    params: Vec<u8>,
+    g: LineageRecord,
+    lintro_l: SignedLegacyIntro,
+    lintro_l_other_keys: SignedLegacyIntro,
+    forged_m: SignedLegacyIntro,
+    r_revokes_l: LineageRecord,
+    r_by_l: LineageRecord,
+    intro_n: SignedIntro,
+    intro_n_other_keys: SignedIntro,
+}
+
+fn legacy_intro(
+    account_id: Id,
+    g: &LineageRecord,
+    keys: &DeviceKeys,
+    public: &DevicePublic,
+    by: &HybridSigningKey,
+) -> SignedLegacyIntro {
+    sign_legacy_intro(
+        LegacyIntroBody {
+            account_id,
+            genesis_hash: g.hash(),
+            entry: entry(public, "Mac"),
+            pop: sign_pop(keys, &account_id.0, public).unwrap(),
+        },
+        by,
+    )
+    .unwrap()
+}
+
+fn legacy() -> &'static Legacy {
+    static L: OnceLock<Legacy> = OnceLock::new();
+    L.get_or_init(|| {
+        let n = Account::create_with_params("Projet Atlas, Camille Durand", kdf()).unwrap();
+        let account_id = n.account.params.account_id;
+        let keyset = n.account.keyset();
+        let identity = IdentityKey::from_bytes(&keyset.identity.to_bytes()).unwrap();
+        let dev = |k: &DeviceKeys, n: u8| k.public(id(n)).unwrap();
+        let ka = DeviceKeys::generate_software().unwrap();
+        let kl = DeviceKeys::generate_software().unwrap();
+        let km = DeviceKeys::generate_software().unwrap();
+        let kn = DeviceKeys::generate_software().unwrap();
+        let (a, l, m, nn) = (
+            dev(&ka, 0x81),
+            dev(&kl, 0x82),
+            dev(&km, 0x83),
+            dev(&kn, 0x84),
+        );
+        let g = LineageRecord::Genesis(
+            sign_genesis(
+                GenesisBody {
+                    format: LINEAGE_FORMAT,
+                    account_id,
+                    identity_pub: identity.verifying_key(),
+                    creator: entry(&a, "iPhone"),
+                    created_at: T0,
+                },
+                &ka,
+                &identity,
+            )
+            .unwrap(),
+        );
+        let lintro_l = legacy_intro(account_id, &g, &kl, &l, &keyset.signing);
+        let l_with_m_keys = km.public(l.device_id).unwrap();
+        let lintro_l_other_keys =
+            legacy_intro(account_id, &g, &km, &l_with_m_keys, &keyset.signing);
+        let stranger = HybridSigningKey::generate().unwrap();
+        let forged_m = legacy_intro(account_id, &g, &km, &m, &stranger);
+        let i1 = IdentityKey::generate().unwrap();
+        let i2 = IdentityKey::generate().unwrap();
+        let r_revokes_l = rotation(
+            account_id,
+            &g,
+            (&ka, a.device_id),
+            vec![l.device_id],
+            vec![entry(&a, "iPhone")],
+            &i1,
+        );
+        let r_by_l = rotation(
+            account_id,
+            &g,
+            (&kl, l.device_id),
+            vec![],
+            vec![entry(&a, "iPhone"), entry(&l, "Mac")],
+            &i2,
+        );
+        let intro_n = intro(account_id, &g, (&ka, a.device_id), (&kn, &nn, "iPad"));
+        let n_with_m_keys = km.public(nn.device_id).unwrap();
+        let intro_n_other_keys = intro(
+            account_id,
+            &g,
+            (&ka, a.device_id),
+            (&km, &n_with_m_keys, "iPad"),
+        );
+        Legacy {
+            account_id,
+            identity,
+            params: n.params_record,
+            g,
+            lintro_l,
+            lintro_l_other_keys,
+            forged_m,
+            r_revokes_l,
+            r_by_l,
+            intro_n,
+            intro_n_other_keys,
+        }
+    })
+}
+
+fn legacy_pin(l: &Legacy) -> ForeignPin {
+    ForeignPin {
+        account_id: l.account_id,
+        genesis: l.g.hash(),
+        head: LineageHead {
+            generation: 0,
+            hash: l.g.hash(),
+        },
+        identity_pub: l.identity.verifying_key(),
+    }
+}
+
+fn with_params<'a>(l: &'a Legacy, intros: &'a [SignedLegacyIntro]) -> LegacyIntros<'a> {
+    LegacyIntros {
+        intros,
+        genesis_params: Some(&l.params),
+    }
+}
+
+fn ids(r: Vec<RosterEntry>) -> Vec<Id> {
+    r.into_iter().map(|e| e.device_id).collect()
+}
+
+#[test]
+fn creator_revokes_legacy_device_advances() {
+    let l = legacy();
+    let records = [l.g.clone(), l.r_revokes_l.clone()];
+    let intros = [l.lintro_l.clone()];
+    let got = follow_foreign(&legacy_pin(l), &records, &[], &with_params(l, &intros));
+    assert_eq!(advanced_chain(&got), Some(&[l.r_revokes_l.hash()][..]));
+    let ForeignLineage::Advanced { last_rotation, .. } = got else {
+        unreachable!()
+    };
+    assert_eq!(last_rotation.revoked, vec![id(0x82)]);
+    // Without the legacy intro too: an unknown revoked id is no reason to
+    // keep the old identity.
+    let got = follow_foreign(&legacy_pin(l), &records, &[], &LegacyIntros::default());
+    assert_eq!(advanced_chain(&got), Some(&[l.r_revokes_l.hash()][..]));
+}
+
+#[test]
+fn legacy_device_rotation_advances() {
+    let l = legacy();
+    let records = [l.g.clone(), l.r_by_l.clone()];
+    let intros = [l.lintro_l.clone()];
+    let got = follow_foreign(&legacy_pin(l), &records, &[], &with_params(l, &intros));
+    assert_eq!(advanced_chain(&got), Some(&[l.r_by_l.hash()][..]));
+    assert_eq!(
+        ids(roster_at(&records, &[], &with_params(l, &intros), &l.g.hash()).unwrap()),
+        vec![id(0x81), id(0x82)]
+    );
+    // An intro naming L as introducer but signed by A: refused, the
+    // signature is checked under L's key from the legacy intro.
+    let mut n_by_l = l.intro_n.clone();
+    n_by_l.body.introducer = id(0x82);
+    assert_eq!(
+        ids(roster_at(&records, &[n_by_l], &with_params(l, &intros), &l.g.hash()).unwrap()),
+        vec![id(0x81), id(0x82)]
+    );
+    // No legacy intro, no params, or params that are not the genesis
+    // identity's: L is unknown, the pin stays.
+    let same = |legacy: &LegacyIntros<'_>| {
+        assert_eq!(
+            follow_foreign(&legacy_pin(l), &records, &[], legacy),
+            ForeignLineage::Same
+        );
+    };
+    same(&LegacyIntros::default());
+    same(&LegacyIntros {
+        intros: &intros,
+        genesis_params: None,
+    });
+    same(&LegacyIntros {
+        intros: &intros,
+        genesis_params: Some(&bob().params),
+    });
+    // Legacy intros never count under a rotation.
+    let r = [l.g.clone(), l.r_by_l.clone()];
+    assert_eq!(
+        ids(roster_at(&r, &[], &with_params(l, &intros), &l.r_by_l.hash()).unwrap()),
+        vec![id(0x81), id(0x82)]
+    );
+}
+
+#[test]
+fn forged_legacy_intro_refused() {
+    let l = legacy();
+    let LineageRecord::Genesis(g) = &l.g else {
+        unreachable!()
+    };
+    let params = onepass_core::account::AccountParams::decode_verified(
+        &l.params,
+        &l.identity.verifying_key(),
+    )
+    .unwrap();
+    // Signed by a key that is not the account's.
+    let got = accept_legacy_intros(g, &params.signing_pub, std::slice::from_ref(&l.forged_m));
+    assert!(got.entries.is_empty() && got.conflicting.is_empty());
+    let records = [l.g.clone()];
+    let forged = [l.forged_m.clone()];
+    assert_eq!(
+        ids(roster_at(&records, &[], &with_params(l, &forged), &l.g.hash()).unwrap()),
+        vec![id(0x81)]
+    );
+    // Bound to another genesis, or to another account.
+    let mut elsewhere = l.lintro_l.clone();
+    elsewhere.body.genesis_hash = [9; 32];
+    let mut stranger = l.lintro_l.clone();
+    stranger.body.account_id = id(0x01);
+    for bad in [elsewhere, stranger] {
+        assert!(
+            accept_legacy_intros(g, &params.signing_pub, &[bad])
+                .entries
+                .is_empty()
+        );
+    }
+    // The good one, under the same key.
+    let got = accept_legacy_intros(g, &params.signing_pub, std::slice::from_ref(&l.lintro_l));
+    assert_eq!(ids(got.entries), vec![id(0x82)]);
+}
+
+#[test]
+fn legacy_conflicting_keys_refused_in_both_orders() {
+    let l = legacy();
+    let records = [l.g.clone(), l.r_by_l.clone()];
+    for intros in [
+        [l.lintro_l.clone(), l.lintro_l_other_keys.clone()],
+        [l.lintro_l_other_keys.clone(), l.lintro_l.clone()],
+    ] {
+        let legacy = with_params(l, &intros);
+        assert_eq!(
+            ids(roster_at(&records, &[], &legacy, &l.g.hash()).unwrap()),
+            vec![id(0x81)]
+        );
+        assert_eq!(
+            follow_foreign(&legacy_pin(l), &records, &[], &legacy),
+            ForeignLineage::Same
+        );
+    }
+}
+
+#[test]
+fn intro_with_two_keys_for_one_id_refused_in_both_orders() {
+    let l = legacy();
+    let records = [l.g.clone()];
+    let none = LegacyIntros::default();
+    assert_eq!(
+        ids(roster_at(
+            &records,
+            std::slice::from_ref(&l.intro_n),
+            &none,
+            &l.g.hash()
+        )
+        .unwrap()),
+        vec![id(0x81), id(0x84)]
+    );
+    for intros in [
+        [l.intro_n.clone(), l.intro_n_other_keys.clone()],
+        [l.intro_n_other_keys.clone(), l.intro_n.clone()],
+    ] {
+        assert_eq!(
+            ids(roster_at(&records, &intros, &none, &l.g.hash()).unwrap()),
+            vec![id(0x81)]
+        );
+    }
+}
+
+fn legacy_card(l: &Legacy) -> ContactCard {
+    ContactCard {
+        format: 1,
+        account_id: l.account_id,
+        genesis: l.g.hash(),
+        head: LineageHead {
+            generation: 0,
+            hash: l.g.hash(),
+        },
+        identity_pub: l.identity.verifying_key(),
+        params: l.params.clone(),
+        lineage: vec![l.g.clone()],
+        intros: vec![],
+        legacy_intros: vec![l.lintro_l.clone()],
+        genesis_params: Some(l.params.clone()),
+        name: "Camille".into(),
+        issued_at: T0 + 60,
+    }
+}
+
+#[test]
+fn card_carries_legacy_intros() {
+    let l = legacy();
+    let signed = SignedContactCard::sign(legacy_card(l), &l.identity).unwrap();
+    let back = SignedContactCard::decode(&signed.encode()).unwrap();
+    assert_eq!(back, signed);
+    back.keys().unwrap();
+    // A contact pinned at the genesis follows L's rotation from the card.
+    let records = [l.g.clone(), l.r_by_l.clone()];
+    let got = follow_foreign(
+        &legacy_pin(l),
+        &records,
+        &back.card.intros,
+        &back.card.legacy(),
+    );
+    assert_eq!(advanced_chain(&got), Some(&[l.r_by_l.hash()][..]));
+
+    let refused = |f: &dyn Fn(&mut ContactCard)| {
+        let mut c = legacy_card(l);
+        f(&mut c);
+        assert!(is_format(SignedContactCard::decode(&unsigned(c).encode())));
+    };
+    refused(&|c| c.genesis_params = None);
+    refused(&|c| c.legacy_intros.clear());
+    refused(&|c| c.genesis_params = Some(vec![1, 2, 3]));
+    refused(&|c| c.legacy_intros[0].body.genesis_hash = [9; 32]);
+    refused(&|c| c.legacy_intros[0].body.account_id = id(0xEE));
+    refused(&|c| c.legacy_intros.push(c.legacy_intros[0].clone()));
+    refused(&|c| {
+        c.legacy_intros.insert(0, l.lintro_l_other_keys.clone());
+    });
+    // Without legacy intros, no genesis params: the plain shape.
+    let mut c = legacy_card(l);
+    c.legacy_intros.clear();
+    c.genesis_params = None;
+    SignedContactCard::decode(&unsigned(c).encode()).unwrap();
+}
+
+#[test]
+fn own_card_carries_legacy_intros() {
+    let (mut d, _sk) = Device::create();
+    let repo = d.repo();
+    let account_id = repo.account().params.account_id;
+    let identity = IdentityKey::from_bytes(&repo.account().keyset().identity.to_bytes()).unwrap();
+    let signing = &repo.account().keyset().signing;
+    let creator_keys = DeviceKeys::generate_software().unwrap();
+    let creator = creator_keys.public(id(0x91)).unwrap();
+    let g = LineageRecord::Genesis(
+        sign_genesis(
+            GenesisBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                identity_pub: identity.verifying_key(),
+                creator: entry(&creator, "iPhone"),
+                created_at: T0,
+            },
+            &creator_keys,
+            &identity,
+        )
+        .unwrap(),
+    );
+    let kl = DeviceKeys::generate_software().unwrap();
+    let mac = kl.public(id(0x92)).unwrap();
+    let lintro = legacy_intro(account_id, &g, &kl, &mac, signing);
+    // Not trusted on this device: dropped at the head.
+    let kw = DeviceKeys::generate_software().unwrap();
+    let watch = kw.public(id(0x93)).unwrap();
+    let untrusted = legacy_intro(account_id, &g, &kw, &watch, signing);
+    // Signed by another key: dropped.
+    let ks = DeviceKeys::generate_software().unwrap();
+    let tv = ks.public(id(0x94)).unwrap();
+    let forged = legacy_intro(
+        account_id,
+        &g,
+        &ks,
+        &tv,
+        &HybridSigningKey::generate().unwrap(),
+    );
+
+    let roster = vec![
+        entry(&creator, "iPhone"),
+        entry(&mac, "Mac"),
+        entry(&tv, "Mac"),
+    ];
+    let mut trust = TrustState::new(
+        account_id,
+        creator.clone(),
+        LineageHead {
+            generation: 0,
+            hash: g.hash(),
+        },
+        identity.verifying_key(),
+        roster.clone(),
+        DeviceLineageState::Current,
+    );
+    for e in &roster {
+        trust.levels.insert(e.device_id, TrustLevel::Tofu);
+    }
+    let rec = |kind, id, data| {
+        (
+            Record {
+                id,
+                kind,
+                version: 0,
+                data,
+            },
+            None,
+        )
+    };
+    let mut writes = vec![rec(RecordKind::Lineage, g.record_id(), g.encode())];
+    for (n, i) in [&lintro, &untrusted, &forged].into_iter().enumerate() {
+        writes.push(rec(RecordKind::DeviceIntro, id(0xA0 + n as u8), i.encode()));
+    }
+    repo.store_mut()
+        .put_all_if_version_with_trust(writes, vec![], None, &trust)
+        .unwrap();
+
+    let card = repo.own_contact_card("Camille", T0 + 5).unwrap();
+    assert_eq!(card.card.legacy_intros, vec![lintro]);
+    let params = repo
+        .store()
+        .get(RecordKind::AccountParams, account_id)
+        .unwrap()
+        .unwrap()
+        .data;
+    assert_eq!(card.card.genesis_params, Some(params));
+    let back = SignedContactCard::decode(&card.encode()).unwrap();
+    assert_eq!(
+        ids(roster_at(&back.card.lineage, &[], &back.card.legacy(), &g.hash()).unwrap()),
+        vec![id(0x91), id(0x92)]
+    );
 }

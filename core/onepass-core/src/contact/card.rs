@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use super::lineage::{LegacyAccepted, LegacyIntros, accept_legacy_intros, grow_roster};
 use super::{
     CONTACT_CARD_DOMAIN, CONTACT_CARD_FORMAT, MAX_CARD_INTROS_PER_RECORD, MAX_CONTACT_NAME_CHARS,
 };
@@ -12,7 +13,9 @@ use crate::crypto::sign::{SLH_PUBLIC_LEN, SLH_SIG_LEN};
 use crate::crypto::{
     HybridKemPublic, HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey,
 };
-use crate::lineage::{LineageRecord, SignedIntro, decode_strict_with, identity_id, intro_id};
+use crate::lineage::{
+    LineageRecord, SignedIntro, SignedLegacyIntro, decode_strict_with, identity_id, intro_id,
+};
 use crate::repo::Repository;
 use crate::store::{RecordKind, RecordStore};
 use crate::trust::LineageHead;
@@ -46,6 +49,15 @@ pub struct ContactCard {
     /// them, at most `MAX_CARD_INTROS_PER_RECORD` per record, sorted by
     /// intro id, unique.
     pub intros: Vec<SignedIntro>,
+    /// Legacy (TOFU) intros of the devices migrated from before key
+    /// rotation v2 (rotation spec 15, owner ruling O4): each bound to the
+    /// genesis of this account, one per device id, sorted by device id, at
+    /// most `MAX_CARD_INTROS_PER_RECORD`.
+    pub legacy_intros: Vec<SignedLegacyIntro>,
+    /// The `AccountParams` record of the genesis identity, whose account
+    /// signing key checks `legacy_intros`: present exactly when
+    /// `legacy_intros` is not empty.
+    pub genesis_params: Option<Vec<u8>>,
     /// Chosen by the holder: 1 to 64 characters, none of them a control,
     /// bidi, zero-width or line/paragraph separator character.
     /// Never shown as is: the contact book keeps its own name.
@@ -158,7 +170,36 @@ impl ContactCard {
             }
             previous = Some(id);
         }
+
+        if self.legacy_intros.len() > MAX_CARD_INTROS_PER_RECORD
+            || self.legacy_intros.is_empty() != self.genesis_params.is_none()
+        {
+            return Err(bad("contact card legacy intros"));
+        }
+        if let Some(p) = &self.genesis_params {
+            AccountParams::decode(p)?;
+        }
+        let mut previous: Option<Id> = None;
+        for intro in &self.legacy_intros {
+            SignedLegacyIntro::decode(&intro.encode())?;
+            let id = intro.body.entry.device_id;
+            if intro.body.account_id != self.account_id
+                || intro.body.genesis_hash != self.genesis
+                || previous.is_some_and(|p| p >= id)
+            {
+                return Err(bad("contact card legacy intros"));
+            }
+            previous = Some(id);
+        }
         Ok(())
+    }
+
+    /// The legacy intros and genesis params, as `follow_foreign` takes them.
+    pub fn legacy(&self) -> LegacyIntros<'_> {
+        LegacyIntros {
+            intros: &self.legacy_intros,
+            genesis_params: self.genesis_params.as_deref(),
+        }
     }
 
     fn bytes(&self) -> Vec<u8> {
@@ -269,29 +310,77 @@ impl<S: RecordStore> Repository<S> {
         lineage.reverse();
         let genesis = lineage[0].hash();
 
+        // Intros and legacy intros share the `DeviceIntro` kind; each
+        // record is read as whichever of the two it decodes as.
         let mut by_head: BTreeMap<[u8; 32], Vec<SignedIntro>> = BTreeMap::new();
+        let mut legacy_pending: Vec<SignedLegacyIntro> = Vec::new();
         for r in self.store.list(RecordKind::DeviceIntro)? {
-            if let Ok(intro) = SignedIntro::decode(&r.data)
+            if let Ok(intro) = SignedIntro::decode(&r.data) {
+                if intro.body.account_id == account_id {
+                    by_head.entry(intro.body.head).or_default().push(intro);
+                }
+            } else if let Ok(intro) = SignedLegacyIntro::decode(&r.data)
                 && intro.body.account_id == account_id
+                && intro.body.genesis_hash == genesis
             {
-                by_head.entry(intro.body.head).or_default().push(intro);
+                legacy_pending.push(intro);
+            }
+        }
+        let trusted_now = |e: &crate::lineage::RosterEntry| {
+            trust.roster.iter().any(|t| {
+                t.device_id == e.device_id && t.sign_pub == e.sign_pub && t.kem_pub == e.kem_pub
+            }) && !trust.revoked.contains(&e.device_id)
+                && !trust.excluded.contains(&e.device_id)
+        };
+
+        // Legacy intros, checked as a contact will check them: under the
+        // account signing key of the genesis identity (spec 15 step 3).
+        let LineageRecord::Genesis(g) = &lineage[0] else {
+            return Err(bad("contact card lineage"));
+        };
+        let mut genesis_params = None;
+        let mut legacy = LegacyAccepted::default();
+        if !legacy_pending.is_empty()
+            && let Some(rec) = self.store.get(
+                RecordKind::AccountParams,
+                crate::store::account_record_id(account_id, None),
+            )?
+            && let Ok(p) = AccountParams::decode_verified(&rec.data, &g.body.identity_pub)
+            && p.account_id == account_id
+        {
+            legacy = accept_legacy_intros(g, &p.signing_pub, &legacy_pending);
+            // Under the head, only what this device trusts now.
+            if trust.head.generation == 0 {
+                legacy.entries.retain(|e| trusted_now(e));
+            }
+            if !legacy.entries.is_empty() {
+                genesis_params = Some(rec.data);
+            }
+        }
+        let legacy_ids: BTreeSet<Id> = legacy.entries.iter().map(|e| e.device_id).collect();
+        let mut legacy_intros: Vec<SignedLegacyIntro> = Vec::new();
+        for id in &legacy_ids {
+            // The intro whose entry was kept (smallest encoding).
+            let kept = legacy.entries.iter().find(|e| e.device_id == *id);
+            if let Some(i) = legacy_pending
+                .iter()
+                .filter(|i| Some(&i.body.entry) == kept)
+                .min_by_key(|i| i.encode())
+            {
+                legacy_intros.push(i.clone());
             }
         }
         let mut intros = BTreeMap::new();
         for record in &lineage {
             let pending = by_head.remove(&record.hash()).unwrap_or_default();
             let at_head = record.hash() == trust.head.hash;
-            for intro in accepted_intros(record, pending) {
-                let e = &intro.body.entry;
+            let record_legacy = match record {
+                LineageRecord::Genesis(_) => legacy.clone(),
+                LineageRecord::Rotation(_) => LegacyAccepted::default(),
+            };
+            for intro in accepted_intros(record, &record_legacy, pending) {
                 // Under the head, only what this device trusts now.
-                let trusted = !at_head
-                    || (trust.roster.iter().any(|t| {
-                        t.device_id == e.device_id
-                            && t.sign_pub == e.sign_pub
-                            && t.kem_pub == e.kem_pub
-                    }) && !trust.revoked.contains(&e.device_id)
-                        && !trust.excluded.contains(&e.device_id));
-                if trusted {
+                if !at_head || trusted_now(&intro.body.entry) {
                     intros.insert(intro_id(&intro.body), intro);
                 }
             }
@@ -310,6 +399,8 @@ impl<S: RecordStore> Repository<S> {
             params: params_record.data,
             lineage,
             intros: intros.into_values().collect(),
+            legacy_intros,
+            genesis_params,
             name: name.to_string(),
             issued_at: now,
         };
@@ -320,9 +411,14 @@ impl<S: RecordStore> Repository<S> {
 }
 
 /// The intros of `pending` (all bound to `record`) that extend its roster
-/// (`lineage::grow_roster`, nothing excluded), in the order accepted.
-fn accepted_intros(record: &LineageRecord, pending: Vec<SignedIntro>) -> Vec<SignedIntro> {
-    super::lineage::grow_roster(record, pending, &BTreeSet::new()).1
+/// (`lineage::grow_roster`, with the record's legacy entries, nothing
+/// excluded), in the order accepted.
+fn accepted_intros(
+    record: &LineageRecord,
+    legacy: &LegacyAccepted,
+    pending: Vec<SignedIntro>,
+) -> Vec<SignedIntro> {
+    grow_roster(record, legacy, pending, &BTreeSet::new()).1
 }
 
 #[cfg(test)]

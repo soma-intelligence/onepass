@@ -15,7 +15,10 @@ mod card;
 mod lineage;
 
 pub use card::{CardKeys, ContactCard, SignedContactCard};
-pub use lineage::{ForeignLineage, ForeignPin, follow_foreign, roster_at};
+pub use lineage::{
+    ForeignLineage, ForeignPin, LegacyAccepted, LegacyIntros, MAX_FOREIGN_COPIES,
+    accept_legacy_intros, follow_foreign, roster_at,
+};
 
 /// Signature domain of a `ContactCard`, by the identity key (spec 19.1).
 pub const CONTACT_CARD_DOMAIN: &[u8] = b"onepass/contact-card/v1";
