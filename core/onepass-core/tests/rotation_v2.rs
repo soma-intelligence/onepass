@@ -1613,12 +1613,16 @@ fn prompt_names_come_from_local_roster() {
                     e.name = "Tablette du salon".into();
                 }
             }
+            let a = t.roster.iter().find(|e| e.name.starts_with("Tél")).unwrap();
+            t.levels.insert(a.device_id, TrustLevel::Tofu);
         },
         |_, _, _| {},
         |_, _, _| true,
     );
     let _ = &f;
     let prompt = prompt_of(&c).unwrap();
+    assert!(prompt.tofu_signer);
+    assert!(prompt.choices[0].complete);
     assert_eq!(prompt.choices[0].rotator_name, "Téléphone de Camille");
     assert_eq!(
         prompt.choices[0].revoked_names,
@@ -1676,11 +1680,30 @@ fn follow_waits_for_completeness() {
                 && ch.id == delivery_id(&out.head, f.others[C].id()))
         },
     );
-    assert_eq!(prompt_of(&c), None);
+    // Controller ruling (fix round 1): a valid record this device cannot
+    // complete is shown, marked incomplete; following it is refused.
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert_eq!(prompt.kind, PromptKind::Single);
+    assert_eq!(prompt.choices[0].hash, out.head);
+    assert!(!prompt.choices[0].complete);
     let before = snapshot(&c.store());
     let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
-    assert!(r.is_err());
+    assert_eq!(r.err(), Some(Error::NotFound));
     assert_eq!(snapshot(&c.store()), before);
+    // The device is read-only at once, and "Ce n'était pas moi" works.
+    let mut c = c;
+    c.unlock(&f.sk);
+    assert!(c.repo().pending_prompt().is_some());
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
+    c.lock();
+    reject_rotation(&mut c.store(), out.head, true).unwrap();
+    assert_eq!(state(&c), DeviceLineageState::Current);
+    assert_eq!(prompt_of(&c), None);
 }
 
 #[test]
@@ -1778,15 +1801,27 @@ fn normal_unlock_never_follows() {
 /// R10: nothing is written while the device is `Candidate`.
 #[test]
 fn candidate_is_read_only() {
-    let (mut a, f) = fixture();
-    let mut trust = a.store().trust_state().unwrap().unwrap();
-    trust.state = DeviceLineageState::Candidate {
-        children: vec![[1; 32]],
-    };
-    a.repo()
-        .store_mut()
-        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
-        .unwrap();
+    // C has A's rotation (phase 1 only, its vault still reads) and waits.
+    let (_server, _x, mut a, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, _, _| {},
+        |ch, _, _| {
+            !matches!(
+                ch.kind,
+                RecordKind::VaultKey
+                    | RecordKind::VaultMeta
+                    | RecordKind::Manifest
+                    | RecordKind::Item
+            )
+        },
+    );
+    a.unlock(&f.sk);
+    assert_eq!(
+        state(&a),
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
     let before = snapshot(&a.store());
     let v = a.vault();
     let items = a.repo().items(&v).unwrap();
@@ -1956,4 +1991,80 @@ fn mutual_choice_excludes_the_other_signer() {
     assert!(trust.revoked.contains(&f.others[B].id()));
     assert_eq!(trust.ignored, vec![rb.head]);
     assert_eq!(prompt_of(&c), None);
+}
+
+/// Review I1: a session unlocked before the rotation arrives becomes
+/// read-only as soon as a sync brings it, without an app call.
+#[test]
+fn session_open_before_rotation_becomes_read_only() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = c.vault();
+    c.repo().save_item(&v, login(v.id, "eve", T0 + 80)).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let r = c.repo().save_item(&v, login(v.id, "frank", T0 + 90));
+    assert_eq!(r, Err(Error::ReadOnly));
+    let prompt = c.repo().pending_prompt().cloned().expect("pending prompt");
+    assert_eq!(prompt.choices[0].hash, out.head);
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
+}
+
+/// Review I2: following one rotation while the next one is known leaves
+/// the new session read-only, prompting for the next.
+#[test]
+fn follow_then_next_rotation_is_pending() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let sk1 = SecretKey::generate().unwrap();
+    let req = request(&f, &sk1, vec![f.others[B].id()], RotationReason::Revoke);
+    let r1 = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let sk2 = SecretKey::generate().unwrap();
+    let mut req = request(&f, &sk2, vec![], RotationReason::Rotate);
+    req.secret_key = &sk1;
+    let r2 = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+
+    let prompt = prompt_of(&c).unwrap();
+    assert_eq!(prompt.choices[0].hash, r1.head);
+    let (repo, _, _) = follow_rotation(c.store(), r1.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    let next = c.repo().pending_prompt().cloned().expect("next prompt");
+    assert_eq!(next.choices[0].hash, r2.head);
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Candidate {
+            children: vec![r2.head]
+        }
+    );
+    let r = c.repo().create_vault(meta("Travail"));
+    assert_eq!(r.err(), Some(Error::ReadOnly));
+}
+
+/// Review M1: following is refused outside `Current` and `Candidate`.
+#[test]
+fn follow_refused_while_rotating() {
+    let (_server, _a, c, f, out, _sk) = rotated();
+    let mut trust = c.store().trust_state().unwrap().unwrap();
+    trust.state = DeviceLineageState::Rotating { phase: 2 };
+    c.store()
+        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+        .unwrap();
+    let before = snapshot(&c.store());
+    let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
+    assert!(is_validation(&r.map(|_| ())));
+    assert_eq!(snapshot(&c.store()), before);
 }

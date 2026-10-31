@@ -31,7 +31,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
-use aws_lc_rs::digest::{SHA256, digest};
+use aws_lc_rs::digest::{self, SHA256, digest};
 
 use super::{DeviceState, Repository, pin, trust_of};
 use crate::account::{Account, AccountParams, Auk, PinnedAccount};
@@ -75,6 +75,11 @@ pub struct PromptChoice {
     pub revoked_names: Vec<String>,
     /// Informative, from the target record.
     pub issued_at: i64,
+    /// This device's delivery, the params and the keyset of the target are
+    /// present and match its hashes: "C'est moi" can follow. An incomplete
+    /// choice still makes the device read-only and can be rejected ("Ce
+    /// n'était pas moi"); following it fails until the records arrive.
+    pub complete: bool,
 }
 
 fn refused(field: &str, reason: &'static str) -> Error {
@@ -147,6 +152,35 @@ fn completeness<S: RecordStore + ?Sized>(
     Ok(Completeness { present })
 }
 
+/// A digest of everything a rotation prompt depends on: the lineage
+/// records, the deliveries, the account params and keysets (ids, versions,
+/// contents) and the trust state. A change means the prompt must be looked
+/// for again.
+fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
+    let mut ctx = digest::Context::new(&SHA256);
+    for kind in [
+        RecordKind::Lineage,
+        RecordKind::KeyDelivery,
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+    ] {
+        let mut rows = store.list(kind)?;
+        rows.sort_by_key(|r| r.id);
+        for r in rows {
+            ctx.update(&[kind.code()]);
+            ctx.update(&r.id.0);
+            ctx.update(&r.version.to_be_bytes());
+            ctx.update(&sha256(&r.data));
+        }
+    }
+    if let Some(t) = trust_of(store)? {
+        ctx.update(&t.encode());
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ctx.finish().as_ref());
+    Ok(out)
+}
+
 /// The id of the account records of the trust state's identity (spec 6.6).
 fn current_records_id(trust: &TrustState) -> Id {
     account_record_id(
@@ -193,14 +227,38 @@ fn path_to<'a>(
 
 /// The resolver's prompt and what the screen shows for it, or `None` for
 /// any other decision.
+///
+/// Controller ruling (Task 9 fix round 1): a valid record this device
+/// cannot complete yet (its delivery, params or keyset missing or not
+/// matching) still makes it `Candidate` at once, so a server withholding
+/// a delivery cannot keep it writing under the old keys. When the
+/// resolver waits for completeness only (`Wait` with no unknown parent),
+/// it is asked again with every record that delivers to this device
+/// counted as complete; the prompt it gives is shown with those choices
+/// marked `complete: false`. The resolver's own rule stands: nothing
+/// incomplete is ever adopted (`follow_rotation` fails on it).
 fn prompt_in<S: RecordStore + ?Sized>(
     store: &S,
     trust: &TrustState,
     records: &[LineageRecord],
     complete: &Completeness,
 ) -> Result<Option<(Prompt, RotationPrompt)>> {
-    let Decision::Prompt(p) = resolve(trust, records, complete) else {
-        return Ok(None);
+    let p = match resolve(trust, records, complete) {
+        Decision::Prompt(p) => p,
+        Decision::Wait { unknown_parent } if unknown_parent.is_empty() => {
+            let me = trust.me.device_id;
+            let mut assumed = complete.clone();
+            for (h, b) in rotations(records) {
+                if b.deliveries.iter().any(|(id, _)| *id == me) {
+                    assumed.present.insert(h);
+                }
+            }
+            match resolve(trust, records, &assumed) {
+                Decision::Prompt(p) => p,
+                _ => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
     };
     let bodies = rotations(records);
     let mut choices = Vec::with_capacity(p.children.len());
@@ -225,6 +283,7 @@ fn prompt_in<S: RecordStore + ?Sized>(
             rotator_name: local_name(trust, first.rotator),
             revoked_names: revoked.iter().map(|id| local_name(trust, *id)).collect(),
             issued_at: target.issued_at,
+            complete: complete.present.contains(h),
         });
     }
     let code = match p.children.as_slice() {
@@ -316,6 +375,14 @@ pub fn follow_rotation<S: RecordStore>(
     device_keys: &DeviceKeys,
 ) -> Result<(Repository<S>, Auk, SecretKey)> {
     let trust = trust_of(&store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    // Review M1: not out of a rotation being pushed or a quarantine (Tasks
+    // 11 and 12 own those paths).
+    if !matches!(
+        trust.state,
+        DeviceLineageState::Current | DeviceLineageState::Candidate { .. }
+    ) {
+        return Err(refused("rotation", "state"));
+    }
     let me = trust.me.device_id;
     if device_keys.public(me)? != trust.me {
         return Err(refused("device", "other device keys"));
@@ -460,7 +527,13 @@ pub fn follow_rotation<S: RecordStore>(
         lists_forced: true,
         records_id: rid,
         pending: None,
+        lineage_mark: None,
     };
+    let mut repo = repo;
+    // Review I2: a child of the new head already known prompts at once
+    // (best effort: nothing fails after the commit; the stored state and
+    // `writable` look again on the first write anyway).
+    let _ = repo.refresh_pending_rotation();
     Ok((repo, auk, secret_key))
 }
 
@@ -478,10 +551,9 @@ pub fn reject_rotation(
     let trust = trust_of(&*store)?.ok_or_else(|| refused("device", "no device keys"))?;
     let records = lineage_records(&*store)?;
     let complete = completeness(&*store, &records, trust.me.device_id)?;
-    let offered = match resolve(&trust, &records, &complete) {
-        Decision::Prompt(p) => p.children.contains(&choice),
-        _ => false,
-    };
+    // Incomplete choices are offered too: "not me" never waits.
+    let offered = prompt_in(&*store, &trust, &records, &complete)?
+        .is_some_and(|(p, _)| p.children.contains(&choice));
     if !offered {
         return Err(refused("rotation", "not offered"));
     }
@@ -565,13 +637,23 @@ impl<S: RecordStore> Repository<S> {
                 .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next);
         }
         self.pending = found.map(|(_, shown)| shown);
+        self.lineage_mark = Some(lineage_mark(&self.store)?);
         Ok(self.pending.clone())
     }
 
     /// `Error::ReadOnly` while a rotation prompt waits for the user: found
     /// by this session, or recorded in the stored trust state (`Candidate`,
     /// by any process on the device). Every write checks it first (R10).
-    pub(crate) fn writable(&self) -> Result<()> {
+    ///
+    /// Review I1: when the lineage records, deliveries, account records or
+    /// the trust state changed since the last look (a sync pulled a
+    /// rotation into an open session), the prompt is looked for again
+    /// first (`refresh_pending_rotation`), so no app call is needed.
+    pub(crate) fn writable(&mut self) -> Result<()> {
+        if trust_of(&self.store)?.is_some() && self.lineage_mark != Some(lineage_mark(&self.store)?)
+        {
+            self.refresh_pending_rotation()?;
+        }
         if self.pending.is_some() {
             return Err(Error::ReadOnly);
         }
