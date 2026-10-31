@@ -91,8 +91,9 @@ Non-goals:
 The pairing channel is authenticated by the SAS (spec 2b, section 5; `bridge.pv` proves the same construction). Inside it:
 
 - **N to A**, after the SAS: new message `Message::ConfirmedWithKey { device: DevicePublic, pop: HybridSignature }` (variant added at the end of the enum), `pop` = N's device signature over `postcard((session_transcript_hash, DevicePublic))`, domain `onepass/device-pop/v1`. A refuses a `pop` that does not verify.
-- **A to N**: new grant variant `Grant::FullV2(FullGrantV2)` (added at the end) = `FullGrant` plus `trust: TrustSnapshot { lineage: Vec<LineageRecord>, roster: Vec<RosterEntry>, approver: DevicePublic }`. N pins the roster and the lineage head from A: it trusts A because of the SAS, exactly as it already trusts A for the Secret Key and the snapshot.
-- **A** then writes an `Intro` record (6.4) for N, in the same store transaction as the device list entry and the sealed grant (as today, spec 2b 15.6).
+- **A to N**: new grant variant `Grant::FullV2(FullGrantV2)` (added at the end) = `FullGrant` plus `trust: TrustSnapshot { lineage: Vec<LineageRecord>, roster: Vec<RosterEntry>, approver: DevicePublic, levels: Vec<(Id, TrustLevel)> }` (one level per roster entry, in roster order), and two opaque fields reserved for the mailbox plan (`sync`, `enroll`, at most 64 KiB each, `None` until then; `ConfirmedWithKey` likewise carries `mailbox_credential: Option<[u8; 32]>`). N pins the roster, the levels (a `Tofu` device stays `Tofu`, O7) and the lineage head from A: it trusts A because of the SAS, exactly as it already trusts A for the Secret Key and the snapshot. The device list entry is written in the same store transaction as the sealed grant (as today, spec 2b 15.6).
+- **N to A**, once the `FullV2` arrived, in place of `Ack`: a second `ConfirmedWithKey` with the same `DevicePublic`, its `pop` now over the granted account id (the form an intro carries, 6.4: N does not know the account id before the grant). A refuses a `pop` that does not verify or another key.
+- **A** then writes an `Intro` record (6.4) for N and adds N to its roster, in one store transaction (amended 2026-10-31, Task 13 ruling). A session cut between the grant and this acknowledgment leaves N listed in the device list without an intro: A shows it as "Appairage incomplet" and the user finishes (a new pairing session with N) or removes it (its list entry revoked and N excluded on A, then a rotation, since N got the Secret Key).
 - Old peers: an approver that receives `Confirmed` (no key) pairs as today and N is a legacy device (section 15).
 
 ### 5.3 Local trust state
@@ -295,9 +296,10 @@ On a device with no pins (new device, or after "Restaurer avec mon Emergency Kit
 | `Quarantined` | user: "Effacer cet appareil" | erased (as spec 2b A5) | user |
 | `Quarantined` | device time reaches `since` + 7 days, checked at launch and on the quarantine screen | erased | yes |
 | `Quarantined` or `Orphaned` | user: "Ce n'était pas moi", password | `Current`, or `Rotating { phase }` when the lock stopped the device's own rotation (the phase is kept in the state); the signer, kept in the state when the lock was entered, excluded even if the record is gone; offer to remove it | user |
-| `Orphaned` | an intro for me under the child, from a trusted device | `Candidate` | yes |
 | `Orphaned` | re-pair or Emergency Kit | `Current` | user |
 | any | "Restaurer avec mon Emergency Kit" | section 7.5 | user |
+
+`Orphaned` has no automatic exit (amended 2026-10-31, Task 13 ruling): an intro under the child does not make it `Candidate`, since the child holds no Secret Key delivery for it. It leaves only by "Ce n'était pas moi" or a re-pair (or the Emergency Kit).
 
 A lineage record whose parent is not the head is never a child; it is either old (generation at most the head's, on the device's own chain: ignored), a sibling of an ancestor (8.5), or unknown (ignored until its parent is known).
 

@@ -675,6 +675,25 @@ fn grant_v2(a: &mut Device, sk: &SecretKey, device_id: Id) -> FullGrantV2 {
 /// A full v2 pairing of a new device `n` with A: listed and granted in one
 /// transaction, imported, acknowledged, introduced. Returns N's device.
 fn pair_new(v: &mut V2, n: &Keys) -> Device {
+    let (mut nc, mut ap, info, dev) = granted(v, n);
+    // Its acknowledgment carries the pop over the account id: A introduces.
+    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
+    assert!(matches!(
+        ap.on_frame_at(&ack, NOW + 6).unwrap(),
+        Message::ConfirmedWithKey { .. }
+    ));
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    v.a.repo()
+        .introduce(&n.public, &info, DeviceMode::Personal, &pop, me_keys)
+        .unwrap();
+    dev
+}
+
+/// A pairing of `n` with A up to the newcomer's import of its `FullV2`
+/// (listed and granted by A, pinned and opened by N), before its key
+/// acknowledgment.
+fn granted(v: &mut V2, n: &Keys) -> (Newcomer, Approver, DeviceInfo, Device) {
     let info = n.info("iPad de Camille");
     let (mut nc, mut ap) = confirmed_with_key(n, info.clone());
     let entry = DeviceEntry {
@@ -716,18 +735,7 @@ fn pair_new(v: &mut V2, n: &Keys) -> Device {
     }
     dev.unlock(&SecretKey::parse(&got.full.secret_key).unwrap());
     dev.lock();
-    // Its acknowledgment carries the pop over the account id: A introduces.
-    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
-    assert!(matches!(
-        ap.on_frame_at(&ack, NOW + 6).unwrap(),
-        Message::ConfirmedWithKey { .. }
-    ));
-    let pop = ap.newcomer_account_pop().unwrap().clone();
-    let me_keys = &v.me.keys;
-    v.a.repo()
-        .introduce(&n.public, &info, DeviceMode::Personal, &pop, me_keys)
-        .unwrap();
-    dev
+    (nc, ap, info, dev)
 }
 
 fn intros(store: &SyncStore) -> Vec<SignedIntro> {
@@ -1053,4 +1061,192 @@ fn reintro_after_adoption() {
     v.a.lock();
     v.a.unlock(&new_sk);
     assert!(trust(&v.a).roster.iter().any(|e| e.device_id == x.id()));
+}
+
+#[test]
+fn tofu_level_carried() {
+    // A trusts B on first use only: N pins B as `Tofu` too (O7).
+    let mut v = v2();
+    let b = v.others[0].id();
+    let t = trust(&v.a);
+    let mut tofu = t.clone();
+    tofu.levels.insert(b, TrustLevel::Tofu);
+    v.a.repo()
+        .store_mut()
+        .put_with_trust_cas(vec![], vec![], None, &t, &tofu)
+        .unwrap();
+    let snap = v.a.repo().trust_snapshot().unwrap();
+    assert_eq!(snap.level(b), Some(TrustLevel::Tofu));
+    assert_eq!(snap.level(v.me.id()), Some(TrustLevel::Verified));
+    let n = Keys::new(Id::new());
+    let dev = pair_new(&mut v, &n);
+    let pinned = trust(&dev);
+    assert_eq!(pinned.levels.get(&b), Some(&TrustLevel::Tofu));
+    assert_eq!(pinned.levels.get(&v.me.id()), Some(&TrustLevel::Verified));
+    assert_eq!(pinned.levels.get(&n.id()), Some(&TrustLevel::Verified));
+}
+
+#[test]
+fn pairing_incomplete_until_intro_or_cancel() {
+    let mut v = v2();
+    // Devices listed before key rotation v2 (the harness's second device)
+    // show until the migration of Task 14: the baseline.
+    let base = v.a.repo().pairing_incomplete().unwrap();
+    let with = |id: Id| {
+        let mut l = base.clone();
+        l.push(id);
+        l.sort();
+        l
+    };
+    // The session is cut after the grant, before the key acknowledgment.
+    let n = Keys::new(Id::new());
+    let (mut nc, mut ap, info, _dev) = granted(&mut v, &n);
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), with(n.id()));
+    // Finishing (the acknowledgment, then the intro) clears it.
+    let ack = nc.seal_key_ack_at(&n.keys, NOW + 6).unwrap();
+    ap.on_frame_at(&ack, NOW + 6).unwrap();
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    v.a.repo()
+        .introduce(&n.public, &info, DeviceMode::Personal, &pop, me_keys)
+        .unwrap();
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), base);
+    // A pinned device is not cancelled: it leaves by rotation.
+    let r = v.a.repo().cancel_pairing(n.id());
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+
+    // Another cut session, then the user removes the device.
+    let m = Keys::new(Id::new());
+    let _ = granted(&mut v, &m);
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), with(m.id()));
+    v.a.repo().cancel_pairing(m.id()).unwrap();
+    assert_eq!(v.a.repo().pairing_incomplete().unwrap(), base);
+    let listed = v.a.repo().devices().unwrap();
+    let e = listed.iter().find(|e| e.device_id == m.id()).unwrap();
+    assert!(e.revoked_at.is_some());
+}
+
+#[test]
+fn approver_refusals() {
+    let mut v = v2();
+    let t = trust(&v.a);
+    // An approver waiting for the user or locked pins nobody.
+    for state in [
+        DeviceLineageState::Candidate {
+            children: vec![[4; 32]],
+            resume: None,
+        },
+        DeviceLineageState::Orphaned {
+            child: [4; 32],
+            rotator: v.others[0].id(),
+            resume: None,
+        },
+    ] {
+        let mut locked = t.clone();
+        locked.state = state;
+        v.a.repo()
+            .store_mut()
+            .put_with_trust_cas(vec![], vec![], None, &t, &locked)
+            .unwrap();
+        assert!(v.a.repo().trust_snapshot().is_err());
+        v.a.repo()
+            .store_mut()
+            .put_with_trust_cas(vec![], vec![], None, &locked, &t)
+            .unwrap();
+    }
+    // A revoked newcomer id is not introduced.
+    let x = Keys::new(Id::new());
+    let mut revoked = t.clone();
+    revoked.add_revoked(&[x.id()]);
+    v.a.repo()
+        .store_mut()
+        .put_with_trust_cas(vec![], vec![], None, &t, &revoked)
+        .unwrap();
+    let pop = onepass_core::device_keys::sign_pop(&x.keys, &t.account_id.0, &x.public).unwrap();
+    let me_keys = &v.me.keys;
+    let r = v.a.repo().introduce(
+        &x.public,
+        &x.info("Mac"),
+        DeviceMode::Personal,
+        &pop,
+        me_keys,
+    );
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+    // A `FullV2` listing the newcomer under another id than its Hello's.
+    let n = Keys::new(Id::new());
+    let (_nc, mut ap) = confirmed_with_key(&n, n.info("iPad"));
+    let g = grant_v2(&mut v.a, &v.sk, Id::new());
+    assert!(ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).is_err());
+}
+
+#[test]
+fn repair_from_rotating_drops_the_abandoned_rotation() {
+    let mut v = v2();
+    let mut c = follower(&mut v, 1, |_| {});
+    let c_keys = &v.others[1];
+    // C rotates offline: its phase 1 never goes out.
+    c.unlock(&v.sk);
+    let c_sk = SecretKey::generate().unwrap();
+    let mine = c
+        .repo()
+        .rotate(RotateRequest {
+            revoke: vec![v.others[0].id()],
+            new_password: None,
+            password: PASSWORD,
+            secret_key: &v.sk,
+            new_secret_key: &c_sk,
+            device_keys: &c_keys.keys,
+            reason: RotationReason::Revoke,
+        })
+        .unwrap();
+    assert!(matches!(
+        trust(&c).state,
+        DeviceLineageState::Rotating { .. }
+    ));
+    // A rotates too, and syncs.
+    let a_sk = SecretKey::generate().unwrap();
+    let theirs =
+        v.a.repo()
+            .rotate(RotateRequest {
+                revoke: vec![v.others[0].id()],
+                new_password: None,
+                password: PASSWORD,
+                secret_key: &v.sk,
+                new_secret_key: &a_sk,
+                device_keys: &v.me.keys,
+                reason: RotationReason::Revoke,
+            })
+            .unwrap();
+    sync(&mut v.server, &mut v.a).unwrap();
+    // C re-pairs from A, from its open session on its own rotation.
+    let (mut nc, mut ap) = confirmed_with_key(c_keys, c_keys.info("Mac"));
+    let g = grant_v2(&mut v.a, &a_sk, c_keys.id());
+    let f = ap.seal_grant_at(Grant::FullV2(g), true, NOW + 4).unwrap();
+    let Message::Grant(Grant::FullV2(got)) = nc.open_at(&f, NOW + 5).unwrap() else {
+        panic!("expected a FullV2");
+    };
+    let session = c.repo.take().unwrap();
+    let (repo, _, _) = repair_from_grant(session, &got, PASSWORD, &c_keys.keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(trust(&c).head.hash, theirs.head);
+    assert_eq!(trust(&c).state, DeviceLineageState::Current);
+    // Nothing of the abandoned rotation is pushed.
+    let outbox = common::outbox(&c);
+    let mut lineage_id = [0u8; 16];
+    lineage_id.copy_from_slice(&mine.head[..16]);
+    assert!(
+        !outbox
+            .iter()
+            .any(|(ch, _)| ch.kind == RecordKind::Lineage && ch.id == Id(lineage_id))
+    );
+    assert!(
+        !outbox
+            .iter()
+            .any(|(ch, _)| ch.kind == RecordKind::KeyDelivery)
+    );
+    sync(&mut v.server, &mut c).unwrap();
+    assert!(v.server.live(RecordKind::Lineage, Id(lineage_id)).is_none());
+    // A, after its own sync, is on its head with no prompt.
+    sync(&mut v.server, &mut v.a).unwrap();
+    assert_eq!(pending_rotation(&v.a.store()).unwrap(), None);
 }

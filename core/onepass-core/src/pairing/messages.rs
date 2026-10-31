@@ -12,6 +12,7 @@ use crate::device_keys::DevicePublic;
 use crate::devices::{DeviceKind, DeviceMode, check_name};
 use crate::lineage::{LineageRecord, MAX_ROSTER, RosterEntry, check_entry};
 use crate::model::Item;
+use crate::trust::TrustLevel;
 use crate::{Error, Id, Result};
 
 const HELLO_MAGIC: &[u8; 4] = b"OPH1";
@@ -220,14 +221,25 @@ pub const MAX_GRANT_ENROLL_BYTES: usize = 64 * 1024;
 
 /// What the approver trusts (spec 5.2): its lineage chain from the genesis
 /// to its head, in order, its roster at that head (sorted by device id, at
-/// most 64), and its own device public key. The newcomer pins the head and
-/// the roster: it trusts the approver because of the SAS, as it does for
-/// the Secret Key and the snapshot.
+/// most 64), its own device public key, and the trust level of each roster
+/// device (`levels`: one per roster entry, in roster order, so a device the
+/// approver trusts on first use stays `Tofu` on the newcomer, O7). The
+/// newcomer pins the head, the roster and the levels: it trusts the
+/// approver because of the SAS, as it does for the Secret Key and the
+/// snapshot.
+///
+/// Size: the whole grant travels in one frame of at most `MAX_FRAME_BYTES`
+/// (64 MiB). A rotation record with a full roster is about 300 KB, so a
+/// chain of about 200 such rotations fills the frame before
+/// `MAX_TRUST_LINEAGE`; such an account cannot pair (the seal fails, nothing
+/// is written) until the chain is pruned (not designed yet).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrustSnapshot {
     pub lineage: Vec<LineageRecord>,
     pub roster: Vec<RosterEntry>,
     pub approver: DevicePublic,
+    /// `(device id, level)` for every roster entry, same order as `roster`.
+    pub levels: Vec<(Id, TrustLevel)>,
 }
 
 impl TrustSnapshot {
@@ -235,7 +247,8 @@ impl TrustSnapshot {
     /// strict lineage checks, a genesis first and each next record a
     /// rotation whose parent is the previous record's hash, one account;
     /// a sorted, unique roster of at most 64 well-formed entries, none
-    /// revoked along the chain, holding the approver with its keys.
+    /// revoked along the chain, holding the approver with its keys; one
+    /// level per roster entry, in roster order.
     pub fn check(&self) -> Result<()> {
         const BAD: Error = Error::InvalidFormat("trust snapshot");
         DevicePublic::decode(&self.approver.encode()).map_err(|_| BAD)?;
@@ -276,6 +289,15 @@ impl TrustSnapshot {
                 return Err(BAD);
             }
         }
+        if self.levels.len() != self.roster.len()
+            || self
+                .levels
+                .iter()
+                .zip(&self.roster)
+                .any(|((id, _), e)| *id != e.device_id)
+        {
+            return Err(BAD);
+        }
         let a = &self.approver;
         if !self.roster.iter().any(|e| {
             e.device_id == a.device_id && e.sign_pub == a.sign_pub && e.kem_pub == a.kem_pub
@@ -288,6 +310,11 @@ impl TrustSnapshot {
     /// The last record of the chain: the approver's head.
     pub fn head(&self) -> Option<&LineageRecord> {
         self.lineage.last()
+    }
+
+    /// The approver's level for `id`, if it is in the roster.
+    pub fn level(&self, id: Id) -> Option<TrustLevel> {
+        self.levels.iter().find(|(x, _)| *x == id).map(|(_, l)| *l)
     }
 
     /// Every device revoked along the chain.
@@ -523,6 +550,7 @@ mod tests {
         .unwrap();
         let snap = TrustSnapshot {
             lineage: vec![LineageRecord::Genesis(genesis)],
+            levels: vec![(entry.device_id, TrustLevel::Verified)],
             roster: vec![entry],
             approver,
         };
@@ -614,6 +642,13 @@ mod tests {
         let mut twice = snap.clone();
         twice.lineage.push(twice.lineage[0].clone());
         assert!(twice.check().is_err());
+        // Levels missing, or out of roster order.
+        let mut no_levels = snap.clone();
+        no_levels.levels.clear();
+        assert!(no_levels.check().is_err());
+        let mut wrong_id = snap.clone();
+        wrong_id.levels[0].0 = Id::new();
+        assert!(wrong_id.check().is_err());
         // The approver with another key than the roster's.
         let mut rekeyed = snap;
         rekeyed.approver.sign_pub = snapshot(Id::new()).0.approver.sign_pub;
