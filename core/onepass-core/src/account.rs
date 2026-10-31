@@ -25,7 +25,14 @@
 //!   looking like a wrong password; the sealed context makes the clear
 //!   header binding.
 //!
-//! Accounts created now write v2 at epoch 1. The epoch is the counter of
+//! - v3 keyset (key rotation, spec 6.6): `"OPK3"`, the same header as
+//!   `"OPK2"`, the blob sealed at schema 3, and the plaintext carries a
+//!   fourth field, `retired_kem` (at most 16 KEM secrets, newest first: the
+//!   KEM keys of the identities this one replaced, to open account-bound
+//!   archives and travel states made before). `"OPK2"` still opens, with
+//!   `retired_kem` empty. Retired signing and identity keys are never kept.
+//!
+//! Accounts created now write v2 params at epoch 1 and an `OPK3` keyset. The epoch is the counter of
 //! the signed params, bumped by every change of them (a master password
 //! change today); a device pins the highest one it accepted
 //! (`chain::ChainState::params_epoch`) and refuses older ones.
@@ -43,7 +50,7 @@ use crate::crypto::{
     HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey, KDF_FLOOR, KdfParams,
     SecretKey, SymmetricKey, derive_auk, seal,
 };
-use crate::{Error, Id, IntegrityError, Result};
+use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
 /// Signature domain of the v1 account parameters.
 const PARAMS_DOMAIN: &[u8] = b"account-params";
@@ -55,10 +62,17 @@ const PARAMS_V2_PREFIX: &[u8; 4] = b"OPP2";
 const KEYSET_SCHEMA: u16 = 1;
 /// Schema version bound into a v2 keyset blob.
 const KEYSET_SCHEMA_V2: u16 = 2;
+/// Schema version bound into a v3 keyset blob.
+const KEYSET_SCHEMA_V3: u16 = 3;
+/// Most retired KEM secrets a keyset carries (newest first).
+pub const MAX_RETIRED_KEM: usize = 16;
 /// Prefix of a v2 keyset record, followed by the big-endian epoch and the
 /// params hash.
 const KEYSET_V2_PREFIX: &[u8; 4] = b"OPK2";
-/// Bytes before the blob in a v2 keyset record: prefix, epoch, params hash.
+/// Prefix of a v3 keyset record, followed by the same header as v2.
+const KEYSET_V3_PREFIX: &[u8; 4] = b"OPK3";
+/// Bytes before the blob in a v2 or v3 keyset record: prefix, epoch, params
+/// hash.
 const KEYSET_V2_HEADER: usize = 44;
 /// Largest accepted Argon2id cost as `(m_kib, t, p)`: 2 GiB, 16 passes, 16
 /// lanes. Parameters come from the server, so they are bounded before Argon2
@@ -92,6 +106,9 @@ pub struct Keyset {
     pub kem: HybridKemSecret,
     pub signing: HybridSigningKey,
     pub identity: IdentityKey,
+    /// The KEM secrets of the identities this one replaced, newest first,
+    /// at most `MAX_RETIRED_KEM` (`OPK3`; empty for an `OPK2` keyset).
+    pub retired_kem: Vec<HybridKemSecret>,
 }
 
 impl fmt::Debug for Keyset {
@@ -100,11 +117,51 @@ impl fmt::Debug for Keyset {
     }
 }
 
+/// A fingerprint of the Secret Key an account was opened with, kept in
+/// memory only so `rotate_keys` can refuse a "new" Secret Key equal to the
+/// current one (ruling K11). Never stored or sent.
+#[derive(Clone)]
+struct KeyTag([u8; 32]);
+
+impl KeyTag {
+    fn of(account_id: &Id, key: &SecretKey) -> KeyTag {
+        let mut input = Zeroizing::new(Vec::with_capacity(16 + 32));
+        input.extend_from_slice(&account_id.0);
+        input.extend_from_slice(&key.0);
+        let mut out = [0u8; 32];
+        out.copy_from_slice(digest(&SHA256, &input).as_ref());
+        KeyTag(out)
+    }
+
+    fn matches(&self, other: &KeyTag) -> bool {
+        aws_lc_rs::constant_time::verify_slices_are_equal(&self.0, &other.0).is_ok()
+    }
+}
+
+impl fmt::Debug for KeyTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("KeyTag(**)")
+    }
+}
+
 /// An unlocked account.
 #[derive(Debug)]
 pub struct Account {
     pub params: AccountParams,
     keyset: Keyset,
+    /// The Secret Key it was opened with, when known (not after
+    /// `unlock_with_auk`).
+    secret_key_tag: Option<KeyTag>,
+}
+
+/// A key rotation ready to be written (`Account::rotate_keys`): the account
+/// under its new identity, its two records and the new identity's public key.
+#[derive(Debug)]
+pub struct RotatedAccount {
+    pub account: Account,
+    pub params_record: Vec<u8>,
+    pub keyset_record: Vec<u8>,
+    pub identity_pub: IdentityVerifyingKey,
 }
 
 /// A freshly created account with the records to store and the Secret Key to
@@ -194,6 +251,7 @@ impl Account {
             kem: HybridKemSecret::generate()?,
             signing: HybridSigningKey::generate()?,
             identity: IdentityKey::generate()?,
+            retired_kem: Vec::new(),
         };
         let params = sign_params(
             account_id,
@@ -206,8 +264,13 @@ impl Account {
         let auk = derive_auk(password, &secret_key, &params.kdf)?;
         let keyset_record = seal_keyset(&auk, &params, &keyset)?;
         let params_record = params.encode()?;
+        let secret_key_tag = Some(KeyTag::of(&account_id, &secret_key));
         Ok(NewAccount {
-            account: Account { params, keyset },
+            account: Account {
+                params,
+                keyset,
+                secret_key_tag,
+            },
             secret_key,
             params_record,
             keyset_record,
@@ -293,7 +356,8 @@ impl Account {
         let params = verify_params(params_record, pinned, min_epoch)?;
         let key = derive_auk(password, secret_key, &params.kdf)?;
         let auk = Auk::from_bytes(*key.expose());
-        let account = open_keyset(&key, params, keyset_record)?;
+        let mut account = open_keyset(&key, params, keyset_record)?;
+        account.secret_key_tag = Some(KeyTag::of(&account.params.account_id, secret_key));
         Ok((account, auk))
     }
 
@@ -362,12 +426,91 @@ impl Account {
         let keyset_record = seal_keyset(&key, &params, &self.keyset)?;
         let params_record = params.encode()?;
         // Prove the new pair opens before anything is written.
-        let account = open_keyset(&key, params, &keyset_record)?;
+        let mut account = open_keyset(&key, params, &keyset_record)?;
+        account.secret_key_tag = Some(KeyTag::of(&account.params.account_id, secret_key));
         Ok(Rekeyed {
             account,
             auk: Auk::from_bytes(*key.expose()),
             params_record,
             keyset_record,
+        })
+    }
+
+    /// Key rotation (spec 6.6, ruling K1): a fresh keyset (KEM, signing and
+    /// identity keys), v2 params signed by the new identity at epoch 1 (the
+    /// epoch counts password changes within one identity), fresh salt, each
+    /// Argon2id cost the maximum of the current one, `kdf_floor` and the
+    /// enforced floor, and the keyset sealed under the Account Unlock Key of
+    /// `password` and `new_secret_key`. The current KEM secret goes first in
+    /// the new keyset's `retired_kem` (R18), then the ones already retired,
+    /// at most `MAX_RETIRED_KEM`; retired signing and identity keys are
+    /// dropped. The caller checked the current password and Secret Key (by
+    /// opening `self` from the stored records).
+    ///
+    /// Errors: a `new_secret_key` equal to the one this account was opened
+    /// with is `Validation` (ruling K11; an account opened with an Account
+    /// Unlock Key alone does not know it, and the caller compares); costs
+    /// above the ceiling are `InvalidFormat("kdf params")`.
+    pub fn rotate_keys(
+        &self,
+        password: &str,
+        new_secret_key: &SecretKey,
+        kdf_floor: &KdfParams,
+    ) -> Result<RotatedAccount> {
+        let account_id = self.params.account_id;
+        if let Some(current) = &self.secret_key_tag
+            && current.matches(&KeyTag::of(&account_id, new_secret_key))
+        {
+            return Err(ValidationError {
+                field: "secret key".into(),
+                reason: "unchanged",
+            }
+            .into());
+        }
+        let (m_kib, t, p) = enforced_floor();
+        let current = &self.params.kdf;
+        let kdf = KdfParams {
+            m_kib: current.m_kib.max(kdf_floor.m_kib).max(m_kib),
+            t: current.t.max(kdf_floor.t).max(t),
+            p: current.p.max(kdf_floor.p).max(p),
+            salt: KdfParams::new_default()?.salt,
+        };
+        if !within_ceiling(&kdf) {
+            return Err(Error::InvalidFormat("kdf params"));
+        }
+        let mut retired_kem = Vec::with_capacity(MAX_RETIRED_KEM);
+        for old in std::iter::once(&self.keyset.kem).chain(&self.keyset.retired_kem) {
+            if retired_kem.len() == MAX_RETIRED_KEM {
+                break;
+            }
+            retired_kem.push(HybridKemSecret::from_bytes(&old.to_bytes())?);
+        }
+        let keyset = Keyset {
+            kem: HybridKemSecret::generate()?,
+            signing: HybridSigningKey::generate()?,
+            identity: IdentityKey::generate()?,
+            retired_kem,
+        };
+        let params = sign_params(
+            account_id,
+            kdf,
+            keyset.signing.verifying_key()?,
+            keyset.kem.public()?,
+            1,
+            &keyset.identity,
+        )?;
+        let key = derive_auk(password, new_secret_key, &params.kdf)?;
+        let keyset_record = seal_keyset(&key, &params, &keyset)?;
+        let params_record = params.encode()?;
+        // Prove the new pair opens before anything is written.
+        let mut account = open_keyset(&key, params, &keyset_record)?;
+        account.secret_key_tag = Some(KeyTag::of(&account_id, new_secret_key));
+        let identity_pub = account.params.identity_pub.clone();
+        Ok(RotatedAccount {
+            account,
+            params_record,
+            keyset_record,
+            identity_pub,
         })
     }
 }
@@ -456,13 +599,14 @@ fn verify_params(
 /// params hash against the params, open the keyset blob under `auk` and
 /// check it against the signed public keys.
 fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) -> Result<Account> {
-    let (bound, blob) = split_keyset(keyset_record)?;
-    let aad = keyset_aad(&params)?;
+    let (version, bound, blob) = split_keyset(keyset_record)?;
+    let aad = keyset_aad(&params, version)?;
     let expected = match aad.vault_id {
         None => None,
         Some(_) => Some((params.epoch, params_hash(&params)?)),
     };
-    if bound != expected {
+    // A v1 keyset goes with epoch 0 only, a v2 or v3 one from epoch 1.
+    if bound != expected || (version == KeysetVersion::V1) != (params.epoch == 0) {
         return Err(IntegrityError::WrongContext.into());
     }
     let plaintext =
@@ -470,7 +614,7 @@ fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) 
             OpenStage::Commitment => Error::WrongPassword,
             _ => e,
         })?;
-    let keyset = decode_keyset(&plaintext)?;
+    let keyset = decode_keyset(&plaintext, version)?;
 
     if keyset.kem.public()? != params.kem_pub
         || keyset.signing.verifying_key()? != params.signing_pub
@@ -478,7 +622,11 @@ fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) 
     {
         return Err(IntegrityError::Signature.into());
     }
-    Ok(Account { params, keyset })
+    Ok(Account {
+        params,
+        keyset,
+        secret_key_tag: None,
+    })
 }
 
 fn within_ceiling(kdf: &KdfParams) -> bool {
@@ -583,6 +731,34 @@ impl AccountParams {
         .map_err(bad)
     }
 
+    /// Decode a params record read from storage or the server and check
+    /// its signature under `identity` (G8, R13): the record must name that
+    /// identity and be signed by it. A record signed by any other identity
+    /// is `IntegrityError::Signature`; malformed bytes are
+    /// `InvalidFormat("account params")` as for `decode`. Nothing else is
+    /// checked (pin, epoch, floors: see `Account::unlock`).
+    pub fn decode_verified(
+        record: &[u8],
+        identity: &IdentityVerifyingKey,
+    ) -> Result<AccountParams> {
+        let params = Self::decode(record)?;
+        let bad = Error::Integrity(IntegrityError::Signature);
+        if params.identity_pub != *identity {
+            return Err(bad);
+        }
+        let msg = signed_message(
+            &params.account_id,
+            &params.kdf,
+            &params.signing_pub,
+            &params.kem_pub,
+            params.epoch,
+        )?;
+        identity
+            .verify(params_domain(params.epoch), &msg, &params.identity_sig)
+            .map_err(|_| bad)?;
+        Ok(params)
+    }
+
     /// Decode a stored params record, which may come from a hostile store:
     /// the whole buffer, trailing bytes refused, and a v2 record must carry
     /// an epoch of at least 1 (`InvalidFormat("account params")`). Nothing
@@ -644,8 +820,8 @@ fn params_hash(params: &AccountParams) -> Result<[u8; 32]> {
 /// The context a keyset blob is sealed to: at epoch 0 (v1), schema 1 and the
 /// account id; from epoch 1 (v2), schema 2, the account id with the
 /// big-endian epoch XORed into its last 8 bytes, and the first 16 bytes of
-/// the params hash in the vault id slot.
-fn keyset_aad(params: &AccountParams) -> Result<Aad> {
+/// the params hash in the vault id slot (`OPK3` at schema 3, `OPK2` at 2).
+fn keyset_aad(params: &AccountParams, version: KeysetVersion) -> Result<Aad> {
     if params.epoch == 0 {
         return Ok(Aad {
             blob_id: params.account_id,
@@ -662,20 +838,36 @@ fn keyset_aad(params: &AccountParams) -> Result<Aad> {
     Ok(Aad {
         blob_id,
         vault_id: Some(Id(bound)),
-        schema: KEYSET_SCHEMA_V2,
+        schema: match version {
+            KeysetVersion::V3 => KEYSET_SCHEMA_V3,
+            _ => KEYSET_SCHEMA_V2,
+        },
     })
 }
 
-/// A keyset record's binding and blob: a v2 record is `"OPK2" || epoch_be ||
-/// params hash || blob` with an epoch of at least 1, giving
-/// `Some((epoch, hash))`; anything else is a v1 blob (`None`). A v2 header
+/// A keyset record's binding and blob: a v2 or v3 record is `"OPK2"` or
+/// `"OPK3" || epoch_be || params hash || blob` with an epoch of at least 1,
+/// giving `Some((epoch, hash))`; anything else is a v1 blob (`None`). A header
 /// that is cut short or carries epoch 0 is `InvalidFormat("keyset")`.
 type KeysetBinding = Option<(u64, [u8; 32])>;
 
-fn split_keyset(record: &[u8]) -> Result<(KeysetBinding, &[u8])> {
-    if !record.starts_with(KEYSET_V2_PREFIX) {
-        return Ok((None, record));
-    }
+/// The layout of a keyset record: a bare blob, `OPK2`, or `OPK3` (same
+/// header as `OPK2`, schema 3 and the `retired_kem` field).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeysetVersion {
+    V1,
+    V2,
+    V3,
+}
+
+fn split_keyset(record: &[u8]) -> Result<(KeysetVersion, KeysetBinding, &[u8])> {
+    let version = if record.starts_with(KEYSET_V3_PREFIX) {
+        KeysetVersion::V3
+    } else if record.starts_with(KEYSET_V2_PREFIX) {
+        KeysetVersion::V2
+    } else {
+        return Ok((KeysetVersion::V1, None, record));
+    };
     let bad = Error::InvalidFormat("keyset");
     let (header, blob) = record
         .split_at_checked(KEYSET_V2_HEADER)
@@ -686,57 +878,113 @@ fn split_keyset(record: &[u8]) -> Result<(KeysetBinding, &[u8])> {
     hash.copy_from_slice(&header[12..KEYSET_V2_HEADER]);
     match u64::from_be_bytes(be) {
         0 => Err(bad),
-        epoch => Ok((Some((epoch, hash)), blob)),
+        epoch => Ok((version, Some((epoch, hash)), blob)),
     }
 }
 
-/// Seal the postcard encoding of the three secret keys' bytes for `params`
-/// (a v1 bare blob at epoch 0, a v2 record bound to the params above). The
+/// Seal the postcard encoding of the secret keys' bytes for `params` (a v1
+/// bare blob of three keys at epoch 0, a v3 record of three keys and the
+/// retired KEM secrets bound to the params above from epoch 1). The
 /// plaintext is written into a buffer sized up front and wiped on drop.
+///
+/// Errors: retired KEM secrets beyond `MAX_RETIRED_KEM`, or any at epoch 0
+/// (v1 has no field for them), are `InvalidFormat("keyset")`.
 fn seal_keyset(auk: &SymmetricKey, params: &AccountParams, keyset: &Keyset) -> Result<Vec<u8>> {
+    let bad = || Error::InvalidFormat("keyset");
+    if keyset.retired_kem.len() > MAX_RETIRED_KEM
+        || (params.epoch == 0 && !keyset.retired_kem.is_empty())
+    {
+        return Err(bad());
+    }
     let kem = keyset.kem.to_bytes();
     let signing = keyset.signing.to_bytes();
     let identity = keyset.identity.to_bytes();
+    let retired: Vec<_> = keyset.retired_kem.iter().map(|k| k.to_bytes()).collect();
     let mut buf = Zeroizing::new(vec![
         0u8;
         kem.len()
             + signing.len()
             + identity.len()
-            + 3 * MAX_VARINT
+            + 4 * MAX_VARINT
+            + retired
+                .iter()
+                .map(|r| r.len() + MAX_VARINT)
+                .sum::<usize>()
     ]);
-    let used = postcard::to_slice(
-        &(
-            Bytes::new(&kem),
-            Bytes::new(&signing),
-            Bytes::new(&identity),
-        ),
-        &mut buf[..],
-    )
-    .map_err(|_| Error::InvalidFormat("keyset"))?
+    let used = if params.epoch == 0 {
+        postcard::to_slice(
+            &(
+                Bytes::new(&kem),
+                Bytes::new(&signing),
+                Bytes::new(&identity),
+            ),
+            &mut buf[..],
+        )
+    } else {
+        postcard::to_slice(
+            &(
+                Bytes::new(&kem),
+                Bytes::new(&signing),
+                Bytes::new(&identity),
+                retired.iter().map(|r| Bytes::new(r)).collect::<Vec<_>>(),
+            ),
+            &mut buf[..],
+        )
+    }
+    .map_err(|_| bad())?
     .len();
-    let blob = seal(auk, BlobKind::Keyset, &keyset_aad(params)?, &buf[..used])?;
+    let version = if params.epoch == 0 {
+        KeysetVersion::V1
+    } else {
+        KeysetVersion::V3
+    };
+    let blob = seal(
+        auk,
+        BlobKind::Keyset,
+        &keyset_aad(params, version)?,
+        &buf[..used],
+    )?;
     if params.epoch == 0 {
         return Ok(blob);
     }
     let mut out = Vec::with_capacity(KEYSET_V2_HEADER + blob.len());
-    out.extend_from_slice(KEYSET_V2_PREFIX);
+    out.extend_from_slice(KEYSET_V3_PREFIX);
     out.extend_from_slice(&params.epoch.to_be_bytes());
     out.extend_from_slice(&params_hash(params)?);
     out.extend_from_slice(&blob);
     Ok(out)
 }
 
-fn decode_keyset(plaintext: &[u8]) -> Result<Keyset> {
+/// The plaintext of an `OPK3` keyset: KEM, signing and identity secrets,
+/// then the retired KEM secrets.
+type KeysetV3<'a> = (&'a [u8], &'a [u8], &'a [u8], Vec<&'a [u8]>);
+
+/// The keys of a decrypted keyset: three byte strings for v1 and `OPK2`,
+/// and for `OPK3` a list of retired KEM secrets of at most `MAX_RETIRED_KEM`
+/// after them. The whole buffer is consumed.
+fn decode_keyset(plaintext: &[u8], version: KeysetVersion) -> Result<Keyset> {
     let bad = Error::InvalidFormat("keyset");
-    let (kem, signing, identity) =
-        match postcard::take_from_bytes::<(&[u8], &[u8], &[u8])>(plaintext) {
+    let (kem, signing, identity, retired): KeysetV3 = match version {
+        KeysetVersion::V3 => match postcard::take_from_bytes::<KeysetV3>(plaintext) {
             Ok((parts, [])) => parts,
             _ => return Err(bad),
-        };
+        },
+        _ => match postcard::take_from_bytes::<(&[u8], &[u8], &[u8])>(plaintext) {
+            Ok(((kem, signing, identity), [])) => (kem, signing, identity, Vec::new()),
+            _ => return Err(bad),
+        },
+    };
+    if retired.len() > MAX_RETIRED_KEM {
+        return Err(bad);
+    }
     Ok(Keyset {
         kem: HybridKemSecret::from_bytes(kem)?,
         signing: HybridSigningKey::from_bytes(signing)?,
         identity: IdentityKey::from_bytes(identity)?,
+        retired_kem: retired
+            .into_iter()
+            .map(HybridKemSecret::from_bytes)
+            .collect::<Result<_>>()?,
     })
 }
 
@@ -1062,6 +1310,7 @@ mod tests {
             kem: HybridKemSecret::generate().unwrap(),
             signing: HybridSigningKey::from_bytes(&ks.signing.to_bytes()).unwrap(),
             identity: IdentityKey::from_bytes(&ks.identity.to_bytes()).unwrap(),
+            retired_kem: Vec::new(),
         };
         let auk = derive_auk("pw", &n.secret_key, &n.account.params.kdf).unwrap();
         let record = seal_keyset(&auk, &n.account.params, &swapped).unwrap();
@@ -1197,7 +1446,7 @@ mod tests {
         let decoded = AccountParams::decode(&n.params_record).unwrap();
         assert_eq!(decoded, n.account.params);
         assert_eq!(decoded.encode().unwrap(), n.params_record);
-        assert!(n.keyset_record.starts_with(b"OPK2"));
+        assert!(n.keyset_record.starts_with(b"OPK3"));
 
         // The epoch is signed: changing it without re-signing is refused.
         let mut bumped = n.account.params.clone();
@@ -1439,7 +1688,7 @@ mod tests {
         let r = account.rekey(&n.secret_key, "nouveau").unwrap();
         assert_eq!(r.account.params.epoch, 1);
         assert!(r.params_record.starts_with(b"OPP2"));
-        assert!(r.keyset_record.starts_with(b"OPK2"));
+        assert!(r.keyset_record.starts_with(b"OPK3"));
         let a = Account::unlock(
             "nouveau",
             &n.secret_key,
@@ -1477,5 +1726,267 @@ mod tests {
                 .unwrap_err(),
             Error::Integrity(IntegrityError::ParamsRollback)
         );
+    }
+
+    fn unlocked(n: &NewAccount) -> Account {
+        Account::unlock(
+            "pw",
+            &n.secret_key,
+            &n.params_record,
+            &n.keyset_record,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn opk3_round_trip() {
+        let n = shared();
+        assert!(n.keyset_record.starts_with(b"OPK3"));
+        let before = unlocked(n);
+        assert!(before.keyset().retired_kem.is_empty());
+
+        let key = SecretKey::generate().unwrap();
+        let r = before.rotate_keys("pw2", &key, &fast()).unwrap();
+        assert!(r.params_record.starts_with(b"OPP2"));
+        assert!(r.keyset_record.starts_with(b"OPK3"));
+        // The new identity counts its own epochs from 1, on the same account.
+        let (old, new) = (&n.account.params, &r.account.params);
+        assert_eq!(new.account_id, old.account_id);
+        assert_eq!(new.epoch, 1);
+        assert_eq!(r.identity_pub, new.identity_pub);
+        assert_ne!(new.identity_pub, old.identity_pub);
+        assert_ne!(new.signing_pub, old.signing_pub);
+        assert_ne!(new.kem_pub, old.kem_pub);
+        assert_ne!(new.kdf.salt, old.kdf.salt);
+        assert_eq!(
+            AccountParams::decode_verified(&r.params_record, &r.identity_pub).unwrap(),
+            *new
+        );
+
+        // The pair opens under the new key and password only, and the
+        // current KEM secret is the first retired one.
+        let reopened =
+            Account::unlock("pw2", &key, &r.params_record, &r.keyset_record, None).unwrap();
+        assert_eq!(reopened.params, *new);
+        let retired = &reopened.keyset().retired_kem;
+        assert_eq!(retired.len(), 1);
+        assert_eq!(retired[0].public().unwrap(), old.kem_pub);
+        assert_eq!(
+            Account::unlock(
+                "pw",
+                &n.secret_key,
+                &r.params_record,
+                &r.keyset_record,
+                None
+            )
+            .unwrap_err(),
+            Error::WrongPassword
+        );
+        // Resealed unchanged: password change on the new identity keeps them.
+        let again = reopened.rekey(&key, "pw3").unwrap();
+        assert!(again.keyset_record.starts_with(b"OPK3"));
+        assert_eq!(again.account.keyset().retired_kem.len(), 1);
+    }
+
+    /// The shared account with `n` retired KEM secrets, built directly (a
+    /// rotation costs several seconds in a debug build).
+    fn with_retired(n: usize) -> (Account, Vec<HybridKemPublic>) {
+        let shared = unlocked(shared());
+        let retired: Vec<HybridKemSecret> = (0..n)
+            .map(|_| HybridKemSecret::generate().unwrap())
+            .collect();
+        let pubs = retired.iter().map(|k| k.public().unwrap()).collect();
+        let keyset = Keyset {
+            kem: HybridKemSecret::from_bytes(&shared.keyset.kem.to_bytes()).unwrap(),
+            signing: HybridSigningKey::from_bytes(&shared.keyset.signing.to_bytes()).unwrap(),
+            identity: IdentityKey::from_bytes(&shared.keyset.identity.to_bytes()).unwrap(),
+            retired_kem: retired,
+        };
+        (
+            Account {
+                params: shared.params.clone(),
+                keyset,
+                secret_key_tag: shared.secret_key_tag.clone(),
+            },
+            pubs,
+        )
+    }
+
+    #[test]
+    fn retired_kem_capped_at_16() {
+        // One rotation on top of 16 retired keys is the 17th rotation: the
+        // current KEM goes first, the oldest retired one falls off.
+        let (account, retired) = with_retired(MAX_RETIRED_KEM);
+        let current = account.params.kem_pub.clone();
+        let key = SecretKey::generate().unwrap();
+        let r = account.rotate_keys("pw", &key, &fast()).unwrap();
+        let got: Vec<_> = r
+            .account
+            .keyset()
+            .retired_kem
+            .iter()
+            .map(|k| k.public().unwrap())
+            .collect();
+        assert_eq!(got.len(), MAX_RETIRED_KEM);
+        assert_eq!(got[0], current);
+        assert_eq!(got[1..], retired[..MAX_RETIRED_KEM - 1]);
+        assert!(!got.contains(&retired[MAX_RETIRED_KEM - 1]));
+        // The stored record carries exactly those 16, in order.
+        let reopened =
+            Account::unlock("pw", &key, &r.params_record, &r.keyset_record, None).unwrap();
+        let again: Vec<_> = reopened
+            .keyset()
+            .retired_kem
+            .iter()
+            .map(|k| k.public().unwrap())
+            .collect();
+        assert_eq!(again, got);
+    }
+
+    #[test]
+    fn a_keyset_with_17_retired_kem_is_neither_sealed_nor_read() {
+        let n = shared();
+        let (account, _) = with_retired(MAX_RETIRED_KEM + 1);
+        let auk = derive_auk("pw", &n.secret_key, &n.account.params.kdf).unwrap();
+        assert_eq!(
+            seal_keyset(&auk, &account.params, account.keyset()).unwrap_err(),
+            Error::InvalidFormat("keyset")
+        );
+        // A hand-made plaintext with 17 is refused when read.
+        let kem = account.keyset.kem.to_bytes();
+        let signing = account.keyset.signing.to_bytes();
+        let identity = account.keyset.identity.to_bytes();
+        let retired: Vec<_> = account
+            .keyset
+            .retired_kem
+            .iter()
+            .map(|k| k.to_bytes())
+            .collect();
+        let plaintext = postcard::to_allocvec(&(
+            Bytes::new(&kem),
+            Bytes::new(&signing),
+            Bytes::new(&identity),
+            retired.iter().map(|r| Bytes::new(r)).collect::<Vec<_>>(),
+        ))
+        .unwrap();
+        assert_eq!(
+            decode_keyset(&plaintext, KeysetVersion::V3).err(),
+            Some(Error::InvalidFormat("keyset"))
+        );
+        // Trailing bytes are refused too.
+        let mut long = plaintext.clone();
+        long.push(0);
+        assert!(decode_keyset(&long, KeysetVersion::V3).is_err());
+    }
+
+    /// The brief's literal check: 17 chained rotations keep the 16 newest.
+    /// About ten seconds each in a debug build, hence ignored by default
+    /// (`cargo test --release -p onepass-core --lib -- --ignored`).
+    #[test]
+    #[ignore = "17 rotations: slow in a debug build"]
+    fn seventeen_rotations_keep_the_16_newest() {
+        let mut account = unlocked(shared());
+        let mut kems = vec![account.params.kem_pub.clone()];
+        let mut last = None;
+        for _ in 0..17 {
+            let key = SecretKey::generate().unwrap();
+            let r = account.rotate_keys("pw", &key, &fast()).unwrap();
+            kems.push(r.account.params.kem_pub.clone());
+            account = r.account;
+            last = Some((key, r.params_record, r.keyset_record));
+        }
+        let (key, params, keyset) = last.unwrap();
+        let reopened = Account::unlock("pw", &key, &params, &keyset, None).unwrap();
+        let got: Vec<_> = reopened
+            .keyset()
+            .retired_kem
+            .iter()
+            .map(|k| k.public().unwrap())
+            .collect();
+        assert_eq!(got, kems[1..17].iter().rev().cloned().collect::<Vec<_>>());
+        assert!(!got.contains(&kems[0]));
+    }
+
+    #[test]
+    fn rotate_keys_new_secret_key_must_differ() {
+        let n = shared();
+        // Created with the key, then unlocked with it: both know it.
+        for account in [&n.account, &unlocked(n)] {
+            assert!(matches!(
+                account.rotate_keys("pw", &n.secret_key, &fast()),
+                Err(Error::Validation(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rotate_keys_refuses_kdf_above_the_ceiling() {
+        let n = shared();
+        let mut floor = fast();
+        floor.m_kib = KDF_CEILING.0 + 1;
+        let key = SecretKey::generate().unwrap();
+        assert_eq!(
+            n.account.rotate_keys("pw", &key, &floor).unwrap_err(),
+            Error::InvalidFormat("kdf params")
+        );
+    }
+
+    #[test]
+    fn decode_verified_checks_the_signature_under_the_given_identity() {
+        let n = shared();
+        let id = &n.account.params.identity_pub;
+        assert_eq!(
+            AccountParams::decode_verified(&n.params_record, id).unwrap(),
+            n.account.params
+        );
+        // Another identity: the record is self-signed, not signed by it.
+        let other = IdentityKey::generate().unwrap().verifying_key();
+        assert_eq!(
+            AccountParams::decode_verified(&n.params_record, &other).unwrap_err(),
+            Error::Integrity(IntegrityError::Signature)
+        );
+        // The same fields signed by another identity, which also names itself.
+        let p = &n.account.params;
+        let attacker = IdentityKey::generate().unwrap();
+        let forged = sign_params(
+            p.account_id,
+            p.kdf.clone(),
+            p.signing_pub.clone(),
+            p.kem_pub.clone(),
+            p.epoch + 1,
+            &attacker,
+        )
+        .unwrap()
+        .encode()
+        .unwrap();
+        assert_eq!(
+            AccountParams::decode_verified(&forged, id).unwrap_err(),
+            Error::Integrity(IntegrityError::Signature)
+        );
+        // A tampered epoch under the right identity key id.
+        let mut bumped = p.clone();
+        bumped.epoch += 1;
+        assert_eq!(
+            AccountParams::decode_verified(&bumped.encode().unwrap(), id).unwrap_err(),
+            Error::Integrity(IntegrityError::Signature)
+        );
+        // Malformed bytes stay a format error.
+        let mut long = n.params_record.clone();
+        long.push(0);
+        assert_eq!(
+            AccountParams::decode_verified(&long, id).unwrap_err(),
+            Error::InvalidFormat("account params")
+        );
+    }
+
+    #[test]
+    fn an_opk3_record_is_not_an_opk2_one() {
+        // The prefix and the sealed schema both move: relabelling an OPK3
+        // record as OPK2 (or the reverse) does not open.
+        let n = shared();
+        let mut as_v2 = n.keyset_record.clone();
+        as_v2[..4].copy_from_slice(b"OPK2");
+        assert!(Account::unlock("pw", &n.secret_key, &n.params_record, &as_v2, None).is_err());
     }
 }
