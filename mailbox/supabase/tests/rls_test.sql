@@ -43,8 +43,20 @@ select onepass_test.ok(
     (select bool_and(not has_function_privilege(r, p.oid, 'execute'))
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
           unnest(array['anon', 'authenticated', 'service_role', 'onepass_mailbox_api', 'onepass_mailbox_janitor']) r
-     where n.nspname = 'onepass_mailbox' and p.proname in ('current_mailbox', 'current_rdv', 'in_maintenance')),
+     where n.nspname = 'onepass_mailbox' and p.proname in ('current_mailbox', 'current_rdv', 'current_invite', 'in_maintenance')),
     'rls_helpers_not_executable_by_others');
+
+-- Policies call their helpers once per statement: every helper call sits in
+-- a scalar subquery (pg_policies shows it as `( SELECT onepass_mailbox....`).
+select onepass_test.ok(
+    (select bool_and(
+        coalesce(qual, '') !~ '(?<!SELECT )onepass_mailbox\.(current_|in_maintenance)'
+        and coalesce(with_check, '') !~ '(?<!SELECT )onepass_mailbox\.(current_|in_maintenance)')
+     from pg_policies where schemaname = 'onepass_mailbox'),
+    'policy_helpers_wrapped_in_select');
+select onepass_test.ok(
+    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 11,
+    'policies_using_helpers_counted');
 
 -- Two mailboxes A and B, written in maintenance by the owner.
 set local role onepass_mailbox_owner;
@@ -193,11 +205,17 @@ select set_config('onepass.mailbox', repeat('aa', 15), true);
 select onepass_test.ok(onepass_mailbox.current_mailbox() is null, 'short_mailbox_setting_is_null');
 select set_config('onepass.mailbox', upper(repeat('aa', 16)), true);
 select onepass_test.ok(onepass_mailbox.current_mailbox() = decode(repeat('aa', 16), 'hex'), 'mailbox_setting_decoded');
+select set_config('onepass.invite', 'not hex', true);
+select onepass_test.ok((select count(*) from onepass_mailbox.invites) = 0, 'malformed_invite_setting_matches_nothing');
+select set_config('onepass.invite', '', true);
 select set_config('onepass.mailbox', '', true);
 
 reset role;
 
--- Maintenance only counts for postgres and the janitor as session user. A
+-- Maintenance only counts for postgres and the janitor as session user.
+-- The harness logs in as a superuser, so `set session authorization` below is
+-- a simulation: it proves the session_user gate, not that a real api or
+-- janitor login could not switch (it cannot: that needs a superuser login). A
 -- SECURITY DEFINER probe owned by the owner stands in for a future function.
 create function onepass_mailbox.t_probe() returns bigint
 language sql security definer set search_path = ''
