@@ -1,11 +1,28 @@
 -- Schema-wide privilege guard. Every later migration is held to it: a
 -- function or table created in onepass_mailbox by the wrong role, or left
 -- open to PUBLIC, fails here. Extend the allowlists below when a migration
--- grants EXECUTE on purpose (Task 4: credential_key, api_*, rdv_* for the api;
--- Task 6: the janitor's functions).
+-- grants EXECUTE on purpose (Task 6: rdv_* for the api, the janitor's
+-- functions). Entries are full signatures (regprocedure text), so a new
+-- overload of an allowed name is not allowed by accident.
 
-create temporary table t_allow (role text, proname text) on commit drop;
--- insert into t_allow values ('onepass_mailbox_api', 'credential_key'), ...;
+create temporary table t_allow (role text, signature text) on commit drop;
+insert into t_allow (role, signature) values
+    ('onepass_mailbox_api', 'onepass_mailbox.credential_key(bytea,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_create_mailbox(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,boolean)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_mailbox_info(bytea,bytea,timestamp with time zone,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_changes(bytea,bytea,timestamp with time zone,bytea,bigint,integer)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_record(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_enroll(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,timestamp with time zone,bytea,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_revoke_credential(bytea,bytea,timestamp with time zone,bytea,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_set_push(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)');
+
+-- The allowlist names real functions (a typo would allow nothing and hide it).
+select onepass_test.ok(
+    not exists (select 1 from t_allow w
+                where not exists (select 1 from pg_proc p
+                                  where p.pronamespace = 'onepass_mailbox'::regnamespace
+                                    and p.oid::regprocedure::text = w.signature)),
+    'allowlist_entries_exist');
 
 -- Functions: owned by the owner, an explicit ACL (NULL means PUBLIC EXECUTE)
 -- with no PUBLIC entry.
@@ -31,13 +48,13 @@ select onepass_test.ok(
           and (case when r = 'public'
                     then p.proacl is null or exists (select 1 from unnest(p.proacl) a where a::text like '=%')
                     else has_function_privilege(r, p.oid, 'execute') end)
-          and not exists (select 1 from t_allow w where w.role = r and w.proname = p.proname)),
+          and not exists (select 1 from t_allow w where w.role = r and w.signature = p.oid::regprocedure::text)),
     'execute_only_on_allowlist');
 
 -- What api and janitor may execute runs as the owner, with an empty search_path.
 select onepass_test.ok(
     not exists (
-        select 1 from pg_proc p join t_allow w on w.proname = p.proname
+        select 1 from pg_proc p join t_allow w on w.signature = p.oid::regprocedure::text
         where p.pronamespace = 'onepass_mailbox'::regnamespace
           and not (p.prosecdef and 'search_path=""' = any (coalesce(p.proconfig, '{}')))),
     'allowed_functions_are_security_definer_with_empty_search_path');
@@ -53,6 +70,19 @@ select onepass_test.ok(
                                              where a::text not like 'onepass_mailbox_owner=%')), true)
      from pg_class c where c.relnamespace = 'onepass_mailbox'::regnamespace and c.relkind in ('r', 'p', 'S', 'v', 'm')),
     'relations_granted_to_nobody');
+
+-- No column level grant either (a column grant is invisible in relacl).
+select onepass_test.ok(
+    not exists (select 1 from pg_attribute a join pg_class c on c.oid = a.attrelid
+                where c.relnamespace = 'onepass_mailbox'::regnamespace and a.attacl is not null),
+    'columns_granted_to_nobody');
+
+-- Every allowed entry point is granted to the api role (so the edge
+-- function can call it) and to no other role.
+select onepass_test.ok(
+    (select bool_and(has_function_privilege('onepass_mailbox_api', w.signature::regprocedure, 'execute'))
+     from t_allow w where w.role = 'onepass_mailbox_api'),
+    'api_entry_points_are_granted');
 
 -- The guard bites: a function postgres creates here without the owner role
 -- is caught by the checks above.
