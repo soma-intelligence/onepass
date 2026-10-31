@@ -779,6 +779,7 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         device_list: None,
         vault_list: None,
         approver_list: None,
+        contact_book: None,
         device_id: store.chain_state()?.device_id,
     };
     // Every vault a stored `last_seen` may name: the session's map replaces
@@ -839,6 +840,7 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         pending: None,
         lineage_mark: None,
         lineage_lock: None,
+        contact_alerts: Vec::new(),
     };
     let mut repo = repo;
     // Spec 10.4: replay this device's own writes under the new keys (best

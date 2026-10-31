@@ -682,6 +682,7 @@ fn book_keyed_by_identity() {
         secret_key: &f.sk,
         new_secret_key: &new_sk,
         device_keys: &f.me_keys,
+        keep_tofu: &[],
         reason: RotationReason::Rotate,
     };
     a.repo().rotate(req).unwrap();

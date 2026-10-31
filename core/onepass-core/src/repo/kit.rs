@@ -503,6 +503,7 @@ impl<S: RecordStore> Repository<S> {
             device_list: None,
             vault_list: None,
             approver_list: None,
+            contact_book: None,
             device_id: Some(new_id),
         };
         let device = DeviceState {
@@ -528,6 +529,7 @@ impl<S: RecordStore> Repository<S> {
             pending: None,
             lineage_mark: None,
             lineage_lock: None,
+            contact_alerts: Vec::new(),
         };
 
         // At generation 0 the device list says who is listed (trust on

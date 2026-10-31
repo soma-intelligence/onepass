@@ -3961,6 +3961,7 @@ mod tests {
                 hash: [1; 32],
             }),
             approver_list: None,
+            contact_book: None,
             device_id: Some(me),
         };
         s.put_all_if_version_with_chain(vec![], &stored).unwrap();
@@ -5752,6 +5753,7 @@ mod tests {
         let vault_fork = ChainState {
             vault_list: seen_at(3, 2),
             approver_list: None,
+            contact_book: None,
             ..stored.clone()
         };
         let book_fork = ChainState {
@@ -5779,6 +5781,7 @@ mod tests {
         let rebased = ChainState {
             vault_list: seen_at(2, 3),
             approver_list: None,
+            contact_book: None,
             ..vault_fork.clone()
         };
         assert_eq!(merge_chain(&rebased, &stored, true).unwrap(), rebased);
@@ -5786,6 +5789,7 @@ mod tests {
         let mine = ChainState {
             device_id: Some(Id::new()),
             approver_list: None,
+            contact_book: None,
             ..stored.clone()
         };
         let other = ChainState {
