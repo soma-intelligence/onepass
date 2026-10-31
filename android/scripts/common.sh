@@ -35,6 +35,13 @@ if ! cargo ndk --version 2>/dev/null | grep -qx "cargo-ndk $CARGO_NDK_VERSION"; 
   exit 1
 fi
 
+# RUSTFLAGS in the environment would replace the 16 KiB page flag of
+# core/.cargo/config.toml without a word: refuse it.
+if [ -n "${RUSTFLAGS:-}" ] || [ -n "${CARGO_ENCODED_RUSTFLAGS:-}" ]; then
+  echo "unset RUSTFLAGS and CARGO_ENCODED_RUSTFLAGS: they override core/.cargo/config.toml" >&2
+  exit 1
+fi
+
 ndk_bin() {
   local host
   for host in darwin-x86_64 linux-x86_64; do

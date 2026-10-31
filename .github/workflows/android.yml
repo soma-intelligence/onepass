@@ -15,13 +15,21 @@ on:
 permissions:
   contents: read
 
+# A newer push supersedes the run of the same branch.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   # The Rust core and the FFI on Android (plan X4, Task 1): both ABIs built
   # with the pinned NDK and checked for 16 KiB pages, then every test of
-  # onepass-core and onepass-ffi run inside an API 29 x86_64 emulator.
+  # onepass-core, onepass-ffi and onepass-peer run inside an API 29 x86_64
+  # emulator. The emulator needs KVM: GitHub's standard Linux runners give
+  # it to public repositories; on a private repository the emulator would
+  # run unaccelerated and time out (use a larger runner there).
   core:
     name: core (Android API 29 emulator)
     runs-on: ubuntu-latest
@@ -46,9 +54,11 @@ jobs:
       - name: Install the pinned toolchain
         working-directory: core
         run: rustup show active-toolchain || rustup toolchain install
+      # The runner image has the SDK licenses accepted already. No `yes |`:
+      # under the default pipefail its SIGPIPE (141) would fail the step.
       - name: Install the pinned NDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ANDROID_NDK_VERSION" < /dev/null > /dev/null
           ls "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked

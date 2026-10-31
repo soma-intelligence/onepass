@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Builds the test binaries of onepass-core and onepass-ffi for Android, pushes
+# Builds the test binaries of onepass-core, onepass-ffi and onepass-peer for
+# Android, pushes
 # them to the running emulator (or device) with adb, runs each one there and
-# exits with the status of the first failure.
+# exits with the status of the first failure. Extra args go to every test
+# binary (test name filters).
 #
 #   android/scripts/test-core-emulator.sh [test binary args...]
 #
@@ -51,7 +53,7 @@ export CARGO_TARGET_DIR="$repo_root/core/target/android-tests"
 cd "$repo_root/core"
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
-cargo test --target "$triple" -p onepass-core -p onepass-ffi --no-run --message-format=json-render-diagnostics >"$build_log"
+cargo test --target "$triple" -p onepass-core -p onepass-ffi -p onepass-peer --no-run --message-format=json-render-diagnostics >"$build_log"
 binaries=()
 while IFS= read -r exe; do
   binaries+=("$exe")
@@ -68,11 +70,25 @@ if [ "$device_abi" != "$abi" ]; then
   exit 1
 fi
 
+# adbd restarts on root and unroot: wait (at most 2 minutes) until it
+# answers as the wanted uid.
+adb_uid() {
+  local tries=0
+  until [ "$("$adb" shell id -u 2>/dev/null | tr -d '\r')" = "$1" ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 120 ]; then
+      echo "adbd never came back as uid $1" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 # The tests run as the shell user (uid 2000), never as root: root would
 # bypass the file permission checks some tests make.
 if [ "$("$adb" shell id -u | tr -d '\r')" = 0 ]; then
   "$adb" unroot >/dev/null
-  until [ "$("$adb" shell id -u 2>/dev/null | tr -d '\r')" = 2000 ]; do sleep 1; done
+  adb_uid 2000
 fi
 "$adb" shell "rm -rf $remote && mkdir -p $remote/bin $remote/tmp"
 # frozen_account reads its fixture at run time (ONEPASS_CORE_FIXTURES).
@@ -81,14 +97,9 @@ fi
 # The adb shell SELinux domain may not create Unix sockets under
 # /data/local/tmp (avc: denied { create } ... tclass=sock_file), unlike an
 # app in its own data directory. The developer tests bind the SSH agent and
-# MCP sockets, so they run with SELinux permissive, on emulators and
-# userdebug builds only, still as the shell user. Every other binary runs
-# enforcing.
+# MCP sockets, so they run with SELinux permissive, on non-user emulator
+# builds only, still as the shell user. Every other binary runs enforcing.
 needs_sockets='^developer-'
-# adbd restarts on root and unroot: wait until it answers as the wanted uid.
-adb_uid() {
-  until [ "$("$adb" shell id -u 2>/dev/null | tr -d '\r')" = "$1" ]; do sleep 1; done
-}
 selinux() {
   "$adb" root >/dev/null
   adb_uid 0
@@ -96,7 +107,24 @@ selinux() {
   "$adb" unroot >/dev/null
   adb_uid 2000
 }
+# Whatever ends the run (failure, Ctrl-C, kill), never leave the device
+# permissive: best effort, only once it was switched.
+permissive=0
+restore_enforcing() {
+  if [ "$permissive" -eq 1 ]; then
+    permissive=0
+    selinux 1 || echo "could not restore SELinux enforcing: run adb root; adb shell setenforce 1" >&2
+  fi
+}
+trap 'restore_enforcing; rm -f "$build_log"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 build_type="$("$adb" shell getprop ro.build.type | tr -d '\r')"
+emulator=0
+if [ "$("$adb" shell getprop ro.kernel.qemu | tr -d '\r')" = 1 ] ||
+  [ "$("$adb" shell getprop ro.boot.qemu | tr -d '\r')" = 1 ]; then
+  emulator=1
+fi
 
 first_failure=0
 passed_total=0
@@ -106,14 +134,13 @@ for exe in "${binaries[@]}"; do
   name="$(basename "$exe")"
   "$adb" push "$exe" "$remote/bin/$name" >/dev/null
   echo "=== $name"
-  permissive=0
   if printf '%s' "$name" | grep -Eq "$needs_sockets"; then
-    if [ "$build_type" = user ]; then
-      echo "$name binds Unix sockets: needs a userdebug or eng build (SELinux permissive)" >&2
+    if [ "$build_type" = user ] || [ "$emulator" -ne 1 ]; then
+      echo "$name binds Unix sockets: needs a userdebug or eng emulator (SELinux permissive)" >&2
     else
       echo "(SELinux permissive for $name)"
-      selinux 0
       permissive=1
+      selinux 0
     fi
   fi
   out="$(mktemp)"
@@ -121,9 +148,7 @@ for exe in "${binaries[@]}"; do
   "$adb" shell "cd $remote && TMPDIR=$remote/tmp ONEPASS_CORE_FIXTURES=$remote/fixtures RUST_BACKTRACE=1 ./bin/$name $*" 2>&1 | tee "$out"
   status="${PIPESTATUS[0]}"
   set -e
-  if [ "$permissive" -eq 1 ]; then
-    selinux 1
-  fi
+  restore_enforcing
   # Debug test binaries are large: keep the emulator disk free.
   "$adb" shell "rm -f $remote/bin/$name"
   summary="$(grep -E '^test result:' "$out" | tail -n 1 || true)"

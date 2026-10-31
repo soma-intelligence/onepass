@@ -15,9 +15,12 @@ pub const LAUNCHERS: [&str; 5] = [
     "com.apple.env",
 ];
 
-/// Executable paths of the launchers skipped on Linux, where nothing is
-/// signed (`/proc/<pid>/exe` names the resolved file).
-pub const LINUX_LAUNCHER_PATHS: [&str; 10] = [
+/// Executable paths of the launchers skipped on Linux and Android, where
+/// nothing is signed (`/proc/<pid>/exe` names the resolved file). Android's
+/// `/bin/sh` resolves to `/system/bin/sh` (mksh, its own binary); its `env`
+/// is a toybox applet, which shares one binary with every other tool, so it
+/// is not listed.
+pub const LINUX_LAUNCHER_PATHS: [&str; 11] = [
     "/bin/sh",
     "/bin/bash",
     "/bin/dash",
@@ -28,6 +31,7 @@ pub const LINUX_LAUNCHER_PATHS: [&str; 10] = [
     "/usr/bin/dash",
     "/usr/bin/zsh",
     "/usr/bin/env",
+    "/system/bin/sh",
 ];
 
 /// Most launchers skipped above the MCP server (spec 3.2).
@@ -51,7 +55,7 @@ pub enum CodeIdentity {
         cdhash: String,
         hardened: bool,
     },
-    /// Linux only, where nothing is signed: pinned by the SHA-256 of the
+    /// Linux and Android, where nothing is signed: pinned by the SHA-256 of the
     /// running image (`/proc/<pid>/exe`).
     Unsigned { path: PathBuf, sha256: String },
 }

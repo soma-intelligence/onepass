@@ -242,7 +242,13 @@ mod tests {
         assert!(pid_exists(1));
         assert!(!pid_exists(0));
         assert!(!pid_exists(-1));
-        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        // Android keeps its tools in /system/bin.
+        let true_program = if cfg!(target_os = "android") {
+            "/system/bin/true"
+        } else {
+            "/usr/bin/true"
+        };
+        let mut child = std::process::Command::new(true_program).spawn().unwrap();
         let pid = child.id() as i32;
         child.wait().unwrap();
         assert!(!pid_exists(pid));
