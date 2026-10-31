@@ -502,6 +502,7 @@ impl<S: RecordStore> Repository<S> {
             params_epoch: account.params.epoch,
             device_list: None,
             vault_list: None,
+            approver_list: None,
             device_id: Some(new_id),
         };
         let device = DeviceState {

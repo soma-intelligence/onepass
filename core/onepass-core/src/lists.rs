@@ -365,7 +365,7 @@ impl<S: RecordStore> Repository<S> {
             None => None,
         };
         let approver_list = match self.store.get(RecordKind::ApproverList, id)? {
-            Some(rec) => Some(open_record::<ApproverEntry>(&self.account, &rec, None)?.seen()),
+            Some(rec) => Some(open_record::<ApproverEntry>(&self.account, id, &rec, None)?.seen()),
             None => None,
         };
         self.chain.device_list = device_list;

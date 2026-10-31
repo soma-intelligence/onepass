@@ -3873,6 +3873,7 @@ mod tests {
                 seq: 1,
                 hash: [1; 32],
             }),
+            approver_list: None,
             device_id: Some(me),
         };
         s.put_all_if_version_with_chain(vec![], &stored).unwrap();
@@ -5650,10 +5651,12 @@ mod tests {
         let stored = ChainState {
             device_list: seen_at(3, 1),
             vault_list: seen_at(3, 1),
+            approver_list: None,
             ..ChainState::default()
         };
         let vault_fork = ChainState {
             vault_list: seen_at(3, 2),
+            approver_list: None,
             ..stored.clone()
         };
         let device_fork = ChainState {
@@ -5672,6 +5675,7 @@ mod tests {
         // below the stored seq.
         let rebased = ChainState {
             vault_list: seen_at(2, 3),
+            approver_list: None,
             ..vault_fork.clone()
         };
         assert_eq!(merge_chain(&rebased, &stored, true).unwrap(), rebased);
