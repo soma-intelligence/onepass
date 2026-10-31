@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Record, RecordKind, RecordStore};
+use super::{Record, RecordKind, RecordStore, check_local_meta_key};
 use crate::chain::ChainState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -148,6 +148,39 @@ impl RecordStore for SqliteStore {
         tx.commit().map_err(store_err)
     }
 
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        check_local_meta_key(key)?;
+        meta_on(&self.conn, key)
+    }
+
+    fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        meta_keys_on(&self.conn, prefix)
+    }
+
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        check_local_meta_key(key)?;
+        set_meta_on(&self.conn, key, value)
+    }
+
+    /// The writes and the removal in one transaction.
+    fn put_all_if_version_taking_meta(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        key: &str,
+        expected: &[u8],
+    ) -> Result<()> {
+        check_local_meta_key(key)?;
+        let tx = self.conn.transaction().map_err(store_err)?;
+        if meta_on(&tx, key)?.as_deref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        for (r, version) in &writes {
+            put_if_version_on(&tx, r, *version)?;
+        }
+        set_meta_on(&tx, key, None)?;
+        tx.commit().map_err(store_err)
+    }
+
     fn trust_state(&self) -> Result<Option<TrustState>> {
         let bytes: Option<Vec<u8>> = self
             .conn
@@ -233,6 +266,39 @@ fn delete_on(conn: &Connection, kind: RecordKind, id: Id) -> Result<()> {
 }
 
 /// `put_if_version` on a connection or an open transaction.
+fn meta_on(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get(0)
+    })
+    .optional()
+    .map_err(store_err)
+}
+
+/// The `meta` keys that start with `prefix`, sorted.
+fn meta_keys_on(conn: &Connection, prefix: &str) -> Result<Vec<String>> {
+    let mut stmt = conn
+        .prepare("SELECT key FROM meta ORDER BY key")
+        .map_err(store_err)?;
+    let keys = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(store_err)?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(store_err)?;
+    Ok(keys.into_iter().filter(|k| k.starts_with(prefix)).collect())
+}
+
+fn set_meta_on(conn: &Connection, key: &str, value: Option<&[u8]>) -> Result<()> {
+    match value {
+        Some(v) => conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![key, v],
+        ),
+        None => conn.execute("DELETE FROM meta WHERE key = ?1", params![key]),
+    }
+    .map_err(store_err)?;
+    Ok(())
+}
+
 fn put_if_version_on(conn: &Connection, r: &Record, expected: Option<u64>) -> Result<()> {
     let version = i64::try_from(r.version).map_err(|_| Error::InvalidFormat("record version"))?;
     let changed = match expected {

@@ -195,6 +195,13 @@ impl ContactEntry {
     }
 }
 
+/// What `plan_pin` decided: the entry, and the book to write (the current
+/// one, the next entries) when it changes.
+pub(super) type PinPlan = (
+    ContactEntry,
+    Option<(Option<Stored<ContactEntry>>, Vec<ContactEntry>)>,
+);
+
 /// The earliest removal among the sides of `incarnation`.
 fn removal(a: &ContactEntry, b: &ContactEntry, incarnation: u64) -> Option<ContactState> {
     [a, b]
@@ -394,6 +401,22 @@ impl<S: RecordStore> Repository<S> {
         transcript_hash: [u8; 32],
         now: i64,
     ) -> Result<ContactEntry> {
+        let (entry, write) = self.plan_pin(card, level, transcript_hash, now)?;
+        if let Some((current, entries)) = write {
+            self.write_list(current.as_ref(), entries)?;
+        }
+        Ok(entry)
+    }
+
+    /// `pin_contact` up to the write: the entry, and the book to write
+    /// (the current one, the next entries) when it changes.
+    pub(super) fn plan_pin(
+        &mut self,
+        card: &SignedContactCard,
+        level: ContactLevel,
+        transcript_hash: [u8; 32],
+        now: i64,
+    ) -> Result<PinPlan> {
         if card.card.account_id == self.account.params.account_id {
             return Err(refused("contact", "own account"));
         }
@@ -453,14 +476,13 @@ impl<S: RecordStore> Repository<S> {
             Some(i) => {
                 let merged = entries[i].merge_preferring(&fresh);
                 if merged == entries[i] {
-                    return Ok(merged);
+                    return Ok((merged, None));
                 }
                 entries[i] = merged.clone();
                 merged
             }
         };
-        self.write_list(current.as_ref(), entries)?;
-        Ok(entry)
+        Ok((entry, Some((current, entries))))
     }
 
     /// `pin_contact` for the integration tests: the verification flows are
@@ -552,7 +574,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// The book, verified against the one last accepted, which it then
     /// becomes.
-    fn read_book(&mut self) -> Result<Option<Stored<ContactEntry>>> {
+    pub(super) fn read_book(&mut self) -> Result<Option<Stored<ContactEntry>>> {
         let book = self.read_list::<ContactEntry>()?;
         if let Some(b) = &book {
             self.chain.contact_book = Some(b.body.seen());
@@ -561,7 +583,7 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Apply `edit` to one entry and write the next book if it changed.
-    fn edit_contact(
+    pub(super) fn edit_contact(
         &mut self,
         account_id: Id,
         edit: impl FnOnce(&mut ContactEntry) -> Result<()>,
@@ -582,7 +604,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// This device's id in the device list (registering it first, as
     /// `devices` does), or else the trust state's.
-    fn this_device(&mut self) -> Result<Id> {
+    pub(super) fn this_device(&mut self) -> Result<Id> {
         if self.chain.device_id.is_none() {
             self.maintain_lists(None)?;
         }

@@ -168,6 +168,30 @@ pub struct Record {
     pub data: Vec<u8>,
 }
 
+/// Prefixes of the device-local metadata keys the repository may read and
+/// write through `RecordStore::local_meta` and its siblings: never synced,
+/// never a key the store uses itself (chain, trust, sync state).
+pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite."];
+
+/// `key` under one of `LOCAL_META_PREFIXES`, else `Validation`.
+pub fn check_local_meta_key(key: &str) -> Result<()> {
+    if LOCAL_META_PREFIXES
+        .iter()
+        .any(|p| key.len() > p.len() && key.starts_with(p))
+    {
+        Ok(())
+    } else {
+        Err(Error::Validation(crate::ValidationError {
+            field: "meta".into(),
+            reason: "not a local meta key",
+        }))
+    }
+}
+
+fn local_meta_unsupported() -> Error {
+    Error::Store("local meta unsupported".into())
+}
+
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
 /// record with the same key; `delete` of a missing record is not an error.
 pub trait RecordStore {
@@ -292,6 +316,43 @@ pub trait RecordStore {
             self.delete(kind, id)?;
         }
         Ok(())
+    }
+
+    /// Device-local metadata under `key` (see `LOCAL_META_PREFIXES`; any
+    /// other key is `Validation`). A store that keeps none refuses.
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        let _ = key;
+        Err(local_meta_unsupported())
+    }
+
+    /// The local metadata keys that start with `prefix`, sorted. A store
+    /// that keeps none refuses.
+    fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        let _ = prefix;
+        Err(local_meta_unsupported())
+    }
+
+    /// Set (`Some`) or remove (`None`) the local metadata under `key`. A
+    /// store that keeps none refuses.
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        let _ = (key, value);
+        Err(local_meta_unsupported())
+    }
+
+    /// `put_all_if_version`, and remove the local metadata under `key`,
+    /// which must hold exactly `expected`, all or nothing: a version
+    /// mismatch, or `key` missing or holding anything else, writes and
+    /// removes nothing (`Error::Conflict`). What a one-time token needs:
+    /// two callers racing on one key never both succeed. A store that
+    /// keeps no local metadata refuses.
+    fn put_all_if_version_taking_meta(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        key: &str,
+        expected: &[u8],
+    ) -> Result<()> {
+        let _ = (writes, key, expected);
+        Err(local_meta_unsupported())
     }
 
     /// The pinned chain state this store keeps for the device, read by the

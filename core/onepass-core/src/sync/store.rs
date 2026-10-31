@@ -39,7 +39,10 @@ use crate::format::STORE_USER_VERSION;
 use crate::lineage::identity_id;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
+use crate::store::{
+    Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id,
+    check_local_meta_key,
+};
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
@@ -2999,6 +3002,65 @@ impl RecordStore for SyncStore {
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
         self.read(|c| effective_get(c, kind, id))
+    }
+
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        check_local_meta_key(key)?;
+        self.read(|c| meta_in(c, key))
+    }
+
+    fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        self.read(|c| {
+            let mut stmt = c
+                .prepare("SELECT key FROM meta ORDER BY key")
+                .map_err(store_err)?;
+            let keys = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(store_err)?
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .map_err(store_err)?;
+            Ok(keys.into_iter().filter(|k| k.starts_with(prefix)).collect())
+        })
+    }
+
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        check_local_meta_key(key)?;
+        let tx = self.write_tx()?;
+        match value {
+            Some(v) => set_meta_in(&tx, key, v)?,
+            None => {
+                tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+                    .map_err(store_err)?;
+            }
+        }
+        tx.commit()
+    }
+
+    /// The writes (as pending rows) and the removal in one transaction (or
+    /// one savepoint of the open batch).
+    fn put_all_if_version_taking_meta(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        key: &str,
+        expected: &[u8],
+    ) -> Result<()> {
+        check_local_meta_key(key)?;
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        if meta_in(&tx, key)?.as_deref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        for (r, version) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *version {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        tx.execute("DELETE FROM meta WHERE key = ?1", params![key])
+            .map_err(store_err)?;
+        tx.commit()
     }
 
     fn list(&self, kind: RecordKind) -> Result<Vec<Record>> {

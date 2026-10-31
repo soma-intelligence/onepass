@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{Record, RecordKind, RecordStore};
+use super::{Record, RecordKind, RecordStore, check_local_meta_key};
 use crate::chain::ChainState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -11,6 +11,7 @@ use crate::{Error, Id, Result};
 pub struct MemoryStore {
     records: BTreeMap<(RecordKind, Id), Record>,
     trust: Option<TrustState>,
+    meta: BTreeMap<String, Vec<u8>>,
 }
 
 impl MemoryStore {
@@ -49,6 +50,53 @@ impl RecordStore for MemoryStore {
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         self.records.remove(&(kind, id));
+        Ok(())
+    }
+
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        check_local_meta_key(key)?;
+        Ok(self.meta.get(key).cloned())
+    }
+
+    fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        Ok(self
+            .meta
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect())
+    }
+
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        check_local_meta_key(key)?;
+        match value {
+            Some(v) => self.meta.insert(key.to_owned(), v.to_vec()),
+            None => self.meta.remove(key),
+        };
+        Ok(())
+    }
+
+    /// All or nothing: a version mismatch or another meta value leaves
+    /// both as they were.
+    fn put_all_if_version_taking_meta(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        key: &str,
+        expected: &[u8],
+    ) -> Result<()> {
+        check_local_meta_key(key)?;
+        if self.meta.get(key).map(Vec::as_slice) != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        let mut records = self.records.clone();
+        for (r, version) in writes {
+            if records.get(&(r.kind, r.id)).map(|c| c.version) != version {
+                return Err(Error::Conflict);
+            }
+            records.insert((r.kind, r.id), r);
+        }
+        self.records = records;
+        self.meta.remove(key);
         Ok(())
     }
 
