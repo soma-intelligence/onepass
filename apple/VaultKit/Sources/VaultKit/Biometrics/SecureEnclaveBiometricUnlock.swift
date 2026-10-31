@@ -104,6 +104,7 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     public func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
         let context = ContextBox(LAContext())
         context.value.localizedReason = prompt
+        context.value.localizedFallbackTitle = String(localized: "Utiliser le mot de passe maître", bundle: VaultKitStrings.bundle)
         // SecKey decryption blocks while the system biometric sheet is up: run it off the
         // caller's thread, and dismiss the sheet if the calling task is cancelled.
         return try await withTaskCancellationHandler {
@@ -152,29 +153,67 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         }
     }
 
-    /// Maps Security / LocalAuthentication errors. Anything not listed here is reported as
-    /// `.failed`, which `BiometricUnlock` treats as an invalidated key (password fallback).
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "biometrics")
+
+    /// `TKErrorDomain` (CryptoTokenKit), where Secure Enclave key operations report most refusals.
+    static let tokenErrorDomain = "CryptoTokenKit"
+
+    /// Logs the error (domain and code only, never data) and classifies it.
     private static func map(_ error: CFError?) -> EnclaveError {
         guard let error else { return .failed(code: -1) }
         let ns = error as Error as NSError
-        if ns.domain == LAError.errorDomain {
+        let mapped = classify(ns)
+        let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+        log.notice(
+            "enclave error \(ns.domain, privacy: .public) \(ns.code, privacy: .public) underlying \(underlying?.domain ?? "-", privacy: .public) \(underlying?.code ?? 0, privacy: .public) -> \(String(describing: mapped), privacy: .public)")
+        return mapped
+    }
+
+    /// Security, CryptoTokenKit and LocalAuthentication errors, following `NSUnderlyingErrorKey`
+    /// down to the first one that says something. Only a key that is gone (`errSecItemNotFound`,
+    /// token object not found, invalidated device key) or a biometry no longer enrolled counts as an
+    /// invalidation; a cancel, a fallback, a lockout or a failed match never does. Anything else is
+    /// `.failed`, which `BiometricUnlock` answers with the password while keeping the enrollment.
+    static func classify(_ error: NSError) -> EnclaveError {
+        var current: NSError? = error
+        var depth = 0
+        while let ns = current, depth < 4 {
+            if let known = classifyOne(ns) { return known }
+            current = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        return .failed(code: Int32(truncatingIfNeeded: error.code))
+    }
+
+    private static func classifyOne(_ ns: NSError) -> EnclaveError? {
+        switch ns.domain {
+        case LAError.errorDomain:
             switch LAError.Code(rawValue: ns.code) {
-            case .userCancel, .appCancel, .systemCancel: return .cancelled
+            case .userCancel, .appCancel, .systemCancel, .notInteractive: return .cancelled
             case .userFallback: return .userFallback
+            case .authenticationFailed: return .authenticationFailed
             case .biometryNotEnrolled: return .biometryNotEnrolled
             case .biometryLockout: return .biometryLockout
             case .biometryNotAvailable: return .unavailable
-            default: break
+            default: return nil
             }
-        }
-        if ns.domain == NSOSStatusErrorDomain {
+        case tokenErrorDomain:
+            switch ns.code {
+            case -4, -9: return .cancelled  // canceled by user, authentication needed
+            case -5: return .authenticationFailed
+            case -6, -10: return .keyInvalidated  // object not found, invalidated device key
+            default: return nil
+            }
+        case NSOSStatusErrorDomain:
             switch OSStatus(ns.code) {
             case errSecUserCanceled: return .cancelled
             case errSecItemNotFound: return .keyInvalidated
-            default: break
+            case errSecAuthFailed: return .authenticationFailed
+            default: return nil
             }
+        default:
+            return nil
         }
-        return .failed(code: Int32(truncatingIfNeeded: ns.code))
     }
 }
 

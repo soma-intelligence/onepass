@@ -620,11 +620,12 @@ public final class VaultSession {
     }
 
     /// Spec 4 point 3: restart the 14 day clock, and enroll again when biometrics are wanted but the
-    /// enrollment was dropped (reboot, expiry, biometry change).
+    /// enrollment was dropped (reboot, expiry, biometry change) or kept after a failure that may hide
+    /// a stale key (`needsRefresh`). Silent: creating the key and wrapping the AUK ask nothing.
     private func afterPasswordUnlock(accountID: String, auk: SecretBytes) {
         try? biometrics.notePasswordUnlock(accountID: accountID)
         if settings.biometricsWanted, settings.deviceMode.biometricsAllowed, biometrics.isAvailable,
-            !biometrics.isEnrolled(accountID: accountID)
+            !biometrics.isEnrolled(accountID: accountID) || biometrics.needsRefresh(accountID: accountID)
         {
             let allowWatch = settings.allowWatchUnlock
             try? auk.withData { try biometrics.enroll(auk: $0, accountID: accountID, allowWatch: allowWatch) }

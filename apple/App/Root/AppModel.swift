@@ -499,8 +499,14 @@ final class AppModel {
 
     /// Turns biometric unlock on: checks the master password and wraps the key with the Secure
     /// Enclave (`enrollBiometrics`), then asks for Touch ID, Face ID or the Watch once, so the
-    /// user knows it works. A refused or cancelled check turns it back off.
+    /// user knows it works. A refused or cancelled check turns it back off. Already enrolled (the
+    /// session enrolled again after the password unlock): nothing more is asked.
     func enableBiometrics(password: SecretBytes) async throws {
+        if session.canUseBiometrics {
+            settings.biometricsWanted = true
+            settingsChanged()
+            return
+        }
         try await session.enrollBiometrics(password: password)
         guard await confirmBiometry() else {
             session.disableBiometrics()
@@ -547,6 +553,12 @@ final class AppModel {
     func answerBiometricOffer(accept: Bool) {
         guard let offer = biometricOffer else { return }
         guard accept else {
+            biometricOffer = nil
+            markBiometricOfferAnswered()
+            return
+        }
+        // Enrolled meanwhile (the session's own enrollment after the unlock): nothing to ask.
+        if session.canUseBiometrics {
             biometricOffer = nil
             markBiometricOfferAnswered()
             return

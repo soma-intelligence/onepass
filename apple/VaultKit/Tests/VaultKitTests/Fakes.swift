@@ -9,6 +9,7 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
         var keys: Set<String> = []
         var invalidated = false
         var nextError: EnclaveError?
+        var created = 0
     }
     private let state = Mutex(State())
     let available: Bool
@@ -24,12 +25,15 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
 
     func invalidate() { state.withLock { $0.invalidated = true } }
     func failNextDecrypt(with error: EnclaveError) { state.withLock { $0.nextError = error } }
+    /// Keys created so far (a new enrollment creates one).
+    var createdKeys: Int { state.withLock { $0.created } }
     func hasKey(tag: String) -> Bool { state.withLock { $0.keys.contains(tag) } }
 
     func createKey(tag: String, allowWatch: Bool) throws {
         state.withLock {
             $0.keys.insert(tag)
             $0.invalidated = false
+            $0.created += 1
         }
     }
 
@@ -55,17 +59,25 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
 }
 
 final class FakeClock: BootClock {
-    private let state: Mutex<(boot: String, now: Date)>
+    private let state: Mutex<(boot: String, bootTime: Date?, now: Date)>
 
-    init(boot: String = "boot-1", now: Date = Date(timeIntervalSince1970: 2_000_000)) {
-        state = Mutex((boot, now))
+    init(boot: String = "boot-1", now: Date = Date(timeIntervalSince1970: 2_000_000), bootTime: Date? = nil) {
+        state = Mutex((boot, bootTime ?? now.addingTimeInterval(-3600), now))
     }
 
     var bootSessionID: String { state.withLock { $0.boot } }
+    var bootTime: Date? { state.withLock { $0.bootTime } }
     var now: Date { state.withLock { $0.now } }
     func advance(_ seconds: TimeInterval) { state.withLock { $0.now = $0.now.addingTimeInterval(seconds) } }
-    func reboot() { state.withLock { $0.boot = "boot-" + UUID().uuidString } }
+    /// A new boot session id and a boot time a minute ago.
+    func reboot() {
+        state.withLock {
+            $0.boot = "boot-" + UUID().uuidString
+            $0.bootTime = $0.now.addingTimeInterval(-60)
+        }
+    }
     func setBoot(_ id: String) { state.withLock { $0.boot = id } }
+    func setBootTime(_ time: Date?) { state.withLock { $0.bootTime = time } }
 }
 
 /// Keychain whose reads can fail (locked keychain).

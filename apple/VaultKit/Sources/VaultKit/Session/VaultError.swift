@@ -61,7 +61,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case let error as EnclaveError:
             switch error {
             case .unavailable, .biometryNotEnrolled: self = .biometricsUnavailable
-            case .userFallback: self = .passwordRequired
+            case .userFallback, .authenticationFailed: self = .passwordRequired
             case .cancelled: self = .other(ErrorText.cancelled(VaultKitStrings.bundle))
             case .biometryLockout: self = .other(PasswordReason.lockedOut.message)
             case .keyInvalidated: self = .other(PasswordReason.invalidated.message)

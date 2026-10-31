@@ -70,7 +70,10 @@ struct RootView: View {
             .alert(
                 Text("Utiliser \(OnboardingModel.biometryName) pour déverrouiller ?"),
                 isPresented: Binding(
-                    get: { model.biometricOffer != nil && model.session.state == .unlocked },
+                    get: {
+                        model.biometricOffer != nil && model.session.state == .unlocked
+                            && !model.session.canUseBiometrics
+                    },
                     set: { _ in }),
                 presenting: model.biometricOffer
             ) { _ in
