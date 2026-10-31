@@ -541,9 +541,11 @@ pub fn follow_rotation<S: RecordStore>(
     let mut repo = repo;
     // Spec 10.4: replay this device's own writes under the new keys (best
     // effort: nothing fails after the commit; what waits is tried again at
-    // the next unlock or rebase). Review I2: a child of the new head
-    // already known prompts at once (the replay then waits for it); the
-    // stored state and `writable` look again on the first write anyway.
+    // the next unlock or rebase). The replay's `writable` resolves the
+    // lineage first (its mark is unset): a child of the new head already
+    // known makes it wait. Review I2 (Task 9): that child then prompts at
+    // once; the stored state and `writable` look again on the first write
+    // anyway.
     let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
     Ok((repo, auk, secret_key))

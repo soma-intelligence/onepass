@@ -2193,6 +2193,7 @@ fn intent(n: u32, at: i64) -> OwnWrite {
             hash: [0; 32],
         },
         at,
+        wrote: None,
     }
 }
 
@@ -2387,4 +2388,163 @@ fn travel_refused_while_candidate() {
     };
     assert_eq!(c.repo().exit_travel(&upstream, &parked).err(), ro);
     assert_eq!(c.repo().exit_travel_unpinned(&upstream).err(), ro);
+}
+
+// ------------------------------------------------- fix round 1 (review)
+
+/// A commits a rotation (not pushed). C writes X ("mine") and pushes it,
+/// then the revoked iPad, still on the old identity, overwrites X
+/// ("forged", later) or deletes it (`delete`), and pushes. C pulls that
+/// without loading, A pushes every phase, C pulls and follows.
+fn overtaken_by_revoked(delete: bool) -> (Server, Device, Device, Id) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut ipad = old_device(&server, &f);
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    let v = c.vault();
+    let x = login(v.id, "mine", T0 + 50);
+    c.repo().save_item(&v, x.clone()).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    c.lock();
+    pull(&server, &mut ipad);
+    let iv = ipad.vault();
+    if delete {
+        ipad.repo().delete_item(&iv, x.id).unwrap();
+    } else {
+        ipad.repo()
+            .save_item(&iv, edited(&x, "forged", T0 + 70))
+            .unwrap();
+    }
+    sync(&mut server, &mut ipad).unwrap();
+    // C reads the vault as the iPad left it (a clean load).
+    c.unlock(&f.sk);
+    pull(&server, &mut c);
+    let _ = c.items();
+    c.lock();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    (server, a, c, x.id)
+}
+
+/// Review C1 (R11): the replay brings back this device's own record of an
+/// item, never what the revoked device wrote over it under the old
+/// identity.
+#[test]
+fn replay_never_imports_an_overwrite_by_another_device() {
+    let (_server, mut a, mut c, _x) = overtaken_by_revoked(false);
+    let alert = c.store().trust_state().unwrap().unwrap().own_writes.alert;
+    for dev in [&mut c, &mut a] {
+        let u = users(&dev.items());
+        assert!(!u.contains(&"forged".to_string()), "{u:?}");
+        // Its own record is gone from the device: not replayed, flagged.
+        assert!(u.contains(&"mine".to_string()) || alert, "{u:?}");
+    }
+}
+
+/// Review C1, deletion variant: a deletion by the revoked device never
+/// removes this device's write.
+#[test]
+fn replay_never_imports_a_deletion_by_another_device() {
+    let (_server, mut a, mut c, _x) = overtaken_by_revoked(true);
+    let alert = c.store().trust_state().unwrap().unwrap().own_writes.alert;
+    for dev in [&mut c, &mut a] {
+        let u = users(&dev.items());
+        assert!(u.contains(&"mine".to_string()) || alert, "{u:?}");
+    }
+}
+
+/// A commits a rotation (not pushed); `during` runs on C, unlocked on the
+/// old identity, before A pushes every phase; C pulls and follows.
+fn follow_after(during: impl FnOnce(&mut Device)) -> (Server, Device, Device) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    during(&mut c);
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    (server, a, c)
+}
+
+/// Review I1: a vault created under the old identity after `from_heads`
+/// does not break `vaults()` under the new one; it stays on the device,
+/// never sent under the old keys (its re-creation is Task 11).
+#[test]
+fn vault_created_under_old_identity_stays_local() {
+    let mut created = None;
+    let (_server, _a, mut c) = follow_after(|c| {
+        created = Some(c.repo().create_vault(meta("Travail")).unwrap().id);
+    });
+    let id = created.unwrap();
+    let names: Vec<String> = c
+        .repo()
+        .vaults()
+        .unwrap()
+        .into_iter()
+        .map(|v| v.meta.name)
+        .collect();
+    assert!(!names.contains(&"Travail".to_string()), "{names:?}");
+    assert_eq!(names.len(), 1);
+    assert!(c.store().get(RecordKind::VaultKey, id).unwrap().is_some());
+    assert!(outbox(&c).iter().all(|(ch, _)| {
+        ch.id != id
+            && !(ch.kind == RecordKind::Item
+                && ch
+                    .data
+                    .as_ref()
+                    .is_some_and(|d| split_item_record(d).unwrap().0 == id))
+    }));
+}
+
+/// Review I2: a rename made under the old identity is replayed under the
+/// new keys, not dropped.
+#[test]
+fn vault_rename_under_old_identity_is_replayed() {
+    let (mut server, mut a, mut c) = follow_after(|c| {
+        let v = c.vault();
+        c.repo().update_vault_meta(&v, meta("Perso")).unwrap();
+    });
+    assert_eq!(c.vault().meta.name, "Perso");
+    let t = c.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty());
+    assert!(!t.own_writes.alert);
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    assert_eq!(a.vault().meta.name, "Perso");
+}
+
+/// Review I3: in generation 0, with no rotation anywhere, a vault key the
+/// server replaced with garbage is an integrity error as before, never a
+/// silent read of the device's own copy.
+#[test]
+fn generation_zero_broken_vault_key_is_an_alert() {
+    let mut server = Server::default();
+    let (mut a, _f) = fixture_on(&mut server);
+    let v = a.vault().id;
+    let live = server.get(RecordKind::VaultKey, v).unwrap();
+    let mut data = live.data.clone();
+    for b in data.iter_mut().take(64) {
+        *b ^= 0x5a;
+    }
+    server.replay(Record {
+        data,
+        version: live.version + 1,
+        ..live
+    });
+    pull(&server, &mut a);
+    assert!(!a.store().retained_rows(v).unwrap().is_empty());
+    assert!(matches!(a.repo().vaults(), Err(Error::Integrity(_))));
 }
