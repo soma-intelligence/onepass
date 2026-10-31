@@ -2643,14 +2643,25 @@ fn save_health(
 /// records by vault prefix (kind `?2`).
 const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 1, 16) = ?3)";
 
-/// Whether `vault` has retained rows (see the module doc).
+/// Whether the kept rows of `vault` must outlive a clean load: it has
+/// retained rows (see the module doc) and this device knows a rotation
+/// they serve, one it waits on (`Candidate`) or rejected (`ignored`), or
+/// own writes of a left identity to replay. Otherwise (generation 0, no
+/// rotation anywhere) kept rows go as before (review I3).
 fn has_retained(conn: &Connection, vault: Id) -> Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM retained WHERE id = ?1)",
-        params![&vault.0[..]],
-        |r| r.get(0),
-    )
-    .map_err(store_err)
+    let any: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM retained WHERE id = ?1)",
+            params![&vault.0[..]],
+            |r| r.get(0),
+        )
+        .map_err(store_err)?;
+    Ok(any
+        && trust_in(conn)?.is_some_and(|t| {
+            matches!(t.state, DeviceLineageState::Candidate { .. })
+                || !t.ignored.is_empty()
+                || !t.own_writes.replay.is_empty()
+        }))
 }
 
 fn delete_kept(tx: &Connection, vault: Id) -> Result<()> {

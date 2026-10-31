@@ -11,11 +11,15 @@
 //!   opened with the retired keys: the vault key envelope it held
 //!   (`RecordStore::retained_rows` once the rotation re-sealed it, else the
 //!   visible one) under a KEM secret of the session keyset's
-//!   `retired_kem`, the newest manifest it holds (pending, visible or kept)
-//!   that verifies under a retired signing key (`TrustState::retired`),
-//!   and the item records that manifest lists. The retired KEM secrets are
-//!   part of the current keyset, sealed under the current Account Unlock
-//!   Key: nothing else is kept for the replay;
+//!   `retired_kem`. Each intent names what this device wrote
+//!   (`OwnWrite::wrote`: the hash of its own item record, or of its sealed
+//!   meta for a meta intent, `None` for a deletion), and only that very
+//!   record is replayed, found among the rows the device holds (visible,
+//!   pending, kept, retained). What another device wrote over it under the
+//!   identity left (the revoked device can) is never taken (R11); a record
+//!   the device no longer holds is `lost` and raises the log's alert. The
+//!   retired KEM secrets are part of the current keyset, sealed under the
+//!   current Account Unlock Key: nothing else is kept for the replay;
 //! - an intent is reflected when the rotation was made from a manifest of
 //!   the vault newer than the one the write was based on and the device
 //!   holds no pending manifest of that vault (spec 10.4: "based on a
@@ -39,18 +43,20 @@
 //! its intents stay, and the next replay (unlock, rebase, follow) tries
 //! again. Nothing of a vault is dropped before its replay commits.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
+use aws_lc_rs::digest::{SHA256, digest};
 use time::OffsetDateTime;
 
 use super::{Repository, Use, seen, split_item_record, trust_of};
+use crate::crypto::unwrap_key;
 use crate::manifest::{
-    Manifest, ManifestEntry, SeenManifest, SignedManifest, record_hash, signed_by, verify_manifest,
+    Manifest, SeenManifest, SignedManifest, record_hash, signed_by, verify_manifest,
 };
 use crate::model::Item;
 use crate::store::{Record, RecordKind, RecordStore};
-use crate::trust::{DeviceLineageState, OwnWrite, TrustState};
-use crate::vault::{ItemRecord, Vault};
+use crate::trust::{DeviceLineageState, OwnWrite};
+use crate::vault::{ItemRecord, Vault, VaultMeta, kem_context};
 use crate::{Error, Id, IntegrityError, Result};
 
 /// What a replay did, intent by intent.
@@ -72,37 +78,51 @@ pub struct ReplayReport {
     pub waiting: usize,
 }
 
-/// The device's own copy of a vault under the identity it left.
+/// The device's own copy of a vault under the identity it left: the old
+/// vault (key and meta opened with a retired KEM secret), every item record
+/// and meta row of the vault it still holds (visible, pending, kept,
+/// retained), and whether it holds a pending manifest of that identity.
 struct OldView {
-    /// The items its newest manifest lists, by item id. Items whose record
-    /// the device no longer holds are in `missing`.
-    items: BTreeMap<Id, Item>,
-    missing: Vec<Id>,
-    /// That manifest is a pending write of this device.
+    key: Record,
+    kem: usize,
+    vault: Vault,
+    items: Vec<ItemRecord>,
+    metas: Vec<Record>,
     pending: bool,
 }
 
-/// Rows of `vault` among `rows` (manifests by id, items by prefix).
+/// The item record of `vault` in `r`, if it is one.
 fn item_of(r: &Record, vault: Id) -> Option<ItemRecord> {
     let (prefix, body) = split_item_record(&r.data).ok()?;
     (prefix == vault).then(|| ItemRecord::decode(body).ok())?
 }
 
-fn exact(e: &ManifestEntry, i: &ItemRecord) -> bool {
-    i.item_id == e.item_id && i.version == e.version && record_hash(i) == e.record_hash
+/// What a meta intent records of the sealed meta it wrote (`OwnWrite::wrote`).
+pub(crate) fn meta_hash(sealed: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest(&SHA256, sealed).as_ref());
+    out
 }
 
 impl<S: RecordStore> Repository<S> {
     /// Record the intent of an item write before it is made (spec 10.4):
-    /// `item` of `vault`, based on `based_on`. A store without a trust
+    /// `item` of `vault`, based on `based_on`, writing the record whose
+    /// hash is `wrote` (`None`: a deletion). A store without a trust
     /// state records nothing. The trust state is written conditionally on
     /// the one read (another writer may move it), a few times at most.
-    pub(crate) fn log_own_write(&mut self, vault: Id, item: Id, based_on: &Manifest) -> Result<()> {
+    pub(crate) fn log_own_write(
+        &mut self,
+        vault: Id,
+        item: Id,
+        based_on: &Manifest,
+        wrote: Option<[u8; 32]>,
+    ) -> Result<()> {
         let w = OwnWrite {
             vault,
             item,
             based_on: seen(based_on),
             at: OffsetDateTime::now_utc().unix_timestamp(),
+            wrote,
         };
         for _ in 0..3 {
             let Some(trust) = trust_of(&self.store)? else {
@@ -122,21 +142,45 @@ impl<S: RecordStore> Repository<S> {
         Err(Error::Conflict)
     }
 
+    /// Whether this device knows a valid rotation of its head that it has
+    /// not followed: it waits on a prompt (`Candidate`, or found by this
+    /// session, or found now in what a fetch brought), or the user rejected
+    /// one (`ignored`). Only then is a vault
+    /// key the server replaced read from the device's own copy; otherwise a
+    /// vault key that does not open stays an integrity error (review I3).
+    pub(crate) fn rotation_known(&self) -> Result<bool> {
+        let Some(t) = trust_of(&self.store)? else {
+            return Ok(false);
+        };
+        if self.pending.is_some()
+            || matches!(t.state, DeviceLineageState::Candidate { .. })
+            || !t.ignored.is_empty()
+        {
+            return Ok(true);
+        }
+        // A fetch brought one that no write looked at yet.
+        Ok(super::follow::pending_rotation(&self.store)?.is_some())
+    }
+
     /// Whether unlisted item records of `vault` that do not open under its
     /// key are left alone instead of being an integrity alert (R21: records
     /// of foreign key generations). From generation 1 on, or for a vault a
-    /// rotation re-sealed that this device still reads from its own copy.
+    /// known rotation re-sealed that this device still reads from its own
+    /// copy.
     pub(crate) fn tolerates_foreign(&self, vault: Id) -> Result<bool> {
         Ok(self.records_id != self.account.params.account_id
-            || !self.store.retained_rows(vault)?.is_empty())
+            || (!self.store.retained_rows(vault)?.is_empty() && self.rotation_known()?))
     }
 
     /// The vault as this device sealed it before a rotation re-sealed it
     /// (`retained_rows`), opened under the session's keys and authenticated
     /// by a manifest this device holds (pending, visible or kept) that
     /// verifies under the session's signing key. `None` without such rows
-    /// or such a manifest.
+    /// or such a manifest, or without a known rotation (`rotation_known`).
     pub(crate) fn retained_vault(&self, vault: Id) -> Result<Option<Vault>> {
+        if !self.rotation_known()? {
+            return Ok(None);
+        }
         let rows = self.store.retained_rows(vault)?;
         let row = |kind| rows.iter().find(|r| r.kind == kind);
         let (Some(key), Some(meta)) = (row(RecordKind::VaultKey), row(RecordKind::VaultMeta))
@@ -154,11 +198,12 @@ impl<S: RecordStore> Repository<S> {
         Ok(verifies.then_some(v))
     }
 
-    /// The session reads `vault` from its own copy: retained rows exist and
-    /// the visible vault key does not open under the session's keys (a
+    /// The session reads `vault` from its own copy: a rotation is known
+    /// (`rotation_known`), retained rows exist and the visible vault key
+    /// does not open under the session's keys (a
     /// rotation this device has not followed re-sealed it).
     pub(crate) fn reads_own_copy(&self, vault: Id) -> Result<bool> {
-        if self.store.retained_rows(vault)?.is_empty() {
+        if self.store.retained_rows(vault)?.is_empty() || !self.rotation_known()? {
             return Ok(false);
         }
         let key = self.store.get(RecordKind::VaultKey, vault)?;
@@ -185,52 +230,29 @@ impl<S: RecordStore> Repository<S> {
         Ok(out)
     }
 
-    /// See `OldView`. `None` when no retired key opens the vault or no
-    /// manifest of the vault verifies under a retired signing key.
-    fn old_view(&self, vault: Id, trust: &TrustState) -> Result<Option<OldView>> {
-        let mut keys = self.store.retained_rows(vault)?;
+    /// See `OldView`. `None` when no retired KEM secret opens the vault.
+    fn old_view(&self, vault: Id) -> Result<Option<OldView>> {
+        let mut rows = self.store.retained_rows(vault)?;
         for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
-            keys.extend(self.store.get(kind, vault)?);
+            rows.extend(self.store.get(kind, vault)?);
         }
-        let of = |kind| keys.iter().filter(move |r| r.kind == kind);
-        let mut old = None;
+        let of = |kind| rows.iter().filter(move |r| r.kind == kind);
+        let mut found = None;
         'open: for key in of(RecordKind::VaultKey) {
             for meta in of(RecordKind::VaultMeta) {
-                for kem in &self.account.keyset().retired_kem {
-                    if let Ok(v) = Vault::open_with_kem(kem, vault, &key.data, &meta.data) {
-                        old = Some(v);
+                for (kem, secret) in self.account.keyset().retired_kem.iter().enumerate() {
+                    if let Ok(v) = Vault::open_with_kem(secret, vault, &key.data, &meta.data) {
+                        found = Some((key.clone(), kem, v));
                         break 'open;
                     }
                 }
             }
         }
-        let Some(old) = old else {
+        let Some((key, kem, old)) = found else {
             return Ok(None);
         };
-        let pending_manifest = self.store.is_pending_write(RecordKind::Manifest, vault)?;
-        let visible = self.store.get(RecordKind::Manifest, vault)?;
-        let mut best: Option<(Manifest, bool)> = None;
-        for r in self.manifest_rows(vault)? {
-            let Ok(sm) = SignedManifest::decode(&r.data) else {
-                continue;
-            };
-            let verified = trust
-                .retired
-                .iter()
-                .rev()
-                .find_map(|ri| verify_manifest(&old, &ri.sign_pub, &sm, None).ok());
-            let Some(m) = verified else {
-                continue;
-            };
-            let pending = pending_manifest && visible.as_ref() == Some(&r);
-            if best.as_ref().is_none_or(|(b, _)| m.seq > b.seq) {
-                best = Some((m, pending));
-            }
-        }
-        let Some((manifest, pending)) = best else {
-            return Ok(None);
-        };
-        let mut held: Vec<ItemRecord> = self
+        let metas = of(RecordKind::VaultMeta).cloned().collect();
+        let mut items: Vec<ItemRecord> = self
             .store
             .list(RecordKind::Item)?
             .iter()
@@ -240,28 +262,55 @@ impl<S: RecordStore> Repository<S> {
             if r.kind == RecordKind::Item
                 && let Some(i) = item_of(&r, vault)
             {
-                held.push(i);
+                items.push(i);
             }
         }
-        let mut items = BTreeMap::new();
-        let mut missing = Vec::new();
-        for e in &manifest.entries {
-            match held
-                .iter()
-                .find(|i| exact(e, i))
-                .and_then(|i| old.open_item(i).ok())
-            {
-                Some(item) => {
-                    items.insert(e.item_id, item);
-                }
-                None => missing.push(e.item_id),
-            }
-        }
+        let pending = self.left_signed_vaults()?.contains(&vault);
         Ok(Some(OldView {
+            key,
+            kem,
+            vault: old,
             items,
-            missing,
+            metas,
             pending,
         }))
+    }
+
+    /// The item this device itself wrote for `w` (the record whose hash it
+    /// logged), opened under the old vault key: `Ok(None)` for a deletion,
+    /// `Err(())` when the device no longer holds that record.
+    fn own_item(old: &OldView, w: &OwnWrite) -> std::result::Result<Option<Item>, ()> {
+        let Some(h) = w.wrote else {
+            return Ok(None);
+        };
+        old.items
+            .iter()
+            .find(|i| i.item_id == w.item && record_hash(i) == h)
+            .and_then(|i| old.vault.open_item(i).ok())
+            .map(Some)
+            .ok_or(())
+    }
+
+    /// The meta this device itself wrote for the meta intent `w`, opened
+    /// under the old vault key, or `None` when it no longer holds it.
+    fn own_meta(&self, old: &OldView, w: &OwnWrite) -> Option<VaultMeta> {
+        let h = w.wrote?;
+        let row = old.metas.iter().find(|m| meta_hash(&m.data) == h)?;
+        let kem = self.account.keyset().retired_kem.get(old.kem)?;
+        Vault::open_with_kem(kem, w.vault, &old.key.data, &row.data)
+            .ok()
+            .map(|v| v.meta)
+    }
+
+    /// Whether the visible vault key of `vault` opens under the session's
+    /// KEM key.
+    fn key_opens(&self, vault: Id) -> Result<bool> {
+        Ok(self
+            .store
+            .get(RecordKind::VaultKey, vault)?
+            .is_some_and(|k| {
+                unwrap_key(&self.account.keyset().kem, &k.data, &kem_context(vault)).is_ok()
+            }))
     }
 
     /// The vault as the session's identity sealed it (visible key and meta
@@ -315,27 +364,30 @@ impl<S: RecordStore> Repository<S> {
                 .filter(|w| w.vault == vault)
                 .cloned()
                 .collect();
-            let Some(current) = self.current_vault(vault)? else {
+            // The new content is here once the visible vault key opens
+            // under the session's keys (its meta may still be shadowed by a
+            // pending meta of the identity left, which the replay settles).
+            if !self.key_opens(vault)? {
                 report.waiting += intents.len();
                 continue;
-            };
-            let Some(old) = self.old_view(vault, &trust)? else {
-                // The new content is here, the device's own copy is not
-                // (nothing retained it): nothing to replay from.
-                report.lost += intents.len();
-                self.store.settle_replayed(vault)?;
-                self.forget_replayed(vault, !intents.is_empty())?;
-                continue;
-            };
+            }
+            let old = self.old_view(vault)?;
             let last_seen = self.device.last_seen.get(&vault).cloned();
             self.store.batch_begin()?;
-            let done = self
-                .replay_vault(&current, &old, &intents, heads.get(&vault))
-                .and_then(|r| {
-                    self.forget_replayed(vault, r.lost > 0)?;
-                    self.store.batch_commit()?;
-                    Ok(r)
-                });
+            let done = match &old {
+                Some(old) => self.replay_vault(vault, old, &intents, heads.get(&vault)),
+                // The new content is here, the device's own copy is not
+                // (nothing retained it): nothing to replay from.
+                None => self.store.settle_replayed(vault).map(|()| ReplayReport {
+                    lost: intents.len(),
+                    ..ReplayReport::default()
+                }),
+            }
+            .and_then(|r| {
+                self.forget_replayed(vault, r.lost > 0)?;
+                self.store.batch_commit()?;
+                Ok(r)
+            });
             match done {
                 Ok(r) => {
                     report.replayed += r.replayed;
@@ -361,9 +413,9 @@ impl<S: RecordStore> Repository<S> {
     /// followed (the store never pushes them, `SyncStore::pending_changes`).
     /// Their pending rows go once their new content is here, replayed or
     /// not (a vault created or renamed there carries no item intent).
-    pub(crate) fn left_signed_vaults(&self) -> Result<std::collections::BTreeSet<Id>> {
+    pub(crate) fn left_signed_vaults(&self) -> Result<BTreeSet<Id>> {
         let signer = &self.account.params.signing_pub;
-        let mut out = std::collections::BTreeSet::new();
+        let mut out = BTreeSet::new();
         for key in self.store.list(RecordKind::VaultKey)? {
             if !self.store.is_pending_write(RecordKind::Manifest, key.id)? {
                 continue;
@@ -385,7 +437,7 @@ impl<S: RecordStore> Repository<S> {
     /// longer open under the session's keys) for every vault but `keep`
     /// (intents still to replay from them). Pending rows are left alone:
     /// they may be the session's own.
-    fn drop_left_copies(&mut self, keep: &std::collections::BTreeSet<Id>) -> Result<()> {
+    fn drop_left_copies(&mut self, keep: &BTreeSet<Id>) -> Result<()> {
         for key in self.store.list(RecordKind::VaultKey)? {
             if keep.contains(&key.id) {
                 continue;
@@ -404,41 +456,60 @@ impl<S: RecordStore> Repository<S> {
         Ok(())
     }
 
-    /// One vault's replay, inside the open batch.
+    /// One vault's replay, inside the open batch. The meta first (its
+    /// manifest carries it), then the items, each from the very record this
+    /// device wrote (R11: what another device wrote over it under the
+    /// identity left is never taken).
     fn replay_vault(
         &mut self,
-        vault: &Vault,
+        vault: Id,
         old: &OldView,
         intents: &[OwnWrite],
         head: Option<&SeenManifest>,
     ) -> Result<ReplayReport> {
         let mut r = ReplayReport::default();
-        self.store.settle_replayed(vault.id)?;
-        let loaded = self.served(vault, Use::Write)?;
-        let mut saves = Vec::new();
-        let mut deletes = Vec::new();
-        for w in intents {
-            if old.missing.contains(&w.item) {
+        self.store.settle_replayed(vault)?;
+        let reflected = |w: &OwnWrite| !old.pending && head.is_some_and(|h| w.based_on.seq < h.seq);
+        let mut current = self.current_vault(vault)?.ok_or(Error::NotFound)?;
+        for w in intents.iter().filter(|w| w.item == w.vault) {
+            let Some(meta) = self.own_meta(old, w) else {
                 r.lost += 1;
                 continue;
+            };
+            if meta == current.meta {
+                r.present += 1;
+            } else if reflected(w) {
+                r.superseded += 1;
+            } else {
+                current = self.update_vault_meta(&current, meta)?;
+                r.replayed += 1;
             }
-            let mine = old.items.get(&w.item);
+        }
+        let loaded = self.served(&current, Use::Write)?;
+        let mut saves = Vec::new();
+        let mut deletes = Vec::new();
+        for w in intents.iter().filter(|w| w.item != w.vault) {
+            let Ok(mine) = Self::own_item(old, w) else {
+                r.lost += 1;
+                continue;
+            };
             let theirs = match loaded.listed(w.item) {
-                Some((_, rec)) => Some(vault.open_item(rec)?),
+                Some((_, rec)) => Some(current.open_item(rec)?),
                 None => None,
             };
-            if mine == theirs.as_ref() {
+            if mine == theirs {
                 r.present += 1;
                 continue;
             }
-            let reflected = !old.pending && head.is_some_and(|h| w.based_on.seq < h.seq);
-            if reflected {
+            if reflected(w) {
                 r.superseded += 1;
                 continue;
             }
+            // The merge rule of the rebase, ties to this device (it has no
+            // record hash to compare with: its record is of other keys).
             match (mine, theirs) {
-                (Some(m), None) => saves.push(m.clone()),
-                (Some(m), Some(t)) if m.updated_at >= t.updated_at => saves.push(m.clone()),
+                (Some(m), None) => saves.push(m),
+                (Some(m), Some(t)) if m.updated_at >= t.updated_at => saves.push(m),
                 (None, Some(t)) if t.updated_at.unix_timestamp() <= w.at => deletes.push(w.item),
                 _ => {
                     r.superseded += 1;
@@ -448,10 +519,10 @@ impl<S: RecordStore> Repository<S> {
             r.replayed += 1;
         }
         for item in saves {
-            self.save_item(vault, item)?;
+            self.save_item(&current, item)?;
         }
         for id in deletes {
-            self.delete_item(vault, id)?;
+            self.delete_item(&current, id)?;
         }
         Ok(r)
     }

@@ -820,12 +820,26 @@ impl<S: RecordStore> Repository<S> {
                     }
                     Err(e) => return Err(e),
                 },
-                // Key rotation v2 (spec 9): a vault a rotation re-sealed
-                // under keys this device has not followed yet is read from
-                // its own copy (`RecordStore::retained_rows`).
-                Err(Error::Integrity(e)) => {
-                    self.retained_vault(key.id)?.ok_or(Error::Integrity(e))?
-                }
+                // Key rotation v2 (spec 9): a vault a known rotation
+                // re-sealed under keys this device has not followed yet is
+                // read from its own copy (`RecordStore::retained_rows`).
+                Err(Error::Integrity(e)) => match self.retained_vault(key.id)? {
+                    Some(v) => v,
+                    // Review I1 (R21): from generation 1 on, a vault key of
+                    // a foreign generation that the verified vault list does
+                    // not list live (a vault created under the identity
+                    // left, after `from_heads`) is not this identity's
+                    // vault: left alone, not opened. Its re-creation under
+                    // the new identity is Task 11.
+                    None if self.records_id != self.account.params.account_id
+                        && !entries
+                            .iter()
+                            .any(|l| l.vault_id == key.id && l.deleted_at.is_none()) =>
+                    {
+                        continue;
+                    }
+                    None => return Err(Error::Integrity(e)),
+                },
                 Err(e) => return Err(e),
             };
             out.push(vault);
@@ -1224,6 +1238,9 @@ impl<S: RecordStore> Repository<S> {
         let m =
             Manifest::next(Some(&prev), vault.id, prev.entries.clone())?.with_meta(&updated.meta);
         let manifest = self.signed_manifest(&updated, &m)?;
+        // Spec 10.4: a meta intent is keyed by the vault id itself.
+        let sealed = replay::meta_hash(&blob);
+        self.log_own_write(vault.id, vault.id, &prev, Some(sealed))?;
         let meta_record = Record {
             id: vault.id,
             kind: RecordKind::VaultMeta,
@@ -1265,7 +1282,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
-        self.log_own_write(vault.id, item.id, &loaded.manifest)?;
+        self.log_own_write(vault.id, item.id, &loaded.manifest, Some(record_hash(&rec)))?;
         let old = loaded.listed(item.id).map(|(blob, _)| *blob);
         let written = self.put_item(vault.id, &rec)?;
         let mut entries = loaded.entries_without(item.id);
@@ -1372,7 +1389,7 @@ impl<S: RecordStore> Repository<S> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
-        self.log_own_write(vault.id, item_id, &loaded.manifest)?;
+        self.log_own_write(vault.id, item_id, &loaded.manifest, None)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
         self.delete_ignored(&loaded, item_id)?;
@@ -1413,8 +1430,8 @@ impl<S: RecordStore> Repository<S> {
         let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
         let dst = self.served(to, Use::Write)?;
         let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
-        self.log_own_write(to.id, item_id, &dst.manifest)?;
-        self.log_own_write(from.id, item_id, &src.manifest)?;
+        self.log_own_write(to.id, item_id, &dst.manifest, Some(record_hash(&moved)))?;
+        self.log_own_write(from.id, item_id, &src.manifest, None)?;
         let replaced = dst.listed(item_id).map(|(b, _)| *b);
         let written = self.put_item(to.id, &moved)?;
         let mut entries = dst.entries_without(item_id);

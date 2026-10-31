@@ -85,14 +85,19 @@ pub const MAX_OWN_WRITES: usize = 10_000;
 pub const OWN_WRITE_MAX_AGE_SECS: i64 = 30 * 86_400;
 
 /// One item intent this device wrote (spec 10.4): the item of `vault` it
-/// saved, deleted or moved, the manifest the write was based on, and when
-/// (Unix seconds, device clock).
+/// saved, deleted or moved, the manifest the write was based on, when
+/// (Unix seconds, device clock), and what it wrote: the `record_hash` of
+/// its own item record, `None` for a deletion (or a move out). An intent
+/// whose `item` is the vault id itself is a change of the vault's meta;
+/// `wrote` is then the SHA-256 of the sealed meta it wrote. The replay
+/// brings back only that very record (R11).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnWrite {
     pub vault: Id,
     pub item: Id,
     pub based_on: SeenManifest,
     pub at: i64,
+    pub wrote: Option<[u8; 32]>,
 }
 
 /// Own-write log (spec 10.4, G4, R7). `entries`: the item intents this
@@ -389,6 +394,7 @@ pub mod tests {
                 item: Id([2; 16]),
                 based_on: seen.clone(),
                 at: 1_700_000_000,
+                wrote: Some([5; 32]),
             },
             false,
         );
@@ -497,6 +503,7 @@ pub mod tests {
                 hash: [0; 32],
             },
             at,
+            wrote: None,
         }
     }
 

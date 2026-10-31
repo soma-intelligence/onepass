@@ -11,7 +11,9 @@
 //!
 //! Merge rule for an item changed on both sides: the newest `updated_at`
 //! wins, a tie goes to the larger record hash (bytes), the same answer on
-//! every device. An item the server left as it was in the ancestor keeps
+//! every device. (The replay of own writes after a key rotation,
+//! `crate::repo::replay`, uses the same rule with ties to the replaying
+//! device: its record is sealed under other keys, so no hash compares.) An item the server left as it was in the ancestor keeps
 //! the local change whatever the clocks say. A local deletion applies only
 //! if the server still has the very record the ancestor listed; otherwise
 //! the server's change is kept. A local edit of an item the server deleted
