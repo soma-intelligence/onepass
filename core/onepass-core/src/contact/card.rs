@@ -12,10 +12,7 @@ use crate::crypto::sign::{SLH_PUBLIC_LEN, SLH_SIG_LEN};
 use crate::crypto::{
     HybridKemPublic, HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey,
 };
-use crate::lineage::{
-    LineageRecord, RosterEntry, SignedIntro, decode_strict_with, identity_id, intro_id,
-    verify_intro, verify_intro_identity,
-};
+use crate::lineage::{LineageRecord, SignedIntro, decode_strict_with, identity_id, intro_id};
 use crate::repo::Repository;
 use crate::store::{RecordKind, RecordStore};
 use crate::trust::LineageHead;
@@ -322,47 +319,10 @@ impl<S: RecordStore> Repository<S> {
     }
 }
 
-/// The intros of `pending` (all bound to `record`) that extend its roster:
-/// the record's roster (the genesis creator, or the rotation's roster),
-/// grown by each intro accepted, until none more is. An intro is accepted
-/// when its device is not yet a member and its signature verifies under
-/// its introducer, a member (`verify_intro`); a kit self-intro (introducer
-/// = the device itself) also needs the record identity's signature. At
-/// most `MAX_CARD_INTROS_PER_RECORD`, in the order accepted.
-fn accepted_intros(record: &LineageRecord, mut pending: Vec<SignedIntro>) -> Vec<SignedIntro> {
-    let mut members: Vec<RosterEntry> = match record {
-        LineageRecord::Genesis(s) => vec![s.body.creator.clone()],
-        LineageRecord::Rotation(s) => s.body.roster.clone(),
-    };
-    let mut accepted = Vec::new();
-    let mut progress = true;
-    while progress && accepted.len() < MAX_CARD_INTROS_PER_RECORD {
-        progress = false;
-        let mut rest = Vec::new();
-        for intro in pending {
-            let b = &intro.body;
-            let ok = accepted.len() < MAX_CARD_INTROS_PER_RECORD
-                && !members.iter().any(|m| m.device_id == b.entry.device_id)
-                && if b.introducer == b.entry.device_id {
-                    verify_intro_identity(&intro, record.identity_pub()).is_ok()
-                        && verify_intro(&intro, &b.entry.sign_pub).is_ok()
-                } else {
-                    members
-                        .iter()
-                        .find(|m| m.device_id == b.introducer)
-                        .is_some_and(|m| verify_intro(&intro, &m.sign_pub).is_ok())
-                };
-            if ok {
-                members.push(b.entry.clone());
-                accepted.push(intro);
-                progress = true;
-            } else {
-                rest.push(intro);
-            }
-        }
-        pending = rest;
-    }
-    accepted
+/// The intros of `pending` (all bound to `record`) that extend its roster
+/// (`lineage::grow_roster`, nothing excluded), in the order accepted.
+fn accepted_intros(record: &LineageRecord, pending: Vec<SignedIntro>) -> Vec<SignedIntro> {
+    super::lineage::grow_roster(record, pending, &BTreeSet::new()).1
 }
 
 #[cfg(test)]

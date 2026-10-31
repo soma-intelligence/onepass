@@ -1,7 +1,7 @@
 //! Contact cards (sharing spec 5.2, plan rulings A-3, A-4, A-6): strict
 //! codec, domain-separated identity signature, keys from the signed params,
-//! name rules, fingerprints, safety numbers, pair ids, frozen vectors, and
-//! the account's own card.
+//! name rules, fingerprints, safety numbers, pair ids, frozen vectors, the
+//! account's own card, and following another account's lineage (spec 5.5).
 //!
 //! The vectors in `tests/vectors/contact/*.hex` were generated once by
 //! `generate_vectors` (ignored) from fixed ids, names and dates over
@@ -18,8 +18,8 @@ use common::{Device, kdf};
 use data_encoding::HEXLOWER;
 use onepass_core::account::Account;
 use onepass_core::contact::{
-    CONTACT_CARD_DOMAIN, ContactCard, SignedContactCard, fingerprint, format_safety_number,
-    pair_id, safety_number,
+    CONTACT_CARD_DOMAIN, ContactCard, ForeignLineage, ForeignPin, SignedContactCard, fingerprint,
+    follow_foreign, format_safety_number, pair_id, roster_at, safety_number,
 };
 use onepass_core::crypto::{IdentityKey, IdentitySignature};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic, sign_pop};
@@ -27,7 +27,7 @@ use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
     GENESIS_IDENTITY_DOMAIN, GenesisBody, IntroBody, LINEAGE_FORMAT, LineageRecord, RosterEntry,
     RotationBody, RotationReason, SignedIntro, identity_id, intro_id, sign_genesis, sign_intro,
-    sign_rotation,
+    sign_rotation, verify_rotation,
 };
 use onepass_core::store::{Record, RecordKind, RecordStore};
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
@@ -752,4 +752,574 @@ fn own_card_at_pinned_head() {
         repo.own_contact_card("", T0),
         Err(Error::InvalidFormat(_))
     ));
+}
+
+// ------------------------------------------- another account's lineage
+
+/// A foreign account's lineage (sharing spec 5.5), signed once per process.
+///
+/// Devices: A (iPhone, creator), B (iPad, introduced under the genesis by
+/// A), C (Mac, introduced under generation 1 by A), X (outside the account).
+///
+/// - `g`: genesis by A.
+/// - `r1`: generation 1 by A, revokes B.
+/// - `r1_sibling`: generation 1 by B, revokes nobody (a sibling of `r1`).
+/// - `r1_unknown`: generation 1 by X, a device in no roster.
+/// - `r1_body_key`: generation 1 naming A as rotator, A's roster entry
+///   carrying X's key, signed by X.
+/// - `r2`: generation 2 by C (known only through its intro under `r1`).
+/// - `r2_by_b`: generation 2 under `r1` by B, revoked by `r1`.
+struct Foreign {
+    account_id: Id,
+    identities: Vec<IdentityKey>,
+    g: LineageRecord,
+    r1: LineageRecord,
+    r1_sibling: LineageRecord,
+    r1_unknown: LineageRecord,
+    r1_body_key: LineageRecord,
+    r2: LineageRecord,
+    r2_by_b: LineageRecord,
+    /// B under the genesis, by A.
+    intro_b_g: SignedIntro,
+    /// C under `r1`, by A.
+    intro_c_r1: SignedIntro,
+    /// B again under `r1`, by A (a revoked device back in a roster).
+    intro_b_r1: SignedIntro,
+}
+
+fn rotation(
+    account_id: Id,
+    parent: &LineageRecord,
+    rotator: (&DeviceKeys, Id),
+    revoked: Vec<Id>,
+    mut roster: Vec<RosterEntry>,
+    identity: &IdentityKey,
+) -> LineageRecord {
+    roster.sort_by_key(|e| e.device_id);
+    let deliveries = roster
+        .iter()
+        .filter(|e| e.device_id != rotator.1)
+        .map(|e| (e.device_id, [0x5A; 32]))
+        .collect();
+    LineageRecord::Rotation(
+        sign_rotation(
+            RotationBody {
+                format: LINEAGE_FORMAT,
+                account_id,
+                generation: parent.generation() + 1,
+                parent: parent.hash(),
+                rotator: rotator.1,
+                reason: RotationReason::Revoke,
+                revoked,
+                roster,
+                identity_pub: identity.verifying_key(),
+                params_hash: [0x50; 32],
+                keyset_hash: [0x4B; 32],
+                deliveries,
+                from_heads: BTreeMap::new(),
+                issued_at: T0 + 30,
+            },
+            rotator.0,
+            identity,
+        )
+        .unwrap(),
+    )
+}
+
+fn intro(
+    account_id: Id,
+    under: &LineageRecord,
+    introducer: (&DeviceKeys, Id),
+    new: (&DeviceKeys, &DevicePublic, &str),
+) -> SignedIntro {
+    let mut e = entry(new.1, new.2);
+    e.introduced_by = Some(introducer.1);
+    sign_intro(
+        IntroBody {
+            format: LINEAGE_FORMAT,
+            account_id,
+            head: under.hash(),
+            entry: e,
+            introducer: introducer.1,
+            pop: sign_pop(new.0, &account_id.0, new.1).unwrap(),
+        },
+        introducer.0,
+        None,
+    )
+    .unwrap()
+}
+
+fn foreign() -> &'static Foreign {
+    static F: OnceLock<Foreign> = OnceLock::new();
+    F.get_or_init(|| {
+        let account_id = id(0x70);
+        let identities: Vec<IdentityKey> =
+            (0..6).map(|_| IdentityKey::generate().unwrap()).collect();
+        let dev = |n: u8| {
+            let k = DeviceKeys::generate_software().unwrap();
+            let p = k.public(id(n)).unwrap();
+            (k, p)
+        };
+        let (ka, a) = dev(0x71);
+        let (kb, b) = dev(0x72);
+        let (kc, c) = dev(0x73);
+        let (kx, x) = dev(0x74);
+        let g = LineageRecord::Genesis(
+            sign_genesis(
+                GenesisBody {
+                    format: LINEAGE_FORMAT,
+                    account_id,
+                    identity_pub: identities[0].verifying_key(),
+                    creator: entry(&a, "iPhone"),
+                    created_at: T0,
+                },
+                &ka,
+                &identities[0],
+            )
+            .unwrap(),
+        );
+        let intro_b_g = intro(account_id, &g, (&ka, a.device_id), (&kb, &b, "iPad"));
+        let r1 = rotation(
+            account_id,
+            &g,
+            (&ka, a.device_id),
+            vec![b.device_id],
+            vec![entry(&a, "iPhone")],
+            &identities[1],
+        );
+        let r1_sibling = rotation(
+            account_id,
+            &g,
+            (&kb, b.device_id),
+            vec![],
+            vec![entry(&a, "iPhone"), entry(&b, "iPad")],
+            &identities[2],
+        );
+        let r1_unknown = rotation(
+            account_id,
+            &g,
+            (&kx, x.device_id),
+            vec![],
+            vec![entry(&x, "Inconnu")],
+            &identities[3],
+        );
+        let mut forged_a = entry(&a, "iPhone");
+        forged_a.sign_pub = x.sign_pub.clone();
+        let r1_body_key = rotation(
+            account_id,
+            &g,
+            (&kx, a.device_id),
+            vec![],
+            vec![forged_a],
+            &identities[3],
+        );
+        let intro_c_r1 = intro(account_id, &r1, (&ka, a.device_id), (&kc, &c, "Mac"));
+        let intro_b_r1 = intro(account_id, &r1, (&ka, a.device_id), (&kb, &b, "iPad"));
+        let r2 = rotation(
+            account_id,
+            &r1,
+            (&kc, c.device_id),
+            vec![],
+            vec![entry(&a, "iPhone"), entry(&c, "Mac")],
+            &identities[4],
+        );
+        let r2_by_b = rotation(
+            account_id,
+            &r1,
+            (&kb, b.device_id),
+            vec![],
+            vec![entry(&a, "iPhone"), entry(&b, "iPad")],
+            &identities[5],
+        );
+        Foreign {
+            account_id,
+            identities,
+            g,
+            r1,
+            r1_sibling,
+            r1_unknown,
+            r1_body_key,
+            r2,
+            r2_by_b,
+            intro_b_g,
+            intro_c_r1,
+            intro_b_r1,
+        }
+    })
+}
+
+fn pin_at(f: &Foreign, r: &LineageRecord) -> ForeignPin {
+    ForeignPin {
+        account_id: f.account_id,
+        genesis: f.g.hash(),
+        head: LineageHead {
+            generation: r.generation(),
+            hash: r.hash(),
+        },
+        identity_pub: r.identity_pub().clone(),
+    }
+}
+
+fn all_intros(f: &Foreign) -> Vec<SignedIntro> {
+    vec![
+        f.intro_b_g.clone(),
+        f.intro_c_r1.clone(),
+        f.intro_b_r1.clone(),
+    ]
+}
+
+fn advanced_chain(l: &ForeignLineage) -> Option<&[[u8; 32]]> {
+    match l {
+        ForeignLineage::Advanced { chain, .. } => Some(chain),
+        _ => None,
+    }
+}
+
+#[test]
+fn same_head_is_same() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone()];
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.r1), &records, &all_intros(f)),
+        ForeignLineage::Same
+    );
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.g), std::slice::from_ref(&f.g), &[]),
+        ForeignLineage::Same
+    );
+}
+
+#[test]
+fn one_rotation_advances() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone()];
+    let got = follow_foreign(
+        &pin_at(f, &f.g),
+        &records,
+        std::slice::from_ref(&f.intro_b_g),
+    );
+    let ForeignLineage::Advanced {
+        chain,
+        head,
+        identity_pub,
+        last_rotation,
+    } = got
+    else {
+        panic!("expected Advanced, got {got:?}");
+    };
+    assert_eq!(chain, vec![f.r1.hash()]);
+    assert_eq!(
+        head,
+        LineageHead {
+            generation: 1,
+            hash: f.r1.hash()
+        }
+    );
+    assert_eq!(identity_pub, f.identities[1].verifying_key());
+    assert_eq!(last_rotation.revoked, vec![id(0x72)]);
+    // Without B's intro, `r1` revokes a device the genesis roster does not
+    // know: not valid (spec 7.2), the pin stays.
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.g), &records, &[]),
+        ForeignLineage::Same
+    );
+}
+
+#[test]
+fn two_rotations_advance_in_order() {
+    let f = foreign();
+    // Given out of order: the result follows the generations.
+    let records = [f.r2.clone(), f.g.clone(), f.r1.clone()];
+    let got = follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f));
+    assert_eq!(advanced_chain(&got), Some(&[f.r1.hash(), f.r2.hash()][..]));
+    let ForeignLineage::Advanced {
+        head, identity_pub, ..
+    } = got
+    else {
+        unreachable!()
+    };
+    assert_eq!(head.generation, 2);
+    assert_eq!(identity_pub, f.identities[4].verifying_key());
+    // From `r1`, one step.
+    let got = follow_foreign(&pin_at(f, &f.r1), &records, &all_intros(f));
+    assert_eq!(advanced_chain(&got), Some(&[f.r2.hash()][..]));
+}
+
+#[test]
+fn rotation_by_unknown_device_ignored() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1_unknown.clone()];
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        ForeignLineage::Same
+    );
+}
+
+#[test]
+fn rotation_signed_with_key_from_body_ignored() {
+    let f = foreign();
+    // The body's roster gives A the key that signed it: it verifies under
+    // that key, never under A's key from the genesis.
+    let LineageRecord::Rotation(s) = &f.r1_body_key else {
+        unreachable!()
+    };
+    verify_rotation(s, &s.body.roster[0].sign_pub).unwrap();
+    let records = [f.g.clone(), f.r1_body_key.clone()];
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        ForeignLineage::Same
+    );
+}
+
+#[test]
+fn intro_extends_roster() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone(), f.r2.clone()];
+    // C signs `r2`; C is known only by A's intro under `r1`.
+    let got = follow_foreign(
+        &pin_at(f, &f.r1),
+        &records,
+        std::slice::from_ref(&f.intro_c_r1),
+    );
+    assert_eq!(advanced_chain(&got), Some(&[f.r2.hash()][..]));
+    // Without it, C is unknown.
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.r1), &records, &[]),
+        ForeignLineage::Same
+    );
+    // An intro bound to another record does not count under `r1`.
+    let mut moved = f.intro_c_r1.clone();
+    moved.body.head = f.g.hash();
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.r1), &records, &[moved]),
+        ForeignLineage::Same
+    );
+
+    // roster_at: the record's roster plus the intros accepted under it.
+    let ids = |r: Vec<RosterEntry>| r.into_iter().map(|e| e.device_id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(roster_at(&records, &all_intros(f), &f.r1.hash()).unwrap()),
+        vec![id(0x71), id(0x72), id(0x73)]
+    );
+    assert_eq!(
+        ids(roster_at(&records, &[], &f.r1.hash()).unwrap()),
+        vec![id(0x71)]
+    );
+    assert_eq!(
+        ids(roster_at(&records, &all_intros(f), &f.g.hash()).unwrap()),
+        vec![id(0x71), id(0x72)]
+    );
+    assert!(matches!(
+        roster_at(&records, &[], &[9; 32]),
+        Err(Error::NotFound)
+    ));
+}
+
+#[test]
+fn roster_at_identity_intro_rules() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone()];
+    let ids = |r: Vec<RosterEntry>| r.into_iter().map(|e| e.device_id).collect::<Vec<_>>();
+    let kd = DeviceKeys::generate_software().unwrap();
+    let d = kd.public(id(0x75)).unwrap();
+    let self_intro = |identity: Option<&IdentityKey>| {
+        sign_intro(
+            IntroBody {
+                format: LINEAGE_FORMAT,
+                account_id: f.account_id,
+                head: f.r1.hash(),
+                entry: entry(&d, "Kit"),
+                introducer: d.device_id,
+                pop: sign_pop(&kd, &f.account_id.0, &d).unwrap(),
+            },
+            &kd,
+            identity,
+        )
+        .unwrap()
+    };
+    // A kit self-intro signed by the identity of `r1`: accepted.
+    let good = self_intro(Some(&f.identities[1]));
+    assert_eq!(
+        ids(roster_at(&records, &[good], &f.r1.hash()).unwrap()),
+        vec![id(0x71), id(0x75)]
+    );
+    // By another identity, or without one: refused.
+    for bad in [self_intro(Some(&f.identities[0])), self_intro(None)] {
+        assert_eq!(
+            ids(roster_at(&records, &[bad], &f.r1.hash()).unwrap()),
+            vec![id(0x71)]
+        );
+    }
+}
+
+#[test]
+fn sibling_rotations_fork() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone(), f.r1_sibling.clone()];
+    let mut expected = vec![f.r1.hash(), f.r1_sibling.hash()];
+    expected.sort();
+    // `r1` revokes B, the signer of its sibling: never picked, the user
+    // decides (spec 12.3 point 4).
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.g), &records, &all_intros(f)),
+        ForeignLineage::Forked { siblings: expected }
+    );
+}
+
+#[test]
+fn revoked_device_rotation_after_revocation_ignored() {
+    let f = foreign();
+    let records = [f.g.clone(), f.r1.clone(), f.r2_by_b.clone()];
+    // B is not in `r1`'s roster.
+    assert_eq!(
+        follow_foreign(
+            &pin_at(f, &f.r1),
+            &records,
+            std::slice::from_ref(&f.intro_b_g)
+        ),
+        ForeignLineage::Same
+    );
+    // B is back under `r1` through an intro: still revoked by an ancestor.
+    let intros = [f.intro_b_g.clone(), f.intro_b_r1.clone()];
+    assert_eq!(
+        follow_foreign(&pin_at(f, &f.r1), &records, &intros),
+        ForeignLineage::Same
+    );
+    // From the genesis, the walk stops at `r1`.
+    let got = follow_foreign(&pin_at(f, &f.g), &records, &intros);
+    assert_eq!(advanced_chain(&got), Some(&[f.r1.hash()][..]));
+}
+
+#[test]
+fn older_card_never_replaces_pinned_head() {
+    let f = foreign();
+    assert_eq!(
+        follow_foreign(
+            &pin_at(f, &f.r2),
+            &[f.g.clone(), f.r1.clone()],
+            &all_intros(f)
+        ),
+        ForeignLineage::Unknown
+    );
+    assert_eq!(
+        follow_foreign(
+            &pin_at(f, &f.r1),
+            std::slice::from_ref(&f.g),
+            &all_intros(f)
+        ),
+        ForeignLineage::Unknown
+    );
+    // A path that skips a record, or a pin on another genesis.
+    assert_eq!(
+        follow_foreign(
+            &pin_at(f, &f.r2),
+            &[f.g.clone(), f.r2.clone()],
+            &all_intros(f)
+        ),
+        ForeignLineage::Unknown
+    );
+    let mut other = pin_at(f, &f.r1);
+    other.genesis = [9; 32];
+    assert_eq!(
+        follow_foreign(&other, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        ForeignLineage::Unknown
+    );
+    // Records of another account are not this one's.
+    let mut stranger = pin_at(f, &f.g);
+    stranger.account_id = id(0x01);
+    assert_eq!(
+        follow_foreign(&stranger, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        ForeignLineage::Unknown
+    );
+    // A pin whose identity is not its head's.
+    let mut wrong = pin_at(f, &f.r1);
+    wrong.identity_pub = f.identities[0].verifying_key();
+    assert_eq!(
+        follow_foreign(&wrong, &[f.g.clone(), f.r1.clone()], &all_intros(f)),
+        ForeignLineage::Unknown
+    );
+}
+
+/// Withholding records or intros (any subset) only stops the walk early:
+/// `Same`, `Unknown` or an `Advanced` whose chain is a prefix of the full
+/// one. Never a fork or an identity off the full chain.
+#[test]
+fn withholding_never_yields_another_identity() {
+    let f = foreign();
+    let records = [
+        f.g.clone(),
+        f.r1.clone(),
+        f.r2.clone(),
+        f.r2_by_b.clone(),
+        f.r1_unknown.clone(),
+        f.r1_body_key.clone(),
+    ];
+    let intros = all_intros(f);
+    for pin in [pin_at(f, &f.g), pin_at(f, &f.r1)] {
+        let full = follow_foreign(&pin, &records, &intros);
+        let full_chain = advanced_chain(&full)
+            .expect("the full set advances")
+            .to_vec();
+        for rmask in 0u32..(1 << records.len()) {
+            let rs: Vec<LineageRecord> = (0..records.len())
+                .filter(|i| rmask & (1 << i) != 0)
+                .map(|i| records[i].clone())
+                .collect();
+            for imask in 0u32..(1 << intros.len()) {
+                let is: Vec<SignedIntro> = (0..intros.len())
+                    .filter(|i| imask & (1 << i) != 0)
+                    .map(|i| intros[i].clone())
+                    .collect();
+                match follow_foreign(&pin, &rs, &is) {
+                    ForeignLineage::Same | ForeignLineage::Unknown => {}
+                    ForeignLineage::Advanced {
+                        chain,
+                        head,
+                        identity_pub,
+                        last_rotation,
+                    } => {
+                        assert!(full_chain.starts_with(&chain), "{rmask:b} {imask:b}");
+                        assert_eq!(head.hash, *chain.last().unwrap());
+                        let at = records.iter().find(|r| r.hash() == head.hash).unwrap();
+                        assert_eq!(&identity_pub, at.identity_pub());
+                        assert_eq!(&identity_pub, &last_rotation.identity_pub);
+                    }
+                    other => panic!("{rmask:b} {imask:b}: {other:?}"),
+                }
+            }
+        }
+    }
+}
+
+/// With a fork in the full set, a subset may hide one side; whatever it
+/// yields stays on a valid branch of the full set.
+#[test]
+fn withholding_a_sibling_stays_on_a_branch() {
+    let f = foreign();
+    let records = [
+        f.g.clone(),
+        f.r1.clone(),
+        f.r1_sibling.clone(),
+        f.r2.clone(),
+    ];
+    let intros = all_intros(f);
+    let pin = pin_at(f, &f.g);
+    let branches = [vec![f.r1.hash(), f.r2.hash()], vec![f.r1_sibling.hash()]];
+    for rmask in 0u32..(1 << records.len()) {
+        let rs: Vec<LineageRecord> = (0..records.len())
+            .filter(|i| rmask & (1 << i) != 0)
+            .map(|i| records[i].clone())
+            .collect();
+        match follow_foreign(&pin, &rs, &intros) {
+            ForeignLineage::Advanced { chain, .. } => {
+                assert!(branches.iter().any(|b| b.starts_with(&chain)), "{rmask:b}");
+            }
+            ForeignLineage::Forked { siblings } => {
+                let mut expected = vec![f.r1.hash(), f.r1_sibling.hash()];
+                expected.sort();
+                assert_eq!(siblings, expected);
+            }
+            ForeignLineage::Same | ForeignLineage::Unknown => {}
+        }
+    }
 }
