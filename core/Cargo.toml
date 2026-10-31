@@ -33,3 +33,44 @@ opt-level = 3
 # identity key tests in debug builds.
 [profile.dev.package.slh-dsa]
 opt-level = 3
+
+# Task 19 carried item 8: the rest of the crypto (ML-KEM, ML-DSA, X25519,
+# Ed25519 and SHA in aws-lc, Argon2id and BLAKE2b at the dev KDF floor,
+# the libcrux differential crates, SHA-3) and the bundled SQLite dominate
+# the debug test suite unoptimized. Optimized in dev and test builds only;
+# the workspace's own crates keep their debug build.
+[profile.dev.package.aws-lc-sys]
+opt-level = 3
+
+[profile.dev.package.aws-lc-rs]
+opt-level = 3
+
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.libcrux-ml-kem]
+opt-level = 3
+
+[profile.dev.package.libcrux-ml-dsa]
+opt-level = 3
+
+[profile.dev.package.libcrux-sha3]
+opt-level = 3
+
+[profile.dev.package.libcrux-intrinsics]
+opt-level = 3
+
+[profile.dev.package.sha3]
+opt-level = 3
+
+[profile.dev.package.keccak]
+opt-level = 3
+
+[profile.dev.package.hybrid-array]
+opt-level = 3
+
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
