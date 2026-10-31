@@ -18,9 +18,9 @@ use common::{Device, kdf};
 use data_encoding::HEXLOWER;
 use onepass_core::account::Account;
 use onepass_core::contact::{
-    CONTACT_CARD_DOMAIN, ContactCard, ForeignLineage, ForeignPin, LegacyIntros, SignedContactCard,
-    accept_legacy_intros, fingerprint, follow_foreign, format_safety_number, pair_id, roster_at,
-    safety_number,
+    CONTACT_CARD_DOMAIN, ContactCard, ForeignLineage, ForeignPin, LegacyIntros, MAX_FOREIGN_COPIES,
+    SignedContactCard, accept_legacy_intros, fingerprint, follow_foreign, format_safety_number,
+    pair_id, roster_at, safety_number,
 };
 use onepass_core::crypto::HybridSigningKey;
 use onepass_core::crypto::{IdentityKey, IdentitySignature};
@@ -1786,4 +1786,71 @@ fn own_card_carries_legacy_intros() {
         ids(roster_at(&back.card.lineage, &[], &back.card.legacy(), &g.hash()).unwrap()),
         vec![id(0x91), id(0x92)]
     );
+}
+
+#[test]
+fn forged_intro_never_blocks_an_honest_one() {
+    let l = legacy();
+    let records = [l.g.clone()];
+    let none = LegacyIntros::default();
+    // N's id with other keys, a signature that verifies nowhere.
+    let mut forged = l.intro_n_other_keys.clone();
+    forged.sig.mldsa[0] ^= 1;
+    for intros in [
+        [l.intro_n.clone(), forged.clone()],
+        [forged.clone(), l.intro_n.clone()],
+    ] {
+        assert_eq!(
+            ids(roster_at(&records, &intros, &none, &l.g.hash()).unwrap()),
+            vec![id(0x81), id(0x84)]
+        );
+    }
+}
+
+/// Copies of `r` (same body) whose device signature verifies nowhere,
+/// split by where their encoding's SHA-256 falls against `r`'s.
+fn bad_copies(r: &LineageRecord) -> (Vec<LineageRecord>, Vec<LineageRecord>) {
+    let key = |r: &LineageRecord| sha256(&[&r.encode()]);
+    let good = key(r);
+    let (mut below, mut above) = (Vec::new(), Vec::new());
+    for k in 0..256 {
+        let LineageRecord::Rotation(mut s) = r.clone() else {
+            unreachable!()
+        };
+        s.device_sig.mldsa[k] ^= 1;
+        let bad = LineageRecord::Rotation(s);
+        if key(&bad) < good {
+            below.push(bad);
+        } else {
+            above.push(bad);
+        }
+        if below.len() >= MAX_FOREIGN_COPIES && above.len() >= MAX_FOREIGN_COPIES {
+            break;
+        }
+    }
+    (below, above)
+}
+
+#[test]
+fn copies_capped() {
+    let f = foreign();
+    let (below, above) = bad_copies(&f.r1);
+    let pin = pin_at(f, &f.g);
+    let intros = [f.intro_b_g.clone()];
+    let run = |extra: &[LineageRecord]| {
+        let mut rs = vec![f.g.clone(), f.r1.clone()];
+        rs.extend_from_slice(extra);
+        follow(&pin, &rs, &intros)
+    };
+    // The good copy among the kept ones: found.
+    let mut kept = below[..MAX_FOREIGN_COPIES - 1].to_vec();
+    kept.extend_from_slice(&above);
+    // Exact duplicates count once.
+    for _ in 0..20 {
+        kept.push(below[0].clone());
+    }
+    assert_eq!(advanced_chain(&run(&kept)), Some(&[f.r1.hash()][..]));
+    // Pushed out by `MAX_FOREIGN_COPIES` smaller bad copies: the record is
+    // hidden, as if withheld, never accepted wrongly.
+    assert_eq!(run(&below[..MAX_FOREIGN_COPIES]), ForeignLineage::Same);
 }
