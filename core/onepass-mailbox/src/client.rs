@@ -12,9 +12,9 @@ use onepass_mailbox_proto::{
     signature_input_header, ticket_signed_bytes,
 };
 
-use crate::MailboxError;
 use crate::credential::{Credential, CredentialKey};
 use crate::http::{self, Endpoint, Http, Method, RESPONSE_MAX, Response};
+use crate::{MailboxError, RETRY_AFTER_MAX};
 
 /// Lifetime of the enroll tickets this device issues, seconds.
 const TICKET_SECS: i64 = 300;
@@ -29,7 +29,7 @@ fn system_clock() -> i64 {
 
 fn random16() -> Result<[u8; 16], MailboxError> {
     let mut n = [0u8; 16];
-    aws_lc_rs::rand::fill(&mut n).map_err(|_| MailboxError::Malformed("random"))?;
+    aws_lc_rs::rand::fill(&mut n).map_err(|_| MailboxError::Rng)?;
     Ok(n)
 }
 
@@ -314,7 +314,9 @@ impl MailboxClient {
         Ok(answer)
     }
 
-    /// `GET /v1/mailboxes/{m}/records/{kind}/{id}`; `None` when absent.
+    /// `GET /v1/mailboxes/{m}/records/{kind}/{id}`; `None` when absent
+    /// (`not_found`). A path the server does not serve answers `no_route`
+    /// and comes back as `Server(NoRoute)`, never as `None`.
     pub fn record(&self, kind: u8, id: [u8; 16]) -> Result<Option<ServerRecord>, MailboxError> {
         if kind == 0 {
             return Err(MailboxError::Malformed("kind zero"));
@@ -456,21 +458,46 @@ pub(crate) fn expect(r: Response, ok: &[u16]) -> Result<Response, MailboxError> 
         // A gateway in front of the function, or nothing we understand.
         return Err(match r.status {
             429 => MailboxError::Retry {
-                after: r.retry_after,
+                after: cap(r.retry_after),
             },
+            413 => MailboxError::TooLarge,
             502..=504 => MailboxError::Retry { after: None },
             _ => MailboxError::Malformed("error body"),
         });
     };
+    // The code must come with its own status (spec 4.6): a 500 that says
+    // cursor_expired would otherwise start a full fetch.
+    if status_of(body.code) != r.status {
+        return Err(MailboxError::Malformed("error status"));
+    }
     Err(match body.code {
         ErrorCode::StaleRequest => MailboxError::Stale,
         ErrorCode::CursorExpired => MailboxError::CursorExpired,
         ErrorCode::TooLarge => MailboxError::TooLarge,
         ErrorCode::RateLimited | ErrorCode::Retry => MailboxError::Retry {
-            after: body.retry_after.or(r.retry_after),
+            after: cap(body.retry_after.or(r.retry_after)),
         },
         code => MailboxError::Server(code),
     })
+}
+
+fn cap(after: Option<u32>) -> Option<u32> {
+    after.map(|s| s.min(RETRY_AFTER_MAX))
+}
+
+/// HTTP status of each error code (spec 4.6).
+fn status_of(code: ErrorCode) -> u16 {
+    match code {
+        ErrorCode::Malformed => 400,
+        ErrorCode::BadSignature | ErrorCode::StaleRequest | ErrorCode::Replay => 401,
+        ErrorCode::UnknownCredential | ErrorCode::RevokedCredential | ErrorCode::Frozen => 403,
+        ErrorCode::NotFound | ErrorCode::NoRoute => 404,
+        ErrorCode::CursorExpired => 410,
+        ErrorCode::TooLarge => 413,
+        ErrorCode::Quota => 422,
+        ErrorCode::RateLimited => 429,
+        ErrorCode::Retry => 503,
+    }
 }
 
 fn expect_empty(r: Response) -> Result<(), MailboxError> {

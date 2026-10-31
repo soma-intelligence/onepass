@@ -9,7 +9,7 @@
 //   the transaction COMMITS, so the nonce and the counters stick;
 // - any other SQLSTATE is a bug or a transient fault: 503 retry.
 import postgres from "postgres";
-import { CODES, isCode, Refusal } from "./errors.ts";
+import { CODES, isSqlCode, Refusal } from "./errors.ts";
 
 export type Row = Record<string, unknown>;
 
@@ -81,7 +81,7 @@ export const a = {
 export function refusalFromSqlError(e: unknown): Refusal {
   const err = e as { code?: unknown; message?: unknown; detail?: unknown } | null;
   if (
-    err && typeof err.code === "string" && /^OP[0-9]{3}$/.test(err.code) && isCode(err.message) &&
+    err && typeof err.code === "string" && /^OP[0-9]{3}$/.test(err.code) && isSqlCode(err.message) &&
     CODES[err.message].status === Number(err.code.slice(2))
   ) {
     let retry: number | null = null;

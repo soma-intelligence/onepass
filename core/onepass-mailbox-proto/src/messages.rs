@@ -616,6 +616,9 @@ pub enum ErrorCode {
     Quota,
     RateLimited,
     Retry,
+    /// 404 for a method and path the mailbox does not serve, so a client can
+    /// tell a wrong base URL from a record that is absent (`NotFound`).
+    NoRoute,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -799,6 +802,7 @@ mod tests {
             ErrorCode::Quota,
             ErrorCode::RateLimited,
             ErrorCode::Retry,
+            ErrorCode::NoRoute,
         ] {
             rt(ErrorBody {
                 code,

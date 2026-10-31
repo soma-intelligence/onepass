@@ -235,10 +235,31 @@ impl Http {
     }
 }
 
+/// A `rustls::Error` anywhere in an error's chain: the handshake (or a
+/// record) failed, as opposed to the network.
+fn tls_cause(e: &(dyn std::error::Error + 'static)) -> Option<String> {
+    let mut cur = Some(e);
+    while let Some(err) = cur {
+        if let Some(t) = err.downcast_ref::<rustls::Error>() {
+            return Some(t.to_string());
+        }
+        cur = err.source();
+    }
+    None
+}
+
 fn map_error(e: ureq::Error) -> MailboxError {
     use ureq::Error as E;
     match e {
-        E::Io(_) | E::ConnectionFailed | E::HostNotFound | E::Timeout(_) => MailboxError::Offline,
+        // rustls reports handshake failures (untrusted certificate, no
+        // TLS 1.3, no shared group, garbage) as an io::Error wrapping its
+        // own error; ureq passes that on as Io. Not "offline": retrying
+        // will not help.
+        E::Io(e) => match e.get_ref().and_then(|inner| tls_cause(inner)) {
+            Some(why) => MailboxError::Tls(why),
+            None => MailboxError::Offline,
+        },
+        E::ConnectionFailed | E::HostNotFound | E::Timeout(_) => MailboxError::Offline,
         E::BodyExceedsLimit(_) => MailboxError::Malformed("response size"),
         E::Tls(w) => MailboxError::Tls(w.to_string()),
         E::Rustls(e) => MailboxError::Tls(e.to_string()),

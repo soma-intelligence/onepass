@@ -14,7 +14,8 @@ export type Code =
   | "too_large"
   | "quota"
   | "rate_limited"
-  | "retry";
+  | "retry"
+  | "no_route";
 
 export const CODES: Record<Code, { status: number; wire: string }> = {
   malformed: { status: 400, wire: "Malformed" },
@@ -30,10 +31,19 @@ export const CODES: Record<Code, { status: number; wire: string }> = {
   quota: { status: 422, wire: "Quota" },
   rate_limited: { status: 429, wire: "RateLimited" },
   retry: { status: 503, wire: "Retry" },
+  // A method and path this function does not serve: told apart from a
+  // record that is absent (not_found), so a wrong base URL never reads as
+  // "no such record" on the client.
+  no_route: { status: 404, wire: "NoRoute" },
 };
 
 export function isCode(s: unknown): s is Code {
   return typeof s === "string" && Object.hasOwn(CODES, s);
+}
+
+/** A code an SQL entry point may raise or return: the router's own no_route is not one. */
+export function isSqlCode(s: unknown): s is Exclude<Code, "no_route"> {
+  return isCode(s) && s !== "no_route";
 }
 
 /** A request answered with an `ErrorBody`. */

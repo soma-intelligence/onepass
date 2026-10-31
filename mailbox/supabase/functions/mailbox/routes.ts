@@ -4,7 +4,7 @@
 // Ed25519, strict body decode, one entry point in one transaction, then the
 // response. The database, Storage and the clock are injected (index.ts).
 import * as proto from "./proto.ts";
-import { CODES, isCode, Refusal } from "./errors.ts";
+import { CODES, isSqlCode, Refusal } from "./errors.ts";
 import { a, type Arg, type Db, type Fn, refusalFromSqlError, type Row } from "./db.ts";
 import type { Signer } from "./storage.ts";
 import { clientAddress, ipKeyer, type IpSource } from "./ip.ts";
@@ -76,7 +76,7 @@ export function errorResponse(r: Refusal): Response {
 function inBand(row: Row | undefined): Refusal | null {
   if (!row) return new Refusal("retry");
   if (row.status === "ok") return null;
-  if (isCode(row.status)) {
+  if (isSqlCode(row.status)) {
     const ra = row.retry_after;
     return new Refusal(row.status, row.status === "rate_limited" && typeof ra === "number" ? ra : null);
   }
@@ -686,10 +686,10 @@ export function handler(deps: Deps): (req: Request) => Promise<Response> {
   return async (req) => {
     try {
       const url = new URL(req.url);
-      if (!url.pathname.startsWith(PREFIX + "/")) throw new Refusal("not_found");
+      if (!url.pathname.startsWith(PREFIX + "/")) throw new Refusal("no_route");
       const path = url.pathname.slice(PREFIX.length);
       const found = match(req.method, path);
-      if (!found) throw new Refusal("not_found");
+      if (!found) throw new Refusal("no_route");
       const { route, groups } = found;
       const query = url.search.startsWith("?") ? url.search.slice(1) : url.search;
       if (route.query === "none" && url.search !== "") throw new Refusal("malformed");

@@ -314,7 +314,7 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
                 .collect();
             ok(encode(&BlobUrls { urls }))
         }
-        _ => Resp::error(ErrorCode::NotFound, 404, None),
+        _ => Resp::error(ErrorCode::NoRoute, 404, None),
     }
 }
 
@@ -559,6 +559,11 @@ fn error_bodies_map() {
             MailboxError::Retry { after: None },
         ),
         (ErrorCode::Retry, 503, MailboxError::Retry { after: None }),
+        (
+            ErrorCode::NoRoute,
+            404,
+            MailboxError::Server(ErrorCode::NoRoute),
+        ),
     ];
     for (code, status, want) in cases {
         *answer.lock().unwrap() = Resp::error(code, status, None);
@@ -582,6 +587,22 @@ fn error_bodies_map() {
         c.info().unwrap_err(),
         MailboxError::Retry { after: Some(9) }
     );
+    // A hint above an hour is cut to an hour.
+    *answer.lock().unwrap() = Resp::error(ErrorCode::RateLimited, 429, Some(1_000_000));
+    assert_eq!(
+        c.info().unwrap_err(),
+        MailboxError::Retry { after: Some(3600) }
+    );
+    // A code with another code's status is malformed (500 + cursor_expired
+    // must not start a full fetch).
+    *answer.lock().unwrap() = Resp::error(ErrorCode::CursorExpired, 500, None);
+    assert_eq!(
+        c.info().unwrap_err(),
+        MailboxError::Malformed("error status")
+    );
+    // A gateway's bare 413 tells the batch splitter to cut.
+    *answer.lock().unwrap() = Resp::empty(413);
+    assert_eq!(c.info().unwrap_err(), MailboxError::TooLarge);
     // A bare 502 or 503 from a gateway is a retry too.
     *answer.lock().unwrap() = Resp::empty(502);
     assert_eq!(c.info().unwrap_err(), MailboxError::Retry { after: None });
@@ -1093,6 +1114,29 @@ fn collected_blob_is_announced_and_uploaded_again() {
 }
 
 #[test]
+fn record_absent_is_none_but_unknown_route_is_an_error() {
+    let server = Server::start(|req, _| {
+        if req.path.contains("/records/1/") {
+            return Resp::error(ErrorCode::NotFound, 404, None);
+        }
+        Resp::error(ErrorCode::NoRoute, 404, None)
+    });
+    let (c, _) = client(&server);
+    assert_eq!(c.record(1, [1; 16]).unwrap(), None);
+    assert_eq!(
+        c.record(2, [1; 16]).unwrap_err(),
+        MailboxError::Server(ErrorCode::NoRoute)
+    );
+    // A gateway 404 that is not ours is not "absent" either.
+    let gateway = Server::start(|_, _| Resp::empty(404));
+    let (c, _) = client(&gateway);
+    assert!(matches!(
+        c.record(1, [1; 16]).unwrap_err(),
+        MailboxError::Malformed(_)
+    ));
+}
+
+#[test]
 fn record_not_found_is_none() {
     let server = Server::start(|req, _| {
         if req.path.contains("/records/1/") {
@@ -1299,4 +1343,144 @@ fn self_host_ca_is_added_to_the_web_roots() {
 
 fn webpki_root_der() -> Vec<u8> {
     webpki_root_certs::TLS_SERVER_ROOT_CERTS[0].to_vec()
+}
+
+// ------------------------------------------------------------- TLS (I1)
+
+const CA_PEM: &str = include_str!("fixtures/ca.pem");
+const LEAF_PEM: &str = include_str!("fixtures/leaf.pem");
+const LEAF_KEY: &str = include_str!("fixtures/leaf.key");
+
+/// What a TLS server saw of the handshake.
+#[derive(Debug, Default, Clone)]
+struct Negotiated {
+    version: Option<rustls::ProtocolVersion>,
+    group: Option<rustls::NamedGroup>,
+}
+
+/// A loopback TLS server (leaf for localhost, signed by the test CA) that
+/// answers every request with a `ServerConfig`. `tls12_only` serves
+/// TLS 1.2 alone.
+fn tls_server(tls12_only: bool) -> (u16, Arc<Mutex<Negotiated>>) {
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    let chain: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(LEAF_PEM.as_bytes())
+        .chain(CertificateDer::pem_slice_iter(CA_PEM.as_bytes()))
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let key = PrivateKeyDer::from_pem_slice(LEAF_KEY.as_bytes()).unwrap();
+    let mut provider = rustls::crypto::aws_lc_rs::default_provider();
+    let versions: &[&rustls::SupportedProtocolVersion] = if tls12_only {
+        provider
+            .cipher_suites
+            .retain(|s| s.version().version == rustls::ProtocolVersion::TLSv1_2);
+        &[&rustls::version::TLS12]
+    } else {
+        &[&rustls::version::TLS13]
+    };
+    let config = Arc::new(
+        rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+            .with_protocol_versions(versions)
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(chain, key)
+            .unwrap(),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let seen = Arc::new(Mutex::new(Negotiated::default()));
+    let s = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            let (config, s) = (config.clone(), s.clone());
+            std::thread::spawn(move || {
+                let conn = rustls::ServerConnection::new(config).unwrap();
+                let mut tls = rustls::StreamOwned::new(conn, stream);
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match tls.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => return,
+                    }
+                }
+                *s.lock().unwrap() = Negotiated {
+                    version: tls.conn.protocol_version(),
+                    group: tls.conn.negotiated_key_exchange_group().map(|g| g.name()),
+                };
+                let body = encode(&ServerConfig {
+                    realtime_url: "wss://x.invalid".into(),
+                    publishable_key: "pk".into(),
+                    open_signup: false,
+                });
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    onepass_mailbox_proto::CONTENT_TYPE,
+                    body.len()
+                );
+                let _ = tls.write_all(head.as_bytes());
+                let _ = tls.write_all(&body);
+                tls.conn.send_close_notify();
+                let _ = tls.flush();
+            });
+        }
+    });
+    (port, seen)
+}
+
+fn tls_client(port: u16, ca: Option<&str>) -> MailboxClient {
+    MailboxClient::new(
+        Endpoint {
+            base_url: format!("https://localhost:{port}{PREFIX}"),
+            extra_ca_pem: ca.map(str::to_string),
+        },
+        Credential::generate().unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn tls_handshake_with_the_self_host_ca_is_tls13_hybrid() {
+    let (port, seen) = tls_server(false);
+    let c = tls_client(port, Some(CA_PEM));
+    assert!(!c.server_config().unwrap().open_signup);
+    let n = seen.lock().unwrap().clone();
+    assert_eq!(n.version, Some(rustls::ProtocolVersion::TLSv1_3));
+    assert_eq!(n.group, Some(rustls::NamedGroup::X25519MLKEM768));
+}
+
+#[test]
+fn untrusted_certificate_is_tls_not_offline() {
+    let (port, _) = tls_server(false);
+    let c = tls_client(port, None);
+    let err = c.server_config().unwrap_err();
+    assert!(
+        matches!(&err, MailboxError::Tls(w) if w.contains("certificate")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn tls12_only_server_is_tls_not_offline() {
+    let (port, _) = tls_server(true);
+    let c = tls_client(port, Some(CA_PEM));
+    let err = c.server_config().unwrap_err();
+    assert!(matches!(err, MailboxError::Tls(_)), "{err:?}");
+}
+
+#[test]
+fn garbage_instead_of_a_server_hello_is_tls() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut buf = [0u8; 512];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n");
+        }
+    });
+    let err = tls_client(port, None).server_config().unwrap_err();
+    assert!(matches!(err, MailboxError::Tls(_)), "{err:?}");
 }

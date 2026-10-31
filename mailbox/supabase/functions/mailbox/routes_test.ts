@@ -129,7 +129,7 @@ function withKey(key: TestKey, rest: Answer = () => [ok()]): Answer {
 
 // --------------------------------------------------------------- routing
 
-Deno.test("unknown route is 404 not_found without SQL", async () => {
+Deno.test("unknown route is 404 no_route without SQL", async () => {
   const db = new FakeDb();
   const h = handler(deps(db));
   for (
@@ -145,7 +145,7 @@ Deno.test("unknown route is 404 not_found without SQL", async () => {
       ["GET", "http://localhost/other/v1/config"],
     ]
   ) {
-    await assertError(await h(new Request(u, { method }), IP), "not_found");
+    await assertError(await h(new Request(u, { method }), IP), "no_route");
   }
   assertEquals(db.calls.length, 0);
 });
@@ -219,9 +219,11 @@ Deno.test("an unsigned or badly signed request on a signed route makes no SQL ca
 
 // ------------------------------------------------------------ SQL errors
 
+const SQL_CODES = (Object.keys(CODES) as Code[]).filter((c) => c !== "no_route");
+
 Deno.test("every raised OP errcode maps to its status and ErrorBody, rolled back", async () => {
   const k = await newKey();
-  for (const code of Object.keys(CODES) as Code[]) {
+  for (const code of SQL_CODES) {
     const db = new FakeDb(withKey(k, () => {
       throw { code: `OP${CODES[code].status}`, message: code, detail: code === "rate_limited" ? "7" : undefined };
     }));
@@ -239,6 +241,8 @@ Deno.test("an unknown SQLSTATE or a mismatched OP code is 503 retry", async () =
       { code: "P0001", message: "unknown mailbox error code x" },
       { code: "OP404", message: "replay" },
       { code: "OP999", message: "nope" },
+      // no_route belongs to the router: SQL cannot claim it.
+      { code: "OP404", message: "no_route" },
       new Error("connection reset"),
     ]
   ) {
@@ -249,9 +253,18 @@ Deno.test("an unknown SQLSTATE or a mismatched OP code is 503 retry", async () =
   }
 });
 
+Deno.test("an absent record is not_found, never no_route; SQL cannot answer no_route", async () => {
+  const k = await newKey();
+  const target = `/v1/mailboxes/${MHEX}/records/5/${MHEX}`;
+  const absent = new FakeDb(withKey(k, () => [{ status: "not_found", retry_after: null }]));
+  await assertError(await handler(deps(absent))(await signed(k, "GET", target), IP), "not_found");
+  const lying = new FakeDb(withKey(k, () => [{ status: "no_route", retry_after: null }]));
+  await assertError(await handler(deps(lying))(await signed(k, "GET", target), IP), "retry");
+});
+
 Deno.test("in-band codes map to their status, and the transaction commits", async () => {
   const k = await newKey();
-  for (const code of Object.keys(CODES) as Code[]) {
+  for (const code of SQL_CODES) {
     const db = new FakeDb(withKey(k, () => [{ status: code, retry_after: code === "rate_limited" ? 9 : null }]));
     const r = await handler(deps(db))(await signed(k, "GET", `/v1/mailboxes/${MHEX}`), IP);
     await assertError(r, code, code === "rate_limited" ? 9 : null);
