@@ -292,13 +292,8 @@ impl<S: RecordStore> Repository<S> {
         if req.device_keys.public(me)? != trust.me {
             return Err(refused("device", "other device keys"));
         }
-        if !trust
-            .roster
-            .iter()
-            .any(|e| e.device_id == me && e.sign_pub == trust.me.sign_pub)
-        {
-            return Err(refused("device", "not in the roster"));
-        }
+        // Task 15 (concern 1): the one pin check, keys compared.
+        super::kit::check_pinned(&trust)?;
         if trust.identity_pub != self.account.params.identity_pub {
             return Err(IntegrityError::WrongContext.into());
         }

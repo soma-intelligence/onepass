@@ -549,11 +549,27 @@ pub fn repair_from_grant(
         .ok_or(Error::NotFound)?;
     let left = AccountParams::decode_verified(&current.data, &trust.identity_pub)?;
 
+    // Task 15 review I2: a kit-restored device still waiting for a yes is
+    // outside its own roster; its entry comes from the approver's roster
+    // (the approver introduced it), else from its own self-intro.
     let own_entry = trust
         .roster
         .iter()
-        .find(|e| e.device_id == me)
+        .chain(&grant.trust.roster)
+        .find(|e| e.device_id == me && same_keys(e, &trust.me))
         .cloned()
+        .or_else(|| {
+            stored_intros(&store).ok().and_then(|intros| {
+                intros
+                    .into_iter()
+                    .find(|i| {
+                        i.identity_sig.is_some()
+                            && i.body.introducer == me
+                            && same_keys(&i.body.entry, &trust.me)
+                    })
+                    .map(|i| i.body.entry)
+            })
+        })
         .ok_or_else(|| refused("device", "not in its own roster"))?;
     let mut next = trust.clone();
     next.head = LineageHead {
