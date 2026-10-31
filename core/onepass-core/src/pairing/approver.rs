@@ -4,9 +4,10 @@
 use std::fmt;
 
 use crate::crypto::kem::wrap_key_labeled;
-use crate::crypto::{SecretKey, SymmetricKey};
+use crate::crypto::{HybridSignature, SecretKey, SymmetricKey};
+use crate::device_keys::{DevicePublic, verify_pop};
 use crate::devices::DeviceMode;
-use crate::{IntegrityError, Result};
+use crate::{Id, IntegrityError, Result};
 
 use super::channel::Channel;
 use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
@@ -27,6 +28,21 @@ pub struct Approver {
     /// Started from an invite: the newcomer takes a `Profile`.
     invite: bool,
     profile_sent: bool,
+    /// `SHA-256(QR text || Hello)`: the context of the newcomer's first
+    /// proof of possession (spec 5.2).
+    transcript: [u8; 32],
+    /// The id the Hello asked to be listed under.
+    peer_id: Id,
+    /// Key rotation v2: the newcomer's device key, from its
+    /// `ConfirmedWithKey` (pop over the transcript verified). `None` for a
+    /// legacy newcomer (`Confirmed`).
+    peer_key: Option<DevicePublic>,
+    /// The account a `FullV2` granted, for the second proof of possession.
+    granted_account: Option<Id>,
+    /// The newcomer's proof of possession over the granted account id, from
+    /// its second `ConfirmedWithKey` (its acknowledgment): what the intro
+    /// carries (spec 6.4).
+    account_pop: Option<HybridSignature>,
 }
 
 impl Approver {
@@ -82,6 +98,11 @@ impl Approver {
             acked: false,
             invite,
             profile_sent: false,
+            transcript: t,
+            peer_id: h.device.device_id,
+            peer_key: None,
+            granted_account: None,
+            account_pop: None,
         };
         let kx = KeyExchange { envelope }.to_bytes();
         Ok((approver, kx, code, h.device, h.requested_mode))
@@ -91,28 +112,83 @@ impl Approver {
         self.on_frame_at(frame, now_unix())
     }
 
-    /// Open a frame from the newcomer: `Confirmed` first (recorded), then
-    /// `Ack` after the grant, `Audit` in a public session, or `End`.
-    /// Anything else ends the session.
+    /// Open a frame from the newcomer: `Confirmed` or `ConfirmedWithKey`
+    /// first (recorded), then the acknowledgment after the grant (`Ack`, or
+    /// for a `FullV2` the second `ConfirmedWithKey`), `Audit` in a public
+    /// session, or `End`. Anything else ends the session.
+    ///
+    /// A `ConfirmedWithKey` is refused, and the session ended, unless its
+    /// device id is the Hello's and its proof of possession verifies: over
+    /// the transcript hash the first time (spec 5.2), over the granted
+    /// account id the second time, for the same device key.
     pub fn on_frame_at(&mut self, frame: &[u8], now: i64) -> Result<Message> {
         let msg = self.channel.open_at(frame, now)?;
+        let v2 = self.peer_key.is_some();
         let ok = match &msg {
             Message::Confirmed => !self.peer_confirmed && self.granted.is_none(),
-            Message::Ack => self.granted.is_some() && !self.acked,
+            // A public device has no device key to pin.
+            Message::ConfirmedWithKey { .. } if !self.peer_confirmed => {
+                self.granted.is_none() && self.requested != DeviceMode::Public
+            }
+            Message::ConfirmedWithKey { .. } => {
+                self.granted_account.is_some() && self.account_pop.is_none()
+            }
+            Message::Ack => self.granted.is_some() && !self.acked && !v2,
             Message::Audit(_) => self.granted == Some(true),
             Message::End => true,
             Message::Grant(_) | Message::Profile(_) => false,
         };
-        if !ok {
+        let checked = if ok { self.check_key(&msg) } else { Ok(()) };
+        if !ok || checked.is_err() {
             self.channel.close();
-            return Err(refused("unexpected message"));
+            return Err(checked
+                .err()
+                .unwrap_or_else(|| refused("unexpected message")));
         }
-        match msg {
+        match &msg {
             Message::Confirmed => self.peer_confirmed = true,
+            Message::ConfirmedWithKey { device, .. } if !self.peer_confirmed => {
+                self.peer_confirmed = true;
+                self.peer_key = Some(device.clone());
+            }
+            Message::ConfirmedWithKey { pop, .. } => {
+                self.account_pop = Some(pop.clone());
+                self.acked = true;
+            }
             Message::Ack => self.acked = true,
             _ => {}
         }
         Ok(msg)
+    }
+
+    /// The proof of possession of a `ConfirmedWithKey`.
+    fn check_key(&self, msg: &Message) -> Result<()> {
+        let Message::ConfirmedWithKey { device, pop, .. } = msg else {
+            return Ok(());
+        };
+        if device.device_id != self.peer_id {
+            return Err(refused("device id"));
+        }
+        match (&self.peer_key, self.granted_account) {
+            (None, _) => verify_pop(&self.transcript, device, pop),
+            (Some(first), Some(account)) if first == device => verify_pop(&account.0, device, pop),
+            _ => Err(refused("device key")),
+        }
+    }
+
+    /// The newcomer's device key, once its `ConfirmedWithKey` arrived (its
+    /// proof of possession over the transcript verified). `None` for a
+    /// legacy newcomer: it pairs as before and is trusted on first use
+    /// (spec 15).
+    pub fn newcomer_key(&self) -> Option<&DevicePublic> {
+        self.peer_key.as_ref()
+    }
+
+    /// The newcomer's proof of possession over the granted account id, once
+    /// its acknowledgment of a `FullV2` arrived: with `newcomer_key`, what
+    /// the approver's intro carries (`Repository::introduce`).
+    pub fn newcomer_account_pop(&self) -> Option<&HybridSignature> {
+        self.account_pop.as_ref()
     }
 
     pub fn seal_grant(&mut self, grant: Grant, user_confirmed: bool) -> Result<Vec<u8>> {
@@ -124,7 +200,11 @@ impl Approver {
     /// the SAS and passed the presence check), and unless the grant
     /// matches the requested mode: a `PublicGrant` for a public request
     /// (this session, read only, not yet expired), a `FullGrant` of the
-    /// requested mode otherwise, with a snapshot within the cap.
+    /// requested mode otherwise, with a snapshot within the cap. A
+    /// newcomer that sent its device key gets a `FullV2` (its trust
+    /// snapshot well formed and of the granted account), a legacy one a
+    /// `Full`: an older newcomer cannot read a `FullV2`, and a newer one
+    /// refuses a `Full` (a downgrade).
     pub fn seal_grant_at(
         &mut self,
         grant: Grant,
@@ -144,14 +224,34 @@ impl Approver {
                 }
                 Some(g.expires_at)
             }
-            Grant::Full(g) if self.requested != DeviceMode::Public && g.mode == self.requested => {
+            Grant::Full(g)
+                if self.requested != DeviceMode::Public
+                    && g.mode == self.requested
+                    && self.peer_key.is_none() =>
+            {
                 SecretKey::parse(&g.secret_key)?;
                 check_snapshot(&g.snapshot)?;
                 None
             }
+            Grant::FullV2(g)
+                if self.requested != DeviceMode::Public
+                    && g.full.mode == self.requested
+                    && g.full.device_id == self.peer_id
+                    && self.peer_key.is_some() =>
+            {
+                SecretKey::parse(&g.full.secret_key)?;
+                check_snapshot(&g.full.snapshot)?;
+                g.check()?;
+                None
+            }
             _ => return Err(refused("grant does not match the requested mode")),
         };
+        let account = match &grant {
+            Grant::FullV2(g) => Some(g.full.account_id),
+            _ => None,
+        };
         let frame = self.channel.seal_at(&Message::Grant(grant), now)?;
+        self.granted_account = account;
         if let Some(e) = expiry {
             self.channel.set_expiry(e);
         }
@@ -204,6 +304,7 @@ impl fmt::Debug for Approver {
             .field("peer_confirmed", &self.peer_confirmed)
             .field("granted", &self.granted)
             .field("acked", &self.acked)
+            .field("v2", &self.peer_key.is_some())
             .finish_non_exhaustive()
     }
 }

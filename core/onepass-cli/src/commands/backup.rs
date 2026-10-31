@@ -17,16 +17,14 @@
     )
 )]
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
-use onepass_core::Id;
 use onepass_core::archive::{
-    self, ArchiveKind, ArchivedVault, HeaderInfo, Unlock, inspect as read_header, restore_plan,
+    self, ArchiveKind, ArchivedVault, HeaderInfo, Unlock, inspect as read_header,
 };
 use onepass_core::epoch::EpochReason;
 use onepass_core::model::validate;
@@ -125,7 +123,7 @@ fn create(ctx: &Ctx, out: &Path, with_passphrase: bool) -> Result<(), CliError> 
 fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
     let bytes = read_capped(file)?;
     let info = read_header(&bytes)?;
-    let (created, restored, skipped, epoch) = with_session(ctx, |repo| {
+    let (created, restored, skipped, epoch, before_rotation) = with_session(ctx, |repo| {
         // A running server would write back last seen manifests of what
         // this changes; during Travel Mode, restored vaults would sit beside
         // the hidden ones.
@@ -137,7 +135,7 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
         }
         let account_id = repo.account().params.account_id;
         let contents = if info.account == Some(account_id) {
-            archive::open(&bytes, Unlock::Account(repo.account()))?
+            repo.open_archive(&bytes)?
         } else if info.passphrase {
             let p = read_secret("Archive passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
             archive::open(&bytes, Unlock::Passphrase(&p))?
@@ -147,47 +145,43 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 msg: "this backup belongs to another account and has no passphrase".to_owned(),
             });
         };
-        let mut vaults = all(repo)?;
-        let mut existing = Vec::with_capacity(vaults.len());
-        for v in &vaults {
-            let ids: Vec<Id> = stored(repo.items(v))?.iter().map(|i| i.id).collect();
-            existing.push((v.id, ids));
-        }
-        let plan = restore_plan(&contents, &existing);
+        let before_rotation = contents.made_before_rotation;
+        let mut progress = archive::RestoreProgress::default();
+        let report = repo.restore_archive_with(&contents, &mut progress, &|item| {
+            validate(&item)?;
+            Ok(item)
+        });
         drop(contents);
-        // Every item is checked before the first write (vaults included).
-        for (i, (_, item)) in plan.writes.iter().enumerate() {
-            if validate(item).is_err() {
+        let total = usize::try_from(progress.total).unwrap_or(usize::MAX);
+        let report = match report {
+            Ok(r) => r,
+            // Every item is checked before the first write (vaults included).
+            Err(_) if progress.invalid.is_some() => {
                 return Err(CliError::usage(format!(
                     "item {} of the backup is invalid: nothing written",
-                    i + 1
+                    progress.invalid.unwrap_or(0)
                 )));
             }
-        }
-        let total = plan.writes.len();
-        let mut index: HashMap<Id, usize> =
-            vaults.iter().enumerate().map(|(i, v)| (v.id, i)).collect();
-        for (archive_id, meta) in plan.new_vaults.iter().cloned() {
-            let v = stored(repo.create_vault(meta)).map_err(|e| partial(e, 0, total))?;
-            vaults.push(v);
-            index.insert(archive_id, vaults.len() - 1);
-        }
-        let mut restored = 0u64;
-        for (archive_id, mut item) in plan.writes {
-            let target = index
-                .get(&archive_id)
-                .and_then(|&i| vaults.get(i))
-                .ok_or_else(|| CliError::usage("restore plan names an unknown vault"))?;
-            item.vault_id = target.id;
-            stored(repo.save_item(target, item))
-                .map_err(|e| partial(e, usize::try_from(restored).unwrap_or(usize::MAX), total))?;
-            restored += 1;
-        }
+            Err(e) => {
+                let done = usize::try_from(progress.restored).unwrap_or(usize::MAX);
+                let e = stored::<()>(Err(e))
+                    .err()
+                    .unwrap_or_else(|| CliError::usage("restore failed"));
+                return Err(partial(e, done, total));
+            }
+        };
+        let restored = u64::from(report.restored);
         // After every write: the epoch's heads are the restored state. A
         // failure here keeps the items written (and the device state saved):
         // it is reported once the counts are out.
         let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore)).map(|e| e.epoch);
-        Ok((plan.new_vaults.len(), restored, plan.skipped, epoch))
+        Ok((
+            report.vaults_created as usize,
+            restored,
+            report.skipped,
+            epoch,
+            before_rotation,
+        ))
     })?;
     let issued = epoch.as_ref().ok().copied();
     if ctx.json {
@@ -198,9 +192,15 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 "restored": restored,
                 "skipped": skipped,
                 "epoch": issued,
+                "made_before_rotation": before_rotation,
             })
         );
     } else {
+        if before_rotation {
+            crate::out!(
+                "Warning: this backup was made before a key rotation; a revoked device could have forged it"
+            );
+        }
         crate::out!("Created {created} vaults");
         crate::out!("Restored {restored} items");
         crate::out!("Skipped {skipped} items (already in the account)");

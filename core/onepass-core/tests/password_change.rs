@@ -334,3 +334,56 @@ fn racing_password_changes_loser_dropped() {
         assert_eq!(dev.items().len(), 1);
     }
 }
+
+/// Hold-out 4: params the server serves that the device's identity did not
+/// sign are ignored, not trusted to overtake a local password change.
+#[test]
+fn unverified_params_ignored() {
+    use onepass_core::account::AccountParams;
+    use onepass_core::crypto::IdentityKey;
+
+    let mut server = Server::default();
+    let (mut a, _b, sk, _) = setup(&mut server);
+    let id = account_id(&mut a);
+
+    // A changes the password; the change is still pending.
+    a.repo()
+        .change_password(PASSWORD, &sk, NEW_PASSWORD)
+        .unwrap();
+    a.repo().persist_device_state().unwrap();
+    assert_eq!(a.repo().chain().params_epoch, 2);
+
+    // The server serves params of the same account at a far higher epoch,
+    // signed by another identity (signature valid under its own key).
+    let p = a.repo().account().params.clone();
+    let attacker = IdentityKey::generate().unwrap();
+    let epoch = 50;
+    let msg =
+        postcard::to_allocvec(&(&p.account_id, &p.kdf, &p.signing_pub, &p.kem_pub, epoch)).unwrap();
+    let forged = AccountParams {
+        identity_pub: attacker.verifying_key(),
+        identity_sig: attacker.sign(b"account-params/v2", &msg).unwrap(),
+        epoch,
+        ..p
+    };
+    let mut record = server.get(RecordKind::AccountParams, id).unwrap();
+    record.version += 10;
+    record.data = forged.encode().unwrap();
+    server.replay(record);
+    pull(&server, &mut a);
+
+    // Ignored: A's change was not taken for superseded, it is still going
+    // out, the epoch did not move, and the refusal is logged.
+    assert!(!a.store().take_password_change_superseded().unwrap());
+    assert!(
+        outbox(&a)
+            .iter()
+            .any(|(c, _)| c.kind == RecordKind::AccountParams)
+    );
+    assert_eq!(a.repo().chain().params_epoch, 2);
+    let log = a.store().ignored_params().unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].record_id, id);
+    // Control: a record A's own identity signed does overtake it (that is
+    // the race of `racing_password_changes_loser_dropped`).
+}

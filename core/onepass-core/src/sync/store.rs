@@ -13,6 +13,13 @@
 //!   key), so the device still holds its own verified copy when the server
 //!   goes back to an older state or serves an incomplete one. See
 //!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
+//! - `retained`: the `base` vault key
+//!   and vault meta rows a fetch replaced with other bytes (the first such
+//!   row per key): the vault as the identity this device is on sealed it,
+//!   kept while a rotation re-sealed it under keys this device has not
+//!   followed yet (spec 9, read-only reads) and until its own writes are
+//!   replayed under the new keys (spec 10.4). See
+//!   `RecordStore::retained_rows` and `RecordStore::settle_replayed`.
 //! - `meta`: device state, change token, sync health and other small
 //!   values.
 
@@ -34,10 +41,17 @@ use super::{
 };
 use crate::account::{AccountParams, signed_params};
 use crate::chain::{ChainState, Seen};
+use crate::crypto::IdentityVerifyingKey;
 use crate::format::STORE_USER_VERSION;
+use crate::lineage::identity_id;
+use crate::lineage::resolve::PromptKind;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
+use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::store::{
+    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, account_record_id,
+};
+use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -47,6 +61,11 @@ const DEVICE_STATE_KEY: &str = "device_state";
 const EPOCH_MARK_KEY: &str = "epoch_hash";
 /// The pinned chain state (`ChainState`), beside the device state.
 const CHAIN_STATE_KEY: &str = "chain";
+/// `meta` key of the local trust state.
+const TRUST_STATE_KEY: &str = "trust";
+/// `meta` key of what the push phases of a rotation need
+/// (`RotationPush`), from the rotation's commit until phase 3 is confirmed.
+const ROTATION_PUSH_KEY: &str = "rotation_push";
 /// Raised when a fetch dropped a local password change the server had
 /// overtaken (`SyncStore::take_password_change_superseded`).
 const SUPERSEDED_KEY: &str = "password_change_superseded";
@@ -77,6 +96,10 @@ const HEALTH_MEMORY_ENTRY_BYTES: usize = 16 + 1 + 8 + 4 + 1;
 /// because the signed vault list marks them deleted (same encoding as the
 /// ignored deletions, kind `Manifest`, id the vault).
 const DROPPED_WRITES_KEY: &str = "dropped_vault_writes";
+/// The capped log of server params the store ignored because the identity of
+/// the device's own pending change did not sign them (same encoding, kind
+/// `AccountParams`, id the params record).
+const IGNORED_PARAMS_KEY: &str = "ignored_params";
 const FETCH_MODE_KEY: &str = "zone.full_fetch";
 const FETCH_PLAIN: u8 = 1;
 const FETCH_RESET: u8 = 2;
@@ -121,6 +144,13 @@ CREATE TABLE IF NOT EXISTS kept (
     data BLOB NOT NULL,
     PRIMARY KEY (kind, id)
 );
+CREATE TABLE IF NOT EXISTS retained (
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (kind, id)
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
     value BLOB NOT NULL
@@ -149,6 +179,17 @@ type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
 
 pub struct SyncStore {
     conn: Connection,
+}
+
+/// What `SyncStore::push_rotation_phase` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhaseOutcome {
+    /// Every write of the phase is confirmed: the device moved to the next
+    /// phase (or to `Current` after phase 3), durably.
+    Done,
+    /// Writes of the phase are still pending (or the device is not in that
+    /// phase): push `pending_changes`, then ask again.
+    Retry,
 }
 
 /// Only the SQLite error code goes into the error: never paths or data.
@@ -279,6 +320,14 @@ fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
 /// A `base` older than the ancestor is a server that went back: the local
 /// manifest is not held, its push restores the server's copy.
 fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
+    let exempt = overwritten_vaults(conn)?;
+    let mut held = held_vaults_in(conn)?;
+    held.retain(|v| !exempt.contains(v));
+    Ok(held)
+}
+
+/// `held_vaults` without the rotation's exemption.
+fn held_vaults_in(conn: &Connection) -> Result<BTreeSet<Id>> {
     let mut stmt = conn
         .prepare(
             "SELECT p.id FROM pending p
@@ -340,9 +389,14 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
     .collect()
 }
 
-/// The epoch of an account params record, `None` if it does not decode.
-fn params_epoch(data: &[u8]) -> Option<u64> {
-    AccountParams::decode(data).ok().map(|p| p.epoch)
+/// The epoch of the server's account params `base`, counted only when
+/// `identity` signed them (G8): a record that does not decode, or that
+/// another identity signed, is `None`. The identity is the one of the
+/// device's own pending change, never one the record names.
+fn server_params_epoch(base: &[u8], identity: &IdentityVerifyingKey) -> Option<u64> {
+    AccountParams::decode_verified(base, identity)
+        .ok()
+        .map(|p| p.epoch)
 }
 
 /// The data of one row of `table` (`pending` or `base`), `None` if there is
@@ -378,26 +432,46 @@ fn server_params(conn: &Connection, id: Id) -> Result<Option<Vec<u8>>> {
 /// change the server already has, or one it has overtaken, never goes out;
 /// see `server_params`).
 fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
+    // Review I3 (Task 11): only the pair of the identity this device is on.
+    // A password change made under an identity it left (its keyset sealed
+    // under the left Secret Key, which a revoked device may hold) stays on
+    // the device, never pushed.
+    if let Some(t) = trust_in(conn)?
+        && id
+            != account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            )
+    {
+        return Ok(false);
+    }
     let params = row_data(conn, "pending", RecordKind::AccountParams, id)?;
     let keyset = row_data(conn, "pending", RecordKind::Keyset, id)?;
     let (Some(params), Some(_)) = (params, keyset) else {
         return Ok(false);
     };
-    let Some(epoch) = params_epoch(&params) else {
+    let Ok(pending) = AccountParams::decode(&params) else {
         return Ok(false);
     };
     let base = server_params(conn, id)?;
-    Ok(match base.as_deref().map(params_epoch) {
-        Some(Some(base_epoch)) => epoch > base_epoch,
-        // No server params (a new account, or a zone reset that requeued
-        // the pair), or ones that do not even decode: the pair goes out.
-        _ => true,
-    })
+    Ok(
+        match base
+            .as_deref()
+            .map(|b| server_params_epoch(b, &pending.identity_pub))
+        {
+            Some(Some(base_epoch)) => pending.epoch > base_epoch,
+            // No server params (a new account, or a zone reset that requeued
+            // the pair), or ones that do not decode or that another identity
+            // signed (ignored): the pair goes out.
+            _ => true,
+        },
+    )
 }
 
 /// After a fetch: a local password change (pending account params and
 /// keyset) that the server params caught up with (epoch at least the
-/// pending one) is dropped, both rows together, so it can never be pushed
+/// pending one, the params signed by the pending change's identity) is
+/// dropped, both rows together, so it can never be pushed
 /// over the server's pair. If the server pair is not this very change (a
 /// push confirmed before `mark_pushed`), the change lost a race: the
 /// `password_change_superseded` flag is raised for the app. A pending keyset
@@ -420,9 +494,16 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
         ) else {
             continue;
         };
-        let (Some(local), Some(remote)) = (params_epoch(&pending), params_epoch(&base)) else {
+        let Ok(local) = AccountParams::decode(&pending) else {
             continue;
         };
+        // Server params the pending change's identity did not sign cannot
+        // overtake it: ignored, and logged (G8, hold-out 4).
+        let Some(remote) = server_params_epoch(&base, &local.identity_pub) else {
+            append_log(tx, IGNORED_PARAMS_KEY, &[(RecordKind::AccountParams, id)])?;
+            continue;
+        };
+        let local = local.epoch;
         if remote < local {
             continue;
         }
@@ -454,8 +535,194 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// The stored trust state, if any.
+fn trust_in(conn: &Connection) -> Result<Option<TrustState>> {
+    meta_in(conn, TRUST_STATE_KEY)?
+        .map(|b| TrustState::decode(&b))
+        .transpose()
+}
+
+fn set_meta_in(conn: &Connection, key: &str, value: &[u8]) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The phase this device pushes a rotation in, and the record id of the
+/// rotation's identity (spec 6.6), or `None` outside `Rotating`.
+fn rotating_in(conn: &Connection) -> Result<Option<(u8, Id)>> {
+    Ok(trust_in(conn)?.and_then(|t| match t.state {
+        DeviceLineageState::Rotating { phase } => Some((phase, identity_id(&t.identity_pub))),
+        _ => None,
+    }))
+}
+
+/// What the rotation being pushed needs (`RotationPush`), if any.
+fn rotation_push_in(conn: &Connection) -> Result<Option<RotationPush>> {
+    meta_in(conn, ROTATION_PUSH_KEY)?
+        .map(|b| RotationPush::decode(&b))
+        .transpose()
+}
+
+/// The vaults whose single-slot records the rotator overwrites whatever
+/// the server holds (R21): those the rotation re-sealed, in phases 1 and
+/// 2. Their manifests are never held for a rebase meanwhile: the server's
+/// copy is old-identity or sibling content the rotator never reads (spec
+/// 10.3), and the push expects the version it read.
+fn overwritten_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
+    Ok(match rotating_in(conn)? {
+        Some((1 | 2, _)) => rotation_push_in(conn)?
+            .map(|p| p.vaults.into_iter().collect())
+            .unwrap_or_default(),
+        _ => BTreeSet::new(),
+    })
+}
+
+/// Phase 1 of a rotation (spec 7.1): the deliveries, the account records
+/// and lists under the new identity id `rid`, the lineage record. All new
+/// ids. The rank orders them: deliveries, params, keyset, lists, then the
+/// lineage record last.
+fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
+    match kind {
+        RecordKind::KeyDelivery => Some(0),
+        RecordKind::AccountParams if id == rid => Some(1),
+        RecordKind::Keyset if id == rid => Some(2),
+        RecordKind::DeviceList if id == rid => Some(3),
+        RecordKind::VaultList if id == rid => Some(4),
+        RecordKind::Lineage => Some(5),
+        _ => None,
+    }
+}
+
+/// A pending row: kind, id, whether it is a write, and the vault it
+/// belongs to (manifest, key and meta: their id; an item: its prefix or
+/// the vault kept with its tombstone).
+type PendingRow = (RecordKind, Id, bool, Option<Id>);
+
+fn pending_rows(conn: &Connection) -> Result<Vec<PendingRow>> {
+    let mut stmt = conn
+        .prepare("SELECT kind, id, data, vault FROM pending")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, Option<Vec<u8>>>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+            ))
+        })
+        .map_err(store_err)?;
+    rows.map(|row| {
+        let (kind, id, data, tomb) = row.map_err(store_err)?;
+        let kind = decode_kind(kind)?;
+        let id = decode_id(id)?;
+        let vault = match kind {
+            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => Some(id),
+            RecordKind::Item => match data.as_deref() {
+                Some(d) => Some(split_item_record(d)?.0),
+                None => tomb.map(decode_id).transpose()?,
+            },
+            _ => None,
+        };
+        Ok((kind, id, data.is_some(), vault))
+    })
+    .collect()
+}
+
+/// Whether a write of phase `phase` is still pending. Phase 1: a write the
+/// phase-1 outbox takes (`phase_one_rank`, writes only, as
+/// `pending_changes_in`). Invariant: every row counted here is one the
+/// outbox sends, or one held for a rebase (a list the server moved past,
+/// a params pair the server already holds) that the next `rebase` or fetch
+/// settles; none is withheld for good. Phase 2: a write of a re-sealed
+/// vault (key, meta, item, manifest; every vault write when the store kept
+/// no `RotationPush`). Phase 3: a deletion of a collected item.
+fn phase_left(
+    rows: &[PendingRow],
+    phase: u8,
+    rid: Id,
+    push: Option<&RotationPush>,
+) -> Result<bool> {
+    Ok(match phase {
+        1 => rows
+            .iter()
+            .any(|(kind, id, write, _)| *write && phase_one_rank(*kind, *id, rid).is_some()),
+        2 => rows.iter().any(|(kind, _, write, vault)| {
+            *write
+                && matches!(
+                    kind,
+                    RecordKind::VaultKey
+                        | RecordKind::VaultMeta
+                        | RecordKind::Item
+                        | RecordKind::Manifest
+                )
+                && vault.is_some_and(|v| push.is_none_or(|p| p.vaults.contains(&v)))
+        }),
+        3 => rows.iter().any(|(kind, id, _, _)| {
+            *kind == RecordKind::Item && push.is_some_and(|p| p.collect.contains(id))
+        }),
+        _ => return Err(Error::InvalidFormat("rotation phase")),
+    })
+}
+
+/// What `pending_changes` holds back for a key rotation v2 on a remaining
+/// device (spec 7.2, 10.4, R10): while a rotation waits for the user
+/// (`candidate`), every pending write but the lineage kinds (the old keys
+/// may be the revoked device's); once a rotation is followed, every pending
+/// row of the vaults written under the identity left (`left`): those whose
+/// own writes wait for their replay, and those whose pending manifest the
+/// identity the device is on did not sign. They stay on the device (G4)
+/// until the replay settles them.
+///
+/// `all` (review I2 of Task 11): this device's own rotation lost to a
+/// sibling it knows (stored `Candidate` from `Rotating`, or `Rotating` with
+/// a switch found now): nothing goes out, so the loser never overwrites the
+/// winner's single-slot vault records (R21) nor sends half of its phase 1.
+#[derive(Debug, Default)]
+struct Hold {
+    candidate: bool,
+    all: bool,
+    left: BTreeSet<Id>,
+}
+
+/// The vaults whose pending manifest the identity of `trust` did not sign
+/// (written before this device followed a rotation). Every pending
+/// manifest when that identity's params cannot be read.
+fn left_signed_vaults(conn: &Connection, trust: &TrustState) -> Result<BTreeSet<Id>> {
+    let rid = account_record_id(
+        trust.account_id,
+        (trust.head.generation > 0).then_some(&trust.identity_pub),
+    );
+    let signer = effective_get(conn, RecordKind::AccountParams, rid)?
+        .and_then(|r| AccountParams::decode_verified(&r.data, &trust.identity_pub).ok())
+        .map(|p| p.signing_pub);
+    let mut stmt = conn
+        .prepare("SELECT id, data FROM pending WHERE kind = ?1 AND data IS NOT NULL")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![RecordKind::Manifest.code()], |r| {
+            Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(store_err)?;
+    let mut out = BTreeSet::new();
+    for row in rows {
+        let (id, data) = row.map_err(store_err)?;
+        let ours = signer
+            .as_ref()
+            .is_some_and(|s| SignedManifest::decode(&data).is_ok_and(|sm| signed_by(&sm, s)));
+        if !ours {
+            out.insert(decode_id(id)?);
+        }
+    }
+    Ok(out)
+}
+
 /// `SyncStore::pending_changes` on a consistent view.
-fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
+fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
     let held_lists = held_lists(tx)?;
     let deleted = deleted_vaults(tx, &[]);
@@ -507,6 +774,12 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
         if data.is_some() && owner.is_some_and(|v| deleted.contains(&v)) {
             continue;
         }
+        if hold.all
+            || (hold.candidate && !kind.is_immutable())
+            || owner.is_some_and(|v| hold.left.contains(&v))
+        {
+            continue;
+        }
         if data.is_some()
             && matches!(kind, RecordKind::AccountParams | RecordKind::Keyset)
             && !account_pair_pushable(tx, id)?
@@ -528,6 +801,13 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     // Deletions go last, highest kind first: a fetching device never
     // sees a manifest without its key.
     deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
+    // A rotation in phase 1 (spec 7.1, 10.5): its new records only, the
+    // lineage record last; every other write waits.
+    if let Some((1, rid)) = rotating_in(tx)? {
+        writes.retain(|c| phase_one_rank(c.kind, c.id, rid).is_some());
+        writes.sort_by_key(|c| (phase_one_rank(c.kind, c.id, rid), c.version));
+        return Ok(writes);
+    }
     writes.extend(deletions);
     Ok(writes)
 }
@@ -604,6 +884,114 @@ impl SyncStore {
         self.conn.execute_batch("ROLLBACK").map_err(store_err)
     }
 
+    /// See `RecordStore::put_all_if_version_with_trust` and
+    /// `RecordStore::put_rotation`.
+    /// `guard`: what the stored trust state must be, checked inside the
+    /// transaction (`Conflict` otherwise, nothing written): the one the
+    /// caller read, byte for byte, or none at all for the first write.
+    ///
+    /// The chain state, when given, is merged with the stored one while the
+    /// trust state keeps its identity, and also on the first trust write
+    /// (Task 8, carried to Task 14: a migrating device keeps its device id
+    /// and the lists it accepted); it replaces the stored one only when the
+    /// identity changes.
+    fn put_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        guard: TrustGuard<'_>,
+        trust: &TrustState,
+        rotation: Option<&RotationPush>,
+    ) -> Result<()> {
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        if !guard.admits(meta_in(&tx, TRUST_STATE_KEY)?.as_deref()) {
+            return Err(Error::Conflict);
+        }
+        for (r, expected) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *expected {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        for (kind, id) in deletes {
+            delete_in(&tx, kind, id)?;
+        }
+        if let Some(chain) = chain {
+            let same_identity = trust_in(&tx)?.is_none_or(|t| t.identity_pub == trust.identity_pub);
+            let chain = if same_identity {
+                merge_chain(&chain, &chain_state_in(&tx)?, false)?
+            } else {
+                chain
+            };
+            set_meta_in(&tx, CHAIN_STATE_KEY, &chain.encode())?;
+        }
+        set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
+        if let Some(rotation) = rotation {
+            set_meta_in(&tx, ROTATION_PUSH_KEY, &rotation.encode())?;
+        }
+        tx.commit()
+    }
+
+    /// Settle phase `phase` of the rotation this device pushes (spec 7.1,
+    /// state `Rotating { phase }`), once the push loop has pushed
+    /// `pending_changes` (gated to the phase) and confirmed it:
+    /// - phase 1 (deliveries, identity-keyed params, keyset and lists, the
+    ///   lineage record): confirmed, the device moves to phase 2;
+    /// - phase 2 (per re-sealed vault: key, meta, items, manifest, each
+    ///   single-slot write conditional on the version read, R21):
+    ///   confirmed, the deletions of the item records the `from_heads`
+    ///   manifests list are queued (and nothing else, R23) and the device
+    ///   moves to phase 3;
+    /// - phase 3: those deletions confirmed, the device is `Current`.
+    ///
+    /// Each move is one transaction with the trust state, so a cut resumes
+    /// at the phase reached. `Retry` (nothing written) while a write of the
+    /// phase is pending, or when the device is not in `Rotating { phase }`.
+    /// A phase other than 1 to 3 is `InvalidFormat("rotation phase")`.
+    pub fn push_rotation_phase(&mut self, phase: u8) -> Result<PhaseOutcome> {
+        // Review I2 (Task 11): a rotation that lost to a known sibling
+        // stops where it is.
+        if self.lost_rotation()? {
+            return Ok(PhaseOutcome::Retry);
+        }
+        let tx = self.write_tx()?;
+        let Some(mut trust) = trust_in(&tx)? else {
+            return Ok(PhaseOutcome::Retry);
+        };
+        if trust.state != (DeviceLineageState::Rotating { phase }) {
+            return Ok(PhaseOutcome::Retry);
+        }
+        let push = rotation_push_in(&tx)?;
+        let rid = identity_id(&trust.identity_pub);
+        if phase_left(&pending_rows(&tx)?, phase, rid, push.as_ref())? {
+            return Ok(PhaseOutcome::Retry);
+        }
+        trust.state = match phase {
+            1 => DeviceLineageState::Rotating { phase: 2 },
+            2 => {
+                for id in push.iter().flat_map(|p| &p.collect) {
+                    delete_in(&tx, RecordKind::Item, *id)?;
+                }
+                DeviceLineageState::Rotating { phase: 3 }
+            }
+            _ => {
+                tx.execute(
+                    "DELETE FROM meta WHERE key = ?1",
+                    params![ROTATION_PUSH_KEY],
+                )
+                .map_err(store_err)?;
+                DeviceLineageState::Current
+            }
+        };
+        set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
+        tx.commit()?;
+        Ok(PhaseOutcome::Done)
+    }
+
     /// Local writes to push, minus the held vaults, minus the writes (not
     /// the deletions) into a vault the verified vault list in `base` marks
     /// deleted (`deleted_vaults`, spec 4.5), and minus the account params
@@ -611,8 +999,72 @@ impl SyncStore {
     /// server's (`account_pair_pushable`). Order: account params, keysets,
     /// vault keys, vault metas, items, manifests, then deletions, so a
     /// manifest never reaches the server before its items.
+    ///
+    /// A device pushing a rotation (`Rotating { phase }`, spec 7.1, 10.5):
+    /// in phase 1 only the rotation's new records go out (deliveries,
+    /// params, keyset, lists, the lineage record last) and every other
+    /// write waits; in phases 1 and 2 the re-sealed vaults are never held
+    /// (R21). See `push_rotation_phase`.
+    ///
+    /// Key rotation v2 (spec 7.2, 10.4, R10): while a rotation waits for
+    /// the user (the stored state is `Candidate`, or a prompt is found
+    /// now), only the lineage kinds go out; after a follow, the pending
+    /// rows of a vault whose own writes still wait for their replay stay
+    /// (they were written under the identity left).
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
-        self.read(pending_changes_in)
+        let hold = self.rotation_hold()?;
+        self.read(|tx| pending_changes_in(tx, &hold))
+    }
+
+    /// See `Hold`.
+    fn rotation_hold(&self) -> Result<Hold> {
+        let Some(trust) = self.read(trust_in)? else {
+            return Ok(Hold::default());
+        };
+        let (candidate, all) = match trust.state {
+            DeviceLineageState::Candidate { resume, .. } => {
+                let locked = crate::repo::follow::look_for(self, &trust)?.lock.is_some();
+                (true, resume.is_some() || locked)
+            }
+            DeviceLineageState::Current => {
+                let look = crate::repo::follow::look_for(self, &trust)?;
+                (look.prompt.is_some(), look.lock.is_some())
+            }
+            DeviceLineageState::Rotating { .. } => {
+                let lost = self.lost_rotation()?;
+                (lost, lost)
+            }
+            // Task 12: a device a valid lineage record revokes or drops
+            // pushes nothing (spec 8.1).
+            DeviceLineageState::Quarantined { .. } | DeviceLineageState::Orphaned { .. } => {
+                (true, true)
+            }
+            DeviceLineageState::Legacy => (false, false),
+        };
+        let mut left = trust.own_writes.replay_vaults();
+        if !trust.retired.is_empty() {
+            left.extend(self.read(|c| left_signed_vaults(c, &trust))?);
+        }
+        Ok(Hold {
+            candidate,
+            all,
+            left,
+        })
+    }
+
+    /// Review I2 (Task 11): the rotation this device pushes lost to a
+    /// sibling it knows (the resolver offers a switch), whether or not a
+    /// session looked at it yet. Task 12: or a valid lineage record revokes
+    /// or drops this device (spec 8.1: nothing goes out).
+    fn lost_rotation(&self) -> Result<bool> {
+        let Some(trust) = self.read(trust_in)? else {
+            return Ok(false);
+        };
+        let look = crate::repo::follow::look_for(self, &trust)?;
+        Ok(look.lock.is_some()
+            || look
+                .prompt
+                .is_some_and(|(p, _)| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
     }
 
     /// Every `base` row, ordered by kind then id: the store as the server
@@ -889,6 +1341,13 @@ impl SyncStore {
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
             return Ok(());
         }
+        // The lineage kinds decode with no cap of their own (a rotation
+        // lists every vault head), so their size is bounded here, before
+        // anything reads them. No honest writer exceeds it (`check_size` on
+        // every local write), so the row is dropped, not staged.
+        if c.kind.is_immutable() && c.data.as_deref().is_some_and(|d| check_size(d).is_err()) {
+            return Ok(());
+        }
         let v = to_i64(c.version)?;
         self.conn
             .execute(
@@ -910,7 +1369,8 @@ impl SyncStore {
     ///
     /// Remote deletions the store has no right to make are ignored (they
     /// come from a hostile or broken server): account params, keysets, the
-    /// restore epoch and the signed lists, and the vault key, vault meta and
+    /// restore epoch, the signed lists, the lineage, intro and delivery
+    /// records (immutable, spec 6.3), and the vault key, vault meta and
     /// manifest of a vault in the device's `last_seen`, unless the account's
     /// signed vault list marks that vault deleted (spec 4.5,
     /// `deleted_vaults`: the list in `base` or the one staged in this batch,
@@ -950,6 +1410,25 @@ impl SyncStore {
                 }
                 continue;
             }
+            if kind.is_immutable()
+                && data.as_deref().is_some_and(|d| {
+                    row_data(
+                        &tx,
+                        "base",
+                        kind,
+                        decode_id(id.clone()).unwrap_or(Id([0; 16])),
+                    )
+                    .ok()
+                    .flatten()
+                    .is_some_and(|old| old != d)
+                })
+            {
+                // A different-bytes overwrite of an immutable row.
+                if let Ok(id) = decode_id(id) {
+                    ignored.push((kind, id));
+                }
+                continue;
+            }
             if matches!(kind, RecordKind::Manifest | RecordKind::Item) {
                 // The first row replaced or removed since the vault last
                 // loaded cleanly stays as part of the device's copy.
@@ -957,6 +1436,26 @@ impl SyncStore {
                     "INSERT OR IGNORE INTO kept (kind, id, version, data)
                      SELECT kind, id, version, data FROM base
                      WHERE kind = ?1 AND id = ?2 AND (?3 IS NULL OR data != ?3)",
+                    params![kind_code, &id, &data],
+                )
+                .map_err(store_err)?;
+            }
+            // Key rotation v2: a device keeps its own copy of a vault key
+            // and meta the server replaced. A legacy device too (no trust
+            // state yet, Task 8 carried to Task 14): a rotation fetched
+            // before its first unlock after the update must leave it its
+            // vaults to read once it migrates (`crate::repo::migrate`);
+            // until then the rows are inert (no rotation is known without a
+            // trust state).
+            if data.is_some() && matches!(kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
+                // The first row replaced since the vault last loaded cleanly
+                // (as `kept`: a clean load drops a meta retained without its
+                // key, review M1 of Task 10), so the retained meta pairs with
+                // the kept manifest.
+                tx.execute(
+                    "INSERT OR IGNORE INTO retained (kind, id, version, data)
+                     SELECT kind, id, version, data FROM base
+                     WHERE kind = ?1 AND id = ?2 AND data != ?3",
                     params![kind_code, &id, &data],
                 )
                 .map_err(store_err)?;
@@ -969,9 +1468,16 @@ impl SyncStore {
                 }
             }
             match data {
+                // A row staged without server meta (a pairing snapshot,
+                // `repair_from_grant`) that the device already holds with
+                // the same version and bytes keeps the meta it had: it is
+                // the same server record, and its tag is still the one the
+                // next conditional push must name (Task 14 fix round 1).
                 Some(data) => tx.execute(
                     "INSERT OR REPLACE INTO base (kind, id, version, data, server_meta)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                     VALUES (?1, ?2, ?3, ?4, COALESCE(?5,
+                        (SELECT server_meta FROM base
+                         WHERE kind = ?1 AND id = ?2 AND version = ?3 AND data = ?4)))",
                     params![kind_code, id, version, data, server_meta],
                 ),
                 None => tx.execute(
@@ -1134,6 +1640,16 @@ impl SyncStore {
         force_lists: bool,
     ) -> Result<(DeviceState, ChainState)> {
         let tx = self.write_tx()?;
+        // A session of an identity this device left (opened before a
+        // rotation committed on another connection) pins records nobody
+        // reads any more: it must not merge its pins over the new
+        // identity's (spec 6.6).
+        if let (Some(trust), Some(pin)) = (trust_in(&tx)?, &mem.pinned)
+            && pin.account_id == trust.account_id
+            && pin.identity_pub != trust.identity_pub
+        {
+            return Err(Error::Conflict);
+        }
         let stored = device_state_in(&tx)?;
         let chain = merge_chain(mem_chain, &chain_state_in(&tx)?, force_lists)?;
         let pinned = match (mem.pinned.clone(), stored.pinned) {
@@ -1249,7 +1765,9 @@ impl SyncStore {
     /// stays in place, so other open connections keep working on it.
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
-        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -1275,7 +1793,9 @@ impl SyncStore {
         if visible {
             return Err(Error::InvalidFormat("store holds an account"));
         }
-        for table in ["base", "pending", "staging", "ancestor", "kept", "meta"] {
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -1297,6 +1817,21 @@ impl SyncStore {
             )
             .map_err(store_err)?;
         Ok(())
+    }
+
+    /// Server params the store ignored since the log was written, oldest
+    /// first, at most `MAX_IGNORED_DELETIONS`: records for the account that
+    /// the device's own identity did not sign, which therefore never count
+    /// as a password change that overtook a pending one.
+    pub fn ignored_params(&self) -> Result<Vec<IgnoredParams>> {
+        Ok(self
+            .read(|c| log_in(c, IGNORED_PARAMS_KEY))?
+            .into_iter()
+            .map(|e| IgnoredParams {
+                record_id: e.id,
+                at: e.at,
+            })
+            .collect())
     }
 
     /// Vaults whose pending local writes a rebase dropped because the
@@ -1514,7 +2049,7 @@ impl SyncStore {
             ],
         )
         .map_err(store_err)?;
-        for table in ["ancestor", "kept"] {
+        for table in ["ancestor", "kept", "retained"] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
         }
@@ -1722,6 +2257,14 @@ pub enum AccountState {
 pub struct IgnoredDeletion {
     pub kind: RecordKind,
     pub id: Id,
+    pub at: i64,
+}
+
+/// Server params the store ignored (`SyncStore::ignored_params`): the
+/// params record id, and when (Unix seconds, device clock).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IgnoredParams {
+    pub record_id: Id,
     pub at: i64,
 }
 
@@ -2178,6 +2721,32 @@ fn save_health(
 /// records by vault prefix (kind `?2`).
 const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 1, 16) = ?3)";
 
+/// Whether the kept rows of `vault` must outlive a clean load: it has
+/// retained rows (see the module doc) and this device knows a rotation
+/// they serve, one it waits on (`Candidate`), rejected (`ignored`) or that
+/// locks it (`Quarantined`, `Orphaned`: spec 8.1, the data stays for the
+/// user's answer), or own writes of a left identity to replay. Otherwise (generation 0, no
+/// rotation anywhere) kept rows go as before (review I3).
+fn has_retained(conn: &Connection, vault: Id) -> Result<bool> {
+    let any: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM retained WHERE id = ?1)",
+            params![&vault.0[..]],
+            |r| r.get(0),
+        )
+        .map_err(store_err)?;
+    Ok(any
+        && trust_in(conn)?.is_some_and(|t| {
+            matches!(
+                t.state,
+                DeviceLineageState::Candidate { .. }
+                    | DeviceLineageState::Quarantined { .. }
+                    | DeviceLineageState::Orphaned { .. }
+            ) || !t.ignored.is_empty()
+                || !t.own_writes.replay.is_empty()
+        }))
+}
+
 fn delete_kept(tx: &Connection, vault: Id) -> Result<()> {
     tx.execute(
         &format!("DELETE FROM kept WHERE {KEPT_ROWS}"),
@@ -2248,10 +2817,15 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 /// `RecordStore::delete` inside a transaction: a row known to the server
 /// becomes a tombstone carrying its version, a local-only row vanishes. A
 /// signed list record is never deleted (spec 4.2: the lists only grow):
-/// `InvalidFormat("list record deletion")`.
+/// `InvalidFormat("list record deletion")`. Lineage, intro and delivery
+/// records are never deleted either (spec 6.3):
+/// `InvalidFormat("immutable record deletion")`.
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
         return Err(Error::InvalidFormat("list record deletion"));
+    }
+    if kind.is_immutable() {
+        return Err(Error::InvalidFormat("immutable record deletion"));
     }
     let base_row: Option<(i64, Option<Vec<u8>>)> = tx
         .query_row(
@@ -2314,7 +2888,10 @@ fn protected_from_remote_deletion(
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
-        | RecordKind::VaultList => true,
+        | RecordKind::VaultList
+        | RecordKind::Lineage
+        | RecordKind::DeviceIntro
+        | RecordKind::KeyDelivery => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -2337,18 +2914,34 @@ fn deleted_vaults(conn: &Connection, staged: &[StagedRow]) -> BTreeSet<Id> {
 
 fn proven_deleted(conn: &Connection, staged: &[StagedRow]) -> Result<BTreeSet<Id>> {
     let mut out = BTreeSet::new();
-    let Some(pin) = device_state_in(conn)?.pinned else {
+    let Some(mut pin) = device_state_in(conn)?.pinned else {
         return Ok(out);
     };
+    // With a trust state, its account and identity are the ones that count
+    // (spec 6.6, ruling H3): a device state saved before a rotation committed
+    // still pins the identity this device left, whose key a revoked device
+    // may hold. Records under any other identity's id prove nothing.
+    let rid = match trust_in(conn)? {
+        Some(t) => {
+            pin.account_id = t.account_id;
+            let rid = account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            );
+            pin.identity_pub = t.identity_pub;
+            rid
+        }
+        None => pin.account_id,
+    };
     let account = pin.account_id;
-    let Some(params) = row_data(conn, "base", RecordKind::AccountParams, account)? else {
+    let Some(params) = row_data(conn, "base", RecordKind::AccountParams, rid)? else {
         return Ok(out);
     };
     let signing = signed_params(&params, Some(&pin))?.signing_pub;
     let chain = chain_state_in(conn)?;
-    let base = row_data(conn, "base", RecordKind::VaultList, account)?;
+    let base = row_data(conn, "base", RecordKind::VaultList, rid)?;
     let incoming = staged.iter().find_map(|(kind, id, _, data, _)| {
-        (*kind == i64::from(RecordKind::VaultList.code()) && id[..] == account.0[..])
+        (*kind == i64::from(RecordKind::VaultList.code()) && id[..] == rid.0[..])
             .then_some(data.as_deref())
             .flatten()
     });
@@ -2515,7 +3108,7 @@ fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
-    for table in ["base", "pending", "staging", "ancestor", "kept"] {
+    for table in ["base", "pending", "staging", "ancestor", "kept", "retained"] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE kind = ?1 AND id = ?2"),
             params![kind.code(), &id.0[..]],
@@ -2675,6 +3268,241 @@ impl RecordStore for SyncStore {
         )
         .map_err(store_err)?;
         tx.commit()
+    }
+
+    fn trust_state(&self) -> Result<Option<TrustState>> {
+        self.meta(TRUST_STATE_KEY)?
+            .map(|b| TrustState::decode(&b))
+            .transpose()
+    }
+
+    /// The conditional writes, the deletions (as `delete`), the chain state
+    /// (when given) and the trust state in one transaction (or one
+    /// savepoint of the open batch). The chain state pins one identity's
+    /// records (params epoch, lists): it is merged as in
+    /// `put_all_if_version_with_chain` while the trust state keeps its
+    /// identity, and replaces the stored one when the identity changes (a
+    /// rotation or an adoption: epochs and lists start again with the new
+    /// identity, spec 6.6, 10.2).
+    fn put_all_if_version_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.put_with_trust(writes, deletes, chain, TrustGuard::Any, trust, None)
+    }
+
+    /// Every table emptied in one transaction (as `reset`: records, sync
+    /// state, trust, chain and device state), the trust state compared with
+    /// `expected` inside it; then the file is compacted (best effort), so
+    /// the rows do not linger in free pages or in the WAL.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        let tx = self.write_tx()?;
+        if meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode()) {
+            return Err(Error::Conflict);
+        }
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        tx.commit()?;
+        let _ = self.compact();
+        Ok(())
+    }
+
+    /// `put_all_if_version_with_trust` if the stored trust state is
+    /// `expected`, in the same transaction.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.put_with_trust(
+            writes,
+            deletes,
+            chain,
+            TrustGuard::Is(expected),
+            trust,
+            None,
+        )
+    }
+
+    /// `put_all_if_version_with_trust` if no trust state is stored, the
+    /// chain state merged with the stored one (see `put_with_trust`).
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.put_with_trust(writes, Vec::new(), chain, TrustGuard::Absent, trust, None)
+    }
+
+    /// `put_with_trust_cas` (the chain state replaces the stored one, the
+    /// identity changes), and `rotation` kept for the push phases
+    /// (`push_rotation_phase`), in one transaction.
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        self.put_with_trust(
+            writes,
+            Vec::new(),
+            Some(chain),
+            TrustGuard::Is(expected),
+            trust,
+            Some(rotation),
+        )
+    }
+
+    fn retained_rows(&self, vault: Id) -> Result<Vec<Record>> {
+        self.read(|c| {
+            let mut stmt = c
+                .prepare(
+                    "SELECT kind, id, version, data FROM retained WHERE id = ?1
+                     ORDER BY kind",
+                )
+                .map_err(store_err)?;
+            let rows = stmt
+                .query_map(params![&vault.0[..]], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .map_err(store_err)?;
+            rows.map(|row| {
+                let (k, id, v, d) = row.map_err(store_err)?;
+                decode_row(k, id, v, d)
+            })
+            .collect()
+        })
+    }
+
+    fn settle_replayed(&mut self, vault: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        delete_vault_rows(&tx, vault)?;
+        tx.execute(
+            "DELETE FROM pending WHERE kind IN (?1, ?2) AND id = ?3",
+            params![
+                RecordKind::VaultKey.code(),
+                RecordKind::VaultMeta.code(),
+                &vault.0[..]
+            ],
+        )
+        .map_err(store_err)?;
+        tx.execute("DELETE FROM retained WHERE id = ?1", params![&vault.0[..]])
+            .map_err(store_err)?;
+        delete_kept(&tx, vault)?;
+        tx.commit()
+    }
+
+    fn drop_retained(&mut self, vault: Id) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute("DELETE FROM retained WHERE id = ?1", params![&vault.0[..]])
+            .map_err(store_err)?;
+        tx.commit()
+    }
+
+    fn put_follow(
+        &mut self,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        retained: Vec<Record>,
+        drop_pending: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        self.begin_batch()?;
+        let done = (|| {
+            self.put_with_trust(
+                Vec::new(),
+                Vec::new(),
+                Some(chain),
+                TrustGuard::Is(expected),
+                trust,
+                None,
+            )?;
+            {
+                let tx = self.write_tx()?;
+                for (kind, id) in &drop_pending {
+                    tx.execute(
+                        "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                        params![kind.code(), &id.0[..]],
+                    )
+                    .map_err(store_err)?;
+                }
+                tx.execute(
+                    "DELETE FROM meta WHERE key = ?1",
+                    params![ROTATION_PUSH_KEY],
+                )
+                .map_err(store_err)?;
+                tx.commit()?;
+            }
+            self.put_retained(retained)
+        })();
+        match done {
+            Ok(()) => self.commit_batch(),
+            Err(e) => {
+                let _ = self.rollback_batch();
+                Err(e)
+            }
+        }
+    }
+
+    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+        let tx = self.write_tx()?;
+        for r in rows {
+            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
+                return Err(Error::InvalidFormat("retained row"));
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO retained (kind, id, version, data)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, &r.data],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![r.kind.code(), &r.id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
+    fn batch_begin(&mut self) -> Result<()> {
+        self.begin_batch()
+    }
+
+    fn batch_commit(&mut self) -> Result<()> {
+        self.commit_batch()
+    }
+
+    fn batch_rollback(&mut self) -> Result<()> {
+        self.rollback_batch()
+    }
+
+    /// A pending row of `(kind, id)` that writes data (not a deletion).
+    fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
+        self.read(|conn| {
+            let data: Option<Option<Vec<u8>>> = conn
+                .query_row(
+                    "SELECT data FROM pending WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(store_err)?;
+            Ok(matches!(data, Some(Some(_))))
+        })
     }
 
     /// The conditional writes and the deletions (as `delete`) in one
@@ -2838,7 +3666,25 @@ impl RecordStore for SyncStore {
         let tx = self.write_tx()?;
         match event {
             VaultEvent::Clean => {
-                delete_kept(&tx, vault)?;
+                // Review M1 (Task 10): a meta retained without its vault key
+                // is another device's rename under the same keys, not a
+                // rotation: the clean load drops it, so a rotation that
+                // follows retains the meta of this load.
+                tx.execute(
+                    "DELETE FROM retained WHERE id = ?1 AND kind = ?2
+                     AND NOT EXISTS (SELECT 1 FROM retained WHERE id = ?1 AND kind = ?3)",
+                    params![
+                        &vault.0[..],
+                        RecordKind::VaultMeta.code(),
+                        RecordKind::VaultKey.code()
+                    ],
+                )
+                .map_err(store_err)?;
+                // The replay of own writes still reads the kept rows of a
+                // vault re-sealed by a rotation (`retained`).
+                if !has_retained(&tx, vault)? {
+                    delete_kept(&tx, vault)?;
+                }
                 // Clean once the server serves the copy back by itself;
                 // settled after `STALE_CLEAR_ROUNDS` such rounds
                 // (`count_round`).
@@ -2885,7 +3731,9 @@ impl RecordStore for SyncStore {
                 // built on that state, so it is what the server must keep
                 // serving: an older copy's seq (or the head of an epoch
                 // that was withdrawn) no longer applies.
-                delete_kept(&tx, vault)?;
+                if !has_retained(&tx, vault)? {
+                    delete_kept(&tx, vault)?;
+                }
                 let base = base_manifest(&tx, vault)?.map(|(version, _)| version);
                 update_health_lenient(&tx, |map| match map.get_mut(&vault) {
                     Some(e) => {
@@ -2927,6 +3775,98 @@ impl RecordStore for SyncStore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trust_is_written_with_records_and_chain() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), None);
+        let (a, gone) = (Id::new(), Id::new());
+        let rec = |id, version, n| Record {
+            id,
+            kind: RecordKind::Item,
+            version,
+            data: vec![n],
+        };
+        s.put(rec(gone, 1, 9)).unwrap();
+        let mut trust = crate::trust::tests::sample();
+        let chain = ChainState {
+            params_epoch: 4,
+            ..ChainState::default()
+        };
+        s.put_all_if_version_with_trust(
+            vec![(rec(a, 1, 1), None)],
+            vec![(RecordKind::Item, gone)],
+            Some(chain.clone()),
+            &trust,
+        )
+        .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        assert_eq!(s.chain_state().unwrap(), chain);
+        assert_eq!(s.get(RecordKind::Item, gone).unwrap(), None);
+
+        // A lost race leaves records, chain and trust untouched.
+        let before = trust.clone();
+        trust.add_revoked(&[Id([0xEE; 16])]);
+        let b = Id::new();
+        let r = s.put_all_if_version_with_trust(
+            vec![(rec(b, 1, 2), None), (rec(a, 2, 3), Some(7))],
+            vec![],
+            Some(ChainState {
+                params_epoch: 9,
+                ..ChainState::default()
+            }),
+            &trust,
+        );
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(before));
+        assert_eq!(s.chain_state().unwrap(), chain);
+        assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
+    }
+
+    /// Task 8, carried to Task 14: the first trust write (a migration)
+    /// merges the chain state it carries with the stored one: the device id
+    /// and the lists accepted stay. It is refused once a trust state is
+    /// stored.
+    #[test]
+    fn first_trust_write_merges_the_chain_state() {
+        use crate::chain::Seen;
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let me = Id::new();
+        let stored = ChainState {
+            params_epoch: 2,
+            device_list: Some(Seen {
+                seq: 3,
+                hash: [3; 32],
+            }),
+            vault_list: Some(Seen {
+                seq: 1,
+                hash: [1; 32],
+            }),
+            device_id: Some(me),
+        };
+        s.put_all_if_version_with_chain(vec![], &stored).unwrap();
+        let trust = crate::trust::tests::sample();
+        let fresh = ChainState {
+            params_epoch: 2,
+            ..ChainState::default()
+        };
+        s.put_first_trust(vec![], Some(fresh.clone()), &trust)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), stored);
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        // A second first write is a lost race.
+        assert_eq!(
+            s.put_first_trust(vec![], Some(fresh.clone()), &trust),
+            Err(Error::Conflict)
+        );
+
+        // `put_all_if_version_with_trust` as a first write merges too.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.put_all_if_version_with_chain(vec![], &stored).unwrap();
+        s.put_all_if_version_with_trust(vec![], vec![], Some(fresh), &trust)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), stored);
+    }
+
     use super::*;
 
     fn rec(id: Id, kind: RecordKind, version: u64, data: &[u8]) -> Record {
@@ -3554,6 +4494,113 @@ mod tests {
         assert_eq!(count(&s, "base"), 6);
         assert_eq!(count(&s, "pending"), 0);
         assert!(s.has_account().unwrap());
+    }
+
+    #[test]
+    fn server_deletion_of_immutable_records_refused() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let acct = Id::new();
+        // Identity-keyed account params (generation 1): an id that is not
+        // the account id.
+        let rows = [
+            (RecordKind::Lineage, Id::new()),
+            (RecordKind::DeviceIntro, Id::new()),
+            (RecordKind::KeyDelivery, Id::new()),
+            (RecordKind::AccountParams, Id::new()),
+            (RecordKind::Keyset, Id::new()),
+            (RecordKind::AccountParams, acct),
+        ];
+        for (kind, id) in rows {
+            seed_base(&mut s, kind, id, 1, b"x".to_vec());
+        }
+        for (kind, id) in rows {
+            s.stage_remote(remote(kind, id, 2, None)).unwrap();
+        }
+        assert!(s.commit_remote().unwrap().is_empty());
+        for (kind, id) in rows {
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"x");
+        }
+        let logged: Vec<(RecordKind, Id)> = s
+            .ignored_deletions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        for row in rows {
+            assert!(logged.contains(&row), "{row:?} not logged");
+        }
+    }
+
+    #[test]
+    fn remote_overwrite_of_immutable_row_refused_when_bytes_differ() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Lineage, id, 1, b"x".to_vec());
+        s.stage_remote(remote(RecordKind::Lineage, id, 2, Some(b"y".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        let r = s.get(RecordKind::Lineage, id).unwrap().unwrap();
+        assert_eq!((r.data, r.version), (b"x".to_vec(), 1));
+        let logged: Vec<_> = s
+            .ignored_deletions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        assert!(logged.contains(&(RecordKind::Lineage, id)));
+        // Same bytes with a version bump stays accepted.
+        s.stage_remote(remote(RecordKind::Lineage, id, 3, Some(b"x".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.get(RecordKind::Lineage, id).unwrap().unwrap().version, 3);
+    }
+
+    #[test]
+    fn local_delete_of_immutable_kind_refused() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            let id = Id::new();
+            seed_base(&mut s, kind, id, 1, b"x".to_vec());
+            assert_eq!(
+                s.delete(kind, id),
+                Err(Error::InvalidFormat("immutable record deletion"))
+            );
+            assert!(s.get(kind, id).unwrap().is_some());
+            assert!(s.pending_changes().unwrap().is_empty());
+            let r = Record {
+                id,
+                kind,
+                version: 1,
+                data: b"z".to_vec(),
+            };
+            assert_eq!(s.put_if_version(r, None), Err(Error::Conflict));
+        }
+    }
+
+    #[test]
+    fn oversize_remote_immutable_record_is_not_staged() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let big = vec![0u8; MAX_RECORD_BYTES + 1];
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            let id = Id::new();
+            s.stage_remote(remote(kind, id, 1, Some(big.clone())))
+                .unwrap();
+            s.commit_remote().unwrap();
+            assert_eq!(s.get(kind, id).unwrap(), None);
+            let ok = vec![0u8; MAX_RECORD_BYTES];
+            s.stage_remote(remote(kind, id, 1, Some(ok.clone())))
+                .unwrap();
+            s.commit_remote().unwrap();
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, ok);
+        }
     }
 
     #[test]

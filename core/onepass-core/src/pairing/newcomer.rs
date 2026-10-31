@@ -3,16 +3,17 @@
 
 use std::fmt;
 
-use crate::Result;
 use crate::crypto::kem::unwrap_key_labeled;
 use crate::crypto::{HybridKemSecret, SecretKey, random_array};
+use crate::device_keys::{DeviceKeys, DevicePublic, sign_pop};
 use crate::devices::{DeviceMode, check_name};
+use crate::{Id, Result};
 
 use super::channel::Channel;
 use super::invite::signed_hello;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
+use super::messages::{DeviceInfo, FullGrantV2, Grant, Hello, KeyExchange, Message, ProfileCard};
 use super::qr::{InviteQr, PairingQr, QR_VERSION};
-use super::snapshot::check_snapshot;
+use super::snapshot::{check_snapshot, check_trust_for};
 use super::{KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +40,13 @@ pub struct Newcomer {
     /// Joined from an invite: the approver may send its `Profile`.
     joined: bool,
     profile: Option<ProfileCard>,
+    /// Who this device says it is (the Hello's).
+    device: DeviceInfo,
+    /// Key rotation v2: this device's public key, once it confirmed with
+    /// it (`confirm_with_key`).
+    key: Option<DevicePublic>,
+    /// The account a `FullV2` granted.
+    granted_account: Option<Id>,
 }
 
 impl Newcomer {
@@ -62,7 +70,7 @@ impl Newcomer {
         let hello = Hello {
             session_id,
             ephemeral_public: public,
-            device,
+            device: device.clone(),
             requested_mode: mode,
         }
         .to_bytes()?;
@@ -78,6 +86,9 @@ impl Newcomer {
             acked: false,
             joined: false,
             profile: None,
+            device,
+            key: None,
+            granted_account: None,
         };
         Ok((newcomer, qr, hello))
     }
@@ -98,7 +109,7 @@ impl Newcomer {
         let hello = Hello {
             session_id,
             ephemeral_public: secret.public()?,
-            device,
+            device: device.clone(),
             requested_mode: mode,
         }
         .to_bytes()?;
@@ -115,6 +126,9 @@ impl Newcomer {
             acked: false,
             joined: true,
             profile: None,
+            device,
+            key: None,
+            granted_account: None,
         };
         Ok((newcomer, frame))
     }
@@ -162,6 +176,10 @@ impl Newcomer {
     }
 
     /// The user confirmed the codes match: the `Confirmed` frame to send.
+    /// A legacy confirmation: the approver grants a `Full` and lists this
+    /// device without a device key (spec 15). The only one an approver
+    /// from before key rotation v2 reads: the app retries with it, on a
+    /// new QR, when a `confirm_with_key` session was closed at once.
     pub fn confirm(&mut self) -> Result<Vec<u8>> {
         if self.state != State::KeyReady {
             return Err(refused("nothing to confirm"));
@@ -169,6 +187,70 @@ impl Newcomer {
         let frame = self.channel_mut()?.seal(&Message::Confirmed)?;
         self.state = State::Confirmed;
         Ok(frame)
+    }
+
+    /// The user confirmed the codes match, on a device with device keys
+    /// (spec 5.2): the `ConfirmedWithKey` frame to send, with this device's
+    /// public key under the Hello's device id and its proof of possession
+    /// over the session transcript hash. The approver then grants a
+    /// `FullV2`. Refused for a public session (no key to pin).
+    pub fn confirm_with_key(&mut self, keys: &DeviceKeys) -> Result<Vec<u8>> {
+        if self.state != State::KeyReady {
+            return Err(refused("nothing to confirm"));
+        }
+        if self.mode == DeviceMode::Public {
+            return Err(refused("device key for a public session"));
+        }
+        let public = keys.public(self.device.device_id)?;
+        let pop = sign_pop(keys, &self.transcript, &public)?;
+        let frame = self.channel_mut()?.seal(&Message::ConfirmedWithKey {
+            device: public.clone(),
+            pop,
+            mailbox_credential: None,
+        })?;
+        self.key = Some(public);
+        self.state = State::Confirmed;
+        Ok(frame)
+    }
+
+    /// The acknowledgment of a `FullV2` (spec 5.2, 6.4): the same device
+    /// key, its proof of possession now over the granted account id, which
+    /// the approver's intro for this device carries. In place of `Ack`.
+    pub fn seal_key_ack(&mut self, keys: &DeviceKeys) -> Result<Vec<u8>> {
+        self.seal_key_ack_at(keys, now_unix())
+    }
+
+    pub fn seal_key_ack_at(&mut self, keys: &DeviceKeys, now: i64) -> Result<Vec<u8>> {
+        let (Some(me), Some(account)) = (self.key.clone(), self.granted_account) else {
+            return Err(refused("message not allowed now"));
+        };
+        if self.state != State::Granted || self.acked {
+            return Err(refused("message not allowed now"));
+        }
+        if keys.public(me.device_id)? != me {
+            return Err(refused("device key"));
+        }
+        let pop = sign_pop(keys, &account.0, &me)?;
+        let frame = self.channel_mut()?.seal_at(
+            &Message::ConfirmedWithKey {
+                device: me,
+                pop,
+                mailbox_credential: None,
+            },
+            now,
+        )?;
+        self.acked = true;
+        Ok(frame)
+    }
+
+    /// This device's public key, after `confirm_with_key`.
+    pub fn device_key(&self) -> Option<&DevicePublic> {
+        self.key.as_ref()
+    }
+
+    /// The device this session asked to join as.
+    pub fn device_info(&self) -> &DeviceInfo {
+        &self.device
     }
 
     pub fn open(&mut self, frame: &[u8]) -> Result<Message> {
@@ -210,9 +292,16 @@ impl Newcomer {
                 self.channel_mut()?.set_expiry(g.expires_at);
                 self.public_granted = true;
             }
-            Grant::Full(g) if self.mode != DeviceMode::Public && g.mode == self.mode => {
+            Grant::Full(g)
+                if self.mode != DeviceMode::Public && g.mode == self.mode && self.key.is_none() =>
+            {
                 SecretKey::parse(&g.secret_key)?;
                 check_snapshot(&g.snapshot)?;
+            }
+            Grant::FullV2(g) if self.mode != DeviceMode::Public && g.full.mode == self.mode => {
+                let me = self.key.as_ref().ok_or(refused("grant does not match"))?;
+                self.check_v2(g, me)?;
+                self.granted_account = Some(g.full.account_id);
             }
             _ => return Err(refused("grant does not match the requested mode")),
         }
@@ -220,16 +309,30 @@ impl Newcomer {
         Ok(())
     }
 
+    /// A `FullV2` for this device: the full grant's checks, listed under
+    /// the Hello's id, and a trust snapshot this device can pin
+    /// (`check_trust_for`).
+    fn check_v2(&self, g: &FullGrantV2, me: &DevicePublic) -> Result<()> {
+        SecretKey::parse(&g.full.secret_key)?;
+        check_snapshot(&g.full.snapshot)?;
+        g.check()?;
+        if g.full.device_id != me.device_id {
+            return Err(refused("device id"));
+        }
+        check_trust_for(&g.trust, me)
+    }
+
     pub fn seal(&mut self, msg: &Message) -> Result<Vec<u8>> {
         self.seal_at(msg, now_unix())
     }
 
-    /// Seal `Ack` (once, after the grant), `Audit` (public session, after
-    /// the grant) or `End`. `Confirmed` goes through `confirm`.
+    /// Seal `Ack` (once, after a legacy grant), `Audit` (public session,
+    /// after the grant) or `End`. `Confirmed` goes through `confirm`, the
+    /// acknowledgment of a `FullV2` through `seal_key_ack`.
     pub fn seal_at(&mut self, msg: &Message, now: i64) -> Result<Vec<u8>> {
         let granted = self.state == State::Granted;
         match msg {
-            Message::Ack if granted && !self.acked => {}
+            Message::Ack if granted && !self.acked && self.key.is_none() => {}
             Message::Audit(_) if granted && self.public_granted => {}
             Message::End => {}
             _ => return Err(refused("message not allowed now")),
@@ -324,6 +427,199 @@ mod tests {
         n.confirm().unwrap();
         assert!(n.confirm().is_err());
         assert!(!format!("{n:?}").contains("secret"));
+    }
+
+    /// A trust snapshot of a one-device account: its genesis by `a`.
+    fn trust_snapshot(account: Id, a: &DeviceKeys, a_id: Id) -> super::super::TrustSnapshot {
+        use crate::crypto::IdentityKey;
+        use crate::lineage::{
+            GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, sign_genesis,
+        };
+        let approver = a.public(a_id).unwrap();
+        let entry = RosterEntry {
+            device_id: a_id,
+            sign_pub: approver.sign_pub.clone(),
+            kem_pub: approver.kem_pub.clone(),
+            name: "iPhone".into(),
+            kind: DeviceKind::Phone,
+            mode: DeviceMode::Personal,
+            introduced_by: None,
+        };
+        let identity = IdentityKey::generate().unwrap();
+        let genesis = sign_genesis(
+            GenesisBody {
+                format: LINEAGE_FORMAT,
+                account_id: account,
+                identity_pub: identity.verifying_key(),
+                creator: entry.clone(),
+                created_at: NOW,
+            },
+            a,
+            &identity,
+        )
+        .unwrap();
+        super::super::TrustSnapshot {
+            lineage: vec![LineageRecord::Genesis(genesis)],
+            levels: vec![(a_id, crate::trust::TrustLevel::Verified)],
+            roster: vec![entry],
+            approver,
+        }
+    }
+
+    fn session(n_id: Id) -> (Newcomer, Approver) {
+        let device = DeviceInfo {
+            device_id: n_id,
+            name: "iPad de Camille".into(),
+            kind: DeviceKind::Tablet,
+        };
+        let (mut n, qr, hello) = Newcomer::new(device, DeviceMode::Personal, NOW).unwrap();
+        let (a, kx, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+        n.on_key_exchange(&kx, NOW + 2).unwrap();
+        (n, a)
+    }
+
+    fn key_message(keys: &DeviceKeys, id: Id, context: &[u8]) -> Message {
+        let device = keys.public(id).unwrap();
+        Message::ConfirmedWithKey {
+            pop: sign_pop(keys, context, &device).unwrap(),
+            device,
+            mailbox_credential: None,
+        }
+    }
+
+    #[test]
+    fn pop_mismatch_refused() {
+        let keys = DeviceKeys::generate_software().unwrap();
+        let id = Id::new();
+        // A pop over another transcript.
+        let (mut n, mut a) = session(id);
+        let frame = n
+            .channel_mut()
+            .unwrap()
+            .seal_at(&key_message(&keys, id, &[9; 32]), NOW + 3)
+            .unwrap();
+        assert_eq!(
+            a.on_frame_at(&frame, NOW + 3),
+            Err(Error::Integrity(crate::IntegrityError::Signature))
+        );
+        // The session is over: the honest confirmation no longer passes.
+        let good = n
+            .channel_mut()
+            .unwrap()
+            .seal_at(&Message::Confirmed, NOW + 4);
+        assert!(a.on_frame_at(&good.unwrap(), NOW + 4).is_err());
+        assert_eq!(a.newcomer_key(), None);
+
+        // A key under another device id than the Hello's.
+        let (mut n, mut a) = session(id);
+        let t = n.transcript;
+        let frame = n
+            .channel_mut()
+            .unwrap()
+            .seal_at(&key_message(&keys, Id::new(), &t), NOW + 3)
+            .unwrap();
+        assert!(a.on_frame_at(&frame, NOW + 3).is_err());
+
+        // The honest one passes.
+        let (mut n, mut a) = session(id);
+        let frame = n.confirm_with_key(&keys).unwrap();
+        assert!(matches!(
+            a.on_frame_at(&frame, NOW + 3).unwrap(),
+            Message::ConfirmedWithKey { .. }
+        ));
+        assert_eq!(a.newcomer_key(), Some(&keys.public(id).unwrap()));
+    }
+
+    #[test]
+    fn key_ack_pop_must_cover_the_granted_account() {
+        let keys = DeviceKeys::generate_software().unwrap();
+        let a_keys = DeviceKeys::generate_software().unwrap();
+        let id = Id::new();
+        let account = Id::new();
+        let grant = || {
+            Grant::FullV2(super::super::FullGrantV2 {
+                full: FullGrant {
+                    account_id: account,
+                    secret_key: Zeroizing::new(SecretKey::generate().unwrap().to_display()),
+                    mode: DeviceMode::Personal,
+                    device_id: id,
+                    snapshot: vec![],
+                },
+                trust: trust_snapshot(account, &a_keys, Id::new()),
+                sync: None,
+                enroll: None,
+            })
+        };
+        for (context, ok) in [(Id::new().0, false), (account.0, true)] {
+            let (mut n, mut a) = session(id);
+            let f = n.confirm_with_key(&keys).unwrap();
+            a.on_frame_at(&f, NOW + 3).unwrap();
+            let f = a.seal_grant_at(grant(), true, NOW + 4).unwrap();
+            n.open_at(&f, NOW + 5).unwrap();
+            let frame = n
+                .channel_mut()
+                .unwrap()
+                .seal_at(&key_message(&keys, id, &context), NOW + 6)
+                .unwrap();
+            assert_eq!(a.on_frame_at(&frame, NOW + 6).is_ok(), ok);
+            assert_eq!(a.newcomer_account_pop().is_some(), ok);
+        }
+        // Another key than the confirmed one.
+        let (mut n, mut a) = session(id);
+        let f = n.confirm_with_key(&keys).unwrap();
+        a.on_frame_at(&f, NOW + 3).unwrap();
+        let f = a.seal_grant_at(grant(), true, NOW + 4).unwrap();
+        n.open_at(&f, NOW + 5).unwrap();
+        let other = DeviceKeys::generate_software().unwrap();
+        let frame = n
+            .channel_mut()
+            .unwrap()
+            .seal_at(&key_message(&other, id, &account.0), NOW + 6)
+            .unwrap();
+        assert!(a.on_frame_at(&frame, NOW + 6).is_err());
+    }
+
+    #[test]
+    fn full_v2_checked_by_the_newcomer() {
+        let keys = DeviceKeys::generate_software().unwrap();
+        let a_keys = DeviceKeys::generate_software().unwrap();
+        let id = Id::new();
+        let account = Id::new();
+        let mk = |device_id: Id, account_id: Id, snap_account: Id| {
+            Message::Grant(Grant::FullV2(super::super::FullGrantV2 {
+                full: FullGrant {
+                    account_id,
+                    secret_key: Zeroizing::new(SecretKey::generate().unwrap().to_display()),
+                    mode: DeviceMode::Personal,
+                    device_id,
+                    snapshot: vec![],
+                },
+                trust: trust_snapshot(snap_account, &a_keys, Id::new()),
+                sync: None,
+                enroll: None,
+            }))
+        };
+        let cases = [
+            (mk(id, account, account), true),
+            // Listed under another id than the Hello's.
+            (mk(Id::new(), account, account), false),
+            // A chain of another account.
+            (mk(id, account, Id::new()), false),
+        ];
+        for (msg, ok) in cases {
+            let (mut n, mut a) = session(id);
+            let f = n.confirm_with_key(&keys).unwrap();
+            a.on_frame_at(&f, NOW + 3).unwrap();
+            // Sealed raw, as a hostile approver would.
+            let f = a.channel.seal_at(&msg, NOW + 4).unwrap();
+            assert_eq!(n.open_at(&f, NOW + 5).is_ok(), ok);
+        }
+        // A legacy grant to a newcomer that sent its key: a downgrade.
+        let (mut n, mut a) = session(id);
+        let f = n.confirm_with_key(&keys).unwrap();
+        a.on_frame_at(&f, NOW + 3).unwrap();
+        let f = a.channel.seal_at(&grant(), NOW + 4).unwrap();
+        assert!(n.open_at(&f, NOW + 5).is_err());
     }
 
     #[test]

@@ -1,0 +1,52 @@
+(* formal-lib: rotation_core.pvl *)
+(* OnePass formal model, negative control of rotation.pv: the follower
+   adopts any rotation record signed by a device it pinned, WITHOUT the
+   user's confirmation (spec ruling R6 removed). Everything else is
+   rotation.pv: device-key signature, identity proof of possession,
+   delivery to the device KEM key, keyset checks.
+
+   Expected: the revoked device B, still pinned by C because C has not
+   seen A's revocation yet, signs its own rotation (for instance "B
+   revokes A", the race of spec 8.3) and C adopts it silently. Device
+   keys alone cannot settle the race; the user is the arbiter. This is
+   why every adoption in the design is a user step (R6). *)
+
+let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
+  in(c, (body: bitstring, sdev: bitstring, sid: bitstring, params: bitstring,
+         ks: bitstring, deliv: bitstring));
+  let rr_body(=acct, =head, signer: bitstring, ip: pkey, revoked: bitstring,
+              roster: bitstring, ph: bitstring) = body in
+  get pinned(=me, =head, =signer, spub) in
+  if verify_dom(spub, dom_rotation, body, sdev) = true then
+  if verify_dom(ip, dom_rotation_id, body, sid) = true then
+  if revoked <> me then
+  (* No user confirmation here. *)
+  let (km: seed, kx: seed, ssk: skey) =
+    open_rotation(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
+  event Adopt(me, signer, ip);
+  UseVault(me, ip, km, kx, ssk).
+
+(* Expected false: C adopts an identity no honest device introduced. *)
+query d: bitstring, s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
+  event(Adopt(d, s, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+(* Expected false: C adopts B's rotation. *)
+query ip: pkey; event(Adopt(devC, devB, ip)).
+(* Expected false: what C writes afterwards reaches the attacker. *)
+query d: bitstring, m: bitstring; event(ItemSealedNew(d, m)) && attacker(m).
+(* Sanity (expected false): C follows A's honest rotation. *)
+query ip: pkey; event(Adopt(devC, devA, ip)).
+
+process
+  new dskA: skey; new dkmA: seed; new dkxA: seed;
+  new dskB: skey; new dkmB: seed; new dkxB: seed;
+  new dskC: skey; new dkmC: seed; new dkxC: seed;
+  out(c, (pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA),
+          pk(dskB), kem_pk_m(dkmB), kem_pk_x(dkxB),
+          pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC)));
+  out(c, (dskB, dkmB, dkxB));
+  insert pinned(devC, h_genesis, devA, pk(dskA));
+  insert pinned(devC, h_genesis, devB, pk(dskB));
+  let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
+                  ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
+  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  | !Follow(devC, dkmC, dkxC, h_genesis) )

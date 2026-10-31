@@ -47,6 +47,11 @@ impl From<Error> for PortError {
             Error::Validation(v) => PortError::Invalid(v.to_string()),
             Error::Conflict => PortError::Other("concurrent write, retry".into()),
             Error::WrongPassword => PortError::Other("wrong password or secret key".into()),
+            Error::ReadOnly => {
+                PortError::Other("read only until the key rotation is answered".into())
+            }
+            // Only a kit restore returns it; never reached through a port.
+            Error::OutdatedKit { .. } => PortError::Other("emergency kit outdated".into()),
         }
     }
 }

@@ -138,9 +138,12 @@ impl From<Error> for CliError {
                 code: 5,
                 msg: e.to_string(),
             },
-            Error::Validation(_) | Error::InvalidFormat(_) | Error::Crypto | Error::Store(_) => {
-                CliError::usage(e)
-            }
+            Error::Validation(_)
+            | Error::InvalidFormat(_)
+            | Error::Crypto
+            | Error::Store(_)
+            | Error::ReadOnly
+            | Error::OutdatedKit { .. } => CliError::usage(e),
         }
     }
 }

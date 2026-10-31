@@ -4,10 +4,8 @@
 
 use std::path::Path;
 
-use onepass_core::account::AccountParams;
 use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DeviceEntry, DeviceKind, DeviceMode};
-use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
 use zeroize::Zeroizing;
 
@@ -44,7 +42,11 @@ pub struct FfiDevice {
     pub added_at: i64,
     /// The device that approved it, `None` when it registered itself.
     pub added_by: Option<String>,
+    /// When it was revoked; `None` when it is not, or when the date is
+    /// unknown (key rotation v2 derives it from the lineage, Task 12 M2):
+    /// `revoked` tells.
     pub revoked_at: Option<i64>,
+    pub revoked: bool,
     pub is_this_device: bool,
 }
 
@@ -100,7 +102,8 @@ fn device_to_ffi(e: &DeviceEntry, me: Option<onepass_core::Id>) -> FfiDevice {
         mode: e.mode.into(),
         added_at: e.added_at,
         added_by: e.added_by.map(id_hex),
-        revoked_at: e.revoked_at,
+        revoked_at: e.revoked_at.filter(|at| *at != 0),
+        revoked: e.revoked_at.is_some(),
         is_this_device: Some(e.device_id) == me,
     }
 }
@@ -168,6 +171,11 @@ impl Session {
     /// Mark another device revoked. This device cannot revoke itself from
     /// the list (`Validation("device", "this device")`); revoking twice
     /// changes nothing; an unknown id is `NotFound`.
+    ///
+    /// Key rotation v2 (spec 10.1): on a device with device keys
+    /// (`FfiLineageStatus::removes_by_rotation`) "Retirer" is a rotation,
+    /// `rotate_keys` with the device in `revoke`; this call is refused
+    /// there (`Validation("device", "remove by rotation")`).
     pub fn revoke_device(&self, id: String) -> Result<(), OnePassError> {
         let id = parse_id(&id)?;
         self.with(|repo| {
@@ -187,8 +195,26 @@ impl Session {
         self.with(|repo| Ok(repo.rename_device(id, &name)?))
     }
 
-    /// Whether the device list marks this device revoked: the app then
-    /// erases the device.
+    /// "Appairage incomplet" (spec 5.2 as ruled, Task 13): devices listed
+    /// whose pairing stopped before their key was introduced. The app
+    /// offers to finish (pair it again) or remove it (`cancel_pairing`,
+    /// then `rotate_keys`). Sorted ids.
+    pub fn pairing_incomplete(&self) -> Result<Vec<String>, OnePassError> {
+        self.with(|repo| Ok(repo.pairing_incomplete()?.into_iter().map(id_hex).collect()))
+    }
+
+    /// Remove a device whose pairing is incomplete: listed revoked and
+    /// excluded here, in one transaction. It got the Secret Key with its
+    /// grant: the app follows with `rotate_keys` (reason `Rotate`).
+    pub fn cancel_pairing(&self, id: String) -> Result<(), OnePassError> {
+        let id = parse_id(&id)?;
+        self.with(|repo| Ok(repo.cancel_pairing(id)?))
+    }
+
+    /// Whether this device is revoked (on a device with key rotation v2
+    /// trust state, by a valid lineage record only; otherwise by the device
+    /// list). The app locks the device; it never erases on this answer
+    /// (only the quarantine erases, spec 8.4).
     pub fn is_this_device_revoked(&self) -> Result<bool, OnePassError> {
         self.with(|repo| Ok(repo.is_this_device_revoked()?))
     }
@@ -213,14 +239,22 @@ impl Session {
 }
 
 /// The epoch of the account params in the store at `db_path`, without
-/// unlocking (nothing verified). Above `pinned_params_epoch`: the master
-/// password changed on another device.
+/// unlocking. The signature is verified (G8) under the identity this device
+/// pinned, or under the record's own identity on a device that pinned
+/// nothing yet: params signed by any other identity are an integrity error,
+/// never an epoch. Above `pinned_params_epoch`: the master password changed
+/// on another device.
 #[uniffi::export]
 pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
-    let params = store.list(RecordKind::AccountParams)?;
-    let record = params.first().ok_or(OnePassError::NotFound)?;
-    Ok(AccountParams::decode(&record.data)?.epoch)
+    let pinned = store.device_state()?.pinned;
+    // With a trust state, the params of its identity (key rotation v2):
+    // a rotation waiting for the user is not an error here, and once
+    // followed the poll reads the new identity's params.
+    Ok(onepass_core::repo::follow::stored_params_epoch(
+        &store,
+        pinned.as_ref(),
+    )?)
 }
 
 /// The highest params epoch an unlock accepted on this device (0 before
@@ -229,4 +263,36 @@ pub fn store_params_epoch(db_path: String) -> Result<u64, OnePassError> {
 pub fn pinned_params_epoch(db_path: String) -> Result<u64, OnePassError> {
     let store = SyncStore::open(Path::new(&db_path))?;
     Ok(store.chain_state()?.params_epoch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(revoked_at: Option<i64>) -> DeviceEntry {
+        DeviceEntry {
+            device_id: onepass_core::Id([1; 16]),
+            name: "iPad de Camille".into(),
+            kind: DeviceKind::Tablet,
+            mode: DeviceMode::Personal,
+            added_at: 1,
+            added_by: None,
+            revoked_at,
+        }
+    }
+
+    /// Task 12 M2: a revocation the lineage holds without a date (0) shows
+    /// as revoked, without a date.
+    #[test]
+    fn unknown_revocation_date_is_hidden() {
+        let d = device_to_ffi(&entry(Some(0)), None);
+        assert!(d.revoked);
+        assert_eq!(d.revoked_at, None);
+        let d = device_to_ffi(&entry(Some(1_700_000_000)), None);
+        assert!(d.revoked);
+        assert_eq!(d.revoked_at, Some(1_700_000_000));
+        let d = device_to_ffi(&entry(None), None);
+        assert!(!d.revoked);
+        assert_eq!(d.revoked_at, None);
+    }
 }

@@ -74,12 +74,16 @@ pub use approver::Approver;
 pub use channel::Channel;
 pub use invite::Invite;
 pub use messages::{
-    AuditAction, AuditEvent, DeviceInfo, FullGrant, Grant, Hello, KeyExchange, Message,
-    ProfileCard, PublicGrant, SnapshotRecord,
+    AuditAction, AuditEvent, DeviceInfo, FullGrant, FullGrantV2, Grant, Hello, KeyExchange,
+    MAX_GRANT_ENROLL_BYTES, MAX_GRANT_SYNC_BYTES, MAX_TRUST_LINEAGE, Message, ProfileCard,
+    PublicGrant, SnapshotRecord, TrustSnapshot,
 };
 pub use newcomer::Newcomer;
 pub use qr::{InviteQr, PairingQr};
-pub use snapshot::{MAX_SNAPSHOT_BYTES, check_snapshot_size, snapshot_from_store};
+pub use snapshot::{
+    MAX_SNAPSHOT_BYTES, check_snapshot_size, check_trust_for, import_full_v2, newcomer_entry,
+    snapshot_from_store, trust_from_grant,
+};
 
 /// A QR is valid this long after it is shown (spec 5.1, ruling B16).
 pub const QR_LIFETIME_SECS: i64 = 120;

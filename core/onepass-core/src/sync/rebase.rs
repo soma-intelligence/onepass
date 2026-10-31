@@ -11,7 +11,9 @@
 //!
 //! Merge rule for an item changed on both sides: the newest `updated_at`
 //! wins, a tie goes to the larger record hash (bytes), the same answer on
-//! every device. An item the server left as it was in the ancestor keeps
+//! every device. (The replay of own writes after a key rotation,
+//! `crate::repo::replay`, uses the same rule with ties to the replaying
+//! device: its record is sealed under other keys, so no hash compares.) An item the server left as it was in the ancestor keeps
 //! the local change whatever the clocks say. A local deletion applies only
 //! if the server still has the very record the ancestor listed; otherwise
 //! the server's change is kept. A local edit of an item the server deleted
@@ -65,7 +67,7 @@
 //! interleave; the apps guarantee it by running the rebase inside the sync
 //! round that owns the fetch (one round at a time).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chain::Seen;
 use crate::devices::DeviceEntry;
@@ -306,6 +308,20 @@ impl Repository<SyncStore> {
     /// (the stored epoch's rules, the store).
     pub fn rebase_report(&mut self) -> Result<RebaseReport> {
         let mut first_error = None;
+        // Key rotation v2 (spec 10.4): own writes of an identity left are
+        // replayed first, under the keys followed; their vaults' pending
+        // rows of that identity are never rebased (they were written under
+        // other keys), the replay settles them.
+        if let Err(e) = self.replay_own_writes() {
+            first_error.get_or_insert(e);
+        }
+        let mut replaying = BTreeSet::new();
+        if let Some(t) = crate::repo::trust_of(&self.store)? {
+            replaying = t.own_writes.replay_vaults();
+            if !t.retired.is_empty() {
+                replaying.extend(self.left_signed_vaults()?);
+            }
+        }
         for (kind, _) in self.store.lists_needing_rebase()? {
             let result = match kind {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
@@ -318,7 +334,8 @@ impl Repository<SyncStore> {
         if let Err(e) = self.drop_deleted_vault_writes() {
             first_error.get_or_insert(e);
         }
-        let held = self.store.vaults_needing_rebase()?;
+        let mut held = self.store.vaults_needing_rebase()?;
+        held.retain(|v| !replaying.contains(v));
         let pending_epoch = self.store.pending_epoch()?;
         let lost_epoch = pending_epoch.is_some() && (self.store.epoch_held()? || !held.is_empty());
         if let (true, Some(issued)) = (lost_epoch, pending_epoch) {
@@ -437,11 +454,11 @@ impl Repository<SyncStore> {
     /// `VaultListRollback`). On failure the local list stays pending and
     /// held, and the chain state is as it was.
     fn rebase_list<E: AccountList>(&mut self) -> Result<()> {
-        let id = self.account.params.account_id;
+        let id = self.records_id;
         let local = self.store.get(E::KIND, id)?.ok_or(Error::NotFound)?;
-        let local: crate::lists::ListBody<E> = open_record(&self.account, &local, None)?;
+        let local: crate::lists::ListBody<E> = open_record(&self.account, id, &local, None)?;
         let ancestor = match self.store.ancestor_record(E::KIND, id)? {
-            Some(rec) => Some(open_record::<E>(&self.account, &rec, None)?),
+            Some(rec) => Some(open_record::<E>(&self.account, id, &rec, None)?),
             None => None,
         };
         let server = self
@@ -451,7 +468,7 @@ impl Repository<SyncStore> {
         let after: Option<Seen> = ancestor.as_ref().map(|a| a.seen());
         let server = Stored {
             version: server.version,
-            body: open_record::<E>(&self.account, &server, after.as_ref())?,
+            body: open_record::<E>(&self.account, id, &server, after.as_ref())?,
         };
         let entries = rebase_entries(
             ancestor.as_ref().map(|a| a.entries.as_slice()),

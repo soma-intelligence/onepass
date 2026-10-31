@@ -292,9 +292,13 @@ pub(crate) struct Stored<E> {
     pub(crate) body: ListBody<E>,
 }
 
-/// The record of a list body, signed: id = account id, version = seq.
-pub(crate) fn list_record<E: AccountList>(account: &Account, body: ListBody<E>) -> Result<Record> {
-    let id = body.account_id;
+/// The record of a list body, signed: id = `id` (the identity's record id,
+/// spec 6.6), version = seq.
+pub(crate) fn list_record<E: AccountList>(
+    account: &Account,
+    id: Id,
+    body: ListBody<E>,
+) -> Result<Record> {
     let version = body.seq;
     let signed = sign(account, E::DOMAIN, body)?;
     Ok(Record {
@@ -306,16 +310,16 @@ pub(crate) fn list_record<E: AccountList>(account: &Account, body: ListBody<E>) 
 }
 
 /// Verify a stored list record of `account` against `seen`: `verify`, then
-/// the record id and the body's account id must be the account's
-/// (`WrongContext`).
+/// the record id must be `id` (the identity's record id, spec 6.6) and the
+/// body's account id the account's (`WrongContext`).
 pub(crate) fn open_record<E: AccountList>(
     account: &Account,
+    id: Id,
     rec: &Record,
     seen: Option<&Seen>,
 ) -> Result<ListBody<E>> {
     let body: ListBody<E> = verify(&account.params.signing_pub, E::DOMAIN, &rec.data, seen)?;
-    let id = account.params.account_id;
-    if rec.id != id || body.account_id != id {
+    if rec.id != id || body.account_id != account.params.account_id {
         return Err(IntegrityError::WrongContext.into());
     }
     Ok(body)
@@ -328,10 +332,10 @@ impl<S: RecordStore> Repository<S> {
     /// creates it), and a rollback when one was.
     pub(crate) fn read_list<E: AccountList>(&self) -> Result<Option<Stored<E>>> {
         let seen = E::seen(&self.chain);
-        match self.store.get(E::KIND, self.account.params.account_id)? {
+        match self.store.get(E::KIND, self.records_id)? {
             Some(rec) => Ok(Some(Stored {
                 version: rec.version,
-                body: open_record(&self.account, &rec, seen.as_ref())?,
+                body: open_record(&self.account, self.records_id, &rec, seen.as_ref())?,
             })),
             None if seen.is_some() => Err(rollback(E::DOMAIN)),
             None => Ok(None),
@@ -345,13 +349,13 @@ impl<S: RecordStore> Repository<S> {
     /// (`issue_restore_epoch_take_server`), after the pending lists were
     /// dropped; the next persist keeps these pins (`lists_forced`).
     pub(crate) fn take_server_lists(&mut self) -> Result<()> {
-        let id = self.account.params.account_id;
+        let id = self.records_id;
         let device_list = match self.store.get(RecordKind::DeviceList, id)? {
-            Some(rec) => Some(open_record::<DeviceEntry>(&self.account, &rec, None)?.seen()),
+            Some(rec) => Some(open_record::<DeviceEntry>(&self.account, id, &rec, None)?.seen()),
             None => None,
         };
         let vault_list = match self.store.get(RecordKind::VaultList, id)? {
-            Some(rec) => Some(open_record::<VaultListEntry>(&self.account, &rec, None)?.seen()),
+            Some(rec) => Some(open_record::<VaultListEntry>(&self.account, id, &rec, None)?.seen()),
             None => None,
         };
         self.chain.device_list = device_list;
@@ -367,12 +371,15 @@ impl<S: RecordStore> Repository<S> {
         current: Option<&Stored<E>>,
         entries: Vec<E>,
     ) -> Result<(Record, Option<u64>, ListBody<E>)> {
+        // Task 15 (spec 7.5 step 5): a kit-restored device signs no list
+        // before a device pins it.
+        self.signs_lists()?;
         let body = ListBody::next(
             current.map(|c| &c.body),
             self.account.params.account_id,
             entries,
         )?;
-        let rec = list_record(&self.account, body.clone())?;
+        let rec = list_record(&self.account, self.records_id, body.clone())?;
         Ok((rec, current.map(|c| c.version), body))
     }
 

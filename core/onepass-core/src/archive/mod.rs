@@ -20,7 +20,7 @@ use crate::vault::VaultMeta;
 
 pub use format::{
     ArchiveKind, ArchivedVault, CURRENT_SCHEMA, Contents, HeaderInfo, Unlock, backup, export,
-    inspect, open,
+    inspect, open, open_retired,
 };
 
 /// What restoring an archive into an account does. Nothing is overwritten.
@@ -36,6 +36,31 @@ pub struct RestorePlan {
     /// Items whose id already exists in any vault of the account (or earlier
     /// in the archive), left untouched.
     pub skipped: u32,
+}
+
+/// State of a restore across attempts and errors
+/// (`Repository::restore_archive_with`).
+#[derive(Debug, Default)]
+pub struct RestoreProgress {
+    /// Vaults created so far: archive vault id to account vault id.
+    pub created: std::collections::HashMap<Id, Id>,
+    /// Items written by the last attempt.
+    pub restored: u32,
+    /// Items the last attempt planned to write.
+    pub total: u32,
+    /// The 1-based plan position of the item `prepare` refused.
+    pub invalid: Option<u32>,
+}
+
+/// What `Repository::restore_archive` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreReport {
+    pub vaults_created: u32,
+    pub restored: u32,
+    pub skipped: u32,
+    /// The archive was made before a key rotation (R18): the restore
+    /// screen says so before this runs.
+    pub made_before_rotation: bool,
 }
 
 /// Plan a restore of `contents` into an account whose vaults and item ids
