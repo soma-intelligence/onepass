@@ -5396,3 +5396,31 @@ fn archive_before_two_rotations_opens_with_warning() {
     assert_eq!(a.repo().account().keyset().retired_kem.len(), 2);
     assert!(a.repo().open_archive(&old).unwrap().made_before_rotation);
 }
+
+/// Task 19 carried item 6: timing of 1000 item writes and a push on a
+/// device with a trust state, in `Current`. Run by hand:
+/// `cargo test --release --features dev-fast-kdf --test rotation_v2
+/// write_loop_timing -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn write_loop_timing() {
+    let mut server = Server::default();
+    let (mut a, _f) = fixture_on(&mut server);
+    let v = a.vault();
+    let t = std::time::Instant::now();
+    for i in 0..1000 {
+        a.repo()
+            .save_item(&v, login(v.id, &format!("u{i}"), T0 + i64::from(i)))
+            .unwrap();
+    }
+    let writes = t.elapsed();
+    let t = std::time::Instant::now();
+    let changes = a.store().pending_changes().unwrap().len();
+    let outbox_time = t.elapsed();
+    let t = std::time::Instant::now();
+    push(&mut server, &a).unwrap();
+    let pushed = t.elapsed();
+    eprintln!(
+        "TIMING writes(1000)={writes:?} pending_changes({changes})={outbox_time:?} push={pushed:?}"
+    );
+}

@@ -203,6 +203,13 @@ fn completeness<S: RecordStore + ?Sized>(
 /// for again.
 pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
     let mut ctx = digest::Context::new(&SHA256);
+    // Task 19 carried item 6: a store that stamps every change of those
+    // rows (`RecordStore::lineage_stamp`) stands for them.
+    let stamped = store.lineage_stamp()?;
+    if let Some(stamp) = stamped {
+        ctx.update(b"stamp");
+        ctx.update(&stamp.to_be_bytes());
+    }
     for kind in [
         RecordKind::Lineage,
         RecordKind::DeviceIntro,
@@ -210,6 +217,9 @@ pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32
         RecordKind::AccountParams,
         RecordKind::Keyset,
     ] {
+        if stamped.is_some() {
+            break;
+        }
         let mut rows = store.list(kind)?;
         rows.sort_by_key(|r| r.id);
         for r in rows {

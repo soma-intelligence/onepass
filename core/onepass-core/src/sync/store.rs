@@ -162,6 +162,29 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
     value BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS lineage_stamp (
+    k INTEGER NOT NULL PRIMARY KEY,
+    v INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO lineage_stamp (k, v) VALUES (1, 0);
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_ins AFTER INSERT ON base
+    WHEN NEW.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_upd AFTER UPDATE ON base
+    WHEN NEW.kind IN (1, 2, 10, 11, 12) OR OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_del AFTER DELETE ON base
+    WHEN OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_ins AFTER INSERT ON pending
+    WHEN NEW.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_upd AFTER UPDATE ON pending
+    WHEN NEW.kind IN (1, 2, 10, 11, 12) OR OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_del AFTER DELETE ON pending
+    WHEN OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
 ";
 
 /// Check `PRAGMA user_version`, then create what is missing and stamp the
@@ -231,6 +254,10 @@ type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
 
 pub struct SyncStore {
     conn: Connection,
+    /// The last trust state decoded, with the exact bytes it came from
+    /// (Task 19 carried item 6): a read whose bytes are the same returns a
+    /// copy without decoding again. Keyed by the bytes, so never stale.
+    trust_cache: std::sync::Mutex<Option<(Vec<u8>, TrustState)>>,
 }
 
 /// What `SyncStore::push_rotation_phase` found.
@@ -943,13 +970,19 @@ impl SyncStore {
         conn.execute_batch("PRAGMA synchronous = FULL;")
             .map_err(store_err)?;
         init_schema(&conn)?;
-        Ok(SyncStore { conn })
+        Ok(SyncStore {
+            conn,
+            trust_cache: Default::default(),
+        })
     }
 
     pub fn open_in_memory() -> Result<SyncStore> {
         let conn = Connection::open_in_memory().map_err(store_err)?;
         init_schema(&conn)?;
-        Ok(SyncStore { conn })
+        Ok(SyncStore {
+            conn,
+            trust_cache: Default::default(),
+        })
     }
 
     /// A write transaction: an `IMMEDIATE` one, or a savepoint inside an
@@ -3407,9 +3440,30 @@ impl RecordStore for SyncStore {
     }
 
     fn trust_state(&self) -> Result<Option<TrustState>> {
-        self.meta(TRUST_STATE_KEY)?
-            .map(|b| TrustState::decode(&b))
-            .transpose()
+        let Some(bytes) = self.meta(TRUST_STATE_KEY)? else {
+            return Ok(None);
+        };
+        let mut cache = self
+            .trust_cache
+            .lock()
+            .map_err(|_| Error::Store("trust cache".into()))?;
+        if let Some((b, t)) = cache.as_ref()
+            && *b == bytes
+        {
+            return Ok(Some(t.clone()));
+        }
+        let t = TrustState::decode(&bytes)?;
+        *cache = Some((bytes, t.clone()));
+        Ok(Some(t))
+    }
+
+    fn lineage_stamp(&self) -> Result<Option<u64>> {
+        self.read(|c| {
+            let v: i64 = c
+                .query_row("SELECT v FROM lineage_stamp WHERE k = 1", [], |r| r.get(0))
+                .map_err(store_err)?;
+            Ok(Some(v as u64))
+        })
     }
 
     /// The conditional writes, the deletions (as `delete`), the chain state
@@ -4248,6 +4302,52 @@ mod tests {
             .collect();
         kept.sort();
         assert_eq!(kept, vec![vec![1], vec![9]]);
+    }
+
+    /// Task 19 carried item 6: the lineage stamp moves with every write or
+    /// removal of a kind a rotation prompt reads, local or fetched, and
+    /// not with item writes; the trust state read is the one stored.
+    #[test]
+    fn lineage_stamp_moves_only_with_prompt_kinds() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let stamp = |s: &SyncStore| s.lineage_stamp().unwrap().unwrap();
+        let mut last = stamp(&s);
+        let mut moved = |s: &SyncStore, expect: bool| {
+            let now = stamp(s);
+            assert_eq!(now != last, expect);
+            last = now;
+        };
+        let id = Id::new();
+        s.put(rec(id, RecordKind::Item, 1, &[1])).unwrap();
+        moved(&s, false);
+        for kind in [
+            RecordKind::AccountParams,
+            RecordKind::Keyset,
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            seed_base(&mut s, kind, id, 1, vec![1]);
+            moved(&s, true);
+        }
+        s.put(rec(id, RecordKind::AccountParams, 2, &[2])).unwrap();
+        moved(&s, true);
+        s.stage_remote(remote(RecordKind::AccountParams, id, 2, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        s.stage_remote(remote(RecordKind::Item, id, 2, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        moved(&s, false);
+
+        let mut trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        trust.excluded.insert(Id([0xAB; 16]));
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust));
     }
 
     /// A `retained` table from before the copy tag keeps its rows.

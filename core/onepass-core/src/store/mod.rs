@@ -285,6 +285,15 @@ pub trait RecordStore {
         Err(Error::Store("trust state unsupported".into()))
     }
 
+    /// A counter that changes whenever a row of the kinds a rotation prompt
+    /// depends on (account params, keysets, lineage, intro and delivery
+    /// records) is written or removed, local or fetched, on any connection
+    /// (Task 19 carried item 6; `SyncStore`: SQLite triggers). `None`: the
+    /// store keeps none, and the caller digests the rows themselves.
+    fn lineage_stamp(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
+
     /// `put_all_if_version_and_delete`, and the trust state (and `chain`,
     /// on a store that persists it) in the same transaction: all or nothing.
     /// A store that keeps no trust state refuses and writes nothing.
