@@ -342,158 +342,98 @@ select onepass_test.throws(
 
 -- ------------------------------------------------------------- collection
 
--- Orphaned for just under 24 h: not yet.
+-- sha1 and sha2 are unreferenced. Orphaned for just under 24 h: kept.
 update onepass_mailbox.blobs set orphaned_at = now() - interval '23 hours 59 minutes'
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1);
 update onepass_mailbox.blobs set orphaned_at = null
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
-set local role onepass_mailbox_janitor;
+insert into t_take (name, gen, object_name)
+select 'sha1', b.gen, onepass_test.oname('A', onepass_test.sha(1)) from onepass_test.blob('A', onepass_test.sha(1)) b;
+select onepass_mailbox.maintenance();
 select onepass_test.ok(
-    (select count(*) = 0 from onepass_mailbox.gc_take(100)),
-    'gc_take_leaves_a_blob_orphaned_for_less_than_24_hours');
-reset role;
+    (select count(*) = 1 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1))
+    and not exists (select 1 from onepass_mailbox.blob_graves),
+    'blob_orphaned_for_less_than_24_hours_is_kept');
+
+-- Orphaned for 24 hours: maintenance deletes the row and queues the name.
 update onepass_mailbox.blobs set orphaned_at = now() - interval '24 hours 1 second'
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1);
-set local role onepass_mailbox_janitor;
-insert into t_take select 'sha1', gen, take, object_name from onepass_mailbox.gc_take(100);
-reset role;
+select onepass_mailbox.maintenance();
 select onepass_test.ok(
-    (select count(*) = 1 and bool_and(t.object_name = onepass_test.oname('A', onepass_test.sha(1))
-                                      and t.gen = b.gen and t.take = b.gc_take)
-     from t_take t, onepass_test.blob('A', onepass_test.sha(1)) b),
-    'gc_take_returns_a_blob_orphaned_for_24_hours_with_its_object_name');
-set local role onepass_mailbox_janitor;
+    not exists (select 1 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1))
+    and (select array_agg(object_name) from onepass_mailbox.blob_graves where mailbox_id = onepass_test.mbx('A'))
+        = array[(select object_name from t_take where name = 'sha1')],
+    'blob_orphaned_for_24_hours_becomes_a_grave');
 select onepass_test.ok(
-    (select count(*) = 0 from onepass_mailbox.gc_take(100)),
-    'gc_take_does_not_return_a_taken_blob_again_at_once');
-reset role;
-select onepass_test.ok(
-    (select b.state = 3 from onepass_test.blob('A', onepass_test.sha(1)) b),
-    'taken_blob_is_marked_orphaned');
+    (select b.refs = 1 from onepass_test.blob('A', onepass_test.sha(4)) b),
+    'referenced_blob_is_never_collected');
 
--- While a take is pending the collector may delete the object at any
--- moment: the blob is neither committable nor revived by an announce
--- (retry, with retry_after). The collector deletes the object, then calls
--- gc_done, which drops the row; the client announces again, sees no object,
--- uploads and commits. End to end, in that order.
+-- No row: a commit naming it is malformed even though the old object is
+-- still there; the client announces again and gets a new name.
 set local role onepass_mailbox_api;
 select onepass_test.answers(
-    $$select * from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)$$,
-    'malformed', 'commit_of_a_blob_taken_by_gc_refused');
+    $$select * from onepass_test.put_blob('a', 'A', 8, null, onepass_test.sha(1), 30000)$$,
+    'malformed', 'commit_of_a_collected_blob_refused');
 select onepass_test.ok(
-    (select count(*) = 1 and bool_and(status = 'retry' and retry_after between 1 and 3600 and sha256 is null)
-     from onepass_test.announce('a', 'A', array[onepass_test.sha(2), onepass_test.sha(1)], array[20000, 30000])),
-    'announce_of_a_blob_with_a_pending_take_is_retry');
+    (select status = 'ok' and needs_upload and object_name <> (select object_name from t_take where name = 'sha1')
+     from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])),
+    'announce_of_a_collected_blob_names_a_new_generation');
+
+-- The collector drains the graves: take, delete the object, confirm.
 reset role;
+set local role onepass_mailbox_janitor;
 select onepass_test.ok(
-    (select b.state = 3 and b.gc_taken_at is not null from onepass_test.blob('A', onepass_test.sha(1)) b)
-    and (select b.state = 1 and b.orphaned_at is null from onepass_test.blob('A', onepass_test.sha(2)) b),
-    'announce_refused_for_a_pending_take_changes_nothing');
-set local role onepass_mailbox_api;
-select onepass_test.answers(
-    $$select * from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)$$,
-    'malformed', 'commit_after_a_refused_announce_still_refused');
+    (select count(*) = 1 and bool_and(mailbox_id = onepass_test.mbx('A')
+                                      and object_name = (select object_name from t_take where name = 'sha1'))
+     from onepass_mailbox.gc_take(100)),
+    'gc_take_returns_the_grave');
+select onepass_test.ok((select count(*) = 0 from onepass_mailbox.gc_take(100)), 'gc_take_does_not_hand_out_a_taken_grave');
 reset role;
--- The collector deletes exactly the name it got, then confirms its take.
+-- The upload of the new generation and the collector's delete of the old
+-- name cross: the new object survives.
+select onepass_test.object('A', onepass_test.sha(1), 30000);
 delete from storage.objects where name = (select object_name from t_take where name = 'sha1');
 set local role onepass_mailbox_janitor;
-select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(1),
-    (select gen from t_take where name = 'sha1'), (select take from t_take where name = 'sha1'));
+select onepass_mailbox.gc_done(onepass_test.mbx('A'), (select object_name from t_take where name = 'sha1'));
+select onepass_mailbox.gc_done(onepass_test.mbx('A'), (select object_name from t_take where name = 'sha1'));
 reset role;
-select onepass_test.ok(
-    (select count(*) = 0 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1)),
-    'gc_done_deletes_the_collected_blob');
+select onepass_test.ok(not exists (select 1 from onepass_mailbox.blob_graves), 'gc_done_drops_the_grave_idempotently');
 set local role onepass_mailbox_api;
 select onepass_test.ok(
-    (select status = 'ok' and needs_upload from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])),
-    'announce_after_collection_needs_an_upload');
-reset role;
-select onepass_test.object('A', onepass_test.sha(1), 30000);
-set local role onepass_mailbox_api;
-select onepass_test.ok(
-    (select status = 'ok' from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)),
-    'commit_after_reupload_is_applied');
+    (select status = 'ok' from onepass_test.put_blob('a', 'A', 8, null, onepass_test.sha(1), 30000)),
+    'commit_of_the_new_generation_is_applied');
 reset role;
 select onepass_test.ok(
-    (select b.refs = 1 and b.state = 2 and b.gc_taken_at is null from onepass_test.blob('A', onepass_test.sha(1)) b),
-    'collected_then_reuploaded_blob_is_referenced_with_its_object');
--- Back to an orphan for what follows.
-set local role onepass_mailbox_api;
-select onepass_test.ok((select status = 'ok' from onepass_test.del('a', 'A', 5)), 'reuploaded_blob_row_deleted');
-reset role;
+    exists (select 1 from storage.objects where name = onepass_test.oname('A', onepass_test.sha(1)))
+    and (select b.refs = 1 and b.state = 2 from onepass_test.blob('A', onepass_test.sha(1)) b),
+    'new_generation_object_survives_the_collector');
 
--- A take the collector never confirmed is handed out again an hour later,
--- as a new take of the same generation.
+-- A collector that never confirms: maintenance hands the grave out again
+-- after 10 minutes.
 update onepass_mailbox.blobs set orphaned_at = now() - interval '2 days'
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
+select onepass_mailbox.maintenance();
 set local role onepass_mailbox_janitor;
-insert into t_take select 'sha2_first', gen, take, object_name from onepass_mailbox.gc_take(100);
+select onepass_test.ok((select count(*) = 1 from onepass_mailbox.gc_take(100)), 'gc_take_takes_a_second_grave');
 reset role;
-select onepass_test.ok((select count(*) = 1 from t_take where name = 'sha2_first'), 'gc_take_takes_a_second_blob');
-update onepass_mailbox.blobs set gc_taken_at = now() - interval '61 minutes'
-where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
+update onepass_mailbox.blob_graves set taken_at = now() - interval '9 minutes';
+select onepass_mailbox.maintenance();
 set local role onepass_mailbox_janitor;
-insert into t_take select 'sha2_second', gen, take, object_name from onepass_mailbox.gc_take(100);
+select onepass_test.ok((select count(*) = 0 from onepass_mailbox.gc_take(100)), 'grave_taken_9_minutes_ago_stays_taken');
 reset role;
-select onepass_test.ok(
-    (select f.gen = s.gen and f.object_name = s.object_name and f.take < s.take
-     from t_take f, t_take s where f.name = 'sha2_first' and s.name = 'sha2_second'),
-    'unconfirmed_take_is_retaken_with_a_new_take');
--- Two collectors: the older one's confirmation is a no-op.
+update onepass_mailbox.blob_graves set taken_at = now() - interval '11 minutes';
+select onepass_mailbox.maintenance();
 set local role onepass_mailbox_janitor;
-select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(2),
-    (select gen from t_take where name = 'sha2_first'), (select take from t_take where name = 'sha2_first'));
-reset role;
-select onepass_test.ok(
-    (select b.state = 3 and b.gc_take = (select take from t_take where name = 'sha2_second')
-     from onepass_test.blob('A', onepass_test.sha(2)) b),
-    'gc_done_of_an_older_take_is_a_no_op');
-
--- The second take expires too: an announce takes the blob back under a new
--- generation, so a new object name. Upload and commit; then the late
--- collector deletes the name it was given and confirms: nothing it does
--- reaches the new object or the row.
-update onepass_mailbox.blobs set gc_taken_at = now() - interval '61 minutes'
-where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
-set local role onepass_mailbox_api;
-select onepass_test.ok(
-    (select status = 'ok' and needs_upload
-            and object_name <> (select object_name from t_take where name = 'sha2_second')
-     from onepass_test.announce('a', 'A', array[onepass_test.sha(2)], array[20000])),
-    'announce_after_an_expired_take_revives_the_blob');
-reset role;
-select onepass_test.ok(
-    (select b.state = 1 and b.gc_taken_at is null and b.gc_take is null and b.orphaned_at is null
-            and b.gen > (select gen from t_take where name = 'sha2_second')
-     from onepass_test.blob('A', onepass_test.sha(2)) b),
-    'revive_bumps_the_generation');
-select onepass_test.object('A', onepass_test.sha(2), 20000);
-set local role onepass_mailbox_api;
-select onepass_test.ok(
-    (select status = 'ok' from onepass_test.put_blob('a', 'A', 7, null, onepass_test.sha(2), 20000)),
-    'commit_of_the_revived_blob_is_applied');
-reset role;
-delete from storage.objects where name = (select object_name from t_take where name = 'sha2_second');
-set local role onepass_mailbox_janitor;
-select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(2),
-    (select gen from t_take where name = 'sha2_second'), (select take from t_take where name = 'sha2_second'));
-reset role;
-select onepass_test.ok(
-    exists (select 1 from storage.objects where name = onepass_test.oname('A', onepass_test.sha(2)))
-    and (select b.refs = 1 and b.state = 2 from onepass_test.blob('A', onepass_test.sha(2)) b),
-    'late_collector_leaves_the_new_generation_intact');
-set local role onepass_mailbox_api;
-select onepass_test.ok(
-    (select status = 'ok' and object_name = onepass_test.oname('A', onepass_test.sha(2)) and size = 20000
-     from onepass_test.lookup('a', 'A', array[onepass_test.sha(2)])),
-    'lookup_names_the_current_generation');
-reset role;
-set local role onepass_mailbox_janitor;
+select onepass_test.ok((select count(*) = 1 from onepass_mailbox.gc_take(100)), 'unconfirmed_grave_is_handed_out_again');
 select onepass_test.throws($$select * from onepass_mailbox.gc_take(0)$$, '22023', 'gc_take_limit_zero_refused');
 select onepass_test.throws(
     $$select * from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])$$, '42501',
     'janitor_cannot_announce');
 reset role;
+select onepass_test.throws(
+    $$insert into onepass_mailbox.blob_graves (mailbox_id, object_name)
+      values (onepass_test.mbx('A'), encode(onepass_test.mbx('B'), 'hex') || '/' || repeat('ab', 32) || '.1')$$,
+    '23514', 'grave_name_outside_its_mailbox_refused');
 
 -- ----------------------------------------------------------------- quota
 

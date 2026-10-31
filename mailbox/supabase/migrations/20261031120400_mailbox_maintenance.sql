@@ -30,8 +30,11 @@
 --     page stays valid. The mailboxes are locked like a commit locks them
 --     (FOR NO KEY UPDATE, in id order), so a batch that read a tombstone
 --     never counts it after the purge took it.
--- and marks every blob nobody references (refs = 0) as orphaned now; the
--- collector takes it 24 hours later.
+-- It marks every blob nobody references (refs = 0) as orphaned now, and
+-- collects the blobs orphaned for 24 hours: in one statement, skipping rows
+-- a commit or an announce holds (they lock blob rows in hash order), the
+-- row is deleted and its object name queued in blob_graves for mailbox-gc
+-- (graves taken more than 10 minutes ago are handed out again).
 --
 -- Wake-up partitions. On Supabase, realtime.messages is partitioned by day
 -- and the Realtime service creates the partitions ahead (today and the next
@@ -45,21 +48,17 @@
 -- Janitor (onepass_mailbox_janitor, the role of the mailbox-gc and
 -- mailbox-push edge functions, Task 8). Internal functions, not request
 -- entry points: they raise 22023 on a bad argument and return plain rows.
---   gc_take(limit): up to limit blobs orphaned for 24 hours, marked taken
---     (state 3) under a fresh take token, oldest first; each row gives the
---     generation, the token and the exact object name. A take never
---     confirmed is handed out again an hour later under a new token. The
---     caller deletes exactly that object name through the Storage API, then
---     calls gc_done.
---   gc_done(mailbox, sha, gen, take): deletes the blob row only if it is
---     still taken by that take, at that generation, and unreferenced;
---     otherwise (an announce revived it under a new generation, or a newer
---     take replaced this one) it does nothing. While a take is current
---     nobody can announce or commit the blob.
---   Task 8 (mailbox-gc), defense in depth: keep a 10 minute timer from each
---     gc_take reply and drop the takes older than that without deleting
---     anything (the lease is an hour, generations make a late delete
---     harmless, the timer keeps it from happening at all).
+--   gc_take(limit): up to limit graves (object names of collected blobs,
+--     queued by maintenance), oldest first, marked taken. The caller deletes
+--     each object through the Storage API (an object already gone counts as
+--     deleted), then calls gc_done. A take older than 10 minutes is handed
+--     out again by maintenance, so a collector that crashes leaks nothing;
+--     deleting a name twice is harmless, and no current blob ever has a
+--     grave's name (generations never repeat).
+--   gc_done(mailbox, object_name): drops the grave. Idempotent.
+--   Task 8 (mailbox-gc): keep a 10 minute timer from each gc_take reply and
+--     drop the names older than that without deleting (maintenance hands
+--     them out again); always delete the object before gc_done.
 --   push_take(limit): removes up to limit mailboxes from the push queue,
 --     oldest first, and returns the push tokens to wake: the active
 --     credentials of each mailbox that is not frozen, without the one the
@@ -172,6 +171,26 @@ begin
           for update skip locked) t
     where b.mailbox_id = t.mailbox_id and b.sha256 = t.sha256;
 
+    -- Collect: row out, object name into the graves, under the row lock.
+    with t as (
+        select x.mailbox_id, x.sha256 from onepass_mailbox.blobs x
+        where x.refs = 0 and x.orphaned_at <= p_now - interval '24 hours'
+        order by x.mailbox_id, x.sha256
+        limit 10000
+        for update skip locked
+    ), gone as (
+        delete from onepass_mailbox.blobs b
+        using t
+        where b.mailbox_id = t.mailbox_id and b.sha256 = t.sha256 and b.refs = 0
+        returning b.mailbox_id, onepass_mailbox._blob_object(b.mailbox_id, b.sha256, b.gen) as object_name
+    )
+    insert into onepass_mailbox.blob_graves (mailbox_id, object_name, queued_at)
+    select g.mailbox_id, g.object_name, p_now from gone g
+    on conflict (mailbox_id, object_name) do nothing;
+    -- A take mailbox-gc never confirmed goes back to the queue.
+    update onepass_mailbox.blob_graves set taken_at = null
+    where taken_at < p_now - interval '10 minutes';
+
     for v_day in select * from onepass_mailbox.wake_partitions_missing(p_now) loop
         raise warning 'onepass_mailbox maintenance: realtime.messages has no partition for % (UTC), wake-ups that day are lost; the Realtime service creates them', v_day;
     end loop;
@@ -183,7 +202,7 @@ $$;
 -- --------------------------------------------------------------- janitor
 
 create function onepass_mailbox.gc_take(p_limit integer)
-returns table (mailbox_id bytea, sha256 bytea, gen bigint, take bigint, object_name text)
+returns table (mailbox_id bytea, object_name text)
 language plpgsql
 security definer
 set search_path = ''
@@ -197,38 +216,34 @@ begin
     perform set_config('onepass.maintenance', 'on', true);
     return query
     with t as (
-        select b.mailbox_id, b.sha256 from onepass_mailbox.blobs b
-        where b.refs = 0 and b.orphaned_at <= now() - interval '24 hours'
-          and (b.state <> 3 or b.gc_taken_at < now() - interval '1 hour')
-        order by b.orphaned_at
+        select g.mailbox_id, g.object_name from onepass_mailbox.blob_graves g
+        where g.taken_at is null
+        order by g.queued_at, g.mailbox_id, g.object_name
         limit p_limit
         for update skip locked
     )
-    update onepass_mailbox.blobs b
-    set state = 3, gc_taken_at = now(), gc_take = nextval('onepass_mailbox.blob_gen_seq')
+    update onepass_mailbox.blob_graves g set taken_at = now()
     from t
-    where b.mailbox_id = t.mailbox_id and b.sha256 = t.sha256
-    returning b.mailbox_id, b.sha256, b.gen, b.gc_take, onepass_mailbox._blob_object(b.mailbox_id, b.sha256, b.gen);
+    where g.mailbox_id = t.mailbox_id and g.object_name = t.object_name
+    returning g.mailbox_id, g.object_name;
     perform set_config('onepass.maintenance', '', true);
 end
 $$;
 
-create function onepass_mailbox.gc_done(p_mailbox bytea, p_sha bytea, p_gen bigint, p_take bigint)
+create function onepass_mailbox.gc_done(p_mailbox bytea, p_object_name text)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-    if p_mailbox is null or length(p_mailbox) <> 16 or p_sha is null or length(p_sha) <> 32
-       or p_gen is null or p_take is null then
-        raise exception using errcode = '22023', message = 'gc_done takes a 16 byte mailbox, a 32 byte hash, a generation and a take';
+    if p_mailbox is null or length(p_mailbox) <> 16 or p_object_name is null then
+        raise exception using errcode = '22023', message = 'gc_done takes a 16 byte mailbox and an object name';
     end if;
     perform onepass_mailbox._enter(null);
     perform set_config('onepass.maintenance', 'on', true);
-    delete from onepass_mailbox.blobs b
-    where b.mailbox_id = p_mailbox and b.sha256 = p_sha and b.state = 3 and b.refs = 0
-      and b.gen = p_gen and b.gc_take = p_take;
+    delete from onepass_mailbox.blob_graves g
+    where g.mailbox_id = p_mailbox and g.object_name = p_object_name;
     perform set_config('onepass.maintenance', '', true);
 end
 $$;
@@ -295,7 +310,7 @@ revoke all on all functions in schema onepass_mailbox from public, anon, authent
 
 grant execute on function
     onepass_mailbox.gc_take(integer),
-    onepass_mailbox.gc_done(bytea, bytea, bigint, bigint),
+    onepass_mailbox.gc_done(bytea, text),
     onepass_mailbox.push_take(integer),
     onepass_mailbox.push_forget(bytea, bytea)
 to onepass_mailbox_janitor;

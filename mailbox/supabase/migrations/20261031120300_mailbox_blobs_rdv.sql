@@ -3,8 +3,6 @@
 -- 20261031120100: refusals before authentication raise, every other outcome
 -- is returned in band with `status text, retry_after integer` first, and a
 -- refused write leaves only the consumed counters.
--- One addition: api_blob_announce may answer 'retry' (HTTP 503) with
--- retry_after set, like rate_limited.
 --
 -- Blobs. A body above 16 KiB (INLINE_MAX) lives in the private Storage
 -- bucket 'onepass-mailbox' under hex(mailbox) || '/' || hex(sha256) || '.'
@@ -21,47 +19,45 @@
 --   (Every announce and lookup row carries object_name.)
 --   api_blob_announce: 1 to 1 000 (PAGE_MAX_RECORDS) distinct blobs of
 --     16 385 to 921 600 bytes. Records each one as announced (state 1) when
---     absent and answers, sorted by hash, whether it needs an upload: yes
---     unless its object is in Storage with that size, and always when the
---     collector has taken it (state 3), since its object may go at any
---     moment. While the collector holds a take on one of them (gc_take less
---     than an hour ago) the whole announce is 'retry' with retry_after 60
---     and changes nothing: the object may be deleted at any moment, so the
---     blob must not become committable before gc_done (C1 of the Task 6
---     review). Quota: bytes_used counts committed bodies through their
---     records (inline and blob alike); blobs no record references yet are
---     counted at announce, so the bytes a mailbox holds in Storage stay
---     under its plan. Only growth is refused, like a commit.
+--     absent, under a new generation, and answers, sorted by hash, its
+--     object name and whether it needs an upload: yes unless that object is
+--     in Storage with that size. Quota: bytes_used counts committed bodies
+--     through their records (inline and blob alike); blobs no record
+--     references yet are counted at announce, so the bytes a mailbox holds
+--     in Storage stay under its plan. Only growth is refused, like a commit.
 --   api_blob_lookup: the hashes asked for that a live row of the mailbox
---     references, with their size, sorted (one 'ok' row with NULL columns
---     when none is).
+--     references, with their size and object name, sorted (one 'ok' row
+--     with NULL columns when none is).
 --   api_commit, Blob branch (replaces the Task 5 function, same signature):
 --     a put with blob_sha (32 bytes) and size (16 385 to 921 600) and no
---     data passes only if the object exists under the mailbox's prefix with
---     metadata size equal to size, and the collector has not taken it;
---     otherwise the batch is malformed. A written put takes one reference
---     on its blob, the body it replaces (put or delete) gives one back. A
---     blob whose count falls to 0 is marked orphaned by maintenance and
---     collected 24 hours later (20261031120400).
+--     data passes only if the blob was announced (its row exists), the
+--     object of its current generation exists with metadata size equal to
+--     size, and a blob that rows already reference keeps its size;
+--     otherwise the batch is malformed (the client announces again). A
+--     written put takes one reference on its blob, the body it replaces
+--     (put or delete) gives one back.
 --
--- Blob states: 1 announced (no commit has seen its object yet), 2 present (a
--- commit checked its object), 3 orphaned and handed to the collector
--- (gc_take, which returns the generation, a take token and the exact object
--- name to delete). A taken blob is never referenced again: a commit refuses it
--- (malformed) and an announce answers 'retry' while the take is pending.
--- The collector deletes the object, then calls gc_done, which deletes the
--- row; the client announces again, finds no object, uploads, commits. So no
--- commit can reference a blob between the take and the object's deletion.
--- A take older than an hour (far above an edge function's run time) is
--- abandoned: an announce then takes the blob back under a new generation
--- (state 1, a new object name, upload asked), or gc_take takes it again
--- under a new token. A late collector deletes only the old name, and its
--- gc_done(mailbox, sha, gen, take) is a no-op unless gen and take are still
--- the row's: timers alone do not guard the object (Task 6 review, round 2).
+-- Blob states: 1 announced (no commit has seen its object yet), 2 present
+-- (a commit checked its object). A blob whose count falls to 0 is marked
+-- orphaned by maintenance; 24 hours later maintenance collects it: in one
+-- statement under the row lock, the row is deleted and its object name is
+-- queued in blob_graves. The edge function mailbox-gc then drains the
+-- graves (20261031120400). A blob announced again after that gets a new
+-- row and a new generation, hence a new object name: deleting a grave can
+-- never reach a current object. Generations never repeat (one sequence).
+--
+-- Commit and collection (Task 6 review, round 3). The commit locks every
+-- blob row it touches (the blobs it puts and those of the rows it
+-- replaces) FOR UPDATE in hash order right after the mailbox lock, before
+-- it checks them, and holds them to the end: the collector skips locked
+-- rows, so a blob checked by a commit cannot be collected under it. The
+-- reference is an UPDATE bound to the generation checked; no commit path
+-- inserts a blob row.
 --
 -- Lock order: blob rows are locked in (mailbox, sha256) order by every
--- writer (announce and commit insert in hash order and lock the rows they
--- touch in that order; maintenance and gc_take skip locked rows).
+-- writer (announce inserts in hash order under the mailbox lock, commit
+-- locks in hash order under the mailbox lock; maintenance skips locked
+-- rows).
 --
 -- Rendezvous (spec 5.3, T-RDV). No credential: the session id from the QR
 -- code is the only key, and every call counts on the per-IP minute bucket of
@@ -90,20 +86,34 @@
 
 set role onepass_mailbox_owner;
 
--- Upload generations and take tokens, drawn from one sequence so no value
--- is ever handed out twice (a row deleted by gc_done and announced again
--- gets a new generation, never an old object name).
+-- Upload generations, from one sequence: no value is ever handed out twice.
 create sequence onepass_mailbox.blob_gen_seq as bigint;
 -- The generation names the object: hex(mailbox)/hex(sha256).gen. A new row
--- takes one, a revived row (abandoned take) takes a new one.
+-- takes one.
 alter table onepass_mailbox.blobs
     add column gen bigint not null default nextval('onepass_mailbox.blob_gen_seq') check (gen >= 1);
--- When the collector took the blob, and the token of that take (gc_take);
--- NULL otherwise.
-alter table onepass_mailbox.blobs add column gc_taken_at timestamptz;
-alter table onepass_mailbox.blobs add column gc_take bigint;
-alter table onepass_mailbox.blobs
-    add constraint blobs_taken check ((state = 3) = (gc_taken_at is not null) and (state = 3) = (gc_take is not null));
+-- Only live states: a collected blob has no row (its name is a grave).
+alter table onepass_mailbox.blobs add constraint blobs_state_live check (state in (1, 2));
+
+-- Object names to delete from Storage: collected blobs. mailbox-gc takes
+-- them (taken_at), deletes each object, then drops the entry; maintenance
+-- hands an entry out again when its take is older than 10 minutes, so a
+-- crashed collector never leaks an object.
+create table onepass_mailbox.blob_graves (
+    mailbox_id bytea not null references onepass_mailbox.mailboxes (id) check (length(mailbox_id) = 16),
+    object_name text not null check (object_name ~ '^[0-9a-f]{32}/[0-9a-f]{64}\.[1-9][0-9]*$'),
+    queued_at timestamptz not null default now(),
+    taken_at timestamptz,
+    primary key (mailbox_id, object_name),
+    constraint blob_graves_name_in_mailbox check (left(object_name, 32) = encode(mailbox_id, 'hex'))
+);
+create index blob_graves_queue_idx on onepass_mailbox.blob_graves (queued_at) where taken_at is null;
+alter table onepass_mailbox.blob_graves enable row level security;
+alter table onepass_mailbox.blob_graves force row level security;
+create policy blob_graves_current on onepass_mailbox.blob_graves
+    for all to onepass_mailbox_owner
+    using (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()))
+    with check (mailbox_id = (select onepass_mailbox.current_mailbox()) or (select onepass_mailbox.in_maintenance()));
 
 -- Live rows by the blob they reference: lookups and reference counts.
 create index records_blob_idx on onepass_mailbox.records (mailbox_id, blob_sha256) where blob_sha256 is not null;
@@ -245,14 +255,6 @@ begin
             perform onepass_mailbox._fail('frozen');
         end if;
 
-        -- A blob the collector holds (its take is less than an hour old) may
-        -- lose its object at any moment: come back once the take is over.
-        if exists (select 1 from unnest(p_shas) as o (s)
-                   join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s
-                   where b.state = 3 and b.gc_taken_at >= now() - interval '1 hour') then
-            v_err := 'retry';
-            v_retry := 60;
-        end if;
     end if;
 
     if v_err is null then
@@ -281,40 +283,22 @@ begin
     end if;
 
     -- Rows in hash order (the order every writer of blobs locks them in).
-    -- A take that starts meanwhile is not undone: the batch is then retry.
-    -- A revived blob (its take abandoned) gets a new generation, so a new
-    -- object name: whatever a late collector deletes is the old name.
-    begin
-        with up as (
-            insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state)
-            select p_mailbox, o.s, o.z, 1 from unnest(p_shas, p_sizes) as o (s, z)
-            order by o.s
-            on conflict (mailbox_id, sha256) do update set
-                size = case when b.refs = 0 then excluded.size else b.size end,
-                -- An abandoned take (lease over) is taken back; an
-                -- unreferenced blob is kept alive another 24 hours.
-                state = case when b.state = 3 then 1 else b.state end,
-                gen = case when b.state = 3 then nextval('onepass_mailbox.blob_gen_seq') else b.gen end,
-                gc_taken_at = null,
-                gc_take = null,
-                orphaned_at = case when b.refs = 0 then null else b.orphaned_at end
-            where not (b.state = 3 and b.gc_taken_at >= now() - interval '1 hour')
-            returning b.sha256, b.gen, b.size
-        )
-        select array_agg(up.sha256 order by up.sha256), array_agg(up.gen order by up.sha256),
-               array_agg(up.size order by up.sha256)
-        into v_out_sha, v_out_gen, v_out_size
-        from up;
-        if coalesce(cardinality(v_out_sha), 0) <> v_n then
-            raise exception using errcode = 'OP503', message = 'retry';
-        end if;
-    exception when sqlstate 'OP503' then
-        v_err := 'retry';
-    end;
-    if v_err is not null then
-        return query select v_err, 60, null::bytea, null::boolean, null::text;
-        return;
-    end if;
+    -- A row being collected (maintenance holds it) is waited for; once it
+    -- is gone the blob comes back as a new row, under a new generation.
+    with up as (
+        insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state)
+        select p_mailbox, o.s, o.z, 1 from unnest(p_shas, p_sizes) as o (s, z)
+        order by o.s
+        on conflict (mailbox_id, sha256) do update set
+            size = case when b.refs = 0 then excluded.size else b.size end,
+            -- An unreferenced blob is kept alive another 24 hours.
+            orphaned_at = case when b.refs = 0 then null else b.orphaned_at end
+        returning b.sha256, b.gen, b.size
+    )
+    select array_agg(up.sha256 order by up.sha256), array_agg(up.gen order by up.sha256),
+           array_agg(up.size order by up.sha256)
+    into v_out_sha, v_out_gen, v_out_size
+    from up;
 
     -- An upload is needed unless the current generation's object is there
     -- with the blob's size.
@@ -425,6 +409,7 @@ declare
     v_inc_sha bytea[];
     v_inc_n integer[];
     v_inc_size integer[];
+    v_inc_gen bigint[];
     v_dec_sha bytea[];
     v_dec_n integer[];
     v_rows integer;
@@ -496,13 +481,25 @@ begin
     end if;
 
     if v_err is null then
-        -- Every blob the batch puts: its object under this mailbox's prefix,
-        -- with this size, not taken by the collector, and the size it is
-        -- known by when rows already reference it.
-        -- The blob must be announced: the announce gave it the generation
-        -- its object is named after.
-        select coalesce(bool_or(bl.sha256 is null or so.id is null or bl.state = 3
-                                or (bl.refs > 0 and bl.size <> x.s)), false)
+        -- Lock every blob row this batch touches, in hash order, before
+        -- checking them: the blobs it puts and those the rows it replaces
+        -- hold. Held to the end, so the collector (which skips locked rows)
+        -- cannot take one away between the check and the write.
+        perform 1 from onepass_mailbox.blobs b
+        where b.mailbox_id = p_mailbox
+          and b.sha256 in (
+              select o.b from unnest(p_ops, p_blob_sha) as o (op, b) where o.op = 1 and o.b is not null
+              union
+              select r.blob_sha256 from unnest(p_kinds, p_ids) as o (k, i)
+              join onepass_mailbox.records r on r.mailbox_id = p_mailbox and r.kind = o.k and r.id = o.i
+              where r.blob_sha256 is not null)
+        order by b.sha256
+        for update;
+
+        -- Every blob the batch puts: announced (its row gives the
+        -- generation its object is named after), that object present with
+        -- this size, and the size it is known by when rows reference it.
+        select coalesce(bool_or(bl.sha256 is null or so.id is null or (bl.refs > 0 and bl.size <> x.s)), false)
         into v_bad
         from (select distinct o.b, o.s from unnest(p_ops, p_blob_sha, p_sizes) as o (op, b, s)
               where o.op = 1 and o.b is not null) x
@@ -584,9 +581,9 @@ begin
         -- each written put of the blob, -1 for each written op whose row held
         -- it. Blobs whose net is 0 are left alone.
         select array_agg(d.b order by d.b) filter (where d.n > 0), array_agg(d.n order by d.b) filter (where d.n > 0),
-               array_agg(d.s order by d.b) filter (where d.n > 0),
+               array_agg(d.s order by d.b) filter (where d.n > 0), array_agg(bl.gen order by d.b) filter (where d.n > 0),
                array_agg(d.b order by d.b) filter (where d.n < 0), array_agg(-d.n order by d.b) filter (where d.n < 0)
-        into v_inc_sha, v_inc_n, v_inc_size, v_dec_sha, v_dec_n
+        into v_inc_sha, v_inc_n, v_inc_size, v_inc_gen, v_dec_sha, v_dec_n
         from (
             select x.b, sum(x.n)::integer as n, max(x.s) as s
             from (
@@ -601,10 +598,11 @@ begin
             ) x
             group by x.b
         ) d
+        left join onepass_mailbox.blobs bl on bl.mailbox_id = p_mailbox and bl.sha256 = d.b
         where d.n <> 0;
 
-        -- All or nothing: a quota refusal, or a blob the collector took while
-        -- this batch ran, rolls the writes back (contract 3).
+        -- All or nothing: a quota refusal, or a blob row that is not the one
+        -- checked, rolls the writes back (contract 3).
         begin
             insert into onepass_mailbox.records as r
                 (mailbox_id, kind, id, version, seq, deleted, deleted_at, size, data, blob_sha256)
@@ -625,25 +623,14 @@ begin
                 data = excluded.data,
                 blob_sha256 = excluded.blob_sha256;
 
-            -- Blob rows locked in hash order, as every writer of blobs does.
-            perform 1 from onepass_mailbox.blobs b
-            where b.mailbox_id = p_mailbox
-              and b.sha256 = any (coalesce(v_inc_sha, '{}'::bytea[]) || coalesce(v_dec_sha, '{}'::bytea[]))
-            order by b.sha256
-            for no key update;
+            -- Update only, bound to the generation checked under the lock.
             if v_inc_sha is not null then
-                insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state, refs)
-                select p_mailbox, i.b, i.s, 2, i.n
-                from unnest(v_inc_sha, v_inc_n, v_inc_size) as i (b, n, s)
-                order by i.b
-                on conflict (mailbox_id, sha256) do update set
-                    refs = b.refs + excluded.refs,
+                update onepass_mailbox.blobs b set
+                    refs = b.refs + i.n,
                     state = 2,
-                    size = case when b.refs = 0 then excluded.size else b.size end,
-                    orphaned_at = null,
-                    gc_taken_at = null,
-                    gc_take = null
-                where b.state <> 3;
+                    orphaned_at = null
+                from unnest(v_inc_sha, v_inc_n, v_inc_gen) as i (b, n, g)
+                where b.mailbox_id = p_mailbox and b.sha256 = i.b and b.gen = i.g;
                 get diagnostics v_rows = row_count;
                 if v_rows <> cardinality(v_inc_sha) then
                     raise exception using errcode = 'OP400', message = 'malformed';

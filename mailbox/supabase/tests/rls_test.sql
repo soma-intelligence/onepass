@@ -10,7 +10,7 @@ grant select on t_tables to public;
 
 select onepass_test.ok(
     (select array_agg(name order by name) from t_tables) = array[
-        'blobs', 'credentials', 'invites', 'mailboxes', 'nonces', 'plans', 'push_queue',
+        'blob_graves', 'blobs', 'credentials', 'invites', 'mailboxes', 'nonces', 'plans', 'push_queue',
         'rate', 'rdv_chunks', 'rdv_sessions', 'records', 'used_tickets'],
     'tables_of_spec_4_5');
 
@@ -55,7 +55,7 @@ select onepass_test.ok(
      from pg_policies where schemaname = 'onepass_mailbox'),
     'policy_helpers_wrapped_in_select');
 select onepass_test.ok(
-    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 11,
+    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 12,
     'policies_using_helpers_counted');
 
 -- Two mailboxes A and B, written in maintenance by the owner.
