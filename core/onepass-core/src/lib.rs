@@ -8,6 +8,7 @@ pub mod approvers;
 pub mod archive;
 pub mod chain;
 pub mod companion;
+pub mod contact;
 pub mod crypto;
 pub mod device_keys;
 pub mod devices;

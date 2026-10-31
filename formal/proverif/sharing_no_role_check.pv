@@ -1,0 +1,54 @@
+(* formal-lib: sharing_core.pvl *)
+(* OnePass formal model, negative control of sharing.pv: readers accept a
+   manifest from any member of the pinned body, WITHOUT checking that its
+   signer has the role Write or Manage (ReadItems with rc = false).
+   Everything else is sharing.pv, including the malicious reader Dave
+   whose signing key the attacker holds from phase 0.
+
+   Expected: the attacker re-signs a manifest blob it saw (a blob does
+   not name its writer) as Dave, and Bob or Carol accepts a manifest from
+   a reader (attack A6). This shows the write-right query of sharing.pv
+   depends on the role check and is not vacuous: writing is refused by
+   every honest client, not made impossible by the key (spec 10.1). *)
+
+(* Expected false: a manifest is accepted from a member without Write. *)
+query d: bitstring, v: bitstring, w: bitstring, g: bitstring;
+  event(ManifestAccepted(d, v, w, g)) ==> event(MemberRole(v, w, role_write, g)).
+(* Expected false, the attack named: a manifest signed as Dave is accepted. *)
+query d: bitstring, v: bitstring, g: bitstring; event(ManifestAccepted(d, v, dave, g)).
+(* Sanity (expected false): Carol reads Bob's item. *)
+query v: bitstring; event(ManifestAccepted(carol, v, bob, g1)).
+
+process
+  new skA: skey; new kmA: seed; new kxA: seed;
+  new skB: skey; new kmB: seed; new kxB: seed;
+  new skC: skey; new kmC: seed; new kxC: seed;
+  new skD: skey; new kmD: seed; new kxD: seed;
+  (* Public keys are public. *)
+  out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)));
+  (* Dave, a reader, is malicious: his signing key is the attacker's. *)
+  out(c, skD);
+  (* Contact verification over the authenticated channels: Bob and Carol
+     face to face (SAS, Verified), Dave by the invite link (Link). Each
+     side keeps the other's honest keys (sharing_core.pvl, "Contacts"). *)
+  new k1: key; new k2: key;
+  let eA = entry_alice(skA, kmA, kxA) in
+  ( Owner(skA, eA,
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB), lvl_verified,
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_verified,
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD), lvl_link, k1, k2, true)
+  | MemberJoin(false, bob, skB, kmB, kxB, true, alice, pk(skA))
+  | MemberJoin(false, carol, skC, kmC, kxC, true, alice, pk(skA))
+    (* Bob from the state his join reaches (sharing_core.pvl). *)
+  | MemberUpdate(bob, i2, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
+                 members_g1(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+                            pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k1)
+  | MemberReadAfter(false, bob, nxt(seq1), body_ref(nxt(seq1), g2, key_commit(k2, g2)), g2,
+                    members_g2(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                               pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k2)
+    (* Phase 1: Carol is removed, the attacker holds her whole state. *)
+  | (phase 1; out(c, (skC, kmC, kxC))) )

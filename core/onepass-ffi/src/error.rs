@@ -113,6 +113,10 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::RemoteUnknownDevice => "remote_unknown_device",
         IntegrityError::RemoteWrongRecipient => "remote_wrong_recipient",
         IntegrityError::RemoteUnknownRequest => "remote_unknown_request",
+        IntegrityError::ContactBookRollback => "contact_book_rollback",
+        IntegrityError::MembershipRollback => "membership_rollback",
+        IntegrityError::MembershipFork => "membership_fork",
+        IntegrityError::FamilyRollback => "family_rollback",
     }
 }
 

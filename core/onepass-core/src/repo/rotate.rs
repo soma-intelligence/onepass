@@ -6,8 +6,8 @@
 //! (`Account::rotate_keys`), the roster without the revoked and excluded
 //! devices, one Secret Key delivery per remaining device, every live vault
 //! under a new vault key with every listed item resealed at version + 1 and
-//! the next manifest signed by the new key, both signed lists at seq 1, and
-//! the rotation record signed by this device's key and by the new identity.
+//! the next manifest signed by the new key, both signed lists (and the
+//! contact book, when there is one) at seq 1, and the rotation record signed by this device's key and by the new identity.
 //! Account records of the new identity live under its identity id (spec
 //! 6.6). Then everything goes in one local transaction with the new trust
 //! state (`Rotating { phase: 1 }`, K5). Nothing is written before it, and
@@ -38,6 +38,7 @@ use super::replay::meta_hash;
 use super::{Repository, entry, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
 use crate::chain::{ChainState, Seen};
+use crate::contact::ContactEntry;
 use crate::crypto::kem::wrap_key_labeled;
 use crate::crypto::{SecretKey, SymmetricKey};
 use crate::device_keys::DeviceKeys;
@@ -343,6 +344,7 @@ impl<S: RecordStore> Repository<S> {
         }
         let devices = self.read_list::<DeviceEntry>()?;
         let vault_list = self.read_list::<VaultListEntry>()?;
+        let book = self.read_list::<ContactEntry>()?;
 
         // The current password and Secret Key, with every unlock check, on
         // the records of the current identity (spec 6.6). This also gives
@@ -512,8 +514,9 @@ impl<S: RecordStore> Repository<S> {
             });
         }
 
-        // Step 4: both lists at seq 1 under the identity id, signed by the
-        // new key; the device list marks the revoked devices.
+        // Step 4: the lists (and the contact book, if any) at seq 1 under
+        // the identity id, signed by the new key; the device list marks the
+        // revoked devices.
         let at = now();
         let mut device_entries = devices.map(|d| d.body.entries).unwrap_or_default();
         for e in &mut device_entries {
@@ -536,6 +539,14 @@ impl<S: RecordStore> Repository<S> {
         let (vault_rec, vault_seen) = first_list(&account, new_id, vault_entries)?;
         writes.push((device_rec, None));
         writes.push((vault_rec, None));
+        let book_seen = match book {
+            Some(b) => {
+                let (rec, seen) = first_list(&account, new_id, b.body.entries)?;
+                writes.push((rec, None));
+                Some(seen)
+            }
+            None => None,
+        };
 
         // Step 5: the rotation record, signed by this device and by the new
         // identity.
@@ -636,6 +647,7 @@ impl<S: RecordStore> Repository<S> {
             vault_list: Some(vault_seen),
             approver_list: None,
             device_id: self.chain.device_id,
+            contact_book: book_seen,
         };
         collect.sort();
         collect.dedup();

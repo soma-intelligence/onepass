@@ -4,7 +4,7 @@
 FUZZ_SECONDS ?= 60
 # Pinned nightly for fuzz and Miri (same date as .github/workflows/core.yml).
 NIGHTLY ?= nightly-2026-10-20
-FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse import_csv import_1pux import_bitwarden_json import_enpass_json import_keepass_xml import_cxf import_text archive_open hibp_range site_directory mcp_line ssh_agent_frame mailbox_message mailbox_signature_input enroll_ticket remote_message
+FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse import_csv import_1pux import_bitwarden_json import_enpass_json import_keepass_xml import_cxf import_text archive_open hibp_range site_directory mcp_line ssh_agent_frame mailbox_message mailbox_signature_input enroll_ticket remote_message contact_frames
 
 check: fmt-check lint test deny
 
