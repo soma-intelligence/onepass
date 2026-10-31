@@ -892,6 +892,13 @@ impl SyncStore {
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
             return Ok(());
         }
+        // The lineage kinds decode with no cap of their own (a rotation
+        // lists every vault head), so their size is bounded here, before
+        // anything reads them. No honest writer exceeds it (`check_size` on
+        // every local write), so the row is dropped, not staged.
+        if c.kind.is_immutable() && c.data.as_deref().is_some_and(|d| check_size(d).is_err()) {
+            return Ok(());
+        }
         let v = to_i64(c.version)?;
         self.conn
             .execute(
@@ -913,7 +920,8 @@ impl SyncStore {
     ///
     /// Remote deletions the store has no right to make are ignored (they
     /// come from a hostile or broken server): account params, keysets, the
-    /// restore epoch and the signed lists, and the vault key, vault meta and
+    /// restore epoch, the signed lists, the lineage, intro and delivery
+    /// records (immutable, spec 6.3), and the vault key, vault meta and
     /// manifest of a vault in the device's `last_seen`, unless the account's
     /// signed vault list marks that vault deleted (spec 4.5,
     /// `deleted_vaults`: the list in `base` or the one staged in this batch,
@@ -2317,7 +2325,10 @@ fn protected_from_remote_deletion(
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
-        | RecordKind::VaultList => true,
+        | RecordKind::VaultList
+        | RecordKind::Lineage
+        | RecordKind::DeviceIntro
+        | RecordKind::KeyDelivery => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -3649,6 +3660,76 @@ mod tests {
         assert_eq!(count(&s, "base"), 6);
         assert_eq!(count(&s, "pending"), 0);
         assert!(s.has_account().unwrap());
+    }
+
+    #[test]
+    fn server_deletion_of_immutable_records_refused() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let acct = Id::new();
+        // Identity-keyed account params (generation 1): an id that is not
+        // the account id.
+        let rows = [
+            (RecordKind::Lineage, Id::new()),
+            (RecordKind::DeviceIntro, Id::new()),
+            (RecordKind::KeyDelivery, Id::new()),
+            (RecordKind::AccountParams, Id::new()),
+            (RecordKind::Keyset, Id::new()),
+            (RecordKind::AccountParams, acct),
+        ];
+        for (kind, id) in rows {
+            seed_base(&mut s, kind, id, 1, b"x".to_vec());
+        }
+        for (kind, id) in rows {
+            s.stage_remote(remote(kind, id, 2, None)).unwrap();
+        }
+        assert!(s.commit_remote().unwrap().is_empty());
+        for (kind, id) in rows {
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, b"x");
+        }
+        let logged: Vec<(RecordKind, Id)> = s
+            .ignored_deletions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        for row in rows {
+            assert!(logged.contains(&row), "{row:?} not logged");
+        }
+        // A server write of the same record is still a plain change.
+        s.stage_remote(remote(
+            RecordKind::Lineage,
+            rows[0].1,
+            3,
+            Some(b"y".to_vec()),
+        ))
+        .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(
+            s.get(RecordKind::Lineage, rows[0].1).unwrap().unwrap().data,
+            b"y"
+        );
+    }
+
+    #[test]
+    fn oversize_remote_immutable_record_is_not_staged() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let big = vec![0u8; MAX_RECORD_BYTES + 1];
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            let id = Id::new();
+            s.stage_remote(remote(kind, id, 1, Some(big.clone())))
+                .unwrap();
+            s.commit_remote().unwrap();
+            assert_eq!(s.get(kind, id).unwrap(), None);
+            let ok = vec![0u8; MAX_RECORD_BYTES];
+            s.stage_remote(remote(kind, id, 1, Some(ok.clone())))
+                .unwrap();
+            s.commit_remote().unwrap();
+            assert_eq!(s.get(kind, id).unwrap().unwrap().data, ok);
+        }
     }
 
     #[test]
