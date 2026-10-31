@@ -175,10 +175,14 @@ impl Message for ServerRecord {
     }
 }
 
+/// One page of `GET /v1/mailboxes/{m}/changes` (spec 4.5, 4.6). `head` is the
+/// mailbox's last written seq when the page was read: in a full fetch the
+/// client keeps the head of its first page and goes on incrementally from it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangesPage {
     pub incarnation: u64,
     pub min_cursor: u64,
+    pub head: u64,
     pub records: Vec<ServerRecord>,
     pub next_after: u64,
     pub more: bool,
@@ -195,6 +199,9 @@ impl Message for ChangesPage {
             if prev.is_some_and(|p| r.seq <= p) {
                 return Err(ProtoError::Unsorted("page"));
             }
+            if r.seq > self.head {
+                return Err(ProtoError::Format("head"));
+            }
             prev = Some(r.seq);
         }
         // An empty page echoes the requested `after`: the client checks that.
@@ -210,6 +217,64 @@ impl Message for ChangesPage {
             return Err(ProtoError::TooLarge("page bytes"));
         }
         Ok(())
+    }
+}
+
+/// Query string of `GET /v1/mailboxes/{m}/changes`, in its only accepted
+/// spelling: `after=<seq>&limit=<1..=1000>&full=<0|1>`, decimal without sign
+/// or leading zero. `full` asks for a full fetch (live rows only, tombstones
+/// skipped, `min_cursor` ignored), otherwise the fetch is incremental.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangesQuery {
+    pub after: u64,
+    pub limit: u32,
+    pub full: bool,
+}
+
+impl ChangesQuery {
+    pub fn to_query(&self) -> String {
+        format!(
+            "after={}&limit={}&full={}",
+            self.after,
+            self.limit,
+            u8::from(self.full)
+        )
+    }
+
+    /// Strict parse of the query string, without the leading `?`. The value
+    /// read is written back and must equal the input byte for byte.
+    pub fn parse(query: &str) -> Result<Self, ProtoError> {
+        fn field<'a>(item: Option<&'a str>, name: &str) -> Result<&'a str, ProtoError> {
+            item.and_then(|i| i.strip_prefix(name))
+                .and_then(|i| i.strip_prefix('='))
+                .ok_or(ProtoError::Format("changes query"))
+        }
+        let bad = || ProtoError::Format("changes query");
+        let mut items = query.split('&');
+        let after = field(items.next(), "after")?;
+        let limit = field(items.next(), "limit")?;
+        let full = field(items.next(), "full")?;
+        if items.next().is_some() {
+            return Err(bad());
+        }
+        let digits =
+            |v: &str| !v.is_empty() && v.len() <= 20 && v.bytes().all(|b| b.is_ascii_digit());
+        if !digits(after) || !digits(limit) {
+            return Err(bad());
+        }
+        let q = ChangesQuery {
+            after: after.parse().map_err(|_| bad())?,
+            limit: limit.parse().map_err(|_| bad())?,
+            full: match full {
+                "0" => false,
+                "1" => true,
+                _ => return Err(bad()),
+            },
+        };
+        if q.limit == 0 || q.limit > PAGE_MAX_RECORDS || q.to_query() != query {
+            return Err(bad());
+        }
+        Ok(q)
     }
 }
 
@@ -257,6 +322,9 @@ impl Message for CommitRequest {
     }
 
     fn check(&self) -> Result<(), ProtoError> {
+        if self.ops.is_empty() {
+            return Err(ProtoError::Format("empty commit"));
+        }
         let mut seen = BTreeSet::new();
         for o in &self.ops {
             o.check()?;
@@ -285,8 +353,15 @@ impl Message for ConflictEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommitResponse {
-    Applied { seqs: Vec<u64> },
-    Conflict { current: Vec<ConflictEntry> },
+    /// One entry per operation, in the order sent: the seq it took, or `None`
+    /// for a delete that changed nothing (absent key or tombstone already).
+    /// The client stores no `server_meta` for `None`.
+    Applied {
+        seqs: Vec<Option<u64>>,
+    },
+    Conflict {
+        current: Vec<ConflictEntry>,
+    },
 }
 
 impl Message for CommitResponse {
@@ -393,6 +468,10 @@ impl Message for MailboxInfo {
     }
 }
 
+/// `GET /v1/config`. `realtime_url` and `publishable_key` open the public
+/// wake channel `mbx:<wake_topic>` (spec 4.10). A wake message only means
+/// "fetch now": the client ignores its payload, whatever it holds (the
+/// server's `realtime.send` adds an `id`), and never trusts it for anything.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub realtime_url: String,
@@ -598,6 +677,7 @@ mod tests {
         rt(ChangesPage {
             incarnation: 4,
             min_cursor: 1,
+            head: 2_000,
             records: vec![rec(3), rec(9)],
             next_after: 9,
             more: true,
@@ -605,6 +685,7 @@ mod tests {
         rt(ChangesPage {
             incarnation: 4,
             min_cursor: 1,
+            head: 2_000,
             records: vec![],
             next_after: 12,
             more: false,
@@ -620,7 +701,9 @@ mod tests {
         rt(CommitRequest {
             ops: vec![put(5, 1, inline(2)), put(6, 1, inline(0))],
         });
-        rt(CommitResponse::Applied { seqs: vec![1, 300] });
+        rt(CommitResponse::Applied {
+            seqs: vec![Some(1), None, Some(300)],
+        });
         let entry = ConflictEntry {
             kind: 5,
             id: [1; 16],
@@ -721,7 +804,9 @@ mod tests {
 
     #[test]
     fn unknown_version_refused() {
-        let mut bytes = encode(&CommitRequest { ops: vec![] });
+        let mut bytes = encode(&CommitRequest {
+            ops: vec![put(5, 1, inline(1))],
+        });
         bytes[0] = 2;
         assert_eq!(decode::<CommitRequest>(&bytes), Err(ProtoError::Version));
         assert_eq!(
@@ -732,7 +817,9 @@ mod tests {
 
     #[test]
     fn trailing_byte_refused() {
-        let mut bytes = encode(&CommitResponse::Applied { seqs: vec![1] });
+        let mut bytes = encode(&CommitResponse::Applied {
+            seqs: vec![Some(1)],
+        });
         bytes.push(0);
         assert!(matches!(
             decode::<CommitResponse>(&bytes),
@@ -756,15 +843,17 @@ mod tests {
 
     #[test]
     fn non_canonical_varint_refused() {
-        // version, variant Applied, one seq, then seq 1 written as 0x81 0x00.
-        let bytes = [PROTO_VERSION, 0, 1, 0x81, 0x00];
+        // version, variant Applied, one seq, Some, then seq 1 written as 0x81 0x00.
+        let bytes = [PROTO_VERSION, 0, 1, 1, 0x81, 0x00];
         assert!(matches!(
             decode::<CommitResponse>(&bytes),
             Err(ProtoError::Format(_))
         ));
         assert_eq!(
-            decode::<CommitResponse>(&[PROTO_VERSION, 0, 1, 1]).unwrap(),
-            CommitResponse::Applied { seqs: vec![1] }
+            decode::<CommitResponse>(&[PROTO_VERSION, 0, 1, 1, 1]).unwrap(),
+            CommitResponse::Applied {
+                seqs: vec![Some(1)]
+            }
         );
     }
 
@@ -861,6 +950,7 @@ mod tests {
         let page = ChangesPage {
             incarnation: 1,
             min_cursor: 0,
+            head: 2_000,
             records: vec![ServerRecord { kind: 0, ..rec(1) }],
             next_after: 1,
             more: false,
@@ -881,6 +971,7 @@ mod tests {
         let page = |seqs: &[u64], next_after| ChangesPage {
             incarnation: 1,
             min_cursor: 0,
+            head: 2_000,
             records: seqs.iter().map(|&s| rec(s)).collect(),
             next_after,
             more: false,
@@ -903,6 +994,7 @@ mod tests {
         let too_many = ChangesPage {
             incarnation: 1,
             min_cursor: 0,
+            head: 2_000,
             records: (1..=u64::from(PAGE_MAX_RECORDS) + 1).map(rec).collect(),
             next_after: u64::from(PAGE_MAX_RECORDS) + 1,
             more: false,
@@ -915,6 +1007,7 @@ mod tests {
         let heavy = ChangesPage {
             incarnation: 1,
             min_cursor: 0,
+            head: 2_000,
             records: (1..=300u64)
                 .map(|s| ServerRecord {
                     body: Some(inline(INLINE_MAX)),
@@ -1023,6 +1116,94 @@ mod tests {
             decode::<ErrorBody>(&bytes),
             Err(ProtoError::Format(_))
         ));
+    }
+
+    #[test]
+    fn empty_commit_refused() {
+        assert_eq!(
+            decode::<CommitRequest>(&encode(&CommitRequest { ops: vec![] })),
+            Err(ProtoError::Format("empty commit"))
+        );
+        assert_eq!(
+            decode::<CommitRequest>(&[PROTO_VERSION, 0]),
+            Err(ProtoError::Format("empty commit"))
+        );
+    }
+
+    #[test]
+    fn page_seqs_not_above_head() {
+        let page = |head| ChangesPage {
+            incarnation: 1,
+            min_cursor: 0,
+            head,
+            records: vec![rec(3), rec(9)],
+            next_after: 9,
+            more: false,
+        };
+        assert!(decode::<ChangesPage>(&encode(&page(9))).is_ok());
+        assert!(decode::<ChangesPage>(&encode(&page(12))).is_ok());
+        assert_eq!(
+            decode::<ChangesPage>(&encode(&page(8))),
+            Err(ProtoError::Format("head"))
+        );
+    }
+
+    #[test]
+    fn changes_query_round_trip() {
+        for q in [
+            ChangesQuery {
+                after: 0,
+                limit: 1,
+                full: false,
+            },
+            ChangesQuery {
+                after: u64::MAX,
+                limit: PAGE_MAX_RECORDS,
+                full: true,
+            },
+            ChangesQuery {
+                after: 12,
+                limit: 500,
+                full: true,
+            },
+        ] {
+            assert_eq!(ChangesQuery::parse(&q.to_query()), Ok(q.clone()));
+        }
+        assert_eq!(
+            ChangesQuery {
+                after: 12,
+                limit: 500,
+                full: true
+            }
+            .to_query(),
+            "after=12&limit=500&full=1"
+        );
+    }
+
+    #[test]
+    fn changes_query_refused() {
+        for bad in [
+            "",
+            "after=1&limit=1",
+            "after=1&limit=1&full=1&x=1",
+            "limit=1&after=1&full=1",
+            "after=01&limit=1&full=0",
+            "after=+1&limit=1&full=0",
+            "after=-1&limit=1&full=0",
+            "after=18446744073709551616&limit=1&full=0",
+            "after=1&limit=0&full=0",
+            "after=1&limit=1001&full=0",
+            "after=1&limit=1&full=2",
+            "after=1&limit=1&full=true",
+            "after=1&after=1&limit=1&full=0",
+            "after=&limit=1&full=0",
+            "after=1&limit=1&full=0&",
+        ] {
+            assert!(
+                matches!(ChangesQuery::parse(bad), Err(ProtoError::Format(_))),
+                "accepted {bad}"
+            );
+        }
     }
 
     #[test]

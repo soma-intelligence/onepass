@@ -14,9 +14,9 @@ use serde::de::DeserializeOwned;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, CommitRequest, CommitResponse, CreateMailbox,
-    Enroll, EnrollTicket, ErrorBody, MailboxCreated, MailboxInfo, Message, ServerConfig, SetPush,
-    SignatureParams, SignedEnrollTicket, decode, encode,
+    BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
+    CreateMailbox, Enroll, EnrollTicket, ErrorBody, MailboxCreated, MailboxInfo, Message,
+    ServerConfig, ServerRecord, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
 };
 
 fn err(e: impl Display) -> JsError {
@@ -76,9 +76,21 @@ pub fn decode_blob_lookup(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<BlobLookup>(bytes)
 }
 
+/// `{ after, limit, full }` from the query string of `GET .../changes`
+/// (without the `?`), in its only accepted spelling.
+#[wasm_bindgen(js_name = parseChangesQuery)]
+pub fn parse_changes_query(query: &str) -> Result<JsValue, JsError> {
+    to_js(&ChangesQuery::parse(query).map_err(err)?)
+}
+
 #[wasm_bindgen(js_name = encodeChanges)]
 pub fn encode_changes(v: JsValue) -> Result<Vec<u8>, JsError> {
     enc::<ChangesPage>(v)
+}
+
+#[wasm_bindgen(js_name = encodeRecord)]
+pub fn encode_record(v: JsValue) -> Result<Vec<u8>, JsError> {
+    enc::<ServerRecord>(v)
 }
 
 #[wasm_bindgen(js_name = encodeCommitResponse)]
