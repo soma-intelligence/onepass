@@ -27,7 +27,7 @@ use crate::repo::follow::{lineage_records, rotations};
 use crate::repo::{LineageLock, Repository, trust_of};
 use crate::store::{RecordKind, RecordStore};
 use crate::sync::SyncStore;
-use crate::trust::DeviceLineageState;
+use crate::trust::{DeviceLineageState, TrustLevel};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, Result, ValidationError};
 
@@ -323,7 +323,8 @@ impl<S: RecordStore> Repository<S> {
     /// gives (the rotator writes it, `rotate`), else at the earliest
     /// `issued_at` of a stored rotation record revoking it; a revocation
     /// only the account-signed list carries is not shown (any holder of the
-    /// account keys, a revoked device included, can sign that list).
+    /// account keys, a revoked device included, can sign that list), unless
+    /// this device excluded it too (`cancel_pairing`, "Ce n'était pas moi").
     pub fn devices(&mut self) -> Result<Vec<DeviceEntry>> {
         self.maintain_lists(None)?;
         let mut entries = self
@@ -344,6 +345,10 @@ impl<S: RecordStore> Repository<S> {
                                 .min()
                         })
                         .or(Some(0))
+                } else if t.excluded.contains(&e.device_id) {
+                    // A device the user removed here (`cancel_pairing`, or
+                    // distrusted): the list's revocation shows.
+                    e.revoked_at
                 } else {
                     None
                 };
@@ -445,6 +450,66 @@ impl<S: RecordStore> Repository<S> {
             e.name = name.to_owned();
             Ok(true)
         })
+    }
+
+    /// Key rotation v2 (Task 13, ruling on spec 5.2): the devices whose
+    /// pairing stopped between the grant and the newcomer's key
+    /// acknowledgment, "Appairage incomplet": listed in the device list and
+    /// not revoked there, but neither in this device's roster, nor revoked
+    /// or excluded along the lineage, nor trusted on first use (`Tofu`, a
+    /// legacy newcomer). They hold the Secret Key the grant carried, yet no
+    /// device pins their key. The app lets the user finish (a new pairing
+    /// session with that device ends in `introduce`) or remove the device
+    /// (`cancel_pairing`, then a rotation). Sorted. Empty without a trust
+    /// state. Until the migration of Task 14, a device paired before key
+    /// rotation v2 shows here too.
+    pub fn pairing_incomplete(&mut self) -> Result<Vec<Id>> {
+        let Some(t) = trust_of(&self.store)? else {
+            return Ok(Vec::new());
+        };
+        let mut out: Vec<Id> = self
+            .devices()?
+            .into_iter()
+            .filter(|e| e.revoked_at.is_none())
+            .map(|e| e.device_id)
+            .filter(|id| {
+                *id != t.me.device_id
+                    && !t.roster.iter().any(|r| r.device_id == *id)
+                    && !t.revoked.contains(id)
+                    && !t.excluded.contains(id)
+                    && t.levels.get(id) != Some(&TrustLevel::Tofu)
+            })
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
+    /// Remove a device whose pairing is incomplete (`pairing_incomplete`):
+    /// its device list entry is marked revoked (now) and this device
+    /// excludes it (no intro of it is accepted here again; conditional on
+    /// the trust state read, a second write). It got the Secret Key
+    /// with its grant, so the app follows this with a key rotation
+    /// (`Repository::rotate`, reason `Rotate`): the new roster never held
+    /// it. Any other id is `Validation("device")`: a pinned device leaves by
+    /// rotation only (spec 10.1).
+    pub fn cancel_pairing(&mut self, id: Id) -> Result<()> {
+        if !self.pairing_incomplete()?.contains(&id) {
+            return Err(invalid("device", "pairing not incomplete"));
+        }
+        let at = now();
+        self.edit_devices(|entries| {
+            let e = entries
+                .iter_mut()
+                .find(|e| e.device_id == id)
+                .ok_or(Error::NotFound)?;
+            e.revoked_at = Some(at);
+            Ok(true)
+        })?;
+        let t = trust_of(&self.store)?.ok_or(Error::NotFound)?;
+        let mut next = t.clone();
+        next.excluded.insert(id);
+        self.store
+            .put_with_trust_cas(Vec::new(), Vec::new(), None, &t, &next)
     }
 
     /// Whether this device is revoked. Brings the lists up to date first.

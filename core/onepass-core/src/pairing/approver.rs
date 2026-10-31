@@ -236,6 +236,7 @@ impl Approver {
             Grant::FullV2(g)
                 if self.requested != DeviceMode::Public
                     && g.full.mode == self.requested
+                    && g.full.device_id == self.peer_id
                     && self.peer_key.is_some() =>
             {
                 SecretKey::parse(&g.full.secret_key)?;

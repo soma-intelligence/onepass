@@ -19,8 +19,8 @@
 //!   (`repair_from_grant`, ruling A9): its local data stays, its own writes
 //!   are replayed under the approver's identity.
 //!
-//! Where the intro of a pairing comes from (a deviation from the letter of
-//! spec 5.2, reported): an intro's `pop` is over the account id (spec 6.4,
+//! Where the intro of a pairing comes from (spec 5.2 as amended
+//! 2026-10-31): an intro's `pop` is over the account id (spec 6.4,
 //! Task 2 ruling), which a newcomer does not know before the grant. Its
 //! first proof of possession, over the session transcript, is what the
 //! approver checks before granting; its second, over the account id it
@@ -45,7 +45,9 @@
 
 use std::collections::BTreeMap;
 
-use super::follow::{Adoption, commit_adoption, lineage_records};
+use super::follow::{
+    Adoption, abandoned_rotation_rows, commit_adoption, lineage_records, rotations,
+};
 use super::{Repository, trust_of};
 use crate::account::{Account, AccountParams, Auk, PinnedAccount};
 use crate::crypto::{HybridKemSecret, HybridSignature, KdfParams, SecretKey};
@@ -293,10 +295,29 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         chain.reverse();
+        // A roster device without a recorded level is sent as `Tofu`: the
+        // newcomer never pins it higher than this device does.
+        let levels = trust
+            .roster
+            .iter()
+            .map(|e| {
+                let level = if e.device_id == trust.me.device_id {
+                    TrustLevel::Verified
+                } else {
+                    trust
+                        .levels
+                        .get(&e.device_id)
+                        .copied()
+                        .unwrap_or(TrustLevel::Tofu)
+                };
+                (e.device_id, level)
+            })
+            .collect();
         let snapshot = TrustSnapshot {
             lineage: chain,
             roster: trust.roster,
             approver: trust.me,
+            levels,
         };
         snapshot.check()?;
         Ok(snapshot)
@@ -529,21 +550,37 @@ pub fn repair_from_grant(
         hash: head_hash,
     };
     next.identity_pub = head.identity_pub().clone();
-    next.roster = grant.trust.roster.clone();
+    // Review m6: a device this one revoked or excluded stays out.
+    next.roster = grant
+        .trust
+        .roster
+        .iter()
+        .filter(|e| !trust.revoked.contains(&e.device_id) && !trust.excluded.contains(&e.device_id))
+        .cloned()
+        .collect();
     if !next.roster.iter().any(|e| e.device_id == me) {
         if next.roster.len() >= MAX_ROSTER {
             return Err(refused("device", "roster full"));
         }
         insert_sorted(&mut next.roster, own_entry);
     }
-    next.levels = next
-        .roster
-        .iter()
-        .map(|e| {
-            let level = trust.levels.get(&e.device_id).copied();
-            (e.device_id, level.unwrap_or(TrustLevel::Verified))
-        })
-        .collect();
+    // Review I1: this device `Verified`; another device at the level this
+    // device recorded, else the approver's (never a default).
+    let mut levels = BTreeMap::new();
+    for e in &next.roster {
+        let level = if e.device_id == me {
+            TrustLevel::Verified
+        } else {
+            trust
+                .levels
+                .get(&e.device_id)
+                .copied()
+                .or_else(|| grant.trust.level(e.device_id))
+                .ok_or_else(|| refused("trust snapshot", "level missing"))?
+        };
+        levels.insert(e.device_id, level);
+    }
+    next.levels = levels;
     next.add_revoked(&grant.trust.revoked());
     if head.identity_pub() != &trust.identity_pub {
         next.retired.push(RetiredIdentity {
@@ -554,6 +591,9 @@ pub fn repair_from_grant(
         });
     }
     next.state = DeviceLineageState::Current;
+    // Review I3: a rotator re-paired onto another head drops what of its
+    // own rotation never went out, in the follow's transaction.
+    let drop_pending = abandoned_rotation_rows(&store, &trust, &rotations(&mine))?;
     let from_heads = match &head {
         LineageRecord::Rotation(s) => s.body.from_heads.clone(),
         LineageRecord::Genesis(_) => BTreeMap::new(),
@@ -571,7 +611,7 @@ pub fn repair_from_grant(
             rid,
             from_heads,
             left_kem: Some(&left_kem),
-            drop_pending: Vec::new(),
+            drop_pending,
             device_keys,
         },
     )?;

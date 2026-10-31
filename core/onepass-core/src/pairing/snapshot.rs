@@ -110,9 +110,10 @@ pub fn newcomer_entry(me: &DevicePublic, info: &DeviceInfo, grant: &FullGrantV2)
 
 /// The trust state a newcomer pins from a `FullV2` (spec 5.2, 7.4): the
 /// approver's head and identity, its roster plus this device (as the
-/// approver's intro lists it), every device trusted `Verified` (the SAS
-/// authenticates the approver, and the approver vouches for the rest),
-/// every revocation along the chain, state `Current`.
+/// approver's intro lists it), each device at the approver's level (the SAS
+/// authenticates the approver, and the approver vouches for the rest; a
+/// `Tofu` device stays `Tofu`), this device `Verified`, every revocation
+/// along the chain, state `Current`.
 pub fn trust_from_grant(
     grant: &FullGrantV2,
     me: &DevicePublic,
@@ -139,11 +140,19 @@ pub fn trust_from_grant(
         roster,
         DeviceLineageState::Current,
     );
-    trust.levels = trust
-        .roster
-        .iter()
-        .map(|e| (e.device_id, TrustLevel::Verified))
-        .collect();
+    // The approver's level for each device it pins (O7: `Tofu` stays
+    // `Tofu`); this device is `Verified`, pinned by its own pairing.
+    for e in &trust.roster {
+        let level = if e.device_id == me.device_id {
+            TrustLevel::Verified
+        } else {
+            grant
+                .trust
+                .level(e.device_id)
+                .ok_or(refused("trust snapshot"))?
+        };
+        trust.levels.insert(e.device_id, level);
+    }
     trust.add_revoked(&grant.trust.revoked());
     Ok(trust)
 }
@@ -155,6 +164,11 @@ pub fn trust_from_grant(
 /// already: a device that holds the account re-pairs as a follow
 /// (`crate::repo::pairing::repair_from_grant`, ruling A9). The caller then
 /// unlocks with the password and the granted Secret Key.
+///
+/// Three writes, not one (review m4): a cut after the snapshot commit leaves
+/// signed server rows and no trust state. A retry finds no trust state and
+/// imports again (the rows merge as a fetch); the app's import resets the
+/// store on failure as before.
 pub fn import_full_v2(
     store: &mut SyncStore,
     grant: &FullGrantV2,

@@ -460,6 +460,7 @@ mod tests {
         .unwrap();
         super::super::TrustSnapshot {
             lineage: vec![LineageRecord::Genesis(genesis)],
+            levels: vec![(a_id, crate::trust::TrustLevel::Verified)],
             roster: vec![entry],
             approver,
         }

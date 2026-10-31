@@ -675,33 +675,12 @@ fn follow_with<S: RecordStore>(
     next.own_writes
         .adopt(if switch { &no_heads } else { &body.from_heads });
     // Review M1 (Task 11): a switch away from this device's own rotation
-    // drops what of its phase 1 has not gone out (the lineage record, the
-    // deliveries of the losing Secret Key, its params, keyset and lists):
-    // nobody acts on a lineage record that never reached the server.
-    let mut drop_pending = Vec::new();
-    let left_id = current_records_id(&trust);
-    if let Some(own_head) = bodies.get(&trust.head.hash)
-        && switch
-        && own_head.rotator == me
-    {
-        let mut id = [0u8; 16];
-        id.copy_from_slice(&trust.head.hash[..16]);
-        let mut rows = vec![(RecordKind::Lineage, Id(id))];
-        rows.extend(
-            own_head
-                .deliveries
-                .iter()
-                .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
-        );
-        for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
-            rows.push((kind, left_id));
-        }
-        for (kind, id) in rows {
-            if store.is_pending_write(kind, id)? {
-                drop_pending.push((kind, id));
-            }
-        }
-    }
+    // drops what of its phase 1 has not gone out.
+    let drop_pending = if switch {
+        abandoned_rotation_rows(&store, &trust, &bodies)?
+    } else {
+        Vec::new()
+    };
     let repo = commit_adoption(
         store,
         Adoption {
@@ -716,6 +695,46 @@ fn follow_with<S: RecordStore>(
         },
     )?;
     Ok((repo, auk, secret_key))
+}
+
+/// The pending rows of this device's own rotation at `trust.head` that
+/// never went out (review M1 of Task 11, I3 of Task 13): its lineage
+/// record, the deliveries of its Secret Key and its signed lists under its
+/// identity. A device leaving that rotation for another head (a switch, a
+/// re-pair) drops them in the same transaction: nobody acts on a lineage
+/// record that never reached the server. Empty when the head is not this
+/// device's rotation.
+pub(crate) fn abandoned_rotation_rows<S: RecordStore + ?Sized>(
+    store: &S,
+    trust: &TrustState,
+    bodies: &BTreeMap<[u8; 32], &RotationBody>,
+) -> Result<Vec<(RecordKind, Id)>> {
+    let mut drop = Vec::new();
+    let Some(own_head) = bodies.get(&trust.head.hash) else {
+        return Ok(drop);
+    };
+    if own_head.rotator != trust.me.device_id {
+        return Ok(drop);
+    }
+    let left_id = current_records_id(trust);
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&trust.head.hash[..16]);
+    let mut rows = vec![(RecordKind::Lineage, Id(id))];
+    rows.extend(
+        own_head
+            .deliveries
+            .iter()
+            .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
+    );
+    for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
+        rows.push((kind, left_id));
+    }
+    for (kind, id) in rows {
+        if store.is_pending_write(kind, id)? {
+            drop.push((kind, id));
+        }
+    }
+    Ok(drop)
 }
 
 /// An adoption ready to commit: the trust state read (`trust`) and the one
