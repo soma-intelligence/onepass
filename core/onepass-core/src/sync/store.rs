@@ -1381,6 +1381,10 @@ impl SyncStore {
                 && data.is_some()
                 && matches!(kind, RecordKind::VaultKey | RecordKind::VaultMeta)
             {
+                // The first row replaced since the vault last loaded cleanly
+                // (as `kept`: a clean load drops a meta retained without its
+                // key, review M1 of Task 10), so the retained meta pairs with
+                // the kept manifest.
                 tx.execute(
                     "INSERT OR IGNORE INTO retained (kind, id, version, data)
                      SELECT kind, id, version, data FROM base
@@ -3291,6 +3295,27 @@ impl RecordStore for SyncStore {
         tx.commit()
     }
 
+    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+        let tx = self.write_tx()?;
+        for r in rows {
+            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
+                return Err(Error::InvalidFormat("retained row"));
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO retained (kind, id, version, data)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, &r.data],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![r.kind.code(), &r.id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
     fn batch_begin(&mut self) -> Result<()> {
         self.begin_batch()
     }
@@ -3479,6 +3504,20 @@ impl RecordStore for SyncStore {
         let tx = self.write_tx()?;
         match event {
             VaultEvent::Clean => {
+                // Review M1 (Task 10): a meta retained without its vault key
+                // is another device's rename under the same keys, not a
+                // rotation: the clean load drops it, so a rotation that
+                // follows retains the meta of this load.
+                tx.execute(
+                    "DELETE FROM retained WHERE id = ?1 AND kind = ?2
+                     AND NOT EXISTS (SELECT 1 FROM retained WHERE id = ?1 AND kind = ?3)",
+                    params![
+                        &vault.0[..],
+                        RecordKind::VaultMeta.code(),
+                        RecordKind::VaultKey.code()
+                    ],
+                )
+                .map_err(store_err)?;
                 // The replay of own writes still reads the kept rows of a
                 // vault re-sealed by a rotation (`retained`).
                 if !has_retained(&tx, vault)? {

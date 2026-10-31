@@ -26,10 +26,12 @@
 //! is on, and when a prompt is pending the session is read-only
 //! (`Error::ReadOnly`, R10) and reports it (`Repository::pending_prompt`).
 //!
-//! Following a switch (`PromptKind::Switch` or `Reapply`, spec 8.5) is
-//! refused here: it lands with the re-application of Task 11. The prompt
-//! for it is built already, with the names along the path from the
-//! divergence to the target.
+//! - `follow_switch` (Task 11, spec 8.5): the same from the session open
+//!   on the identity the device is on, which a switch needs (its own copy
+//!   of each vault is wrapped again for the replay); the prompt names the
+//!   devices along the path from the divergence to the target, flags a
+//!   removal of a rotator of the device's own chain on the other branch,
+//!   and lists the removals to re-apply (`Repository::reapply`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
@@ -39,12 +41,13 @@ use aws_lc_rs::digest::{self, SHA256, digest};
 use super::{DeviceState, Repository, pin, trust_of};
 use crate::account::{Account, AccountParams, Auk, PinnedAccount};
 use crate::chain::ChainState;
-use crate::crypto::{KdfParams, SecretKey};
+use crate::crypto::{HybridKemSecret, KdfParams, SecretKey, unwrap_key, wrap_key};
 use crate::device_keys::DeviceKeys;
 use crate::lineage::resolve::{Completeness, Decision, Prompt, PromptKind, resolve};
 use crate::lineage::{LineageRecord, RotationBody, delivery_id, identity_id, rotation_code};
-use crate::store::{RecordKind, RecordStore, account_record_id};
+use crate::store::{Record, RecordKind, RecordStore, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
+use crate::vault::{Vault, kem_context};
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
 /// What the confirmation screen shows (spec 9). Names come from the local
@@ -63,6 +66,15 @@ pub struct RotationPrompt {
     /// This device changed the master password and has not pushed it yet
     /// (spec 7.3): the screen offers to apply it to the new keys.
     pub pending_password_change: bool,
+    /// A switch whose path removes the rotator of a record this device is
+    /// on (controller ruling, Task 4 review): "iPhone de Quentin a retiré
+    /// iPad de Quentin sur un autre jeu de clés." (`rotator_name` removed
+    /// `revoked_names`). Never a quarantine, never adopted without the user.
+    pub cross_branch_revocation: bool,
+    /// The devices this device removed that the choice keeps (spec 8.5
+    /// step 5), local names: `Repository::reapply` removes them again
+    /// after the follow, in the same user step.
+    pub reapply_names: Vec<String>,
 }
 
 /// One record the user can confirm or reject.
@@ -101,7 +113,7 @@ fn sha256(b: &[u8]) -> [u8; 32] {
 
 /// Every lineage record of the store that decodes; the others are
 /// ignored (the resolver never sees them).
-fn lineage_records<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<LineageRecord>> {
+pub(crate) fn lineage_records<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<LineageRecord>> {
     Ok(store
         .list(RecordKind::Lineage)?
         .iter()
@@ -109,7 +121,7 @@ fn lineage_records<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<LineageReco
         .collect())
 }
 
-fn rotations(records: &[LineageRecord]) -> BTreeMap<[u8; 32], &RotationBody> {
+pub(crate) fn rotations(records: &[LineageRecord]) -> BTreeMap<[u8; 32], &RotationBody> {
     records
         .iter()
         .filter_map(|r| match r {
@@ -136,9 +148,30 @@ fn complete_for<S: RecordStore + ?Sized>(
             .is_some_and(|r| sha256(&r.data) == *want))
     };
     let rid = identity_id(&body.identity_pub);
-    Ok(matches(RecordKind::KeyDelivery, delivery_id(h, me), want)?
-        && matches(RecordKind::AccountParams, rid, &body.params_hash)?
+    if !matches(RecordKind::KeyDelivery, delivery_id(h, me), want)? {
+        return Ok(false);
+    }
+    let Some(params) = store.get(RecordKind::AccountParams, rid)? else {
+        return Ok(false);
+    };
+    if later_epoch(&params.data, body) {
+        // The keyset was sealed again with the password change: the unlock
+        // checks it against the verified params.
+        return Ok(store.get(RecordKind::Keyset, rid)?.is_some());
+    }
+    Ok(sha256(&params.data) == body.params_hash
         && matches(RecordKind::Keyset, rid, &body.keyset_hash)?)
+}
+
+/// Controller ruling I6 (Task 9, spec 6.3 and 7.2): the params of the new
+/// identity after a password change there (epoch 2 and on) no longer hash
+/// to `params_hash`, which binds epoch 1 only. Such params count when they
+/// verify under the identity the record names, for the same account, at
+/// an epoch above 1 (G8: a params record the identity did not sign is
+/// ignored).
+fn later_epoch(params: &[u8], body: &RotationBody) -> bool {
+    AccountParams::decode_verified(params, &body.identity_pub)
+        .is_ok_and(|p| p.account_id == body.account_id && p.epoch > 1)
 }
 
 fn completeness<S: RecordStore + ?Sized>(
@@ -298,12 +331,41 @@ fn prompt_in<S: RecordStore + ?Sized>(
     };
     let pending_password_change =
         store.is_pending_write(RecordKind::AccountParams, current_records_id(trust))?;
+    // The rotators of the device's own chain, from the head back.
+    let mut own_rotators = BTreeSet::new();
+    let mut h = trust.head.hash;
+    while let Some(b) = bodies.get(&h) {
+        own_rotators.insert(b.rotator);
+        h = b.parent;
+        if own_rotators.len() > bodies.len() {
+            break;
+        }
+    }
+    let mut cross_branch_revocation = false;
+    let mut reapply = BTreeSet::new();
+    if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) {
+        for target in &p.children {
+            let path = path_to(trust, &bodies, *target);
+            cross_branch_revocation |= path
+                .iter()
+                .any(|b| b.revoked.iter().any(|id| own_rotators.contains(id)));
+        }
+    }
+    for target in p.children.iter().filter_map(|h| bodies.get(h)) {
+        for e in &target.roster {
+            if e.device_id != trust.me.device_id && trust.revoked.contains(&e.device_id) {
+                reapply.insert(e.device_id);
+            }
+        }
+    }
     let shown = RotationPrompt {
         kind: p.kind,
         choices,
         code,
         tofu_signer,
         pending_password_change,
+        cross_branch_revocation,
+        reapply_names: reapply.iter().map(|id| local_name(trust, *id)).collect(),
     };
     Ok(Some((p, shown)))
 }
@@ -357,13 +419,16 @@ fn offered<S: RecordStore + ?Sized>(
 /// - no trust state, or `device_keys` other than the pinned ones:
 ///   `Validation("device")`;
 /// - `choice` not offered by the resolver now, a record that does not
-///   list this device or revokes it, a switch (Task 11):
-///   `Validation("rotation")`;
+///   list this device or revokes it: `Validation("rotation")`; a switch
+///   (`PromptKind::Switch` or `Reapply`) follows from the open session
+///   only (`follow_switch`): `Validation("rotation")`;
 /// - this device's delivery, the params or the keyset missing:
 ///   `NotFound`; one that does not match the hash the signed record lists
 ///   (a substituted envelope is refused before any decapsulation):
-///   `Integrity(Signature)`; a roster that pins another key for a device
-///   this one pinned: `Integrity(WrongContext)`;
+///   `Integrity(Signature)`, except params of a later epoch verified under
+///   the record's identity (a password change there, ruling I6); a roster
+///   that pins another key for a device this one pinned:
+///   `Integrity(WrongContext)`;
 /// - a wrong password: `WrongPassword`;
 /// - the trust state changed since it was read (another writer):
 ///   `Conflict`; the commit failing: its error.
@@ -375,28 +440,76 @@ fn offered<S: RecordStore + ?Sized>(
 /// moves the pin to the trust state's identity and starts the vaults from
 /// `from_heads` (`reconcile_pin`). Nothing fails after the commit.
 pub fn follow_rotation<S: RecordStore>(
-    mut store: S,
+    store: S,
     choice: [u8; 32],
     password: &str,
     device_keys: &DeviceKeys,
 ) -> Result<(Repository<S>, Auk, SecretKey)> {
-    let trust = trust_of(&store)?.ok_or_else(|| refused("device", "no device keys"))?;
-    // Review M1: not out of a rotation being pushed or a quarantine (Tasks
-    // 11 and 12 own those paths).
-    if !matches!(
-        trust.state,
-        DeviceLineageState::Current | DeviceLineageState::Candidate { .. }
-    ) {
-        return Err(refused("rotation", "state"));
+    follow_with(store, choice, password, device_keys, None)
+}
+
+/// Follow `choice` from the session open on the identity this device is on
+/// (any prompt kind; a switch needs it, spec 8.5 step 4). The session's
+/// keys are those the device's own writes since its last adoption were
+/// sealed with: after the commit, the device's own copy of each vault with
+/// writes to replay is wrapped again for the identity followed and kept
+/// (`RecordStore::put_retained`) until the replay is done (spec 10.4).
+/// The refusals of `follow_rotation` apply, and a session on another
+/// identity than the trust state's is `Validation("session")`. A device
+/// pushing its own rotation (`Rotating`) may follow a switch.
+///
+/// The switch moves the head to the winner's descendant (`choice`), adds
+/// every removal along the path from the divergence to it, retires the
+/// identity left and replays the own writes against nothing (the content
+/// of another branch reflects none of them). The removals this device
+/// made that the new head lacks are re-applied by `Repository::reapply`,
+/// in the same user step (spec 8.5 step 5).
+pub fn follow_switch<S: RecordStore>(
+    session: Repository<S>,
+    choice: [u8; 32],
+    password: &str,
+    device_keys: &DeviceKeys,
+) -> Result<(Repository<S>, Auk, SecretKey)> {
+    let trust = trust_of(&session.store)?.ok_or_else(|| refused("device", "no device keys"))?;
+    if session.account.params.identity_pub != trust.identity_pub {
+        return Err(refused("session", "another identity"));
     }
+    let keyset = session.account.keyset();
+    let mut left = Vec::with_capacity(keyset.retired_kem.len() + 1);
+    for k in std::iter::once(&keyset.kem).chain(&keyset.retired_kem) {
+        left.push(HybridKemSecret::from_bytes(&k.to_bytes())?);
+    }
+    let Repository { store, .. } = session;
+    follow_with(store, choice, password, device_keys, Some(&left))
+}
+
+fn follow_with<S: RecordStore>(
+    mut store: S,
+    choice: [u8; 32],
+    password: &str,
+    device_keys: &DeviceKeys,
+    left_kem: Option<&[HybridKemSecret]>,
+) -> Result<(Repository<S>, Auk, SecretKey)> {
+    let trust = trust_of(&store)?.ok_or_else(|| refused("device", "no device keys"))?;
     let me = trust.me.device_id;
     if device_keys.public(me)? != trust.me {
         return Err(refused("device", "other device keys"));
     }
     let records = lineage_records(&store)?;
     let prompt = offered(&store, &trust, &records, choice)?;
-    if matches!(prompt.kind, PromptKind::Switch | PromptKind::Reapply) {
-        return Err(refused("rotation", "switch"));
+    let switch = matches!(prompt.kind, PromptKind::Switch | PromptKind::Reapply);
+    if switch && left_kem.is_none() {
+        return Err(refused("rotation", "switch needs the open session"));
+    }
+    // Review M1 (Task 9): not out of a quarantine or an orphaned state
+    // (Task 12); out of a rotation being pushed only for a switch.
+    let state_ok = match trust.state {
+        DeviceLineageState::Current | DeviceLineageState::Candidate { .. } => true,
+        DeviceLineageState::Rotating { .. } => switch,
+        _ => false,
+    };
+    if !state_ok {
+        return Err(refused("rotation", "state"));
     }
     let bodies = rotations(&records);
     let body = *bodies
@@ -422,19 +535,23 @@ pub fn follow_rotation<S: RecordStore>(
         .ok_or(Error::NotFound)?;
     let secret_key = super::rotate::open_key_delivery(device_keys, body, me, &envelope.data)?;
 
-    // Step 2: the params and keyset of the new identity, hash-matched,
-    // verified under the identity the record names (G8), opened with the
-    // password.
+    // Step 2: the params and keyset of the new identity, hash-matched (or,
+    // after a password change there, verified under the identity the
+    // record names: ruling I6), verified under that identity (G8), opened
+    // with the password.
     let rid = identity_id(&body.identity_pub);
     let params = store
         .get(RecordKind::AccountParams, rid)?
         .ok_or(Error::NotFound)?;
     let keyset = store.get(RecordKind::Keyset, rid)?.ok_or(Error::NotFound)?;
-    if sha256(&params.data) != body.params_hash || sha256(&keyset.data) != body.keyset_hash {
+    let bound =
+        sha256(&params.data) == body.params_hash && sha256(&keyset.data) == body.keyset_hash;
+    if !bound && !later_epoch(&params.data, body) {
         return Err(IntegrityError::Signature.into());
     }
-    // The KDF costs are bound by the signed record (params hash): no floor
-    // beyond the build's own.
+    // The KDF costs are bound by the signed record (params hash, or the new
+    // identity's signature at a later epoch): no floor beyond the build's
+    // own.
     let expected = PinnedAccount {
         account_id: trust.account_id,
         identity_pub: body.identity_pub.clone(),
@@ -481,6 +598,10 @@ pub fn follow_rotation<S: RecordStore>(
         })
         .collect();
     next.roster = body.roster.clone();
+    // A switch adopts every removal from the divergence to the target.
+    for b in path_to(&trust, &bodies, choice) {
+        next.add_revoked(&b.revoked);
+    }
     next.add_revoked(&body.revoked);
     if prompt.kind == PromptKind::Mutual {
         // Spec 8.3: keeping one side excludes the other signers.
@@ -502,8 +623,12 @@ pub fn follow_rotation<S: RecordStore>(
     });
     next.state = DeviceLineageState::Current;
     // Spec 10.4: the own writes so far wait for their replay under the new
-    // keys, against the rotation's `from_heads`.
-    next.own_writes.adopt(&body.from_heads);
+    // keys, against the rotation's `from_heads`; after a switch, against
+    // nothing (another branch's content reflects none of them, and its
+    // manifests' seqs say nothing of this device's).
+    let no_heads = BTreeMap::new();
+    next.own_writes
+        .adopt(if switch { &no_heads } else { &body.from_heads });
     let chain = ChainState {
         params_epoch: account.params.epoch,
         device_list: None,
@@ -513,12 +638,27 @@ pub fn follow_rotation<S: RecordStore>(
     // Every vault a stored `last_seen` may name: the session's map replaces
     // them on the next persist.
     let mut dropped: BTreeSet<Id> = body.from_heads.keys().copied().collect();
-    dropped.extend(store.list(RecordKind::VaultKey)?.iter().map(|r| r.id));
+    let keys = store.list(RecordKind::VaultKey)?;
+    dropped.extend(keys.iter().map(|r| r.id));
+    // The vaults whose own copy the replay needs: intents to replay, or a
+    // vault this device wrote and has not pushed (created there).
+    let mut own: BTreeSet<Id> = next.own_writes.replay_vaults();
+    for k in &keys {
+        if store.is_pending_write(RecordKind::Manifest, k.id)? {
+            own.insert(k.id);
+        }
+    }
 
     store.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain.clone()), &trust, &next)?;
 
-    // Committed: nothing below can fail. Step 4: the session on the new
-    // identity, its vaults from `from_heads` (R12).
+    // Committed: nothing below can fail the call. A switch keeps the own
+    // copies for the replay (best effort: a copy not kept is reported by
+    // the replay as lost, with the log's alert).
+    if let Some(left_kem) = left_kem {
+        let _ = keep_own_copies(&mut store, &own, left_kem, &account);
+    }
+    // Step 4: the session on the new identity, its vaults from
+    // `from_heads` (R12).
     let device = DeviceState {
         pinned: Some(pin(&account)),
         last_seen: body.from_heads.clone(),
@@ -542,13 +682,71 @@ pub fn follow_rotation<S: RecordStore>(
     // Spec 10.4: replay this device's own writes under the new keys (best
     // effort: nothing fails after the commit; what waits is tried again at
     // the next unlock or rebase). The replay's `writable` resolves the
-    // lineage first (its mark is unset): a child of the new head already
-    // known makes it wait. Review I2 (Task 9): that child then prompts at
-    // once; the stored state and `writable` look again on the first write
-    // anyway.
+    // lineage first (its mark is unset), so a child of the new head already
+    // known makes it wait and prompts at once (review I2 of Task 9).
     let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
     Ok((repo, auk, secret_key))
+}
+
+/// After a switch: for each vault of `vaults`, the device's own copy sealed
+/// under the identity it left is kept for the replay, its vault key wrapped
+/// again for the identity followed (`account`), with the meta it pairs
+/// with; its pending key and meta of that identity move there
+/// (`RecordStore::put_retained`), so the followed identity's key shows once
+/// it arrives. `left_kem` is the left identity's KEM secret, then the ones
+/// it retired. The copy under the left identity's own key comes first (the
+/// writes since its adoption are sealed under it); without one, a copy the
+/// followed identity's retired secrets open already (older writes still
+/// waiting for their replay) stays as it is.
+fn keep_own_copies<S: RecordStore>(
+    store: &mut S,
+    vaults: &BTreeSet<Id>,
+    left_kem: &[HybridKemSecret],
+    account: &Account,
+) -> Result<()> {
+    let keyset = account.keyset();
+    for &vault in vaults {
+        let ctx = kem_context(vault);
+        let retained = store.retained_rows(vault)?;
+        let opens_now = retained.iter().any(|r| {
+            r.kind == RecordKind::VaultKey
+                && keyset
+                    .retired_kem
+                    .iter()
+                    .any(|k| unwrap_key(k, &r.data, &ctx).is_ok())
+        });
+        let mut rows: Vec<Record> = retained;
+        for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
+            rows.extend(store.get(kind, vault)?);
+        }
+        let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+        'found: for (i, secret) in left_kem.iter().enumerate() {
+            if i == 1 && opens_now {
+                break;
+            }
+            for key in of(RecordKind::VaultKey) {
+                let Ok(k) = unwrap_key(secret, &key.data, &ctx) else {
+                    continue;
+                };
+                let Some(meta) = of(RecordKind::VaultMeta)
+                    .find(|m| Vault::open_with_kem(secret, vault, &key.data, &m.data).is_ok())
+                else {
+                    continue;
+                };
+                let envelope = wrap_key(&account.params.kem_pub, &k, &ctx)?;
+                store.put_retained(vec![
+                    Record {
+                        data: envelope,
+                        ..key.clone()
+                    },
+                    meta.clone(),
+                ])?;
+                break 'found;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// "Ce n'était pas moi" for `choice` (spec 8.2): the record joins
@@ -641,6 +839,15 @@ impl<S: RecordStore> Repository<S> {
                 })
             }
             (DeviceLineageState::Candidate { .. }, None) => Some(DeviceLineageState::Current),
+            // Spec 8.2: a sibling of the device's own rotation wins; the
+            // push of its phases stops until the user answers.
+            (DeviceLineageState::Rotating { .. }, Some((p, _)))
+                if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) =>
+            {
+                Some(DeviceLineageState::Candidate {
+                    children: p.children.clone(),
+                })
+            }
             _ => None,
         };
         if let Some(state) = state {

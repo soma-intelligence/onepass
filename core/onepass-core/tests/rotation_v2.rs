@@ -1484,7 +1484,8 @@ fn lost_acknowledgement_in_phase_one() {
 
 use onepass_core::lineage::resolve::PromptKind;
 use onepass_core::repo::follow::{
-    RotationPrompt, follow_rotation, pending_rotation, reject_rotation, stored_params_epoch,
+    RotationPrompt, follow_rotation, follow_switch, pending_rotation, reject_rotation,
+    stored_params_epoch,
 };
 
 /// Index of the follower C ("Mac") and of the revoked B ("iPad") in
@@ -2479,34 +2480,46 @@ fn follow_after(during: impl FnOnce(&mut Device)) -> (Server, Device, Device) {
     (server, a, c)
 }
 
-/// Review I1: a vault created under the old identity after `from_heads`
-/// does not break `vaults()` under the new one; it stays on the device,
-/// never sent under the old keys (its re-creation is Task 11).
+/// Review I1 of Task 10, carried to Task 11: a vault created under the old
+/// identity after `from_heads` is re-created under the new identity (a new
+/// vault key, its own items replayed into it); the old one is left alone
+/// and nothing of it goes out under the old keys.
 #[test]
-fn vault_created_under_old_identity_stays_local() {
+fn vault_created_under_old_identity_is_recreated() {
     let mut created = None;
-    let (_server, _a, mut c) = follow_after(|c| {
-        created = Some(c.repo().create_vault(meta("Travail")).unwrap().id);
+    let (mut server, mut a, mut c) = follow_after(|c| {
+        let v = c.repo().create_vault(meta("Travail")).unwrap();
+        c.repo()
+            .save_item(&v, login(v.id, "work", T0 + 80))
+            .unwrap();
+        created = Some(v.id);
     });
-    let id = created.unwrap();
-    let names: Vec<String> = c
-        .repo()
-        .vaults()
-        .unwrap()
-        .into_iter()
-        .map(|v| v.meta.name)
-        .collect();
-    assert!(!names.contains(&"Travail".to_string()), "{names:?}");
-    assert_eq!(names.len(), 1);
-    assert!(c.store().get(RecordKind::VaultKey, id).unwrap().is_some());
+    let old = created.unwrap();
+    let t = c.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert);
+    let work = c.vault_named("Travail");
+    assert_ne!(work.id, old, "a new vault under the new keys");
+    assert_eq!(
+        users(&c.repo().items(&work).unwrap()),
+        vec!["work".to_string()]
+    );
+    assert_eq!(c.repo().vaults().unwrap().len(), 2);
     assert!(outbox(&c).iter().all(|(ch, _)| {
-        ch.id != id
+        ch.id != old
             && !(ch.kind == RecordKind::Item
                 && ch
                     .data
                     .as_ref()
-                    .is_some_and(|d| split_item_record(d).unwrap().0 == id))
+                    .is_some_and(|d| split_item_record(d).unwrap().0 == old))
     }));
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    let work = a.vault_named("Travail");
+    assert_eq!(
+        users(&a.repo().items(&work).unwrap()),
+        vec!["work".to_string()]
+    );
 }
 
 /// Review I2: a rename made under the old identity is replayed under the
@@ -2547,4 +2560,720 @@ fn generation_zero_broken_vault_key_is_an_alert() {
     pull(&server, &mut a);
     assert!(!a.store().retained_rows(v).unwrap().is_empty());
     assert!(matches!(a.repo().vaults(), Err(Error::Integrity(_))));
+}
+
+// ------------------------------------------------- Task 11: siblings
+
+fn head_of(dev: &Device) -> [u8; 32] {
+    dev.store().trust_state().unwrap().unwrap().head.hash
+}
+
+/// Fetch everything but the Secret Key deliveries, without moving the
+/// cursor: the next `pull` brings them (and the rest again).
+fn pull_without_deliveries(server: &Server, dev: &mut Device) {
+    let cursor = dev.cursor;
+    pull_only(server, dev, |ch| ch.kind != RecordKind::KeyDelivery);
+    dev.cursor = cursor;
+}
+
+/// Ruling I6 (Task 9): the new identity changes its password before the
+/// follower follows; the params at epoch 2 no longer match the record's
+/// hash but verify under its identity, so the follower follows with the
+/// new password.
+#[test]
+fn follow_after_password_change_on_new_identity() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo()
+        .change_password(PASSWORD, &new_sk, NEW_PASSWORD)
+        .unwrap();
+    a.repo().persist_device_state().unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert!(prompt.choices[0].complete);
+    assert!(follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).is_err());
+    let (repo, _, sk) =
+        follow_rotation(c.store(), out.head, NEW_PASSWORD, &f.others[C].keys).unwrap();
+    assert_eq!(repo.account().params.epoch, 2);
+    c.repo = Some(repo);
+    assert_eq!(users(&c.items()), users(&a.items()));
+    c.lock();
+    c.try_unlock(NEW_PASSWORD, &sk).unwrap();
+}
+
+/// Params of a later epoch that the new identity did not sign are not
+/// taken for the record's (G8): the follow is refused.
+#[test]
+fn later_epoch_params_must_verify_under_the_record_identity() {
+    let (server, _a, c, f, out, _sk) = rotated();
+    let body = rotation_of(&c.store(), &out.head);
+    let rid = identity_id(&body.identity_pub);
+    // The old identity's params (epoch 1, another signer) under the new id.
+    let old = server
+        .get(RecordKind::AccountParams, f_identity_record_id(&c, &f))
+        .unwrap();
+    let mut store = c.store();
+    store
+        .put(Record {
+            id: rid,
+            kind: RecordKind::AccountParams,
+            version: 2,
+            data: old.data,
+        })
+        .unwrap();
+    let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
+    assert!(r.is_err());
+    assert_eq!(
+        head_of(&c),
+        c.store().trust_state().unwrap().unwrap().head.hash
+    );
+    assert_ne!(head_of(&c), out.head);
+}
+
+/// The record id of the account params of the identity `c` is on.
+fn f_identity_record_id(c: &Device, _f: &Fixture) -> Id {
+    let t = c.store().trust_state().unwrap().unwrap();
+    account_record_id(
+        t.account_id,
+        (t.head.generation > 0).then_some(&t.identity_pub),
+    )
+}
+
+/// Carried item 4 (Task 10): two rotations followed before the first
+/// replay finished. The replay opens the device's own copy with the right
+/// retired key, brings its own write in, and never the revoked device's
+/// late one.
+#[test]
+fn double_follow_before_replay() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut ipad = old_device(&server, &f);
+    c.unlock(&f.sk);
+    let v = c.vault();
+    c.repo()
+        .save_item(&v, login(v.id, "mine", T0 + 50))
+        .unwrap();
+    c.lock();
+    let sk1 = SecretKey::generate().unwrap();
+    let req = request(&f, &sk1, vec![f.others[B].id()], RotationReason::Revoke);
+    let r1 = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let iv = ipad.vault();
+    ipad.repo()
+        .save_item(&iv, login(iv.id, "forged", T0 + 55))
+        .unwrap();
+    sync(&mut server, &mut ipad).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    // C gets r1 without its vault content: the replay waits.
+    let cursor = c.cursor;
+    pull_only(&server, &mut c, |ch| {
+        !matches!(
+            ch.kind,
+            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest | RecordKind::Item
+        )
+    });
+    c.cursor = cursor;
+    let (repo, _, _) = follow_rotation(c.store(), r1.head, PASSWORD, &f.others[C].keys).unwrap();
+    drop(repo);
+    let t = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(t.own_writes.replay.len(), 1);
+
+    // A rotates again; C gets everything and follows r2.
+    let sk2 = SecretKey::generate().unwrap();
+    let mut req = request(&f, &sk2, vec![], RotationReason::Rotate);
+    req.secret_key = &sk1;
+    let r2 = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let prompt = prompt_of(&c).expect("r2 prompts");
+    assert_eq!(prompt.choices[0].hash, r2.head);
+    let (repo, _, _) = follow_rotation(c.store(), r2.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    let u = users(&c.items());
+    assert!(u.contains(&"mine".to_string()), "{u:?}");
+    assert!(!u.contains(&"forged".to_string()), "{u:?}");
+    let t = c.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty());
+    assert!(!t.own_writes.alert);
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    let u = users(&a.items());
+    assert!(u.contains(&"mine".to_string()) && !u.contains(&"forged".to_string()));
+}
+
+/// Carried item 5 (Task 10): `ignored` keeps the rejected sibling, but once
+/// the device settled on another head the own-copy gate (I3) closes again:
+/// a vault key the server replaced with garbage is an integrity error.
+#[test]
+fn ignored_sibling_no_longer_opens_own_copy() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let a_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &a_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![f.me.id()], RotationReason::Revoke);
+    req.device_keys = &f.others[B].keys;
+    let rb = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    push_outbox(&mut server, &b).unwrap();
+    pull(&server, &mut c);
+    let (repo, _, _) = follow_rotation(c.store(), ra.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(
+        c.store().trust_state().unwrap().unwrap().ignored,
+        vec![rb.head]
+    );
+    assert_eq!(c.repo().vaults().unwrap().len(), 1);
+
+    let v = c.vault().id;
+    let live = server.get(RecordKind::VaultKey, v).unwrap();
+    let mut data = live.data.clone();
+    for byte in data.iter_mut().take(64) {
+        *byte ^= 0x5a;
+    }
+    server.replay(Record {
+        data,
+        version: live.version + 1,
+        ..live
+    });
+    let live = server.get(RecordKind::VaultMeta, v).unwrap();
+    let mut data = live.data.clone();
+    for byte in data.iter_mut().skip(8).take(32) {
+        *byte ^= 0x5a;
+    }
+    server.replay(Record {
+        data,
+        version: live.version + 1,
+        ..live
+    });
+    pull(&server, &mut c);
+    assert_eq!(c.store().retained_rows(v).unwrap().len(), 2);
+    assert!(matches!(c.repo().vaults(), Err(Error::Integrity(_))));
+}
+
+/// Review M1 (Task 10): a rename by another device that a session loaded
+/// before phase 2 is what that session reads from its own copy while it
+/// waits: the meta retained pairs with the manifest kept since that clean
+/// load, never the meta from before the rename.
+#[test]
+fn own_copy_keeps_the_meta_of_its_key() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = a.vault();
+    a.repo().update_vault_meta(&v, meta("Perso")).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(c.vault().meta.name, "Perso");
+    let _ = c.items();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(c.vault().meta.name, "Perso");
+    assert_eq!(
+        users(&c.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+}
+
+/// Two rotations A and C made concurrently from the genesis (`revoke_a`
+/// and `revoke_c`), each pushed through phase 1, each rotator then pulling
+/// the other's record (and looking at it, as the app does after a fetch).
+/// B ("iPad") is a third device on the genesis, locked. C stays unlocked.
+struct Race {
+    server: Server,
+    f: Fixture,
+    a: Device,
+    b: Device,
+    c: Device,
+    ra: RotationOutcome,
+    rc: RotationOutcome,
+}
+
+impl Race {
+    /// Spec 8.5: no exclusion between the two, the smaller hash wins.
+    fn a_wins(&self) -> bool {
+        self.ra.head < self.rc.head
+    }
+}
+
+fn reason(revoke: &[Id]) -> RotationReason {
+    if revoke.is_empty() {
+        RotationReason::Rotate
+    } else {
+        RotationReason::Revoke
+    }
+}
+
+fn race(
+    revoke_a: impl FnOnce(&Fixture) -> Vec<Id>,
+    revoke_c: impl FnOnce(&Fixture) -> Vec<Id>,
+    before: impl FnOnce(&mut Server, &mut Device, &Fixture),
+    after: impl FnOnce(&mut Device),
+    pull_round: impl Fn(&Server, &mut Device),
+) -> Race {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    before(&mut server, &mut c, &f);
+    let a_sk = SecretKey::generate().unwrap();
+    let revoke = revoke_a(&f);
+    let req = request(&f, &a_sk, revoke.clone(), reason(&revoke));
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let c_sk = SecretKey::generate().unwrap();
+    let revoke = revoke_c(&f);
+    let mut req = request(&f, &c_sk, revoke.clone(), reason(&revoke));
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    after(&mut c);
+    // Phase 1: new ids only, never in conflict.
+    for d in [&a, &c] {
+        push_outbox(&mut server, d).unwrap();
+        assert_eq!(
+            d.store().push_rotation_phase(1).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    for d in [&mut a, &mut c] {
+        pull_round(&server, d);
+        d.repo().refresh_pending_rotation().unwrap();
+    }
+    Race {
+        server,
+        f,
+        a,
+        b,
+        c,
+        ra,
+        rc,
+    }
+}
+
+/// The device keys of A (`a`) or of C.
+fn keys_of(f: &Fixture, a: bool) -> &DeviceKeys {
+    if a { &f.me.keys } else { &f.others[C].keys }
+}
+
+/// Port of `zz3`: A and C rotate at the same time. The loser switches once
+/// (with its own writes replayed, the one made before its rotation and the
+/// one after), the third device follows the winner once, the winner never
+/// moves; all end on the same head with nothing left to decide.
+#[test]
+fn two_concurrent_rotations_converge() {
+    let r = race(
+        |_| vec![],
+        |_| vec![],
+        |server, c, _| {
+            let v = c.vault();
+            c.repo()
+                .save_item(&v, login(v.id, "carla", T0 + 40))
+                .unwrap();
+            sync(server, c).unwrap();
+        },
+        |c| {
+            let v = c.vault();
+            c.repo()
+                .save_item(&v, login(v.id, "late", T0 + 60))
+                .unwrap();
+        },
+        pull,
+    );
+    let a_wins = r.a_wins();
+    let (wh, lh) = if a_wins {
+        (r.ra.head, r.rc.head)
+    } else {
+        (r.rc.head, r.ra.head)
+    };
+    let Race {
+        mut server,
+        f,
+        a,
+        mut b,
+        c,
+        ..
+    } = r;
+    let (mut w, mut l) = if a_wins { (a, c) } else { (c, a) };
+    let l_keys = keys_of(&f, !a_wins);
+
+    assert!(w.repo().pending_prompt().is_none());
+    let p = l.repo().pending_prompt().cloned().expect("switch prompt");
+    assert_eq!(p.kind, PromptKind::Reapply);
+    assert_eq!(p.choices.len(), 1);
+    assert_eq!(p.choices[0].hash, wh);
+    assert!(!p.cross_branch_revocation);
+    assert!(p.reapply_names.is_empty());
+    assert!(matches!(state(&l), DeviceLineageState::Candidate { .. }));
+
+    // The winner pushes its phases; the loser waits.
+    sync(&mut server, &mut w).unwrap();
+    assert_eq!(state(&w), DeviceLineageState::Current);
+    assert_eq!(head_of(&w), wh);
+
+    let mut switches = 0;
+    pull(&server, &mut l);
+    let session = l.repo.take().unwrap();
+    let (repo, _, sk) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    switches += 1;
+    l.repo = Some(repo);
+    assert_eq!(head_of(&l), wh);
+    let t = l.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert);
+    assert!(
+        l.repo()
+            .reapply(PASSWORD, &sk, &SecretKey::generate().unwrap(), l_keys)
+            .unwrap()
+            .is_none()
+    );
+    sync(&mut server, &mut l).unwrap();
+
+    // The third device follows the winner directly.
+    pull(&server, &mut b);
+    let pb = prompt_of(&b).expect("b prompts");
+    assert_eq!(pb.kind, PromptKind::Single);
+    assert_eq!(pb.choices.len(), 1);
+    assert_eq!(pb.choices[0].hash, wh);
+    let (repo, _, _) = follow_rotation(b.store(), wh, PASSWORD, &f.others[B].keys).unwrap();
+    b.repo = Some(repo);
+
+    for d in [&mut w, &mut l, &mut b] {
+        sync(&mut server, d).unwrap();
+    }
+    for d in [&mut w, &mut l, &mut b] {
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(prompt_of(d), None);
+        assert!(d.repo().refresh_pending_rotation().unwrap().is_none());
+        let u = users(&d.items());
+        for name in ["carla", "late", "alice"] {
+            assert!(u.contains(&name.to_string()), "{name} missing: {u:?}");
+        }
+    }
+    assert_eq!(switches, 1);
+    assert_ne!(lh, wh);
+}
+
+/// Port of `zz5`: two rotations seen incomplete first (deliveries
+/// withheld). The loser stops pushing at once (a better sibling is known),
+/// nothing alternates, and every device converges in at most two user
+/// steps (here one: the loser's switch, the third device's follow).
+#[test]
+fn two_incomplete_rotations_converge() {
+    let r = race(
+        |_| vec![],
+        |_| vec![],
+        |_, _, _| {},
+        |_| {},
+        pull_without_deliveries,
+    );
+    let a_wins = r.a_wins();
+    let wh = if a_wins { r.ra.head } else { r.rc.head };
+    let Race {
+        mut server,
+        f,
+        a,
+        mut b,
+        c,
+        ..
+    } = r;
+    let (mut w, mut l) = if a_wins { (a, c) } else { (c, a) };
+    let l_keys = keys_of(&f, !a_wins);
+    let mut steps = BTreeMap::new();
+
+    // Incomplete: the loser is read-only, its prompt marked incomplete;
+    // following fails and changes nothing.
+    let p = l.repo().pending_prompt().cloned().expect("loser prompt");
+    assert_eq!(p.kind, PromptKind::Reapply);
+    assert!(!p.choices[0].complete);
+    assert!(matches!(state(&l), DeviceLineageState::Candidate { .. }));
+    assert!(w.repo().pending_prompt().is_none());
+    pull_without_deliveries(&server, &mut b);
+    let pb = prompt_of(&b).expect("b sees a prompt");
+    assert!(!pb.choices[0].complete);
+    assert!(follow_rotation(b.store(), wh, PASSWORD, &f.others[B].keys).is_err());
+
+    // The winner goes on; the loser pushes nothing of its phase 2.
+    sync(&mut server, &mut w).unwrap();
+    assert_eq!(state(&w), DeviceLineageState::Current);
+    let _ = sync(&mut server, &mut l);
+    assert!(matches!(state(&l), DeviceLineageState::Candidate { .. }));
+
+    // The deliveries arrive.
+    pull(&server, &mut l);
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    *steps.entry("loser").or_insert(0) += 1;
+    l.repo = Some(repo);
+    pull(&server, &mut b);
+    let (repo, _, _) = follow_rotation(b.store(), wh, PASSWORD, &f.others[B].keys).unwrap();
+    *steps.entry("b").or_insert(0) += 1;
+    b.repo = Some(repo);
+    for d in [&mut w, &mut l, &mut b] {
+        sync(&mut server, d).unwrap();
+    }
+    for d in [&mut w, &mut l, &mut b] {
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(prompt_of(d), None);
+        assert_eq!(
+            users(&d.items()),
+            ["alice", "bob", "carol"].map(String::from)
+        );
+    }
+    assert!(steps.values().all(|n| *n <= 2), "{steps:?}");
+}
+
+/// The winner and the loser of a race whose rotations revoke devices.
+struct Settled {
+    server: Server,
+    f: Fixture,
+    w: Device,
+    l: Device,
+    wh: [u8; 32],
+    a_wins: bool,
+}
+
+/// `race` with these revocations, the winner pushed through, the loser
+/// switched to it.
+fn race_and_switch(
+    revoke_a: impl FnOnce(&Fixture) -> Vec<Id>,
+    revoke_c: impl FnOnce(&Fixture) -> Vec<Id>,
+) -> (Settled, SecretKey) {
+    let r = race(revoke_a, revoke_c, |_, _, _| {}, |_| {}, pull);
+    let a_wins = r.a_wins();
+    let wh = if a_wins { r.ra.head } else { r.rc.head };
+    let Race {
+        mut server,
+        f,
+        a,
+        c,
+        ..
+    } = r;
+    let (mut w, mut l) = if a_wins { (a, c) } else { (c, a) };
+    let p = l.repo().pending_prompt().cloned().expect("switch prompt");
+    assert_eq!(p.kind, PromptKind::Reapply);
+    sync(&mut server, &mut w).unwrap();
+    pull(&server, &mut l);
+    let session = l.repo.take().unwrap();
+    let (repo, _, sk) = follow_switch(session, wh, PASSWORD, keys_of(&f, !a_wins)).unwrap();
+    l.repo = Some(repo);
+    (
+        Settled {
+            server,
+            f,
+            w,
+            l,
+            wh,
+            a_wins,
+        },
+        sk,
+    )
+}
+
+/// Spec 8.5 step 5: A revokes B while C revokes D. The loser re-applies
+/// its removal, uncovered by the winner, as a `Reapply` child of the
+/// winner's tip; the winner follows it, and both end there with both
+/// devices removed.
+#[test]
+fn loser_reapplies_uncovered_removal() {
+    let (mut s, sk) = race_and_switch(|f| vec![f.others[B].id()], |f| vec![f.others[2].id()]);
+    let (mine, theirs) = if s.a_wins {
+        (s.f.others[2].id(), s.f.others[B].id())
+    } else {
+        (s.f.others[B].id(), s.f.others[2].id())
+    };
+    assert_eq!(s.l.repo().uncovered_removals().unwrap(), vec![mine]);
+    let keys = keys_of(&s.f, !s.a_wins);
+    let out =
+        s.l.repo()
+            .reapply(PASSWORD, &sk, &SecretKey::generate().unwrap(), keys)
+            .unwrap()
+            .expect("a reapply record");
+    let body = rotation_of(&s.l.store(), &out.head);
+    assert_eq!(body.reason, RotationReason::Reapply);
+    assert_eq!(body.parent, s.wh);
+    assert_eq!(body.revoked, vec![mine]);
+    assert!(
+        !body
+            .roster
+            .iter()
+            .any(|e| e.device_id == mine || e.device_id == theirs)
+    );
+    sync(&mut s.server, &mut s.l).unwrap();
+
+    pull(&s.server, &mut s.w);
+    let p = prompt_of(&s.w).expect("winner prompts for the reapply");
+    assert_eq!(p.kind, PromptKind::Single);
+    assert_eq!(p.choices[0].hash, out.head);
+    let w_keys = keys_of(&s.f, s.a_wins);
+    let (repo, _, _) = follow_rotation(s.w.store(), out.head, PASSWORD, w_keys).unwrap();
+    s.w.repo = Some(repo);
+    for d in [&mut s.w, &mut s.l] {
+        sync(&mut s.server, d).unwrap();
+        pull(&s.server, d);
+        assert_eq!(head_of(d), out.head);
+        assert_eq!(prompt_of(d), None);
+        let t = d.store().trust_state().unwrap().unwrap();
+        assert!(t.revoked.contains(&mine) && t.revoked.contains(&theirs));
+        assert_eq!(
+            users(&d.items()),
+            ["alice", "bob", "carol"].map(String::from)
+        );
+    }
+}
+
+/// The winner already revoked the same device: no `Reapply` record.
+#[test]
+fn reapply_dropped_when_covered() {
+    let (mut s, sk) = race_and_switch(|f| vec![f.others[B].id()], |f| vec![f.others[B].id()]);
+    assert!(s.l.repo().uncovered_removals().unwrap().is_empty());
+    let keys = keys_of(&s.f, !s.a_wins);
+    let lineage_before = s.l.store().list(RecordKind::Lineage).unwrap().len();
+    assert!(
+        s.l.repo()
+            .reapply(PASSWORD, &sk, &SecretKey::generate().unwrap(), keys)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        s.l.store().list(RecordKind::Lineage).unwrap().len(),
+        lineage_before
+    );
+    sync(&mut s.server, &mut s.l).unwrap();
+    pull(&s.server, &mut s.w);
+    assert_eq!(prompt_of(&s.w), None);
+    assert_eq!(head_of(&s.w), s.wh);
+    assert_eq!(head_of(&s.l), s.wh);
+}
+
+/// Spec 7.3: a password change pending on the identity the device leaves
+/// is offered on the follow screen and, on yes, re-applied as epoch 2 of
+/// the new identity.
+#[test]
+fn password_change_reapplied_on_yes() {
+    let (mut server, mut a, mut c, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, c, f| {
+            c.unlock(&f.sk);
+            c.repo()
+                .change_password(PASSWORD, &f.sk, NEW_PASSWORD)
+                .unwrap();
+            c.lock();
+        },
+        |_, _, _| true,
+    );
+    assert!(prompt_of(&c).unwrap().pending_password_change);
+    // The new keys were made under the password A knew.
+    let (repo, _, sk) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    // "Oui": the change is applied to the new identity.
+    c.repo()
+        .change_password(PASSWORD, &sk, NEW_PASSWORD)
+        .unwrap();
+    assert_eq!(c.repo().account().params.epoch, 2);
+    c.lock();
+    assert!(c.try_unlock(PASSWORD, &sk).is_err());
+    c.try_unlock(NEW_PASSWORD, &sk).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    pull(&server, &mut a);
+    let pin = a.store().device_state().unwrap().pinned;
+    assert_eq!(stored_params_epoch(&a.store(), pin.as_ref()).unwrap(), 2);
+}
+
+/// Controller ruling (Task 4 review): E followed S1, signed by B; A, on a
+/// sibling branch it made without seeing S1, revokes B. E is told (A
+/// removed B on another set of keys), never adopts silently and is not
+/// quarantined.
+#[test]
+fn cross_branch_revocation_alerts() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut e = follower_with(&mut server, &a, &f, 2, |_| {});
+    // A writes nothing while away: it does not see S1 before rotating.
+    let before = server.clone();
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[B].keys;
+    let s1 = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut e);
+    let (repo, _, _) = follow_rotation(e.store(), s1.head, PASSWORD, &f.others[2].keys).unwrap();
+    e.repo = Some(repo);
+    assert_eq!(head_of(&e), s1.head);
+
+    // A, on the server as it was before S1, revokes B.
+    let mut away = before;
+    let a_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &a_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut away, &mut a).unwrap();
+    // Its records reach E's server (phase 1, then its content).
+    for ((kind, id), entry) in &away.records {
+        if matches!(
+            kind,
+            RecordKind::Lineage
+                | RecordKind::KeyDelivery
+                | RecordKind::AccountParams
+                | RecordKind::Keyset
+        ) && entry.record.is_some()
+            && server.get(*kind, *id).is_none()
+        {
+            server.replay(entry.record.clone().unwrap());
+        }
+    }
+    pull(&server, &mut e);
+    let p = e
+        .repo()
+        .refresh_pending_rotation()
+        .unwrap()
+        .expect("an alert");
+    assert_eq!(p.kind, PromptKind::Switch);
+    assert!(p.cross_branch_revocation);
+    assert_eq!(p.choices.len(), 1);
+    assert_eq!(p.choices[0].hash, ra.head);
+    assert_eq!(p.choices[0].rotator_name, "iPhone");
+    assert_eq!(p.choices[0].revoked_names, vec!["iPad".to_string()]);
+    // Never a quarantine, never adopted silently, read-only meanwhile.
+    let t = e.store().trust_state().unwrap().unwrap();
+    assert_eq!(t.head.hash, s1.head);
+    assert_eq!(
+        t.state,
+        DeviceLineageState::Candidate {
+            children: vec![ra.head]
+        }
+    );
+    let v = e.vault();
+    assert_eq!(
+        e.repo().save_item(&v, login(v.id, "x", T0 + 99)).err(),
+        Some(Error::ReadOnly)
+    );
+    // A plain follow refuses a switch; the session one takes it.
+    assert!(is_validation(
+        &follow_rotation(e.store(), ra.head, PASSWORD, &f.others[2].keys).map(|_| ())
+    ));
+    let session = e.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, ra.head, PASSWORD, &f.others[2].keys).unwrap();
+    e.repo = Some(repo);
+    let t = e.store().trust_state().unwrap().unwrap();
+    assert_eq!(t.head.hash, ra.head);
+    assert!(t.revoked.contains(&f.others[B].id()));
 }

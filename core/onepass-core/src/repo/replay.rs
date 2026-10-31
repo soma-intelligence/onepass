@@ -19,7 +19,10 @@
 //!   identity left (the revoked device can) is never taken (R11); a record
 //!   the device no longer holds is `lost` and raises the log's alert. The
 //!   retired KEM secrets are part of the current keyset, sealed under the
-//!   current Account Unlock Key: nothing else is kept for the replay;
+//!   current Account Unlock Key. After a switch (Task 11) the identity left
+//!   is not among them: `follow_switch` wraps the vault key of the own copy
+//!   again for the session's KEM key and keeps it in the retained rows,
+//!   which the session's own KEM secret then opens;
 //! - an intent is reflected when the rotation was made from a manifest of
 //!   the vault newer than the one the write was based on and the device
 //!   holds no pending manifest of that vault (spec 10.4: "based on a
@@ -34,6 +37,10 @@
 //! Only this device's intents are replayed: what other devices wrote under
 //! the identity left after `from_heads` is never imported (R11), they
 //! replay it themselves.
+//!
+//! A vault of the identity left that the head's rotation did not re-seal
+//! (created there after `from_heads`) is re-created under the session's
+//! keys, with this device's own items (Task 11).
 //!
 //! One vault is one batch (`RecordStore::batch_begin`): the vault's
 //! pending writes of the identity left go (`RecordStore::settle_replayed`,
@@ -57,6 +64,7 @@ use crate::model::Item;
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::trust::{DeviceLineageState, OwnWrite};
 use crate::vault::{ItemRecord, Vault, VaultMeta, kem_context};
+use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
 /// What a replay did, intent by intent.
@@ -145,18 +153,29 @@ impl<S: RecordStore> Repository<S> {
     /// Whether this device knows a valid rotation of its head that it has
     /// not followed: it waits on a prompt (`Candidate`, or found by this
     /// session, or found now in what a fetch brought), or the user rejected
-    /// one (`ignored`). Only then is a vault
-    /// key the server replaced read from the device's own copy; otherwise a
-    /// vault key that does not open stays an integrity error (review I3).
+    /// a child of its head (`ignored`). Only then is a vault key the server
+    /// replaced read from the device's own copy; otherwise a vault key that
+    /// does not open stays an integrity error (review I3).
+    ///
+    /// Task 11: `ignored` keeps every record the user rejected (the
+    /// resolver must go on ignoring them, siblings included), so only a
+    /// rejected record whose parent is still the head keeps the gate open;
+    /// once the device moved on (followed, switched or rotated), it closes.
     pub(crate) fn rotation_known(&self) -> Result<bool> {
         let Some(t) = trust_of(&self.store)? else {
             return Ok(false);
         };
-        if self.pending.is_some()
-            || matches!(t.state, DeviceLineageState::Candidate { .. })
-            || !t.ignored.is_empty()
-        {
+        if self.pending.is_some() || matches!(t.state, DeviceLineageState::Candidate { .. }) {
             return Ok(true);
+        }
+        if !t.ignored.is_empty() {
+            let records = super::follow::lineage_records(&self.store)?;
+            let rejected_child = super::follow::rotations(&records)
+                .iter()
+                .any(|(h, b)| b.parent == t.head.hash && t.ignored.contains(h));
+            if rejected_child {
+                return Ok(true);
+            }
         }
         // A fetch brought one that no write looked at yet.
         Ok(super::follow::pending_rotation(&self.store)?.is_some())
@@ -237,10 +256,20 @@ impl<S: RecordStore> Repository<S> {
             rows.extend(self.store.get(kind, vault)?);
         }
         let of = |kind| rows.iter().filter(move |r| r.kind == kind);
+        // The retired KEM secrets, then the session's own: a switch wraps
+        // the device's own copy again for the identity it follows
+        // (`crate::repo::follow`). The retained rows come first, so the
+        // visible key of the new content is tried last.
+        let keyset = self.account.keyset();
+        let secrets: Vec<_> = keyset
+            .retired_kem
+            .iter()
+            .chain(std::iter::once(&keyset.kem))
+            .collect();
         let mut found = None;
         'open: for key in of(RecordKind::VaultKey) {
             for meta in of(RecordKind::VaultMeta) {
-                for (kem, secret) in self.account.keyset().retired_kem.iter().enumerate() {
+                for (kem, secret) in secrets.iter().enumerate() {
                     if let Ok(v) = Vault::open_with_kem(secret, vault, &key.data, &meta.data) {
                         found = Some((key.clone(), kem, v));
                         break 'open;
@@ -296,7 +325,11 @@ impl<S: RecordStore> Repository<S> {
     fn own_meta(&self, old: &OldView, w: &OwnWrite) -> Option<VaultMeta> {
         let h = w.wrote?;
         let row = old.metas.iter().find(|m| meta_hash(&m.data) == h)?;
-        let kem = self.account.keyset().retired_kem.get(old.kem)?;
+        let keyset = self.account.keyset();
+        let kem = keyset
+            .retired_kem
+            .get(old.kem)
+            .or_else(|| (old.kem == keyset.retired_kem.len()).then_some(&keyset.kem))?;
         Vault::open_with_kem(kem, w.vault, &old.key.data, &row.data)
             .ok()
             .map(|v| v.meta)
@@ -368,7 +401,14 @@ impl<S: RecordStore> Repository<S> {
             // under the session's keys (its meta may still be shadowed by a
             // pending meta of the identity left, which the replay settles).
             if !self.key_opens(vault)? {
-                report.waiting += intents.len();
+                if self.recreates(vault, &trust)? {
+                    let r = self.recreate_vault(vault, &intents)?;
+                    report.replayed += r.replayed;
+                    report.superseded += r.superseded;
+                    report.lost += r.lost;
+                } else {
+                    report.waiting += intents.len();
+                }
                 continue;
             }
             let old = self.old_view(vault)?;
@@ -406,6 +446,80 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         Ok(report)
+    }
+
+    /// Whether `vault`, whose visible key does not open under the session's
+    /// keys, is one no rotation will bring under them: a vault of an
+    /// identity this device left (its own copy opens with a retired KEM
+    /// secret) that the head's rotation did not re-seal (not in its
+    /// `from_heads`) and that the session's verified vault list does not
+    /// list live. It was created there after the rotation's `from_heads`
+    /// (review I1 of Task 10): it is re-created under the session's keys.
+    fn recreates(&self, vault: Id, trust: &crate::trust::TrustState) -> Result<bool> {
+        if trust.retired.is_empty() {
+            return Ok(false);
+        }
+        let records = super::follow::lineage_records(&self.store)?;
+        let bodies = super::follow::rotations(&records);
+        let Some(head) = bodies.get(&trust.head.hash) else {
+            return Ok(false);
+        };
+        if head.from_heads.contains_key(&vault) {
+            return Ok(false);
+        }
+        let listed = self
+            .read_list::<VaultListEntry>()?
+            .is_some_and(|l| l.body.entries.iter().any(|e| e.vault_id == vault));
+        if listed {
+            return Ok(false);
+        }
+        Ok(self.old_view(vault)?.is_some())
+    }
+
+    /// Re-create `vault` (see `recreates`) under the session's keys: a new
+    /// vault, its meta as this device last wrote it (or as its own copy
+    /// holds it), and this device's own items of it, each from the very
+    /// record it wrote (R11). The old vault is left as it is on the server
+    /// (a foreign generation, ignored); its pending rows go. One batch.
+    fn recreate_vault(&mut self, vault: Id, intents: &[OwnWrite]) -> Result<ReplayReport> {
+        let mut r = ReplayReport::default();
+        let Some(old) = self.old_view(vault)? else {
+            return Ok(r);
+        };
+        let mut meta = old.vault.meta.clone();
+        for w in intents.iter().filter(|w| w.item == w.vault) {
+            match self.own_meta(&old, w) {
+                Some(m) => meta = m,
+                None => r.lost += 1,
+            }
+        }
+        let mut items = Vec::new();
+        for w in intents.iter().filter(|w| w.item != w.vault) {
+            match Self::own_item(&old, w) {
+                Ok(Some(item)) => items.push(item),
+                // A deletion in a vault that starts empty: nothing to do.
+                Ok(None) => r.superseded += 1,
+                Err(()) => r.lost += 1,
+            }
+        }
+        self.store.batch_begin()?;
+        let done = (|| {
+            let fresh = self.create_vault(meta)?;
+            for mut item in items {
+                item.vault_id = fresh.id;
+                self.save_item(&fresh, item)?;
+                r.replayed += 1;
+            }
+            self.store.settle_replayed(vault)?;
+            self.forget_replayed(vault, r.lost > 0)?;
+            self.store.batch_commit()?;
+            self.forget_vault(vault);
+            Ok(r)
+        })();
+        if done.is_err() {
+            let _ = self.store.batch_rollback();
+        }
+        done
     }
 
     /// The vaults whose pending manifest the session's identity did not
@@ -473,7 +587,11 @@ impl<S: RecordStore> Repository<S> {
         let mut current = self.current_vault(vault)?.ok_or(Error::NotFound)?;
         for w in intents.iter().filter(|w| w.item == w.vault) {
             let Some(meta) = self.own_meta(old, w) else {
-                r.lost += 1;
+                if reflected(w) {
+                    r.superseded += 1;
+                } else {
+                    r.lost += 1;
+                }
                 continue;
             };
             if meta == current.meta {
@@ -489,13 +607,19 @@ impl<S: RecordStore> Repository<S> {
         let mut saves = Vec::new();
         let mut deletes = Vec::new();
         for w in intents.iter().filter(|w| w.item != w.vault) {
-            let Ok(mine) = Self::own_item(old, w) else {
-                r.lost += 1;
-                continue;
-            };
             let theirs = match loaded.listed(w.item) {
                 Some((_, rec)) => Some(current.open_item(rec)?),
                 None => None,
+            };
+            let Ok(mine) = Self::own_item(old, w) else {
+                // Reflected by the rotation: its record is no longer needed
+                // (a phase 3 may have collected it).
+                if reflected(w) {
+                    r.superseded += 1;
+                } else {
+                    r.lost += 1;
+                }
+                continue;
             };
             if mine == theirs {
                 r.present += 1;

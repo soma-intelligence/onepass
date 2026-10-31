@@ -351,6 +351,19 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// Replace retained rows (`retained_rows`) with `rows`, each a vault
+    /// key or vault meta row, by kind and id, and drop this device's
+    /// pending writes of those rows (key rotation v2, Task 11: a device
+    /// following a switch keeps its own copy of a vault, its vault key
+    /// wrapped again for the identity it follows, until its own writes are
+    /// replayed; the key and meta it wrote under the identity it left move
+    /// there and no longer hide the followed identity's). The default keeps
+    /// none, so it writes nothing.
+    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+        let _ = rows;
+        Ok(())
+    }
+
     /// Open a batch: every write until `batch_commit` or `batch_rollback`
     /// lands in one transaction where the store can. The default writes as
     /// it goes (no undo).
