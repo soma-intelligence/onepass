@@ -13,11 +13,19 @@
 
    Cast (spec 17):
    - Alice: owner of the vault, role Manage. One device, honest.
-   - Bob: member with role Write, honest. He writes items and reads.
-   - Carol: member with role Read, honest in phase 0 (she joins and reads),
-     then removed by Alice. In phase 1 the attacker holds her whole state:
-     her account signing key and KEM key, so every generation 1 envelope
-     addressed to her and everything sealed under generation 1.
+   - Bob: member with role Write, Verified contact, honest. He writes
+     items and reads.
+   - Carol: member with role Write, Verified contact, honest in phase 0
+     (she joins, writes and reads), then removed by Alice. In phase 1 the
+     attacker holds her whole state: her account signing key and KEM key,
+     so every generation 1 envelope addressed to her and everything sealed
+     under generation 1. A removed writer who keeps writing (A5).
+   - Dave: member with role Read, Link contact, malicious from the start
+     (T4): the attacker holds his signing key in phase 0 and re-signs any
+     manifest blob it sees as Dave's (a blob does not name its writer),
+     while every reader checks. A reader who writes (A6). His KEM key
+     stays his: leaking it would only give the attacker what readers
+     legitimately read, and would void the g1 secrecy query.
    - The server (CloudKit zone, contact zone, rendezvous) is the public
      channel c, hostile from the start.
 
@@ -47,7 +55,7 @@
    Abstractions:
    - one vault, two generations (g1 at creation, g2 at Carol's removal);
      membership bodies seq 1 (create) and seq 2 (remove Carol);
-   - a member list of exactly three slots (`mem3`), the removed member's
+   - a member list of exactly four slots (`mem4`), the removed member's
      slot replaced by `no_member`; lookup by slot (`slot`);
    - items are sealed directly under the vault key of their generation
      (item keys are account.pv's job); removal follows spec 9 option C:
@@ -63,11 +71,23 @@
      monotone merges are not modeled (Rust property tests, spec 17);
    - the CKShare participant list and permissions are not modeled (no
      client relies on them, spec 10.1);
+   - one vault only: cross-vault replay (part of A16) and the `=vlt`
+     checks are not exercised; a cross-generation envelope is refused by
+     the signed key_commit, not by the envelope context;
+   - the owner reads nothing from the server, so A3 (an old list replayed
+     so that a manager wraps g+1 for the removed member) is covered only
+     on the member side (prev_hash chaining), not on the manager side;
+   - the member level is not in `ment`: 7.2 rule 6 (a new Manage member
+     is Verified in the body) is not modeled, and the decision 1 query is
+     a guard on the owner's script, not a property against the attacker;
    - Bob's steps are proved one at a time: his update (phase 1) starts
      from the honest state his join reaches, and his reads after the
      update from the honest state the update reaches, each justified by
      the MembershipAccepted and EnvelopeAccepted queries of the step
-     before (see MemberUpdate). Chained, ProVerif did not finish. *)
+     before (see MemberUpdate): n = (seq, body_ref, member list), so the
+     member list a device accepts is proven to be one a manager signed.
+     Chained, ProVerif did not finish. The sanity queries are therefore
+     reached step by step from those states, not as one trace. *)
 
 (* ------------------------------------------------------------------ *)
 (* Names                                                               *)
@@ -77,6 +97,7 @@
 const alice: bitstring.
 const bob: bitstring.
 const carol: bitstring.
+const dave: bitstring.
 const vlt: bitstring.
 (* Generations of the vault key, sequence numbers of the membership. *)
 const g1: bitstring.
@@ -112,7 +133,7 @@ const dom_shared_manifest: bitstring.
 (* Member { account_id, role, sign_pub, kem_pub } (identity id, level,
    added_by, owner flag and key_pending are not modeled). *)
 fun ment(bitstring, bitstring, pkey, mlkem_pk, x25519_pk): bitstring [data].
-fun mem3(bitstring, bitstring, bitstring): bitstring [data].
+fun mem4(bitstring, bitstring, bitstring, bitstring): bitstring [data].
 
 (* Slot i of a member list. A verifier looks an account up by reading the
    slot the attacker names (index sent with the message): this covers
@@ -123,12 +144,15 @@ fun mem3(bitstring, bitstring, bitstring): bitstring [data].
 const i1: bitstring.
 const i2: bitstring.
 const i3: bitstring.
-reduc forall e1: bitstring, e2: bitstring, e3: bitstring;
-    slot(mem3(e1, e2, e3), i1) = e1;
-  forall e1: bitstring, e2: bitstring, e3: bitstring;
-    slot(mem3(e1, e2, e3), i2) = e2;
-  forall e1: bitstring, e2: bitstring, e3: bitstring;
-    slot(mem3(e1, e2, e3), i3) = e3.
+const i4: bitstring.
+reduc forall e1: bitstring, e2: bitstring, e3: bitstring, e4: bitstring;
+    slot(mem4(e1, e2, e3, e4), i1) = e1;
+  forall e1: bitstring, e2: bitstring, e3: bitstring, e4: bitstring;
+    slot(mem4(e1, e2, e3, e4), i2) = e2;
+  forall e1: bitstring, e2: bitstring, e3: bitstring, e4: bitstring;
+    slot(mem4(e1, e2, e3, e4), i3) = e3;
+  forall e1: bitstring, e2: bitstring, e3: bitstring, e4: bitstring;
+    slot(mem4(e1, e2, e3, e4), i4) = e4.
 
 (* MembershipBody { vault_id, seq, prev_hash, generation, key_commit,
    members, removed, signer } (spec 7.1). *)
@@ -169,7 +193,7 @@ table contactDev(bitstring, bitstring, bitstring, bitstring, pkey).
 
 (* The owner created the key of generation g. *)
 event GenerationCreated(bitstring, bitstring, key).
-(* An honest manager signed membership body n = (seq, body_ref). *)
+(* An honest manager signed membership body n = (seq, body_ref, members). *)
 event MembershipSigned(bitstring, bitstring, bitstring).
 (* Account mgr is a manager of the vault (role Manage in a body it signs). *)
 event Manager(bitstring, bitstring).
@@ -178,7 +202,7 @@ event Manager(bitstring, bitstring).
 event MemberRole(bitstring, bitstring, bitstring, bitstring).
 (* The owner added account m with role r at contact level lvl. *)
 event MemberAdded(bitstring, bitstring, bitstring, bitstring).
-(* Device d accepted membership body n = (seq, body_ref). *)
+(* Device d accepted membership body n = (seq, body_ref, members). *)
 event MembershipAccepted(bitstring, bitstring, bitstring).
 (* Device d accepted the key k of generation g (envelope + key_commit). *)
 event EnvelopeAccepted(bitstring, bitstring, bitstring, key).
@@ -207,13 +231,15 @@ letfun shared_write(w: bitstring, sk: skey, seq: bitstring, hb: bitstring,
    `members` and key k, accepts a manifest (spec 8.2): the blob opens
    under the key of its generation and points to the pinned body, the
    signer has the role Write or Manage in that body, its signing key comes
-   from that body, the item is the one the manifest lists. *)
-let ReadItems(me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
+   from that body, the item is the one the manifest lists.
+   rc = false drops the role check: negative control
+   sharing_no_role_check.pv only. *)
+let ReadItems(rc: bool, me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
               members: bitstring, k: key) =
   in(c, (blob: bitstring, w: bitstring, sig: bitstring, ict: bitstring, iw: bitstring));
   let (=seq, =hb, =g, ih: bitstring) = aead_open(k, sh_manifest_aad(g), blob) in
   let ment(=w, r: bitstring, spub: pkey, km: mlkem_pk, kx: x25519_pk) = slot(members, iw) in
-  if r = role_write || r = role_manage then
+  if rc = false || r = role_write || r = role_manage then
   if verify_dom(spub, dom_shared_manifest, blob, sig) = true then
   if h(ict) = ih then
   let m = aead_open(k, sh_item_aad(g), ict) in
@@ -233,15 +259,19 @@ let ReadItems(me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
 (* generation).                                                         *)
 (* ------------------------------------------------------------------ *)
 
-(* Alice's member entry, and the member list of generation 1. *)
+(* Alice's member entry, and the member lists of generations 1 and 2. *)
 letfun entry_alice(skA: skey, kmA: seed, kxA: seed) =
   ment(alice, role_manage, pk(skA), kem_pk_m(kmA), kem_pk_x(kxA)).
 letfun members_g1(eA: bitstring, sB: pkey, mB: mlkem_pk, xB: x25519_pk,
-                  sC: pkey, mC: mlkem_pk, xC: x25519_pk) =
-  mem3(eA, ment(bob, role_write, sB, mB, xB), ment(carol, role_read, sC, mC, xC)).
-(* The member list after Carol's removal. *)
-letfun members_g2(eA: bitstring, sB: pkey, mB: mlkem_pk, xB: x25519_pk) =
-  mem3(eA, ment(bob, role_write, sB, mB, xB), no_member).
+                  sC: pkey, mC: mlkem_pk, xC: x25519_pk,
+                  sD: pkey, mD: mlkem_pk, xD: x25519_pk) =
+  mem4(eA, ment(bob, role_write, sB, mB, xB), ment(carol, role_write, sC, mC, xC),
+       ment(dave, role_read, sD, mD, xD)).
+(* After Carol's removal. *)
+letfun members_g2(eA: bitstring, sB: pkey, mB: mlkem_pk, xB: x25519_pk,
+                  sD: pkey, mD: mlkem_pk, xD: x25519_pk) =
+  mem4(eA, ment(bob, role_write, sB, mB, xB), no_member,
+       ment(dave, role_read, sD, mD, xD)).
 
 (* After the removal body: the remaining item resealed and a new item,
    both under (g, k), each listed by a manifest Alice signs. *)
@@ -254,38 +284,44 @@ let OwnerAfterRemoval(skA: skey, seq: bitstring, hb: bitstring, g: bitstring,
 let Owner(skA: skey, eA: bitstring,
           sB: pkey, mB: mlkem_pk, xB: x25519_pk, lb: bitstring,
           sC: pkey, mC: mlkem_pk, xC: x25519_pk, lc: bitstring,
+          sD: pkey, mD: mlkem_pk, xD: x25519_pk, ld: bitstring,
           k1: key, k2: key, rekey: bool) =
   new m1: bitstring; new m_new: bitstring;
   new rbm: seed; new rbx: seed; new rcm: seed; new rcx: seed;
-  new r2m: seed; new r2x: seed;
+  new rdm: seed; new rdx: seed; new r2m: seed; new r2x: seed;
+  new r2dm: seed; new r2dx: seed;
   (* Decision 1: Write (and Manage) need a Verified contact; Read takes
      either level. *)
   if lb = lvl_verified then
+  if lc = lvl_verified then
   let kc1 = key_commit(k1, g1) in
-  let members1 = members_g1(eA, sB, mB, xB, sC, mC, xC) in
+  let members1 = members_g1(eA, sB, mB, xB, sC, mC, xC, sD, mD, xD) in
   let body1 = mbody(vlt, seq1, no_prev, g1, kc1, members1, no_removed, alice) in
   let hb1 = body_ref(seq1, g1, kc1) in
   event GenerationCreated(vlt, g1, k1);
   event MemberAdded(vlt, bob, role_write, lb);
-  event MemberAdded(vlt, carol, role_read, lc);
+  event MemberAdded(vlt, carol, role_write, lc);
+  event MemberAdded(vlt, dave, role_read, ld);
   event Manager(vlt, alice);
   event MemberRole(vlt, alice, role_manage, g1);
   event MemberRole(vlt, alice, role_write, g1);
   event MemberRole(vlt, bob, role_write, g1);
-  event MemberRole(vlt, carol, role_read, g1);
-  event MembershipSigned(vlt, (seq1, hb1), alice);
+  event MemberRole(vlt, carol, role_write, g1);
+  event MemberRole(vlt, dave, role_read, g1);
+  event MembershipSigned(vlt, (seq1, hb1, members1), alice);
   (* The invite (spec 7.3): the signed body and one envelope per member,
      to the keys of the book. *)
   out(c, (body1, sign_dom(skA, dom_membership, body1)));
   out(c, core_wrap_labeled(mB, xB, rbm, rbx, lbl_share_vk, env_ctx(g1, bob), k1));
   out(c, core_wrap_labeled(mC, xC, rcm, rcx, lbl_share_vk, env_ctx(g1, carol), k1));
+  out(c, core_wrap_labeled(mD, xD, rdm, rdx, lbl_share_vk, env_ctx(g1, dave), k1));
   (* Alice writes an item at generation 1. *)
   event ItemSealed(alice, g1, m1);
   out(c, shared_write(alice, skA, seq1, hb1, g1, k1, m1));
   phase 1;
   (* Removal of Carol (spec 9.2). *)
   let seq2 = nxt(seq1) in
-  let members2 = members_g2(eA, sB, mB, xB) in
+  let members2 = members_g2(eA, sB, mB, xB, sD, mD, xD) in
   if rekey then
     (let kc2 = key_commit(k2, g2) in
      let body2 = mbody(vlt, seq2, hb1, g2, kc2, members2, removed_carol, alice) in
@@ -295,9 +331,11 @@ let Owner(skA: skey, eA: bitstring,
      event MemberRole(vlt, alice, role_manage, g2);
      event MemberRole(vlt, alice, role_write, g2);
      event MemberRole(vlt, bob, role_write, g2);
-     event MembershipSigned(vlt, (seq2, hb2), alice);
+     event MemberRole(vlt, dave, role_read, g2);
+     event MembershipSigned(vlt, (seq2, hb2, members2), alice);
      out(c, (body2, sign_dom(skA, dom_membership, body2)));
      out(c, core_wrap_labeled(mB, xB, r2m, r2x, lbl_share_vk, env_ctx(g2, bob), k2));
+     out(c, core_wrap_labeled(mD, xD, r2dm, r2dx, lbl_share_vk, env_ctx(g2, dave), k2));
      OwnerAfterRemoval(skA, seq2, hb2, g2, k2, m1, m_new))
   else
     (let body2 = mbody(vlt, seq2, hb1, g1, kc1, members2, removed_carol, alice) in
@@ -306,7 +344,8 @@ let Owner(skA: skey, eA: bitstring,
      event MemberRole(vlt, alice, role_manage, g1);
      event MemberRole(vlt, alice, role_write, g1);
      event MemberRole(vlt, bob, role_write, g1);
-     event MembershipSigned(vlt, (seq2, hb2), alice);
+     event MemberRole(vlt, dave, role_read, g1);
+     event MembershipSigned(vlt, (seq2, hb2, members2), alice);
      out(c, (body2, sign_dom(skA, dom_membership, body2)));
      OwnerAfterRemoval(skA, seq2, hb2, g1, k1, m1, m_new)).
 
@@ -319,7 +358,7 @@ let Owner(skA: skey, eA: bitstring,
    has the role Manage in that body; I am a member; my envelope opens and
    matches the signed key_commit. Then read, and write if the role
    allows it. *)
-let MemberJoin(me: bitstring, sk: skey, km: seed, kx: seed, writes: bool,
+let MemberJoin(rc: bool, me: bitstring, sk: skey, km: seed, kx: seed, writes: bool,
                mgr: bitstring, mgr_spub: pkey) =
   new m: bitstring;
   in(c, (body: bitstring, sig: bitstring, env: bitstring, is: bitstring,
@@ -332,19 +371,19 @@ let MemberJoin(me: bitstring, sk: skey, km: seed, kx: seed, writes: bool,
   let ment(=me, myrole: bitstring, =pk(sk), zm: mlkem_pk, zx: x25519_pk) =
     slot(members, im) in
   let hb = body_ref(seq, g, kc) in
-  event MembershipAccepted(me, vlt, (seq, hb));
+  event MembershipAccepted(me, vlt, (seq, hb, members));
   let k = core_unwrap_labeled(km, kx, lbl_share_vk, env_ctx(g, me), env) in
   if key_commit(k, g) = kc then
   event EnvelopeAccepted(me, vlt, g, k);
-  ( (! ReadItems(me, seq, hb, g, members, k))
+  ( (! ReadItems(rc, me, seq, hb, g, members, k))
   | (if writes then
        event ItemSealed(me, g, m);
        out(c, shared_write(me, sk, seq, hb, g, k, m))) ).
 
 (* Compositional start of the update. The join above proves (queries
    MembershipAccepted and EnvelopeAccepted of sharing.pv) that a member
-   pins only a body the manager signed and accepts only the key the owner
-   created for its generation. MemberUpdate therefore starts from the
+   pins only a (seq, body_ref, member list) the manager signed and accepts
+   only the key the owner created for its generation. MemberUpdate therefore starts from the
    honest state the join reaches (body seq 1, its members, k1), passed by
    the main process, instead of chaining after the join: chained, the
    two steps kept every hypothesis of both in each clause and ProVerif
@@ -353,7 +392,10 @@ let MemberJoin(me: bitstring, sk: skey, km: seed, kx: seed, writes: bool,
    Next body (spec 7.2), phase 1: chained to the pinned head (seq + 1,
    prev_hash), signed by a member with the role Manage in the PINNED body,
    with the key of the pinned body (never the received one); this device
-   is still a member. A new generation needs its envelope, opened with the
+   is still a member, read at its own slot `myslot` (Bob is second in
+   every list Alice signs; an attacker-chosen index here, with an
+   attacker-built list before the signature is resolved, made one query
+   take 90 s). A new generation needs its envelope, opened with the
    member's KEM key and checked against the signed key_commit; the same
    generation keeps the key (and its commit). Then write: every write
    here is after the removal. *)
@@ -367,17 +409,17 @@ let MemberAfterRemoval(me: bitstring, sk: skey, seq: bitstring, hb: bitstring,
    (body seq 2 and its key), justified by the queries of the update, for
    the same reason as above: chained after the update, ProVerif did not
    finish within the 300 s budget. *)
-let MemberReadAfter(me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
-                    members: bitstring, k: key) =
+let MemberReadAfter(rc: bool, me: bitstring, seq: bitstring, hb: bitstring,
+                    g: bitstring, members: bitstring, k: key) =
   phase 1;
-  ! ReadItems(me, seq, hb, g, members, k).
+  ! ReadItems(rc, me, seq, hb, g, members, k).
 
-let MemberUpdate(me: bitstring, sk: skey, km: seed, kx: seed,
+let MemberUpdate(me: bitstring, myslot: bitstring, sk: skey, km: seed, kx: seed,
                  seq: bitstring, hb: bitstring, g: bitstring,
                  members: bitstring, k: key) =
   phase 1;
   new m: bitstring;
-  in(c, (body2: bitstring, sig2: bitstring, is: bitstring, im: bitstring));
+  in(c, (body2: bitstring, sig2: bitstring, is: bitstring));
   let mbody(=vlt, seq2: bitstring, =hb, gen2: bitstring, kc2: bitstring,
             members2: bitstring, rmv2: bitstring, signer2: bitstring) = body2 in
   if seq2 = nxt(seq) then
@@ -385,9 +427,9 @@ let MemberUpdate(me: bitstring, sk: skey, km: seed, kx: seed,
     slot(members, is) in
   if verify_dom(spub2, dom_membership, body2, sig2) = true then
   let ment(=me, myrole2: bitstring, =pk(sk), zm: mlkem_pk, zx: x25519_pk) =
-    slot(members2, im) in
+    slot(members2, myslot) in
   let hb2 = body_ref(seq2, gen2, kc2) in
-  event MembershipAccepted(me, vlt, (seq2, hb2));
+  event MembershipAccepted(me, vlt, (seq2, hb2, members2));
   if gen2 = g then
     (if kc2 = key_commit(k, g) then
      MemberAfterRemoval(me, sk, seq2, hb2, g, k, m))

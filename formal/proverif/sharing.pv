@@ -3,87 +3,106 @@
    2026-10-30-sharing-families-design.md, sections 5 to 10 and 17).
    Declarations and processes: sharing_core.pvl.
 
-   Run: Alice and Bob verified each other face to face (SAS, level
-   Verified), Alice and Carol by an invite link (level Link). Alice
-   creates the vault at generation g1 with Bob (Write) and Carol (Read):
-   signed membership body seq 1, one envelope per member to the keys of
-   her book. Bob and Carol join, Alice and Bob write, Carol reads. Phase
-   1: the attacker gets Carol's whole state, Alice removes Carol (body
-   seq 2, generation g2, envelope for Bob, remaining item resealed, new
-   item), Bob follows the body, opens his envelope, reads and writes.
-   The server is the attacker throughout.
+   Run: Alice verified Bob and Carol face to face (SAS, level Verified)
+   and Dave by an invite link (level Link). Alice creates the vault at
+   generation g1 with Bob and Carol (Write) and Dave (Read): signed
+   membership body seq 1, one envelope per member to the keys of her
+   book. Bob and Carol join, Alice, Bob and Carol write, Bob and Carol
+   read. Dave is malicious: the attacker holds his signing key from phase
+   0 and signs manifests as him. Phase 1: the attacker gets Carol's whole
+   state, Alice removes Carol (body seq 2, generation g2, envelopes for
+   Bob and Dave, remaining item resealed, new item), Bob follows the
+   body, opens his envelope, reads and writes. The server is the
+   attacker throughout.
 
    Properties (spec 17):
    - nothing written after the removal reaches Carol or the server;
    - the key of generation 1 is secret from the server, the key of
      generation 2 from the server and Carol;
    - a manifest is accepted only from a member with the right to write
-     at that generation;
-   - a membership body is accepted only if a manager signed it;
+     at that generation, although a reader (Dave, from phase 0) and a
+     removed writer (Carol, phase 1) sign manifests;
+   - a membership body, member list included, is accepted only if a
+     manager signed it;
    - a vault key is accepted only if the owner created it for that
      generation (key_commit in the signed body);
-   - a Link contact only ever gets the role Read (decision 1). *)
+   - a Link contact only ever gets the role Read (decision 1; a guard on
+     the owner's script, see sharing_core.pvl). *)
 
 (* Secrecy after the removal: what Alice and Bob write after removing
    Carol stays secret from Carol's state and the server (phase 1, when
    the attacker holds Carol's keys). *)
 query m: bitstring; event(ItemSealedAfterRemoval(m)) && attacker(m) phase 1.
-(* Key of each generation: g1 secret from the server while Carol is a
-   member (phase 0), g2 secret even with Carol's state (phase 1). *)
+(* Key of each generation: g1 secret from the server and Dave's signing
+   key while Carol is a member (phase 0), g2 secret even with Carol's
+   state (phase 1). *)
 query v: bitstring, k: key; event(GenerationCreated(v, g1, k)) && attacker(k) phase 0.
 query v: bitstring, k: key; event(GenerationCreated(v, g2, k)) && attacker(k) phase 1.
 
-(* Write right: an accepted manifest was written by a member a signed
-   body gives the right Write (or Manage) at that generation. *)
+(* Write right (A6, A5): an accepted manifest was written by a member a
+   signed body gives the right Write (or Manage) at that generation. The
+   attacker signs as the reader Dave throughout and as the removed writer
+   Carol in phase 1. Indexed by generation, not by seq: sound because
+   every removal moves to a new generation (spec 9 C, 7.2 rule 5); a role
+   change without rekey is not modeled. *)
 query d: bitstring, v: bitstring, w: bitstring, g: bitstring;
   event(ManifestAccepted(d, v, w, g)) ==> event(MemberRole(v, w, role_write, g)).
-(* Membership: an accepted body n = (seq, body hash) was signed by a
-   manager. *)
+(* Membership: an accepted body n = (seq, body_ref, member list) was
+   signed by a manager. *)
 query d: bitstring, v: bitstring, n: bitstring, mgr: bitstring;
   event(MembershipAccepted(d, v, n)) ==> (event(MembershipSigned(v, n, mgr)) && event(Manager(v, mgr))).
 (* Envelope: an accepted vault key is the one created for that generation
    (the envelope is not authenticated, the signed key_commit is). *)
 query d: bitstring, v: bitstring, g: bitstring, k: key;
   event(EnvelopeAccepted(d, v, g, k)) ==> event(GenerationCreated(v, g, k)).
-(* Decision 1: a Link contact is only ever added as a reader. *)
+(* Decision 1: a Link contact is only ever added as a reader (guard on
+   the owner's script). *)
 query v: bitstring, m: bitstring, r: bitstring;
   event(MemberAdded(v, m, r, lvl_link)) ==> r = role_read.
 
-(* Sanity (expected false): add (Bob gets g1), write (Carol reads Bob's
-   item), removal (Bob gets g2), read after the removal (Bob reads what
-   Alice wrote), Bob writes after the removal, and Carol's leak works (g1
-   is known in phase 1, so the removal property is not vacuous). *)
-query k: key; event(EnvelopeAccepted(bob, vlt, g1, k)).
-query v: bitstring; event(ManifestAccepted(carol, v, bob, g1)).
-query k: key; event(EnvelopeAccepted(bob, vlt, g2, k)).
-query m: bitstring; event(ItemRead(bob, vlt, g2, m)).
-query m: bitstring; event(ItemSealed(bob, g2, m)).
+(* Sanity (expected false), one conjunction so that all steps are
+   reached in one run, step by step from the states of the compositional
+   starts: add (Bob gets g1), write (Carol reads Bob's item,
+   Bob reads Carol's), removal (Bob gets g2), read after the removal (Bob
+   reads what Alice wrote), Bob writes after the removal, and Carol's leak
+   works (g1 is known in phase 1, so the removal property is not
+   vacuous). *)
+query k: key, v1: bitstring, v2: bitstring, k2: key, m: bitstring, m2: bitstring;
+  event(EnvelopeAccepted(bob, vlt, g1, k)) && event(ManifestAccepted(carol, v1, bob, g1))
+  && event(ManifestAccepted(bob, v2, carol, g1)) && event(EnvelopeAccepted(bob, vlt, g2, k2))
+  && event(ItemRead(bob, vlt, g2, m)) && event(ItemSealed(bob, g2, m2)).
 query v: bitstring, k: key; event(GenerationCreated(v, g1, k)) && attacker(k) phase 1.
 
 process
   new skA: skey; new kmA: seed; new kxA: seed;
   new skB: skey; new kmB: seed; new kxB: seed;
   new skC: skey; new kmC: seed; new kxC: seed;
+  new skD: skey; new kmD: seed; new kxD: seed;
   (* Public keys are public. *)
   out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
           pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
-          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)));
-  (* Contact verification over the authenticated channels: Alice and Bob
-     face to face (SAS, Verified), Alice and Carol by the invite link
-     (Link). Each side keeps the other's honest keys (sharing_core.pvl,
-     "Contacts"). *)
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)));
+  (* Dave, a reader, is malicious: his signing key is the attacker's. *)
+  out(c, skD);
+  (* Contact verification over the authenticated channels: Bob and Carol
+     face to face (SAS, Verified), Dave by the invite link (Link). Each
+     side keeps the other's honest keys (sharing_core.pvl, "Contacts"). *)
   new k1: key; new k2: key;
   let eA = entry_alice(skA, kmA, kxA) in
   ( Owner(skA, eA,
           pk(skB), kem_pk_m(kmB), kem_pk_x(kxB), lvl_verified,
-          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_link, k1, k2, true)
-  | MemberJoin(bob, skB, kmB, kxB, true, alice, pk(skA))
-  | MemberJoin(carol, skC, kmC, kxC, false, alice, pk(skA))
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_verified,
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD), lvl_link, k1, k2, true)
+  | MemberJoin(true, bob, skB, kmB, kxB, true, alice, pk(skA))
+  | MemberJoin(true, carol, skC, kmC, kxC, true, alice, pk(skA))
     (* Bob from the state his join reaches (sharing_core.pvl). *)
-  | MemberUpdate(bob, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
+  | MemberUpdate(bob, i2, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
                  members_g1(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
-                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)), k1)
-  | MemberReadAfter(bob, nxt(seq1), body_ref(nxt(seq1), g2, key_commit(k2, g2)), g2,
-                    members_g2(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB)), k2)
+                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+                            pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k1)
+  | MemberReadAfter(true, bob, nxt(seq1), body_ref(nxt(seq1), g2, key_commit(k2, g2)), g2,
+                    members_g2(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                               pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k2)
     (* Phase 1: Carol is removed, the attacker holds her whole state. *)
   | (phase 1; out(c, (skC, kmC, kxC))) )

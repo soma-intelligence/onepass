@@ -13,23 +13,27 @@
 query m: bitstring; event(ItemSealedAfterRemoval(m)) && attacker(m) phase 1.
 (* Sanity (expected false): Bob accepts the removal body (seq 2) and
    writes after it. *)
-query hb: bitstring; event(MembershipAccepted(bob, vlt, (nxt(seq1), hb))).
+query hb: bitstring, ms: bitstring; event(MembershipAccepted(bob, vlt, (nxt(seq1), hb, ms))).
 query m: bitstring; event(ItemSealed(bob, g1, m)) && event(ItemSealedAfterRemoval(m)).
 
 process
   new skA: skey; new kmA: seed; new kxA: seed;
   new skB: skey; new kmB: seed; new kxB: seed;
   new skC: skey; new kmC: seed; new kxC: seed;
+  new skD: skey; new kmD: seed; new kxD: seed;
   out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
           pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
-          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)));
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)));
   new k1: key; new k2: key;
   let eA = entry_alice(skA, kmA, kxA) in
   ( Owner(skA, eA,
           pk(skB), kem_pk_m(kmB), kem_pk_x(kxB), lvl_verified,
-          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_link, k1, k2, false)
-  | MemberJoin(bob, skB, kmB, kxB, true, alice, pk(skA))
-  | MemberUpdate(bob, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_verified,
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD), lvl_link, k1, k2, false)
+  | MemberJoin(true, bob, skB, kmB, kxB, true, alice, pk(skA))
+  | MemberUpdate(bob, i2, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
                  members_g1(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
-                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)), k1)
+                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+                            pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k1)
   | (phase 1; out(c, (skC, kmC, kxC))) )
