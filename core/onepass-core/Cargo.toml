@@ -112,3 +112,13 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "rotation_v2"
 required-features = ["dev-fast-kdf"]
+
+# The signed contact book across devices, fast-KDF accounts: needs the dev floor.
+[[test]]
+name = "contact_book"
+required-features = ["dev-fast-kdf"]
+
+# Contact cards over fast-KDF test accounts: needs the dev floor.
+[[test]]
+name = "contact_vectors"
+required-features = ["dev-fast-kdf"]

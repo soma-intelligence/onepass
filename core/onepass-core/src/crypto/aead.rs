@@ -42,6 +42,12 @@ pub enum BlobKind {
     Remote = 13,
     /// The AUK sealed under the remote unlock key `K_r` (`remote_unlock`).
     RemoteUnlock = 14,
+    /// A remote contact invitation reply (sharing, spec 19.1).
+    ContactInvite = 15,
+    /// A sent item (sharing, spec 19.1).
+    ItemSend = 16,
+    /// A recovery slot (sharing, spec 19.1).
+    RecoverySlot = 17,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -280,6 +286,30 @@ mod tests {
         assert_eq!(BlobKind::Pairing as u8, 12);
         assert_eq!(BlobKind::Remote as u8, 13);
         assert_eq!(BlobKind::RemoteUnlock as u8, 14);
+    }
+
+    #[test]
+    fn blob_kind_codes_unchanged() {
+        let all = [
+            (BlobKind::Keyset, 1),
+            (BlobKind::VaultKey, 2),
+            (BlobKind::VaultMeta, 3),
+            (BlobKind::ItemKey, 4),
+            (BlobKind::Item, 5),
+            (BlobKind::Manifest, 6),
+            (BlobKind::Attachment, 7),
+            (BlobKind::DeviceState, 8),
+            (BlobKind::Archive, 9),
+            (BlobKind::TravelState, 10),
+            (BlobKind::Companion, 11),
+            (BlobKind::Pairing, 12),
+            (BlobKind::ContactInvite, 15),
+            (BlobKind::ItemSend, 16),
+            (BlobKind::RecoverySlot, 17),
+        ];
+        for (kind, code) in all {
+            assert_eq!(kind as u8, code);
+        }
     }
 
     use super::*;

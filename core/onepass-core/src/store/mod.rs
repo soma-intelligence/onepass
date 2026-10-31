@@ -39,6 +39,28 @@ pub enum RecordKind {
     KeyDelivery,
     /// The signed approver list, id = account id, version = its seq.
     ApproverList,
+    /// The signed contact book (spec 19.1).
+    ContactBook,
+    /// A family or share membership record (spec 19.1).
+    Membership,
+    /// A member's public key record, written once (spec 19.1).
+    MemberKey,
+    /// A member's lineage record, written once (spec 19.1).
+    MemberLineage,
+    /// A request to rekey a share (spec 19.1).
+    RekeyRequest,
+    /// A family record (spec 19.1).
+    Family,
+    /// A recovery slot (spec 19.1).
+    RecoverySlot,
+    /// A recovery half (spec 19.1).
+    RecoveryHalf,
+    /// A recovery message (spec 19.1).
+    RecoveryMessage,
+    /// A sent item (spec 19.1).
+    ItemSend,
+    /// A share invitation (spec 19.1).
+    ShareInvite,
 }
 
 impl RecordKind {
@@ -57,6 +79,17 @@ impl RecordKind {
             Self::DeviceIntro => 11,
             Self::KeyDelivery => 12,
             Self::ApproverList => 13,
+            Self::ContactBook => 14,
+            Self::Membership => 15,
+            Self::MemberKey => 16,
+            Self::MemberLineage => 17,
+            Self::RekeyRequest => 18,
+            Self::Family => 19,
+            Self::RecoverySlot => 20,
+            Self::RecoveryHalf => 21,
+            Self::RecoveryMessage => 22,
+            Self::ItemSend => 23,
+            Self::ShareInvite => 24,
         }
     }
 
@@ -75,6 +108,17 @@ impl RecordKind {
             11 => Self::DeviceIntro,
             12 => Self::KeyDelivery,
             13 => Self::ApproverList,
+            14 => Self::ContactBook,
+            15 => Self::Membership,
+            16 => Self::MemberKey,
+            17 => Self::MemberLineage,
+            18 => Self::RekeyRequest,
+            19 => Self::Family,
+            20 => Self::RecoverySlot,
+            21 => Self::RecoveryHalf,
+            22 => Self::RecoveryMessage,
+            23 => Self::ItemSend,
+            24 => Self::ShareInvite,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -85,7 +129,29 @@ impl RecordKind {
     /// 6.5): a second write under the same key is a conflict, and a
     /// deletion coming from the server is refused.
     pub fn is_immutable(self) -> bool {
-        matches!(self, Self::Lineage | Self::DeviceIntro | Self::KeyDelivery)
+        matches!(
+            self,
+            Self::Lineage
+                | Self::DeviceIntro
+                | Self::KeyDelivery
+                | Self::MemberKey
+                | Self::MemberLineage
+        )
+    }
+
+    /// The kinds whose deletion coming from the server is refused and
+    /// logged by `commit_remote` (spec 13.2): the immutable chain records
+    /// plus memberships and families, which only a signed change retires.
+    pub fn server_deletion_refused(self) -> bool {
+        matches!(
+            self,
+            Self::Lineage
+                | Self::DeviceIntro
+                | Self::KeyDelivery
+                | Self::Membership
+                | Self::Family
+                | Self::MemberLineage
+        )
     }
 }
 
@@ -127,6 +193,43 @@ impl TrustGuard<'_> {
             TrustGuard::Absent => stored.is_none(),
         }
     }
+}
+
+/// Prefixes of the device-local metadata keys the repository may read and
+/// write through `RecordStore::local_meta` and its siblings: never synced,
+/// never a key the store uses itself (chain, trust, sync state).
+pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite."];
+
+/// `key` under one of `LOCAL_META_PREFIXES`, else `Validation`.
+pub fn check_local_meta_key(key: &str) -> Result<()> {
+    if LOCAL_META_PREFIXES
+        .iter()
+        .any(|p| key.len() > p.len() && key.starts_with(p))
+    {
+        Ok(())
+    } else {
+        Err(Error::Validation(crate::ValidationError {
+            field: "meta".into(),
+            reason: "not a local meta key",
+        }))
+    }
+}
+
+/// A `local_meta_keys` prefix: one of `LOCAL_META_PREFIXES` or longer
+/// under it, else `Validation` (store-internal key names stay unlisted).
+pub fn check_local_meta_prefix(prefix: &str) -> Result<()> {
+    if LOCAL_META_PREFIXES.iter().any(|p| prefix.starts_with(p)) {
+        Ok(())
+    } else {
+        Err(Error::Validation(crate::ValidationError {
+            field: "meta".into(),
+            reason: "not a local meta prefix",
+        }))
+    }
+}
+
+fn local_meta_unsupported() -> Error {
+    Error::Store("local meta unsupported".into())
 }
 
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
@@ -253,6 +356,44 @@ pub trait RecordStore {
             self.delete(kind, id)?;
         }
         Ok(())
+    }
+
+    /// Device-local metadata under `key` (see `LOCAL_META_PREFIXES`; any
+    /// other key is `Validation`). A store that keeps none refuses.
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        let _ = key;
+        Err(local_meta_unsupported())
+    }
+
+    /// The local metadata keys that start with `prefix`, sorted. A prefix
+    /// outside `LOCAL_META_PREFIXES` is `Validation` (see
+    /// `check_local_meta_prefix`). A store that keeps none refuses.
+    fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
+        let _ = prefix;
+        Err(local_meta_unsupported())
+    }
+
+    /// Set (`Some`) or remove (`None`) the local metadata under `key`. A
+    /// store that keeps none refuses.
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        let _ = (key, value);
+        Err(local_meta_unsupported())
+    }
+
+    /// `put_all_if_version`, and remove the local metadata under `key`,
+    /// which must hold exactly `expected`, all or nothing: a version
+    /// mismatch, or `key` missing or holding anything else, writes and
+    /// removes nothing (`Error::Conflict`). What a one-time token needs:
+    /// two callers racing on one key never both succeed. A store that
+    /// keeps no local metadata refuses.
+    fn put_all_if_version_taking_meta(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        key: &str,
+        expected: &[u8],
+    ) -> Result<()> {
+        let _ = (writes, key, expected);
+        Err(local_meta_unsupported())
     }
 
     /// The pinned chain state this store keeps for the device, read by the
@@ -665,9 +806,38 @@ mod tests {
             RecordKind::DeviceIntro,
             RecordKind::KeyDelivery,
             RecordKind::ApproverList,
+            RecordKind::ContactBook,
+            RecordKind::Membership,
+            RecordKind::MemberKey,
+            RecordKind::MemberLineage,
+            RecordKind::RekeyRequest,
+            RecordKind::Family,
+            RecordKind::RecoverySlot,
+            RecordKind::RecoveryHalf,
+            RecordKind::RecoveryMessage,
+            RecordKind::ItemSend,
+            RecordKind::ShareInvite,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
+        for (kind, code) in [
+            (RecordKind::ContactBook, 13),
+            (RecordKind::Membership, 14),
+            (RecordKind::MemberKey, 15),
+            (RecordKind::MemberLineage, 16),
+            (RecordKind::RekeyRequest, 17),
+            (RecordKind::Family, 18),
+            (RecordKind::RecoverySlot, 19),
+            (RecordKind::RecoveryHalf, 20),
+            (RecordKind::RecoveryMessage, 21),
+            (RecordKind::ItemSend, 22),
+            (RecordKind::ShareInvite, 23),
+        ] {
+            assert_eq!(kind.code(), code);
+        }
+        assert!(RecordKind::MemberKey.is_immutable());
+        assert!(RecordKind::MemberLineage.is_immutable());
+        assert!(!RecordKind::Membership.is_immutable());
         assert_eq!(RecordKind::Lineage.code(), 10);
         assert_eq!(RecordKind::DeviceIntro.code(), 11);
         assert_eq!(RecordKind::KeyDelivery.code(), 12);
@@ -677,7 +847,7 @@ mod tests {
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(RecordKind::ApproverList.code(), 13);
         assert_eq!(
-            RecordKind::from_code(14).unwrap_err(),
+            RecordKind::from_code(25).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

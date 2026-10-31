@@ -8,8 +8,9 @@
 //!   data = `postcard(SignedManifest)`;
 //! - item records (`Item`), id = a fresh blob id per written version,
 //!   version = item version, data = `vault_id (16 bytes) || postcard(ItemRecord)`;
-//! - signed device list (`DeviceList`) and vault list (`VaultList`), id =
-//!   account id, version = seq (see `lists`, `devices`, `vaultlist`).
+//! - signed device list (`DeviceList`), vault list (`VaultList`) and
+//!   contact book (`ContactBook`), id = account id, version = seq (see
+//!   `lists`, `devices`, `vaultlist`, `contact`).
 //!
 //! - restore epoch (`RestoreEpoch`), id = account id, version = epoch,
 //!   data = `postcard(SignedRestoreEpoch)` (see `crate::epoch`).
@@ -218,6 +219,9 @@ pub struct Repository<S: RecordStore> {
     /// Task 12), found with `pending`: nothing is written or pushed, and a
     /// quarantined device reads nothing either.
     pub(crate) lineage_lock: Option<LineageLock>,
+    /// The contact book's alerts of this session (`contact_alerts`). In
+    /// memory only.
+    pub(crate) contact_alerts: Vec<crate::contact::ContactAlert>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -603,6 +607,7 @@ impl<S: RecordStore> Repository<S> {
             pending: None,
             lineage_mark: None,
             lineage_lock: None,
+            contact_alerts: Vec::new(),
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, v2.map(|(_, r)| r), at));
@@ -744,6 +749,7 @@ impl<S: RecordStore> Repository<S> {
             pending: None,
             lineage_mark: None,
             lineage_lock: None,
+            contact_alerts: Vec::new(),
         };
         // K9: an unlock never follows a rotation; it reports a pending one,
         // and the session is read-only until the user answers.

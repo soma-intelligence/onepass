@@ -40,6 +40,16 @@ pub enum IntegrityError {
     RemoteWrongRecipient,
     /// A remote response to no pending request (or from the wrong phone).
     RemoteUnknownRequest,
+    /// A contact book older than the one this device already accepted, or
+    /// a fork of it.
+    ContactBookRollback,
+    /// A membership record older than the one this device already
+    /// accepted.
+    MembershipRollback,
+    /// Two different memberships at one sequence.
+    MembershipFork,
+    /// A family record older than the one this device already accepted.
+    FamilyRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -67,6 +77,10 @@ impl fmt::Display for IntegrityError {
             Self::RemoteUnknownDevice => "remote message from an unknown device",
             Self::RemoteWrongRecipient => "remote message for another device",
             Self::RemoteUnknownRequest => "remote response to no pending request",
+            Self::ContactBookRollback => "contact book rollback detected",
+            Self::MembershipRollback => "membership rollback detected",
+            Self::MembershipFork => "membership fork detected",
+            Self::FamilyRollback => "family rollback detected",
         };
         f.write_str(s)
     }

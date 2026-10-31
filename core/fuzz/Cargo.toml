@@ -189,6 +189,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "contact_card"
+path = "fuzz_targets/contact_card.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "enroll_ticket"
 path = "fuzz_targets/enroll_ticket.rs"
 test = false
@@ -196,8 +203,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "contact_book"
+path = "fuzz_targets/contact_book.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "remote_message"
 path = "fuzz_targets/remote_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "contact_frames"
+path = "fuzz_targets/contact_frames.rs"
 test = false
 doc = false
 bench = false

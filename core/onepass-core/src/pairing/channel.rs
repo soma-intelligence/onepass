@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use zeroize::Zeroizing;
+
 use crate::crypto::{Aad, BlobKind, SymmetricKey, open, seal};
 use crate::{Error, Id, Result};
 
@@ -58,30 +60,53 @@ impl Channel {
 
     /// Seal `msg` as the next frame. Sending `End` closes the channel.
     pub fn seal_at(&mut self, msg: &Message, now: i64) -> Result<Vec<u8>> {
-        self.check_open(now)?;
-        let next = self.sent.checked_add(1).ok_or(refused("counter"))?;
         let plain = msg.encode()?;
-        let frame = seal(&self.send, BlobKind::Pairing, &self.aad(self.sent), &plain)?;
-        self.sent = next;
-        if *msg == Message::End {
-            self.closed = true;
-        }
-        Ok(frame)
+        self.seal_bytes_at(&plain, *msg == Message::End, now)
     }
 
     /// Open the next frame from the peer. Any failure closes the channel;
     /// receiving `End` closes it too.
     pub fn open_at(&mut self, frame: &[u8], now: i64) -> Result<Message> {
-        self.check_open(now)?;
-        let r = self.open_next(frame);
-        match &r {
-            Ok(Message::End) | Err(_) => self.closed = true,
-            Ok(_) => {}
+        let plain = self.open_bytes_at(frame, now)?;
+        let r = Message::decode(&plain);
+        if matches!(r, Ok(Message::End) | Err(_)) {
+            self.closed = true;
         }
         r
     }
 
-    fn open_next(&mut self, frame: &[u8]) -> Result<Message> {
+    /// Seal `plain` as the next frame, whatever message it encodes (the
+    /// pairing `Message`, or the contact verification's own). `is_end`
+    /// closes the channel once sealed.
+    pub(crate) fn seal_bytes_at(
+        &mut self,
+        plain: &[u8],
+        is_end: bool,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        self.check_open(now)?;
+        let next = self.sent.checked_add(1).ok_or(refused("counter"))?;
+        let frame = seal(&self.send, BlobKind::Pairing, &self.aad(self.sent), plain)?;
+        self.sent = next;
+        if is_end {
+            self.closed = true;
+        }
+        Ok(frame)
+    }
+
+    /// Open the next frame from the peer into its plaintext, in a buffer
+    /// wiped on drop. Any failure closes the channel. The caller decodes
+    /// it, and closes the channel when that fails or reads an end.
+    pub(crate) fn open_bytes_at(&mut self, frame: &[u8], now: i64) -> Result<Zeroizing<Vec<u8>>> {
+        self.check_open(now)?;
+        let r = self.open_next(frame);
+        if r.is_err() {
+            self.closed = true;
+        }
+        r
+    }
+
+    fn open_next(&mut self, frame: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         if frame.len() > MAX_FRAME_BYTES {
             return Err(Error::InvalidFormat("pairing frame too large"));
         }
@@ -92,9 +117,8 @@ impl Channel {
             &self.aad(self.received),
             frame,
         )?;
-        let msg = Message::decode(&plain)?;
         self.received = next;
-        Ok(msg)
+        Ok(plain)
     }
 
     /// No frame passes after `expires_at`.

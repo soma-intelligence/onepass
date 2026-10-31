@@ -14,21 +14,27 @@
 //! - `device_list`, `vault_list`: the last signed device list and vault list
 //!   accepted (filled by later milestones).
 //! - `approver_list`: the last signed approver list accepted (version 2).
+//! - `contact_book`: the last signed contact book accepted (sharing spec
+//!   5.4, version 3).
 //! - `device_id`: this device's id in the device list, once registered.
 //!
 //! Postcard is not self-describing, so a new field is a new version: the
-//! encoding is always version 2, and version 1 (no approver list) still
-//! decodes, with `approver_list` at `None`.
+//! encoding is always version 3; version 1 (no approver list) and version 2
+//! (no contact book) still decode, the fields they lack at `None`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Id, Result};
 
 /// Encoding version, the first byte of `ChainState::encode`.
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
 
 /// The version 1 encoding, which `decode` still reads.
 const VERSION_1: u8 = 1;
+
+/// The version 2 encoding (approver list, no contact book), which `decode`
+/// still reads.
+const VERSION_2: u8 = 2;
 
 /// A signed list as last accepted: its sequence number and the hash of its
 /// signed body.
@@ -46,6 +52,7 @@ pub struct ChainState {
     pub vault_list: Option<Seen>,
     pub device_id: Option<Id>,
     pub approver_list: Option<Seen>,
+    pub contact_book: Option<Seen>,
 }
 
 /// `ChainState` as version 1 wrote it (before the approver list).
@@ -65,6 +72,30 @@ impl From<ChainStateV1> for ChainState {
             vault_list: v.vault_list,
             device_id: v.device_id,
             approver_list: None,
+            contact_book: None,
+        }
+    }
+}
+
+/// `ChainState` as version 2 wrote it (before the contact book).
+#[derive(Deserialize)]
+struct ChainStateV2 {
+    params_epoch: u64,
+    device_list: Option<Seen>,
+    vault_list: Option<Seen>,
+    device_id: Option<Id>,
+    approver_list: Option<Seen>,
+}
+
+impl From<ChainStateV2> for ChainState {
+    fn from(v: ChainStateV2) -> Self {
+        ChainState {
+            params_epoch: v.params_epoch,
+            device_list: v.device_list,
+            vault_list: v.vault_list,
+            device_id: v.device_id,
+            approver_list: v.approver_list,
+            contact_book: None,
         }
     }
 }
@@ -89,6 +120,10 @@ impl ChainState {
                 _ => Err(bad),
             },
             Some((&VERSION_1, body)) => match postcard::take_from_bytes::<ChainStateV1>(body) {
+                Ok((state, [])) => Ok(state.into()),
+                _ => Err(bad),
+            },
+            Some((&VERSION_2, body)) => match postcard::take_from_bytes::<ChainStateV2>(body) {
                 Ok((state, [])) => Ok(state.into()),
                 _ => Err(bad),
             },
@@ -121,6 +156,10 @@ mod tests {
             approver_list: Some(Seen {
                 seq: 4,
                 hash: [3; 32],
+            }),
+            contact_book: Some(Seen {
+                seq: 5,
+                hash: [4; 32],
             }),
         }
     }
@@ -176,13 +215,26 @@ mod tests {
     }
 
     #[test]
-    fn chain_v2_round_trip() {
+    fn chain_v3_round_trip() {
         let s = full();
         let bytes = s.encode();
-        assert_eq!(bytes[0], 2);
+        assert_eq!(bytes[0], 3);
         let back = ChainState::decode(&bytes).unwrap();
         assert_eq!(back, s);
         assert!(back.approver_list.is_some());
+        assert!(back.contact_book.is_some());
+    }
+
+    #[test]
+    fn chain_v2_decodes_without_contact_book() {
+        let mut s = full();
+        s.contact_book = None;
+        let mut bytes = vec![2];
+        bytes.extend(postcard::to_allocvec(&s).unwrap());
+        // Version 2 had no contact book field: drop its None byte.
+        bytes.pop();
+        let back = ChainState::decode(&bytes).unwrap();
+        assert_eq!(back, s);
     }
 
     #[test]
@@ -200,7 +252,7 @@ mod tests {
         let mut bytes = full().encode();
         assert_eq!(ChainState::decode(&[]), bad);
         // Unknown version.
-        bytes[0] = 3;
+        bytes[0] = 4;
         assert_eq!(ChainState::decode(&bytes), bad);
         // Trailing bytes.
         let mut bytes = full().encode();
