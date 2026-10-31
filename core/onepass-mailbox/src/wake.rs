@@ -10,9 +10,9 @@
 
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
-use std::sync::Arc;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::JoinHandle;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::hex;
@@ -28,6 +28,8 @@ use crate::http::{Endpoint, check_url, tls_client_config};
 
 /// Phoenix heartbeat period.
 const HEARTBEAT: Duration = Duration::from_secs(25);
+/// A join with no reply by then is given up (as the Phoenix JS client).
+const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// Waits before each reconnection, the last one repeated.
 const BACKOFF: [Duration; 5] = [
     Duration::from_secs(1),
@@ -36,10 +38,21 @@ const BACKOFF: [Duration; 5] = [
     Duration::from_secs(10),
     Duration::from_secs(30),
 ];
-/// Connect and handshake deadline (also the longest `stop` waits).
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// A joined connection must last this long for the waits to start over:
+/// a server that accepts the join then drops cannot make the listener
+/// (and its catch-up wake) spin.
+const STABLE: Duration = Duration::from_secs(60);
+/// One deadline for TCP connect (every address), TLS and the WebSocket
+/// upgrade together.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Longest TCP connect to one address.
+const CONNECT_ONE: Duration = Duration::from_secs(5);
+/// Longest blocking write once connected.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the reading loop looks at the clock and the stop flag.
 const TICK: Duration = Duration::from_millis(100);
+/// Longest `stop` (or a drop) waits for the thread before leaving it.
+const STOP_WAIT: Duration = Duration::from_secs(1);
 /// Largest message or frame taken from the server.
 const MESSAGE_MAX: usize = 64 * 1024;
 /// Longest publishable key taken.
@@ -74,14 +87,56 @@ struct Target {
     tls: Option<Arc<rustls::ClientConfig>>,
     /// `realtime:mbx:<hex>`.
     topic: String,
+    handshake: Duration,
+}
+
+/// What the listener and its thread share.
+struct Shared {
+    /// Checked by every loop of the thread.
+    stop: AtomicBool,
+    /// Set by `stop` under this lock; `on_wake` runs only under it while
+    /// false, so no call starts once `stop` has returned.
+    stopped: Mutex<bool>,
+    /// The thread has ended.
+    done: Mutex<bool>,
+    ended: Condvar,
+    on_wake: OnWake,
+}
+
+impl Shared {
+    fn stopping(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Calls `on_wake` unless stopped. A panic in it is contained: the
+    /// listener goes on.
+    fn wake(&self) {
+        let stopped = self.stopped.lock().unwrap_or_else(|e| e.into_inner());
+        if !*stopped {
+            let _ = catch_unwind(AssertUnwindSafe(|| (self.on_wake)()));
+        }
+    }
+}
+
+/// Marks the thread ended, however it ends.
+struct Ended<'a>(&'a Shared);
+
+impl Drop for Ended<'_> {
+    fn drop(&mut self) {
+        *self.0.done.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        self.0.ended.notify_all();
+    }
 }
 
 /// Listens to one mailbox's wake channel until stopped, reconnecting after
-/// 1, 2, 5, 10, then every 30 s. After a reconnection, `on_wake` runs once
-/// (a wake may have been missed while the channel was down).
+/// 1, 2, 5, 10, then every 30 s (the waits start over once a connection
+/// has lasted a minute). After a reconnection, `on_wake` runs once (a wake
+/// may have been missed while the channel was down).
+///
+/// `on_wake` runs on the listener's thread and should return quickly:
+/// `stop` waits for a call in progress.
 pub struct WakeListener {
-    stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    shared: Arc<Shared>,
 }
 
 impl WakeListener {
@@ -107,38 +162,50 @@ impl WakeListener {
         on_wake: Box<dyn Fn() + Send + Sync>,
     ) -> Result<WakeListener, MailboxError> {
         let target = target(realtime_url, publishable_key, wake_topic, extra_ca_pem)?;
-        Ok(spawn(
-            target,
-            Arc::new(SystemClock(Instant::now())),
-            on_wake,
-        ))
+        spawn(target, Arc::new(SystemClock(Instant::now())), on_wake)
     }
 
-    /// Stops listening. Waits for the thread, at most about 5 s (a connect
-    /// in progress); `on_wake` is not called once this returns.
+    /// Stops listening. Returns within about 1 s (plus an `on_wake` call
+    /// in progress): a thread still in a connect or a write is left to end
+    /// on its own. `on_wake` is never called once this returns.
     pub fn stop(self) {}
 }
 
 impl Drop for WakeListener {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+        let s = &self.shared;
+        s.stop.store(true, Ordering::SeqCst);
+        *s.stopped.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        let done = s.done.lock().unwrap_or_else(|e| e.into_inner());
+        // Detached past the wait: it holds only its own share.
+        let _ = s
+            .ended
+            .wait_timeout_while(done, STOP_WAIT, |done| !*done)
+            .unwrap_or_else(|e| e.into_inner());
     }
 }
 
-fn spawn(target: Target, clock: Arc<dyn WakeClock>, on_wake: OnWake) -> WakeListener {
-    let stop = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&stop);
-    let thread = std::thread::Builder::new()
+fn spawn(
+    target: Target,
+    clock: Arc<dyn WakeClock>,
+    on_wake: OnWake,
+) -> Result<WakeListener, MailboxError> {
+    let shared = Arc::new(Shared {
+        stop: AtomicBool::new(false),
+        stopped: Mutex::new(false),
+        done: Mutex::new(false),
+        ended: Condvar::new(),
+        on_wake,
+    });
+    let s = Arc::clone(&shared);
+    std::thread::Builder::new()
         .name("onepass-wake".into())
-        .spawn(move || run(&target, clock.as_ref(), &on_wake, &flag))
-        .expect("spawn the wake thread");
-    WakeListener {
-        stop,
-        thread: Some(thread),
-    }
+        .spawn(move || {
+            let _ended = Ended(&s);
+            run(&target, clock.as_ref(), &s);
+        })
+        .map_err(|_| MailboxError::Malformed("cannot start the wake thread"))?;
+    Ok(WakeListener { shared })
 }
 
 /// Unreserved characters stay, everything else is percent-encoded.
@@ -191,6 +258,7 @@ fn target(
         port,
         tls,
         topic: format!("realtime:mbx:{}", hex(&wake_topic)),
+        handshake: HANDSHAKE_TIMEOUT,
     })
 }
 
@@ -221,16 +289,68 @@ fn split_authority(a: &str, default: u16) -> Result<(String, u16), MailboxError>
 
 // ----------------------------------------------------------- connection
 
+/// The TCP stream under TLS and the WebSocket. Until the handshake is done
+/// every read and write is bounded by what is left of one deadline.
+struct Sock {
+    tcp: TcpStream,
+    deadline: Option<Instant>,
+}
+
+impl Sock {
+    fn arm(&self, write: bool) -> io::Result<()> {
+        let Some(d) = self.deadline else {
+            return Ok(());
+        };
+        let left = d.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "handshake deadline",
+            ));
+        }
+        if write {
+            self.tcp.set_write_timeout(Some(left))
+        } else {
+            self.tcp.set_read_timeout(Some(left))
+        }
+    }
+
+    /// The handshake is over: short reads (the loop's tick), bounded writes.
+    fn connected(&mut self) -> io::Result<()> {
+        self.deadline = None;
+        self.tcp.set_read_timeout(Some(TICK))?;
+        self.tcp.set_write_timeout(Some(WRITE_TIMEOUT))
+    }
+}
+
+impl Read for Sock {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.arm(false)?;
+        self.tcp.read(buf)
+    }
+}
+
+impl Write for Sock {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.arm(true)?;
+        self.tcp.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.tcp.flush()
+    }
+}
+
 enum Conn {
-    Plain(TcpStream),
-    Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
+    Plain(Sock),
+    Tls(Box<StreamOwned<ClientConnection, Sock>>),
 }
 
 impl Conn {
-    fn tcp(&self) -> &TcpStream {
+    fn sock(&mut self) -> &mut Sock {
         match self {
             Conn::Plain(s) => s,
-            Conn::Tls(s) => &s.sock,
+            Conn::Tls(s) => &mut s.sock,
         }
     }
 }
@@ -260,28 +380,38 @@ impl Write for Conn {
     }
 }
 
-fn connect(t: &Target) -> Option<WebSocket<Conn>> {
+/// TCP (every resolved address), TLS and the WebSocket upgrade, all within
+/// `t.handshake`. Name resolution uses the system resolver, which has no
+/// timeout of its own: `stop` does not wait for it.
+fn connect(t: &Target, shared: &Shared) -> Option<WebSocket<Conn>> {
     let addrs: Vec<SocketAddr> = (t.host.as_str(), t.port).to_socket_addrs().ok()?.collect();
-    let tcp = addrs
-        .iter()
-        .find_map(|a| TcpStream::connect_timeout(a, CONNECT_TIMEOUT).ok())?;
-    tcp.set_read_timeout(Some(CONNECT_TIMEOUT)).ok()?;
-    tcp.set_write_timeout(Some(CONNECT_TIMEOUT)).ok()?;
+    let deadline = Instant::now() + t.handshake;
+    let tcp = addrs.iter().find_map(|a| {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() || shared.stopping() {
+            return None;
+        }
+        TcpStream::connect_timeout(a, left.min(CONNECT_ONE)).ok()
+    })?;
     let _ = tcp.set_nodelay(true);
+    let sock = Sock {
+        tcp,
+        deadline: Some(deadline),
+    };
     let conn = match &t.tls {
-        None => Conn::Plain(tcp),
+        None => Conn::Plain(sock),
         Some(cfg) => {
             let name = ServerName::try_from(t.host.clone()).ok()?;
             let c = ClientConnection::new(Arc::clone(cfg), name).ok()?;
-            Conn::Tls(Box::new(StreamOwned::new(c, tcp)))
+            Conn::Tls(Box::new(StreamOwned::new(c, sock)))
         }
     };
     let config = WebSocketConfig::default()
         .max_message_size(Some(MESSAGE_MAX))
         .max_frame_size(Some(MESSAGE_MAX));
     let request = t.url.as_str().into_client_request().ok()?;
-    let (ws, _) = tungstenite::client::client_with_config(request, conn, Some(config)).ok()?;
-    ws.get_ref().tcp().set_read_timeout(Some(TICK)).ok()?;
+    let (mut ws, _) = tungstenite::client::client_with_config(request, conn, Some(config)).ok()?;
+    ws.get_mut().sock().connected().ok()?;
     Some(ws)
 }
 
@@ -321,58 +451,61 @@ fn phoenix(topic: &str, event: &str, payload: serde_json::Value, reference: u64)
 }
 
 /// How a connection ended.
+/// How a connection ended.
 enum End {
     Stopped,
-    /// After a successful join.
-    DroppedJoined,
-    DroppedEarly,
+    /// `joined`: for how long the join had held, if it was acknowledged.
+    Dropped {
+        joined: Option<Duration>,
+    },
 }
 
-fn run(t: &Target, clock: &dyn WakeClock, on_wake: &OnWake, stop: &AtomicBool) {
+fn run(t: &Target, clock: &dyn WakeClock, shared: &Shared) {
     let mut failures = 0usize;
     let mut joined_once = false;
     loop {
-        if stop.load(Ordering::SeqCst) {
+        if shared.stopping() {
             return;
         }
-        let end = match connect(t) {
-            Some(ws) => session(ws, t, clock, on_wake, stop, joined_once),
-            None => End::DroppedEarly,
+        let end = match connect(t, shared) {
+            Some(ws) => session(ws, t, clock, shared, joined_once),
+            None => End::Dropped { joined: None },
         };
         match end {
             End::Stopped => return,
-            End::DroppedJoined => {
+            End::Dropped { joined: Some(up) } => {
                 joined_once = true;
-                failures = 0;
+                if up >= STABLE {
+                    failures = 0;
+                }
             }
-            End::DroppedEarly => {}
+            End::Dropped { joined: None } => {}
         }
         let wait = BACKOFF[failures.min(BACKOFF.len() - 1)];
         failures += 1;
-        if !pause(clock, wait, stop) {
+        if !pause(clock, wait, shared) {
             return;
         }
     }
 }
 
 /// Sleeps `d` in ticks; false when stopped meanwhile.
-fn pause(clock: &dyn WakeClock, d: Duration, stop: &AtomicBool) -> bool {
+fn pause(clock: &dyn WakeClock, d: Duration, shared: &Shared) -> bool {
     let until = clock.now() + d;
     while clock.now() < until {
-        if stop.load(Ordering::SeqCst) {
+        if shared.stopping() {
             return false;
         }
         clock.sleep(TICK.min(until - clock.now()));
     }
-    !stop.load(Ordering::SeqCst)
+    !shared.stopping()
 }
 
 fn session(
     mut ws: WebSocket<Conn>,
     t: &Target,
     clock: &dyn WakeClock,
-    on_wake: &OnWake,
-    stop: &AtomicBool,
+    shared: &Shared,
     rejoin: bool,
 ) -> End {
     let mut next_ref = 1u64;
@@ -382,29 +515,29 @@ fn session(
         .send(phoenix(&t.topic, "phx_join", join, next_ref))
         .is_err()
     {
-        return End::DroppedEarly;
+        return End::Dropped { joined: None };
     }
     next_ref += 1;
-    let mut joined = false;
+    let join_sent = clock.now();
+    let mut joined_at: Option<Duration> = None;
     let mut last_beat = clock.now();
     let mut beat_pending: Option<String> = None;
-    let dropped = |joined: bool| {
-        if joined {
-            End::DroppedJoined
-        } else {
-            End::DroppedEarly
-        }
+    let dropped = |joined_at: Option<Duration>| End::Dropped {
+        joined: joined_at.map(|at| clock.now().saturating_sub(at)),
     };
     loop {
-        if stop.load(Ordering::SeqCst) {
+        if shared.stopping() {
             let _ = ws.close(None);
             let _ = ws.flush();
             return End::Stopped;
         }
+        if joined_at.is_none() && clock.now().saturating_sub(join_sent) >= JOIN_TIMEOUT {
+            return dropped(None);
+        }
         if clock.now().saturating_sub(last_beat) >= HEARTBEAT {
             if beat_pending.is_some() {
                 // The last beat went unanswered: the line is dead.
-                return dropped(joined);
+                return dropped(joined_at);
             }
             let r = next_ref;
             next_ref += 1;
@@ -412,14 +545,14 @@ fn session(
                 .send(phoenix("phoenix", "heartbeat", serde_json::json!({}), r))
                 .is_err()
             {
-                return dropped(joined);
+                return dropped(joined_at);
             }
             beat_pending = Some(r.to_string());
             last_beat = clock.now();
         }
         let text = match ws.read() {
             Ok(Message::Text(text)) => text,
-            Ok(Message::Close(_)) => return dropped(joined),
+            Ok(Message::Close(_)) => return dropped(joined_at),
             Ok(_) => continue,
             Err(tungstenite::Error::Io(e))
                 if matches!(
@@ -429,7 +562,7 @@ fn session(
             {
                 continue;
             }
-            Err(_) => return dropped(joined),
+            Err(_) => return dropped(joined_at),
         };
         // Anything that is not a Phoenix message is skipped.
         let Ok(m) = serde_json::from_str::<Envelope>(text.as_str()) else {
@@ -439,26 +572,26 @@ fn session(
         match m.event.as_str() {
             "phx_reply" if m.reference.as_deref() == Some(join_ref.as_str()) => {
                 if inner.and_then(|p| p.status.as_deref()) != Some("ok") {
-                    return dropped(joined);
+                    return dropped(joined_at);
                 }
-                joined = true;
-                if rejoin {
-                    on_wake();
+                if joined_at.is_none() {
+                    joined_at = Some(clock.now());
+                    if rejoin {
+                        shared.wake();
+                    }
                 }
             }
             "phx_reply" if m.reference.is_some() && m.reference == beat_pending => {
                 beat_pending = None;
             }
             "broadcast"
-                if joined
+                if joined_at.is_some()
                     && m.topic == t.topic
                     && inner.and_then(|p| p.event.as_deref()) == Some("wake") =>
             {
-                if !stop.load(Ordering::SeqCst) {
-                    on_wake();
-                }
+                shared.wake();
             }
-            "phx_error" | "phx_close" if m.topic == t.topic => return dropped(joined),
+            "phx_error" | "phx_close" if m.topic == t.topic => return dropped(joined_at),
             _ => {}
         }
     }
@@ -518,7 +651,10 @@ mod tests {
     }
 
     /// The next text message, within `within`.
-    fn next_text(ws: &mut ServerWs, within: Duration) -> Option<serde_json::Value> {
+    fn next_text<S: Read + Write>(
+        ws: &mut WebSocket<S>,
+        within: Duration,
+    ) -> Option<serde_json::Value> {
         let until = Instant::now() + within;
         while Instant::now() < until {
             match ws.read() {
@@ -535,12 +671,12 @@ mod tests {
         None
     }
 
-    fn send(ws: &mut ServerWs, v: serde_json::Value) {
+    fn send<S: Read + Write>(ws: &mut WebSocket<S>, v: serde_json::Value) {
         ws.send(Message::text(v.to_string())).unwrap();
     }
 
     /// Reads the join, checks it, answers ok.
-    fn accept_join(ws: &mut ServerWs) {
+    fn accept_join<S: Read + Write>(ws: &mut WebSocket<S>) {
         let join = next_text(ws, SECS5).expect("a join");
         assert_eq!(join["event"], "phx_join");
         assert_eq!(join["topic"], format!("realtime:mbx:{}", hex(&TOPIC)));
@@ -559,7 +695,7 @@ mod tests {
         );
     }
 
-    fn broadcast(ws: &mut ServerWs, event: &str) {
+    fn broadcast<S: Read + Write>(ws: &mut WebSocket<S>, event: &str) {
         send(
             ws,
             serde_json::json!({
@@ -573,16 +709,23 @@ mod tests {
     }
 
     fn listener(url: &str, clock: Arc<TestClock>) -> (WakeListener, Arc<AtomicUsize>) {
+        listener_to(
+            target(url, "sb_publishable_k=y", TOPIC, None).unwrap(),
+            clock,
+        )
+    }
+
+    fn listener_to(t: Target, clock: Arc<TestClock>) -> (WakeListener, Arc<AtomicUsize>) {
         let count = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&count);
-        let t = target(url, "sb_publishable_k=y", TOPIC, None).unwrap();
         let l = spawn(
             t,
             clock,
             Box::new(move || {
                 c.fetch_add(1, Ordering::SeqCst);
             }),
-        );
+        )
+        .unwrap();
         (l, count)
     }
 
@@ -716,5 +859,249 @@ mod tests {
             (t.host.as_str(), t.port, t.tls.is_none()),
             ("127.0.0.1", 5432, true)
         );
+    }
+
+    /// A server that answers every connection with one byte every 2 s
+    /// (a handshake that never ends). Each accept is reported.
+    fn dripping_server() -> (String, mpsc::Receiver<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("ws://{}/realtime/v1", listener.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for s in listener.incoming() {
+                let Ok(mut s) = s else { return };
+                if tx.send(()).is_err() {
+                    return;
+                }
+                std::thread::spawn(move || {
+                    for b in b"HTTP/1.1 101 Switching Protocols\r\n".iter().cycle() {
+                        if s.write_all(&[*b]).is_err() {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_secs(2));
+                    }
+                });
+            }
+        });
+        (url, rx)
+    }
+
+    #[test]
+    fn wake_stop_is_prompt_during_a_dripping_handshake() {
+        let (url, accepts) = dripping_server();
+        let (l, count) = listener(&url, clock());
+        accepts.recv_timeout(SECS5).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let start = Instant::now();
+        l.stop();
+        let took = start.elapsed();
+        assert!(took < Duration::from_millis(1500), "stop took {took:?}");
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn wake_handshake_has_one_deadline() {
+        // Every byte comes in time for a per-read timeout; the whole
+        // handshake does not: the listener gives up and tries again.
+        let (url, accepts) = dripping_server();
+        let mut t = target(&url, "k", TOPIC, None).unwrap();
+        t.handshake = Duration::from_secs(1);
+        let (l, _) = listener_to(t, clock());
+        accepts.recv_timeout(SECS5).unwrap();
+        let start = Instant::now();
+        accepts.recv_timeout(SECS5).expect("a second try");
+        assert!(
+            start.elapsed() < Duration::from_secs(4),
+            "{:?}",
+            start.elapsed()
+        );
+        l.stop();
+    }
+
+    #[test]
+    fn wake_never_runs_after_stop() {
+        // A slow callback is in progress when stop is called: stop returns
+        // only once it is over, and no call starts afterwards.
+        let (url, conns) = server();
+        let running = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (r, c) = (Arc::clone(&running), Arc::clone(&calls));
+        let t = target(&url, "k", TOPIC, None).unwrap();
+        let l = spawn(
+            t,
+            clock(),
+            Box::new(move || {
+                r.fetch_add(1, Ordering::SeqCst);
+                c.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(1500));
+                r.fetch_sub(1, Ordering::SeqCst);
+            }),
+        )
+        .unwrap();
+        let mut ws = conns.recv_timeout(SECS5).unwrap();
+        accept_join(&mut ws);
+        broadcast(&mut ws, "wake");
+        broadcast(&mut ws, "wake");
+        eventually("a call in progress", || running.load(Ordering::SeqCst) == 1);
+        l.stop();
+        assert_eq!(running.load(Ordering::SeqCst), 0, "a call outlived stop");
+        let after = calls.load(Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(calls.load(Ordering::SeqCst), after, "a call after stop");
+        assert_eq!(after, 1);
+    }
+
+    #[test]
+    fn wake_panicking_callback_keeps_listening() {
+        let (url, conns) = server();
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&count);
+        let t = target(&url, "k", TOPIC, None).unwrap();
+        let l = spawn(
+            t,
+            clock(),
+            Box::new(move || {
+                if c.fetch_add(1, Ordering::SeqCst) == 0 {
+                    panic!("first wake panics");
+                }
+            }),
+        )
+        .unwrap();
+        let mut ws = conns.recv_timeout(SECS5).unwrap();
+        accept_join(&mut ws);
+        broadcast(&mut ws, "wake");
+        broadcast(&mut ws, "wake");
+        eventually("the second wake after a panic", || {
+            count.load(Ordering::SeqCst) == 2
+        });
+        l.stop();
+    }
+
+    #[test]
+    fn wake_join_without_reply_is_given_up() {
+        let (url, conns) = server();
+        let clock = clock();
+        let (l, _) = listener(&url, Arc::clone(&clock));
+        let mut first = conns.recv_timeout(SECS5).unwrap();
+        assert_eq!(next_text(&mut first, SECS5).unwrap()["event"], "phx_join");
+        assert!(conns.recv_timeout(Duration::from_millis(300)).is_err());
+        clock.advance(JOIN_TIMEOUT);
+        let mut second = conns.recv_timeout(SECS5).expect("a new try");
+        accept_join(&mut second);
+        l.stop();
+    }
+
+    #[test]
+    fn wake_flapping_server_backs_off() {
+        // Joins are accepted, then the connection drops at once: the waits
+        // grow as for a refused connection, one catch-up wake per rejoin.
+        let (url, conns) = server();
+        let clock = clock();
+        let (l, count) = listener(&url, Arc::clone(&clock));
+        let mut at = Vec::new();
+        for _ in 0..4 {
+            let mut ws = conns.recv_timeout(SECS5).unwrap();
+            at.push(clock.now().as_secs());
+            accept_join(&mut ws);
+            std::thread::sleep(Duration::from_millis(50));
+            let _ = ws.close(None);
+            let _ = ws.flush();
+        }
+        assert_eq!(at, [0, 1, 3, 8]);
+        eventually("three catch-up wakes", || count.load(Ordering::SeqCst) == 3);
+        l.stop();
+    }
+
+    // ------------------------------------------------------------- wss
+
+    const CA_PEM: &str = include_str!("../tests/fixtures/ca.pem");
+    const LEAF_PEM: &str = include_str!("../tests/fixtures/leaf.pem");
+    const LEAF_KEY: &str = include_str!("../tests/fixtures/leaf.key");
+
+    type TlsWs = WebSocket<StreamOwned<rustls::ServerConnection, TcpStream>>;
+
+    /// A loopback `wss` server (leaf for localhost, test CA). Every
+    /// WebSocket that got through TLS and the upgrade goes to the test.
+    fn tls_server(tls12_only: bool) -> (String, mpsc::Receiver<TlsWs>) {
+        use rustls::pki_types::pem::PemObject;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        let chain: Vec<CertificateDer<'static>> =
+            CertificateDer::pem_slice_iter(LEAF_PEM.as_bytes())
+                .chain(CertificateDer::pem_slice_iter(CA_PEM.as_bytes()))
+                .collect::<Result<_, _>>()
+                .unwrap();
+        let key = PrivateKeyDer::from_pem_slice(LEAF_KEY.as_bytes()).unwrap();
+        let mut provider = rustls::crypto::aws_lc_rs::default_provider();
+        let versions: &[&rustls::SupportedProtocolVersion] = if tls12_only {
+            provider
+                .cipher_suites
+                .retain(|s| s.version().version == rustls::ProtocolVersion::TLSv1_2);
+            &[&rustls::version::TLS12]
+        } else {
+            &[&rustls::version::TLS13]
+        };
+        let config = Arc::new(
+            rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+                .with_protocol_versions(versions)
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(chain, key)
+                .unwrap(),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "wss://localhost:{}/realtime/v1",
+            listener.local_addr().unwrap().port()
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for s in listener.incoming() {
+                let Ok(s) = s else { return };
+                s.set_read_timeout(Some(SECS5)).unwrap();
+                let conn = rustls::ServerConnection::new(Arc::clone(&config)).unwrap();
+                let Ok(ws) = tungstenite::accept(StreamOwned::new(conn, s)) else {
+                    continue;
+                };
+                ws.get_ref()
+                    .sock
+                    .set_read_timeout(Some(Duration::from_millis(50)))
+                    .unwrap();
+                if tx.send(ws).is_err() {
+                    return;
+                }
+            }
+        });
+        (url, rx)
+    }
+
+    #[test]
+    fn wake_over_wss_with_the_self_host_ca() {
+        let (url, conns) = tls_server(false);
+        let t = target(&url, "k", TOPIC, Some(CA_PEM.into())).unwrap();
+        let (l, count) = listener_to(t, clock());
+        let mut ws = conns.recv_timeout(SECS5).unwrap();
+        assert_eq!(
+            ws.get_ref().conn.protocol_version(),
+            Some(rustls::ProtocolVersion::TLSv1_3)
+        );
+        accept_join(&mut ws);
+        broadcast(&mut ws, "wake");
+        eventually("a wake over wss", || count.load(Ordering::SeqCst) == 1);
+        l.stop();
+    }
+
+    #[test]
+    fn wake_over_wss_refuses_untrusted_and_tls12() {
+        for (tls12, ca) in [(false, None), (true, Some(CA_PEM.to_string()))] {
+            let (url, conns) = tls_server(tls12);
+            let t = target(&url, "k", TOPIC, ca).unwrap();
+            let (l, _) = listener_to(t, clock());
+            assert!(
+                conns.recv_timeout(Duration::from_millis(1500)).is_err(),
+                "tls12 {tls12}: no WebSocket may get through"
+            );
+            l.stop();
+        }
     }
 }

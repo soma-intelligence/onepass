@@ -1659,3 +1659,32 @@ fn rendezvous_answers_are_checked() {
         .count();
     assert_eq!(deletes, 1, "a bad answer closes the session");
 }
+
+#[test]
+fn rendezvous_reader_caps_the_stream_at_66_mib() {
+    // A hostile server serves one full 1 MiB frame at every n.
+    let mut chunk = (((1u32 << 20) - 4).to_be_bytes()).to_vec();
+    chunk.resize(1 << 20, 7);
+    let server = Server::start(move |req, _| {
+        if req.method == "GET" {
+            return Resp {
+                status: 200,
+                headers: vec![("content-type".into(), "application/octet-stream".into())],
+                body: chunk.clone(),
+            };
+        }
+        Resp::empty(204)
+    });
+    let mut a = Rendezvous::new(server.endpoint(), [0x5c; 16], RdvRole::Approver).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    for _ in 0..66 {
+        assert_eq!(
+            a.recv_frame(1 << 20, deadline).unwrap().len(),
+            (1 << 20) - 4
+        );
+    }
+    assert_eq!(
+        a.recv_frame(1 << 20, deadline).unwrap_err(),
+        MailboxError::Malformed("rendezvous stream size")
+    );
+}
