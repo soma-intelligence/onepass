@@ -218,12 +218,22 @@ impl<S: RecordStore> Repository<S> {
     pub fn exit_travel<U: RecordStore>(&mut self, upstream: &U, state: &TravelState) -> Result<()> {
         // R10: no write while a rotation waits for the user.
         self.writable()?;
+        // R19: a vault the head rotation covered starts again from its
+        // `from_heads` (R12), which the adoption put in the device state: a
+        // parked pin made under the identity left (sealed to a retired KEM
+        // key, signed by a retired key the revoked device also holds) never
+        // replaces it. If the device moved past `from_heads` since (it
+        // wrote the vault under the new identity), the pin is the device's.
+        let heads = self.head_from_heads()?;
         let mut todo = Vec::new();
         for (id, seen) in &state.parked {
             let present = self.store.get(RecordKind::VaultKey, *id)?.is_some();
+            let covered = heads
+                .get(id)
+                .is_some_and(|h| self.device.last_seen.get(id) == Some(h));
             todo.push(Restore {
                 id: *id,
-                parked: Some(seen.clone()),
+                parked: (!covered).then(|| seen.clone()),
                 copy: !present,
             });
         }
@@ -454,14 +464,17 @@ impl<S: RecordStore> Repository<S> {
         if padding.iter().any(|b| *b != 0) {
             return Err(BAD);
         }
-        self.verify_local(SIG_DOMAIN, body, &sig)?;
+        // R18: a state sealed before a rotation is signed by a retired
+        // signing key and sealed to a retired KEM key, both kept.
+        self.verify_local_or_retired(SIG_DOMAIN, body, &sig)?;
         let (envelope, blob): (Vec<u8>, Vec<u8>) = decode_exact(body)?;
         let account_id = self.account_id();
-        let key = unwrap_key(
-            &self.account.keyset().kem,
-            &envelope,
-            &kem_context(account_id),
-        )?;
+        let ctx = kem_context(account_id);
+        let keyset = self.account.keyset();
+        let key = std::iter::once(&keyset.kem)
+            .chain(&keyset.retired_kem)
+            .find_map(|k| unwrap_key(k, &envelope, &ctx).ok())
+            .map_or_else(|| unwrap_key(&keyset.kem, &envelope, &ctx), Ok)?;
         let plain = open(&key, BlobKind::TravelState, &state_aad(account_id), &blob)?;
         decode_exact(&plain)
     }
