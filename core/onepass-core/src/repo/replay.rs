@@ -57,6 +57,7 @@ use time::OffsetDateTime;
 
 use super::{Repository, Use, seen, split_item_record, trust_of};
 use crate::crypto::unwrap_key;
+use crate::lineage::recreated_vault_id;
 use crate::manifest::{
     Manifest, SeenManifest, SignedManifest, record_hash, signed_by, verify_manifest,
 };
@@ -571,10 +572,10 @@ impl<S: RecordStore> Repository<S> {
         // Review M4 (Task 11): this device's own meta (a creation or a
         // change it logged), never one another device wrote there (R11);
         // without one, a neutral meta.
-        let mut meta = recovered_meta();
+        let mut own_meta = None;
         for w in intents.iter().filter(|w| w.item == w.vault) {
             match self.own_meta(&old, w) {
-                Some(m) => meta = m,
+                Some(m) => own_meta = Some(m),
                 None => r.lose(vault, w.item),
             }
         }
@@ -587,11 +588,33 @@ impl<S: RecordStore> Repository<S> {
                 Err(()) => r.lose(vault, w.item),
             }
         }
+        // Task 19 carried item 2: one id per (identity, old vault), so a
+        // device that replays after another one did joins the vault that
+        // one re-created, under the same merge rule as a replay.
+        let id = recreated_vault_id(&self.account.params.identity_pub, vault);
         self.store.batch_begin()?;
         let done = (|| {
-            let fresh = self.create_vault(meta)?;
+            let fresh = match (self.current_vault(id)?, own_meta) {
+                (Some(existing), Some(m)) if m != existing.meta => {
+                    self.update_vault_meta(&existing, m)?
+                }
+                (Some(existing), _) => existing,
+                (None, m) => self.create_vault_with_id(id, m.unwrap_or_else(recovered_meta))?,
+            };
+            let loaded = self.served(&fresh, Use::Write)?;
             for mut item in items {
                 item.vault_id = fresh.id;
+                if let Some((_, rec)) = loaded.listed(item.id) {
+                    let theirs = fresh.open_item(rec)?;
+                    if theirs == item {
+                        r.present += 1;
+                        continue;
+                    }
+                    if theirs.updated_at > item.updated_at {
+                        r.superseded += 1;
+                        continue;
+                    }
+                }
                 self.save_item(&fresh, item)?;
                 r.replayed += 1;
             }

@@ -2550,6 +2550,64 @@ fn vault_created_under_old_identity_is_recreated() {
     );
 }
 
+/// Task 19 carried item 2: C creates a vault under the old identity after
+/// `from_heads` and D writes in it too. Each re-creates it from its own
+/// writes under one id derived from the new identity and the old vault:
+/// one vault in the end, with C's meta and both items, never two.
+#[test]
+fn recreated_vault_is_one_across_devices() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut d = follower_with(&mut server, &a, &f, 2, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    let old = c.repo().create_vault(meta("Travail")).unwrap();
+    c.repo()
+        .save_item(&old, login(old.id, "work", T0 + 80))
+        .unwrap();
+    sync(&mut server, &mut c).unwrap();
+    d.unlock(&f.sk);
+    pull(&server, &mut d);
+    let theirs = d.vault_named("Travail");
+    d.repo()
+        .save_item(&theirs, login(old.id, "dora", T0 + 81))
+        .unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let identity = rotation_of(&a.store(), &out.head).identity_pub;
+    let expected = onepass_core::lineage::recreated_vault_id(&identity, old.id);
+    for (dev, keys) in [(&mut c, &f.others[C].keys), (&mut d, &f.others[2].keys)] {
+        pull(&server, dev);
+        dev.repo = None;
+        let (repo, _, _) = follow_rotation(dev.store(), out.head, PASSWORD, keys).unwrap();
+        dev.repo = Some(repo);
+        let t = dev.store().trust_state().unwrap().unwrap();
+        assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+        assert!(!t.own_writes.alert);
+        sync(&mut server, dev).unwrap();
+    }
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(
+            vaults.len(),
+            2,
+            "{:?}",
+            vaults.iter().map(|v| &v.meta.name).collect::<Vec<_>>()
+        );
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, expected);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
 /// Review I2: a rename made under the old identity is replayed under the
 /// new keys, not dropped.
 #[test]
