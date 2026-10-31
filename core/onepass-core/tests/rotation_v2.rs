@@ -3453,6 +3453,76 @@ fn cross_branch_revocation_alerts() {
     assert!(t.revoked.contains(&f.others[B].id()));
 }
 
+/// Task 19 carried item 4: the cross-branch flag counts only the records
+/// of the device's own chain after the divergence point. B rotates (R1),
+/// everyone follows; then A and C both rotate from R1 revoking B. E, on
+/// the losing sibling, is asked to switch: the winner revokes B, the
+/// rotator of R1, which both branches share, so it is no removal "on
+/// another set of keys".
+#[test]
+fn cross_branch_flag_stops_at_the_divergence() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut e = follower_with(&mut server, &a, &f, 2, |_| {});
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[B].keys;
+    let r1 = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    a.repo = None;
+    for (dev, keys) in [
+        (&mut a, &f.me.keys),
+        (&mut c, &f.others[C].keys),
+        (&mut e, &f.others[2].keys),
+    ] {
+        pull(&server, dev);
+        let (repo, _, _) = follow_rotation(dev.store(), r1.head, PASSWORD, keys).unwrap();
+        dev.repo = Some(repo);
+    }
+    let mut siblings = Vec::new();
+    for (dev, keys) in [(&mut a, &f.me.keys), (&mut c, &f.others[C].keys)] {
+        let new_sk = SecretKey::generate().unwrap();
+        let mut req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+        req.secret_key = &b_sk;
+        req.device_keys = keys;
+        let out = dev.repo.as_mut().unwrap().rotate(req).unwrap();
+        push_outbox(&mut server, dev).unwrap();
+        assert_eq!(
+            dev.store().push_rotation_phase(1).unwrap(),
+            PhaseOutcome::Done
+        );
+        siblings.push(out.head);
+    }
+    siblings.sort();
+    let (wh, lh) = (siblings[0], siblings[1]);
+    // E sees the loser first and follows it.
+    let mut hidden = [0u8; 16];
+    hidden.copy_from_slice(&wh[..16]);
+    let cursor = e.cursor;
+    pull_mapped(&server, &mut e, |ch| {
+        (ch.kind != RecordKind::Lineage || ch.id != Id(hidden)).then_some(ch)
+    });
+    e.cursor = cursor;
+    let session = e.repo.take().unwrap();
+    drop(session);
+    let (repo, _, _) = follow_rotation(e.store(), lh, PASSWORD, &f.others[2].keys).unwrap();
+    e.repo = Some(repo);
+    // The winner arrives.
+    pull(&server, &mut e);
+    let p = e
+        .repo()
+        .refresh_pending_rotation()
+        .unwrap()
+        .expect("a switch");
+    assert_eq!(p.kind, PromptKind::Switch);
+    assert_eq!(p.choices[0].hash, wh);
+    assert_eq!(p.choices[0].revoked_names.len(), 1);
+    assert!(!p.cross_branch_revocation, "B's record is shared");
+}
+
 /// Review M1 (fix round 2): the loser switches before its own phase 1 went
 /// out. Its lineage record, deliveries, params, keyset and lists are
 /// dropped from its outbox and never reach the server.

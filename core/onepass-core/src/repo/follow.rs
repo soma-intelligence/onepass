@@ -353,21 +353,27 @@ fn look_in<S: RecordStore + ?Sized>(
     };
     let pending_password_change =
         store.is_pending_write(RecordKind::AccountParams, current_records_id(trust))?;
-    // The rotators of the device's own chain, from the head back.
-    let mut own_rotators = BTreeSet::new();
-    let mut h = trust.head.hash;
-    while let Some(b) = bodies.get(&h) {
-        own_rotators.insert(b.rotator);
-        h = b.parent;
-        if own_rotators.len() > bodies.len() {
-            break;
-        }
-    }
     let mut cross_branch_revocation = false;
     let mut reapply = BTreeSet::new();
     if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) {
         for target in &p.children {
             let path = path_to(trust, &bodies, *target);
+            // The divergence point: the parent of the first record past the
+            // own chain. Only the own records after it count (Task 19
+            // carried item 4): a rotator of a record both branches share
+            // is not one of "another set of keys".
+            let fork = path.first().map(|b| b.parent);
+            let mut own_rotators = BTreeSet::new();
+            let mut h = trust.head.hash;
+            let mut steps = 0;
+            while Some(h) != fork
+                && let Some(b) = bodies.get(&h)
+                && steps <= bodies.len()
+            {
+                own_rotators.insert(b.rotator);
+                h = b.parent;
+                steps += 1;
+            }
             cross_branch_revocation |= path
                 .iter()
                 .any(|b| b.revoked.iter().any(|id| own_rotators.contains(id)));
