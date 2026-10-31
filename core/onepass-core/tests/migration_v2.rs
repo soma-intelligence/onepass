@@ -480,6 +480,18 @@ fn diverged_after_a_rotation_alerts_then_repairs() {
     let tb = trust(&b);
     assert_eq!(tb.head.hash, gb);
     assert!(tb.genesis_alert);
+    // Fix round 2: a valid rotation chained to the winning genesis leaves
+    // B on a lost lineage: `Orphaned`, no more writes piling up (G4), and
+    // the alert stays until B re-pairs.
+    assert!(matches!(tb.state, DeviceLineageState::Orphaned { .. }));
+    let late = login(v.id, "late", T0 + 60);
+    assert_eq!(b.repo().save_item(&v, late), Err(Error::ReadOnly));
+    assert!(b.repo().clear_genesis_alert().is_err());
+    assert!(trust(&b).genesis_alert);
+    assert!(
+        b.items().iter().any(|i| i.id == offline.id),
+        "still readable"
+    );
 
     // B re-pairs from A (the grant as the SAS session carries it).
     let b_id = kb.public(&mut b).device_id;
@@ -507,6 +519,11 @@ fn diverged_after_a_rotation_alerts_then_repairs() {
     sync(&mut server, &mut b).unwrap();
     sync(&mut server, &mut a).unwrap();
     assert!(a.items().iter().any(|i| i.id == offline.id));
+    // Back on A's lineage: writable, and the alert can be cleared.
+    assert_eq!(trust(&b).state, DeviceLineageState::Current);
+    let v = b.vault();
+    b.save(&login(v.id, "after", T0 + 70));
+    b.repo().clear_genesis_alert().unwrap();
 }
 
 /// A rotation record that decodes but verifies under nothing.
@@ -635,7 +652,10 @@ fn unconfirmed_tofu_devices_get_no_delivery() {
     assert!(roster_ids(&ta).contains(&b_id));
     // Concern 5: C never migrated: the rotation screen names it.
     let c_id = c.repo().this_device_id().unwrap();
-    assert_eq!(a.repo().unmigrated_devices().unwrap(), vec![c_id]);
+    // Review m1: Y, listed after A migrated and never introduced, too.
+    let mut expected = vec![c_id, y_pub.device_id];
+    expected.sort();
+    assert_eq!(a.repo().unmigrated_devices().unwrap(), expected);
 
     // A keep of a device that is not `Tofu` in the roster is refused.
     let new_sk = SecretKey::generate().unwrap();
