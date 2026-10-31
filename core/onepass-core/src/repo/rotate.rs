@@ -34,6 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aws_lc_rs::digest::{SHA256, digest};
 
+use super::replay::meta_hash;
 use super::{Repository, entry, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
 use crate::chain::{ChainState, Seen};
@@ -46,7 +47,7 @@ use crate::lineage::{
     delivery_id, identity_id, rotation_code, sign_rotation,
 };
 use crate::lists::{AccountList, ListBody, sign};
-use crate::manifest::{Manifest, SeenManifest, sign_manifest};
+use crate::manifest::{Manifest, SeenManifest, record_hash, sign_manifest};
 use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustState};
 use crate::vault::{ItemRecord, Vault};
@@ -175,6 +176,53 @@ struct RotatedVault {
 }
 
 impl<S: RecordStore> Repository<S> {
+    /// The removals this device made that its head's roster lacks (spec
+    /// 8.5 step 5): devices in `revoked` (monotone, every removal this
+    /// device made or adopted) that the roster still lists, after a switch
+    /// to a winner that did not revoke them. Sorted. Empty without a trust
+    /// state.
+    pub fn uncovered_removals(&self) -> Result<Vec<Id>> {
+        let Some(trust) = self.store.trust_state()? else {
+            return Ok(Vec::new());
+        };
+        Ok(trust
+            .roster
+            .iter()
+            .map(|e| e.device_id)
+            .filter(|id| *id != trust.me.device_id && trust.revoked.contains(id))
+            .collect())
+    }
+
+    /// Re-apply the uncovered removals (`uncovered_removals`) as a `Reapply`
+    /// child of the head (spec 8.5 step 5), with the preconditions and the
+    /// single transaction of `rotate`; `password` and `secret_key` are the
+    /// current ones (after a switch: the ones just followed), `new_secret_key`
+    /// is drawn and stored as pending by the caller (K6). `Ok(None)` when
+    /// the head already covers every removal: nothing is written (no
+    /// livelock, G6). Same user step as the switch (no prompt of its own).
+    pub fn reapply(
+        &mut self,
+        password: &str,
+        secret_key: &SecretKey,
+        new_secret_key: &SecretKey,
+        device_keys: &DeviceKeys,
+    ) -> Result<Option<RotationOutcome>> {
+        let revoke = self.uncovered_removals()?;
+        if revoke.is_empty() {
+            return Ok(None);
+        }
+        self.rotate(RotateRequest {
+            revoke,
+            new_password: None,
+            password,
+            secret_key,
+            new_secret_key,
+            device_keys,
+            reason: RotationReason::Reapply,
+        })
+        .map(Some)
+    }
+
     /// Rotate every key of the account into a signed lineage record (spec
     /// 7.1). See the module doc.
     ///
@@ -370,6 +418,9 @@ impl<S: RecordStore> Repository<S> {
         // (R23).
         let mut collect = Vec::new();
         let mut rotated = Vec::with_capacity(loaded.len());
+        // What this device re-sealed, for its own-write log (Task 11).
+        let mut resealed: BTreeMap<(Id, Id), [u8; 32]> = BTreeMap::new();
+        let mut metas: BTreeMap<Id, [u8; 32]> = BTreeMap::new();
         for (vault, l) in &loaded {
             let key_rec = self
                 .store
@@ -390,6 +441,7 @@ impl<S: RecordStore> Repository<S> {
                     .checked_add(1)
                     .ok_or(Error::InvalidFormat("item version"))?;
                 let sealed = fresh.reseal_item(&item, version)?;
+                resealed.insert((vault.id, item.id), record_hash(&sealed));
                 entries.push(entry(&sealed));
                 writes.push((item_record(vault.id, &sealed)?, None));
             }
@@ -406,6 +458,7 @@ impl<S: RecordStore> Repository<S> {
                 },
                 Some(l.manifest.seq),
             ));
+            metas.insert(vault.id, meta_hash(&meta_blob));
             writes.push((
                 Record {
                     id: vault.id,
@@ -523,9 +576,28 @@ impl<S: RecordStore> Repository<S> {
         });
         next.state = DeviceLineageState::Rotating { phase: 1 };
         // The new head is this device's own: every write it made so far is
-        // in the content it re-sealed (spec 10.4, since the last head it
-        // adopted).
-        next.own_writes.entries.clear();
+        // in the content it re-sealed. Task 11 (spec 8.5, G4): should this
+        // rotation lose to a sibling, those writes are replayed on the
+        // winner, so each intent now names the record this device re-sealed
+        // (`wrote`), based on the manifest the rotation was made from: a
+        // later rotation made from this head reflects it.
+        let froms: BTreeMap<Id, SeenManifest> =
+            rotated.iter().map(|v| (v.id, v.from.clone())).collect();
+        next.own_writes.entries = std::mem::take(&mut next.own_writes.entries)
+            .into_iter()
+            .filter_map(|mut w| {
+                let from = froms.get(&w.vault)?;
+                w.based_on = from.clone();
+                if w.item == w.vault {
+                    w.wrote = Some(*metas.get(&w.vault)?);
+                } else if w.wrote.is_some() {
+                    // Not in the content re-sealed: a later change of
+                    // another device replaced it there.
+                    w.wrote = Some(*resealed.get(&(w.vault, w.item))?);
+                }
+                Some(w)
+            })
+            .collect();
 
         // The chain state of the new identity: its params epoch and its
         // lists start again (spec 6.6, 10.2); it replaces the stored one in
