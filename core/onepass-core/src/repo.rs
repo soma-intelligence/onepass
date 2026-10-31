@@ -64,7 +64,10 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 mod local;
+pub mod rotate;
 pub mod travel;
+
+pub use rotate::{RotateRequest, RotationOutcome};
 
 /// What a device keeps between sessions: the account pinned at first
 /// unlock, the last manifest accepted for each vault, and the restore epoch

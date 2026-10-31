@@ -156,13 +156,15 @@ pub struct Account {
 }
 
 /// A key rotation ready to be written (`Account::rotate_keys`): the account
-/// under its new identity, its two records and the new identity's public key.
+/// under its new identity, its two records, the new identity's public key
+/// and the new Account Unlock Key (to enroll biometrics again).
 #[derive(Debug)]
 pub struct RotatedAccount {
     pub account: Account,
     pub params_record: Vec<u8>,
     pub keyset_record: Vec<u8>,
     pub identity_pub: IdentityVerifyingKey,
+    pub auk: Auk,
 }
 
 /// A freshly created account with the records to store and the Secret Key to
@@ -523,6 +525,7 @@ impl Account {
             params_record,
             keyset_record,
             identity_pub,
+            auk: Auk::from_bytes(*key.expose()),
         })
     }
 }
