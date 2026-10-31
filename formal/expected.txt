@@ -228,3 +228,75 @@ rotation_account_anchor.pv | event(Adopt(d,s,ip_1)) ==> event(Rotated(s,ip_1,r,r
 rotation_account_anchor.pv | not (event(ItemSealedNew(d,m)) && attacker(m)) | false
 # Sanité.
 rotation_account_anchor.pv | not event(Adopt(devC,devA,ip_1)) | false
+
+# sharing.pv : coffre partagé entre trois comptes (spec 2026-10-30-sharing-families-design.md,
+# sections 5 à 10 et 17). Alice (propriétaire, Gérer), Bob (Modifier, contact Vérifié par le SAS),
+# Carol (Lire, contact Lien) ; liste des membres signée, enveloppes vers les clés du carnet,
+# manifestes partagés avec signataire et pointeur de liste ; Alice retire Carol à la génération g2
+# (option C de 9) ; l'attaquant tient le serveur et, en phase 1, tout l'état de Carol.
+# Après le retrait, ce qu'écrivent Alice et Bob reste secret face à Carol et au serveur.
+sharing.pv | not (event(ItemSealedAfterRemoval(m_14)) && attacker_p1(m_14)) | true
+# Clé de chaque génération : g1 secrète face au serveur, g2 face au serveur et à Carol.
+sharing.pv | not (event(GenerationCreated(v_18,g1,k_9)) && attacker(k_9)) | true
+sharing.pv | not (event(GenerationCreated(v_18,g2,k_9)) && attacker_p1(k_9)) | true
+# Un manifeste accepté vient d'un membre qui a le droit d'écrire à cette génération (A5, A6).
+sharing.pv | event(ManifestAccepted(d,v_18,w_8,g_19)) ==> event(MemberRole(v_18,w_8,role_write,g_19)) | true
+# Un corps de membres accepté (seq et hash) a été signé par un gestionnaire (A2, A3).
+sharing.pv | event(MembershipAccepted(d,v_18,n)) ==> event(MembershipSigned(v_18,n,mgr_2)) && event(Manager(v_18,mgr_2)) | true
+# Une clé de coffre acceptée est celle créée pour sa génération : key_commit signé (A15, A16).
+sharing.pv | event(EnvelopeAccepted(d,v_18,g_19,k_9)) ==> event(GenerationCreated(v_18,g_19,k_9)) | true
+# Décision 1 : un contact au niveau Lien n'est jamais ajouté qu'en lecteur.
+sharing.pv | event(MemberAdded(v_18,m_14,r_3,lvl_link)) ==> r_3 = role_read | true
+# Sanité : ajout (Bob reçoit g1), écriture (Carol lit l'item de Bob), retrait (Bob reçoit g2),
+# lecture après le retrait (Bob lit l'item d'Alice), écriture de Bob après le retrait, et la fuite
+# de l'état de Carol porte bien (g1 connue en phase 1, la requête du retrait n'est pas vide).
+sharing.pv | not event(EnvelopeAccepted(bob,vlt,g1,k_9)) | false
+sharing.pv | not event(ManifestAccepted(carol,v_18,bob,g1)) | false
+sharing.pv | not event(EnvelopeAccepted(bob,vlt,g2,k_9)) | false
+sharing.pv | not event(ItemRead(bob,vlt,g2,m_14)) | false
+sharing.pv | not event(ItemSealed(bob,g2,m_14)) | false
+sharing.pv | not (event(GenerationCreated(v_18,g1,k_9)) && attacker_p1(k_9)) | false
+
+# sharing_member_rotation.pv : Alice, membre d'un coffre partagé, retire son iPad (B, à
+# l'attaquant) par la rotation v2 ; B forge des rotations de la lignée d'Alice vers une identité X.
+# Bob a épinglé le roster de genèse d'Alice en face à face ; il vérifie la lignée puis n'adopte
+# qu'après le geste de l'utilisateur (décision 6) : le code pour un lecteur, le QR en personne pour
+# un rôle qui écrit (tables privées heads et kit de rotation_core.pvl).
+# A11 : Bob n'adopte jamais l'identité X de l'attaquant pour Alice.
+sharing_member_rotation.pv | not event(AdoptIdentity(bob_side,acct,pk(idk_x[]))) | true
+# Toute identité adoptée vient d'une rotation honnête.
+sharing_member_rotation.pv | event(AdoptIdentity(d,a_1,ip_2)) ==> event(Rotated(s,ip_2,r,ro,k_11,ik)) | true
+# Rotation forgée et course : Bob n'adopte jamais un enregistrement signé par l'appareil retiré.
+sharing_member_rotation.pv | not event(AdoptFrom(bob_side,devB,ip_2)) | true
+# La clé de coffre enveloppée pour l'identité adoptée reste secrète.
+sharing_member_rotation.pv | not (event(EnvelopeSealed(d,ip_2,k_11)) && attacker(k_11)) | true
+# Sanité : Bob adopte la rotation honnête d'Alice par le code (Lire) et par le QR (Modifier),
+# depuis l'enregistrement de l'appareil A.
+sharing_member_rotation.pv | not event(Confirmed(bob_side,role_read,ip_2)) | false
+sharing_member_rotation.pv | not event(Confirmed(bob_side,role_write,ip_2)) | false
+sharing_member_rotation.pv | not event(AdoptFrom(bob_side,devA,ip_2)) | false
+
+# sharing_server_directory.pv : témoin négatif, les clés des membres viennent du serveur (annuaire,
+# approche A de 5.1). Attaque attendue (A1) : le serveur donne ses clés, Alice y enveloppe chaque
+# génération, le coffre tombe ; d'où le carnet rempli par le seul canal authentifié.
+sharing_server_directory.pv | not (event(GenerationCreated(v_6,g1,k_2)) && attacker(k_2)) | false
+sharing_server_directory.pv | not (event(ItemSealedAfterRemoval(m_7)) && attacker_p1(m_7)) | false
+# Sanité : le coffre est créé.
+sharing_server_directory.pv | not event(GenerationCreated(v_6,g1,k_2)) | false
+
+# sharing_no_rekey.pv : témoin négatif, retrait sans nouvelle génération (la clé g1 reste, rien
+# n'est rescellé). Attaque attendue (A4) : avec l'état de Carol, l'attaquant lit l'item écrit après
+# son retrait ; d'où la génération g+1 et le rescellement (option C de 9).
+sharing_no_rekey.pv | not (event(ItemSealedAfterRemoval(m_10)) && attacker_p1(m_10)) | false
+# Sanité : Bob accepte le corps du retrait et écrit après lui.
+sharing_no_rekey.pv | not event(MembershipAccepted(bob,vlt,(nxt(seq1),hb_2))) | false
+sharing_no_rekey.pv | not (event(ItemSealed(bob,g1,m_10)) && event(ItemSealedAfterRemoval(m_10))) | false
+
+# sharing_member_autofollow.pv : témoin négatif, Bob adopte toute rotation valide d'Alice sans le
+# geste de l'utilisateur (approche A de 12.3). Attaque attendue (A11) : l'iPad retiré d'Alice fait
+# adopter son identité X à Bob, qui lui enveloppe la clé suivante ; la lignée ne dit pas quel
+# appareil était honnête, le geste tranche (comme rotation_autofollow.pv).
+sharing_member_autofollow.pv | not event(AdoptIdentity(bob_side,acct,pk(idk_x[]))) | false
+sharing_member_autofollow.pv | not (event(EnvelopeSealed(d,ip_1,k_5)) && attacker(k_5)) | false
+# Sanité : Bob suit la rotation honnête d'Alice.
+sharing_member_autofollow.pv | not event(AdoptFrom(bob_side,devA,ip_1)) | false

@@ -1,0 +1,60 @@
+(* formal-lib: rotation_core.pvl *)
+(* formal-lib: sharing_core.pvl *)
+(* OnePass formal model, negative control of sharing_member_rotation.pv:
+   Bob's device adopts any valid rotation of Alice's lineage WITHOUT the
+   user's confirmation gesture (spec 12.3 approach A). Everything else is
+   sharing_member_rotation.pv: pinned roster, device and identity
+   signatures, params signed by the new identity.
+
+   Expected: Alice's revoked iPad (the attacker) signs a rotation towards
+   an identity X of its own, Bob adopts it and wraps the next vault key
+   for X (attack A11). The lineage proves a device of Alice rotated, not
+   which one was honest: the gesture is the arbiter, as in
+   rotation_autofollow.pv. *)
+
+const bob_side: bitstring.
+free idk_x: skey.
+
+event AdoptIdentity(bitstring, bitstring, pkey).
+event AdoptFrom(bitstring, bitstring, pkey).
+event EnvelopeSealed(bitstring, pkey, key).
+
+let MemberFollow(me: bitstring) =
+  in(c, (body: bitstring, sdev: bitstring, sig_id: bitstring, params: bitstring));
+  let rr_body(=acct, =h_genesis, signer: bitstring, ip: pkey, revoked: bitstring,
+              roster: bitstring, ph: bitstring) = body in
+  get contactDev(=me, =acct, =h_genesis, =signer, spub) in
+  if verify_dom(spub, dom_rotation, body, sdev) = true then
+  if verify_dom(ip, dom_rotation_id, body, sig_id) = true then
+  let (=ip, pmsg: bitstring, psig: bitstring) = params in
+  if h(params) = ph then
+  if verify_dom(ip, dom_account_params, pmsg, psig) = true then
+  let (=acct, salt: bitstring, spubn: pkey, pkm: mlkem_pk, pkx: x25519_pk) = pmsg in
+  (* No gesture here. *)
+  new k: key; new rm: seed; new rx: seed;
+  event AdoptIdentity(me, acct, ip);
+  event AdoptFrom(me, signer, ip);
+  event EnvelopeSealed(me, ip, k);
+  out(c, core_wrap_labeled(pkm, pkx, rm, rx, lbl_share_vk, env_ctx(g2, acct), k)).
+
+(* Expected false: Bob adopts X. *)
+query event(AdoptIdentity(bob_side, acct, pk(idk_x))).
+(* Expected false: the key Bob wraps afterwards reaches the attacker. *)
+query d: bitstring, ip: pkey, k: key; event(EnvelopeSealed(d, ip, k)) && attacker(k).
+(* Sanity (expected false): Bob follows Alice's honest rotation. *)
+query ip: pkey; event(AdoptFrom(bob_side, devA, ip)).
+
+process
+  new dskA: skey; new dkmA: seed; new dkxA: seed;
+  new dskB: skey; new dkmB: seed; new dkxB: seed;
+  new dskC: skey; new dkmC: seed; new dkxC: seed;
+  out(c, (pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA),
+          pk(dskB), kem_pk_m(dkmB), kem_pk_x(dkxB),
+          pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC)));
+  out(c, (dskB, dkmB, dkxB));
+  insert contactDev(bob_side, acct, h_genesis, devA, pk(dskA));
+  insert contactDev(bob_side, acct, h_genesis, devB, pk(dskB));
+  let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
+                  ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
+  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  | !MemberFollow(bob_side) )

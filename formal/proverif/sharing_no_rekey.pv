@@ -1,0 +1,35 @@
+(* formal-lib: sharing_core.pvl *)
+(* OnePass formal model, negative control of sharing.pv: Alice removes
+   Carol WITHOUT a new generation (spec 9.1 approach A taken to its end:
+   the removal body keeps g1, its key and its key_commit, no envelope,
+   nothing resealed). Everything else is sharing.pv.
+
+   Expected: the attacker, who holds Carol's whole state after her
+   removal, reads what Alice and Bob write afterwards (attack A4). This is
+   why a removal always moves to generation g+1 and reseals the items
+   (spec 9, option C). *)
+
+(* Expected false: what is written after the removal reaches Carol. *)
+query m: bitstring; event(ItemSealedAfterRemoval(m)) && attacker(m) phase 1.
+(* Sanity (expected false): Bob accepts the removal body (seq 2) and
+   writes after it. *)
+query hb: bitstring; event(MembershipAccepted(bob, vlt, (nxt(seq1), hb))).
+query m: bitstring; event(ItemSealed(bob, g1, m)) && event(ItemSealedAfterRemoval(m)).
+
+process
+  new skA: skey; new kmA: seed; new kxA: seed;
+  new skB: skey; new kmB: seed; new kxB: seed;
+  new skC: skey; new kmC: seed; new kxC: seed;
+  out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)));
+  new k1: key; new k2: key;
+  let eA = entry_alice(skA, kmA, kxA) in
+  ( Owner(skA, eA,
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB), lvl_verified,
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_link, k1, k2, false)
+  | MemberJoin(bob, skB, kmB, kxB, true, alice, pk(skA))
+  | MemberUpdate(bob, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
+                 members_g1(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC)), k1)
+  | (phase 1; out(c, (skC, kmC, kxC))) )

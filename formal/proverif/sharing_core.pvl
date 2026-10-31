@@ -1,0 +1,399 @@
+(* OnePass formal model: shared vaults between accounts (spec
+   docs/superpowers/specs/2026-10-30-sharing-families-design.md, sections
+   5 to 10 and 17, founder decisions 1 and 6). Shared declarations and
+   processes of sharing.pv and its negative controls
+   (sharing_server_directory.pv, sharing_no_rekey.pv). The member identity
+   rotation models (sharing_member_rotation.pv,
+   sharing_member_autofollow.pv) load rotation_core.pvl first, then this
+   file, and only use its labels, envelope context and the contact table
+   `contactDev`.
+
+   Status: design model of the sharing core (S0). It names the records
+   and labels of the spec (sections 6 to 8 and 19.1).
+
+   Cast (spec 17):
+   - Alice: owner of the vault, role Manage. One device, honest.
+   - Bob: member with role Write, honest. He writes items and reads.
+   - Carol: member with role Read, honest in phase 0 (she joins and reads),
+     then removed by Alice. In phase 1 the attacker holds her whole state:
+     her account signing key and KEM key, so every generation 1 envelope
+     addressed to her and everything sealed under generation 1.
+   - The server (CloudKit zone, contact zone, rendezvous) is the public
+     channel c, hostile from the start.
+
+   Accounts: each account is reduced to its current identity, that is
+   its signing key (hybrid, signs the membership bodies and the shared
+   manifests) and its hybrid KEM key (receives the vault key envelopes).
+   The keys come from the AccountParams signed by the identity (README
+   3.5), proven in account.pv; lineage checks are rotation.pv's and
+   sharing_member_rotation.pv's job.
+
+   Contacts (spec 5, decision 1): a key enters the book only through an
+   authenticated private channel. Face to face: QR, Bonjour channel and
+   SAS compared on both sides (F-02 of the formal model, proven for the
+   bridge in bridge.pv, same construction), level Verified. Remote invite:
+   the link secret travels on a messaging channel the attacker does not
+   read (a link read in transit is the documented limit A13), level Link.
+   A safety number compared by voice is the same authenticated channel.
+   The result of such a channel is the peer's honest key: the model hands
+   it to each process as a parameter set by the main process (as the
+   setup `insert pinned` of rotation.pv), never read from c. Carrying
+   the cards on private channels into a table, as a first version did,
+   gives the same guarantee but let ProVerif resolve forged signatures
+   before the table facts and blow up. A Link contact can only
+   receive the role Read (decision 1, ruling A-1): the owner process
+   refuses anything else.
+
+   Abstractions:
+   - one vault, two generations (g1 at creation, g2 at Carol's removal);
+     membership bodies seq 1 (create) and seq 2 (remove Carol);
+   - a member list of exactly three slots (`mem3`), the removed member's
+     slot replaced by `no_member`; lookup by slot (`slot`);
+   - items are sealed directly under the vault key of their generation
+     (item keys are account.pv's job); removal follows spec 9 option C:
+     the remaining items are resealed under generation g2 and nothing
+     written after the removal uses a key Carol holds;
+   - a shared manifest lists one item: its blob, sealed under the
+     generation key, carries the membership pointer (seq, body_ref), the
+     generation and the item ciphertext hash; it is signed by the writer
+     under the domain onepass/shared-manifest/v1;
+   - sequence numbers are the constructor nxt; meta_hash, history,
+     issued_at, the removed list rules (7.2 rule 3), the ancestor rule of
+     8.2 (only the pinned head is used here), concurrent managers and
+     monotone merges are not modeled (Rust property tests, spec 17);
+   - the CKShare participant list and permissions are not modeled (no
+     client relies on them, spec 10.1);
+   - Bob's steps are proved one at a time: his update (phase 1) starts
+     from the honest state his join reaches, and his reads after the
+     update from the honest state the update reaches, each justified by
+     the MembershipAccepted and EnvelopeAccepted queries of the step
+     before (see MemberUpdate). Chained, ProVerif did not finish. *)
+
+(* ------------------------------------------------------------------ *)
+(* Names                                                               *)
+(* ------------------------------------------------------------------ *)
+
+(* Account ids (public) and the shared vault id. *)
+const alice: bitstring.
+const bob: bitstring.
+const carol: bitstring.
+const vlt: bitstring.
+(* Generations of the vault key, sequence numbers of the membership. *)
+const g1: bitstring.
+const g2: bitstring.
+const seq1: bitstring.
+fun nxt(bitstring): bitstring [data].
+(* prev_hash of seq 1 (zeros), empty removed list, list of seq 2. *)
+const no_prev: bitstring.
+const no_removed: bitstring.
+const removed_carol: bitstring.
+const no_member: bitstring.
+(* Roles (spec 7.1) and contact levels (spec 5.3). *)
+const role_read: bitstring.
+const role_write: bitstring.
+const role_manage: bitstring.
+const lvl_verified: bitstring.
+const lvl_link: bitstring.
+
+(* Labels and domains of spec 19.1. *)
+(* onepass/share/vault-key/v1 (wrap_key_labeled, member KEM key) *)
+const lbl_share_vk: bitstring.
+(* onepass/vault-key-commit/v1 (HMAC under the vault key) *)
+const lbl_key_commit: bitstring.
+(* onepass/membership/v1 (signature domain of MembershipBody) *)
+const dom_membership: bitstring.
+(* onepass/shared-manifest/v1 (signature domain of the shared manifest) *)
+const dom_shared_manifest: bitstring.
+
+(* ------------------------------------------------------------------ *)
+(* Terms                                                               *)
+(* ------------------------------------------------------------------ *)
+
+(* Member { account_id, role, sign_pub, kem_pub } (identity id, level,
+   added_by, owner flag and key_pending are not modeled). *)
+fun ment(bitstring, bitstring, pkey, mlkem_pk, x25519_pk): bitstring [data].
+fun mem3(bitstring, bitstring, bitstring): bitstring [data].
+
+(* Slot i of a member list. A verifier looks an account up by reading the
+   slot the attacker names (index sent with the message): this covers
+   every slot a search would find. Lists are sorted and unique in the code
+   (strict decoding), so an account has one slot. A destructor that
+   searched by account id (with `otherwise`) made ProVerif stall on its
+   disequality constraints. *)
+const i1: bitstring.
+const i2: bitstring.
+const i3: bitstring.
+reduc forall e1: bitstring, e2: bitstring, e3: bitstring;
+    slot(mem3(e1, e2, e3), i1) = e1;
+  forall e1: bitstring, e2: bitstring, e3: bitstring;
+    slot(mem3(e1, e2, e3), i2) = e2;
+  forall e1: bitstring, e2: bitstring, e3: bitstring;
+    slot(mem3(e1, e2, e3), i3) = e3.
+
+(* MembershipBody { vault_id, seq, prev_hash, generation, key_commit,
+   members, removed, signer } (spec 7.1). *)
+fun mbody(bitstring, bitstring, bitstring, bitstring, bitstring, bitstring,
+          bitstring, bitstring): bitstring [data].
+
+(* Reference to a membership body: the prev_hash of the next body and the
+   pointer of a manifest. The code hashes the whole body; the model hashes
+   its vault, seq, generation and key_commit only. Every body is signed
+   and an honest manager signs one body per seq, so the two identify the
+   same body here (forks, two bodies at one seq, are not modeled, spec
+   17). Hashing the whole body, which nests the previous one, made the
+   resolution of phase 1 stall. *)
+letfun body_ref(seq: bitstring, g: bitstring, kc: bitstring) = h((vlt, seq, g, kc)).
+
+(* key_commit = HMAC(vault_key_g, "onepass/vault-key-commit/v1" ||
+   vault_id || g) (spec 6.2). *)
+letfun key_commit(k: key, g: bitstring) = mac(k, (lbl_key_commit, vlt, g)).
+(* MemberKey envelope context: vault, generation, member (spec 6.2; the
+   identity id is the member's current identity, implied here). *)
+letfun env_ctx(g: bitstring, m: bitstring) = (vlt, g, m).
+(* AAD of an item and of a manifest blob of generation g. *)
+letfun sh_item_aad(g: bitstring) = blob_aad(kind_item, (vlt, g), vlt).
+letfun sh_manifest_aad(g: bitstring) = blob_aad(kind_manifest, (vlt, g), vlt).
+
+(* ------------------------------------------------------------------ *)
+(* Tables (private)                                                    *)
+(* ------------------------------------------------------------------ *)
+
+(* contactDev(me, account, lineage head, device, device sign pub): the
+   device roster of a contact's lineage, pinned from its card at the face
+   to face verification (spec 5.5), used by the member rotation models. *)
+table contactDev(bitstring, bitstring, bitstring, bitstring, pkey).
+
+(* ------------------------------------------------------------------ *)
+(* Events                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* The owner created the key of generation g. *)
+event GenerationCreated(bitstring, bitstring, key).
+(* An honest manager signed membership body n = (seq, body_ref). *)
+event MembershipSigned(bitstring, bitstring, bitstring).
+(* Account mgr is a manager of the vault (role Manage in a body it signs). *)
+event Manager(bitstring, bitstring).
+(* A signed body gives account w the right r at generation g. Manage
+   implies Write: a manager gets both events. *)
+event MemberRole(bitstring, bitstring, bitstring, bitstring).
+(* The owner added account m with role r at contact level lvl. *)
+event MemberAdded(bitstring, bitstring, bitstring, bitstring).
+(* Device d accepted membership body n = (seq, body_ref). *)
+event MembershipAccepted(bitstring, bitstring, bitstring).
+(* Device d accepted the key k of generation g (envelope + key_commit). *)
+event EnvelopeAccepted(bitstring, bitstring, bitstring, key).
+(* Device d accepted a manifest of writer w at generation g. *)
+event ManifestAccepted(bitstring, bitstring, bitstring, bitstring).
+(* Device d read item content m at generation g. *)
+event ItemRead(bitstring, bitstring, bitstring, bitstring).
+(* Item content m written by w at generation g. *)
+event ItemSealed(bitstring, bitstring, bitstring).
+(* Item content m written after Carol's removal (by Alice or Bob). *)
+event ItemSealedAfterRemoval(bitstring).
+
+(* ------------------------------------------------------------------ *)
+(* Items and shared manifests (spec 8)                                 *)
+(* ------------------------------------------------------------------ *)
+
+(* Writer w seals item m at generation g under k and signs a manifest
+   that points to the membership body (seq, hb) it was written under. *)
+letfun shared_write(w: bitstring, sk: skey, seq: bitstring, hb: bitstring,
+                    g: bitstring, k: key, m: bitstring) =
+  let ict = aead_seal(k, sh_item_aad(g), m) in
+  let blob = aead_seal(k, sh_manifest_aad(g), (seq, hb, g, h(ict))) in
+  (blob, w, sign_dom(sk, dom_shared_manifest, blob), ict).
+
+(* Device me, pinned to body (seq, hb) of generation g with member list
+   `members` and key k, accepts a manifest (spec 8.2): the blob opens
+   under the key of its generation and points to the pinned body, the
+   signer has the role Write or Manage in that body, its signing key comes
+   from that body, the item is the one the manifest lists. *)
+let ReadItems(me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
+              members: bitstring, k: key) =
+  in(c, (blob: bitstring, w: bitstring, sig: bitstring, ict: bitstring, iw: bitstring));
+  let (=seq, =hb, =g, ih: bitstring) = aead_open(k, sh_manifest_aad(g), blob) in
+  let ment(=w, r: bitstring, spub: pkey, km: mlkem_pk, kx: x25519_pk) = slot(members, iw) in
+  if r = role_write || r = role_manage then
+  if verify_dom(spub, dom_shared_manifest, blob, sig) = true then
+  if h(ict) = ih then
+  let m = aead_open(k, sh_item_aad(g), ict) in
+  event ManifestAccepted(me, vlt, w, g);
+  event ItemRead(me, vlt, g, m).
+
+(* ------------------------------------------------------------------ *)
+(* Owner (Alice, Manage): create the vault (phase 0), remove Carol     *)
+(* (phase 1). Bob's and Carol's keys and levels are parameters: the    *)
+(* caller passes the ones of her book (sharing.pv) or, in the negative *)
+(* control, the ones the server sent. The vault keys k1 (g1) and k2    *)
+(* (g2) are fresh names of the main process so that the compositional *)
+(* starts of Bob's update and reads can name them (see below); only    *)
+(* the owner seals under them and only her envelopes carry them.        *)
+(* rekey: true = spec 9 (new key g2, items resealed, envelopes);        *)
+(* false = negative control sharing_no_rekey.pv (removal without a new  *)
+(* generation).                                                         *)
+(* ------------------------------------------------------------------ *)
+
+(* Alice's member entry, and the member list of generation 1. *)
+letfun entry_alice(skA: skey, kmA: seed, kxA: seed) =
+  ment(alice, role_manage, pk(skA), kem_pk_m(kmA), kem_pk_x(kxA)).
+letfun members_g1(eA: bitstring, sB: pkey, mB: mlkem_pk, xB: x25519_pk,
+                  sC: pkey, mC: mlkem_pk, xC: x25519_pk) =
+  mem3(eA, ment(bob, role_write, sB, mB, xB), ment(carol, role_read, sC, mC, xC)).
+(* The member list after Carol's removal. *)
+letfun members_g2(eA: bitstring, sB: pkey, mB: mlkem_pk, xB: x25519_pk) =
+  mem3(eA, ment(bob, role_write, sB, mB, xB), no_member).
+
+(* After the removal body: the remaining item resealed and a new item,
+   both under (g, k), each listed by a manifest Alice signs. *)
+let OwnerAfterRemoval(skA: skey, seq: bitstring, hb: bitstring, g: bitstring,
+                      k: key, m_old: bitstring, m_new: bitstring) =
+  event ItemSealedAfterRemoval(m_new);
+  out(c, shared_write(alice, skA, seq, hb, g, k, m_old));
+  out(c, shared_write(alice, skA, seq, hb, g, k, m_new)).
+
+let Owner(skA: skey, eA: bitstring,
+          sB: pkey, mB: mlkem_pk, xB: x25519_pk, lb: bitstring,
+          sC: pkey, mC: mlkem_pk, xC: x25519_pk, lc: bitstring,
+          k1: key, k2: key, rekey: bool) =
+  new m1: bitstring; new m_new: bitstring;
+  new rbm: seed; new rbx: seed; new rcm: seed; new rcx: seed;
+  new r2m: seed; new r2x: seed;
+  (* Decision 1: Write (and Manage) need a Verified contact; Read takes
+     either level. *)
+  if lb = lvl_verified then
+  let kc1 = key_commit(k1, g1) in
+  let members1 = members_g1(eA, sB, mB, xB, sC, mC, xC) in
+  let body1 = mbody(vlt, seq1, no_prev, g1, kc1, members1, no_removed, alice) in
+  let hb1 = body_ref(seq1, g1, kc1) in
+  event GenerationCreated(vlt, g1, k1);
+  event MemberAdded(vlt, bob, role_write, lb);
+  event MemberAdded(vlt, carol, role_read, lc);
+  event Manager(vlt, alice);
+  event MemberRole(vlt, alice, role_manage, g1);
+  event MemberRole(vlt, alice, role_write, g1);
+  event MemberRole(vlt, bob, role_write, g1);
+  event MemberRole(vlt, carol, role_read, g1);
+  event MembershipSigned(vlt, (seq1, hb1), alice);
+  (* The invite (spec 7.3): the signed body and one envelope per member,
+     to the keys of the book. *)
+  out(c, (body1, sign_dom(skA, dom_membership, body1)));
+  out(c, core_wrap_labeled(mB, xB, rbm, rbx, lbl_share_vk, env_ctx(g1, bob), k1));
+  out(c, core_wrap_labeled(mC, xC, rcm, rcx, lbl_share_vk, env_ctx(g1, carol), k1));
+  (* Alice writes an item at generation 1. *)
+  event ItemSealed(alice, g1, m1);
+  out(c, shared_write(alice, skA, seq1, hb1, g1, k1, m1));
+  phase 1;
+  (* Removal of Carol (spec 9.2). *)
+  let seq2 = nxt(seq1) in
+  let members2 = members_g2(eA, sB, mB, xB) in
+  if rekey then
+    (let kc2 = key_commit(k2, g2) in
+     let body2 = mbody(vlt, seq2, hb1, g2, kc2, members2, removed_carol, alice) in
+     let hb2 = body_ref(seq2, g2, kc2) in
+     event GenerationCreated(vlt, g2, k2);
+     event Manager(vlt, alice);
+     event MemberRole(vlt, alice, role_manage, g2);
+     event MemberRole(vlt, alice, role_write, g2);
+     event MemberRole(vlt, bob, role_write, g2);
+     event MembershipSigned(vlt, (seq2, hb2), alice);
+     out(c, (body2, sign_dom(skA, dom_membership, body2)));
+     out(c, core_wrap_labeled(mB, xB, r2m, r2x, lbl_share_vk, env_ctx(g2, bob), k2));
+     OwnerAfterRemoval(skA, seq2, hb2, g2, k2, m1, m_new))
+  else
+    (let body2 = mbody(vlt, seq2, hb1, g1, kc1, members2, removed_carol, alice) in
+     let hb2 = body_ref(seq2, g1, kc1) in
+     event Manager(vlt, alice);
+     event MemberRole(vlt, alice, role_manage, g1);
+     event MemberRole(vlt, alice, role_write, g1);
+     event MemberRole(vlt, bob, role_write, g1);
+     event MembershipSigned(vlt, (seq2, hb2), alice);
+     out(c, (body2, sign_dom(skA, dom_membership, body2)));
+     OwnerAfterRemoval(skA, seq2, hb2, g1, k1, m1, m_new)).
+
+(* ------------------------------------------------------------------ *)
+(* Member devices (Bob, Carol).                                          *)
+(* ------------------------------------------------------------------ *)
+
+(* Join (spec 7.3), phase 0: the invite body is signed by a contact of
+   my book (mgr, with the key mgr_spub pinned at its verification) that
+   has the role Manage in that body; I am a member; my envelope opens and
+   matches the signed key_commit. Then read, and write if the role
+   allows it. *)
+let MemberJoin(me: bitstring, sk: skey, km: seed, kx: seed, writes: bool,
+               mgr: bitstring, mgr_spub: pkey) =
+  new m: bitstring;
+  in(c, (body: bitstring, sig: bitstring, env: bitstring, is: bitstring,
+         im: bitstring));
+  let mbody(=vlt, seq: bitstring, prev: bitstring, g: bitstring, kc: bitstring,
+            members: bitstring, rmv: bitstring, =mgr) = body in
+  if verify_dom(mgr_spub, dom_membership, body, sig) = true then
+  let ment(=mgr, =role_manage, =mgr_spub, ym: mlkem_pk, yx: x25519_pk) =
+    slot(members, is) in
+  let ment(=me, myrole: bitstring, =pk(sk), zm: mlkem_pk, zx: x25519_pk) =
+    slot(members, im) in
+  let hb = body_ref(seq, g, kc) in
+  event MembershipAccepted(me, vlt, (seq, hb));
+  let k = core_unwrap_labeled(km, kx, lbl_share_vk, env_ctx(g, me), env) in
+  if key_commit(k, g) = kc then
+  event EnvelopeAccepted(me, vlt, g, k);
+  ( (! ReadItems(me, seq, hb, g, members, k))
+  | (if writes then
+       event ItemSealed(me, g, m);
+       out(c, shared_write(me, sk, seq, hb, g, k, m))) ).
+
+(* Compositional start of the update. The join above proves (queries
+   MembershipAccepted and EnvelopeAccepted of sharing.pv) that a member
+   pins only a body the manager signed and accepts only the key the owner
+   created for its generation. MemberUpdate therefore starts from the
+   honest state the join reaches (body seq 1, its members, k1), passed by
+   the main process, instead of chaining after the join: chained, the
+   two steps kept every hypothesis of both in each clause and ProVerif
+   did not finish within the 300 s budget.
+
+   Next body (spec 7.2), phase 1: chained to the pinned head (seq + 1,
+   prev_hash), signed by a member with the role Manage in the PINNED body,
+   with the key of the pinned body (never the received one); this device
+   is still a member. A new generation needs its envelope, opened with the
+   member's KEM key and checked against the signed key_commit; the same
+   generation keeps the key (and its commit). Then write: every write
+   here is after the removal. *)
+let MemberAfterRemoval(me: bitstring, sk: skey, seq: bitstring, hb: bitstring,
+                       g: bitstring, k: key, m: bitstring) =
+  event ItemSealed(me, g, m);
+  event ItemSealedAfterRemoval(m);
+  out(c, shared_write(me, sk, seq, hb, g, k, m)).
+
+(* Reading after the update, from the honest state the update reaches
+   (body seq 2 and its key), justified by the queries of the update, for
+   the same reason as above: chained after the update, ProVerif did not
+   finish within the 300 s budget. *)
+let MemberReadAfter(me: bitstring, seq: bitstring, hb: bitstring, g: bitstring,
+                    members: bitstring, k: key) =
+  phase 1;
+  ! ReadItems(me, seq, hb, g, members, k).
+
+let MemberUpdate(me: bitstring, sk: skey, km: seed, kx: seed,
+                 seq: bitstring, hb: bitstring, g: bitstring,
+                 members: bitstring, k: key) =
+  phase 1;
+  new m: bitstring;
+  in(c, (body2: bitstring, sig2: bitstring, is: bitstring, im: bitstring));
+  let mbody(=vlt, seq2: bitstring, =hb, gen2: bitstring, kc2: bitstring,
+            members2: bitstring, rmv2: bitstring, signer2: bitstring) = body2 in
+  if seq2 = nxt(seq) then
+  let ment(=signer2, =role_manage, spub2: pkey, ym: mlkem_pk, yx: x25519_pk) =
+    slot(members, is) in
+  if verify_dom(spub2, dom_membership, body2, sig2) = true then
+  let ment(=me, myrole2: bitstring, =pk(sk), zm: mlkem_pk, zx: x25519_pk) =
+    slot(members2, im) in
+  let hb2 = body_ref(seq2, gen2, kc2) in
+  event MembershipAccepted(me, vlt, (seq2, hb2));
+  if gen2 = g then
+    (if kc2 = key_commit(k, g) then
+     MemberAfterRemoval(me, sk, seq2, hb2, g, k, m))
+  else
+    (in(c, env2: bitstring);
+     let k2 = core_unwrap_labeled(km, kx, lbl_share_vk, env_ctx(gen2, me), env2) in
+     if key_commit(k2, gen2) = kc2 then
+     event EnvelopeAccepted(me, vlt, gen2, k2);
+     MemberAfterRemoval(me, sk, seq2, hb2, gen2, k2, m)).
