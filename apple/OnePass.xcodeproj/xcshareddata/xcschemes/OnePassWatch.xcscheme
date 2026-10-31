@@ -4,8 +4,7 @@
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES"
-      runPostActionsOnFailure = "NO">
+      buildImplicitDependencies = "YES">
       <PreActions>
          <ExecutionAction
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
@@ -45,8 +44,7 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES"
-      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      shouldUseLaunchSchemeArgsEnv = "YES">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
@@ -75,7 +73,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A939BCC0FC42F4841AE98589"
             BuildableName = "OnePassWatch.app"
-            BlueprintName = "OnePassWatch"
             ReferencedContainer = "container:OnePass.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -98,7 +95,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A939BCC0FC42F4841AE98589"
             BuildableName = "OnePassWatch.app"
-            BlueprintName = "OnePassWatch"
             ReferencedContainer = "container:OnePass.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
