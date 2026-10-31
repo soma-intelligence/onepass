@@ -2,7 +2,7 @@
 // trusted-event helpers (jsdom cannot mint `isTrusted` events) and a page loader.
 import { vi } from "vitest";
 import { testGeometry } from "../detect/helpers";
-import { type ContentExt, type ContentScript, createContentScript } from "../../src/content/index";
+import { type ContentExt, type ContentOptions, type ContentScript, createContentScript } from "../../src/content/index";
 
 export const EXT_ID = "onepassextensionid";
 export const EXT_BASE = `chrome-extension://${EXT_ID}/`;
@@ -62,7 +62,7 @@ export function setPage(html: string): void {
   document.documentElement.innerHTML = `<head></head><body>${html}</body>`;
 }
 
-export function start(href = PAGE): Started {
+export function start(href = PAGE, extra: Partial<ContentOptions> = {}): Started {
   const ext = new FakeExt();
   const cs = createContentScript({
     doc: document,
@@ -71,6 +71,7 @@ export function start(href = PAGE): Started {
     geometry: testGeometry,
     isTrusted: (e) => e.isTrusted || trusted.has(e),
     raf: (cb) => setTimeout(cb, 0),
+    ...extra,
   });
   cs.start();
   return { ext, cs };
