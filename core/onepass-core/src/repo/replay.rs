@@ -105,6 +105,17 @@ fn item_of(r: &Record, vault: Id) -> Option<ItemRecord> {
     (prefix == vault).then(|| ItemRecord::decode(body).ok())?
 }
 
+/// The meta of a re-created vault when this device logged none of its own.
+fn recovered_meta() -> VaultMeta {
+    VaultMeta {
+        name: "Coffre récupéré".into(),
+        icon: "tray".into(),
+        color: "gray".into(),
+        travel_safe: false,
+        mcp_access: false,
+    }
+}
+
 /// What a meta intent records of the sealed meta it wrote (`OwnWrite::wrote`).
 pub(crate) fn meta_hash(sealed: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -125,10 +136,21 @@ impl<S: RecordStore> Repository<S> {
         based_on: &Manifest,
         wrote: Option<[u8; 32]>,
     ) -> Result<()> {
+        self.log_own_write_seen(vault, item, seen(based_on), wrote)
+    }
+
+    /// `log_own_write` with the manifest the write is based on as seen.
+    pub(crate) fn log_own_write_seen(
+        &mut self,
+        vault: Id,
+        item: Id,
+        based_on: SeenManifest,
+        wrote: Option<[u8; 32]>,
+    ) -> Result<()> {
         let w = OwnWrite {
             vault,
             item,
-            based_on: seen(based_on),
+            based_on,
             at: OffsetDateTime::now_utc().unix_timestamp(),
             wrote,
         };
@@ -486,7 +508,10 @@ impl<S: RecordStore> Repository<S> {
         let Some(old) = self.old_view(vault)? else {
             return Ok(r);
         };
-        let mut meta = old.vault.meta.clone();
+        // Review M4 (Task 11): this device's own meta (a creation or a
+        // change it logged), never one another device wrote there (R11);
+        // without one, a neutral meta.
+        let mut meta = recovered_meta();
         for w in intents.iter().filter(|w| w.item == w.vault) {
             match self.own_meta(&old, w) {
                 Some(m) => meta = m,

@@ -324,6 +324,7 @@ fn rotate_refused_unless_current() {
     let mut trust = a.store().trust_state().unwrap().unwrap();
     trust.state = DeviceLineageState::Candidate {
         children: vec![[1; 32]],
+        resume: None,
     };
     a.repo()
         .store_mut()
@@ -1698,7 +1699,8 @@ fn follow_waits_for_completeness() {
     assert_eq!(
         state(&c),
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
     c.lock();
@@ -1779,7 +1781,8 @@ fn normal_unlock_never_follows() {
     assert_eq!(
         trust.state,
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
     let before = snapshot(&c.store());
@@ -1820,7 +1823,8 @@ fn candidate_is_read_only() {
     assert_eq!(
         state(&a),
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
     let before = snapshot(&a.store());
@@ -2016,7 +2020,8 @@ fn session_open_before_rotation_becomes_read_only() {
     assert_eq!(
         state(&c),
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
 }
@@ -2048,7 +2053,8 @@ fn follow_then_next_rotation_is_pending() {
     assert_eq!(
         state(&c),
         DeviceLineageState::Candidate {
-            children: vec![r2.head]
+            children: vec![r2.head],
+            resume: None,
         }
     );
     let r = c.repo().create_vault(meta("Travail"));
@@ -2289,7 +2295,8 @@ fn candidate_reads_after_phase_two() {
     assert_eq!(
         state(&c),
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
     let mut vaults = c.repo().vaults().unwrap();
@@ -2377,7 +2384,8 @@ fn travel_refused_while_candidate() {
     assert_eq!(
         state(&c),
         DeviceLineageState::Candidate {
-            children: vec![out.head]
+            children: vec![out.head],
+            resume: None,
         }
     );
     let upstream = c.store();
@@ -3180,9 +3188,14 @@ fn password_change_reapplied_on_yes() {
         |_, _, _| true,
     );
     assert!(prompt_of(&c).unwrap().pending_password_change);
+    let old_id = f_identity_record_id(&c, &f);
     // The new keys were made under the password A knew.
     let (repo, _, sk) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
     c.repo = Some(repo);
+    // Review I3: the change made under the identity left never goes out
+    // (its keyset is sealed under the old Secret Key the revoked device
+    // holds).
+    assert!(no_account_pair_out(&c, old_id));
     // "Oui": the change is applied to the new identity.
     c.repo()
         .change_password(PASSWORD, &sk, NEW_PASSWORD)
@@ -3191,10 +3204,141 @@ fn password_change_reapplied_on_yes() {
     c.lock();
     assert!(c.try_unlock(PASSWORD, &sk).is_err());
     c.try_unlock(NEW_PASSWORD, &sk).unwrap();
+    assert!(no_account_pair_out(&c, old_id));
     sync(&mut server, &mut c).unwrap();
+    assert!(no_account_pair_out(&c, old_id));
+    assert_eq!(
+        server
+            .get(RecordKind::AccountParams, old_id)
+            .unwrap()
+            .version,
+        1
+    );
     pull(&server, &mut a);
     let pin = a.store().device_state().unwrap().pinned;
     assert_eq!(stored_params_epoch(&a.store(), pin.as_ref()).unwrap(), 2);
+}
+
+/// No account params or keyset of records id `id` in the outbox.
+fn no_account_pair_out(dev: &Device, id: Id) -> bool {
+    outbox(dev).iter().all(|(ch, _)| {
+        !(matches!(ch.kind, RecordKind::AccountParams | RecordKind::Keyset) && ch.id == id)
+    })
+}
+
+/// Review I3, "Non" path: the pending change of the identity left is not
+/// pushed either.
+#[test]
+fn password_change_of_left_identity_never_pushed() {
+    let (mut server, _a, mut c, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, c, f| {
+            c.unlock(&f.sk);
+            c.repo()
+                .change_password(PASSWORD, &f.sk, NEW_PASSWORD)
+                .unwrap();
+            c.lock();
+        },
+        |_, _, _| true,
+    );
+    let old_id = f_identity_record_id(&c, &f);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert!(no_account_pair_out(&c, old_id));
+    sync(&mut server, &mut c).unwrap();
+    assert_eq!(
+        server
+            .get(RecordKind::AccountParams, old_id)
+            .unwrap()
+            .version,
+        1
+    );
+}
+
+/// Review I1: the loser of a race rejects the winner ("Ce n'était pas
+/// moi"): it goes back to its own rotation's phase and pushes it to the
+/// end.
+#[test]
+fn loser_rejecting_the_winner_resumes_its_rotation() {
+    let r = race(|_| vec![], |_| vec![], |_, _, _| {}, |_| {}, pull);
+    let a_wins = r.a_wins();
+    let (wh, lh) = if a_wins {
+        (r.ra.head, r.rc.head)
+    } else {
+        (r.rc.head, r.ra.head)
+    };
+    let Race {
+        mut server, a, c, ..
+    } = r;
+    let mut l = if a_wins { c } else { a };
+    assert!(matches!(state(&l), DeviceLineageState::Candidate { .. }));
+    let mut store = l.store();
+    reject_rotation(&mut store, wh, true).unwrap();
+    assert_eq!(state(&l), rotating(2));
+    l.repo().refresh_pending_rotation().unwrap();
+    assert!(l.repo().pending_prompt().is_none());
+    sync(&mut server, &mut l).unwrap();
+    assert_eq!(state(&l), DeviceLineageState::Current);
+    assert_eq!(head_of(&l), lh);
+    assert_eq!(
+        users(&l.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+}
+
+/// Review I2: the loser fetched the winner's records (phase 1 and 2) but
+/// no session looked at them: the store itself holds every vault row of
+/// the loser and its phase does not advance, so nothing of the winner's
+/// vault key, meta or manifest is overwritten.
+#[test]
+fn loser_never_overwrites_a_known_winner() {
+    let r = race(|_| vec![], |_| vec![], |_, _, _| {}, |_| {}, |_, _| {});
+    let a_wins = r.a_wins();
+    let Race {
+        mut server, a, c, ..
+    } = r;
+    let (mut w, l) = if a_wins { (a, c) } else { (c, a) };
+    sync(&mut server, &mut w).unwrap();
+    assert_eq!(state(&w), DeviceLineageState::Current);
+    let v = w.vault().id;
+    let slots: Vec<_> = [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ]
+    .map(|k| server.get(k, v))
+    .to_vec();
+    let (changes, _) = server.changes_since(l.cursor);
+    let mut store = l.store();
+    for ch in changes {
+        store.stage_remote(ch).unwrap();
+    }
+    store.commit_remote().unwrap();
+    assert!(
+        outbox(&l)
+            .iter()
+            .all(|(ch, _)| ch.kind == RecordKind::Lineage),
+        "{:?}",
+        outbox(&l).iter().map(|(ch, _)| ch.kind).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        l.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Retry
+    );
+    push_outbox(&mut server, &l).unwrap();
+    let after: Vec<_> = [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ]
+    .map(|k| server.get(k, v))
+    .to_vec();
+    assert_eq!(after, slots);
+    pull(&server, &mut w);
+    assert_eq!(
+        users(&w.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
 }
 
 /// Controller ruling (Task 4 review): E followed S1, signed by B; A, on a
@@ -3258,7 +3402,8 @@ fn cross_branch_revocation_alerts() {
     assert_eq!(
         t.state,
         DeviceLineageState::Candidate {
-            children: vec![ra.head]
+            children: vec![ra.head],
+            resume: None,
         }
     );
     let v = e.vault();

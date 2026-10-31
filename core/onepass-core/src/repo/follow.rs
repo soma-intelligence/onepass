@@ -504,8 +504,11 @@ fn follow_with<S: RecordStore>(
     // Review M1 (Task 9): not out of a quarantine or an orphaned state
     // (Task 12); out of a rotation being pushed only for a switch.
     let state_ok = match trust.state {
-        DeviceLineageState::Current | DeviceLineageState::Candidate { .. } => true,
-        DeviceLineageState::Rotating { .. } => switch,
+        DeviceLineageState::Current | DeviceLineageState::Candidate { resume: None, .. } => true,
+        DeviceLineageState::Rotating { .. }
+        | DeviceLineageState::Candidate {
+            resume: Some(_), ..
+        } => switch,
         _ => false,
     };
     if !state_ok {
@@ -649,14 +652,51 @@ fn follow_with<S: RecordStore>(
         }
     }
 
-    store.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain.clone()), &trust, &next)?;
-
-    // Committed: nothing below can fail the call. A switch keeps the own
-    // copies for the replay (best effort: a copy not kept is reported by
-    // the replay as lost, with the log's alert).
-    if let Some(left_kem) = left_kem {
-        let _ = keep_own_copies(&mut store, &own, left_kem, &account);
+    // A switch keeps the own copies for the replay, in the same
+    // transaction (review M7: the left KEM secrets are gone after this
+    // call). A vault whose copy cannot be kept is reported by the replay as
+    // lost, with the log's alert.
+    let retained = match left_kem {
+        Some(left_kem) => own_copies(&store, &own, left_kem, &account)?,
+        None => Vec::new(),
+    };
+    // Review M1 (Task 11): a switch away from this device's own rotation
+    // drops what of its phase 1 has not gone out (the lineage record, the
+    // deliveries of the losing Secret Key, its params, keyset and lists):
+    // nobody acts on a lineage record that never reached the server.
+    let mut drop_pending = Vec::new();
+    if let Some(own_head) = bodies.get(&trust.head.hash)
+        && switch
+        && own_head.rotator == me
+    {
+        let mut id = [0u8; 16];
+        id.copy_from_slice(&trust.head.hash[..16]);
+        let mut rows = vec![(RecordKind::Lineage, Id(id))];
+        rows.extend(
+            own_head
+                .deliveries
+                .iter()
+                .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
+        );
+        let left_id = current_records_id(&trust);
+        for kind in [
+            RecordKind::AccountParams,
+            RecordKind::Keyset,
+            RecordKind::DeviceList,
+            RecordKind::VaultList,
+        ] {
+            rows.push((kind, left_id));
+        }
+        for (kind, id) in rows {
+            if store.is_pending_write(kind, id)? {
+                drop_pending.push((kind, id));
+            }
+        }
     }
+
+    store.put_follow(chain.clone(), &trust, &next, retained, drop_pending)?;
+
+    // Committed: nothing below can fail the call.
     // Step 4: the session on the new identity, its vaults from
     // `from_heads` (R12).
     let device = DeviceState {
@@ -690,22 +730,24 @@ fn follow_with<S: RecordStore>(
 }
 
 /// After a switch: for each vault of `vaults`, the device's own copy sealed
-/// under the identity it left is kept for the replay, its vault key wrapped
+/// under the identity it left, kept for the replay: its vault key wrapped
 /// again for the identity followed (`account`), with the meta it pairs
-/// with; its pending key and meta of that identity move there
-/// (`RecordStore::put_retained`), so the followed identity's key shows once
-/// it arrives. `left_kem` is the left identity's KEM secret, then the ones
-/// it retired. The copy under the left identity's own key comes first (the
-/// writes since its adoption are sealed under it); without one, a copy the
-/// followed identity's retired secrets open already (older writes still
-/// waiting for their replay) stays as it is.
-fn keep_own_copies<S: RecordStore>(
-    store: &mut S,
+/// with, as retained rows for `RecordStore::put_follow` (which also moves
+/// its pending key and meta of that identity there, so the followed
+/// identity's key shows once it arrives). `left_kem` is the left
+/// identity's KEM secret, then the ones it retired. The copy under the left
+/// identity's own key comes first (the writes since its adoption are sealed
+/// under it); without one, a copy the followed identity's retired secrets
+/// open already (older writes still waiting for their replay) stays as it
+/// is.
+fn own_copies<S: RecordStore>(
+    store: &S,
     vaults: &BTreeSet<Id>,
     left_kem: &[HybridKemSecret],
     account: &Account,
-) -> Result<()> {
+) -> Result<Vec<Record>> {
     let keyset = account.keyset();
+    let mut out = Vec::new();
     for &vault in vaults {
         let ctx = kem_context(vault);
         let retained = store.retained_rows(vault)?;
@@ -735,18 +777,16 @@ fn keep_own_copies<S: RecordStore>(
                     continue;
                 };
                 let envelope = wrap_key(&account.params.kem_pub, &k, &ctx)?;
-                store.put_retained(vec![
-                    Record {
-                        data: envelope,
-                        ..key.clone()
-                    },
-                    meta.clone(),
-                ])?;
+                out.push(Record {
+                    data: envelope,
+                    ..key.clone()
+                });
+                out.push(meta.clone());
                 break 'found;
             }
         }
     }
-    Ok(())
+    Ok(out)
 }
 
 /// "Ce n'était pas moi" for `choice` (spec 8.2): the record joins
@@ -778,8 +818,12 @@ pub fn reject_rotation(
         next.excluded.insert(body.rotator);
     }
     next.ignore(choice);
-    if matches!(next.state, DeviceLineageState::Candidate { .. }) {
-        next.state = DeviceLineageState::Current;
+    if let DeviceLineageState::Candidate { resume, .. } = next.state {
+        // Review I1 (Task 11): a rotator that rejects the sibling that beat
+        // it goes back to pushing its own rotation.
+        next.state = resume.map_or(DeviceLineageState::Current, |phase| {
+            DeviceLineageState::Rotating { phase }
+        });
     }
     store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)
 }
@@ -830,22 +874,31 @@ impl<S: RecordStore> Repository<S> {
         let state = match (&trust.state, &found) {
             (DeviceLineageState::Current, Some((p, _))) => Some(DeviceLineageState::Candidate {
                 children: p.children.clone(),
+                resume: None,
             }),
-            (DeviceLineageState::Candidate { children }, Some((p, _)))
+            (DeviceLineageState::Candidate { children, resume }, Some((p, _)))
                 if *children != p.children =>
             {
                 Some(DeviceLineageState::Candidate {
                     children: p.children.clone(),
+                    resume: *resume,
                 })
             }
-            (DeviceLineageState::Candidate { .. }, None) => Some(DeviceLineageState::Current),
+            // Review I1: nothing left to decide; a rotator whose winning
+            // sibling went away resumes its own phases.
+            (DeviceLineageState::Candidate { resume, .. }, None) => {
+                Some(resume.map_or(DeviceLineageState::Current, |phase| {
+                    DeviceLineageState::Rotating { phase }
+                }))
+            }
             // Spec 8.2: a sibling of the device's own rotation wins; the
             // push of its phases stops until the user answers.
-            (DeviceLineageState::Rotating { .. }, Some((p, _)))
+            (DeviceLineageState::Rotating { phase }, Some((p, _)))
                 if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) =>
             {
                 Some(DeviceLineageState::Candidate {
                     children: p.children.clone(),
+                    resume: Some(*phase),
                 })
             }
             _ => None,
