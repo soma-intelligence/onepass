@@ -10,7 +10,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
 .PHONY: simulators-m6 build-watch build-vision screenshots-m6
-.PHONY: simulator-m3 uitest-autofill
+.PHONY: simulator-m3 uitest-autofill simulator-fresh uitest-fresh
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -101,7 +101,25 @@ build-mac: core
 uitest: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
-		CODE_SIGN_IDENTITY=- test
+		CODE_SIGN_IDENTITY=- -skip-testing:OnePassUITests/NoSaveSheetUITests test
+
+FRESH_SIMULATOR := OnePass Fresh iPhone
+FRESH_DESTINATION := platform=iOS Simulator,name=$(FRESH_SIMULATOR)
+
+## The fresh simulator of the save sheet test, created when missing. Never touches any other one.
+simulator-fresh:
+	@xcrun simctl list devices | grep -q "$(FRESH_SIMULATOR) (" || \
+		xcrun simctl create "$(FRESH_SIMULATOR)" com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro $(IOS_RUNTIME)
+
+## "Save Password?" never shown (NoSaveSheetUITests) on `OnePass Fresh iPhone`, erased first so that
+## OnePass is never the AutoFill provider. Shuts down and erases that simulator only; signed ad hoc
+## like `uitest` (the sheet only comes with a signed build).
+uitest-fresh: core simulator-fresh
+	xcrun simctl shutdown "$(FRESH_SIMULATOR)" 2>/dev/null || true
+	xcrun simctl erase "$(FRESH_SIMULATOR)"
+	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePass \
+		-destination '$(FRESH_DESTINATION)' -derivedDataPath DerivedData \
+		CODE_SIGN_IDENTITY=- -only-testing:OnePassUITests/NoSaveSheetUITests test
 
 ## AutoFill XCUITest on `OnePass M3 iPhone`, signed ad hoc (the simulator embeds the App Group,
 ## keychain group and provider entitlements). The test drives AutoFillHost; OnePass and its

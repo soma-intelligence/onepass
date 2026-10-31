@@ -2,7 +2,8 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Concealed, password, one-time code and recovery phrase fields: a secure field with Révéler.
+/// Concealed, password, one-time code and recovery phrase fields: a secure field with Révéler
+/// (`SecretInputField`).
 /// Password: "Générer" (generator sheet) and the strength meter. OTP: a base32 secret or an
 /// `otpauth://` URI, with a live preview of the code. Masked again after 30 s and when it goes away.
 struct SecretFieldEditor: View {
@@ -99,7 +100,8 @@ struct SecretFieldEditor: View {
         if revealed {
             TextField(field.label, text: text, axis: field.kind == .mnemonic ? .vertical : .horizontal)
         } else {
-            SecureField(field.label, text: text)
+            // Emptied as it leaves the screen: iOS never offers to save the value (ruling X24).
+            SecretInputField(title: field.label, text: text, monospaced: true, identifier: "editor.field.\(field.id)")
         }
     }
 }

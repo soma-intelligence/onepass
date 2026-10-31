@@ -142,7 +142,8 @@ private struct OnboardingField: View {
             Text(label).font(.subheadline).foregroundStyle(.secondary)
             Group {
                 if secure {
-                    SecureField(text: $text, prompt: Text(prompt)) { Text(label) }
+                    // Emptied as it leaves the screen: iOS never offers to save the master password.
+                    SecretInputField(title: String(localized: prompt), text: $text, identifier: identifier)
                 } else {
                     TextField(text: $text, prompt: Text(prompt)) { Text(label) }
                 }

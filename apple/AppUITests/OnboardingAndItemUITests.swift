@@ -80,11 +80,12 @@ final class OnboardingAndItemUITests: XCTestCase {
 
         // Saved: its detail is shown, then the row is in the list.
         XCTAssertTrue(app.staticTexts["item.title"].waitForExistence(timeout: Self.uiTimeout), "item not saved")
-        // A signed build gets the system "Save Password?" sheet after an edited secure field
-        // goes away: never save a vault secret in the system password manager.
-        // Milestone 2 limit, gone in milestone 3 (OnePass becomes the AutoFill provider).
-        let notNow = app.buttons.matching(NSPredicate(format: "label IN %@", ["Not Now", "Pas maintenant"])).firstMatch
-        if notNow.waitForExistence(timeout: 3) { notNow.tap() }
+        // iOS never offers "Save Password?" for the generated password, whatever the AutoFill
+        // provider: the secret fields are empty as they leave the screen (ruling X24). Watched 10 s,
+        // the sheet fades in 1 to 4 s after the editor closes when it comes; no dismissal is kept.
+        if let sheet = SaveSheetWatch.firstSighting(in: app) {
+            XCTFail("system \"Save Password?\" sheet after the Login was saved: \(sheet)")
+        }
         let search = tabButton(app, id: "tab.search", label: "Rechercher")
         tap(search)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after save")
