@@ -1017,16 +1017,24 @@ impl SyncStore {
             return Ok(Hold::default());
         };
         let (candidate, all) = match trust.state {
-            DeviceLineageState::Candidate { resume, .. } => (true, resume.is_some()),
-            DeviceLineageState::Current => (
-                crate::repo::follow::pending_rotation(self)?.is_some(),
-                false,
-            ),
+            DeviceLineageState::Candidate { resume, .. } => {
+                let locked = crate::repo::follow::look_for(self, &trust)?.lock.is_some();
+                (true, resume.is_some() || locked)
+            }
+            DeviceLineageState::Current => {
+                let look = crate::repo::follow::look_for(self, &trust)?;
+                (look.prompt.is_some(), look.lock.is_some())
+            }
             DeviceLineageState::Rotating { .. } => {
                 let lost = self.lost_rotation()?;
                 (lost, lost)
             }
-            _ => (false, false),
+            // Task 12: a device a valid lineage record revokes or drops
+            // pushes nothing (spec 8.1).
+            DeviceLineageState::Quarantined { .. } | DeviceLineageState::Orphaned { .. } => {
+                (true, true)
+            }
+            DeviceLineageState::Legacy => (false, false),
         };
         let mut left = trust.own_writes.replay_vaults();
         if !trust.retired.is_empty() {
@@ -1041,10 +1049,17 @@ impl SyncStore {
 
     /// Review I2 (Task 11): the rotation this device pushes lost to a
     /// sibling it knows (the resolver offers a switch), whether or not a
-    /// session looked at it yet.
+    /// session looked at it yet. Task 12: or a valid lineage record revokes
+    /// or drops this device (spec 8.1: nothing goes out).
     fn lost_rotation(&self) -> Result<bool> {
-        Ok(crate::repo::follow::pending_rotation(self)?
-            .is_some_and(|p| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
+        let Some(trust) = self.read(trust_in)? else {
+            return Ok(false);
+        };
+        let look = crate::repo::follow::look_for(self, &trust)?;
+        Ok(look.lock.is_some()
+            || look
+                .prompt
+                .is_some_and(|(p, _)| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
     }
 
     /// Every `base` row, ordered by kind then id: the store as the server
@@ -2695,8 +2710,9 @@ const KEPT_ROWS: &str = "(kind = ?1 AND id = ?3) OR (kind = ?2 AND substr(data, 
 
 /// Whether the kept rows of `vault` must outlive a clean load: it has
 /// retained rows (see the module doc) and this device knows a rotation
-/// they serve, one it waits on (`Candidate`) or rejected (`ignored`), or
-/// own writes of a left identity to replay. Otherwise (generation 0, no
+/// they serve, one it waits on (`Candidate`), rejected (`ignored`) or that
+/// locks it (`Quarantined`, `Orphaned`: spec 8.1, the data stays for the
+/// user's answer), or own writes of a left identity to replay. Otherwise (generation 0, no
 /// rotation anywhere) kept rows go as before (review I3).
 fn has_retained(conn: &Connection, vault: Id) -> Result<bool> {
     let any: bool = conn
@@ -2708,8 +2724,12 @@ fn has_retained(conn: &Connection, vault: Id) -> Result<bool> {
         .map_err(store_err)?;
     Ok(any
         && trust_in(conn)?.is_some_and(|t| {
-            matches!(t.state, DeviceLineageState::Candidate { .. })
-                || !t.ignored.is_empty()
+            matches!(
+                t.state,
+                DeviceLineageState::Candidate { .. }
+                    | DeviceLineageState::Quarantined { .. }
+                    | DeviceLineageState::Orphaned { .. }
+            ) || !t.ignored.is_empty()
                 || !t.own_writes.replay.is_empty()
         }))
 }
@@ -3259,6 +3279,26 @@ impl RecordStore for SyncStore {
         trust: &TrustState,
     ) -> Result<()> {
         self.put_with_trust(writes, deletes, chain, None, trust, None)
+    }
+
+    /// Every table emptied in one transaction (as `reset`: records, sync
+    /// state, trust, chain and device state), the trust state compared with
+    /// `expected` inside it; then the file is compacted (best effort), so
+    /// the rows do not linger in free pages or in the WAL.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        let tx = self.write_tx()?;
+        if meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode()) {
+            return Err(Error::Conflict);
+        }
+        for table in [
+            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+        ] {
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(store_err)?;
+        }
+        tx.commit()?;
+        let _ = self.compact();
+        Ok(())
     }
 
     /// `put_all_if_version_with_trust` if the stored trust state is

@@ -174,8 +174,9 @@ impl<S: RecordStore> Repository<S> {
 
     /// Whether this device knows a valid rotation of its head that it has
     /// not followed: it waits on a prompt (`Candidate`, or found by this
-    /// session, or found now in what a fetch brought), or the user rejected
-    /// a child of its head (`ignored`). Only then is a vault key the server
+    /// session, or found now in what a fetch brought), one locks it
+    /// (`Quarantined`, `Orphaned`, Task 12), or the user rejected a child
+    /// of its head (`ignored`). Only then is a vault key the server
     /// replaced read from the device's own copy; otherwise a vault key that
     /// does not open stays an integrity error (review I3).
     ///
@@ -187,7 +188,15 @@ impl<S: RecordStore> Repository<S> {
         let Some(t) = trust_of(&self.store)? else {
             return Ok(false);
         };
-        if self.pending.is_some() || matches!(t.state, DeviceLineageState::Candidate { .. }) {
+        if self.pending.is_some()
+            || self.lineage_lock.is_some()
+            || matches!(
+                t.state,
+                DeviceLineageState::Candidate { .. }
+                    | DeviceLineageState::Quarantined { .. }
+                    | DeviceLineageState::Orphaned { .. }
+            )
+        {
             return Ok(true);
         }
         if !t.ignored.is_empty() {
@@ -200,7 +209,8 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         // A fetch brought one that no write looked at yet.
-        Ok(super::follow::pending_rotation(&self.store)?.is_some())
+        let look = super::follow::look_for(&self.store, &t)?;
+        Ok(look.prompt.is_some() || look.lock.is_some())
     }
 
     /// Whether unlisted item records of `vault` that do not open under its

@@ -11,6 +11,7 @@ use onepass_core::crypto::HybridSigningKey;
 use onepass_core::crypto::SecretKey;
 use onepass_core::devices::{DEFAULT_DEVICE_NAME, DeviceEntry, DeviceKind, DeviceMode};
 use onepass_core::manifest::{Manifest, sign_manifest};
+use onepass_core::repo::follow::{QuarantineTick, quarantine_tick};
 use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore, SqliteStore};
 use onepass_core::vault::{Vault, VaultMeta};
 use onepass_core::{Error, Id, IntegrityError, Result};
@@ -54,6 +55,11 @@ fn vault_ids(dev: &mut Device) -> Vec<Id> {
 /// A creates the account and syncs; B fetches it, unlocks, registers
 /// itself and syncs; A fetches.
 fn two_devices(server: &mut Server) -> (Device, Device) {
+    let (a, b, _sk) = two_devices_with_key(server);
+    (a, b)
+}
+
+fn two_devices_with_key(server: &mut Server) -> (Device, Device, SecretKey) {
     let (mut a, sk) = Device::create();
     sync(server, &mut a).unwrap();
     let mut b = Device::empty();
@@ -64,7 +70,7 @@ fn two_devices(server: &mut Server) -> (Device, Device) {
         .unwrap();
     sync(server, &mut b).unwrap();
     pull(server, &mut a);
-    (a, b)
+    (a, b, sk)
 }
 
 #[test]
@@ -406,7 +412,7 @@ fn revoked_id_cannot_reregister() {
 #[test]
 fn revoked_device_can_revoke_its_revoker() {
     let mut server = Server::default();
-    let (mut a, mut b) = two_devices(&mut server);
+    let (mut a, mut b, sk) = two_devices_with_key(&mut server);
     let a_id = a.repo().this_device_id().unwrap();
     let b_id = b.repo().this_device_id().unwrap();
 
@@ -420,6 +426,18 @@ fn revoked_device_can_revoke_its_revoker() {
     assert!(a.repo().is_this_device_revoked().unwrap());
     assert!(b.repo().is_this_device_revoked().unwrap());
     assert_eq!(a.repo().devices().unwrap(), b.repo().devices().unwrap());
+
+    // Key rotation v2, spec 8.4: the list is signed with account keys the
+    // revoked device holds, so it never erases anything. Neither device is
+    // quarantined, whatever the clock says, and A still reads its vault.
+    for dev in [&a, &b] {
+        let tick = quarantine_tick(&mut dev.store(), u64::MAX).unwrap();
+        assert_eq!(tick, QuarantineTick::NotQuarantined);
+    }
+    let before = a.items();
+    a.lock();
+    a.unlock(&sk);
+    assert_eq!(a.items(), before);
 }
 
 #[test]

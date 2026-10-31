@@ -71,7 +71,7 @@ pub mod replay;
 pub mod rotate;
 pub mod travel;
 
-pub use follow::{PromptChoice, RotationPrompt};
+pub use follow::{LineageLock, PromptChoice, RotationPrompt};
 pub use rotate::{RotateRequest, RotationOutcome};
 
 /// What a device keeps between sessions: the account pinned at first
@@ -206,6 +206,10 @@ pub struct Repository<S: RecordStore> {
     /// What `pending` was computed from (`follow::lineage_mark`); `None`
     /// before the first look.
     pub(crate) lineage_mark: Option<[u8; 32]>,
+    /// A valid lineage record revokes or drops this device (spec 8.1,
+    /// Task 12), found with `pending`: nothing is written or pushed, and a
+    /// quarantined device reads nothing either.
+    pub(crate) lineage_lock: Option<LineageLock>,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -492,6 +496,7 @@ impl<S: RecordStore> Repository<S> {
             records_id: id,
             pending: None,
             lineage_mark: None,
+            lineage_lock: None,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, None, at));
@@ -623,10 +628,14 @@ impl<S: RecordStore> Repository<S> {
             records_id: params.id,
             pending: None,
             lineage_mark: None,
+            lineage_lock: None,
         };
         // K9: an unlock never follows a rotation; it reports a pending one,
         // and the session is read-only until the user answers.
         repo.refresh_pending_rotation()?;
+        // Spec 8.1, 8.4: a quarantined device stays locked (its answer is
+        // `follow::quarantine_resolve`); an orphaned one opens, read-only.
+        repo.readable()?;
         // Spec 10.4: own writes of an identity left wait for a replay under
         // the keys followed; each unlock tries again (best effort: the
         // session opens whatever it finds).
@@ -768,7 +777,11 @@ impl<S: RecordStore> Repository<S> {
     /// vault the vault list marks deleted is not expected either: the
     /// deletion wins over an epoch that still named the vault (issued
     /// before it reached the issuing device).
+    ///
+    /// A quarantined device reads nothing: `Validation("device")` (key
+    /// rotation v2, spec 8.4); `items` too.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        self.readable()?;
         let stored = self.stored_epoch()?;
         let newer = self.epoch_rule(stored.as_ref())?;
         let known = match &stored {
@@ -1267,6 +1280,7 @@ impl<S: RecordStore> Repository<S> {
     /// against the last one seen and the records against the manifest. The
     /// manifest is then remembered as the last one seen.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
+        self.readable()?;
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Read)?;
         let items = loaded

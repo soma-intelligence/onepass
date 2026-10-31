@@ -95,11 +95,41 @@ impl RecordStore for MemoryStore {
         }
         self.put_all_if_version_with_trust(writes, deletes, chain, trust)
     }
+
+    /// Everything goes if the trust state is `expected`.
+    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+        if self.trust.as_ref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        *self = MemoryStore::default();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn erase_device_is_conditional_on_the_trust_state() {
+        let mut s = MemoryStore::new();
+        let rec = Record {
+            id: Id::new(),
+            kind: RecordKind::Item,
+            version: 1,
+            data: vec![1],
+        };
+        let trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(vec![(rec.clone(), None)], vec![], None, &trust)
+            .unwrap();
+        let mut other = trust.clone();
+        other.ignore([0xAB; 32]);
+        assert_eq!(s.erase_device(&other), Err(Error::Conflict));
+        assert_eq!(s.get(rec.kind, rec.id).unwrap(), Some(rec.clone()));
+        s.erase_device(&trust).unwrap();
+        assert_eq!(s.get(rec.kind, rec.id).unwrap(), None);
+        assert_eq!(s.trust_state().unwrap(), None);
+    }
 
     #[test]
     fn memory_trust_is_all_or_nothing() {
