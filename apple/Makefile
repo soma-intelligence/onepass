@@ -10,7 +10,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # unchanged; make always delegates to it.
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
 .PHONY: simulators-m6 build-watch build-vision screenshots-m6
-.PHONY: simulator-m3 uitest-autofill simulator-fresh uitest-fresh
+.PHONY: simulator-m3 uitest-autofill simulator-fresh uitest-fresh install-iphone
 
 ## Shipped XCFramework (release, ios + ios-simulator + macOS) and bindings.
 core:
@@ -57,6 +57,11 @@ build-ios: core simulators
 	cd "$(APPLE_DIR)" && xcodebuild -project OnePass.xcodeproj -scheme OnePassAutoFill \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath DerivedData \
 		CODE_SIGNING_ALLOWED=NO build
+
+## The founder's iPhone, with the one fixed personal identity (scripts/install-iphone.sh):
+## build, signature checks, devicectl install. `make install-iphone ARGS=--dry-run` installs nothing.
+install-iphone:
+	"$(APPLE_DIR)/scripts/install-iphone.sh" $(ARGS)
 
 WATCH_DESTINATION := platform=watchOS Simulator,name=OnePass M6 Watch
 WATCH_RUNTIME := com.apple.CoreSimulator.SimRuntime.watchOS-27-0

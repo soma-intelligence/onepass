@@ -4,7 +4,8 @@ import Testing
 @testable import VaultKit
 
 /// The shared keychain group comes from one build setting, `ONEPASS_KEYCHAIN_GROUP`: the entitlements
-/// name it and the Info.plist key `OnePassKeychainGroup` hands it to the code. A personal build that
+/// name it and the Info.plist key `OnePassKeychainGroup` hands it to the code (the App Group and the
+/// bundle ids follow the same rule: `ONEPASS_APP_GROUP`, `ONEPASS_BUNDLE_ID_PREFIX`). A personal build that
 /// changed the entitlements alone got errSecMissingEntitlement at unlock; these tests keep the two
 /// from drifting again.
 @Suite("Keychain group setting")
@@ -104,6 +105,43 @@ struct KeychainGroupSettingTests {
         }
         // The app (iOS, signed macOS, CloudKit) and the AutoFill extension carry the group.
         #expect(withGroups >= 6)
+    }
+
+    static let appGroupReference = "$(ONEPASS_APP_GROUP)"
+
+    @Test func everyAppGroupEntitlementNamesTheBuildSetting() throws {
+        var withGroups = 0
+        for file in Self.entitlementFiles() {
+            let data = try Data(contentsOf: file)
+            let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+            guard let groups = plist["com.apple.security.application-groups"] else { continue }
+            withGroups += 1
+            #expect(
+                groups as? [String] == [Self.appGroupReference],
+                """
+                \(file.path): com.apple.security.application-groups must be exactly ["\(Self.appGroupReference)"], \
+                found \(groups). Change the group with the ONEPASS_APP_GROUP build setting (apple/project.yml).
+                """)
+        }
+        // App (iOS, signed and CloudKit, both platforms), AutoFill, widgets, notifications, Safari.
+        #expect(withGroups >= 10)
+    }
+
+    @Test(arguments: ["App/Support/Info.plist", "AutoFill/Support/Info.plist", "Widgets/Info.plist", "NotificationService/Info.plist"])
+    func infoPlistHandsTheAppGroupToTheCode(path: String) throws {
+        let data = try Data(contentsOf: Self.appleDir.appendingPathComponent(path))
+        let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(plist["OnePassAppGroup"] as? String == Self.appGroupReference)
+    }
+
+    @Test func shippedBundleIdsDeriveFromTheBuildSetting() throws {
+        let yml = try String(contentsOf: Self.appleDir.appendingPathComponent("project.yml"), encoding: .utf8)
+        #expect(yml.contains("ONEPASS_BUNDLE_ID_PREFIX: me.somalabs.onepass\n"))
+        for suffix in ["", ".autofill", ".safari", ".widgets", ".notifications", ".watchkitapp", ".watchkitapp.widgets"] {
+            #expect(yml.contains("PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX)\(suffix)\n"), "\(suffix)")
+            #expect(!yml.contains("PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass\(suffix)\n"), "\(suffix)")
+        }
+        #expect(yml.contains("WKCompanionAppBundleIdentifier: $(ONEPASS_BUNDLE_ID_PREFIX)\n"))
     }
 
     @Test func projectDefinesTheSettingWithTheDefaultGroup() throws {

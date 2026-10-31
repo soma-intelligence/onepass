@@ -31,13 +31,19 @@ settings:
     DEAD_CODE_STRIPPING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
-    # App Group shared by the app and the AutoFill extension (Info.plist key `OnePassAppGroup`).
+    # Signing identity, as build settings only (a personal team overrides them, see
+    # scripts/install-iphone.sh; never edit an entitlements file or a bundle id below for it).
+    # Bundle id base: the app; its extensions and the watch app add a suffix.
+    ONEPASS_BUNDLE_ID_PREFIX: me.somalabs.onepass
+    # App Group of the app, the AutoFill extension, the widgets and the notification extension:
+    # every entitlements file names `$(ONEPASS_APP_GROUP)`, the code reads the Info.plist key
+    # `OnePassAppGroup`.
     ONEPASS_APP_GROUP: group.me.somalabs.onepass
     "ONEPASS_APP_GROUP[sdk=macosx*]": $(TeamIdentifierPrefix)me.somalabs.onepass
     # Shared keychain access group after the team prefix, for the app and the AutoFill extension.
     # The only place to change it (a fork or a personal team): every entitlements file names
     # `$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)` and the code reads the Info.plist key
-    # `OnePassKeychainGroup`, so the signature and the code always agree (scripts/check-keychain-group.sh
+    # `OnePassKeychainGroup`, so the signature and the code always agree (scripts/check-signing-groups.sh
     # fails the build otherwise). Existing users' items live in the default: never change it here.
     ONEPASS_KEYCHAIN_GROUP: me.somalabs.onepass.shared
     # CloudKit container of the CloudKit entitlements and of the Info.plist key `OnePassCloudKitContainer`.
@@ -90,11 +96,12 @@ targets:
       # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
       - target: OnePassSafari
         destinationFilters: [macOS]
-    # Entitlements and code share ONEPASS_KEYCHAIN_GROUP: a hardcoded group fails the build.
+    # Entitlements and code share ONEPASS_KEYCHAIN_GROUP and ONEPASS_APP_GROUP: a hardcoded group
+    # fails the build.
     preBuildScripts:
-      - name: Check keychain group
+      - name: Check signing groups
         basedOnDependencyAnalysis: false
-        script: '"${PROJECT_DIR}/scripts/check-keychain-group.sh"'
+        script: '"${PROJECT_DIR}/scripts/check-signing-groups.sh"'
     # Chrome and Firefox native messaging host (Contents/Helpers/onepass-relay): signed Mac builds.
     postBuildScripts:
       - name: Embed browser relay
@@ -146,7 +153,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX)
         PRODUCT_NAME: OnePass
         TARGETED_DEVICE_FAMILY: "1,2,7"
         SUPPORTS_MACCATALYST: NO
@@ -230,7 +237,7 @@ targets:
               SupportsGeneratePasswordCredentials: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.autofill
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).autofill
         PRODUCT_NAME: OnePassAutoFill
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
@@ -304,7 +311,7 @@ targets:
         script: '"${PROJECT_DIR}/SafariExtension/scripts/embed-dev-host.sh"'
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.safari
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).safari
         PRODUCT_NAME: OnePassSafari
         "ARCHS[sdk=macosx*]": arm64
         ENABLE_USER_SCRIPT_SANDBOXING: NO
@@ -397,10 +404,10 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: true
         WKApplication: true
-        WKCompanionAppBundleIdentifier: me.somalabs.onepass
+        WKCompanionAppBundleIdentifier: $(ONEPASS_BUNDLE_ID_PREFIX)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).watchkitapp
         PRODUCT_NAME: OnePassWatch
         "ARCHS[sdk=watchos*]": arm64
         # The core XCFramework has no x86_64 watch simulator slice.
@@ -441,7 +448,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.watchkitapp.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).watchkitapp.widgets
         PRODUCT_NAME: OnePassWatchWidgets
         "ARCHS[sdk=watchos*]": arm64
         # The core XCFramework has no x86_64 watch simulator slice.
@@ -478,6 +485,7 @@ targets:
       path: Widgets/Info.plist
       properties:
         CFBundleDisplayName: OnePass
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: fr
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -485,7 +493,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).widgets
         PRODUCT_NAME: OnePassWidgets
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
@@ -519,6 +527,7 @@ targets:
       path: NotificationService/Info.plist
       properties:
         CFBundleDisplayName: OnePass
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: fr
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -527,7 +536,7 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.notifications
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).notifications
         PRODUCT_NAME: OnePassNotifications
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO

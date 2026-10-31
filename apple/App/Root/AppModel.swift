@@ -247,7 +247,7 @@ final class AppModel {
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
         #if os(iOS)
         #if ONEPASS_CLOUDKIT
-        let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel() : nil
+        let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel(containerIdentifier: Self.cloudKitContainer) : nil
         #else
         let remoteChannel: (any RemoteChannel)? = nil
         #endif
@@ -259,7 +259,7 @@ final class AppModel {
             demo == nil && !isolated && !storeSplit && resolved.isShared
             ? BrowserBridge(session: session, container: resolved) : nil
         #if ONEPASS_CLOUDKIT
-        let macChannel: (any RemoteChannel)? = demo == nil && !isolated && !storeSplit ? CloudKitRemoteChannel() : nil
+        let macChannel: (any RemoteChannel)? = demo == nil && !isolated && !storeSplit ? CloudKitRemoteChannel(containerIdentifier: Self.cloudKitContainer) : nil
         #else
         let macChannel: (any RemoteChannel)? = nil
         #endif
