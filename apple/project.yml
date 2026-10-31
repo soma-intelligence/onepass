@@ -490,6 +490,7 @@ targets:
     platform: iOS
     sources:
       - path: AppUITests/AutoFillUITests.swift
+      - path: AppUITests/RunThroughUITests.swift
     dependencies:
       - target: AutoFillHost
     settings:
