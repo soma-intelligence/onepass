@@ -74,8 +74,10 @@ pub struct CardKeys {
 
 /// Control characters (Cc), and the invisible or reordering ones a name
 /// could hide behind: soft hyphen, Arabic letter mark, Mongolian vowel
-/// separator, zero-width and bidi marks, embeddings and isolates, line and
-/// paragraph separators, word joiner and invisible operators, BOM.
+/// separator, zero-width space and bidi marks, embeddings and isolates, line
+/// and paragraph separators, word joiner and invisible operators, BOM. ZWNJ
+/// (U+200C) and ZWJ (U+200D) stay allowed: Persian names and emoji
+/// sequences need them.
 fn forbidden(c: char) -> bool {
     c.is_control()
         || matches!(
@@ -83,7 +85,8 @@ fn forbidden(c: char) -> bool {
             '\u{00AD}'
                 | '\u{061C}'
                 | '\u{180E}'
-                | '\u{200B}'..='\u{200F}'
+                | '\u{200B}'
+                | '\u{200E}'..='\u{200F}'
                 | '\u{2028}'..='\u{202E}'
                 | '\u{2060}'..='\u{2064}'
                 | '\u{2066}'..='\u{2069}'
@@ -381,5 +384,10 @@ mod tests {
         }
         assert!(check_name("Zoë Ångström-Łódź 日本").is_ok());
         assert!(check_name("Camille Durand").is_ok());
+        assert!(
+            check_name("\u{0645}\u{06CC}\u{200C}\u{062E}\u{0648}\u{0627}\u{0647}\u{0645}").is_ok()
+        );
+        assert!(check_name("Sam \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}").is_ok());
+        assert!(check_name("a\u{200E}b").is_err());
     }
 }
