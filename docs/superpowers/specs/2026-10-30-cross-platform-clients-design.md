@@ -31,7 +31,7 @@ Critère de réussite global : un utilisateur qui a un iPhone ajoute un PC Windo
 | Bureau Windows et Linux | Tauri 2, core Rust lié directement (sans FFI), interface web locale verrouillée ; aides natives Rust pour Windows Hello et le plugin passkeys |
 | Paquets Linux | `.deb` et `.rpm` signés (dépôts apt et dnf), AppImage en second ; Flatpak plus tard |
 | Paquets Windows | MSIX signé (identité de paquet obligatoire pour Windows Hello et le plugin passkeys), winget |
-| Backend de sync | Nouveau service `onepass-mailbox` (boîte aux lettres aveugle, self-hostable, hébergé aussi par Soma) ; un seul backend par compte |
+| Backend de sync | Boîte aux lettres aveugle sur Supabase (Postgres, Storage, Realtime, une fonction edge qui vérifie des requêtes signées), self-hostable, hébergée aussi par Soma (décision 1) ; un seul backend par compte |
 | Moteur de sync | La boucle de sync passe en Rust (`SyncDriver`), partagée par tous les clients ; CloudKit reste un transport Swift pour les comptes qui ne quittent pas Apple |
 | Appairage | Protocole 2b + `ConfirmedWithKey` / `FullV2` de la rotation v2, inchangés ; nouveaux transports : TCP sur le réseau local annoncé en DNS-SD, et rendez-vous chiffré par la boîte aux lettres |
 | Stockage sûr | Android Keystore (StrongBox si présent), Windows TPM par CNG (Platform Crypto Provider), Linux Secret Service + scellement TPM2 quand il existe |
@@ -112,7 +112,7 @@ MSIX signé, obligatoire en pratique : les API `KeyCredentialManager` échouent 
 | --- | --- | --- |
 | A. CloudKit Web Services (ou CloudKit JS) depuis Windows, Linux, Android | Pas de serveur à opérer ; même zone que les apps Apple. | La base privée demande une connexion Apple ID dans un navigateur et un `ckWebAuthToken` à usage unique renouvelé à chaque aller-retour ; les clés serveur à serveur ne donnent que la base publique. Un utilisateur avec Advanced Data Protection doit activer "Accéder aux données iCloud sur le web", ce qui affaiblit sa protection côté Apple. Expérience pénible sur Android, dépendance totale à Apple. |
 | B. Blob store générique (WebDAV, S3 compatible, Nextcloud) fourni par l'utilisateur | Self-host avec ce qu'on a déjà ; zéro service à nous. | Écritures conditionnelles inégales (S3 a `If-Match`/`If-None-Match` depuis 2024, beaucoup de WebDAV non fiables), pas de flux de changements (lister tout le préfixe à chaque tour), pas de lot atomique, pas de notification. Réalisable comme adaptateur, pas comme base. |
-| **C. Service `onepass-mailbox` : boîte aux lettres aveugle, self-hostable, hébergée aussi par Soma** | Fait exactement ce que `RecordStore` attend : écriture conditionnelle, lots atomiques sans limite de 400 enregistrements, flux de changements par séquence serveur, notifications, rendez-vous d'appairage. Code public, image Docker, SQLite pour un self-host, Postgres pour l'hébergé. | Un service à opérer, à surveiller et à protéger contre l'abus ; adresses IP et rythme visibles par l'opérateur. |
+| **C. Service `onepass-mailbox` : boîte aux lettres aveugle, self-hostable, hébergée aussi par Soma** | Fait exactement ce que `RecordStore` attend : écriture conditionnelle, lots atomiques sans limite de 400 enregistrements, flux de changements par séquence serveur, notifications, rendez-vous d'appairage. Code public ; hébergé sur Supabase, self-host sur Supabase auto-hébergé (4.4, 4.16). | Un service à opérer, à surveiller et à protéger contre l'abus ; adresses IP et rythme visibles par l'opérateur. |
 | D. Pair à pair seulement (réseau local, l'appareil Apple sert de hub) | Aucun serveur. | Pas de sync continue quand les appareils ne sont pas ensemble ; un téléphone Android loin de l'iPhone ne voit rien. Garde son intérêt pour le premier transfert (instantané de l'autorisation, 2b section 5.4). |
 
 **Recommandation : C**, avec D pour le premier transfert (déjà dans le protocole 2b) et B comme adaptateur possible plus tard derrière le même protocole. A est écarté. Questions 1 et 13.
@@ -127,46 +127,162 @@ MSIX signé, obligatoire en pratique : les API `KeyCredentialManager` échouent 
 
 **Recommandation : A.** Question 2.
 
-Migration d'un compte (sur un appareil Apple déverrouillé) : choix du serveur (hébergé ou URL self-host), création de la boîte, inscription de l'appareil, envoi complet de `base` et `pending` (réinitialisation de zone vers le nouveau transport), écriture d'un nouvel enregistrement signé `SyncHome` (4.6) dans les deux backends, puis chaque autre appareil Apple lit `SyncHome` dans CloudKit, vérifie la signature, et bascule avec confirmation de l'utilisateur ("Ton coffre se synchronise maintenant avec <serveur>"). CloudKit garde la zone en lecture seule 30 jours, puis l'app propose de l'effacer.
+Migration d'un compte (sur un appareil Apple déverrouillé) : choix du serveur (hébergé ou URL self-host), création de la boîte, inscription de l'appareil, envoi complet de `base` et `pending` (réinitialisation de zone vers le nouveau transport), écriture d'un nouvel enregistrement signé `SyncHome` (4.13) dans les deux backends, puis chaque autre appareil Apple lit `SyncHome` dans CloudKit, vérifie la signature, et bascule avec confirmation de l'utilisateur ("Ton coffre se synchronise maintenant avec <serveur>"). CloudKit garde la zone en lecture seule 30 jours, puis l'app propose de l'effacer.
 
-### 4.4 Protocole de la boîte aux lettres
+### 4.4 Hébergement sur Supabase (décision P1)
 
-Transport : HTTPS (TLS 1.3, échange hybride `X25519MLKEM768` quand le client et le serveur l'offrent, par `rustls`), corps en postcard versionné, HTTP/2. Le chiffrement de bout en bout ne dépend pas de TLS ; TLS protège les métadonnées et l'authentification des requêtes contre un tiers réseau.
+Réécrit le 2026-10-31 après la décision 1 du fondateur. La boîte aux lettres n'est plus un binaire `axum` : c'est un projet Supabase dont chaque brique a un rôle borné.
 
-Ressources (version `v1`) :
+| Brique Supabase | Rôle | Ce qu'elle ne fait jamais |
+| --- | --- | --- |
+| Postgres (schéma `onepass_mailbox`) | Boîtes, identifiants, enregistrements opaques, curseurs (`seq`), nonces, quotas, trames de rendez-vous | Interpréter un blob ; être joint par PostgREST (schéma non exposé) |
+| Fonction edge `mailbox` (Deno) | Seule porte d'entrée HTTP : vérifie la signature de chaque requête, décode strictement le corps, appelle une fonction SQL, encode la réponse | Tenir une clé de données ; écrire en SQL hors des fonctions `api_*` |
+| Storage (bucket privé `onepass-mailbox`) | Corps d'enregistrement au-dessus de 16 Kio (900 Kio au plus) | Servir un objet sans URL signée de 60 s émise après vérification |
+| Realtime (Broadcast depuis la base) | Réveil "il y a du nouveau" quand l'app est ouverte | Porter un `seq`, un genre ou un identifiant |
+| `pg_cron` | Purges (nonces, rendez-vous, pierres tombales), file des notifications | |
 
-| Requête | Rôle |
-| --- | --- |
-| `POST /v1/mailboxes` | Crée une boîte. Hébergé : demande un jeton d'invitation ou un quota (champ `plan` du compte). Rend `mailbox_id` (128 bits aléatoires, sans lien avec l'id du compte) |
-| `POST /v1/mailboxes/{m}/credentials` | Inscrit l'identifiant d'un nouvel appareil, sur présentation d'un ticket signé par un identifiant déjà inscrit (4.5) |
-| `DELETE /v1/mailboxes/{m}/credentials/{c}` | Retire un identifiant (confort : la coupure réelle est la rotation v2) |
-| `GET /v1/mailboxes/{m}/changes?after=<seq>` | Flux de changements : `(server_seq, kind, id, version, size, data)` par pages, `server_seq` strictement croissant par boîte |
-| `POST /v1/mailboxes/{m}/commit` | Lot atomique d'écritures conditionnelles : `[(kind, id, expected_version, data | delete)]`. Tout ou rien ; conflit = liste des clés en conflit, rien d'écrit |
-| `GET /v1/mailboxes/{m}/records/{kind}/{id}` | Lecture d'un enregistrement |
-| `GET /v1/mailboxes/{m}/events` | Flux de notifications (WebSocket ou SSE) : seulement "il y a du nouveau après `seq`" |
-| `PUT/GET /v1/rendezvous/{session_id}/{direction}/{n}` | Relais d'appairage (4.7), trames opaques, durée de vie 2 min, sans authentification de boîte |
+Supabase Auth n'intervient pas : aucune session, aucun JWT d'utilisateur. La preuve d'accès est la signature de requête (4.7). La passerelle de la fonction est ouverte (`verify_jwt = false`) puisque l'authentification est la nôtre.
 
-Authentification des requêtes : chaque appareil a un **identifiant de boîte**, une paire Ed25519 créée sur l'appareil, distincte de ses clés d'appareil de la rotation v2. Chaque requête porte une signature HTTP (RFC 9421) sur la méthode, le chemin, l'empreinte du corps, un horodatage et un nonce ; le serveur refuse au-delà de 5 min de décalage et tout nonce revu. Ce n'est pas une garantie de sécurité des données (le serveur est hostile de toute façon) : c'est ce qui empêche un tiers qui connaît un `mailbox_id` de lire les blobs ou de remplir la boîte. Pourquoi une clé distincte : un identifiant de boîte volé (fichier de configuration, sauvegarde) ne signe ni rotation, ni intro, ni liste ; et le serveur n'apprend aucune clé d'appareil.
+Le modèle de serveur hostile ne change pas : l'opérateur (Soma), Supabase comme sous-traitant, ou un attaquant qui lit la base voient ce que liste 4.15 et rien d'autre. Toute garantie de confidentialité et d'intégrité reste dans le core (manifestes, listes signées, époques, lignée de rotation, `SyncHome`).
 
-Ce que le serveur stocke : boîtes, identifiants (clé publique, date, libellé opaque choisi par le client), enregistrements (`kind`, `id`, `version`, `server_seq`, taille, octets), nonces récents, trames de rendez-vous. Ce qu'il fait respecter : comparaison de version, taille maximale par enregistrement (900 Kio comme aujourd'hui, `MAX_RECORD_BYTES`, pour garder la parité avec CloudKit), quota, débit. Ce qu'il ne fait jamais : interpréter un blob.
+Pile client : un seul code Rust (`onepass-mailbox`, 4.14) en HTTP/1.1 ou HTTP/2 sur TLS 1.3 seulement (`rustls` avec le fournisseur `aws-lc-rs`, échange hybride `X25519MLKEM768` quand le serveur l'offre, racines `webpki-roots`, certificat d'autorité en plus pour un self-host). Corps en postcard versionné, type `application/vnd.onepass.mailbox.v1+postcard`.
 
-Notifications de réveil :
+### 4.5 Schéma Postgres
 
-- Bureau : WebSocket tant que l'app tourne.
-- Android : message FCM sans contenu ("réveille-toi") envoyé par la boîte hébergée, et UnifiedPush pour les builds sans Google ; repli en interrogation périodique par WorkManager. Question 12.
-- Apple sur boîte aux lettres : APNs silencieux sans contenu, repli en récupération à l'ouverture.
+Schéma `onepass_mailbox`, propriété du rôle `onepass_mailbox_owner` (4.8). Identifiants binaires de taille fixe vérifiée par contrainte.
 
-Le jeton de notification (FCM, APNs) est une donnée que l'opérateur voit et relie à une boîte. Documenté en 8.
+| Table | Colonnes | Clé et index |
+| --- | --- | --- |
+| `plans` | `plan text`, `max_bytes bigint`, `max_records int`, `max_credentials int`, `req_per_min int`, `max_commit_ops int` | PK `plan`. Lignes `free` (256 Mio, 100 000 enregistrements, 16 identifiants, 120 requêtes par minute, 20 000 opérations par lot) et `selfhost` (limites hautes) |
+| `invites` | `token_hash bytea(32)`, `plan`, `uses_left int`, `expires_at` | PK `token_hash` |
+| `mailboxes` | `id bytea(16)` (aléatoire, `gen_random_bytes(16)`), `incarnation bigint` (aléatoire, change seulement si l'opérateur restaure une sauvegarde), `plan`, `wake_topic bytea(16)` (aléatoire), `next_seq bigint` (1 au départ), `min_cursor bigint` (0 au départ), `bytes_used bigint`, `records_count int`, `frozen bool`, `created_at`, `last_write_at` | PK `id`, unique `wake_topic` |
+| `credentials` | `id bytea(16)` = `SHA-256("onepass/mailbox-credential-id/v1" ‖ public_key)[..16]`, `mailbox_id`, `public_key bytea(32)`, `label bytea` (64 octets au plus, chiffré par le client), `enrolled_by bytea(16) null`, `push_kind smallint null`, `push_token bytea null`, `created_at`, `last_used_at`, `revoked_at null` | PK `id`, index `(mailbox_id)` |
+| `records` | `mailbox_id`, `kind smallint` (1 à 255), `id bytea(16)`, `version bigint` (celle du client), `seq bigint` (séquence serveur de la dernière écriture), `deleted bool`, `size int`, `data bytea null` (16 Kio au plus), `blob_sha256 bytea(32) null` | PK `(mailbox_id, kind, id)`, unique `(mailbox_id, seq)` pour le flux de changements. Contrainte : une pierre tombale n'a ni `data` ni `blob_sha256`, un enregistrement vivant a exactement l'un des deux |
+| `blobs` | `mailbox_id`, `sha256 bytea(32)`, `size int`, `state smallint` (annoncé, présent, orphelin), `refs int`, `orphaned_at null` | PK `(mailbox_id, sha256)` |
+| `nonces` | `credential_id`, `mailbox_id`, `nonce bytea(16)`, `seen_at` | PK `(credential_id, nonce)`, index `(seen_at)` |
+| `used_tickets` | `ticket_hash bytea(32)`, `mailbox_id`, `used_at` | PK `ticket_hash` |
+| `rate` | `key bytea(32)`, `window_start timestamptz`, `count int` | PK `(key, window_start)` |
+| `push_queue` | `mailbox_id`, `exclude_credential bytea(16) null`, `enqueued_at` | PK `mailbox_id` (une entrée par boîte, regroupe les réveils) |
+| `rdv_sessions` | `session_id bytea(16)`, `created_at`, `bytes bigint`, `closed_at null` | PK `session_id` |
+| `rdv_chunks` | `session_id`, `dir smallint` (0 nouveau vers approbateur, 1 inverse), `n int`, `data bytea` (1 Mio au plus), `written_at` | PK `(session_id, dir, n)` |
 
-### 4.5 Inscription d'un appareil dans la boîte
+Sémantique des enregistrements, calquée sur ce que le coordinateur Swift attend de CloudKit (`RemoteRecordStore`) :
 
-Le ticket d'inscription est produit par un appareil déjà inscrit et transmis au nouvel appareil dans le canal d'appairage authentifié par le code court (4.7) :
+- **Écriture conditionnelle** : une écriture porte `expected: Option<seq>`. `None` passe seulement s'il n'y a pas de ligne ou une pierre tombale ; `Some(s)` passe seulement si la ligne est vivante avec `seq = s`. Le `seq` rendu est rangé côté client comme `server_meta` (8 octets gros-boutistes), exactement comme l'étiquette de changement de CloudKit : `SyncStore` ne change pas.
+- **Suppression** : sans condition (comme CloudKit), idempotente ; une ligne vivante devient pierre tombale avec un nouveau `seq`, une ligne absente ne bouge pas.
+- **Flux** : `seq` strictement croissant par boîte, sans trou visible au client. `after = 0` rend seulement les lignes vivantes (récupération complète, puis `finish_full_fetch` règle le reste). Une pierre tombale vit 90 jours ; un curseur plus ancien que `min_cursor` reçoit `410 cursor_expired` et le client refait une récupération complète.
+- **Perte de données côté serveur** : `incarnation` change ; le client qui voit une autre incarnation que celle rangée fait `begin_zone_reset`, comme pour une zone CloudKit recréée.
 
-`EnrollTicket { mailbox_url, mailbox_id, new_credential_pub, expires_at, nonce }`, signé par l'identifiant de boîte de l'approbateur. Le nouvel appareil crée sa paire, envoie sa clé publique dans `ConfirmedWithKey` (champ ajouté en fin de message, voir 5.2), reçoit le ticket dans l'autorisation, et l'utilise une fois. Le serveur vérifie la signature contre un identifiant inscrit et refuse un ticket expiré ou déjà utilisé.
+### 4.6 API : la fonction edge et les fonctions SQL
 
-Retrait : l'appareil qui retire un autre appareil (liste signée, puis rotation v2) supprime aussi son identifiant de la boîte. Un serveur hostile peut l'ignorer ; ce n'est pas grave, la rotation v2 a déjà rendu inutile tout ce que l'appareil retiré pourrait lire ensuite (objectif G1).
+Ressources (`v1`, chemins relatifs à l'URL de base de la boîte, par exemple `https://<projet>.supabase.co/functions/v1/mailbox`) :
 
-### 4.6 Quels enregistrements, et comment
+| Requête | Signée par | Fonction SQL | Rôle |
+| --- | --- | --- | --- |
+| `GET /v1/config` | personne | aucune | Limites publiques, URL Realtime, clé publiable (publique par nature) |
+| `POST /v1/mailboxes` | la nouvelle clé (preuve de possession) | `api_create_mailbox` | Crée la boîte ; hébergé : jeton d'invitation exigé, 5 créations par jour et par adresse IP |
+| `GET /v1/mailboxes/{m}` | un identifiant inscrit | `api_mailbox_info` | Incarnation, sujet de réveil, `min_cursor`, limites, usage |
+| `POST /v1/mailboxes/{m}/credentials` | la nouvelle clé, ticket signé par un identifiant inscrit dans le corps | `api_enroll` | Inscription (4.12) |
+| `DELETE /v1/mailboxes/{m}/credentials/{c}` | un identifiant inscrit | `api_revoke_credential` | Retrait de confort (la coupure réelle est la rotation v2) |
+| `PUT /v1/mailboxes/{m}/push` | un identifiant inscrit | `api_set_push` | Jeton FCM, APNs ou UnifiedPush de cet identifiant |
+| `GET /v1/mailboxes/{m}/changes?after=<seq>&limit=<n>` | un identifiant inscrit | `api_changes` | Page de changements (1 000 au plus, 4 Mio au plus) |
+| `POST /v1/mailboxes/{m}/commit` | un identifiant inscrit | `api_commit` | Lot atomique (corps de 4 Mio au plus, 20 000 opérations au plus) |
+| `GET /v1/mailboxes/{m}/records/{kind}/{id}` | un identifiant inscrit | `api_record` | Lecture d'un enregistrement |
+| `POST /v1/mailboxes/{m}/blobs/uploads` | un identifiant inscrit | `api_blob_announce` | URL signées d'envoi pour les corps au-dessus de 16 Kio (4.11) |
+| `POST /v1/mailboxes/{m}/blobs/downloads` | un identifiant inscrit | `api_blob_lookup` | URL signées de lecture (60 s) |
+| `PUT /v1/rendezvous/{s}/{dir}/{n}` | personne | `rdv_put` | Trame de rendez-vous, écrite une seule fois |
+| `GET /v1/rendezvous/{s}/{dir}/{n}?wait=25` | personne | `rdv_get` | Lecture avec attente longue (25 s au plus) |
+| `DELETE /v1/rendezvous/{s}` | personne | `rdv_close` | Fin de session |
+
+Le lot de `commit` : `[(kind, id, version, op)]` où `op` est `Put { expected, body: Inline(octets) | Blob { sha256, size } }` ou `Delete`. Tout ou rien : la fonction verrouille la ligne de la boîte (`FOR UPDATE`, un lot à la fois par boîte), compare chaque `expected`, et en cas de conflit n'écrit rien et rend, pour chaque clé en conflit, la ligne serveur courante (que le client met en attente comme le fait le coordinateur Swift). Sinon chaque opération reçoit le `seq` suivant, les compteurs et quotas sont mis à jour dans la même transaction, puis le réveil part (4.10). Un lot qui dépasse les limites est refusé entier (`413`), le client le coupe comme il coupe aujourd'hui pour CloudKit (items avant manifestes).
+
+Codes d'erreur (corps postcard `ErrorBody { code, retry_after }`) : `400 malformed`, `401 bad_signature`, `401 stale_request` (décalage), `401 replay`, `403 unknown_credential`, `403 revoked_credential`, `403 frozen`, `404 not_found`, `409 conflict` (rendu dans le corps du commit, pas en erreur), `410 cursor_expired`, `413 too_large`, `422 quota`, `429 rate_limited` avec `retry_after`, `503 retry`.
+
+Chaque route qui touche la base appelle une seule fonction SQL `api_*` ou `rdv_*` dans une seule transaction. Une fonction `api_*` reçoit l'identifiant, le nonce et l'horodatage déjà vérifiés par la fonction edge et fait elle-même : insertion du nonce (une clé déjà vue lève `replay`), contrôle de l'identifiant (inscrit dans la boîte du chemin, non retiré, boîte non gelée), débit, puis `set_config('onepass.mailbox', <id>, true)` pour la RLS (4.8), puis le travail.
+
+Le décodage strict des corps et la construction de la base de signature viennent du même code Rust que le client : la crate `onepass-mailbox-proto` compilée en WebAssembly (`wasm-bindgen`, cible Deno) et embarquée dans la fonction. Un seul décodeur, fuzzé, et une seule canonicalisation pour les deux côtés.
+
+### 4.7 Requêtes signées
+
+Chaque appareil a un **identifiant de boîte** : une paire Ed25519 créée sur l'appareil, rangée par `DeviceSecrets` (section 6), utilisable appareil verrouillé pour la sync en arrière-plan. Elle est distincte des clés d'appareil de la rotation v2 ; voir "Écart avec la décision 1" plus bas.
+
+Format, inspiré de RFC 9421 (HTTP Message Signatures) et RFC 9530 (`Content-Digest`), restreint à une seule forme :
+
+```
+Content-Digest: sha-256=:<base64 du SHA-256 du corps, corps vide compris>:
+Signature-Input: sig1=("@method" "@onepass-target" "content-digest");created=<unix>;nonce="<base64url, 16 octets>";keyid="<id de l'identifiant, 32 hex>";alg="ed25519";tag="onepass-mailbox/v1"
+Signature: sig1=:<base64 de la signature Ed25519, 64 octets>:
+```
+
+Base signée (RFC 9421 section 2.5), octets UTF-8, sans saut de ligne final :
+
+```
+"@method": POST
+"@onepass-target": /v1/mailboxes/<m hex>/commit?after=12
+"content-digest": sha-256=:...:
+"@signature-params": ("@method" "@onepass-target" "content-digest");created=...;nonce="...";keyid="...";alg="ed25519";tag="onepass-mailbox/v1"
+```
+
+`@onepass-target` est le composant dérivé propre à OnePass : chemin et requête relatifs à l'URL de base de la boîte, tels que le client les a envoyés. Il remplace `@path` parce que la passerelle Supabase préfixe le chemin (`/functions/v1/mailbox`). L'autorité n'est pas signée : le `mailbox_id` dans le chemin, l'identifiant propre à une boîte et le nonce suffisent contre le rejeu vers un autre serveur.
+
+Vérification, dans cet ordre, par la fonction edge :
+
+1. Analyse stricte : exactement une étiquette `sig1`, exactement ces trois composants dans cet ordre, exactement ces paramètres dans cet ordre, `tag` et `alg` égaux aux valeurs ci-dessus. Tout écart : `401 bad_signature`.
+2. `|maintenant - created| <= 300` secondes, sinon `401 stale_request`.
+3. `Content-Digest` recalculé sur le corps reçu.
+4. Clé publique de `keyid` lue par `credential_key` (pour `POST /v1/mailboxes` et l'inscription : la clé du corps, dont `keyid` doit être l'empreinte). Signature vérifiée par WebCrypto (`Ed25519`).
+5. Seulement alors, la fonction `api_*` insère le nonce : une requête non signée ne peut pas remplir la table des nonces. Les nonces vivent 10 minutes (deux fois la fenêtre de décalage) et sont purgés par `pg_cron`.
+
+Le serveur ne signe pas ses réponses : il est hostile de toute façon, TLS protège contre un tiers réseau, et le core vérifie tout ce qu'il lit.
+
+**Écart avec la décision 1.** La décision dit "signature d'appareil (clés de la rotation v2)". Cette réécriture garde une clé de requête distincte, créée et gardée sur l'appareil, pour quatre raisons : (a) la clé d'appareil de la rotation v2 est hybride, et vérifier ML-DSA-87 dans la fonction edge ajouterait une implémentation post-quantique côté serveur sans rien protéger de plus, puisque ces signatures n'authentifient que l'accès à des blobs déjà chiffrés ; (b) sur Apple la clé d'appareil n'est lisible qu'appareil déverrouillé (`WhenUnlockedThisDeviceOnly`) et sa moitié post-quantique vit dans la Secure Enclave, alors que la sync tourne écran verrouillé ; (c) le serveur apprendrait les clés publiques d'appareil et pourrait relier le roster aux adresses IP ; (d) une clé de requête volée (sauvegarde, fichier de configuration) ne signe ni rotation, ni intro, ni liste. Le lien avec la rotation v2 reste : le ticket d'inscription passe dans le canal d'appairage authentifié par le code court, où la clé d'appareil est épinglée en même temps. À confirmer par le fondateur.
+
+### 4.8 Rôles, RLS et défense en profondeur
+
+La RLS n'est pas la frontière de sécurité (la signature l'est), mais elle limite ce qu'un bogue dans une fonction SQL ou dans la fonction edge peut atteindre.
+
+- **`onepass_mailbox_owner`** (`NOLOGIN`, `NOBYPASSRLS`) possède les tables et les fonctions `api_*` et `rdv_*` (`SECURITY DEFINER`, `search_path = ''`). Toutes les tables ont `ENABLE` et `FORCE ROW LEVEL SECURITY` : le propriétaire lui-même y est soumis.
+- **Politiques** : chaque table qui porte `mailbox_id` n'est lisible et modifiable par le propriétaire que pour `mailbox_id = onepass_mailbox.current_mailbox()`, qui lit `current_setting('onepass.mailbox', true)` posé par la fonction après l'authentification de la requête. `rdv_*` : même chose avec `onepass.rdv` (le `session_id`). `invites` : seulement pendant `api_create_mailbox` (`onepass.invite`). `plans` : lecture seule. Une fonction qui oublierait un `WHERE mailbox_id = ...` ne voit quand même que la boîte authentifiée.
+- **Storage** : politique sur `storage.objects` pour `onepass_mailbox_owner`, lecture seule, `bucket_id = 'onepass-mailbox'` et nom préfixé par la boîte courante en hexadécimal. Les URL signées sont émises par la fonction edge avec la clé de service, utilisée pour Storage seulement, jamais pour la base.
+- **`onepass_mailbox_api`** (`LOGIN`, `NOBYPASSRLS`, mot de passe dans les secrets de la fonction) : `USAGE` sur le schéma, `EXECUTE` sur `credential_key`, `api_*` et `rdv_*`, aucun droit sur une table. C'est le seul rôle de la fonction edge pour la base, par le pooler en mode transaction.
+- **`anon`, `authenticated`** : aucun droit sur le schéma, schéma absent des schémas exposés par l'API REST et GraphQL. `service_role` n'est jamais utilisé pour la base.
+- **Maintenance** : `onepass_mailbox.maintenance()` tourne par `pg_cron` sous le rôle `postgres`, hors chemin de requête.
+
+### 4.9 Quotas et abus
+
+- **Par boîte**, dans la transaction du commit : octets (inline + blobs), nombre d'enregistrements vivants, nombre d'identifiants actifs, opérations par lot ; dépassement : `422 quota`, rien d'écrit.
+- **Par identifiant** : `req_per_min` en fenêtre d'une minute (table `rate`), `429` avec `retry_after`.
+- **Par adresse IP** pour les routes sans identifiant (création, inscription, rendez-vous, config) : clé `HMAC-SHA-256(secret du jour, ip)`, pour ne garder aucune adresse en clair ; 5 créations par jour, 60 requêtes de rendez-vous par minute, 200 Mio de rendez-vous par heure.
+- **Rendez-vous** : 66 Mio par session et par sens (un instantané de 50 Mio en trames d'au plus 1 Mio), trame écrite une seule fois (`PUT` sur un `n` existant : `409`), lisible 2 minutes après son écriture, session fermée 10 minutes après sa création.
+- **Gel** : `mailboxes.frozen` coupe une boîte qui abuse (lecture et écriture refusées, `403 frozen`) sans rien effacer ; geste d'opérateur, journalisé.
+- **Hébergé** : création sur invitation (`invites`), plan `free` par défaut. **Self-host** : `OPEN_SIGNUP=true` et plan `selfhost`.
+
+### 4.10 Réveil
+
+- **App ouverte** (tous clients) : le commit appelle `realtime.send('{}', 'wake', 'mbx:' || hex(wake_topic), false)`. Le client suit le canal public `mbx:<wake_topic>` par le WebSocket Realtime avec la clé publiable. Le message est vide : il dit seulement "récupère". Le sujet, 128 bits aléatoires, n'est donné qu'aux identifiants inscrits (`api_mailbox_info`) ; qui le connaîtrait verrait seulement le rythme des écritures. Un canal privé demanderait un JWT Supabase Auth, ce que la décision 1 exclut comme preuve d'accès.
+- **App fermée** : le commit insère ou rafraîchit `push_queue` (une ligne par boîte, l'auteur exclu). `pg_cron` appelle toutes les 10 secondes la fonction edge `mailbox-push`, qui envoie un message sans contenu : FCM (Android Play Store), UnifiedPush (F-Droid), APNs silencieux (Apple sur boîte aux lettres). Repli : interrogation périodique (WorkManager sur Android, récupération à l'ouverture ailleurs).
+- Le jeton de notification est une donnée que l'opérateur voit et relie à une boîte (4.15).
+
+### 4.11 Storage pour les gros corps
+
+Un corps de plus de 16 Kio ne passe pas dans `records.data` : le client calcule son SHA-256, l'annonce (`blobs/uploads`), reçoit une URL signée d'envoi pour `onepass-mailbox/<boîte hex>/<sha256 hex>` (sauf si le blob est déjà présent), l'envoie, puis le référence dans le commit par `Blob { sha256, size }`. Le commit vérifie que l'objet existe dans `storage.objects` avec cette taille et incrémente `refs` ; une ligne remplacée ou supprimée décrémente. Un blob à `refs = 0` depuis 24 heures est supprimé par la fonction edge `mailbox-gc` (par l'API Storage, appelée par `pg_cron` et `pg_net`). En lecture, le client demande des URL signées de 60 s et vérifie le SHA-256 avant de remettre les octets au core.
+
+Effet : un lot de commit reste petit (une référence fait une centaine d'octets), donc un lot atomique de 20 000 enregistrements tient dans 4 Mio quelle que soit la taille des items.
+
+### 4.12 Inscription d'un appareil dans la boîte
+
+Le ticket est produit par un appareil déjà inscrit et transmis au nouvel appareil dans le canal d'appairage authentifié par le code court (section 5) :
+
+```
+EnrollTicket { version: 1, mailbox_url: String (256 octets au plus), mailbox_id: [u8; 16], new_credential_pub: [u8; 32], expires_at: i64, nonce: [u8; 16] }
+SignedEnrollTicket { ticket, approver_credential: [u8; 16], sig: [u8; 64] }
+```
+
+`sig` = Ed25519 de l'identifiant de l'approbateur sur `"onepass/mailbox-enroll/v1" ‖ postcard(ticket)`. Durée de vie : 10 minutes au plus. Le nouvel appareil crée sa paire, envoie sa clé publique dans `ConfirmedWithKey` (champ `mailbox_credential`, 5.2), reçoit le ticket dans `FullGrantV2.enroll`, et l'utilise une fois par `POST /v1/mailboxes/{m}/credentials`, requête signée par sa nouvelle clé. Le serveur vérifie la signature du ticket contre un identifiant actif de la même boîte, la clé du ticket contre celle qui signe la requête, l'échéance, et l'unicité (`used_tickets`).
+
+Retrait : l'appareil qui retire un autre appareil (liste signée, puis rotation v2) supprime aussi son identifiant. Un serveur hostile peut l'ignorer ; la rotation v2 a déjà rendu inutile ce que l'appareil retiré pourrait lire ensuite (objectif G1).
+
+### 4.13 Quels enregistrements, et comment
 
 Tous les enregistrements synchronisés aujourd'hui par CloudKit passent tels quels, octet pour octet, par la boîte aux lettres :
 
@@ -178,27 +294,34 @@ Tous les enregistrements synchronisés aujourd'hui par CloudKit passent tels que
 | `Item` | 5 | oui | items avant leur manifeste dans un même lot |
 | `RestoreEpoch` | 7 | oui | |
 | `DeviceList`, `VaultList` | 8, 9 | oui | contenus en clair (noms d'appareils lisibles par le serveur, limite 2b) |
-| Enregistrements de la rotation v2 (lignée, `Intro`, livraison scellée de la Secret Key, accusé de suivi, enregistrements par identité) | nouveaux codes | oui | définis par la spec rotation v2 section 6 ; rien de spécial côté boîte |
-| **Nouveau** `SyncHome` | nouveau code | oui, dans l'ancien et le nouveau backend | `{account_id, backend: CloudKit | Mailbox{url, mailbox_id}, seq, prev_hash}`, signé par la clé de signature hybride du compte, chaîné comme les listes ; dit aux appareils où vit le compte, pour qu'un serveur ne puisse pas rediriger un appareil vers une autre boîte sans signature |
+| `Lineage`, `DeviceIntro`, `KeyDelivery` (rotation v2) | 10, 11, 12 | oui | immuables ; rien de spécial côté boîte |
+| **Nouveau** `SyncHome` | 13 (ou le premier code libre quand X1 est fusionné) | oui, dans l'ancien et le nouveau backend | id = `account_record_id` de l'identité courante, version = `seq`. Corps `{account_id, seq, prev_hash, backend: CloudKit | Mailbox{url, mailbox_id}, issued_at}`, signé par la clé de signature hybride du compte sous le domaine `onepass/sync-home/v1`, chaîné comme les listes (`Seen` dans `ChainState`). Une rotation le signe à nouveau sous la nouvelle identité (phase 1). Il dit aux appareils où vit le compte, pour qu'un serveur ne puisse pas rediriger un appareil vers une autre boîte sans signature |
 
 Jamais synchronisés : Secret Key, clés d'appareil, identifiant de boîte, `DeviceState`, `ChainState`, `TrustState`, enveloppe biométrique, clés d'appairage du pont navigateur, journaux d'audit, cache d'icônes, charge utile de la montre, état du Travel Mode côté appareil.
 
-Avantage net sur CloudKit : le lot atomique sans limite de 400 enregistrements ou 1,5 Mio supprime le refus d'intégrité transitoire décrit en 10.6 de `docs/security/README.md` (un appareil qui récupère entre deux lots).
+Avantage net sur CloudKit : un lot atomique de 20 000 enregistrements au lieu de 400 ou 1,5 Mio supprime en pratique le refus d'intégrité transitoire décrit en 10.6 de `docs/security/README.md` (un appareil qui récupère entre deux lots). Au-delà de 20 000 opérations (première migration d'un très gros compte), le client coupe en plusieurs lots comme aujourd'hui.
 
-### 4.7 Moteur de sync en Rust
+### 4.14 Code : crates, moteur de sync et dossier Supabase
 
-Aujourd'hui le tour de sync (récupérer, `stage_remote`, `commit_remote`, rebase si déverrouillé, `pending_changes`, envoi, `mark_pushed`) est orchestré par le coordinateur Swift. Pour ne pas l'écrire trois fois (Swift, Kotlin, Tauri), il passe en Rust :
+Le tour de sync (récupérer, `stage_remote`, `commit_remote`, `finish_full_fetch`, rebase si déverrouillé, `pending_changes`, envoi, `mark_pushed`, phases de rotation) est aujourd'hui orchestré par le coordinateur Swift. Pour ne pas l'écrire trois fois, il passe en Rust :
 
-- Nouvelle crate `onepass-sync` : `SyncDriver` qui fait un tour complet sur un trait `Transport { fetch_changes, commit, ... }`, un tour à la fois (la règle "le rebase ne tourne jamais en même temps qu'une réconciliation" reste garantie à un seul endroit). Implémentation `MailboxTransport` en Rust (`hyper` + `rustls`).
-- Exposé par `onepass-ffi` (`SyncDriver`, `run_round`, état et erreurs) pour Swift et Kotlin, utilisé directement par le bureau.
-- CloudKit reste un transport Swift : soit le coordinateur actuel inchangé, soit, plus tard, un `Transport` implémenté par Swift en interface de rappel. Pas de réécriture imposée aux apps Apple tant que le compte reste sur CloudKit.
-- Nouvelle crate serveur `onepass-mailbox` (`axum`, `sqlx`, SQLite ou Postgres), AGPL comme le reste, image Docker, sans dépendance au core autre que les types du protocole (`onepass-mailbox-proto`, partagé avec le client).
+- **`onepass-mailbox-proto`** : messages, décodage strict, base de signature, ticket. Sans dépendance au core ; seul SHA-256 (`sha2`, Rust pur) est interne, Ed25519 vient de l'appelant (`aws-lc-rs` côté client, WebCrypto côté fonction edge). Compilée aussi en WebAssembly pour la fonction edge. Cibles de fuzzing.
+- **`onepass-mailbox`** (client, plus de binaire serveur) : `MailboxClient` bloquant (`ureq` + `rustls`), signature des requêtes, blobs, rendez-vous, écoute Realtime (`tungstenite`). Un modèle en mémoire de la boîte (`FakeMailbox`, derrière la fonctionnalité `testing`) et une suite de conformité jouée contre ce modèle et contre un vrai Supabase local.
+- **`onepass-sync`** : trait `Transport`, `SyncDriver` (un tour à la fois : la règle "le rebase ne tourne jamais en même temps qu'une réconciliation" reste garantie à un seul endroit), `MailboxTransport`. Exposé par `onepass-ffi` pour Swift et Kotlin, utilisé directement par le bureau.
+- **`onepass-pairnet`** : transports d'appairage en Rust (T-LAN par TCP et DNS-SD, T-RDV par la boîte), pour la CLI, le bureau et les tests croisés.
+- **`mailbox/supabase/`** : `config.toml`, migrations SQL, fonctions edge `mailbox`, `mailbox-push`, `mailbox-gc`, tests SQL. AGPL comme le reste.
 
-### 4.8 Ce que voit la boîte aux lettres
+CloudKit reste un transport Swift : le coordinateur actuel ne change pas tant que le compte reste sur CloudKit.
 
-Comme CloudKit (10.5 de la doc sécurité) : nombre d'enregistrements par genre, versions, tailles arrondies, numéros de séquence des manifestes, dates et rythme des écritures, noms d'appareils de la liste signée. En plus : adresses IP des clients, identifiants de boîte, jetons de notification, `mailbox_id`. En moins : aucun identifiant Apple.
+### 4.15 Ce que voit la boîte aux lettres
+
+Comme CloudKit (10.5 de la doc sécurité) : nombre d'enregistrements par genre, versions, tailles des corps (arrondies par le rembourrage du core), numéros de séquence des manifestes, dates et rythme des écritures, noms d'appareils de la liste signée. En plus : adresses IP des clients (journaux de Supabase et de la fonction ; aucune adresse rangée par OnePass, seulement des clés HMAC du jour pour le débit), identifiants de boîte et leurs clés publiques, jetons de notification, `mailbox_id`, sujet de réveil. Supabase, comme sous-traitant, voit la même chose que l'opérateur. En moins : aucun identifiant Apple.
 
 Masquer le genre des enregistrements (nom chiffré) est possible mais casse l'ordre "items avant manifeste" que le serveur n'a pas besoin de connaître ; la parité avec CloudKit est gardée en v1. Question 14.
+
+### 4.16 Self-host
+
+Le self-host est un projet Supabase auto-hébergé (pile Docker officielle : Postgres, Kong, Realtime, Storage, edge runtime) avec les mêmes migrations et les mêmes fonctions : `supabase db push` puis `supabase functions deploy`. L'option "SQLite pour un self-host" de la première version de cette spec disparaît : un seul schéma, une seule implémentation du serveur, testée une fois. Le client accepte une URL de base quelconque et, pour un certificat privé, une autorité en PEM.
 
 ## 5. Appairage d'un appareil hors Apple
 
@@ -354,7 +477,9 @@ La doc `docs/security/README.md` gagnera une section par jalon livré, comme pou
 | `onepass-ffi` | Cibles Android ; `SyncDriver` ; interfaces de rappel `DeviceSecrets` et biométrie ; champs ajoutés à l'appairage |
 | `onepass-sync` (nouvelle) | Boucle de sync, trait `Transport`, `MailboxTransport` |
 | `onepass-mailbox-proto` (nouvelle) | Messages du protocole, décodage strict, cibles de fuzzing |
-| `onepass-mailbox` (nouvelle, binaire serveur) | `axum`, SQLite ou Postgres, image Docker |
+| `onepass-mailbox` (nouvelle) | Client de la boîte : requêtes signées, blobs, rendez-vous, réveil Realtime ; modèle en mémoire et suite de conformité (4.14) |
+| `onepass-pairnet` (nouvelle) | Transports d'appairage T-LAN et T-RDV en Rust (CLI, bureau, tests) |
+| `mailbox/supabase/` (nouveau dossier) | Migrations SQL, fonctions edge `mailbox`, `mailbox-push`, `mailbox-gc`, tests SQL (4.14) |
 | `onepass-platform` (nouvelle) | `DeviceSecrets` Windows (NCrypt, DPAPI) et Linux (Secret Service, TPM2), Windows Hello PRF, FIDO2 `hmac-secret` |
 | `onepass-relay` | Port Windows (canal nommé, Authenticode) et Linux (socket Unix, `SO_PEERCRED`) ; son rôle ne change pas (native messaging seulement) |
 | `onepass-peer` | Branche Windows ; tests Linux en CI Linux |
@@ -381,7 +506,7 @@ Ordre recommandé : X0, X1, X2, X3, X4, X5, X6 (bureau avant Android), parce que
 ## 11. Stratégie de test
 
 - **Core sur chaque cible** : `cargo test --workspace` sur les runners Windows et Linux ; sur Android, tests du core exécutés dans l'émulateur (binaires de test poussés par `cargo-ndk`) pour les parties qui dépendent de l'OS (aléa, mémoire verrouillée, horloge). Vecteurs NIST et test différentiel `aws-lc-rs` contre `libcrux` sur chaque cible (même sortie exigée).
-- **Boîte aux lettres hostile** : la suite `sync_two_devices` rejouée contre un vrai serveur `onepass-mailbox` en HTTP, avec un mandataire hostile entre le client et le serveur qui rejoue, retient, réordonne, injecte, coupe entre l'envoi et la confirmation, sert un vieux `SyncHome`, une autre boîte, un lot partiel. Chaque classe d'attaque de l'étude ETH Zurich / USI reste un test (architecture section 12). Tests de propriétés sur le serveur (atomicité des lots, monotonie de `server_seq`, conflits). Fuzzing de tous les décodeurs du protocole et des tickets.
+- **Boîte aux lettres hostile** : la suite `sync_two_devices` rejouée contre une vraie boîte (Supabase local : `supabase start` et la fonction `mailbox` servie) en HTTP, avec un mandataire hostile entre le client et le serveur qui rejoue, retient, réordonne, injecte, coupe entre l'envoi et la confirmation, sert un vieux `SyncHome`, une autre boîte, un lot partiel. Chaque classe d'attaque de l'étude ETH Zurich / USI reste un test (architecture section 12). Tests SQL sur Postgres 17 (atomicité des lots, monotonie de `seq`, conflits, quotas, RLS : une fonction qui oublie le filtre de boîte ne voit rien d'une autre boîte). Suite de conformité jouée à la fois contre le modèle en mémoire et contre Supabase local, pour que les tests rapides du client ne mentent pas sur le serveur. Fuzzing de tous les décodeurs du protocole et des tickets.
 - **Appairage croisé** : en mémoire dans le Rust (inchangé), puis deux processus sur T-LAN et sur T-RDV, puis une matrice sur matériel réel avant chaque livraison : iPhone vers Pixel, iPhone vers Windows 11, iPhone vers Ubuntu et Fedora, réseau qui isole les clients (T-RDV seul), QR expiré, code faux, homme du milieu sur le relais.
 - **Modèle formel** : le modèle ProVerif de l'appairage (`bridge.pv`) et de la rotation (`rotation.pv`) ne change pas de propriétés ; ajouter le relais T-RDV comme canal public contrôlé par l'attaquant, `SyncHome`, et le ticket d'inscription (le serveur ne doit pas pouvoir inscrire un identifiant sans ticket signé), avec un contrôle négatif (ticket non signé).
 - **Android** : JUnit et Robolectric pour la logique Kotlin ; tests instrumentés pour le Keystore (StrongBox sur un Pixel réel, TEE sur émulateur), l'invalidation par nouvelle empreinte, le refus de la biométrie faible ; autofill testé par une app cible et des pages piégées dans une WebView et dans Chrome (domaine sosie, iframe d'un autre site, page HTTP, app au nom de paquet proche avec une autre signature) ; Credential Manager testé par une app "partie de confiance" de test et webauthn.io.
@@ -399,6 +524,7 @@ Web app ; extension autonome sans app (7.4) ; partage entre personnes ; iPad ou 
 - **WebKitGTK** : versions en retard sur certaines distributions LTS ; une faille non corrigée vise directement l'app. Version minimale exigée au démarrage.
 - **Chrome Android** : le nouveau modèle de permission (Chrome 142) peut changer ce qu'un service tiers reçoit.
 - **Exploitation de la boîte hébergée** : coût, abus, disponibilité ; il faut un tableau de bord et une astreinte légère avant d'ouvrir l'inscription.
+- **Limites de Supabase** : taille des corps et durée des fonctions edge, quotas Realtime, pooler en mode transaction. Les limites de 4.6 et 4.9 sont choisies en dessous ; à revoir sur le plan Supabase choisi au moment du déploiement.
 - **Marque** : "OnePass" sur le Play Store et le Microsoft Store expose plus encore la proximité avec 1Password (section 15 de l'architecture).
 - **Licence** : AGPL-3.0 avec CLA sur le Play Store et le Microsoft Store, à confirmer comme pour l'App Store.
 
@@ -451,7 +577,7 @@ Consultées le 2026-10-30.
 
 Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
 
-1. **Hébergement de la boîte aux lettres : Supabase (fondateur).** L'instance Soma tourne sur Supabase : Postgres pour les enregistrements opaques et les curseurs, Storage pour les gros blobs, Realtime pour le réveil des appareils. Le serveur reste une boîte aux lettres aveugle : aucune clé, aucun contenu en clair, les requêtes sont authentifiées par signature d'appareil (clés de la rotation v2), pas par Supabase Auth comme preuve d'accès aux données ; les règles RLS ne servent que de défense en profondeur. Le self-host reste possible puisque Supabase est auto-hébergeable. La section 4 est à réécrire autour de ce choix (schéma, RLS, quotas, réveil).
+1. **Hébergement de la boîte aux lettres : Supabase (fondateur).** L'instance Soma tourne sur Supabase : Postgres pour les enregistrements opaques et les curseurs, Storage pour les gros blobs, Realtime pour le réveil des appareils. Le serveur reste une boîte aux lettres aveugle : aucune clé, aucun contenu en clair, les requêtes sont authentifiées par signature d'appareil (clés de la rotation v2), pas par Supabase Auth comme preuve d'accès aux données ; les règles RLS ne servent que de défense en profondeur. Le self-host reste possible puisque Supabase est auto-hébergeable. La section 4 est à réécrire autour de ce choix (schéma, RLS, quotas, réveil). Section 4 réécrite le 2026-10-31 (4.4 à 4.16) ; une différence avec cette décision y est signalée (4.7, "Écart avec la décision 1") : la clé qui signe les requêtes est une clé d'appareil propre à la boîte, pas la clé d'appareil de la rotation v2.
 2. **Un seul backend par compte (première passe).** Ajouter un appareil hors Apple propose de passer tout le compte sur la boîte aux lettres.
 3. **Android d'abord (fondateur).** Ordre des jalons : X0, X1, X4, X5, puis X2, X3, X6.
 4. **Tauri 2 (fondateur).** Slint en repli si la revue de sécurité refuse le moteur web.
