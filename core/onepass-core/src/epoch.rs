@@ -3,8 +3,9 @@
 //! other devices accept the new manifest heads instead of reporting a
 //! rollback, while a store replaying, hiding or forging epochs is refused.
 //!
-//! One record per account (`RecordKind::RestoreEpoch`, id = account id,
-//! version = epoch number), data = `postcard(SignedRestoreEpoch)`, in clear
+//! One record per account identity (`RecordKind::RestoreEpoch`, id = the
+//! identity's account record id, `store::account_record_id`: the account
+//! id for generation 0, spec 6.6; version = epoch number), data = `postcard(SignedRestoreEpoch)`, in clear
 //! and signed with the account's hybrid signing key (the key of the
 //! manifests) under the domain `"onepass/restore-epoch/v1"`, over
 //! `postcard(RestoreEpoch)`. Only the holder of the master password and the

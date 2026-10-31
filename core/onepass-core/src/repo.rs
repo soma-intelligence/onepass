@@ -52,6 +52,7 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
+use crate::lineage::identity_id;
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
     record_hash, sign_manifest, verify_manifest,
@@ -59,7 +60,8 @@ use crate::manifest::{
 use crate::model::Item;
 use crate::model::events::EventKind;
 use crate::model::usage::SiteUsage;
-use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
+use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
+use crate::trust::TrustState;
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -190,6 +192,10 @@ pub struct Repository<S: RecordStore> {
     /// the server's lists): a merging persist keeps the in-memory ones
     /// instead of refusing a fork with the stored ones.
     pub(crate) lists_forced: bool,
+    /// The id of the account records of the session's identity (spec
+    /// 6.6): params, keyset, restore epoch and lists. The account id for
+    /// generation 0, the identity id from generation 1 on.
+    pub(crate) records_id: Id,
 }
 
 /// A restore epoch record, verified, and the SHA-256 of its data.
@@ -301,19 +307,74 @@ pub fn split_item_record(data: &[u8]) -> Result<(Id, &[u8])> {
     Ok((Id(id), body))
 }
 
-/// The single account's params and keyset records (`NotFound` if there is
-/// none, `InvalidFormat("account params")` if there are several).
+/// The device's trust state, `None` on a store that keeps none (the store
+/// errors of one that does are errors).
+fn trust_of<S: RecordStore>(store: &S) -> Result<Option<TrustState>> {
+    match store.trust_state() {
+        Ok(t) => Ok(t),
+        Err(_) if !store.persists_chain() => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The account's params and keyset records. With a trust state, those of
+/// its identity (spec 6.6: under the account id for generation 0, the
+/// identity id from generation 1 on; `NotFound` if either is missing).
+/// Without one (a legacy device), the single params record of the store
+/// (`NotFound` if there is none, `InvalidFormat("account params")` if there
+/// are several).
 fn account_records<S: RecordStore>(store: &S) -> Result<(Record, Record)> {
-    let mut found = store.list(RecordKind::AccountParams)?;
-    let params = match found.len() {
-        0 => return Err(Error::NotFound),
-        1 => found.remove(0),
-        _ => return Err(Error::InvalidFormat("account params")),
+    let params = match trust_of(store)? {
+        Some(t) => {
+            let id = account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            );
+            store
+                .get(RecordKind::AccountParams, id)?
+                .ok_or(Error::NotFound)?
+        }
+        None => {
+            let mut found = store.list(RecordKind::AccountParams)?;
+            match found.len() {
+                0 => return Err(Error::NotFound),
+                1 => found.remove(0),
+                _ => return Err(Error::InvalidFormat("account params")),
+            }
+        }
     };
     let keyset = store
         .get(RecordKind::Keyset, params.id)?
         .ok_or(Error::NotFound)?;
     Ok((params, keyset))
+}
+
+/// A device state saved before a rotation committed (the session crashed
+/// in between) still pins the identity the trust state retired: the trust
+/// state is authoritative, so the pin moves to its identity (the KDF floor
+/// is kept) and the restore epoch of the left identity is forgotten
+/// (epochs are per identity, spec 10.2). A pin of an identity the trust
+/// state never held is left alone: the unlock refuses it. Returns whether
+/// the pin moved.
+fn reconcile_pin<S: RecordStore>(store: &S, device: &mut DeviceState) -> Result<bool> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(false);
+    };
+    let Some(pin) = device.pinned.as_mut() else {
+        return Ok(false);
+    };
+    if pin.account_id != trust.account_id
+        || pin.identity_pub == trust.identity_pub
+        || !trust
+            .retired
+            .iter()
+            .any(|r| r.identity_pub == pin.identity_pub)
+    {
+        return Ok(false);
+    }
+    pin.identity_pub = trust.identity_pub;
+    device.epoch = 0;
+    Ok(true)
 }
 
 /// Manifests re-signed by epoch `e` start at seq `e * 2^32`, above every
@@ -401,6 +462,7 @@ impl<S: RecordStore> Repository<S> {
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
+            records_id: id,
         };
         let (manifest, seen) = repo.manifest_record(&vault, None, vec![])?;
         let me = device_id.map(|d| self_entry(d, None, at));
@@ -425,8 +487,8 @@ impl<S: RecordStore> Repository<S> {
         let writes = vec![
             record(RecordKind::AccountParams, id, params_record),
             record(RecordKind::Keyset, id, keyset_record),
-            list_record::<DeviceEntry>(&repo.account, devices)?,
-            list_record::<VaultListEntry>(&repo.account, vaults)?,
+            list_record::<DeviceEntry>(&repo.account, id, devices)?,
+            list_record::<VaultListEntry>(&repo.account, id, vaults)?,
             manifest,
             record(RecordKind::VaultMeta, vault.id, meta_blob),
             record(RecordKind::VaultKey, vault.id, envelope),
@@ -462,10 +524,11 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         secret_key: &SecretKey,
-        device: DeviceState,
+        mut device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
+        let moved = reconcile_pin(&store, &mut device)?;
         let (account, auk) = Account::unlock_exporting_auk_at(
             password,
             secret_key,
@@ -475,15 +538,16 @@ impl<S: RecordStore> Repository<S> {
             chain.params_epoch,
         )?;
         Ok((
-            Self::finish_unlock(store, account, &params, device, chain)?,
+            Self::finish_unlock(store, account, &params, device, chain, moved)?,
             auk,
         ))
     }
 
     /// Like `unlock`, from an Account Unlock Key kept from an earlier one.
-    pub fn unlock_with_auk(store: S, auk: &Auk, device: DeviceState) -> Result<Repository<S>> {
+    pub fn unlock_with_auk(store: S, auk: &Auk, mut device: DeviceState) -> Result<Repository<S>> {
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
+        let moved = reconcile_pin(&store, &mut device)?;
         let account = Account::unlock_with_auk_at(
             auk,
             &params.data,
@@ -491,7 +555,7 @@ impl<S: RecordStore> Repository<S> {
             device.pinned.as_ref(),
             chain.params_epoch,
         )?;
-        Self::finish_unlock(store, account, &params, device, chain)
+        Self::finish_unlock(store, account, &params, device, chain, moved)
     }
 
     fn finish_unlock(
@@ -500,8 +564,13 @@ impl<S: RecordStore> Repository<S> {
         params: &Record,
         mut device: DeviceState,
         mut chain: ChainState,
+        pin_moved: bool,
     ) -> Result<Repository<S>> {
-        if account.params.account_id != params.id {
+        // Spec 6.6: the account id (generation 0) or the identity id of the
+        // records' own identity.
+        if params.id != account.params.account_id
+            && params.id != identity_id(&account.params.identity_pub)
+        {
             return Err(IntegrityError::WrongContext.into());
         }
         match &mut device.pinned {
@@ -514,11 +583,14 @@ impl<S: RecordStore> Repository<S> {
             account,
             device,
             dropped: BTreeSet::new(),
-            epoch_rewound: false,
+            // A pin moved to the trust state's identity drops the left
+            // identity's epoch: the next persist keeps that.
+            epoch_rewound: pin_moved,
             epoch_cache: Mutex::new(None),
             chain,
             travel_parked: BTreeSet::new(),
             lists_forced: false,
+            records_id: params.id,
         })
     }
 
@@ -546,10 +618,15 @@ impl<S: RecordStore> Repository<S> {
         secret_key: &SecretKey,
         new: &str,
     ) -> Result<Auk> {
-        let (params, keyset) = account_records(&self.store)?;
-        if params.id != self.account.params.account_id {
-            return Err(IntegrityError::WrongContext.into());
-        }
+        // The records of the session's identity (spec 7.3).
+        let params = self
+            .store
+            .get(RecordKind::AccountParams, self.records_id)?
+            .ok_or(Error::NotFound)?;
+        let keyset = self
+            .store
+            .get(RecordKind::Keyset, self.records_id)?
+            .ok_or(Error::NotFound)?;
         let (stored, _) = Account::unlock_exporting_auk_at(
             current,
             secret_key,
@@ -713,7 +790,9 @@ impl<S: RecordStore> Repository<S> {
     /// of the same record (version and data) is cached.
     fn stored_epoch(&self) -> Result<Option<StoredEpoch>> {
         let id = self.account.params.account_id;
-        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, id)? else {
+        // Epochs are per identity (spec 10.2): only the record of the
+        // session's identity counts.
+        let Some(rec) = self.store.get(RecordKind::RestoreEpoch, self.records_id)? else {
             return Ok(None);
         };
         let mut cache = self
@@ -879,7 +958,7 @@ impl<S: RecordStore> Repository<S> {
         hash.copy_from_slice(digest(&SHA256, &data).as_ref());
         self.store.put_if_version(
             Record {
-                id: account_id,
+                id: self.records_id,
                 kind: RecordKind::RestoreEpoch,
                 version: epoch,
                 data,

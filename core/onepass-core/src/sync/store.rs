@@ -36,10 +36,11 @@ use crate::account::{AccountParams, signed_params};
 use crate::chain::{ChainState, Seen};
 use crate::crypto::IdentityVerifyingKey;
 use crate::format::STORE_USER_VERSION;
+use crate::lineage::identity_id;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
-use crate::trust::TrustState;
+use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent};
+use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -51,6 +52,9 @@ const EPOCH_MARK_KEY: &str = "epoch_hash";
 const CHAIN_STATE_KEY: &str = "chain";
 /// `meta` key of the local trust state.
 const TRUST_STATE_KEY: &str = "trust";
+/// `meta` key of what the push phases of a rotation need
+/// (`RotationPush`), from the rotation's commit until phase 3 is confirmed.
+const ROTATION_PUSH_KEY: &str = "rotation_push";
 /// Raised when a fetch dropped a local password change the server had
 /// overtaken (`SyncStore::take_password_change_superseded`).
 const SUPERSEDED_KEY: &str = "password_change_superseded";
@@ -157,6 +161,17 @@ type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
 
 pub struct SyncStore {
     conn: Connection,
+}
+
+/// What `SyncStore::push_rotation_phase` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhaseOutcome {
+    /// Every write of the phase is confirmed: the device moved to the next
+    /// phase (or to `Current` after phase 3), durably.
+    Done,
+    /// Writes of the phase are still pending (or the device is not in that
+    /// phase): push `pending_changes`, then ask again.
+    Retry,
 }
 
 /// Only the SQLite error code goes into the error: never paths or data.
@@ -287,6 +302,14 @@ fn write_pending(tx: &Connection, r: &Record) -> Result<()> {
 /// A `base` older than the ancestor is a server that went back: the local
 /// manifest is not held, its push restores the server's copy.
 fn held_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
+    let exempt = overwritten_vaults(conn)?;
+    let mut held = held_vaults_in(conn)?;
+    held.retain(|v| !exempt.contains(v));
+    Ok(held)
+}
+
+/// `held_vaults` without the rotation's exemption.
+fn held_vaults_in(conn: &Connection) -> Result<BTreeSet<Id>> {
     let mut stmt = conn
         .prepare(
             "SELECT p.id FROM pending p
@@ -481,6 +504,135 @@ fn settle_account_changes(tx: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// The stored trust state, if any.
+fn trust_in(conn: &Connection) -> Result<Option<TrustState>> {
+    meta_in(conn, TRUST_STATE_KEY)?
+        .map(|b| TrustState::decode(&b))
+        .transpose()
+}
+
+fn set_meta_in(conn: &Connection, key: &str, value: &[u8]) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )
+    .map_err(store_err)?;
+    Ok(())
+}
+
+/// The phase this device pushes a rotation in, and the record id of the
+/// rotation's identity (spec 6.6), or `None` outside `Rotating`.
+fn rotating_in(conn: &Connection) -> Result<Option<(u8, Id)>> {
+    Ok(trust_in(conn)?.and_then(|t| match t.state {
+        DeviceLineageState::Rotating { phase } => Some((phase, identity_id(&t.identity_pub))),
+        _ => None,
+    }))
+}
+
+/// What the rotation being pushed needs (`RotationPush`), if any.
+fn rotation_push_in(conn: &Connection) -> Result<Option<RotationPush>> {
+    meta_in(conn, ROTATION_PUSH_KEY)?
+        .map(|b| RotationPush::decode(&b))
+        .transpose()
+}
+
+/// The vaults whose single-slot records the rotator overwrites whatever
+/// the server holds (R21): those the rotation re-sealed, in phases 1 and
+/// 2. Their manifests are never held for a rebase meanwhile: the server's
+/// copy is old-identity or sibling content the rotator never reads (spec
+/// 10.3), and the push expects the version it read.
+fn overwritten_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
+    Ok(match rotating_in(conn)? {
+        Some((1 | 2, _)) => rotation_push_in(conn)?
+            .map(|p| p.vaults.into_iter().collect())
+            .unwrap_or_default(),
+        _ => BTreeSet::new(),
+    })
+}
+
+/// Phase 1 of a rotation (spec 7.1): the deliveries, the account records
+/// and lists under the new identity id `rid`, the lineage record. All new
+/// ids. The rank orders them: deliveries, params, keyset, lists, then the
+/// lineage record last.
+fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
+    match kind {
+        RecordKind::KeyDelivery => Some(0),
+        RecordKind::AccountParams if id == rid => Some(1),
+        RecordKind::Keyset if id == rid => Some(2),
+        RecordKind::DeviceList if id == rid => Some(3),
+        RecordKind::VaultList if id == rid => Some(4),
+        RecordKind::Lineage => Some(5),
+        _ => None,
+    }
+}
+
+/// A pending row: kind, id, whether it is a write, and the vault it
+/// belongs to (manifest, key and meta: their id; an item: its prefix or
+/// the vault kept with its tombstone).
+type PendingRow = (RecordKind, Id, bool, Option<Id>);
+
+fn pending_rows(conn: &Connection) -> Result<Vec<PendingRow>> {
+    let mut stmt = conn
+        .prepare("SELECT kind, id, data, vault FROM pending")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, Option<Vec<u8>>>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+            ))
+        })
+        .map_err(store_err)?;
+    rows.map(|row| {
+        let (kind, id, data, tomb) = row.map_err(store_err)?;
+        let kind = decode_kind(kind)?;
+        let id = decode_id(id)?;
+        let vault = match kind {
+            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => Some(id),
+            RecordKind::Item => match data.as_deref() {
+                Some(d) => Some(split_item_record(d)?.0),
+                None => tomb.map(decode_id).transpose()?,
+            },
+            _ => None,
+        };
+        Ok((kind, id, data.is_some(), vault))
+    })
+    .collect()
+}
+
+/// Whether a write of phase `phase` is still pending. Phase 2: a write of
+/// a re-sealed vault (key, meta, item, manifest; every vault write when the
+/// store kept no `RotationPush`). Phase 3: a deletion of a collected item.
+fn phase_left(
+    rows: &[PendingRow],
+    phase: u8,
+    rid: Id,
+    push: Option<&RotationPush>,
+) -> Result<bool> {
+    Ok(match phase {
+        1 => rows
+            .iter()
+            .any(|(kind, id, _, _)| phase_one_rank(*kind, *id, rid).is_some()),
+        2 => rows.iter().any(|(kind, _, write, vault)| {
+            *write
+                && matches!(
+                    kind,
+                    RecordKind::VaultKey
+                        | RecordKind::VaultMeta
+                        | RecordKind::Item
+                        | RecordKind::Manifest
+                )
+                && vault.is_some_and(|v| push.is_none_or(|p| p.vaults.contains(&v)))
+        }),
+        3 => rows.iter().any(|(kind, id, _, _)| {
+            *kind == RecordKind::Item && push.is_some_and(|p| p.collect.contains(id))
+        }),
+        _ => return Err(Error::InvalidFormat("rotation phase")),
+    })
+}
+
 /// `SyncStore::pending_changes` on a consistent view.
 fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     let held = held_vaults(tx)?;
@@ -555,6 +707,13 @@ fn pending_changes_in(tx: &Connection) -> Result<Vec<Change>> {
     // Deletions go last, highest kind first: a fetching device never
     // sees a manifest without its key.
     deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
+    // A rotation in phase 1 (spec 7.1, 10.5): its new records only, the
+    // lineage record last; every other write waits.
+    if let Some((1, rid)) = rotating_in(tx)? {
+        writes.retain(|c| phase_one_rank(c.kind, c.id, rid).is_some());
+        writes.sort_by_key(|c| (phase_one_rank(c.kind, c.id, rid), c.version));
+        return Ok(writes);
+    }
     writes.extend(deletions);
     Ok(writes)
 }
@@ -638,6 +797,97 @@ impl SyncStore {
     /// server's (`account_pair_pushable`). Order: account params, keysets,
     /// vault keys, vault metas, items, manifests, then deletions, so a
     /// manifest never reaches the server before its items.
+    /// See `RecordStore::put_all_if_version_with_trust` and
+    /// `RecordStore::put_rotation`.
+    fn put_with_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+        rotation: Option<&RotationPush>,
+    ) -> Result<()> {
+        for (r, _) in &writes {
+            check_size(&r.data)?;
+        }
+        let tx = self.write_tx()?;
+        for (r, expected) in &writes {
+            if effective_version(&tx, r.kind, r.id)? != *expected {
+                return Err(Error::Conflict);
+            }
+            write_pending(&tx, r)?;
+        }
+        for (kind, id) in deletes {
+            delete_in(&tx, kind, id)?;
+        }
+        if let Some(chain) = chain {
+            let same_identity =
+                trust_in(&tx)?.is_some_and(|t| t.identity_pub == trust.identity_pub);
+            let chain = if same_identity {
+                merge_chain(&chain, &chain_state_in(&tx)?, false)?
+            } else {
+                chain
+            };
+            set_meta_in(&tx, CHAIN_STATE_KEY, &chain.encode())?;
+        }
+        set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
+        if let Some(rotation) = rotation {
+            set_meta_in(&tx, ROTATION_PUSH_KEY, &rotation.encode())?;
+        }
+        tx.commit()
+    }
+
+    /// Settle phase `phase` of the rotation this device pushes (spec 7.1,
+    /// state `Rotating { phase }`), once the push loop has pushed
+    /// `pending_changes` (gated to the phase) and confirmed it:
+    /// - phase 1 (deliveries, identity-keyed params, keyset and lists, the
+    ///   lineage record): confirmed, the device moves to phase 2;
+    /// - phase 2 (per re-sealed vault: key, meta, items, manifest, each
+    ///   single-slot write conditional on the version read, R21):
+    ///   confirmed, the deletions of the item records the `from_heads`
+    ///   manifests list are queued (and nothing else, R23) and the device
+    ///   moves to phase 3;
+    /// - phase 3: those deletions confirmed, the device is `Current`.
+    ///
+    /// Each move is one transaction with the trust state, so a cut resumes
+    /// at the phase reached. `Retry` (nothing written) while a write of the
+    /// phase is pending, or when the device is not in `Rotating { phase }`.
+    /// A phase other than 1 to 3 is `InvalidFormat("rotation phase")`.
+    pub fn push_rotation_phase(&mut self, phase: u8) -> Result<PhaseOutcome> {
+        let tx = self.write_tx()?;
+        let Some(mut trust) = trust_in(&tx)? else {
+            return Ok(PhaseOutcome::Retry);
+        };
+        if trust.state != (DeviceLineageState::Rotating { phase }) {
+            return Ok(PhaseOutcome::Retry);
+        }
+        let push = rotation_push_in(&tx)?;
+        let rid = identity_id(&trust.identity_pub);
+        if phase_left(&pending_rows(&tx)?, phase, rid, push.as_ref())? {
+            return Ok(PhaseOutcome::Retry);
+        }
+        trust.state = match phase {
+            1 => DeviceLineageState::Rotating { phase: 2 },
+            2 => {
+                for id in push.iter().flat_map(|p| &p.collect) {
+                    delete_in(&tx, RecordKind::Item, *id)?;
+                }
+                DeviceLineageState::Rotating { phase: 3 }
+            }
+            _ => {
+                tx.execute(
+                    "DELETE FROM meta WHERE key = ?1",
+                    params![ROTATION_PUSH_KEY],
+                )
+                .map_err(store_err)?;
+                DeviceLineageState::Current
+            }
+        };
+        set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
+        tx.commit()?;
+        Ok(PhaseOutcome::Done)
+    }
+
     pub fn pending_changes(&self) -> Result<Vec<Change>> {
         self.read(pending_changes_in)
     }
@@ -1188,6 +1438,16 @@ impl SyncStore {
         force_lists: bool,
     ) -> Result<(DeviceState, ChainState)> {
         let tx = self.write_tx()?;
+        // A session of an identity this device left (opened before a
+        // rotation committed on another connection) pins records nobody
+        // reads any more: it must not merge its pins over the new
+        // identity's (spec 6.6).
+        if let (Some(trust), Some(pin)) = (trust_in(&tx)?, &mem.pinned)
+            && pin.account_id == trust.account_id
+            && pin.identity_pub != trust.identity_pub
+        {
+            return Err(Error::Conflict);
+        }
         let stored = device_state_in(&tx)?;
         let chain = merge_chain(mem_chain, &chain_state_in(&tx)?, force_lists)?;
         let pinned = match (mem.pinned.clone(), stored.pinned) {
@@ -2426,14 +2686,22 @@ fn proven_deleted(conn: &Connection, staged: &[StagedRow]) -> Result<BTreeSet<Id
         return Ok(out);
     };
     let account = pin.account_id;
-    let Some(params) = row_data(conn, "base", RecordKind::AccountParams, account)? else {
+    // The records of the pinned identity (spec 6.6): under its identity id
+    // from generation 1 on.
+    let rid = match trust_in(conn)? {
+        Some(t) if t.head.generation > 0 && t.identity_pub == pin.identity_pub => {
+            identity_id(&t.identity_pub)
+        }
+        _ => account,
+    };
+    let Some(params) = row_data(conn, "base", RecordKind::AccountParams, rid)? else {
         return Ok(out);
     };
     let signing = signed_params(&params, Some(&pin))?.signing_pub;
     let chain = chain_state_in(conn)?;
-    let base = row_data(conn, "base", RecordKind::VaultList, account)?;
+    let base = row_data(conn, "base", RecordKind::VaultList, rid)?;
     let incoming = staged.iter().find_map(|(kind, id, _, data, _)| {
-        (*kind == i64::from(RecordKind::VaultList.code()) && id[..] == account.0[..])
+        (*kind == i64::from(RecordKind::VaultList.code()) && id[..] == rid.0[..])
             .then_some(data.as_deref())
             .flatten()
     });
@@ -2769,8 +3037,13 @@ impl RecordStore for SyncStore {
     }
 
     /// The conditional writes, the deletions (as `delete`), the chain state
-    /// (merged as in `put_all_if_version_with_chain`, when given) and the
-    /// trust state in one transaction (or one savepoint of the open batch).
+    /// (when given) and the trust state in one transaction (or one
+    /// savepoint of the open batch). The chain state pins one identity's
+    /// records (params epoch, lists): it is merged as in
+    /// `put_all_if_version_with_chain` while the trust state keeps its
+    /// identity, and replaces the stored one when the identity changes (a
+    /// rotation or an adoption: epochs and lists start again with the new
+    /// identity, spec 6.6, 10.2).
     fn put_all_if_version_with_trust(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
@@ -2778,33 +3051,20 @@ impl RecordStore for SyncStore {
         chain: Option<ChainState>,
         trust: &TrustState,
     ) -> Result<()> {
-        for (r, _) in &writes {
-            check_size(&r.data)?;
-        }
-        let tx = self.write_tx()?;
-        for (r, expected) in &writes {
-            if effective_version(&tx, r.kind, r.id)? != *expected {
-                return Err(Error::Conflict);
-            }
-            write_pending(&tx, r)?;
-        }
-        for (kind, id) in deletes {
-            delete_in(&tx, kind, id)?;
-        }
-        if let Some(chain) = chain {
-            let merged = merge_chain(&chain, &chain_state_in(&tx)?, false)?;
-            tx.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-                params![CHAIN_STATE_KEY, merged.encode()],
-            )
-            .map_err(store_err)?;
-        }
-        tx.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-            params![TRUST_STATE_KEY, trust.encode()],
-        )
-        .map_err(store_err)?;
-        tx.commit()
+        self.put_with_trust(writes, deletes, chain, trust, None)
+    }
+
+    /// `put_all_if_version_with_trust` (the chain state replaces the
+    /// stored one, the identity changes), and `rotation` kept for the push
+    /// phases (`push_rotation_phase`), in one transaction.
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        self.put_with_trust(writes, Vec::new(), Some(chain), trust, Some(rotation))
     }
 
     /// The conditional writes and the deletions (as `delete`) in one
