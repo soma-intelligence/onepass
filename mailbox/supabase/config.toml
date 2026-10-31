@@ -62,11 +62,13 @@ file_size_limit = "1MiB"
 [storage.s3_protocol]
 enabled = false
 
-# Record bodies above 16 KiB, 900 KiB at most (spec 4.11). Private: objects
-# are served only through 60 s signed URLs issued by the edge function.
+# Record bodies above 16 KiB, 900 KiB (RECORD_MAX) at most (spec 4.11).
+# Private: objects are served only through 60 s signed URLs issued by the
+# edge function. Migration 20261031120300 creates the bucket the same way
+# for a project set up without this file.
 [storage.buckets.onepass-mailbox]
 public = false
-file_size_limit = "1MiB"
+file_size_limit = "900KiB"
 
 [edge_runtime]
 enabled = true

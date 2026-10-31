@@ -165,7 +165,11 @@ from (values
     ('inline_size_mismatch', '1', 'onepass_test.rid(2)', '1', '1', 'null', '''\x02''', 'null', '2'),
     ('inline_size_null', '1', 'onepass_test.rid(2)', '1', '1', 'null', '''\x02''', 'null', 'null'),
     ('inline_over_16_kib', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'decode(repeat(''00'', 16385), ''hex'')', 'null', '16385'),
-    ('blob_until_task_6', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'null', 'decode(repeat(''ab'', 32), ''hex'')', '20000'),
+    -- Blob bodies (tests/blobs_test.sql has the Storage side).
+    ('blob_without_storage_object', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'null', 'decode(repeat(''ab'', 32), ''hex'')', '20000'),
+    ('blob_of_16384_bytes', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'null', 'decode(repeat(''ab'', 32), ''hex'')', '16384'),
+    ('blob_size_null', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'null', 'decode(repeat(''ab'', 32), ''hex'')', 'null'),
+    ('blob_sha_of_31_bytes', '1', 'onepass_test.rid(2)', '1', '1', 'null', 'null', 'decode(repeat(''ab'', 31), ''hex'')', '20000'),
     ('delete_with_expected', '1', 'onepass_test.rid(2)', '1', '2', '1', 'null', 'null', 'null'),
     ('delete_with_data', '1', 'onepass_test.rid(2)', '1', '2', 'null', '''\x02''', 'null', 'null'),
     ('delete_with_size', '1', 'onepass_test.rid(2)', '1', '2', 'null', 'null', 'null', '0'),
