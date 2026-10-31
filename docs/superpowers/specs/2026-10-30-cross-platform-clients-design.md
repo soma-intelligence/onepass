@@ -446,3 +446,24 @@ Consultées le 2026-10-30.
 - Linux, native messaging en Flatpak (proposition de portail) : https://github.com/flatpak/xdg-desktop-portal/issues/655
 - Linux, `systemd-creds` et TPM2 : https://www.man7.org/linux/man-pages/man1/systemd-creds.1.html
 - UniFFI et Android (cargo-ndk, liaisons Kotlin) : https://docs.jans.io/stable/cedarling/uniffi/cedarling-android
+
+## Décisions du fondateur (2026-10-30)
+
+Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
+
+1. **Hébergement de la boîte aux lettres : Supabase (fondateur).** L'instance Soma tourne sur Supabase : Postgres pour les enregistrements opaques et les curseurs, Storage pour les gros blobs, Realtime pour le réveil des appareils. Le serveur reste une boîte aux lettres aveugle : aucune clé, aucun contenu en clair, les requêtes sont authentifiées par signature d'appareil (clés de la rotation v2), pas par Supabase Auth comme preuve d'accès aux données ; les règles RLS ne servent que de défense en profondeur. Le self-host reste possible puisque Supabase est auto-hébergeable. La section 4 est à réécrire autour de ce choix (schéma, RLS, quotas, réveil).
+2. **Un seul backend par compte (première passe).** Ajouter un appareil hors Apple propose de passer tout le compte sur la boîte aux lettres.
+3. **Android d'abord (fondateur).** Ordre des jalons : X0, X1, X4, X5, puis X2, X3, X6.
+4. **Tauri 2 (fondateur).** Slint en repli si la revue de sécurité refuse le moteur web.
+5. **Linux : `.deb` et `.rpm` signés avec dépôts, AppImage en plus (fondateur).** Flatpak plus tard.
+6. **Windows : MSIX signé et winget, Store ensuite (fondateur).**
+7. **Android : Play Store et APK signé sur GitHub, F-Droid ensuite (fondateur).**
+8. **Un PC peut aussi approuver un nouvel appareil et lancer une rotation (fondateur).** Pas seulement Android. Sur un PC sans caméra, l'appairage passe par le QR affiché par le PC et scanné par le nouvel appareil quand c'est possible, sinon par la saisie d'un code court ; le code de comparaison (SAS) reste obligatoire dans les deux cas. X6 couvre Android et bureau.
+9. **Linux : pas de biométrie, clé FIDO2 `hmac-secret` en option (fondateur).**
+10. **AGPL-3.0-or-later + CLA sur les stores, après avis juridique (fondateur).**
+11. **Versions minimales : Android 10, passkeys sur Android 14+, Windows 11, Ubuntu 24.04, Debian 13, Fedora 42 (fondateur).**
+12. **Réveil Android : FCM sans contenu sur le Play Store, UnifiedPush sur F-Droid, interrogation en repli (fondateur).** Avec Supabase, Realtime sert de réveil quand l'app est ouverte.
+13. **Pas de CloudKit Web Services comme solution d'attente (première passe).**
+14. **Genre des enregistrements visible du serveur en v1, comme CloudKit (première passe).** À revoir après l'audit externe.
+15. **Android sans attestation matérielle : pas bloqué, état affiché (première passe).**
+16. **Rendez-vous d'appairage par l'instance Soma même pour un compte encore sur CloudKit (première passe).** Trames opaques, 2 minutes, mention à l'écran.
