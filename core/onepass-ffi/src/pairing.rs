@@ -550,7 +550,7 @@ impl PairingNewcomer {
         let (repo, auk, sk) =
             onepass_core::repo::pairing::repair_from_grant(repo, &grant, &password, &keys)?;
         s.imported = true;
-        followed(repo, auk, sk)
+        Ok(followed(repo, auk, sk))
     }
 
     /// The acknowledgement of a grant.

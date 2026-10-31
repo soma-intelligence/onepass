@@ -462,7 +462,8 @@ fn two_devices_rotate_and_follow() {
     assert_eq!(followed.auk.len(), 32);
     assert!(!followed.reapply_needed);
     assert!(!followed.own_writes.alert);
-    let s = &followed.session;
+    assert!(followed.warning.is_none());
+    let s = followed.session.as_ref().unwrap();
     assert_eq!(s.lineage_status().unwrap().generation, 1);
     assert_eq!(s.item_summaries().unwrap().len(), 1);
     // The old session is on the identity left: lock and unlock again.
@@ -566,13 +567,13 @@ fn quarantine_erases_only_after_seven_days() {
     assert_ne!(gone.revoked_at, Some(0), "an unknown date is hidden");
     push(&mut server, &a.path);
 
-    // The plain commit runs the contract with the system clock.
+    // The checked commit runs the contract with the app's clock.
     let h = open_sync_store(b.path.clone()).unwrap();
     for r in &server.rows[b.cursor.get()..] {
         h.stage_remote(r.clone()).unwrap();
     }
     let before = now_u();
-    h.commit_remote().unwrap();
+    h.commit_remote_checked(before).unwrap();
     let FfiLineageState::Quarantined { since, erase_at } =
         lineage_status(b.path.clone()).unwrap().state
     else {
@@ -601,15 +602,13 @@ fn quarantine_erases_only_after_seven_days() {
         FfiQuarantineTick::Waiting { erase_at }
     );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
-    // A locked device fetches nothing more; `since` stays.
+    // A later fetch is taken and keeps `since`.
     let h = open_sync_store(b.path.clone()).unwrap();
-    match h.stage_remote(server.rows[0].clone()) {
-        Err(e) => assert_eq!(e, OnePassError::Quarantined),
-        Ok(()) => assert_eq!(
-            h.commit_remote_checked(since + 60).unwrap().quarantine,
-            FfiQuarantineTick::Waiting { erase_at }
-        ),
-    }
+    h.stage_remote(server.rows[0].clone()).unwrap();
+    assert_eq!(
+        h.commit_remote_checked(since + 60).unwrap().quarantine,
+        FfiQuarantineTick::Waiting { erase_at }
+    );
     assert_eq!(
         quarantine_tick(b.path.clone(), since + WEEK).unwrap(),
         FfiQuarantineTick::Erased
@@ -755,12 +754,13 @@ fn migration_tofu_orphaned_and_outdated_kit() {
     ap.introduce(a.session.clone(), a.keys.c(), a.keys.half())
         .unwrap();
     assert_eq!(a.session.devices().unwrap().len(), devices_before);
+    let back_session = back.session.unwrap();
     assert_eq!(
-        back.session.lineage_status().unwrap().state,
+        back_session.lineage_status().unwrap().state,
         FfiLineageState::Current
     );
-    back.session
-        .save_item(login(&back.session, "Banque", "pw-banque"))
+    back_session
+        .save_item(login(&back_session, "Banque", "pw-banque"))
         .unwrap();
 
     // A new device with the old kit: refused, nothing restored.
@@ -1029,7 +1029,178 @@ fn concurrent_rotations_switch_from_the_session() {
     assert_eq!(f.secret_key, winner_sk);
     assert_eq!(loser.session.vaults().err(), Some(OnePassError::Locked));
     assert_eq!(
-        f.session.lineage_status().unwrap().state,
+        f.session.unwrap().lineage_status().unwrap().state,
         FfiLineageState::Current
     );
+}
+
+/// Fix round 1 (review Critical 1): the legacy `commit_remote` never
+/// erases and never reads a clock. A store quarantined long ago keeps every
+/// record through it; only the app's clock (`commit_remote_checked`,
+/// `quarantine_tick`) erases.
+#[test]
+fn legacy_commit_never_erases() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    rotate(&a, vec![this_id(&b)], vec![]);
+    push(&mut server, &a.path);
+    let h = open_sync_store(b.path.clone()).unwrap();
+    for r in &server.rows[b.cursor.get()..] {
+        h.stage_remote(r.clone()).unwrap();
+    }
+    h.commit_remote_checked(1_000).unwrap();
+    assert!(matches!(
+        lineage_status(b.path.clone()).unwrap().state,
+        FfiLineageState::Quarantined { since: 1_000, .. }
+    ));
+    // A fetch is still taken while quarantined (nothing is read or pushed
+    // with it; "Ce n'était pas moi" may need the records).
+    h.stage_remote(server.rows[0].clone()).unwrap();
+    h.commit_remote().unwrap();
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
+    assert!(matches!(
+        lineage_status(b.path.clone()).unwrap().state,
+        FfiLineageState::Quarantined { since: 1_000, .. }
+    ));
+    // A follow or a reject on a locked device says so (review Minor 2).
+    let r = follow_rotation(
+        b.path.clone(),
+        "00".repeat(32),
+        PASSWORD.into(),
+        b.keys.c(),
+        b.keys.half(),
+    );
+    assert_eq!(r.err(), Some(OnePassError::Quarantined));
+    assert_eq!(
+        reject_rotation(b.path.clone(), "00".repeat(32), true).err(),
+        Some(OnePassError::Quarantined)
+    );
+    // The app's clock erases.
+    assert_eq!(
+        h.commit_remote_checked(1_000 + WEEK).unwrap().quarantine,
+        FfiQuarantineTick::Erased
+    );
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+}
+
+/// Fix round 1 (review Important 1): once the adoption committed, the new
+/// Secret Key and Account Unlock Key always come back, even when a later
+/// step fails (here the Travel Mode state does not open); the session is
+/// then reopened by a plain unlock with that key.
+#[test]
+fn follow_hands_back_the_keys_when_a_later_step_fails() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    let (_, new_sk) = rotate(&a, vec![], vec![]);
+    push(&mut server, &a.path);
+    let prompt = pull(&server, &b).prompt.unwrap();
+    {
+        let mut s = onepass_core::sync::SyncStore::open(Path::new(&b.path)).unwrap();
+        s.set_meta("travel_state", &[7u8; 16]).unwrap();
+    }
+    let f = follow_rotation(
+        b.path.clone(),
+        prompt.choices[0].choice.clone(),
+        PASSWORD.into(),
+        b.keys.c(),
+        b.keys.half(),
+    )
+    .unwrap();
+    assert_eq!(f.secret_key, new_sk);
+    assert_eq!(f.auk.len(), 32);
+    assert!(f.session.is_none());
+    assert!(f.warning.is_some());
+    // The adoption stands: nothing to follow any more.
+    assert_eq!(pending_rotation(b.path.clone()).unwrap(), None);
+    {
+        let mut s = onepass_core::sync::SyncStore::open(Path::new(&b.path)).unwrap();
+        s.delete_meta("travel_state").unwrap();
+    }
+    let u = unlock_with_password(b.path.clone(), PASSWORD.into(), new_sk).unwrap();
+    assert_eq!(u.session.lineage_status().unwrap().generation, 1);
+    assert_eq!(u.session.item_summaries().unwrap().len(), 1);
+}
+
+/// Fix round 1 (review Important 2): a follower in Travel Mode follows
+/// (its sealed state re-sealed under the new identity before the session
+/// opens it), and leaving the Travel Mode afterwards brings its vault back
+/// under the new keys.
+#[test]
+fn follow_in_travel_mode_then_travel_off() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    assert!(b.session.enter_travel().unwrap().active);
+    assert!(b.session.vaults().unwrap().is_empty());
+    let (_, new_sk) = rotate(&a, vec![], vec![]);
+    push(&mut server, &a.path);
+    let prompt = pull(&server, &b).prompt.expect("prompt in Travel Mode");
+    let f = follow_rotation(
+        b.path.clone(),
+        prompt.choices[0].choice.clone(),
+        PASSWORD.into(),
+        b.keys.c(),
+        b.keys.half(),
+    )
+    .unwrap();
+    assert_eq!(f.secret_key, new_sk);
+    assert!(f.warning.is_none());
+    let s = f.session.expect("session");
+    assert!(s.travel_status().unwrap().active);
+    // A relaunch opens the re-sealed state with the new key.
+    s.lock();
+    let s = unlock_with_password(b.path.clone(), PASSWORD.into(), new_sk)
+        .unwrap()
+        .session;
+    assert!(s.travel_status().unwrap().active);
+    s.begin_travel_exit().unwrap();
+    let h = open_sync_store(b.path.clone()).unwrap();
+    h.begin_full_fetch().unwrap();
+    for r in &server.rows {
+        h.stage_remote(r.clone()).unwrap();
+    }
+    h.commit_remote_checked(now_u()).unwrap();
+    h.finish_full_fetch().unwrap();
+    assert!(!s.finish_travel_exit().unwrap().active);
+    assert_eq!(s.item_summaries().unwrap().len(), 1);
+}
+
+/// Fix round 1 (review Minor 6): the kit-restored device states it is the
+/// only one left (`claim_only_device`, after the password the app asked);
+/// the other device lists it, raises no rotation alert, and rejects it.
+#[test]
+fn kit_claim_and_reject_through_the_ffi() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let cursor = Cell::new(0);
+    pull_at(&server, &path, &cursor, now_u());
+    let k = Keys::new();
+    let c = restore_from_kit(
+        path.clone(),
+        PASSWORD.into(),
+        a.secret_key.clone(),
+        k.c(),
+        k.half(),
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+    )
+    .unwrap();
+    assert!(c.awaiting_pin().unwrap());
+    assert!(lineage_status(path.clone()).unwrap().awaiting_pin);
+    c.claim_only_device().unwrap();
+    assert!(!c.awaiting_pin().unwrap());
+    assert!(c.claim_only_device().is_err(), "pinned already");
+    push(&mut server, &path);
+    pull(&server, &a);
+    let asking = a.session.kit_restored_devices().unwrap();
+    assert_eq!(asking.len(), 1);
+    assert!(a.session.kit_rotation_alerts().unwrap().is_empty());
+    assert!(a.session.reject_kit_restored("00".repeat(16)).is_err());
+    a.session.reject_kit_restored(asking[0].id.clone()).unwrap();
+    assert!(a.session.kit_restored_devices().unwrap().is_empty());
 }
