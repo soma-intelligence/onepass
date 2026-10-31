@@ -778,6 +778,7 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         params_epoch: account.params.epoch,
         device_list: None,
         vault_list: None,
+        approver_list: None,
         device_id: store.chain_state()?.device_id,
     };
     // Every vault a stored `last_seen` may name: the session's map replaces

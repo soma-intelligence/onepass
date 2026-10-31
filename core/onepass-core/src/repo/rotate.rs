@@ -634,6 +634,7 @@ impl<S: RecordStore> Repository<S> {
             params_epoch: account.params.epoch,
             device_list: Some(device_seen),
             vault_list: Some(vault_seen),
+            approver_list: None,
             device_id: self.chain.device_id,
         };
         collect.sort();
