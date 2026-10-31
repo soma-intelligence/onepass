@@ -961,6 +961,25 @@ impl SyncStore {
                 }
                 continue;
             }
+            if kind.is_immutable()
+                && data.as_deref().is_some_and(|d| {
+                    row_data(
+                        &tx,
+                        "base",
+                        kind,
+                        decode_id(id.clone()).unwrap_or(Id([0; 16])),
+                    )
+                    .ok()
+                    .flatten()
+                    .is_some_and(|old| old != d)
+                })
+            {
+                // A different-bytes overwrite of an immutable row.
+                if let Ok(id) = decode_id(id) {
+                    ignored.push((kind, id));
+                }
+                continue;
+            }
             if matches!(kind, RecordKind::Manifest | RecordKind::Item) {
                 // The first row replaced or removed since the vault last
                 // loaded cleanly stays as part of the device's copy.
@@ -2259,10 +2278,15 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 /// `RecordStore::delete` inside a transaction: a row known to the server
 /// becomes a tombstone carrying its version, a local-only row vanishes. A
 /// signed list record is never deleted (spec 4.2: the lists only grow):
-/// `InvalidFormat("list record deletion")`.
+/// `InvalidFormat("list record deletion")`. Lineage, intro and delivery
+/// records are never deleted either (spec 6.3):
+/// `InvalidFormat("immutable record deletion")`.
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(kind, RecordKind::DeviceList | RecordKind::VaultList) {
         return Err(Error::InvalidFormat("list record deletion"));
+    }
+    if kind.is_immutable() {
+        return Err(Error::InvalidFormat("immutable record deletion"));
     }
     let base_row: Option<(i64, Option<Vec<u8>>)> = tx
         .query_row(
@@ -3695,19 +3719,56 @@ mod tests {
         for row in rows {
             assert!(logged.contains(&row), "{row:?} not logged");
         }
-        // A server write of the same record is still a plain change.
-        s.stage_remote(remote(
-            RecordKind::Lineage,
-            rows[0].1,
-            3,
-            Some(b"y".to_vec()),
-        ))
-        .unwrap();
+    }
+
+    #[test]
+    fn remote_overwrite_of_immutable_row_refused_when_bytes_differ() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let id = Id::new();
+        seed_base(&mut s, RecordKind::Lineage, id, 1, b"x".to_vec());
+        s.stage_remote(remote(RecordKind::Lineage, id, 2, Some(b"y".to_vec())))
+            .unwrap();
         s.commit_remote().unwrap();
-        assert_eq!(
-            s.get(RecordKind::Lineage, rows[0].1).unwrap().unwrap().data,
-            b"y"
-        );
+        let r = s.get(RecordKind::Lineage, id).unwrap().unwrap();
+        assert_eq!((r.data, r.version), (b"x".to_vec(), 1));
+        let logged: Vec<_> = s
+            .ignored_deletions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        assert!(logged.contains(&(RecordKind::Lineage, id)));
+        // Same bytes with a version bump stays accepted.
+        s.stage_remote(remote(RecordKind::Lineage, id, 3, Some(b"x".to_vec())))
+            .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.get(RecordKind::Lineage, id).unwrap().unwrap().version, 3);
+    }
+
+    #[test]
+    fn local_delete_of_immutable_kind_refused() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        for kind in [
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            let id = Id::new();
+            seed_base(&mut s, kind, id, 1, b"x".to_vec());
+            assert_eq!(
+                s.delete(kind, id),
+                Err(Error::InvalidFormat("immutable record deletion"))
+            );
+            assert!(s.get(kind, id).unwrap().is_some());
+            assert!(s.pending_changes().unwrap().is_empty());
+            let r = Record {
+                id,
+                kind,
+                version: 1,
+                data: b"z".to_vec(),
+            };
+            assert_eq!(s.put_if_version(r, None), Err(Error::Conflict));
+        }
     }
 
     #[test]
