@@ -1,0 +1,19 @@
+[package]
+name = "onepass-pairnet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+onepass-mailbox = { path = "../onepass-mailbox" }
+# DNS-SD announce and browse of T-LAN (spec 5.3), no async runtime: its
+# own daemon thread, flume channels. No default features (no async, no log).
+mdns-sd = { version = "0.21", default-features = false }
+# Picks the one LAN address the listener binds to (already under mdns-sd).
+if-addrs = "0.15"
+
+[dev-dependencies]
+# FakeMailbox: the rendezvous from memory.
+onepass-mailbox = { path = "../onepass-mailbox", features = ["testing"] }

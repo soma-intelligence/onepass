@@ -561,6 +561,13 @@ user-id = 4484
 user-login = "hsivonen"
 user-name = "Henri Sivonen"
 
+[[publisher.wasi]]
+version = "0.11.1+wasi-snapshot-preview1"
+when = "2025-06-10"
+user-id = 1
+user-login = "alexcrichton"
+user-name = "Alex Crichton"
+
 [[publisher.wasm-bindgen-macro]]
 version = "0.2.99"
 when = "2024-12-07"
@@ -617,8 +624,78 @@ user-login = "kennykerr"
 user-name = "Kenny Kerr"
 
 [[publisher.windows-sys]]
+version = "0.52.0"
+when = "2023-11-15"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows-sys]]
 version = "0.61.2"
 when = "2025-10-06"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows-targets]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_aarch64_gnullvm]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_aarch64_msvc]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_i686_gnu]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_i686_gnullvm]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_i686_msvc]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_x86_64_gnu]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_x86_64_gnullvm]]
+version = "0.52.6"
+when = "2024-07-03"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
+[[publisher.windows_x86_64_msvc]]
+version = "0.52.6"
+when = "2024-07-03"
 user-id = 64539
 user-login = "kennykerr"
 user-name = "Kenny Kerr"
@@ -883,6 +960,18 @@ who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.2.15"
 notes = "no build.rs, no macros, no unsafe. It reads the filesystem and makes copies of DLLs into OUT_DIR."
+
+[[audits.bytecode-alliance.audits.webpki-root-certs]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
+version = "1.0.4"
+notes = "Purely a data crate."
+
+[[audits.bytecode-alliance.audits.webpki-root-certs]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.4 -> 1.0.11"
+notes = "Standard root updates"
 
 [[audits.bytecode-alliance.audits.zeroize]]
 who = "Pat Hickey <p.hickey@f5.com>"
@@ -2011,6 +2100,13 @@ who = "Alex Franchuk <afranchuk@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "1.9.0 -> 1.13.3"
 notes = "Unsafe code is forbidden, so there's no new unsafe code. There are 3 new optional dependencies, all reasonable (adding trait impls)."
+aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.untrusted]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.1 -> 0.9.0"
+notes = "Mostly a refactor of existing code. No use of std, no unsafe, no dependencies."
 aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.utf8parse]]

@@ -33,6 +33,12 @@ allow = [
     "Zlib",
     "MPL-2.0",
 ]
+# The Mozilla root certificates the mailbox client trusts (spec 4.4) are data
+# under CDLA-Permissive-2.0, a permissive data licence. Allowed for that one
+# crate only.
+exceptions = [
+    { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
 
 [bans]
 multiple-versions = "warn"
