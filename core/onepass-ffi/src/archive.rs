@@ -88,6 +88,10 @@ pub struct FfiRestoreSummary {
     pub skipped: u32,
     /// Opened by the account: its signature was verified.
     pub signature_verified: bool,
+    /// The archive was made before a key rotation (R18): its signature is
+    /// by a retired key, which the revoked device also holds. The restore
+    /// screen says "Sauvegarde faite avant le changement de clés".
+    pub made_before_rotation: bool,
     /// The restore epoch issued after the writes (`None` in a preview, or
     /// when issuing it failed: the items stay written, issue it again).
     pub epoch: Option<u64>,
@@ -148,7 +152,7 @@ fn open_for(
     }
     let account = repo.account();
     if header.account == Some(account.params.account_id) {
-        return Ok((archive::open(bytes, Unlock::Account(account))?, true));
+        return Ok((repo.open_archive(bytes)?, true));
     }
     if !header.passphrase {
         return Err(invalid("archive of another account"));
@@ -179,6 +183,7 @@ fn summary(contents: &Contents, plan: &RestorePlan, verified: bool) -> FfiRestor
         by_type: by_type(plan.writes.iter().map(|(_, i)| i)),
         skipped: plan.skipped,
         signature_verified: verified,
+        made_before_rotation: contents.made_before_rotation,
         epoch: None,
     }
 }

@@ -4738,3 +4738,312 @@ fn kit_restore_over_quarantine_keeps_own_writes_accounted() {
     sync(&mut server, &mut a).unwrap();
     assert!(a.items().iter().any(|i| i.id == dave.id), "A receives it");
 }
+
+// ------------------------------------- Task 16: travel, archives, backups
+
+/// The base rows of the device as the Travel Mode upstream.
+fn base_upstream(dev: &Device) -> onepass_core::store::MemoryStore {
+    let mut up = onepass_core::store::MemoryStore::new();
+    for r in dev.store().export_records().unwrap() {
+        up.put(r).unwrap();
+    }
+    up
+}
+
+/// The vault of `dev` as an archive entry.
+fn archived(dev: &mut Device) -> onepass_core::archive::ArchivedVault {
+    let v = dev.vault();
+    onepass_core::archive::ArchivedVault {
+        id: v.id,
+        meta: v.meta.clone(),
+        items: dev.items(),
+    }
+}
+
+/// The records of the kinds that belong to the identity and the lineage.
+fn identity_records(store: &SyncStore) -> Vec<Record> {
+    let mut out = Vec::new();
+    for kind in [
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+        RecordKind::RestoreEpoch,
+        RecordKind::DeviceList,
+        RecordKind::VaultList,
+        RecordKind::Lineage,
+        RecordKind::DeviceIntro,
+        RecordKind::KeyDelivery,
+    ] {
+        out.extend(store.list(kind).unwrap());
+    }
+    out.sort_by_key(|r| (r.kind.code(), r.id));
+    out
+}
+
+/// R18, spec 10.7: a backup made before the rotation opens through
+/// `retired_kem` and the signature of the retired key, and says so.
+#[test]
+fn archive_before_rotation_opens_with_warning() {
+    use onepass_core::archive::{self, ArchiveKind, Unlock};
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let av = archived(&mut a);
+    let old = archive::backup(a.repo().account(), vec![av.clone()], None).unwrap();
+    let fresh = archive::backup(a.repo().account(), vec![av.clone()], None).unwrap();
+    // Before any rotation nothing is flagged.
+    assert!(!a.repo().open_archive(&old).unwrap().made_before_rotation);
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    // The plain account unlock cannot verify the old signature.
+    assert!(archive::open(&old, Unlock::Account(a.repo().account())).is_err());
+    // The repository opens it, with the warning.
+    let c = a.repo().open_archive(&old).unwrap();
+    assert!(c.made_before_rotation);
+    assert_eq!(c.kind, ArchiveKind::Backup);
+    assert_eq!(c.vaults.len(), 1);
+    assert_eq!(c.vaults[0].id, av.id);
+    assert_eq!(c.vaults[0].meta, av.meta);
+    let ids = |v: &onepass_core::archive::ArchivedVault| {
+        v.items.iter().map(|i| i.id).collect::<BTreeSet<_>>()
+    };
+    assert_eq!(ids(&c.vaults[0]), ids(&av));
+    assert!(a.repo().open_archive(&fresh).unwrap().made_before_rotation);
+
+    // A backup made now is not flagged.
+    let av2 = archived(&mut a);
+    let now = archive::backup(a.repo().account(), vec![av2], None).unwrap();
+    assert!(!a.repo().open_archive(&now).unwrap().made_before_rotation);
+
+    // Passphrase archives are unchanged.
+    let kdf = kdf();
+    let phrase = "quartz lantern oyster meadow 91";
+    let both = archive::backup(a.repo().account(), vec![av], Some((phrase, kdf))).unwrap();
+    let c = archive::open(&both, Unlock::Passphrase(phrase)).unwrap();
+    assert!(!c.made_before_rotation);
+}
+
+/// The warning is not forgeable away: an archive signed by nobody the
+/// device knows, or made for another account, is still refused.
+#[test]
+fn archive_signed_by_an_unknown_key_is_refused() {
+    use onepass_core::archive;
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let (mut other, _) = Device::create();
+    let av = archived(&mut a);
+    let foreign = archive::backup(other.repo().account(), vec![av.clone()], None).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    assert!(a.repo().open_archive(&foreign).is_err());
+    // Tampered signature bytes under the right account id.
+    let own = archive::backup(a.repo().account(), vec![av], None).unwrap();
+    let mut bad = own.clone();
+    let last = bad.len() - 1;
+    bad[last] ^= 1;
+    assert!(a.repo().open_archive(&bad).is_err());
+}
+
+/// An archive made before the rotation restores as new writes under the
+/// current keys: nothing of the old identity comes back (R18, R11).
+#[test]
+fn restoring_an_old_archive_writes_under_the_current_keys() {
+    use onepass_core::archive;
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let av = archived(&mut a);
+    let old = archive::backup(a.repo().account(), vec![av], None).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let gone = f.items[0].id;
+    a.delete(gone);
+    let before = a.items().len();
+
+    let contents = a.repo().open_archive(&old).unwrap();
+    assert!(contents.made_before_rotation);
+    let report = a.repo().restore_archive(&contents).unwrap();
+    assert!(report.made_before_rotation);
+    assert_eq!(report.vaults_created, 0);
+    assert!(report.restored >= 1);
+    assert_eq!(a.items().len(), before + report.restored as usize);
+    // Everything reads under the new identity after a lock and unlock.
+    a.lock();
+    a.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert!(a.items().iter().any(|i| i.id == gone));
+    sync(&mut server, &mut a).unwrap();
+}
+
+/// Spec 10.7: `backup restore` imports content only. The lineage, the
+/// intros, the deliveries, the account records, the lists and the trust
+/// state are the same after it.
+#[test]
+fn backup_restore_never_touches_lineage() {
+    use onepass_core::archive;
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let av = archived(&mut a);
+    let old = archive::backup(a.repo().account(), vec![av], None).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert!(
+        !identity_records(&a.store()).is_empty(),
+        "the fixture has lineage and deliveries"
+    );
+    a.delete(f.items[0].id);
+
+    let ids = identity_records(&a.store());
+    let mut trust = a.store().trust_state().unwrap().unwrap();
+    let contents = a.repo().open_archive(&old).unwrap();
+    a.repo().restore_archive(&contents).unwrap();
+    assert_eq!(identity_records(&a.store()), ids);
+    // The restored items are this device's own writes, logged as any
+    // write is; nothing else of the trust state moves.
+    let mut after = a.store().trust_state().unwrap().unwrap();
+    after.own_writes = trust.own_writes.clone();
+    trust.own_writes = after.own_writes.clone();
+    assert_eq!(after, trust);
+    // And only vault content was written.
+    assert!(
+        onepass_core::archive::restorable_kind(RecordKind::Item)
+            && !onepass_core::archive::restorable_kind(RecordKind::Lineage)
+            && !onepass_core::archive::restorable_kind(RecordKind::DeviceIntro)
+            && !onepass_core::archive::restorable_kind(RecordKind::KeyDelivery)
+            && !onepass_core::archive::restorable_kind(RecordKind::Keyset)
+    );
+}
+
+/// A device that cannot write (a rotation waits for it) restores nothing.
+#[test]
+fn restore_is_refused_while_candidate() {
+    use onepass_core::archive;
+    let (_server, _a, mut c, f, _out, _sk) = rotated();
+    c.unlock(&f.sk);
+    let contents = archive::Contents {
+        archive_id: Id::new(),
+        kind: archive::ArchiveKind::Backup,
+        created_at: T0,
+        source_account: None,
+        vaults: vec![],
+        made_before_rotation: false,
+    };
+    assert_eq!(
+        c.repo().restore_archive(&contents).err(),
+        Some(Error::ReadOnly)
+    );
+}
+
+/// R19, spec 10.6: a follower in Travel Mode adopts the rotation; its
+/// state, sealed under the old keys, still opens; `travel off` brings the
+/// vault back against the rotation's `from_heads` and never imports what
+/// the revoked device wrote late under the old identity (R11).
+#[test]
+fn travel_follower_adopts_then_travel_off_uses_from_heads() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut ipad = old_device(&server, &f);
+    c.unlock(&f.sk);
+    let vault = c.vault().id;
+    let up = base_upstream(&c);
+    let state = c.repo().enter_travel(&up).unwrap();
+    let sealed = c.repo().seal_travel_state(&state).unwrap();
+    c.store()
+        .set_travel_hidden(&BTreeSet::from([vault]))
+        .unwrap();
+    c.lock();
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let iv = ipad.vault();
+    ipad.repo()
+        .save_item(&iv, login(iv.id, "forged", T0 + 50))
+        .unwrap();
+    sync(&mut server, &mut ipad).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let av = a.vault();
+    a.repo()
+        .save_item(&av, login(av.id, "after", T0 + 80))
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert!(
+        c.store()
+            .get(RecordKind::VaultKey, vault)
+            .unwrap()
+            .is_none(),
+        "the sync keeps the hidden vault off the device"
+    );
+
+    // Adopting works with the vault parked.
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let heads = rotation_of(&a.store(), &out.head).from_heads;
+    assert!(heads.contains_key(&vault));
+    c.repo = Some(repo);
+
+    // The state sealed under the old keys opens under the new ones.
+    let reopened = c.repo().open_travel_state(&sealed).unwrap();
+    assert_eq!(reopened, state);
+    c.repo().resume_travel(&reopened);
+    assert!(c.repo().vaults().unwrap().iter().all(|v| v.id != vault));
+
+    // Travel off: the pin is the rotation's, not the parked old one.
+    c.store().set_travel_hidden(&BTreeSet::new()).unwrap();
+    full_fetch(&server, &mut c);
+    c.repo()
+        .exit_travel(&onepass_core::store::MemoryStore::new(), &reopened)
+        .unwrap();
+    let users = users(&c.items());
+    assert_eq!(users, ["after", "alice", "bob", "carol"].map(String::from));
+    assert!(!users.contains(&"forged".to_string()));
+}
+
+/// A state forged with the old signing key (the revoked device holds it)
+/// cannot move the pin of a vault the rotation covered: `from_heads` wins
+/// over whatever the parked state says.
+#[test]
+fn old_travel_pin_cannot_override_from_heads() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let vault = c.vault().id;
+    let up = base_upstream(&c);
+    let state = c.repo().enter_travel(&up).unwrap();
+    c.store()
+        .set_travel_hidden(&BTreeSet::from([vault]))
+        .unwrap();
+    c.lock();
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+
+    // The parked pin claims a manifest far ahead of anything real.
+    let mut forged = state.clone();
+    for seen in forged.parked.values_mut() {
+        seen.seq += 1_000;
+        seen.hash = [9; 32];
+    }
+    c.repo().resume_travel(&forged);
+    c.store().set_travel_hidden(&BTreeSet::new()).unwrap();
+    full_fetch(&server, &mut c);
+    c.repo()
+        .exit_travel(&onepass_core::store::MemoryStore::new(), &forged)
+        .unwrap();
+    assert_eq!(
+        users(&c.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+}

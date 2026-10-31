@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::account::Account;
+use crate::crypto::HybridVerifyingKey;
 use crate::crypto::aead::{LEN_PREFIX, OpenStage, TAG_LEN, open_detailed};
 use crate::crypto::{
     Aad, BlobKind, DEV_KDF_FLOOR, HEADER_LEN, HybridSignature, KDF_FLOOR, KdfParams, SecretKey,
@@ -79,6 +80,11 @@ pub struct Contents {
     pub created_at: i64,
     pub source_account: Option<Id>,
     pub vaults: Vec<ArchivedVault>,
+    /// R18: the archive was signed by a retired signing key or sealed to a
+    /// retired KEM key, so it was made before a key rotation (the revoked
+    /// device can forge such a file: the user is told). Always false for a
+    /// passphrase unlock and for `open`.
+    pub made_before_rotation: bool,
 }
 
 /// How to open an archive.
@@ -444,19 +450,36 @@ fn check_schema(schema: u16) -> Result<()> {
 }
 
 /// The opening account must be the signer, and the signature must verify
-/// under its signing key over `signed_digest`.
-fn verify_signature(header: &Header, sealed: &[u8], account: &Account) -> Result<()> {
+/// under its signing key over `signed_digest`, or under one of the
+/// `retired` signing keys (R18: an archive made before a rotation). Returns
+/// whether a retired key verified it.
+fn verify_signature(
+    header: &Header,
+    sealed: &[u8],
+    account: &Account,
+    retired: &[HybridVerifyingKey],
+) -> Result<bool> {
     let refused = || Error::Integrity(IntegrityError::Signature);
     let signed = header.signature.as_ref().ok_or_else(refused)?;
     if signed.account_id != account.params.account_id {
         return Err(refused());
     }
     let digest = signed_digest(header, sealed)?;
-    account
+    if account
         .params
         .signing_pub
         .verify(SIGN_DOMAIN, &digest, &signed.signature)
-        .map_err(|_| refused())
+        .is_ok()
+    {
+        return Ok(false);
+    }
+    if retired
+        .iter()
+        .any(|k| k.verify(SIGN_DOMAIN, &digest, &signed.signature).is_ok())
+    {
+        return Ok(true);
+    }
+    Err(refused())
 }
 
 /// Copy a 32-byte unwrapped key straight into a key buffer.
@@ -469,7 +492,13 @@ fn content_key(plain: &[u8]) -> Result<SymmetricKey> {
     Ok(k)
 }
 
-fn unwrap_content_key(header: &Header, sealed: &[u8], unlock: Unlock<'_>) -> Result<SymmetricKey> {
+/// The content key and whether the archive was made before a rotation.
+fn unwrap_content_key(
+    header: &Header,
+    sealed: &[u8],
+    unlock: Unlock<'_>,
+    retired: &[HybridVerifyingKey],
+) -> Result<(SymmetricKey, bool)> {
     match unlock {
         Unlock::Account(account) => {
             let id = account.params.account_id;
@@ -484,12 +513,22 @@ fn unwrap_content_key(header: &Header, sealed: &[u8], unlock: Unlock<'_>) -> Res
                     _ => None,
                 })
                 .ok_or(Error::WrongPassword)?;
-            verify_signature(header, sealed, account)?;
-            unwrap_key(
-                &account.keyset().kem,
-                envelope,
-                &envelope_context(header.archive_id),
-            )
+            let old_signer = verify_signature(header, sealed, account, retired)?;
+            let ctx = envelope_context(header.archive_id);
+            let keyset = account.keyset();
+            match unwrap_key(&keyset.kem, envelope, &ctx) {
+                Ok(k) => Ok((k, old_signer)),
+                Err(first) => {
+                    // R18: the KEM secrets of the identities this one
+                    // replaced, newest first.
+                    for old in &keyset.retired_kem {
+                        if let Ok(k) = unwrap_key(old, envelope, &ctx) {
+                            return Ok((k, true));
+                        }
+                    }
+                    Err(first)
+                }
+            }
         }
         Unlock::Passphrase(passphrase) => {
             let (kdf, wrapped_key) = header
@@ -516,7 +555,7 @@ fn unwrap_content_key(header: &Header, sealed: &[u8], unlock: Unlock<'_>) -> Res
                 OpenStage::Commitment => Error::WrongPassword,
                 _ => e,
             })?;
-            content_key(&plain)
+            Ok((content_key(&plain)?, false))
         }
     }
 }
@@ -524,7 +563,7 @@ fn unwrap_content_key(header: &Header, sealed: &[u8], unlock: Unlock<'_>) -> Res
 /// Decode and check the payload: schema first (a newer one may not decode
 /// as this one), then the whole payload with no trailing byte, the repeated
 /// fields against the header, and the counts.
-fn decode_payload(header: &Header, plain: &[u8]) -> Result<Contents> {
+fn decode_payload(header: &Header, plain: &[u8], made_before_rotation: bool) -> Result<Contents> {
     let bad = Error::InvalidFormat("archive payload");
     // Enum variant indexes are varint u32 in postcard: the prefix decodes
     // whatever kinds a newer version adds.
@@ -549,6 +588,7 @@ fn decode_payload(header: &Header, plain: &[u8]) -> Result<Contents> {
         created_at: payload.created_at,
         source_account: payload.source_account,
         vaults: payload.vaults,
+        made_before_rotation,
     })
 }
 
@@ -568,13 +608,27 @@ fn decode_payload(header: &Header, plain: &[u8]) -> Result<Contents> {
 /// trailing byte, its repeated fields equal the header's
 /// (`IntegrityError::WrongContext`) and its counts are within bounds.
 pub fn open(bytes: &[u8], unlock: Unlock<'_>) -> Result<Contents> {
+    open_retired(bytes, unlock, &[])
+}
+
+/// `open`, for an account that rotated its keys (R18, spec 10.7): an
+/// archive signed by one of `retired` (the public signing keys the device
+/// left, from its trust state) also verifies, and one sealed to a KEM key
+/// the account's keyset retired also opens. Either way
+/// `Contents::made_before_rotation` is set. The content is data under the
+/// current keys when restored; nothing of the old identity comes back.
+pub fn open_retired(
+    bytes: &[u8],
+    unlock: Unlock<'_>,
+    retired: &[HybridVerifyingKey],
+) -> Result<Contents> {
     let (header, sealed) = decode_container(bytes)?;
     check_schema(header.payload_schema)?;
     let max_sealed = HEADER_LEN + padded_len(MAX_PAYLOAD + LEN_PREFIX) + TAG_LEN;
     if sealed.len() > max_sealed {
         return Err(too_large());
     }
-    let k = unwrap_content_key(&header, sealed, unlock)?;
+    let (k, before_rotation) = unwrap_content_key(&header, sealed, unlock, retired)?;
     let plain = crate::crypto::open(
         &k,
         BlobKind::Archive,
@@ -582,7 +636,7 @@ pub fn open(bytes: &[u8], unlock: Unlock<'_>) -> Result<Contents> {
         sealed,
     )?;
     drop(k);
-    decode_payload(&header, &plain)
+    decode_payload(&header, &plain, before_rotation)
 }
 
 #[cfg(test)]

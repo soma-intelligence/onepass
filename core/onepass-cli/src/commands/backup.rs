@@ -125,7 +125,7 @@ fn create(ctx: &Ctx, out: &Path, with_passphrase: bool) -> Result<(), CliError> 
 fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
     let bytes = read_capped(file)?;
     let info = read_header(&bytes)?;
-    let (created, restored, skipped, epoch) = with_session(ctx, |repo| {
+    let (created, restored, skipped, epoch, before_rotation) = with_session(ctx, |repo| {
         // A running server would write back last seen manifests of what
         // this changes; during Travel Mode, restored vaults would sit beside
         // the hidden ones.
@@ -137,7 +137,7 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
         }
         let account_id = repo.account().params.account_id;
         let contents = if info.account == Some(account_id) {
-            archive::open(&bytes, Unlock::Account(repo.account()))?
+            repo.open_archive(&bytes)?
         } else if info.passphrase {
             let p = read_secret("Archive passphrase: ", ARCHIVE_PASSPHRASE_ENV)?;
             archive::open(&bytes, Unlock::Passphrase(&p))?
@@ -154,6 +154,7 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
             existing.push((v.id, ids));
         }
         let plan = restore_plan(&contents, &existing);
+        let before_rotation = contents.made_before_rotation;
         drop(contents);
         // Every item is checked before the first write (vaults included).
         for (i, (_, item)) in plan.writes.iter().enumerate() {
@@ -187,7 +188,13 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
         // failure here keeps the items written (and the device state saved):
         // it is reported once the counts are out.
         let epoch = stored(repo.issue_restore_epoch(EpochReason::Restore)).map(|e| e.epoch);
-        Ok((plan.new_vaults.len(), restored, plan.skipped, epoch))
+        Ok((
+            plan.new_vaults.len(),
+            restored,
+            plan.skipped,
+            epoch,
+            before_rotation,
+        ))
     })?;
     let issued = epoch.as_ref().ok().copied();
     if ctx.json {
@@ -198,9 +205,15 @@ fn restore(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
                 "restored": restored,
                 "skipped": skipped,
                 "epoch": issued,
+                "made_before_rotation": before_rotation,
             })
         );
     } else {
+        if before_rotation {
+            crate::out!(
+                "Warning: this backup was made before a key rotation; a revoked device could have forged it"
+            );
+        }
         crate::out!("Created {created} vaults");
         crate::out!("Restored {restored} items");
         crate::out!("Skipped {skipped} items (already in the account)");

@@ -41,6 +41,30 @@ impl<S: RecordStore> Repository<S> {
             .verify(&local_domain(domain), msg, sig)
     }
 
+    /// `verify_local`, also under the signing keys of the identities this
+    /// device left (R18): a state signed before a rotation. A revoked
+    /// device holds those keys, so the caller must not give the result
+    /// more weight than data from the file system.
+    pub(crate) fn verify_local_or_retired(
+        &self,
+        domain: &[u8],
+        msg: &[u8],
+        sig: &HybridSignature,
+    ) -> Result<()> {
+        if self.verify_local(domain, msg, sig).is_ok() {
+            return Ok(());
+        }
+        let d = local_domain(domain);
+        if self
+            .retired_signers()?
+            .iter()
+            .any(|k| k.verify(&d, msg, sig).is_ok())
+        {
+            return Ok(());
+        }
+        Err(Error::Integrity(IntegrityError::Signature))
+    }
+
     /// Merge a device state read from disk into the in-memory one.
     ///
     /// Per vault the higher `seq` wins; the same `seq` with another hash is

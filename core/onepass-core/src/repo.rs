@@ -2063,6 +2063,102 @@ fn interrupted_write(vault: &Vault, m: &Manifest, rec: &ItemRecord) -> bool {
     expected == Some(rec.version) && vault.open_item(rec).is_ok()
 }
 
+impl<S: RecordStore> Repository<S> {
+    /// The public signing keys of the identities this device left, from its
+    /// trust state (empty without one): the keys an archive or a Travel
+    /// state made before a rotation was signed with (R18).
+    pub(crate) fn retired_signers(&self) -> Result<Vec<crate::crypto::HybridVerifyingKey>> {
+        Ok(trust_of(&self.store)?
+            .map(|t| t.retired.into_iter().map(|r| r.sign_pub).collect())
+            .unwrap_or_default())
+    }
+
+    /// The manifests the head rotation of the trust state was made from
+    /// (`from_heads`, R12); empty without a trust state or when the head is
+    /// a genesis or not in the store.
+    pub(crate) fn head_from_heads(&self) -> Result<BTreeMap<Id, SeenManifest>> {
+        let Some(trust) = trust_of(&self.store)? else {
+            return Ok(BTreeMap::new());
+        };
+        let mut id = [0u8; 16];
+        id.copy_from_slice(&trust.head.hash[..16]);
+        let Some(rec) = self.store.get(RecordKind::Lineage, Id(id))? else {
+            return Ok(BTreeMap::new());
+        };
+        match crate::lineage::LineageRecord::decode(&rec.data) {
+            Ok(r @ crate::lineage::LineageRecord::Rotation(_)) if r.hash() == trust.head.hash => {
+                match r {
+                    crate::lineage::LineageRecord::Rotation(s) => Ok(s.body.from_heads),
+                    _ => Ok(BTreeMap::new()),
+                }
+            }
+            _ => Ok(BTreeMap::new()),
+        }
+    }
+
+    /// Open an account backup made by this account, also one made before a
+    /// key rotation (spec 10.7, R18): its KEM key opens through
+    /// `retired_kem` and its signature verifies under a retired signing key
+    /// of the trust state; `made_before_rotation` then tells the restore
+    /// screen to warn ("Sauvegarde faite avant le changement de clés"), as
+    /// the revoked device can forge such a file. A signature by no key this
+    /// device knows is refused as before.
+    pub fn open_archive(&self, bytes: &[u8]) -> Result<crate::archive::Contents> {
+        let retired = self.retired_signers()?;
+        crate::archive::open_retired(
+            bytes,
+            crate::archive::Unlock::Account(&self.account),
+            &retired,
+        )
+    }
+
+    /// Restore `contents` into the account: the missing vaults are created
+    /// with the archive's meta, every item absent from the account is
+    /// written as a new write under the current keys (so an archive of an
+    /// older identity brings no record of that identity back), the others
+    /// are skipped (`restore_plan`). Every item is validated before the
+    /// first write. Only vault content is written: never the account
+    /// records, the lists, the lineage, the intros, the deliveries or the
+    /// trust state (spec 10.7, `archive::restorable_kind`). While a
+    /// rotation waits for the user it is `Error::ReadOnly`. The caller
+    /// issues the restore epoch afterwards.
+    pub fn restore_archive(
+        &mut self,
+        contents: &crate::archive::Contents,
+    ) -> Result<crate::archive::RestoreReport> {
+        self.writable()?;
+        let mut targets: std::collections::HashMap<Id, Vault> = std::collections::HashMap::new();
+        let mut existing = Vec::new();
+        for v in self.vaults()? {
+            let ids = self.items(&v)?.iter().map(|i| i.id).collect();
+            existing.push((v.id, ids));
+            targets.insert(v.id, v);
+        }
+        let plan = crate::archive::restore_plan(contents, &existing);
+        for (_, item) in &plan.writes {
+            crate::model::validate(item)?;
+        }
+        let mut report = crate::archive::RestoreReport {
+            vaults_created: 0,
+            restored: 0,
+            skipped: plan.skipped,
+            made_before_rotation: contents.made_before_rotation,
+        };
+        for (archive_id, meta) in plan.new_vaults {
+            let vault = self.create_vault(meta)?;
+            targets.insert(archive_id, vault);
+            report.vaults_created = report.vaults_created.saturating_add(1);
+        }
+        for (archive_id, mut item) in plan.writes {
+            let target = targets.get(&archive_id).ok_or(Error::NotFound)?;
+            item.vault_id = target.id;
+            self.save_item(target, item)?;
+            report.restored = report.restored.saturating_add(1);
+        }
+        Ok(report)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::OnceLock;

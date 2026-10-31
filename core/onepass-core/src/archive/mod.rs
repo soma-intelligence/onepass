@@ -16,12 +16,26 @@ use std::collections::HashSet;
 
 use crate::Id;
 use crate::model::Item;
+use crate::store::RecordKind;
 use crate::vault::VaultMeta;
 
 pub use format::{
     ArchiveKind, ArchivedVault, CURRENT_SCHEMA, Contents, HeaderInfo, Unlock, backup, export,
-    inspect, open,
+    inspect, open, open_retired,
 };
+
+/// Whether a record of `kind` can be written by a restore: the vault
+/// content only. The account records, the lists, the epoch and everything
+/// keyed by the identity (lineage, device intros, key deliveries) belong to
+/// the live account and are never restored from a file (spec 10.7). An
+/// archive carries no record at all, only vaults and items: this names the
+/// boundary a restore must stay inside.
+pub fn restorable_kind(kind: RecordKind) -> bool {
+    matches!(
+        kind,
+        RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Item | RecordKind::Manifest
+    )
+}
 
 /// What restoring an archive into an account does. Nothing is overwritten.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +50,17 @@ pub struct RestorePlan {
     /// Items whose id already exists in any vault of the account (or earlier
     /// in the archive), left untouched.
     pub skipped: u32,
+}
+
+/// What `Repository::restore_archive` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreReport {
+    pub vaults_created: u32,
+    pub restored: u32,
+    pub skipped: u32,
+    /// The archive was made before a key rotation (R18): the restore
+    /// screen says so before this runs.
+    pub made_before_rotation: bool,
 }
 
 /// Plan a restore of `contents` into an account whose vaults and item ids
