@@ -18,6 +18,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use aws_lc_rs::digest;
+
 use crate::account::AccountParams;
 use crate::crypto::{HybridKemPublic, HybridVerifyingKey, IdentityVerifyingKey};
 use crate::lineage::{
@@ -29,10 +31,11 @@ use crate::{Error, Id, Result};
 
 use super::MAX_CARD_INTROS_PER_RECORD;
 
-/// Most copies of one record (same lineage hash, other signatures) whose
-/// signatures `follow_foreign` checks. Exact duplicates count once. A
-/// server sending more bad copies can only hide the record (`Same`),
-/// which withholding it does anyway.
+/// Most copies of one record (same lineage hash, other signatures) that
+/// `follow_foreign` keeps and checks: exact duplicates count once, and the
+/// copies with the smallest SHA-256 of their encoding are kept. A server
+/// sending more bad copies can only hide the record (`Same`), which
+/// withholding it does anyway.
 pub const MAX_FOREIGN_COPIES: usize = 8;
 
 /// The legacy (TOFU) devices of an account migrated from before key
@@ -239,11 +242,16 @@ fn roster_with(
 
 /// The record's roster (the genesis creator, or the rotation's roster),
 /// then the accepted legacy entries (genesis only), without `excluded`,
-/// grown by each intro of `pending` accepted, until none more is.
-/// `pending` is bound to `record` by the caller; it is taken in intro id
-/// order, and an id it names with two key pairs (or with keys other than
-/// a legacy entry's, or listed in `legacy.conflicting`) is refused, so
-/// the outcome depends on the set only. Returns the members and the
+/// grown by the intros of `pending` (bound to `record` by the caller) in
+/// passes until none more is accepted.
+///
+/// Each pass looks only at intros that verify against the members as they
+/// stood at the start of the pass (a forged intro never counts, so it can
+/// never block an honest one), for ids that are not members, excluded or
+/// in `legacy.conflicting`. Per id: if the verifying intros agree on the
+/// key pair, the one with the smallest intro id is accepted; if they name
+/// two key pairs, the id is refused for good. The outcome depends on the
+/// set of intros only, never on their order. Returns the members and the
 /// intros accepted, in the order accepted.
 pub(super) fn grow_roster(
     record: &LineageRecord,
@@ -261,49 +269,63 @@ pub(super) fn grow_roster(
         }
     }
     members.retain(|m| !excluded.contains(&m.device_id));
-
-    // Ids claimed with two key pairs under this record.
-    let mut conflicting = legacy.conflicting.clone();
-    let mut claimed: BTreeMap<Id, &RosterEntry> =
-        legacy.entries.iter().map(|e| (e.device_id, e)).collect();
-    for i in &pending {
-        let e = &i.body.entry;
-        match claimed.get(&e.device_id) {
-            Some(other) if !same_keys(other, e) => {
-                conflicting.insert(e.device_id);
-            }
-            Some(_) => {}
-            None => {
-                claimed.insert(e.device_id, e);
-            }
-        }
-    }
+    let mut refused = legacy.conflicting.clone();
     pending.sort_by_key(|i| intro_id(&i.body));
 
     let mut accepted = Vec::new();
-    let mut progress = true;
-    while progress && accepted.len() < MAX_CARD_INTROS_PER_RECORD {
-        progress = false;
-        let mut rest = Vec::new();
-        for intro in pending {
+    while accepted.len() < MAX_CARD_INTROS_PER_RECORD {
+        let verifies = |intro: &SignedIntro| {
             let b = &intro.body;
-            let ok = accepted.len() < MAX_CARD_INTROS_PER_RECORD
-                && !excluded.contains(&b.entry.device_id)
-                && !conflicting.contains(&b.entry.device_id)
-                && !members.iter().any(|m| m.device_id == b.entry.device_id)
-                && if b.introducer == b.entry.device_id {
-                    verify_intro_identity(&intro, record.identity_pub()).is_ok()
-                        && verify_intro(&intro, &b.entry.sign_pub).is_ok()
-                } else {
-                    members
-                        .iter()
-                        .find(|m| m.device_id == b.introducer)
-                        .is_some_and(|m| verify_intro(&intro, &m.sign_pub).is_ok())
-                };
-            if ok {
-                members.push(b.entry.clone());
+            if b.introducer == b.entry.device_id {
+                verify_intro_identity(intro, record.identity_pub()).is_ok()
+                    && verify_intro(intro, &b.entry.sign_pub).is_ok()
+            } else {
+                members
+                    .iter()
+                    .find(|m| m.device_id == b.introducer)
+                    .is_some_and(|m| verify_intro(intro, &m.sign_pub).is_ok())
+            }
+        };
+        // Candidate intros per id, in intro id order.
+        let mut by_id: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
+        for (n, intro) in pending.iter().enumerate() {
+            let id = intro.body.entry.device_id;
+            if excluded.contains(&id)
+                || refused.contains(&id)
+                || members.iter().any(|m| m.device_id == id)
+                || !verifies(intro)
+            {
+                continue;
+            }
+            by_id.entry(id).or_default().push(n);
+        }
+        if by_id.is_empty() {
+            break;
+        }
+        let mut taken: BTreeSet<usize> = BTreeSet::new();
+        let mut added = Vec::new();
+        for (id, ns) in by_id {
+            let first = &pending[ns[0]].body.entry;
+            if ns
+                .iter()
+                .any(|n| !same_keys(&pending[*n].body.entry, first))
+            {
+                refused.insert(id);
+            } else if accepted.len() + added.len() < MAX_CARD_INTROS_PER_RECORD {
+                added.push(ns[0]);
+                taken.insert(ns[0]);
+            }
+        }
+        if added.is_empty() {
+            break;
+        }
+        for n in &added {
+            members.push(pending[*n].body.entry.clone());
+        }
+        let mut rest = Vec::new();
+        for (n, intro) in pending.into_iter().enumerate() {
+            if taken.contains(&n) {
                 accepted.push(intro);
-                progress = true;
             } else {
                 rest.push(intro);
             }
@@ -326,8 +348,8 @@ pub(super) fn grow_roster(
 /// account, one generation after `p`, that passes the structural rules;
 /// its rotator is in `roster_at(p)` and was revoked by no record from the
 /// genesis to `p`; the rotator's entry in its own roster carries the same
-/// signing key; and some copy of it (at most `MAX_FOREIGN_COPIES`
-/// distinct ones are tried) verifies under the rotator's key from
+/// signing key; and some copy of it (of the `MAX_FOREIGN_COPIES` kept)
+/// verifies under the rotator's key from
 /// `roster_at(p)` and under the identity it names. The ids a rotation
 /// revokes need not be known: they can only shrink later rosters.
 /// Devices revoked by an ancestor can neither introduce nor be
@@ -342,10 +364,17 @@ pub fn follow_foreign(
 ) -> ForeignLineage {
     // Every copy of each record of this account that passes the strict
     // checks, by lineage hash; the rotations by parent.
-    let mut by_hash: BTreeMap<[u8; 32], Vec<&LineageRecord>> = BTreeMap::new();
+    // Per lineage hash, the distinct copies keyed by the SHA-256 of their
+    // encoding, keeping the `MAX_FOREIGN_COPIES` smallest: a function of
+    // the set of copies, bounded whatever the server sends.
+    let mut by_hash: BTreeMap<[u8; 32], BTreeMap<[u8; 32], &LineageRecord>> = BTreeMap::new();
     let mut children: BTreeMap<[u8; 32], BTreeSet<[u8; 32]>> = BTreeMap::new();
     for r in records {
-        if r.account_id() != pin.account_id || LineageRecord::decode(&r.encode()).is_err() {
+        if r.account_id() != pin.account_id {
+            continue;
+        }
+        let bytes = r.encode();
+        if LineageRecord::decode(&bytes).is_err() {
             continue;
         }
         let h = r.hash();
@@ -353,10 +382,15 @@ pub fn follow_foreign(
             children.entry(parent).or_default().insert(h);
         }
         let copies = by_hash.entry(h).or_default();
-        if !copies.contains(&r) {
-            copies.push(r);
+        copies.insert(copy_key(&bytes), r);
+        if copies.len() > MAX_FOREIGN_COPIES {
+            copies.pop_last();
         }
     }
+    let by_hash: BTreeMap<[u8; 32], Vec<&LineageRecord>> = by_hash
+        .into_iter()
+        .map(|(h, c)| (h, c.into_values().collect()))
+        .collect();
 
     // The pinned path, back to the genesis.
     let mut revoked: BTreeSet<Id> = BTreeSet::new();
@@ -433,6 +467,13 @@ pub fn follow_foreign(
     }
 }
 
+/// Sort key of a copy: SHA-256 of its encoding.
+fn copy_key(bytes: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest::digest(&digest::SHA256, bytes).as_ref());
+    out
+}
+
 /// The copy of a child that makes it valid under a parent of generation
 /// `generation` whose roster (intros included, revoked devices removed) is
 /// `roster`, `revoked` holding every device revoked from the genesis to
@@ -457,11 +498,8 @@ fn valid_child<'a>(
     {
         return None;
     }
-    copies
-        .iter()
-        .take(MAX_FOREIGN_COPIES)
-        .find_map(|r| match r {
-            LineageRecord::Rotation(s) if verify_rotation(s, &signer.sign_pub).is_ok() => Some(s),
-            _ => None,
-        })
+    copies.iter().find_map(|r| match r {
+        LineageRecord::Rotation(s) if verify_rotation(s, &signer.sign_pub).is_ok() => Some(s),
+        _ => None,
+    })
 }
