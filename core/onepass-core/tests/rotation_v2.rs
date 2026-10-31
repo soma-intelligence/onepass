@@ -3643,7 +3643,9 @@ fn self_revocation_locks_then_waits() {
         state(&c),
         DeviceLineageState::Quarantined {
             by: out.head,
-            since: T
+            rotator: f.me.id(),
+            since: T,
+            resume: None,
         }
     );
     assert_eq!(records(&c), before);
@@ -3673,7 +3675,7 @@ fn erased_after_seven_days() {
 
 #[test]
 fn clock_moved_back_never_erases_early() {
-    let (_server, _a, c, _f, out) = c_revoked();
+    let (_server, _a, c, f, out) = c_revoked();
     tick(&c, T);
     let before = records(&c);
     assert_eq!(
@@ -3686,7 +3688,9 @@ fn clock_moved_back_never_erases_early() {
         state(&c),
         DeviceLineageState::Quarantined {
             by: out.head,
-            since: T
+            rotator: f.me.id(),
+            since: T,
+            resume: None,
         }
     );
 }
@@ -3695,7 +3699,7 @@ fn clock_moved_back_never_erases_early() {
 /// withholding it afterwards, keeps `since`.
 #[test]
 fn since_is_kept_on_reread() {
-    let (mut server, _a, mut c, _f, out) = c_revoked();
+    let (mut server, _a, mut c, f, out) = c_revoked();
     tick(&c, T);
     full_fetch(&server, &mut c);
     assert_eq!(
@@ -3704,7 +3708,9 @@ fn since_is_kept_on_reread() {
     );
     let quarantined = DeviceLineageState::Quarantined {
         by: out.head,
+        rotator: f.me.id(),
         since: T,
+        resume: None,
     };
     assert_eq!(state(&c), quarantined);
     // A hostile server now withholds the record: still quarantined, same
@@ -3827,7 +3833,10 @@ fn erase_now() {
 fn forged_device_list_never_erases() {
     let mut server = Server::default();
     let (mut a, f) = fixture_on(&mut server);
-    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    // B: a device holding the account keys, without a trust state (a
+    // legacy build, or a thief's tool), that may still sign the list.
+    let mut b = Device::empty();
+    pull(&server, &mut b);
     b.unlock(&f.sk);
     let a_id = a.repo().this_device_id().unwrap();
     let b_id = b
@@ -3836,9 +3845,13 @@ fn forged_device_list_never_erases() {
         .unwrap();
     sync(&mut server, &mut b).unwrap();
     pull(&server, &mut a);
-    a.repo().revoke_device(b_id).unwrap();
-    sync(&mut server, &mut a).unwrap();
-    // B, offline, revokes A in the list.
+    // Review M1: on a device with a trust state, removing a device is a
+    // rotation, never a list edit.
+    let before = records(&a);
+    let r = a.repo().revoke_device(b_id);
+    assert!(is_validation(&r), "{r:?}");
+    assert_eq!(records(&a), before);
+    // B revokes A in the list.
     b.repo().revoke_device(a_id).unwrap();
     sync(&mut server, &mut b).unwrap();
     pull(&server, &mut a);
@@ -3960,7 +3973,14 @@ fn orphaned_reads_only_until_not_me() {
     assert_eq!(prompt_of(&c), None);
     assert!(outbox(&c).is_empty(), "nothing goes out");
     c.unlock(&f.sk);
-    assert_eq!(state(&c), DeviceLineageState::Orphaned { child: out.head });
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Orphaned {
+            child: out.head,
+            rotator: f.me.id(),
+            resume: None,
+        }
+    );
     assert_eq!(
         users(&c.items()),
         ["alice", "bob", "carol", "dave"].map(String::from)
@@ -3995,4 +4015,143 @@ fn orphaned_reads_only_until_not_me() {
         users(&c.items()),
         ["alice", "bob", "carol", "dave"].map(String::from)
     );
+}
+
+/// Review I1: a rotator quarantined by a winning sibling that revokes it
+/// (the sibling's signer is the stolen device) answers "Ce n'était pas
+/// moi" and goes back to pushing its own rotation where it stopped.
+#[test]
+fn not_me_resumes_a_quarantined_rotation() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let a_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &a_sk, vec![f.others[C].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    c.repo.as_mut().unwrap().rotate(req).unwrap();
+    for d in [&a, &c] {
+        push_outbox(&mut server, d).unwrap();
+        assert_eq!(
+            d.store().push_rotation_phase(1).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    c.repo = None;
+    pull(&server, &mut c);
+    assert_eq!(state(&c), rotating(2));
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(
+        state(&c),
+        DeviceLineageState::Quarantined {
+            by: ra.head,
+            rotator: f.me.id(),
+            since: T,
+            resume: Some(2),
+        }
+    );
+    assert_eq!(
+        c.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Retry
+    );
+    let repo = quarantine_resolve(c.store(), not_me(&c, PASSWORD, &c_sk))
+        .unwrap()
+        .unwrap();
+    drop(repo);
+    assert_eq!(state(&c), rotating(2));
+    push(&mut server, &c).unwrap();
+    assert_eq!(state(&c), DeviceLineageState::Current);
+}
+
+/// Review I2: the signer is excluded even when the server deleted the
+/// record that quarantined the device; its next record revoking the
+/// device does not quarantine it again.
+#[test]
+fn not_me_excludes_a_withheld_signer() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    // S: A's device file before the rotation (same keys, same head).
+    let mut s = sibling_of(&mut a, &f.sk);
+    let sk1 = SecretKey::generate().unwrap();
+    let req = request(&f, &sk1, vec![f.others[C].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    tick(&c, T);
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&ra.head[..16]);
+    server.forge_deletion(RecordKind::Lineage, Id(id));
+    full_fetch(&server, &mut c);
+    // The sync store refuses that deletion; the row is gone all the same
+    // (a store that lost it): the stored signer is what counts.
+    let conn = rusqlite::Connection::open(&c.path).unwrap();
+    let gone = conn
+        .execute(
+            "DELETE FROM base WHERE kind = ?1 AND id = ?2",
+            rusqlite::params![RecordKind::Lineage.code(), &id[..]],
+        )
+        .unwrap();
+    assert_eq!(gone, 1);
+    drop(conn);
+    assert!(
+        c.store()
+            .get(RecordKind::Lineage, Id(id))
+            .unwrap()
+            .is_none()
+    );
+    quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
+        .unwrap()
+        .unwrap();
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert!(trust.excluded.contains(&f.me.id()));
+    assert_eq!(trust.state, DeviceLineageState::Current);
+
+    let sk2 = SecretKey::generate().unwrap();
+    let req = request(&f, &sk2, vec![f.others[C].id()], RotationReason::Revoke);
+    s.repo.as_mut().unwrap().rotate(req).unwrap();
+    push_outbox(&mut server, &s).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T + 86_400), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&c), DeviceLineageState::Current);
+}
+
+/// Review M4: "Ce n'était pas moi" and "Effacer" before the first tick
+/// (the resolver's decision, no clock yet), and an erase whose trust state
+/// changed meanwhile erases nothing.
+#[test]
+fn answers_before_the_first_tick() {
+    let (_server, _a, c, f, _out) = c_revoked();
+    assert_eq!(state(&c), DeviceLineageState::Current);
+    let stale = c.store().trust_state().unwrap().unwrap();
+    let mut other = stale.clone();
+    other.ignore([0xAB; 32]);
+    let before = records(&c);
+    assert_eq!(c.store().erase_device(&other), Err(Error::Conflict));
+    assert_eq!(records(&c), before);
+    quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
+        .unwrap()
+        .unwrap();
+    assert!(
+        c.store()
+            .trust_state()
+            .unwrap()
+            .unwrap()
+            .excluded
+            .contains(&f.me.id())
+    );
+    // The stale trust state no longer erases.
+    assert_eq!(c.store().erase_device(&stale), Err(Error::Conflict));
+    assert_eq!(records(&c), before);
+
+    let (_server, _a, c, _f, _out) = c_revoked();
+    assert!(
+        quarantine_resolve(c.store(), QuarantineChoice::Erase)
+            .unwrap()
+            .is_none()
+    );
+    assert_erased(&c);
 }

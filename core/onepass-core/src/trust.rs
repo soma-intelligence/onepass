@@ -78,11 +78,24 @@ pub enum DeviceLineageState {
     },
     /// This device made the head and pushes phases 1 to 3.
     Rotating { phase: u8 },
-    /// A valid child revokes this device. `since` is the device clock, in
-    /// Unix seconds, when the quarantine was first entered.
-    Quarantined { by: [u8; 32], since: u64 },
-    /// A valid child does not list this device. Local data stays readable.
-    Orphaned { child: [u8; 32] },
+    /// A valid child (`by`, signed by `rotator`) revokes this device.
+    /// `since` is the device clock, in Unix seconds, when the quarantine was
+    /// first entered. `resume`: the phase of this device's own rotation when
+    /// the quarantine stopped it (from `Rotating`, or `Candidate` with a
+    /// resume): "Ce n'était pas moi" takes it back to `Rotating { phase }`.
+    Quarantined {
+        by: [u8; 32],
+        rotator: Id,
+        since: u64,
+        resume: Option<u8>,
+    },
+    /// A valid child (`child`, signed by `rotator`) does not list this
+    /// device. Local data stays readable. `resume` as for `Quarantined`.
+    Orphaned {
+        child: [u8; 32],
+        rotator: Id,
+        resume: Option<u8>,
+    },
 }
 
 /// Most intents kept in each list of the own-write log (spec 10.4).
@@ -313,6 +326,12 @@ impl TrustState {
             DeviceLineageState::Rotating { phase } if !(1..=MAX_ROTATION_PHASE).contains(phase) => {
                 return Err(BAD);
             }
+            DeviceLineageState::Quarantined { resume, .. }
+            | DeviceLineageState::Orphaned { resume, .. }
+                if resume.is_some_and(|p| !(1..=MAX_ROTATION_PHASE).contains(&p)) =>
+            {
+                return Err(BAD);
+            }
             _ => {}
         }
         Ok(())
@@ -423,9 +442,21 @@ pub mod tests {
             DeviceLineageState::Rotating { phase: 2 },
             DeviceLineageState::Quarantined {
                 by: [8; 32],
+                rotator: Id([3; 16]),
                 since: 1_700_000_000,
+                resume: None,
             },
-            DeviceLineageState::Orphaned { child: [9; 32] },
+            DeviceLineageState::Quarantined {
+                by: [8; 32],
+                rotator: Id([3; 16]),
+                since: 1_700_000_000,
+                resume: Some(2),
+            },
+            DeviceLineageState::Orphaned {
+                child: [9; 32],
+                rotator: Id([3; 16]),
+                resume: Some(3),
+            },
         ];
         for st in states {
             let mut s = sample();
@@ -483,6 +514,17 @@ pub mod tests {
             },
             DeviceLineageState::Candidate {
                 children: vec![[1; 32]],
+                resume: Some(4),
+            },
+            DeviceLineageState::Quarantined {
+                by: [8; 32],
+                rotator: Id([3; 16]),
+                since: 1,
+                resume: Some(0),
+            },
+            DeviceLineageState::Orphaned {
+                child: [9; 32],
+                rotator: Id([3; 16]),
                 resume: Some(4),
             },
         ] {
