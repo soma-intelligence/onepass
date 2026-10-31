@@ -1089,8 +1089,9 @@ fn tofu_level_carried() {
 #[test]
 fn pairing_incomplete_until_intro_or_cancel() {
     let mut v = v2();
-    // Devices listed before key rotation v2 (the harness's second device)
-    // show until the migration of Task 14: the baseline.
+    // A device listed before key rotation v2 that this hand-seeded trust
+    // state never marked `Tofu` (the harness's second device; a real
+    // migration marks it, Task 14): the baseline.
     let base = v.a.repo().pairing_incomplete().unwrap();
     let with = |id: Id| {
         let mut l = base.clone();
@@ -1124,6 +1125,70 @@ fn pairing_incomplete_until_intro_or_cancel() {
     let listed = v.a.repo().devices().unwrap();
     let e = listed.iter().find(|e| e.device_id == m.id()).unwrap();
     assert!(e.revoked_at.is_some());
+}
+
+/// Task 13 review, carried to Task 14: `cancel_pairing` revokes the list
+/// entry and excludes the device in one transaction; a late intro of the
+/// cancelled device is refused, from this device and from another one.
+#[test]
+fn cancelled_pairing_refuses_a_late_intro() {
+    use onepass_core::device_keys::sign_pop;
+    use onepass_core::lineage::{IntroBody, sign_intro};
+
+    let mut v = v2();
+    let m = Keys::new(Id::new());
+    let (mut nc, mut ap, info, _dev) = granted(&mut v, &m);
+    let list_before = v.a.store().list(RecordKind::DeviceList).unwrap();
+    v.a.repo().cancel_pairing(m.id()).unwrap();
+    let t = trust(&v.a);
+    assert!(t.excluded.contains(&m.id()));
+    let listed = v.a.repo().devices().unwrap();
+    assert!(
+        listed
+            .iter()
+            .find(|e| e.device_id == m.id())
+            .unwrap()
+            .revoked_at
+            .is_some()
+    );
+    // One list write went with the exclusion.
+    let list_after = v.a.store().list(RecordKind::DeviceList).unwrap();
+    assert_eq!(list_after[0].version, list_before[0].version + 1);
+
+    // The session finishes late: its intro is refused here.
+    let ack = nc.seal_key_ack_at(&m.keys, NOW + 6).unwrap();
+    ap.on_frame_at(&ack, NOW + 6).unwrap();
+    let pop = ap.newcomer_account_pop().unwrap().clone();
+    let me_keys = &v.me.keys;
+    let r =
+        v.a.repo()
+            .introduce(&m.public, &info, DeviceMode::Personal, &pop, me_keys);
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+
+    // Another roster device introduces it: not accepted here either.
+    let b = &v.others[0];
+    let account_id = t.account_id;
+    let body = IntroBody {
+        format: LINEAGE_FORMAT,
+        account_id,
+        head: t.head.hash,
+        entry: RosterEntry {
+            introduced_by: Some(b.id()),
+            ..m.entry("iPad")
+        },
+        introducer: b.id(),
+        pop: sign_pop(&m.keys, &account_id.0, &m.public).unwrap(),
+    };
+    let signed = sign_intro(body, &b.keys, None).unwrap();
+    let record = Record {
+        id: onepass_core::lineage::intro_id(&signed.body),
+        kind: RecordKind::DeviceIntro,
+        version: t.head.generation,
+        data: signed.encode(),
+    };
+    v.a.repo().store_mut().put_if_version(record, None).unwrap();
+    v.a.repo().refresh_pending_rotation().unwrap();
+    assert!(!trust(&v.a).roster.iter().any(|e| e.device_id == m.id()));
 }
 
 #[test]

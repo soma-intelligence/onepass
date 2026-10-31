@@ -13,7 +13,7 @@
 //!   key), so the device still holds its own verified copy when the server
 //!   goes back to an older state or serves an incomplete one. See
 //!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
-//! - `retained`: for a device with a trust state, the `base` vault key
+//! - `retained`: the `base` vault key
 //!   and vault meta rows a fetch replaced with other bytes (the first such
 //!   row per key): the vault as the identity this device is on sealed it,
 //!   kept while a rotation re-sealed it under keys this device has not
@@ -48,7 +48,9 @@ use crate::lineage::resolve::PromptKind;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
-use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
+use crate::store::{
+    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, account_record_id,
+};
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
@@ -884,15 +886,21 @@ impl SyncStore {
 
     /// See `RecordStore::put_all_if_version_with_trust` and
     /// `RecordStore::put_rotation`.
-    /// `expected`: the trust state the caller read, compared byte for byte
-    /// with the stored one inside the transaction (`Conflict` otherwise,
-    /// nothing written).
+    /// `guard`: what the stored trust state must be, checked inside the
+    /// transaction (`Conflict` otherwise, nothing written): the one the
+    /// caller read, byte for byte, or none at all for the first write.
+    ///
+    /// The chain state, when given, is merged with the stored one while the
+    /// trust state keeps its identity, and also on the first trust write
+    /// (Task 8, carried to Task 14: a migrating device keeps its device id
+    /// and the lists it accepted); it replaces the stored one only when the
+    /// identity changes.
     fn put_with_trust(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         deletes: Vec<(RecordKind, Id)>,
         chain: Option<ChainState>,
-        expected: Option<&TrustState>,
+        guard: TrustGuard<'_>,
         trust: &TrustState,
         rotation: Option<&RotationPush>,
     ) -> Result<()> {
@@ -900,9 +908,7 @@ impl SyncStore {
             check_size(&r.data)?;
         }
         let tx = self.write_tx()?;
-        if let Some(expected) = expected
-            && meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode())
-        {
+        if !guard.admits(meta_in(&tx, TRUST_STATE_KEY)?.as_deref()) {
             return Err(Error::Conflict);
         }
         for (r, expected) in &writes {
@@ -915,8 +921,7 @@ impl SyncStore {
             delete_in(&tx, kind, id)?;
         }
         if let Some(chain) = chain {
-            let same_identity =
-                trust_in(&tx)?.is_some_and(|t| t.identity_pub == trust.identity_pub);
+            let same_identity = trust_in(&tx)?.is_none_or(|t| t.identity_pub == trust.identity_pub);
             let chain = if same_identity {
                 merge_chain(&chain, &chain_state_in(&tx)?, false)?
             } else {
@@ -1393,9 +1398,6 @@ impl SyncStore {
             rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
         };
         let deleted = deleted_vaults(&tx, &staged);
-        // Key rotation v2: a device with a trust state keeps its own copy
-        // of a vault key and meta the server replaced (`retained`).
-        let retain = trust_in(&tx)?.is_some();
         let mut vaults = BTreeSet::new();
         let mut ignored = Vec::new();
         let mut manifests = Vec::new();
@@ -1438,10 +1440,14 @@ impl SyncStore {
                 )
                 .map_err(store_err)?;
             }
-            if retain
-                && data.is_some()
-                && matches!(kind, RecordKind::VaultKey | RecordKind::VaultMeta)
-            {
+            // Key rotation v2: a device keeps its own copy of a vault key
+            // and meta the server replaced. A legacy device too (no trust
+            // state yet, Task 8 carried to Task 14): a rotation fetched
+            // before its first unlock after the update must leave it its
+            // vaults to read once it migrates (`crate::repo::migrate`);
+            // until then the rows are inert (no rotation is known without a
+            // trust state).
+            if data.is_some() && matches!(kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
                 // The first row replaced since the vault last loaded cleanly
                 // (as `kept`: a clean load drops a meta retained without its
                 // key, review M1 of Task 10), so the retained meta pairs with
@@ -3278,7 +3284,7 @@ impl RecordStore for SyncStore {
         chain: Option<ChainState>,
         trust: &TrustState,
     ) -> Result<()> {
-        self.put_with_trust(writes, deletes, chain, None, trust, None)
+        self.put_with_trust(writes, deletes, chain, TrustGuard::Any, trust, None)
     }
 
     /// Every table emptied in one transaction (as `reset`: records, sync
@@ -3311,7 +3317,25 @@ impl RecordStore for SyncStore {
         expected: &TrustState,
         trust: &TrustState,
     ) -> Result<()> {
-        self.put_with_trust(writes, deletes, chain, Some(expected), trust, None)
+        self.put_with_trust(
+            writes,
+            deletes,
+            chain,
+            TrustGuard::Is(expected),
+            trust,
+            None,
+        )
+    }
+
+    /// `put_all_if_version_with_trust` if no trust state is stored, the
+    /// chain state merged with the stored one (see `put_with_trust`).
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.put_with_trust(writes, Vec::new(), chain, TrustGuard::Absent, trust, None)
     }
 
     /// `put_with_trust_cas` (the chain state replaces the stored one, the
@@ -3329,7 +3353,7 @@ impl RecordStore for SyncStore {
             writes,
             Vec::new(),
             Some(chain),
-            Some(expected),
+            TrustGuard::Is(expected),
             trust,
             Some(rotation),
         )
@@ -3395,7 +3419,7 @@ impl RecordStore for SyncStore {
                 Vec::new(),
                 Vec::new(),
                 Some(chain),
-                Some(expected),
+                TrustGuard::Is(expected),
                 trust,
                 None,
             )?;
@@ -3789,6 +3813,51 @@ mod tests {
         assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(before));
         assert_eq!(s.chain_state().unwrap(), chain);
         assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
+    }
+
+    /// Task 8, carried to Task 14: the first trust write (a migration)
+    /// merges the chain state it carries with the stored one: the device id
+    /// and the lists accepted stay. It is refused once a trust state is
+    /// stored.
+    #[test]
+    fn first_trust_write_merges_the_chain_state() {
+        use crate::chain::Seen;
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let me = Id::new();
+        let stored = ChainState {
+            params_epoch: 2,
+            device_list: Some(Seen {
+                seq: 3,
+                hash: [3; 32],
+            }),
+            vault_list: Some(Seen {
+                seq: 1,
+                hash: [1; 32],
+            }),
+            device_id: Some(me),
+        };
+        s.put_all_if_version_with_chain(vec![], &stored).unwrap();
+        let trust = crate::trust::tests::sample();
+        let fresh = ChainState {
+            params_epoch: 2,
+            ..ChainState::default()
+        };
+        s.put_first_trust(vec![], Some(fresh.clone()), &trust)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), stored);
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        // A second first write is a lost race.
+        assert_eq!(
+            s.put_first_trust(vec![], Some(fresh.clone()), &trust),
+            Err(Error::Conflict)
+        );
+
+        // `put_all_if_version_with_trust` as a first write merges too.
+        let mut s = SyncStore::open_in_memory().unwrap();
+        s.put_all_if_version_with_chain(vec![], &stored).unwrap();
+        s.put_all_if_version_with_trust(vec![], vec![], Some(fresh), &trust)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), stored);
     }
 
     use super::*;

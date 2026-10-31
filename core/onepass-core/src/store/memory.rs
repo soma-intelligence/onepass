@@ -81,6 +81,19 @@ impl RecordStore for MemoryStore {
         Ok(())
     }
 
+    /// `put_all_if_version_with_trust` if no trust state is stored.
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        if self.trust.is_some() {
+            return Err(Error::Conflict);
+        }
+        self.put_all_if_version_with_trust(writes, Vec::new(), chain, trust)
+    }
+
     /// `put_all_if_version_with_trust` if the trust state is `expected`.
     fn put_with_trust_cas(
         &mut self,

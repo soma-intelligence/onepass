@@ -201,7 +201,7 @@ fn completeness<S: RecordStore + ?Sized>(
 /// records, the intros, the deliveries, the account params and keysets
 /// (ids, versions, contents) and the trust state. A change means the prompt must be looked
 /// for again.
-fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
+pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
     let mut ctx = digest::Context::new(&SHA256);
     for kind in [
         RecordKind::Lineage,
@@ -1279,6 +1279,9 @@ impl<S: RecordStore> Repository<S> {
         // device join the roster first, so a rotation they sign is judged
         // with their keys.
         let trust = super::pairing::apply_intros(&mut self.store, trust)?;
+        // Task 14 (spec 15): the legacy intros under the genesis, and any
+        // other genesis (an alert).
+        let trust = self.apply_migration_records(trust)?;
         let look = look_for(&self.store, &trust)?;
         let found = look.prompt;
         let state = match (&trust.state, &found, look.lock) {

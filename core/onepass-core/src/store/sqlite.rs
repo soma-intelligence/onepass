@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Record, RecordKind, RecordStore};
+use super::{Record, RecordKind, RecordStore, TrustGuard};
 use crate::chain::ChainState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -103,27 +103,25 @@ impl SqliteStore {
 
 impl SqliteStore {
     /// Records, deletions and the trust row in one transaction, the trust
-    /// row compared with `expected` first when given (`Conflict`).
+    /// row checked against `guard` first (`Conflict`).
     fn put_with_trust_if(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         deletes: Vec<(RecordKind, Id)>,
-        expected: Option<&TrustState>,
+        guard: TrustGuard<'_>,
         trust: &TrustState,
     ) -> Result<()> {
         let tx = self.conn.transaction().map_err(store_err)?;
-        if let Some(expected) = expected {
-            let stored: Option<Vec<u8>> = tx
-                .query_row(
-                    "SELECT value FROM meta WHERE key = ?1",
-                    params![TRUST_KEY],
-                    |r| r.get(0),
-                )
-                .optional()
-                .map_err(store_err)?;
-            if stored != Some(expected.encode()) {
-                return Err(Error::Conflict);
-            }
+        let stored: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![TRUST_KEY],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)?;
+        if !guard.admits(stored.as_deref()) {
+            return Err(Error::Conflict);
         }
         for (r, expected) in &writes {
             put_if_version_on(&tx, r, *expected)?;
@@ -211,7 +209,19 @@ impl RecordStore for SqliteStore {
         trust: &TrustState,
     ) -> Result<()> {
         let _ = chain;
-        self.put_with_trust_if(writes, deletes, None, trust)
+        self.put_with_trust_if(writes, deletes, TrustGuard::Any, trust)
+    }
+
+    /// `put_all_if_version_with_trust` if no trust state is stored,
+    /// checked inside the transaction. No chain state here.
+    fn put_first_trust(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: Option<ChainState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = chain;
+        self.put_with_trust_if(writes, Vec::new(), TrustGuard::Absent, trust)
     }
 
     /// `put_all_if_version_with_trust` if the stored trust state is
@@ -225,7 +235,7 @@ impl RecordStore for SqliteStore {
         trust: &TrustState,
     ) -> Result<()> {
         let _ = chain;
-        self.put_with_trust_if(writes, deletes, Some(expected), trust)
+        self.put_with_trust_if(writes, deletes, TrustGuard::Is(expected), trust)
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {

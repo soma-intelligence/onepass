@@ -491,6 +491,8 @@ Accounts and devices from before this design have no lineage and no device keys.
 
 Open question O4: if no account in use has more than one device yet, skip steps 2 to 4 and ask legacy multi-device users to re-pair.
 
+Amended 2026-10-31 (Task 14, O4 kept): the migration runs once a session is open on the first unlock after the update (`Repository::migrate_to_v2`, the app passing the device keys it just created), after a full sync. A genesis counts only if signed by the device's own generation 0 identity; its creator must be listed and not revoked in the device list (step 2 applies the same rule as step 3). Legacy intros (record `DeviceIntro`, id `SHA-256("onepass/intro-id/v1" || postcard(LegacyIntroBody))[..16]`, version 0) are accepted by one pure rule (`lineage::accept_legacy_intros`) while the head is the genesis; a device already pinned `Verified` keeps its key against later legacy intros, a `Tofu` one given a second key is excluded until verified. At migration the devices the list revokes are excluded, and the devices listed without an intro yet are `Tofu` (never "Appairage incomplet"). Two devices that migrate offline at once each keep their own genesis (the self-creator rule) and both see the alert of step 2: the user verifies or re-pairs one of them. A legacy device that fetched a rotation before migrating still opens (its generation 0 records) and reads its vaults from the copy its store retained; once migrated it is `Orphaned` by a rotation that does not list it.
+
 ## 16. Rulings
 
 Format: decision - why - cost if wrong.
