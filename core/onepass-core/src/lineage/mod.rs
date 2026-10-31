@@ -19,6 +19,7 @@ use crate::manifest::SeenManifest;
 use crate::{Error, Id, Result};
 
 mod codec;
+pub mod resolve;
 pub mod verify;
 
 pub(crate) use codec::{check_entry, decode_strict_with};
@@ -169,6 +170,11 @@ fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     out
 }
 
+/// Lineage hash of a rotation body (the signatures are not hashed).
+pub(crate) fn rotation_hash(body: &RotationBody) -> [u8; 32] {
+    sha256(&[LINEAGE_PREFIX, &[ROTATION_TAG], &body_bytes(body)])
+}
+
 pub(crate) fn body_bytes<T: Serialize>(body: &T) -> Vec<u8> {
     postcard::to_allocvec(body).expect("lineage body encodes")
 }
@@ -192,9 +198,7 @@ impl LineageRecord {
             LineageRecord::Genesis(s) => {
                 sha256(&[LINEAGE_PREFIX, &[GENESIS_TAG], &body_bytes(&s.body)])
             }
-            LineageRecord::Rotation(s) => {
-                sha256(&[LINEAGE_PREFIX, &[ROTATION_TAG], &body_bytes(&s.body)])
-            }
+            LineageRecord::Rotation(s) => rotation_hash(&s.body),
         }
     }
 
