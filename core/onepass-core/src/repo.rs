@@ -1073,6 +1073,14 @@ impl<S: RecordStore> Repository<S> {
         let list = self.read_list::<VaultListEntry>()?;
         let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
         let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
+        // Spec 10.4: the creation is this device's own meta write (a
+        // re-creation after a rotation takes it, never another device's).
+        self.log_own_write_seen(
+            vault.id,
+            vault.id,
+            seen.clone(),
+            Some(replay::meta_hash(&meta_blob)),
+        )?;
         let mut writes = vec![(manifest, None)];
         for (kind, data) in [
             (RecordKind::VaultMeta, meta_blob),

@@ -351,6 +351,30 @@ pub trait RecordStore {
         Ok(())
     }
 
+    /// The local transaction of a follow (spec 7.2 step 3, Task 11): the
+    /// chain state and trust state of the new head, conditional on the
+    /// stored trust state being `expected` (`put_with_trust_cas`), the
+    /// retained rows of the own copies a switch keeps (`put_retained`), the
+    /// pending rows `drop_pending` dropped without a deletion being queued
+    /// (the phase-1 records of a rotation that lost before they went out),
+    /// and what a rotation being pushed needed forgotten, all or nothing.
+    /// The default writes them one after the other.
+    fn put_follow(
+        &mut self,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        retained: Vec<Record>,
+        drop_pending: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        let _ = drop_pending;
+        self.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain), expected, trust)?;
+        if retained.is_empty() {
+            return Ok(());
+        }
+        self.put_retained(retained)
+    }
+
     /// Replace retained rows (`retained_rows`) with `rows`, each a vault
     /// key or vault meta row, by kind and id, and drop this device's
     /// pending writes of those rows (key rotation v2, Task 11: a device

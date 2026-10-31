@@ -44,6 +44,7 @@ use crate::chain::{ChainState, Seen};
 use crate::crypto::IdentityVerifyingKey;
 use crate::format::STORE_USER_VERSION;
 use crate::lineage::identity_id;
+use crate::lineage::resolve::PromptKind;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
@@ -429,6 +430,19 @@ fn server_params(conn: &Connection, id: Id) -> Result<Option<Vec<u8>>> {
 /// change the server already has, or one it has overtaken, never goes out;
 /// see `server_params`).
 fn account_pair_pushable(conn: &Connection, id: Id) -> Result<bool> {
+    // Review I3 (Task 11): only the pair of the identity this device is on.
+    // A password change made under an identity it left (its keyset sealed
+    // under the left Secret Key, which a revoked device may hold) stays on
+    // the device, never pushed.
+    if let Some(t) = trust_in(conn)?
+        && id
+            != account_record_id(
+                t.account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            )
+    {
+        return Ok(false);
+    }
     let params = row_data(conn, "pending", RecordKind::AccountParams, id)?;
     let keyset = row_data(conn, "pending", RecordKind::Keyset, id)?;
     let (Some(params), Some(_)) = (params, keyset) else {
@@ -661,9 +675,15 @@ fn phase_left(
 /// own writes wait for their replay, and those whose pending manifest the
 /// identity the device is on did not sign. They stay on the device (G4)
 /// until the replay settles them.
+///
+/// `all` (review I2 of Task 11): this device's own rotation lost to a
+/// sibling it knows (stored `Candidate` from `Rotating`, or `Rotating` with
+/// a switch found now): nothing goes out, so the loser never overwrites the
+/// winner's single-slot vault records (R21) nor sends half of its phase 1.
 #[derive(Debug, Default)]
 struct Hold {
     candidate: bool,
+    all: bool,
     left: BTreeSet<Id>,
 }
 
@@ -752,7 +772,9 @@ fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
         if data.is_some() && owner.is_some_and(|v| deleted.contains(&v)) {
             continue;
         }
-        if (hold.candidate && !kind.is_immutable()) || owner.is_some_and(|v| hold.left.contains(&v))
+        if hold.all
+            || (hold.candidate && !kind.is_immutable())
+            || owner.is_some_and(|v| hold.left.contains(&v))
         {
             continue;
         }
@@ -926,6 +948,11 @@ impl SyncStore {
     /// phase is pending, or when the device is not in `Rotating { phase }`.
     /// A phase other than 1 to 3 is `InvalidFormat("rotation phase")`.
     pub fn push_rotation_phase(&mut self, phase: u8) -> Result<PhaseOutcome> {
+        // Review I2 (Task 11): a rotation that lost to a known sibling
+        // stops where it is.
+        if self.lost_rotation()? {
+            return Ok(PhaseOutcome::Retry);
+        }
         let tx = self.write_tx()?;
         let Some(mut trust) = trust_in(&tx)? else {
             return Ok(PhaseOutcome::Retry);
@@ -989,16 +1016,35 @@ impl SyncStore {
         let Some(trust) = self.read(trust_in)? else {
             return Ok(Hold::default());
         };
-        let candidate = match trust.state {
-            DeviceLineageState::Candidate { .. } => true,
-            DeviceLineageState::Current => crate::repo::follow::pending_rotation(self)?.is_some(),
-            _ => false,
+        let (candidate, all) = match trust.state {
+            DeviceLineageState::Candidate { resume, .. } => (true, resume.is_some()),
+            DeviceLineageState::Current => (
+                crate::repo::follow::pending_rotation(self)?.is_some(),
+                false,
+            ),
+            DeviceLineageState::Rotating { .. } => {
+                let lost = self.lost_rotation()?;
+                (lost, lost)
+            }
+            _ => (false, false),
         };
         let mut left = trust.own_writes.replay_vaults();
         if !trust.retired.is_empty() {
             left.extend(self.read(|c| left_signed_vaults(c, &trust))?);
         }
-        Ok(Hold { candidate, left })
+        Ok(Hold {
+            candidate,
+            all,
+            left,
+        })
+    }
+
+    /// Review I2 (Task 11): the rotation this device pushes lost to a
+    /// sibling it knows (the resolver offers a switch), whether or not a
+    /// session looked at it yet.
+    fn lost_rotation(&self) -> Result<bool> {
+        Ok(crate::repo::follow::pending_rotation(self)?
+            .is_some_and(|p| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
     }
 
     /// Every `base` row, ordered by kind then id: the store as the server
@@ -3293,6 +3339,51 @@ impl RecordStore for SyncStore {
         tx.execute("DELETE FROM retained WHERE id = ?1", params![&vault.0[..]])
             .map_err(store_err)?;
         tx.commit()
+    }
+
+    fn put_follow(
+        &mut self,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        retained: Vec<Record>,
+        drop_pending: Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        self.begin_batch()?;
+        let done = (|| {
+            self.put_with_trust(
+                Vec::new(),
+                Vec::new(),
+                Some(chain),
+                Some(expected),
+                trust,
+                None,
+            )?;
+            {
+                let tx = self.write_tx()?;
+                for (kind, id) in &drop_pending {
+                    tx.execute(
+                        "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                        params![kind.code(), &id.0[..]],
+                    )
+                    .map_err(store_err)?;
+                }
+                tx.execute(
+                    "DELETE FROM meta WHERE key = ?1",
+                    params![ROTATION_PUSH_KEY],
+                )
+                .map_err(store_err)?;
+                tx.commit()?;
+            }
+            self.put_retained(retained)
+        })();
+        match done {
+            Ok(()) => self.commit_batch(),
+            Err(e) => {
+                let _ = self.rollback_batch();
+                Err(e)
+            }
+        }
     }
 
     fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {

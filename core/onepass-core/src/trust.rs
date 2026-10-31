@@ -68,8 +68,14 @@ pub enum DeviceLineageState {
     /// Normal.
     Current,
     /// Valid children of the head are known (sorted, unique hashes), none
-    /// decided by the user yet. Read-only.
-    Candidate { children: Vec<[u8; 32]> },
+    /// decided by the user yet. Read-only. `resume`: the phase of this
+    /// device's own rotation when a winning sibling made it `Candidate`
+    /// (spec 8.2): rejecting the sibling, or the sibling going away, takes
+    /// it back to `Rotating { phase }`; `None` from `Current`.
+    Candidate {
+        children: Vec<[u8; 32]>,
+        resume: Option<u8>,
+    },
     /// This device made the head and pushes phases 1 to 3.
     Rotating { phase: u8 },
     /// A valid child revokes this device. `since` is the device clock, in
@@ -296,8 +302,11 @@ impl TrustState {
             }
         }
         match &self.state {
-            DeviceLineageState::Candidate { children } => {
-                if children.is_empty() || !children.windows(2).all(|w| w[0] < w[1]) {
+            DeviceLineageState::Candidate { children, resume } => {
+                if children.is_empty()
+                    || !children.windows(2).all(|w| w[0] < w[1])
+                    || resume.is_some_and(|p| !(1..=MAX_ROTATION_PHASE).contains(&p))
+                {
                     return Err(BAD);
                 }
             }
@@ -409,6 +418,7 @@ pub mod tests {
             DeviceLineageState::Current,
             DeviceLineageState::Candidate {
                 children: vec![[1; 32], [2; 32]],
+                resume: Some(2),
             },
             DeviceLineageState::Rotating { phase: 2 },
             DeviceLineageState::Quarantined {
@@ -463,9 +473,17 @@ pub mod tests {
         for st in [
             DeviceLineageState::Rotating { phase: 0 },
             DeviceLineageState::Rotating { phase: 4 },
-            DeviceLineageState::Candidate { children: vec![] },
+            DeviceLineageState::Candidate {
+                children: vec![],
+                resume: None,
+            },
             DeviceLineageState::Candidate {
                 children: vec![[2; 32], [1; 32]],
+                resume: None,
+            },
+            DeviceLineageState::Candidate {
+                children: vec![[1; 32]],
+                resume: Some(4),
             },
         ] {
             let mut s = sample();
