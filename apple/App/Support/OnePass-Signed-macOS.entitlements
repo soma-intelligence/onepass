@@ -4,7 +4,7 @@
 <dict>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)me.somalabs.onepass.shared</string>
+		<string>$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)</string>
 	</array>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>

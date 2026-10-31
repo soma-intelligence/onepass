@@ -78,8 +78,15 @@ public struct VaultEnvironment: Sendable {
         self.identityStore = identityStore
     }
 
-    /// Suffix of the shared keychain access group `$(AppIdentifierPrefix)me.somalabs.onepass.shared`.
-    public static let sharedGroupSuffix = "me.somalabs.onepass.shared"
+    /// The shared keychain access group after the team prefix when the bundle does not say otherwise:
+    /// the default of the `ONEPASS_KEYCHAIN_GROUP` build setting (`apple/project.yml`). Existing users'
+    /// items live there: never change it.
+    public static let defaultKeychainGroup = "me.somalabs.onepass.shared"
+
+    /// Info.plist key the app and the AutoFill extension set to `$(ONEPASS_KEYCHAIN_GROUP)`, the same
+    /// build setting every entitlements file names in `keychain-access-groups`
+    /// (`$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)`), so the code and the signature cannot drift.
+    public static let keychainGroupInfoKey = "OnePassKeychainGroup"
 
     /// The app's environment: store and settings in the shared container (App Group, or the milestone 2
     /// locations without one), system keychain in the shared access group, Secure Enclave biometrics,
@@ -115,12 +122,22 @@ public struct VaultEnvironment: Sendable {
         SharedContainer.resolve().databaseURL
     }
 
-    /// `<prefix>me.somalabs.onepass.shared`, or nil when the prefix is unknown (unsigned build).
-    /// The prefix comes from the `AppIdentifierPrefix` Info.plist key (the apps set it to
-    /// `$(AppIdentifierPrefix)`), else from the default access group the keychain gives this app.
+    /// `<prefix><group>`, or nil when the prefix is unknown (unsigned build). The prefix comes from the
+    /// `AppIdentifierPrefix` Info.plist key (the apps set it to `$(AppIdentifierPrefix)`), else from the
+    /// default access group the keychain gives this app; the group from `keychainGroup(bundle:)`.
     public static func sharedAccessGroup(bundle: Bundle = .main) -> String? {
         guard let prefix = appIdentifierPrefix(bundle: bundle) else { return nil }
-        return prefix + sharedGroupSuffix
+        return prefix + keychainGroup(bundle: bundle)
+    }
+
+    /// The `OnePassKeychainGroup` Info.plist key (`$(ONEPASS_KEYCHAIN_GROUP)` once built), else
+    /// `defaultKeychainGroup` when the key is missing, empty or left unexpanded.
+    static func keychainGroup(bundle: Bundle) -> String {
+        if let value = bundle.object(forInfoDictionaryKey: keychainGroupInfoKey) as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.contains("$(") { return trimmed }
+        }
+        return defaultKeychainGroup
     }
 
     static func appIdentifierPrefix(bundle: Bundle) -> String? {

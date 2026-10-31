@@ -34,6 +34,14 @@ settings:
     # App Group shared by the app and the AutoFill extension (Info.plist key `OnePassAppGroup`).
     ONEPASS_APP_GROUP: group.me.somalabs.onepass
     "ONEPASS_APP_GROUP[sdk=macosx*]": $(TeamIdentifierPrefix)me.somalabs.onepass
+    # Shared keychain access group after the team prefix, for the app and the AutoFill extension.
+    # The only place to change it (a fork or a personal team): every entitlements file names
+    # `$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)` and the code reads the Info.plist key
+    # `OnePassKeychainGroup`, so the signature and the code always agree (scripts/check-keychain-group.sh
+    # fails the build otherwise). Existing users' items live in the default: never change it here.
+    ONEPASS_KEYCHAIN_GROUP: me.somalabs.onepass.shared
+    # CloudKit container of the CloudKit entitlements and of the Info.plist key `OnePassCloudKitContainer`.
+    ONEPASS_CLOUDKIT_CONTAINER: iCloud.me.somalabs.onepass
     # Chrome and Firefox extension ids the Mac app's bridge serves (Info.plist key
     # `OnePassBrowserExtensions`, space separated; Safari is always served). Add the Chrome id
     # (Web Store, or the unpacked one while testing) here.
@@ -82,6 +90,11 @@ targets:
       # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
       - target: OnePassSafari
         destinationFilters: [macOS]
+    # Entitlements and code share ONEPASS_KEYCHAIN_GROUP: a hardcoded group fails the build.
+    preBuildScripts:
+      - name: Check keychain group
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/check-keychain-group.sh"'
     # Chrome and Firefox native messaging host (Contents/Helpers/onepass-relay): signed Mac builds.
     postBuildScripts:
       - name: Embed browser relay
@@ -98,7 +111,9 @@ targets:
         CFBundleDevelopmentRegion: fr
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -196,6 +211,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
         NSExtension:
