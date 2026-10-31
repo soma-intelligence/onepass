@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "postgres": "npm:postgres@3.4.9",
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2.118.0",
+    "@std/assert": "jsr:@std/assert@1.0.19"
+  },
+  "lock": false,
+  "fmt": {
+    "lineWidth": 120
+  }
+}
