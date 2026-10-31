@@ -9,7 +9,7 @@ mod store;
 pub use rebase::RebaseReport;
 pub use store::{
     AccountState, DroppedVaultWrites, IgnoredDeletion, IgnoredParams, MAX_IGNORED_DELETIONS,
-    SyncStore,
+    PhaseOutcome, SyncStore,
 };
 
 use crate::store::RecordKind;

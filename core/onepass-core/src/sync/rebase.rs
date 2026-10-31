@@ -437,11 +437,11 @@ impl Repository<SyncStore> {
     /// `VaultListRollback`). On failure the local list stays pending and
     /// held, and the chain state is as it was.
     fn rebase_list<E: AccountList>(&mut self) -> Result<()> {
-        let id = self.account.params.account_id;
+        let id = self.records_id;
         let local = self.store.get(E::KIND, id)?.ok_or(Error::NotFound)?;
-        let local: crate::lists::ListBody<E> = open_record(&self.account, &local, None)?;
+        let local: crate::lists::ListBody<E> = open_record(&self.account, id, &local, None)?;
         let ancestor = match self.store.ancestor_record(E::KIND, id)? {
-            Some(rec) => Some(open_record::<E>(&self.account, &rec, None)?),
+            Some(rec) => Some(open_record::<E>(&self.account, id, &rec, None)?),
             None => None,
         };
         let server = self
@@ -451,7 +451,7 @@ impl Repository<SyncStore> {
         let after: Option<Seen> = ancestor.as_ref().map(|a| a.seen());
         let server = Stored {
             version: server.version,
-            body: open_record::<E>(&self.account, &server, after.as_ref())?,
+            body: open_record::<E>(&self.account, id, &server, after.as_ref())?,
         };
         let entries = rebase_entries(
             ancestor.as_ref().map(|a| a.entries.as_slice()),

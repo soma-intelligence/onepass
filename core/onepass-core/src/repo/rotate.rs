@@ -15,7 +15,10 @@
 //!
 //! The old item records stay until phase 3 confirms the new content on the
 //! server (R23): nothing is deleted here. Pushing the phases is the sync
-//! layer's job.
+//! layer's job (`SyncStore::push_rotation_phase`); the transaction hands it
+//! the re-sealed vaults and the blob ids of the records the loaded
+//! manifests list (`RotationPush`), and resets the chain state for the new
+//! identity.
 //!
 //! Secret Key delivery (spec 6.5): the envelope is
 //! `wrap_key_labeled(recipient kem_pub, "onepass/rotation/secret-key/v1",
@@ -33,7 +36,7 @@ use aws_lc_rs::digest::{SHA256, digest};
 
 use super::{Repository, entry, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
-use crate::chain::Seen;
+use crate::chain::{ChainState, Seen};
 use crate::crypto::kem::wrap_key_labeled;
 use crate::crypto::{SecretKey, SymmetricKey};
 use crate::device_keys::DeviceKeys;
@@ -44,7 +47,7 @@ use crate::lineage::{
 };
 use crate::lists::{AccountList, ListBody, sign};
 use crate::manifest::{Manifest, SeenManifest, sign_manifest};
-use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
+use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustState};
 use crate::vault::{ItemRecord, Vault};
 use crate::vaultlist::VaultListEntry;
@@ -357,7 +360,10 @@ impl<S: RecordStore> Repository<S> {
             .collect();
 
         // Step 3: every live vault under a new key, every listed item
-        // (live, archived, trashed) resealed at version + 1.
+        // (live, archived, trashed) resealed at version + 1. The records
+        // the loaded manifests list are the only ones phase 3 deletes
+        // (R23).
+        let mut collect = Vec::new();
         let mut rotated = Vec::with_capacity(loaded.len());
         for (vault, l) in &loaded {
             let key_rec = self
@@ -371,7 +377,8 @@ impl<S: RecordStore> Repository<S> {
             let (fresh, envelope, meta_blob) =
                 Vault::create_with_id(&account, vault.id, vault.meta.clone())?;
             let mut entries = Vec::with_capacity(l.records.len());
-            for (_, rec) in &l.records {
+            for (blob, rec) in &l.records {
+                collect.push(*blob);
                 let item = vault.open_item(rec)?;
                 let version = rec
                     .version
@@ -511,9 +518,25 @@ impl<S: RecordStore> Repository<S> {
         });
         next.state = DeviceLineageState::Rotating { phase: 1 };
 
+        // The chain state of the new identity: its params epoch and its
+        // lists start again (spec 6.6, 10.2); it replaces the stored one in
+        // the same transaction, so no reopen pins the left identity's.
+        let chain = ChainState {
+            params_epoch: account.params.epoch,
+            device_list: Some(device_seen),
+            vault_list: Some(vault_seen),
+            device_id: self.chain.device_id,
+        };
+        collect.sort();
+        collect.dedup();
+        let push = RotationPush {
+            vaults: rotated.iter().map(|v| v.id).collect(),
+            collect,
+        };
+
         // Step 6: one local transaction, nothing deleted (R23).
         self.store
-            .put_all_if_version_with_trust(writes, Vec::new(), None, &next)?;
+            .put_rotation(writes, chain.clone(), &next, &push)?;
 
         // Committed: from here on nothing may fail (K12), or a caller
         // following the contract would discard the new Secret Key of an
@@ -530,9 +553,9 @@ impl<S: RecordStore> Repository<S> {
         if let Ok(mut cache) = self.epoch_cache.lock() {
             *cache = None;
         }
-        self.chain.device_list = Some(device_seen);
-        self.chain.vault_list = Some(vault_seen);
+        self.chain = chain;
         self.lists_forced = true;
+        self.records_id = new_id;
         self.replace_last_seen(rotated.iter().map(|v| (v.id, v.head.clone())).collect());
         self.account = account;
         for v in &rotated {

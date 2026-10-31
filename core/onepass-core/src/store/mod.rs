@@ -22,11 +22,12 @@ pub enum RecordKind {
     VaultMeta,
     Item,
     Manifest,
-    /// The account's signed restore epoch (one record, id = account id).
+    /// The account's signed restore epoch (one record per identity, id =
+    /// `account_record_id`).
     RestoreEpoch,
-    /// The signed device list, id = account id, version = its seq.
+    /// The signed device list, id = `account_record_id`, version = its seq.
     DeviceList,
-    /// The signed vault list, id = account id, version = its seq.
+    /// The signed vault list, id = `account_record_id`, version = its seq.
     VaultList,
     /// A lineage record (genesis or rotation), id = `h[..16]`, version =
     /// its generation. Immutable: written once, never deleted by a client,
@@ -273,6 +274,63 @@ pub trait RecordStore {
     ) -> Result<()> {
         let _ = (writes, deletes, chain, trust);
         Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// The local transaction of a rotation (spec 7.1 step 6): the writes,
+    /// the chain state of the new identity (it replaces the stored one) and
+    /// the trust state in state `Rotating { phase: 1 }`, plus what the push
+    /// phases need (`rotation`), all or nothing. The default is
+    /// `put_all_if_version_with_trust` (a store that pushes nothing has no
+    /// phases to drive).
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        let _ = rotation;
+        self.put_all_if_version_with_trust(writes, Vec::new(), Some(chain), trust)
+    }
+}
+
+/// What the push phases of a rotation need beyond its records (spec 7.1):
+/// the vaults it re-sealed (the `from_heads` keys, whose single-slot
+/// records phase 2 overwrites, R21) and the blob ids of the item records
+/// the `from_heads` manifests list (the only records phase 3 deletes,
+/// R23). Kept by the store until the rotation is pushed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RotationPush {
+    pub vaults: Vec<Id>,
+    pub collect: Vec<Id>,
+}
+
+const ROTATION_PUSH_VERSION: u8 = 1;
+
+impl RotationPush {
+    /// A version byte, then postcard; both lists sorted and unique.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![ROTATION_PUSH_VERSION];
+        // Plain data (lists of ids): cannot fail.
+        out.extend(postcard::to_allocvec(self).expect("rotation push encodes"));
+        out
+    }
+
+    /// Decode what `encode` wrote: the whole buffer, a known version,
+    /// sorted unique lists (`InvalidFormat("rotation push")`).
+    pub fn decode(bytes: &[u8]) -> Result<RotationPush> {
+        let bad = Error::InvalidFormat("rotation push");
+        let Some((&ROTATION_PUSH_VERSION, body)) = bytes.split_first() else {
+            return Err(bad);
+        };
+        let Ok((push, [])) = postcard::take_from_bytes::<RotationPush>(body) else {
+            return Err(bad);
+        };
+        let sorted = |v: &[Id]| v.windows(2).all(|w| w[0] < w[1]);
+        if !sorted(&push.vaults) || !sorted(&push.collect) {
+            return Err(bad);
+        }
+        Ok(push)
     }
 }
 

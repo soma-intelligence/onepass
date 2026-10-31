@@ -15,6 +15,7 @@ use common::*;
 use onepass_core::chain::ChainState;
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationReason, delivery_id,
     identity_id, rotation_code, sign_genesis, verify_rotation,
@@ -23,7 +24,8 @@ use onepass_core::manifest::{SeenManifest, SignedManifest, verify_manifest};
 use onepass_core::repo::rotate::open_key_delivery;
 use onepass_core::repo::travel::TravelState;
 use onepass_core::repo::{RotateRequest, RotationOutcome};
-use onepass_core::store::{VaultEvent, account_record_id};
+use onepass_core::store::{RotationPush, VaultEvent, account_record_id};
+use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 
 const NEW_PASSWORD: &str = "Projet Zénith, Camille Durand";
@@ -71,15 +73,17 @@ struct Fixture {
 /// A with three items (one archived, one trashed), synced with B; A pins a
 /// genesis whose roster is A, B, C and D, all verified, state `Current`.
 fn fixture() -> (Device, Fixture) {
-    let mut server = Server::default();
-    let (mut a, _b, sk, items) = setup(
-        &mut server,
-        &[("alice", T0), ("bob", T0 + 1), ("carol", T0 + 2)],
-    );
+    fixture_on(&mut Server::default())
+}
+
+/// `fixture` on `server`; the genesis is pushed, so the outbox is empty.
+fn fixture_on(server: &mut Server) -> (Device, Fixture) {
+    let (mut a, _b, sk, items) =
+        setup(server, &[("alice", T0), ("bob", T0 + 1), ("carol", T0 + 2)]);
     let v = a.vault();
     a.repo().archive_item(&v, items[1].id).unwrap();
     a.repo().trash_item(&v, items[2].id).unwrap();
-    sync(&mut server, &mut a).unwrap();
+    sync(server, &mut a).unwrap();
 
     let me = Peer::new(a.repo().chain().device_id.unwrap_or_else(Id::new));
     let others: Vec<Peer> = (0..3).map(|_| Peer::new(Id::new())).collect();
@@ -133,6 +137,8 @@ fn fixture() -> (Device, Fixture) {
         .store_mut()
         .put_all_if_version_with_trust(vec![(record, None)], vec![], None, &trust)
         .unwrap();
+    sync(server, &mut a).unwrap();
+    assert!(outbox(&a).is_empty());
     (
         a,
         Fixture {
@@ -479,6 +485,21 @@ impl RecordStore for Faulty {
         self.broken.set(true);
         Ok(())
     }
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        self.ok()?;
+        if self.fail_commit {
+            return Err(Error::Store("disk full".into()));
+        }
+        self.inner.put_rotation(writes, chain, trust, rotation)?;
+        self.broken.set(true);
+        Ok(())
+    }
 }
 
 fn faulty_session(a: &Device, f: &Fixture, fail_commit: bool) -> Repository<Faulty> {
@@ -765,4 +786,506 @@ fn items_resealed() {
         a.repo.as_ref().unwrap().device_state().last_seen[&vault.id].seq,
         m.seq
     );
+}
+
+// ---------------------------------------------------------------- phases
+
+fn state(dev: &Device) -> DeviceLineageState {
+    dev.store().trust_state().unwrap().unwrap().state
+}
+
+fn rotating(phase: u8) -> DeviceLineageState {
+    DeviceLineageState::Rotating { phase }
+}
+
+/// Rotate A (no push), keeping the password.
+fn rotate(a: &mut Device, f: &Fixture, new_sk: &SecretKey) -> RotationOutcome {
+    let req = request(f, new_sk, vec![], RotationReason::Rotate);
+    a.repo.as_mut().unwrap().rotate(req).unwrap()
+}
+
+/// Push the outbox as it is (one batch) and confirm it, without settling
+/// the phase.
+fn push_outbox(server: &mut Server, dev: &Device) -> std::result::Result<(), Conflict> {
+    send(server, dev, outbox(dev), true)
+}
+
+/// The kinds of the server's writes after `clock`, in write order.
+fn write_log(server: &Server, clock: u64) -> Vec<(RecordKind, Id)> {
+    let mut log: Vec<(u64, RecordKind, Id)> = server
+        .records
+        .iter()
+        .filter(|(_, e)| e.changed > clock)
+        .map(|((k, id), e)| (e.changed, *k, *id))
+        .collect();
+    log.sort();
+    log.into_iter().map(|(_, k, id)| (k, id)).collect()
+}
+
+/// The blob ids of the item records of `vault` the store holds.
+fn item_blobs(store: &SyncStore, vault: Id) -> BTreeSet<Id> {
+    store
+        .list(RecordKind::Item)
+        .unwrap()
+        .into_iter()
+        .filter(|r| split_item_record(&r.data).unwrap().0 == vault)
+        .map(|r| r.id)
+        .collect()
+}
+
+fn server_item_blobs(server: &Server, vault: Id) -> BTreeSet<Id> {
+    server
+        .records
+        .iter()
+        .filter(|((k, _), e)| {
+            *k == RecordKind::Item
+                && e.record
+                    .as_ref()
+                    .is_some_and(|r| split_item_record(&r.data).unwrap().0 == vault)
+        })
+        .map(|((_, id), _)| *id)
+        .collect()
+}
+
+#[test]
+fn phase_one_writes_new_ids_only_lineage_last() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let new_sk = SecretKey::generate().unwrap();
+    let out = rotate(&mut a, &f, &new_sk);
+    assert_eq!(state(&a), rotating(1));
+    let body = rotation_of(&a.store(), &out.head);
+    let rid = identity_id(&body.identity_pub);
+
+    let batch = outbox(&a);
+    // All new ids: nothing on the server, nothing expected.
+    for (c, tag) in &batch {
+        assert!(c.data.is_some(), "{:?} is a deletion", c.kind);
+        assert_eq!(*tag, None, "{:?} expects a version", c.kind);
+        assert!(server.get(c.kind, c.id).is_none(), "{:?} exists", c.kind);
+    }
+    let mut lineage = [0u8; 16];
+    lineage.copy_from_slice(&out.head[..16]);
+    let mut expected: Vec<(RecordKind, Id)> = body
+        .deliveries
+        .iter()
+        .map(|(to, _)| (RecordKind::KeyDelivery, delivery_id(&out.head, *to)))
+        .collect();
+    expected.sort();
+    expected.extend([
+        (RecordKind::AccountParams, rid),
+        (RecordKind::Keyset, rid),
+        (RecordKind::DeviceList, rid),
+        (RecordKind::VaultList, rid),
+        (RecordKind::Lineage, Id(lineage)),
+    ]);
+    let ids: Vec<(RecordKind, Id)> = batch.iter().map(|(c, _)| (c.kind, c.id)).collect();
+    assert_eq!(ids, expected);
+    assert_eq!(body.deliveries.len(), 3);
+
+    // Not confirmed yet: the phase is not over.
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Retry
+    );
+    let clock = server.clock;
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(write_log(&server, clock), expected);
+    assert_eq!(state(&a), rotating(1));
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    assert_eq!(state(&a), rotating(2));
+}
+
+#[test]
+fn other_writes_wait_in_phase_one() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    let v = a.vault();
+    let dora = login(v.id, "dora", T0 + 50);
+    a.save(&dora);
+
+    let vault_kinds = [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Item,
+        RecordKind::Manifest,
+        RecordKind::RestoreEpoch,
+    ];
+    let phase_one = outbox(&a);
+    assert!(
+        phase_one
+            .iter()
+            .all(|(c, _)| !vault_kinds.contains(&c.kind)),
+        "{:?}",
+        phase_one.iter().map(|(c, _)| c.kind).collect::<Vec<_>>()
+    );
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    // Phase 2: the vault, the new item with it.
+    let phase_two = outbox(&a);
+    assert!(
+        phase_two
+            .iter()
+            .any(|(c, _)| c.kind == RecordKind::Manifest)
+    );
+    assert!(phase_two.iter().all(|(c, _)| c.data.is_some()));
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert!(outbox(&a).is_empty());
+    assert!(users(&a.items()).contains(&"dora".to_string()));
+}
+
+#[test]
+fn cut_between_phases_resumes() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let expected = a.items();
+    let v = a.vault().id;
+    let old_blobs = item_blobs(&a.store(), v);
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    a.repo = None;
+
+    // Phase 1 lands, then the app dies before settling it.
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(state(&a), rotating(1));
+    assert!(outbox(&a).is_empty());
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+
+    // Reopened: phase 2 only, the vault records, nothing deleted.
+    assert_eq!(state(&a), rotating(2));
+    let phase_two = outbox(&a);
+    assert!(!phase_two.is_empty());
+    assert!(phase_two.iter().all(|(c, _)| c.data.is_some()
+        && matches!(
+            c.kind,
+            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Item | RecordKind::Manifest
+        )));
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(
+        a.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Done
+    );
+
+    // Reopened: phase 3 deletes exactly the records the rotation left.
+    assert_eq!(state(&a), rotating(3));
+    let phase_three = outbox(&a);
+    let deleted: BTreeSet<Id> = phase_three
+        .iter()
+        .map(|(c, _)| {
+            assert!(c.data.is_none() && c.kind == RecordKind::Item);
+            c.id
+        })
+        .collect();
+    assert_eq!(deleted, old_blobs);
+    push_outbox(&mut server, &a).unwrap();
+    // A settle asked for the wrong phase changes nothing.
+    assert_eq!(
+        a.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Retry
+    );
+    assert_eq!(state(&a), rotating(3));
+    assert_eq!(
+        a.store().push_rotation_phase(3).unwrap(),
+        PhaseOutcome::Done
+    );
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    assert!(outbox(&a).is_empty());
+    for blob in &old_blobs {
+        assert!(server.get(RecordKind::Item, *blob).is_none());
+    }
+
+    // The new identity opens on this device.
+    a.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.items(), expected);
+}
+
+/// A copy of `a`'s device file (same device keys, same trust state), as a
+/// sibling rotation from the same parent would start.
+fn sibling_of(a: &mut Device, sk: &SecretKey) -> Device {
+    a.lock();
+    let s = Device::empty();
+    std::fs::copy(&a.path, &s.path).unwrap();
+    for ext in ["-wal", "-shm"] {
+        let from = PathBuf::from(format!("{}{ext}", a.path.display()));
+        if from.exists() {
+            std::fs::copy(&from, format!("{}{ext}", s.path.display())).unwrap();
+        }
+    }
+    let mut s = Device {
+        cursor: a.cursor,
+        ..s
+    };
+    s.unlock(sk);
+    a.unlock(sk);
+    s
+}
+
+/// A rotates (not pushed); its sibling S, from the same parent, pushes
+/// phases 1 and 2 first: the server holds S's records and S's vault key,
+/// meta and manifest over the old ones.
+fn sibling_race() -> (Server, Device, Device, Fixture, RotationOutcome) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut s = sibling_of(&mut a, &f.sk);
+    let out = rotate(&mut a, &f, &SecretKey::generate().unwrap());
+    rotate(&mut s, &f, &SecretKey::generate().unwrap());
+    push_outbox(&mut server, &s).unwrap();
+    assert_eq!(
+        s.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    push_outbox(&mut server, &s).unwrap();
+    assert_eq!(
+        s.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Done
+    );
+    (server, a, s, f, out)
+}
+
+#[test]
+fn phase_one_never_conflicts() {
+    let (mut server, a, s, _f, out) = sibling_race();
+    let batch = outbox(&a);
+    assert!(batch.iter().all(|(_, tag)| tag.is_none()));
+    send(&mut server, &a, batch, true).expect("phase 1 never conflicts");
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&out.head[..16]);
+    assert!(server.get(RecordKind::Lineage, Id(id)).is_some());
+    let theirs = s.store().trust_state().unwrap().unwrap().head.hash;
+    id.copy_from_slice(&theirs[..16]);
+    assert!(server.get(RecordKind::Lineage, Id(id)).is_some());
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+}
+
+/// R21: the vault key, meta and manifest hold the sibling's records; the
+/// rotator overwrites them conditionally on the version it reads, without
+/// reading them.
+#[test]
+fn phase_two_overwrites_foreign_single_slot() {
+    let (mut server, mut a, _s, _f, _out) = sibling_race();
+    let expected = a.items();
+    let v = a.vault().id;
+    push_outbox(&mut server, &a).unwrap();
+    assert_eq!(
+        a.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    // Built on the old records: the sibling's are newer.
+    let Err(Conflict(conflicts)) = push_outbox(&mut server, &a) else {
+        panic!("phase 2 over the sibling's records")
+    };
+    assert!(conflicts.contains(&(RecordKind::VaultKey, v)));
+    pull(&server, &mut a);
+    // Not held: nothing to rebase.
+    assert!(a.store().vaults_needing_rebase().unwrap().is_empty());
+    a.repo().rebase().unwrap();
+    let batch = outbox(&a);
+    for kind in [
+        RecordKind::VaultKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+    ] {
+        let (c, tag) = batch
+            .iter()
+            .find(|(c, _)| c.kind == kind && c.id == v)
+            .expect("single-slot write");
+        assert_eq!(*tag, Some(server.live(kind, v).unwrap().tag));
+        assert_ne!(server.get(kind, v).unwrap().data, *c.data.as_ref().unwrap());
+    }
+    send(&mut server, &a, batch.clone(), true).unwrap();
+    for (c, _) in batch.iter().filter(|(c, _)| c.id == v) {
+        assert_eq!(server.get(c.kind, v).unwrap(), as_record(c));
+    }
+    assert_eq!(
+        a.store().push_rotation_phase(2).unwrap(),
+        PhaseOutcome::Done
+    );
+    // The sibling's item records are leftovers under another key.
+    assert_eq!(a.items(), expected);
+}
+
+/// R23: phase 3 deletes the records the `from_heads` manifests list, and
+/// nothing else: the sibling's item records stay.
+#[test]
+fn phase_three_deletes_only_from_heads_items() {
+    let (mut server, mut a, _s, _f, _out) = sibling_race();
+    let v = a.vault().id;
+    // The server holds the old records and the sibling's (it stopped
+    // before its phase 3); A holds the old ones and its own.
+    let mine = item_blobs(&a.store(), v);
+    let served = server_item_blobs(&server, v);
+    let old: BTreeSet<Id> = &mine & &served;
+    let theirs: BTreeSet<Id> = &served - &mine;
+    assert_eq!(old.len(), 3);
+    assert_eq!(theirs.len(), 3);
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    let on_server = server_item_blobs(&server, v);
+    assert!(on_server.is_disjoint(&old), "old records collected");
+    assert!(theirs.is_subset(&on_server), "the sibling's records stay");
+}
+
+/// `zz2_hostile_epoch_inflation` (first design): epochs are per identity.
+/// A restore epoch at `u64::MAX`, validly signed by the identity this
+/// device left, or under another identity's id, changes nothing.
+#[test]
+fn hostile_epoch_inflation_is_noop() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let expected = a.items();
+    let account_id = a.repo().account_id();
+    let forged = RestoreEpoch {
+        account_id,
+        epoch: u64::MAX,
+        issued_at: T0,
+        heads: a.repo().device_state().last_seen.clone(),
+        reason: EpochReason::Restore,
+    };
+    let data = SignedRestoreEpoch::sign(forged, &a.repo().account().keyset().signing)
+        .unwrap()
+        .encode();
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+
+    let other = identity_id(&f_identity(&f));
+    for id in [account_id, other] {
+        server.replay(Record {
+            id,
+            kind: RecordKind::RestoreEpoch,
+            version: i64::MAX as u64,
+            data: data.clone(),
+        });
+    }
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(a.repo().restore_epoch(), None);
+    assert_eq!(a.items(), expected);
+    let v = a.vault();
+    a.save(&login(v.id, "erin", T0 + 60));
+    sync(&mut server, &mut a).unwrap();
+
+    // The next epoch of this identity is its first.
+    let issued = a.repo().issue_restore_epoch(EpochReason::Restore).unwrap();
+    assert_eq!(issued.epoch, 1);
+    sync(&mut server, &mut a).unwrap();
+    let rid = account_record_id(account_id, Some(&a.repo().account().params.identity_pub));
+    assert_eq!(
+        server.get(RecordKind::RestoreEpoch, rid).unwrap().version,
+        1
+    );
+    a.lock();
+    a.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.repo().restore_epoch(), Some(1));
+    assert_eq!(a.items().len(), expected.len() + 1);
+}
+
+/// Another identity: a peer's device key does not make one, so draw one.
+fn f_identity(_f: &Fixture) -> onepass_core::crypto::IdentityVerifyingKey {
+    let n = onepass_core::account::Account::create_with_params(PASSWORD, kdf()).unwrap();
+    n.account.params.identity_pub.clone()
+}
+
+// ---------------------------------------------------------------- reads
+
+/// Controller ruling: right after `rotate`, every read and the next unlock
+/// go to the new identity's records.
+#[test]
+fn reads_and_unlock_follow_the_new_identity() {
+    let (mut a, f) = fixture();
+    let expected = a.items();
+    let new_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &new_sk, vec![], RotationReason::RotateWithPassword);
+    req.new_password = Some(NEW_PASSWORD);
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+
+    assert_eq!(a.repo().vaults().unwrap().len(), 1);
+    assert_eq!(a.items(), expected);
+    let v = a.vault();
+    a.save(&login(v.id, "frank", T0 + 70));
+    assert_eq!(a.items().len(), expected.len() + 1);
+    a.repo().vault_list().unwrap();
+
+    a.lock();
+    assert!(a.try_unlock(PASSWORD, &f.sk).is_err());
+    a.try_unlock(NEW_PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.repo().vaults().unwrap().len(), 1);
+    assert_eq!(a.items().len(), expected.len() + 1);
+    let auk = a.try_unlock(NEW_PASSWORD, &new_sk).unwrap();
+    a.try_unlock_with_auk(&auk).unwrap();
+    assert_eq!(a.items().len(), expected.len() + 1);
+    // A password change stays within the new identity (epoch 2).
+    a.repo()
+        .change_password(NEW_PASSWORD, &new_sk, PASSWORD)
+        .unwrap();
+    assert_eq!(a.repo().account().params.epoch, 2);
+    a.lock();
+    a.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.items().len(), expected.len() + 1);
+}
+
+/// Controller ruling: the device state is saved after the rotation commit;
+/// a crash in between leaves the old pin, epoch and lists. The trust state
+/// (and the chain state written with it) wins on reopen.
+#[test]
+fn crash_before_the_device_state_is_saved() {
+    let (mut a, f) = fixture();
+    let expected = a.items();
+    // A password change (params epoch 2) and a restore epoch (1) under the
+    // old identity, saved.
+    a.repo()
+        .change_password(PASSWORD, &f.sk, NEW_PASSWORD)
+        .unwrap();
+    a.repo().issue_restore_epoch(EpochReason::Restore).unwrap();
+    a.repo().persist_device_state().unwrap();
+    let old_identity = a.repo().account().params.identity_pub.clone();
+    // A second session of the old identity, as an extension holds.
+    let mut stale = {
+        let store = a.store();
+        let state = store.device_state().unwrap();
+        Repository::unlock(store, NEW_PASSWORD, &f.sk, state).unwrap()
+    };
+
+    let new_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    req.password = NEW_PASSWORD;
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    // Crash: the session never saves its device state.
+    a.repo = None;
+    let stored = a.store().device_state().unwrap();
+    assert_eq!(stored.pinned.unwrap().identity_pub, old_identity);
+    assert_eq!(stored.epoch, 1);
+
+    // A session of the left identity cannot save over the new one.
+    assert!(stale.persist_device_state().is_err());
+    let chain = RecordStore::chain_state(&a.store()).unwrap();
+    assert_eq!(chain.params_epoch, 1);
+    drop(stale);
+
+    a.try_unlock(NEW_PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.repo().vaults().unwrap().len(), 1);
+    assert_eq!(a.items(), expected);
+    assert_eq!(a.repo().restore_epoch(), None);
+    let new_identity = a.repo().account().params.identity_pub.clone();
+    a.lock();
+    let stored = a.store().device_state().unwrap();
+    assert_eq!(stored.pinned.unwrap().identity_pub, new_identity);
+    assert_eq!(stored.epoch, 0);
+    a.try_unlock(NEW_PASSWORD, &new_sk).unwrap();
+    assert_eq!(a.items(), expected);
 }

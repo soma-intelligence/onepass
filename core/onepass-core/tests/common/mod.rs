@@ -14,9 +14,10 @@ pub use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 pub use onepass_core::repo::{Repository, split_item_record};
 pub use onepass_core::store::{Record, RecordKind, RecordStore};
 pub use onepass_core::sync::{
-    AccountState, Change, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
+    AccountState, Change, PhaseOutcome, RemoteChange, STALE_ALERT_MAX_ROUNDS, STALE_ALERT_ROUNDS,
     STALE_ALERT_SECONDS, STALE_CLEAR_ROUNDS, SyncStore, VaultSyncHealth,
 };
+pub use onepass_core::trust::DeviceLineageState;
 pub use onepass_core::vault::{ItemRecord, Vault, VaultMeta};
 pub use onepass_core::{Error, Id, IntegrityError, Result};
 pub use time::OffsetDateTime;
@@ -305,8 +306,23 @@ pub fn send(
     Ok(())
 }
 
+/// Push the outbox. A device pushing a rotation (`Rotating { phase }`)
+/// settles each phase once its writes are confirmed
+/// (`SyncStore::push_rotation_phase`) and pushes the next one, as the
+/// apps' push loop does.
 pub fn push(server: &mut Server, dev: &Device) -> std::result::Result<(), Conflict> {
-    send(server, dev, outbox(dev), true)
+    loop {
+        send(server, dev, outbox(dev), true)?;
+        let mut store = dev.store();
+        let Some(DeviceLineageState::Rotating { phase }) =
+            store.trust_state().unwrap().map(|t| t.state)
+        else {
+            return Ok(());
+        };
+        if store.push_rotation_phase(phase).unwrap() == PhaseOutcome::Retry {
+            return Ok(());
+        }
+    }
 }
 
 /// Fetch everything after the cursor: stage it all, then commit at once.
