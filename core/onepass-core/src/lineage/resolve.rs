@@ -29,11 +29,18 @@
 //!    What is left (a cycle, such as A revokes B and B revokes A) needs the
 //!    user: a `Mutual` prompt (8.3).
 //! 4. **Order** (8.5 step 2): among accepted records, the smallest lineage
-//!    hash wins.
+//!    hash that can be acted on now wins. A record is ready when it is
+//!    complete for this device, or when it revokes or drops this device
+//!    (no delivery exists for it then). A smaller record that is withheld
+//!    never blocks a ready one; with none ready, `Wait`.
 //!
 //! Then "for me" (7.2): a winner that revokes this device gives
-//! `Quarantine`, one that does not list it gives `Orphaned`, and a winner
-//! whose delivery, params and keyset are not all present gives `Wait`.
+//! `Quarantine`, one that does not list it gives `Orphaned`, otherwise a
+//! `Single` prompt. A switch targets the newest complete descendant of the
+//! winning branch, trying accepted children in hash order at each level.
+//! A `Mutual` prompt lists every member, complete or not, as soon as one
+//! member that lists this device is complete, so a signer withholding its
+//! own delivery cannot stall its revocation.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -128,15 +135,37 @@ pub fn winner(siblings: &[&Signed<RotationBody>]) -> Option<[u8; 32]> {
         nodes.insert(rotation_hash(&s.body), &s.body);
     }
     match settle(&nodes) {
-        Some(Settled::Winner(h)) => Some(h),
+        Some(Settled::Accepted(order)) => order.first().copied(),
         _ => None,
     }
 }
 
 enum Settled {
-    Winner([u8; 32]),
+    /// The accepted records, in hash order: the first is the winner (8.5
+    /// step 2); the next ones stand in while the first is withheld.
+    Accepted(Vec<[u8; 32]>),
     /// Sorted, at least two.
     Mutual(Vec<[u8; 32]>),
+}
+
+/// What a branch offers this device now.
+enum Outcome {
+    Target([u8; 32]),
+    Quarantine([u8; 32]),
+    Orphaned([u8; 32]),
+}
+
+impl Outcome {
+    fn decide(self, kind: PromptKind) -> Decision {
+        match self {
+            Outcome::Target(h) => Decision::Prompt(Prompt {
+                kind,
+                children: vec![h],
+            }),
+            Outcome::Quarantine(by) => Decision::Quarantine { by },
+            Outcome::Orphaned(child) => Decision::Orphaned { child },
+        }
+    }
 }
 
 /// Grounded settlement of the exclusion graph, then the order. `None` for
@@ -184,7 +213,7 @@ fn settle(nodes: &BTreeMap<[u8; 32], &RotationBody>) -> Option<Settled> {
     if !undecided.is_empty() {
         return Some(Settled::Mutual(undecided));
     }
-    accepted.first().map(|h| Settled::Winner(*h))
+    Some(Settled::Accepted(accepted.into_iter().collect()))
 }
 
 /// Resolve with a fresh signature cache.
@@ -228,6 +257,9 @@ struct View<'a, 'c> {
     genesis: BTreeMap<[u8; 32], &'a GenesisBody>,
     children: BTreeMap<[u8; 32], BTreeSet<[u8; 32]>>,
     cache: &'c mut VerifyCache,
+    /// A sibling that beats the own record is known but not complete:
+    /// report `Wait` rather than `Stay`.
+    pending: bool,
 }
 
 impl<'a, 'c> View<'a, 'c> {
@@ -270,6 +302,7 @@ impl<'a, 'c> View<'a, 'c> {
             genesis,
             children,
             cache,
+            pending: false,
         }
     }
 
@@ -381,12 +414,13 @@ impl<'a, 'c> View<'a, 'c> {
         b.roster.iter().any(|e| e.device_id == self.me())
     }
 
-    /// Mutual prompt over `set`, if every member that lists this device is
-    /// complete.
+    /// Mutual prompt over `set` (every member, complete or not) once at
+    /// least one member that lists this device is complete: a withheld
+    /// delivery cannot keep the user from picking the other side.
     fn mutual(&self, set: Vec<[u8; 32]>, complete: &Completeness) -> Decision {
         let ready = set
             .iter()
-            .all(|h| !self.lists_me(self.rotations[h].body) || complete.present.contains(h));
+            .any(|h| self.lists_me(self.rotations[h].body) && complete.present.contains(h));
         if !ready {
             return Decision::Wait {
                 unknown_parent: vec![],
@@ -396,6 +430,56 @@ impl<'a, 'c> View<'a, 'c> {
             kind: PromptKind::Mutual,
             children: set,
         })
+    }
+
+    /// What one record means for this device on its own, if it can be
+    /// acted on now: a record revoking or dropping this device needs no
+    /// delivery; any other needs to be complete.
+    fn outcome_of(&self, h: [u8; 32], complete: &Completeness) -> Option<Outcome> {
+        let b = self.rotations[&h].body;
+        if b.revoked.contains(&self.me()) {
+            Some(Outcome::Quarantine(h))
+        } else if !self.lists_me(b) {
+            Some(Outcome::Orphaned(h))
+        } else if complete.present.contains(&h) {
+            Some(Outcome::Target(h))
+        } else {
+            None
+        }
+    }
+
+    /// The branch under `h` (valid, on the winning side): a descendant
+    /// that revokes or drops this device, else the newest complete record
+    /// along winners, else `None` (nothing on it can be acted on yet).
+    /// At each level the accepted children are tried in hash order, so a
+    /// withheld smaller sibling never blocks a complete one (8.5 step 2).
+    fn branch(
+        &mut self,
+        h: [u8; 32],
+        revoked: &BTreeSet<Id>,
+        complete: &Completeness,
+    ) -> Option<Outcome> {
+        let b = self.rotations[&h].body;
+        if b.revoked.contains(&self.me()) || !self.lists_me(b) {
+            return self.outcome_of(h, complete);
+        }
+        let mut path_revoked = revoked.clone();
+        path_revoked.extend(b.revoked.iter().copied());
+        let parent = Parent {
+            hash: h,
+            generation: b.generation,
+            roster: Some(&b.roster),
+            path_revoked: path_revoked.clone(),
+        };
+        let kids = self.valid_children(&parent);
+        if let Some(Settled::Accepted(order)) = settle(&kids) {
+            for k in order {
+                if let Some(o) = self.branch(k, &path_revoked, complete) {
+                    return Some(o);
+                }
+            }
+        }
+        self.outcome_of(h, complete)
     }
 
     /// 8.5: at the first level of the own chain where a sibling beats the
@@ -424,65 +508,39 @@ impl<'a, 'c> View<'a, 'c> {
                     }
                     return Some(self.mutual(set, complete));
                 }
-                Settled::Winner(w) if w == *own_hash => continue,
-                Settled::Winner(w) => {
+                Settled::Accepted(order) => {
                     let mine = chain[..=i].iter().any(|(_, b)| b.rotator == self.me());
                     let kind = if mine {
                         PromptKind::Reapply
                     } else {
                         PromptKind::Switch
                     };
-                    return Some(self.switch(w, kind, complete));
+                    let mut own_wins = false;
+                    for w in order {
+                        if w == *own_hash {
+                            own_wins = true;
+                            break;
+                        }
+                        if let Some(o) = self.branch(w, &BTreeSet::new(), complete) {
+                            return Some(o.decide(kind));
+                        }
+                        // A better sibling that cannot be acted on yet.
+                        self.pending = true;
+                    }
+                    if !own_wins {
+                        // The own record is excluded and no winner is ready.
+                        return Some(Decision::Wait {
+                            unknown_parent: vec![],
+                        });
+                    }
                 }
             }
         }
         None
     }
 
-    /// Down the winning branch to its newest descendant this device can
-    /// validate, winner after winner; stop at a level the user must settle.
-    fn switch(&mut self, w: [u8; 32], kind: PromptKind, complete: &Completeness) -> Decision {
-        let mut path = vec![(w, self.rotations[&w].body)];
-        let mut revoked: BTreeSet<Id> = path[0].1.revoked.iter().copied().collect();
-        loop {
-            let (p, pb) = *path.last().expect("path starts with the winner");
-            let parent = Parent {
-                hash: p,
-                generation: pb.generation,
-                roster: Some(&pb.roster),
-                path_revoked: revoked.clone(),
-            };
-            let kids = self.valid_children(&parent);
-            match settle(&kids) {
-                Some(Settled::Winner(k)) => {
-                    let kb = self.rotations[&k].body;
-                    revoked.extend(kb.revoked.iter().copied());
-                    path.push((k, kb));
-                }
-                _ => break,
-            }
-        }
-        for (h, b) in &path {
-            if b.revoked.contains(&self.me()) {
-                return Decision::Quarantine { by: *h };
-            }
-            if !self.lists_me(b) {
-                return Decision::Orphaned { child: *h };
-            }
-        }
-        let (target, _) = *path.last().expect("path starts with the winner");
-        if !complete.present.contains(&target) {
-            return Decision::Wait {
-                unknown_parent: vec![],
-            };
-        }
-        Decision::Prompt(Prompt {
-            kind,
-            children: vec![target],
-        })
-    }
-
-    /// Spec 7.2 and 8.3: the children of the head.
+    /// Spec 7.2 and 8.3: the children of the head. The winner is the
+    /// smallest accepted child that can be acted on now; with none, wait.
     fn children_of_head(&mut self, complete: &Completeness) -> Decision {
         let parent = Parent {
             hash: self.trust.head.hash,
@@ -494,23 +552,13 @@ impl<'a, 'c> View<'a, 'c> {
         match settle(&kids) {
             None => self.wait_or_stay(),
             Some(Settled::Mutual(set)) => self.mutual(set, complete),
-            Some(Settled::Winner(w)) => {
-                let b = kids[&w];
-                if b.revoked.contains(&self.me()) {
-                    Decision::Quarantine { by: w }
-                } else if !self.lists_me(b) {
-                    Decision::Orphaned { child: w }
-                } else if !complete.present.contains(&w) {
-                    Decision::Wait {
-                        unknown_parent: vec![],
-                    }
-                } else {
-                    Decision::Prompt(Prompt {
-                        kind: PromptKind::Single,
-                        children: vec![w],
-                    })
-                }
-            }
+            Some(Settled::Accepted(order)) => order
+                .into_iter()
+                .find_map(|w| self.outcome_of(w, complete))
+                .map(|o| o.decide(PromptKind::Single))
+                .unwrap_or(Decision::Wait {
+                    unknown_parent: vec![],
+                }),
         }
     }
 
@@ -535,7 +583,13 @@ impl<'a, 'c> View<'a, 'c> {
             }
         }
         if parents.is_empty() {
-            Decision::Stay
+            if self.pending {
+                Decision::Wait {
+                    unknown_parent: vec![],
+                }
+            } else {
+                Decision::Stay
+            }
         } else {
             Decision::Wait {
                 unknown_parent: parents.into_iter().collect(),

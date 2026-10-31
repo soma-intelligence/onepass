@@ -12,7 +12,8 @@
 //! - `D_lo`, `D_hi`: D rotates, revokes nobody; `D_lo < A < D_hi` by hash.
 //!   `D2_lo`, `D2_hi`: D again, child of `D_lo` and `D_hi`.
 //! - `B`: B revokes A (the race of 8.3). `Bq`: B revokes C. `Bd`: B revokes
-//!   D. `DB_lo`: B rotates under `D_lo`. `J`: B, generation 3, parent
+//!   D. `Bs`: B rotates, below `D_hi`. `DB_lo`: B rotates under `D_lo`,
+//!   below `D2_lo`. `J`: B, generation 3, parent
 //!   unknown to everyone.
 //! - `F`: claims rotator A with an embedded key for A that is not A's;
 //!   signed by that impostor key. `BadId`: signed by A's real device key,
@@ -218,7 +219,18 @@ fn build() -> World {
         &av,
         T0 + 4,
     );
-    let db_lo = body(hash_of(&d_lo), 2, id(B), Rotate, &[], &all, &av, T0 + 13);
+    // B under D_lo, below D2_lo by hash: a withheld winner-by-order.
+    let hd2 = hash_of(&d2_lo);
+    let db_lo = (T0 + 13..)
+        .map(|t| body(hash_of(&d_lo), 2, id(B), Rotate, &[], &all, &av, t))
+        .find(|b| hash_of(b) < hd2)
+        .unwrap();
+    // B rotates for itself, below D_hi by hash (D does not exclude it).
+    let hdh = hash_of(&d_hi);
+    let bs = (T0 + 20..)
+        .map(|t| body(g, 1, id(B), Rotate, &[], &all, &av, t))
+        .find(|b| hash_of(b) < hdh)
+        .unwrap();
     let rj = body(
         [0x55; 32],
         3,
@@ -262,6 +274,7 @@ fn build() -> World {
         ("Bq", rbq, &devs[B].keys, &attacker),
         ("Bd", rbd, &devs[B].keys, &attacker),
         ("DB_lo", db_lo, &devs[B].keys, &attacker),
+        ("Bs", bs, &devs[B].keys, &attacker),
         ("J", rj, &devs[B].keys, &attacker),
         ("F", rf, &impostor_keys, &attacker),
         ("AnoE", ano_e, &devs[A].keys, &honest),
@@ -535,9 +548,15 @@ fn ancestor_divergence_targets_newest_descendant() {
         resolve(&t, &recs(&names), &complete(&["D2_lo"])),
         prompt(PromptKind::Switch, &["D2_lo"])
     );
-    // The newest descendant's delivery is withheld: wait for it.
+    // The newest descendant's delivery is withheld: the newest complete
+    // one is the target.
     assert_eq!(
         resolve(&t, &recs(&names), &complete(&["D_lo"])),
+        prompt(PromptKind::Switch, &["D_lo"])
+    );
+    // Nothing on the winning branch is complete: wait for it.
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&[])),
         Decision::Wait {
             unknown_parent: vec![]
         }
@@ -680,12 +699,93 @@ fn incomplete_child_waits() {
             unknown_parent: vec![]
         }
     );
-    let d = resolve(&at_genesis(C), &recs(&["A", "B"]), &complete(&["B"]));
+    // Two lone incomplete children: still nothing to ask.
+    let d = resolve(&at_genesis(C), &recs(&["A", "D_hi"]), &complete(&[]));
     assert_eq!(
         d,
         Decision::Wait {
             unknown_parent: vec![]
         }
+    );
+}
+
+/// 8.3 with B withholding its own delivery: the mutual prompt still comes
+/// as soon as A's side is complete, and lists both, so B cannot stall its
+/// revocation.
+#[test]
+fn withheld_b_delivery_does_not_stall_mutual() {
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["A", "B"]), &complete(&["A"])),
+        prompt(PromptKind::Mutual, &["A", "B"])
+    );
+    // Either side complete is enough; neither is not.
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["A", "B"]), &complete(&["B"])),
+        prompt(PromptKind::Mutual, &["A", "B"])
+    );
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["A", "B"]), &complete(&[])),
+        Decision::Wait {
+            unknown_parent: vec![]
+        }
+    );
+}
+
+/// A smaller-hash sibling of B, never complete, does not block an honest
+/// complete sibling (8.5 step 2 among complete accepted siblings).
+#[test]
+fn withheld_smaller_b_sibling_does_not_block() {
+    assert!(h("Bs") < h("D_hi"));
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&["Bs", "D_hi"]), &complete(&["D_hi"])),
+        prompt(PromptKind::Single, &["D_hi"])
+    );
+    // Once complete, B's record is the winner again and is asked about.
+    let names = ["Bs", "D_hi"];
+    assert_eq!(
+        resolve(&at_genesis(C), &recs(&names), &complete(&names)),
+        prompt(PromptKind::Single, &["Bs"])
+    );
+    // At a divergence: C on D_hi, the smaller Bs withheld. No switch; a
+    // wait, since a better sibling may still arrive.
+    let t = after(C, &["D_hi"]);
+    assert_eq!(
+        resolve(&t, &recs(&["D_hi", "Bs"]), &complete(&["D_hi"])),
+        Decision::Wait {
+            unknown_parent: vec![]
+        }
+    );
+}
+
+/// A withheld B-signed descendant on the winning branch does not block
+/// the switch to the newest complete one.
+#[test]
+fn withheld_b_descendant_does_not_block_switch() {
+    assert!(h("DB_lo") < h("D2_lo"));
+    // C followed D_hi, so B is still trusted there; D_lo wins the divergence.
+    let t = after(C, &["D_hi"]);
+    let names = ["D_hi", "D_lo", "D2_lo", "DB_lo"];
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&["D_lo", "D2_lo"])),
+        prompt(PromptKind::Switch, &["D2_lo"])
+    );
+    // Only D_lo complete: the newest complete record is the target.
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&["D_lo"])),
+        prompt(PromptKind::Switch, &["D_lo"])
+    );
+    // Complete, B's descendant is the newest winner and is what is asked
+    // (the user rejects it).
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&names)),
+        prompt(PromptKind::Switch, &["DB_lo"])
+    );
+    // On a device that revoked B by following A, B's descendant is refused.
+    let t = after(C, &["A"]);
+    let names = ["A", "D_lo", "D2_lo", "DB_lo"];
+    assert_eq!(
+        resolve(&t, &recs(&names), &complete(&names)),
+        prompt(PromptKind::Switch, &["D2_lo"])
     );
 }
 
@@ -885,7 +985,7 @@ fn name_of(hash: &[u8; 32]) -> &'static str {
 
 /// The pool for one variant: `lo` puts D's rotation below A's.
 fn pool(lo: bool) -> Vec<&'static str> {
-    let mut v = vec!["A", "A2", "B", "Bq", "Bd", "J", "F", "BadId"];
+    let mut v = vec!["A", "A2", "B", "Bq", "Bd", "Bs", "J", "F", "BadId"];
     if lo {
         v.extend(["D_lo", "D2_lo", "DB_lo"]);
     } else {
@@ -1058,10 +1158,10 @@ proptest! {
     #[test]
     fn interleavings(
         lo in any::<bool>(),
-        keep in prop::collection::vec(any::<bool>(), 11),
-        late in prop::collection::vec(any::<bool>(), 11),
-        keys_c in prop::collection::vec(any::<u32>(), 11),
-        keys_e in prop::collection::vec(any::<u32>(), 11),
+        keep in prop::collection::vec(any::<bool>(), 12),
+        late in prop::collection::vec(any::<bool>(), 12),
+        keys_c in prop::collection::vec(any::<u32>(), 12),
+        keys_e in prop::collection::vec(any::<u32>(), 12),
     ) {
         let pool = pool(lo);
         let kept: Vec<&'static str> = pool.iter().copied().zip(&keep).filter(|(_, k)| **k).map(|(n, _)| n).collect();
