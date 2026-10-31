@@ -214,6 +214,11 @@ criteria = "safe-to-deploy"
 version = "0.10.0"
 criteria = "safe-to-run"
 
+[[exemptions.flume]]
+version = "0.12.0"
+criteria = "safe-to-deploy"
+notes = "Channels of the mdns-sd daemon, DNS-SD of the T-LAN pairing transport (onepass-pairnet, spec 5.3). No default features (no async). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.fs-err]]
 version = "3.3.2"
 criteria = "safe-to-deploy"
@@ -305,6 +310,11 @@ criteria = "safe-to-deploy"
 version = "1.2.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.if-addrs]]
+version = "0.15.0"
+criteria = "safe-to-deploy"
+notes = "Interface list of mdns-sd, and the one LAN address the T-LAN pairing transport (onepass-pairnet, spec 5.3) binds to. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.inout]]
 version = "0.2.5"
 criteria = "safe-to-deploy"
@@ -378,13 +388,28 @@ criteria = "safe-to-deploy"
 version = "0.8.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.lock_api]]
+version = "0.4.14"
+criteria = "safe-to-deploy"
+notes = "Lock traits under spin, under flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.log]]
 version = "0.4.34"
 criteria = "safe-to-deploy"
 
+[[exemptions.mdns-sd]]
+version = "0.21.6"
+criteria = "safe-to-deploy"
+notes = "DNS-SD announce and browse of the T-LAN pairing transport (onepass-pairnet, spec 5.3): pure Rust, no async runtime, no default features. Its daemon only speaks on the interface chosen by the caller. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.minimal-lexical]]
 version = "0.2.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.mio]]
+version = "1.2.4"
+criteria = "safe-to-deploy"
+notes = "Socket polling of the mdns-sd daemon thread (T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.nix]]
 version = "0.31.3"
@@ -510,6 +535,11 @@ notes = "Certificate path validation of rustls in the mailbox client (onepass-ma
 version = "0.3.1"
 criteria = "safe-to-run"
 
+[[exemptions.scopeguard]]
+version = "1.2.0"
+criteria = "safe-to-deploy"
+notes = "Under lock_api, under spin, under flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.scroll]]
 version = "0.12.0"
 criteria = "safe-to-deploy"
@@ -583,6 +613,21 @@ criteria = "safe-to-deploy"
 [[exemptions.smawk]]
 version = "0.3.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.socket-pktinfo]]
+version = "0.4.1"
+criteria = "safe-to-deploy"
+notes = "Multicast UDP sockets with packet info for mdns-sd (T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.socket2]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "Socket options of mdns-sd and socket-pktinfo (multicast DNS of the T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.spin]]
+version = "0.9.9"
+criteria = "safe-to-deploy"
+notes = "Spin lock of flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.spki]]
 version = "0.8.1"
