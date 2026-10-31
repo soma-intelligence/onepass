@@ -13,8 +13,8 @@
 //! in Storage, credential roles (a reader commits and uploads nothing, a
 //! writer limited to `put_kinds` puts only those kinds and deletes nothing,
 //! only a manager grants, changes roles, approves tickets and revokes
-//! another credential, an owner is revoked or demoted only by itself, the
-//! last manager stays).
+//! another credential, an owner is revoked only by itself and never
+//! demoted, a limited writer announces no blob, the last manager stays).
 //!
 //! `FakeMailboxClient` runs the real client's request building and answer
 //! checks (`crate::client`, `crate::blobs`), and every answer goes through
@@ -174,7 +174,7 @@ struct Cred {
     role: CredentialRole,
     /// Write role only: the kinds it may put; no delete when set.
     put_kinds: Option<[u8; 32]>,
-    /// Revoked or demoted only by itself (Task 24 sets it).
+    /// Revoked only by itself, never demoted (Task 24 sets it).
     owner: bool,
 }
 
@@ -349,7 +349,7 @@ impl State {
             return refused(ErrorCode::NotFound);
         };
         let manage = CredentialRole::Manage;
-        if (t.owner && target != caller && role != manage)
+        if (t.owner && role != manage)
             || (t.role == manage && role != manage && self.other_managers(m, target) == 0)
         {
             return refused(ErrorCode::Forbidden);
@@ -692,7 +692,8 @@ impl State {
         m: &MailboxId,
         blobs: &[(Sha256, u32)],
     ) -> Result<Vec<(Sha256, bool, String)>, MailboxError> {
-        if self.caller(caller).role == CredentialRole::Read {
+        let c = self.caller(caller);
+        if c.role == CredentialRole::Read || c.put_kinds.is_some() {
             return refused(ErrorCode::Forbidden);
         }
         let max_bytes = self.limits.max_bytes as i64;

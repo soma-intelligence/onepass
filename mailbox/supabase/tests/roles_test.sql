@@ -231,7 +231,11 @@ select onepass_test.answers(
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_blob_announce(onepass_test.cid('l'), onepass_test.n(), now(), onepass_test.mbx('A'),
         array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
-    'ok', 'limited_writer_announces_blobs');
+    'forbidden', 'limited_writer_cannot_announce_blobs');
+select onepass_test.answers(
+    $$select * from onepass_mailbox.api_blob_announce(onepass_test.cid('w'), onepass_test.n(), now(), onepass_test.mbx('A'),
+        array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
+    'ok', 'unrestricted_writer_announces_blobs');
 
 select onepass_test.ok(onepass_test.info('r', 'A') = 'ok', 'read_role_reads_info');
 select onepass_test.answers(
@@ -363,12 +367,15 @@ reset role;
 select onepass_test.ok((onepass_test.cred('o')).role = 3 and (onepass_test.cred('o')).revoked_at is null,
     'owner_untouched_by_another_manager');
 set local role onepass_mailbox_api;
-select onepass_test.ok(onepass_test.set_role('o', 'A', 'o', 2) = 'ok', 'owner_demotes_itself');
--- Another manager may give an owner the manager role back, never less.
+-- An owner keeps the manager role, even against itself; setting it to 3
+-- again changes nothing.
 select onepass_test.ok(
-    onepass_test.set_role('m', 'A', 'o', 2, onepass_test.kinds(array[14])) = 'forbidden'
+    onepass_test.set_role('o', 'A', 'o', 2) = 'forbidden'
+    and onepass_test.set_role('o', 'A', 'o', 1) = 'forbidden'
+    and onepass_test.set_role('m', 'A', 'o', 2, onepass_test.kinds(array[14])) = 'forbidden'
+    and onepass_test.set_role('o', 'A', 'o', 3) = 'ok'
     and onepass_test.set_role('m', 'A', 'o', 3) = 'ok',
-    'owner_promoted_by_another_manager');
+    'owner_cannot_be_demoted_even_by_itself');
 select onepass_test.ok(onepass_test.set_role('o', 'A', 'm', 2) = 'ok' and onepass_test.set_role('o', 'A', 'm', 3) = 'ok',
     'owner_changes_a_manager');
 select onepass_test.ok(onepass_test.revoke('o', 'A', 'o') = 'ok', 'owner_revokes_itself');
@@ -429,3 +436,37 @@ select onepass_test.ok(
      where p.pronamespace = 'onepass_mailbox'::regnamespace
        and p.proname in ('api_grant_credential', 'api_set_credential_role')) is true,
     'grant_and_set_role_granted_to_the_api_only');
+
+-- ------------------------------------------------- caller under the lock
+
+-- _locked_caller reads the caller as committed now (a concurrent demotion
+-- or revoke that committed while the request waited on the mailbox lock);
+-- every entry point that takes the lock calls it. The single session
+-- harness cannot interleave two sessions: commit-race.sh covers that kind of
+-- race; here the helper and its callers are checked.
+select onepass_test.ok(
+    (select l.o_role = 2 and l.o_put_kinds = onepass_test.kinds(array[14, 15, 16, 17])
+     from onepass_mailbox._locked_caller(onepass_test.cid('l'), onepass_test.mbx('A')) l),
+    'locked_caller_reads_role_and_kinds');
+update onepass_mailbox.credentials set role = 1, put_kinds = null where id = onepass_test.cid('l');
+select onepass_test.ok(
+    (select l.o_role = 1 and l.o_put_kinds is null
+     from onepass_mailbox._locked_caller(onepass_test.cid('l'), onepass_test.mbx('A')) l),
+    'locked_caller_sees_a_committed_demotion');
+select onepass_test.raises(
+    $$select * from onepass_mailbox._locked_caller(onepass_test.cid('s'), onepass_test.mbx('A'))$$,
+    'OP403', 'revoked_credential', 'locked_caller_refuses_a_revoked_caller');
+select onepass_test.raises(
+    $$select * from onepass_mailbox._locked_caller(onepass_test.cid('b'), onepass_test.mbx('A'))$$,
+    'OP403', 'unknown_credential', 'locked_caller_refuses_a_stranger');
+select onepass_test.ok(
+    (select count(*) = 5 and bool_and(p.prosrc like '%onepass_mailbox._locked_caller(p_credential, p_mailbox)%')
+     from pg_proc p
+     where p.pronamespace = 'onepass_mailbox'::regnamespace
+       and p.proname in ('api_grant_credential', 'api_set_credential_role', 'api_revoke_credential',
+                         'api_commit', 'api_blob_announce')),
+    'locked_entry_points_read_the_caller_again');
+select onepass_test.ok(
+    not has_function_privilege('onepass_mailbox_api',
+        'onepass_mailbox._locked_caller(bytea, bytea)'::regprocedure, 'execute'),
+    'locked_caller_is_private');

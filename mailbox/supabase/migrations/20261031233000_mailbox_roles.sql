@@ -14,10 +14,11 @@
 -- refused request stay (in-band status forbidden, 403):
 --   api_commit          role 1 refused; role 2 with put_kinds refuses any
 --                       Delete and any Put of a kind outside the set
---   api_blob_announce   role 2 or 3
+--   api_blob_announce   role 2 without put_kinds, or 3
 --   api_grant_credential, api_set_credential_role   role 3
 --   api_revoke_credential   role 3, or the caller itself
---   an owner is revoked, or given less than the manager role, only by itself
+--   an owner is revoked only by itself, and never given less than the
+--                       manager role (not even by itself)
 --   the last active manager is neither revoked nor demoted
 --   put_kinds only with role 2 (malformed otherwise)
 --   api_enroll          the ticket's approver has role 3
@@ -27,7 +28,19 @@
 --
 -- Credential changes of one mailbox (grant, role change, revoke) take the
 -- mailbox row lock, so two managers demoting each other cannot both pass the
--- last manager check. Replaced functions keep their signatures and grants.
+-- last manager check. Every entry point that takes the mailbox lock (those
+-- three, api_commit, api_blob_announce) reads the caller again under it
+-- (_locked_caller): a revoke or a demotion committed while it waited
+-- applies. Replaced functions keep their signatures and grants.
+--
+-- Known deadlock, left as is: _authenticate updates the caller's
+-- credentials row (last_used_at, at most once a minute) before the entry
+-- point takes the mailbox lock, while revoke and set_role take the mailbox
+-- lock and then update a target credentials row. Two such requests of one
+-- mailbox can wait on each other; Postgres aborts one with 40P01, which the
+-- edge answers 503 retry and the client retries. Rare (two credential
+-- changes, or a change and a request of its target, in the same instant,
+-- with a last_used_at write due). See RUNBOOK.md, Troubleshooting.
 
 set role onepass_mailbox_owner;
 
@@ -91,6 +104,30 @@ as $$
     where c.mailbox_id = p_mailbox and c.revoked_at is null and c.role = 3 and c.id <> p_except;
 $$;
 
+-- The caller's role and put_kinds, read again once the request holds the
+-- mailbox row lock (READ COMMITTED: this statement sees what committed while
+-- it waited). Revoked meanwhile: revoked_credential, raised as at
+-- authentication (the request leaves no trace).
+create function onepass_mailbox._locked_caller(
+    p_credential bytea, p_mailbox bytea, out o_role smallint, out o_put_kinds bytea)
+language plpgsql
+set search_path = ''
+as $$
+declare
+    v_revoked timestamptz;
+begin
+    select c.role, c.put_kinds, c.revoked_at into o_role, o_put_kinds, v_revoked
+    from onepass_mailbox.credentials c
+    where c.id = p_credential and c.mailbox_id = p_mailbox;
+    if not found then
+        perform onepass_mailbox._fail('unknown_credential');
+    end if;
+    if v_revoked is not null then
+        perform onepass_mailbox._fail('revoked_credential');
+    end if;
+end
+$$;
+
 -- ------------------------------------------------------- new entry points
 
 -- POST /v1/mailboxes/{m}/grants. The edge function has imported the key
@@ -136,8 +173,7 @@ begin
     if v_frozen then
         perform onepass_mailbox._fail('frozen');
     end if;
-    select c.role into v_role from onepass_mailbox.credentials c
-    where c.id = p_credential and c.mailbox_id = p_mailbox;
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
     if v_role is distinct from 3 then
         v_err := 'forbidden';
     else
@@ -199,9 +235,10 @@ begin
         return;
     end if;
 
+    -- Mailbox lock, then the target row: see the deadlock note at the top
+    -- (40P01 against a request whose _authenticate wrote last_used_at).
     perform 1 from onepass_mailbox.mailboxes m where m.id = p_mailbox for no key update;
-    select c.role into v_role from onepass_mailbox.credentials c
-    where c.id = p_credential and c.mailbox_id = p_mailbox;
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
     if v_role is distinct from 3 then
         return query select 'forbidden'::text, null::integer;
         return;
@@ -213,9 +250,9 @@ begin
         return query select 'not_found'::text, null::integer;
         return;
     end if;
-    -- An owner gets less than the manager role only from itself; the last
+    -- An owner keeps the manager role (it can only revoke itself); the last
     -- active manager keeps its role.
-    if (v_t_owner and p_target <> p_credential and p_role <> 3)
+    if (v_t_owner and p_role <> 3)
        or (v_t_role = 3 and p_role <> 3 and onepass_mailbox._other_managers(p_mailbox, p_target) = 0) then
         return query select 'forbidden'::text, null::integer;
         return;
@@ -256,9 +293,10 @@ begin
         return;
     end if;
 
+    -- Mailbox lock, then the target row: see the deadlock note at the top
+    -- (40P01 against a request whose _authenticate wrote last_used_at).
     perform 1 from onepass_mailbox.mailboxes m where m.id = p_mailbox for no key update;
-    select c.role into v_role from onepass_mailbox.credentials c
-    where c.id = p_credential and c.mailbox_id = p_mailbox;
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
     if v_role is distinct from 3 and p_target <> p_credential then
         return query select 'forbidden'::text, null::integer;
         return;
@@ -430,17 +468,19 @@ declare
     v_out_gen bigint[];
     v_out_size integer[];
     v_role smallint;
+    v_put_kinds bytea;
 begin
     v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
     if v_retry is not null then
         v_err := 'rate_limited';
     end if;
 
-    -- An upload is a write: a reader announces nothing.
+    -- An upload is a write of a body of any kind: a reader, or a writer
+    -- limited to some kinds, announces nothing.
     if v_err is null then
-        select c.role into v_role from onepass_mailbox.credentials c
+        select c.role, c.put_kinds into v_role, v_put_kinds from onepass_mailbox.credentials c
         where c.id = p_credential and c.mailbox_id = p_mailbox;
-        if v_role = 1 then
+        if v_role = 1 or v_put_kinds is not null then
             v_err := 'forbidden';
         end if;
     end if;
@@ -473,7 +513,12 @@ begin
         if v_frozen then
             perform onepass_mailbox._fail('frozen');
         end if;
-
+        -- The caller again, under the lock.
+        select l.o_role, l.o_put_kinds into v_role, v_put_kinds
+        from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
+        if v_role = 1 or v_put_kinds is not null then
+            v_err := 'forbidden';
+        end if;
     end if;
 
     if v_err is null then
@@ -659,7 +704,17 @@ begin
             -- Frozen while this batch waited: refused like at authentication.
             perform onepass_mailbox._fail('frozen');
         end if;
-        if v_n > v_max_ops then
+        -- The caller again, under the lock: a demotion committed while this
+        -- batch waited applies.
+        select l.o_role, l.o_put_kinds into v_role, v_put_kinds
+        from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
+        if v_role = 1 then
+            v_err := 'forbidden';
+        elsif v_put_kinds is not null and exists (
+                select 1 from unnest(p_kinds, p_ops) as o (k, op)
+                where o.op = 2 or get_bit(v_put_kinds, o.k) = 0) then
+            v_err := 'forbidden';
+        elsif v_n > v_max_ops then
             v_err := 'too_large';
         end if;
     end if;

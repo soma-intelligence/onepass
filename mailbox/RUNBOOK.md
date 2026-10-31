@@ -170,3 +170,10 @@ cd ../mailbox && scripts/hosted-admin.sh e2e-teardown   # mailboxes, objects, pl
 
 `reset-rate`, called by the suite before every case, empties all rate windows:
 run the suite only while nobody else uses the instance.
+
+## Troubleshooting
+
+### Deadlocks (40P01) on credential changes
+
+A revoke or a role change takes the mailbox row lock, then updates the target's `credentials` row. Any signed request first updates its own `credentials` row (`last_used_at`, at most once a minute) in `_authenticate`, then takes the mailbox lock in the entry point. Two such requests on one mailbox, in the same instant, can wait on each other: Postgres aborts one with `40P01 deadlock detected`, the edge function answers `503 retry`, and the client retries. A few of these in the logs are expected and harmless. A steady stream on one mailbox means something hammers its credentials (a loop of grants, role changes or revokes): look at that mailbox's request log. Reordering the locks is a known follow-up (migration 20261031233000, header note), not done yet.
+

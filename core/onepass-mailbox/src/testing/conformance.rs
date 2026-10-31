@@ -893,8 +893,8 @@ fn reader_commit_forbidden(t: &mut dyn ConformanceTarget) {
     a.info().expect("the owner is untouched");
 }
 
-/// A writer limited to kinds 14 to 17 puts those, nothing else, and
-/// deletes nothing.
+/// A writer limited to kinds 14 to 17 puts those, nothing else, deletes
+/// nothing and uploads no blob.
 fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
     let a = owner(t);
     let w = granted(
@@ -930,6 +930,8 @@ fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
         op: Op::Delete,
     };
     forbidden(w.commit(vec![gone]), "a delete of kind 14");
+    let big = vec![3u8; 20 * 1024];
+    forbidden(w.upload_blobs(&[&big]), "a limited writer uploads");
     assert_eq!(page(a.as_ref(), 0, 10, false).head, 4, "only the four puts");
     applied(
         a.commit(vec![put(9, 1, None, b"owner")]),
