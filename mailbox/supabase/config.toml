@@ -1,0 +1,94 @@
+# Local Supabase stack for the OnePass mailbox (spec 4.4). Supabase CLI
+# pinned at 2.122.0, run through npx from mailbox/:
+#
+#   npx --yes supabase@2.122.0 start
+#   npx --yes supabase@2.122.0 db reset
+#   npx --yes supabase@2.122.0 stop --no-backup
+#
+# Ports sit in 574xx so this stack runs beside other local Supabase projects.
+# Reference: https://supabase.com/docs/guides/local-development/cli/config
+project_id = "onepass-mailbox"
+
+[api]
+enabled = true
+port = 57421
+# The onepass_mailbox schema is never exposed by the Data API: the edge
+# function is the only way in (spec 4.4, 4.8).
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 57422
+shadow_port = 57420
+health_timeout = "2m"
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 57429
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[realtime]
+enabled = true
+
+# Neither Studio, mail, analytics nor Auth is part of the mailbox: no
+# Supabase Auth session is ever a proof of access (spec 4.4).
+[studio]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[analytics]
+enabled = false
+
+[auth]
+enabled = false
+
+[storage]
+enabled = true
+file_size_limit = "1MiB"
+
+[storage.s3_protocol]
+enabled = false
+
+# Record bodies above 16 KiB, 900 KiB (RECORD_MAX) at most (spec 4.11).
+# Private: objects are served only through 60 s signed URLs issued by the
+# edge function. Migration 20261031120300 creates the bucket the same way
+# for a project set up without this file.
+[storage.buckets.onepass-mailbox]
+public = false
+file_size_limit = "900KiB"
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 57483
+deno_version = 2
+
+# The gateway is open: requests carry our own signature (spec 4.7), never a
+# Supabase JWT.
+# The proto module is imported as JavaScript (its WebAssembly embedded as
+# base64, see mailbox/scripts/build-proto-wasm.sh): no static file to ship.
+[functions.mailbox]
+verify_jwt = false
+
+# The two janitor functions are called by pg_cron through pg_net with
+# Authorization: Bearer <mailbox_cron_key> (a Vault secret), not a Supabase
+# JWT: they check the key themselves, in constant time, before any database
+# or Storage call.
+[functions.mailbox-push]
+verify_jwt = false
+
+[functions.mailbox-gc]
+verify_jwt = false

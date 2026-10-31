@@ -67,6 +67,11 @@ criteria = "safe-to-deploy"
 version = "1.0.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.base64]]
+version = "0.23.1"
+criteria = "safe-to-deploy"
+notes = "Base64 inside ureq and ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.base64ct]]
 version = "1.8.3"
 criteria = "safe-to-deploy"
@@ -121,7 +126,8 @@ criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
 version = "0.10.2"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "OID constants, now shipped through digest 0.11 (feature oid) under sha1 0.11, the WebSocket handshake hash of tungstenite (mailbox wake listener, onepass-mailbox). Was safe-to-run for dev-dependencies only. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.core-foundation]]
 version = "0.10.1"
@@ -208,6 +214,11 @@ criteria = "safe-to-deploy"
 version = "0.10.0"
 criteria = "safe-to-run"
 
+[[exemptions.flume]]
+version = "0.12.0"
+criteria = "safe-to-deploy"
+notes = "Channels of the mdns-sd daemon, DNS-SD of the T-LAN pairing transport (onepass-pairnet, spec 5.3). No default features (no async). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.fs-err]]
 version = "3.3.2"
 criteria = "safe-to-deploy"
@@ -227,6 +238,11 @@ criteria = "safe-to-deploy"
 [[exemptions.generic-array]]
 version = "0.14.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.getrandom]]
+version = "0.2.17"
+criteria = "safe-to-deploy"
+notes = "Dependency of ring in the lockfile only: ring is an optional feature of rustls-webpki that the mailbox client does not turn on, so neither is compiled. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.getrandom]]
 version = "0.4.3"
@@ -268,6 +284,16 @@ criteria = "safe-to-deploy"
 version = "0.13.0"
 criteria = "safe-to-run"
 
+[[exemptions.http]]
+version = "1.5.0"
+criteria = "safe-to-deploy"
+notes = "HTTP types under ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.httparse]]
+version = "1.10.1"
+criteria = "safe-to-deploy"
+notes = "HTTP/1.1 response parser under ureq-proto (HTTP client of the mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.hybrid-array]]
 version = "0.2.3"
 criteria = "safe-to-deploy"
@@ -283,6 +309,11 @@ criteria = "safe-to-deploy"
 [[exemptions.idna_adapter]]
 version = "1.2.2"
 criteria = "safe-to-deploy"
+
+[[exemptions.if-addrs]]
+version = "0.15.0"
+criteria = "safe-to-deploy"
+notes = "Interface list of mdns-sd, and the one LAN address the T-LAN pairing transport (onepass-pairnet, spec 5.3) binds to. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.inout]]
 version = "0.2.5"
@@ -357,13 +388,28 @@ criteria = "safe-to-deploy"
 version = "0.8.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.lock_api]]
+version = "0.4.14"
+criteria = "safe-to-deploy"
+notes = "Lock traits under spin, under flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.log]]
 version = "0.4.34"
 criteria = "safe-to-deploy"
 
+[[exemptions.mdns-sd]]
+version = "0.21.6"
+criteria = "safe-to-deploy"
+notes = "DNS-SD announce and browse of the T-LAN pairing transport (onepass-pairnet, spec 5.3): pure Rust, no async runtime, no default features. Its daemon only speaks on the interface chosen by the caller. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.minimal-lexical]]
 version = "0.2.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.mio]]
+version = "1.2.4"
+criteria = "safe-to-deploy"
+notes = "Socket polling of the mdns-sd daemon thread (T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.nix]]
 version = "0.31.3"
@@ -445,6 +491,11 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-run"
 
+[[exemptions.ring]]
+version = "0.17.14"
+criteria = "safe-to-deploy"
+notes = "Optional backend of rustls-webpki, in the lockfile only: the mailbox client uses aws-lc-rs and does not compile ring. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.rpassword]]
 version = "7.5.4"
 criteria = "safe-to-deploy"
@@ -465,9 +516,29 @@ criteria = "safe-to-deploy"
 version = "2.1.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.rustls]]
+version = "0.23.46"
+criteria = "safe-to-deploy"
+notes = "TLS 1.3 of the mailbox client (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.4), aws-lc-rs provider. Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.rustls-pki-types]]
+version = "1.15.1"
+criteria = "safe-to-deploy"
+notes = "Certificate types and PEM parsing for rustls in the mailbox client (onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.rustls-webpki]]
+version = "0.103.16"
+criteria = "safe-to-deploy"
+notes = "Certificate path validation of rustls in the mailbox client (onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.rusty-fork]]
 version = "0.3.1"
 criteria = "safe-to-run"
+
+[[exemptions.scopeguard]]
+version = "1.2.0"
+criteria = "safe-to-deploy"
+notes = "Under lock_api, under spin, under flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.scroll]]
 version = "0.12.0"
@@ -485,9 +556,19 @@ criteria = "safe-to-deploy"
 version = "2.17.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.serde-wasm-bindgen]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "serde adapter of the WebAssembly build of onepass-mailbox-proto (feature wasm), run only inside the mailbox edge function (spec 2026-10-30-cross-platform-clients-design 4.6, 4.14). Not in any client binary. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.serdect]]
 version = "0.4.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.sha1]]
+version = "0.11.0"
+criteria = "safe-to-deploy"
+notes = "SHA-1 of the WebSocket handshake (Sec-WebSocket-Accept, RFC 6455) inside tungstenite, mailbox wake listener (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.10). Not used for any security decision of OnePass. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.sha2]]
 version = "0.11.1"
@@ -533,6 +614,21 @@ criteria = "safe-to-deploy"
 version = "0.3.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.socket-pktinfo]]
+version = "0.4.1"
+criteria = "safe-to-deploy"
+notes = "Multicast UDP sockets with packet info for mdns-sd (T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.socket2]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "Socket options of mdns-sd and socket-pktinfo (multicast DNS of the T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.spin]]
+version = "0.9.9"
+criteria = "safe-to-deploy"
+notes = "Spin lock of flume (mdns-sd daemon channels, T-LAN pairing transport (onepass-pairnet, spec 5.3)). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.spki]]
 version = "0.8.1"
 criteria = "safe-to-run"
@@ -573,6 +669,11 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.tungstenite]]
+version = "0.30.0"
+criteria = "safe-to-deploy"
+notes = "Blocking WebSocket client of the mailbox wake listener (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.10), default features off, feature handshake only: TLS is the crate's own rustls stream (aws-lc-rs, TLS 1.3), no ring, no TLS feature of tungstenite. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.typed-path]]
 version = "0.13.0"
 criteria = "safe-to-deploy"
@@ -581,9 +682,24 @@ criteria = "safe-to-deploy"
 version = "1.20.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.ureq]]
+version = "3.5.0"
+criteria = "safe-to-deploy"
+notes = "Blocking HTTP client of the mailbox client (onepass-mailbox, spec 2026-10-30-cross-platform-clients-design 4.4, 4.14). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.ureq-proto]]
+version = "0.6.5"
+criteria = "safe-to-deploy"
+notes = "HTTP/1.1 state machine of ureq (mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.url]]
 version = "2.5.8"
 criteria = "safe-to-deploy"
+
+[[exemptions.utf8-zero]]
+version = "0.8.1"
+criteria = "safe-to-deploy"
+notes = "UTF-8 decoding inside ureq (mailbox client, onepass-mailbox). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.uuid]]
 version = "1.29.0"

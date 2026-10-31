@@ -1,0 +1,26 @@
+[package]
+name = "onepass-mailbox-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+serde.workspace = true
+data-encoding.workspace = true
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+sha2 = "0.10"
+wasm-bindgen = { version = "=0.2.129", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
+
+[features]
+# WebAssembly exports for the mailbox edge function (mailbox/scripts/build-proto-wasm.sh).
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
+
+[dev-dependencies]
+aws-lc-rs.workspace = true
+serde_json.workspace = true

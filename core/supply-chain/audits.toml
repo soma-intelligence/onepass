@@ -479,6 +479,13 @@ start = "2021-10-02"
 end = "2027-04-28"
 notes = "Publisher trust, not a code review: dtolnay is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
 
+[[trusted.wasi]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2020-06-03"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: alexcrichton is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
 [[trusted.wasm-bindgen-macro]]
 criteria = "safe-to-deploy"
 user-id = 1 # Alex Crichton (alexcrichton)
@@ -534,6 +541,69 @@ user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-11-15"
 end = "2027-04-28"
 notes = "Publisher trust, not a code review: kennykerr is trusted by isrg, zcash, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.windows-targets]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-09"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_aarch64_gnullvm]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_aarch64_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-05"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_i686_gnu]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-28"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_i686_gnullvm]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-04-02"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_i686_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-27"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_x86_64_gnu]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-28"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_x86_64_gnullvm]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-09-01"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
+
+[[trusted.windows_x86_64_msvc]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-10-27"
+end = "2027-04-28"
+notes = "Publisher trust, not a code review: kennykerr is already trusted here for other crates. Reached through the lockfile entries of ring (rustls-webpki optional feature, not compiled into the mailbox client, Task 9 of the X1 mailbox plan). Re-decide at expiry."
 
 [[trusted.winnow]]
 criteria = "safe-to-deploy"

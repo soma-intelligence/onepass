@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11"
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 onepass-mcp = { path = "../onepass-mcp" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
 serde_json = "1"
@@ -167,8 +168,29 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mailbox_message"
+path = "fuzz_targets/mailbox_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "lineage_record"
 path = "fuzz_targets/lineage_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mailbox_signature_input"
+path = "fuzz_targets/mailbox_signature_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enroll_ticket"
+path = "fuzz_targets/enroll_ticket.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,194 @@
+name: mailbox
+
+# The mailbox server (mailbox/: SQL, the three edge functions, the proto
+# module they embed) and its Rust client (core/onepass-mailbox*). Everything
+# runs on the runner: a throwaway Postgres 17 for the SQL tests, a local
+# Supabase stack for the end-to-end run. Nothing here reaches a hosted
+# Supabase project.
+
+on:
+  push:
+    paths:
+      - "mailbox/**"
+      - "core/onepass-mailbox/**"
+      - "core/onepass-mailbox-proto/**"
+      - "core/Cargo.lock"
+      - "core/rust-toolchain.toml"
+      - ".github/workflows/mailbox.yml"
+  pull_request:
+    paths:
+      - "mailbox/**"
+      - "core/onepass-mailbox/**"
+      - "core/onepass-mailbox-proto/**"
+      - "core/Cargo.lock"
+      - "core/rust-toolchain.toml"
+      - ".github/workflows/mailbox.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The version of the wasm-bindgen crate in core/Cargo.lock: the build
+  # script refuses any other CLI.
+  WASM_BINDGEN: "0.2.129"
+  SUPABASE_CLI: "2.122.0"
+  DENO: "2.9.7"
+
+jobs:
+  proto-wasm:
+    name: proto wasm (clippy, rebuild drift)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # rustup reads core/rust-toolchain.toml (pinned toolchain, clippy).
+      - name: Install the pinned toolchain and the wasm32 target
+        working-directory: core
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: proto-wasm
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version "=$WASM_BINDGEN" --locked
+      - name: Clippy (wasm32, feature wasm)
+        working-directory: core
+        run: cargo clippy -p onepass-mailbox-proto --features wasm --target wasm32-unknown-unknown -- -D warnings
+      # The edge function embeds the committed module (.wasm and its base64
+      # copy): a rebuild from this commit must give the same bytes.
+      - name: Rebuild the proto module
+        run: mailbox/scripts/build-proto-wasm.sh
+      - name: Committed module matches the rebuild
+        run: |
+          git diff --exit-code -- mailbox/supabase/functions/_shared/proto
+          untracked="$(git status --porcelain --untracked-files=all -- mailbox/supabase/functions/_shared/proto)"
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            exit 1
+          fi
+
+  sql:
+    name: SQL tests (Postgres 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install Postgres 17 (PGDG)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-17
+      - name: SQL tests
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: mailbox/scripts/sql-test.sh
+      - name: Concurrent commits
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: mailbox/scripts/commit-race.sh
+
+  deno:
+    name: edge functions (deno test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO }}
+      - name: Format, lint, type check and test each function
+        working-directory: mailbox/supabase/functions
+        run: |
+          deno fmt --check --line-width=120 _shared/*.ts
+          for f in mailbox mailbox-push mailbox-gc; do
+            echo "::group::$f"
+            (cd "$f" && deno fmt --check && deno lint && deno check ./*.ts && deno test --allow-read --allow-env)
+            echo "::endgroup::"
+          done
+
+  e2e:
+    name: end to end (local Supabase stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO }}
+      - name: Install the pinned toolchain
+        working-directory: core
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: core
+          key: mailbox-e2e
+      - name: Build the e2e test
+        working-directory: core
+        run: cargo test -p onepass-mailbox --test conformance_e2e --no-run
+      - name: Start the local stack
+        working-directory: mailbox
+        run: npx --yes "supabase@$SUPABASE_CLI" start
+      # From scratch: every migration and the seed on an empty database.
+      - name: Reset the database
+        working-directory: mailbox
+        run: npx --yes "supabase@$SUPABASE_CLI" db reset
+      - name: Local secrets (LOGIN passwords, cron key, open signup)
+        run: mailbox/scripts/local-env.sh
+      # The real CLI serve on Linux (it fails on the macOS dev machines),
+      # all three functions behind Kong, in the background.
+      - name: Serve the functions
+        working-directory: mailbox
+        run: |
+          nohup npx --yes "supabase@$SUPABASE_CLI" functions serve --env-file supabase/.env.local \
+            >"$RUNNER_TEMP/functions-serve.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:57421/functions/v1/mailbox/v1/config || true)"
+            if [ "$code" = "200" ]; then
+              echo "mailbox function up"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/functions-serve.log"
+          exit 1
+      - name: Live deno tests (open signup)
+        working-directory: mailbox/supabase/functions
+        env:
+          MAILBOX_TEST_FUNCTION_URL: http://127.0.0.1:57421/functions/v1/mailbox
+        run: |
+          for f in mailbox mailbox-push mailbox-gc; do
+            (cd "$f" && deno test --allow-read --allow-env --allow-net --env-file=../../.env.local live_test.ts)
+          done
+      # A small plan behind an invite (the quota case fills it), open
+      # signup off, then the suite of tests/conformance_fake.rs against the
+      # served function, the Storage duplicate upload and no_route.
+      - name: Conformance against the served function
+        run: |
+          invite="$(mailbox/scripts/e2e-admin.sh setup)"
+          echo "::add-mask::$invite"
+          cd core
+          ONEPASS_MAILBOX_E2E_URL=http://127.0.0.1:57421/functions/v1/mailbox \
+          ONEPASS_MAILBOX_E2E_INVITE="$invite" \
+          ONEPASS_MAILBOX_E2E_ADMIN="$GITHUB_WORKSPACE/mailbox/scripts/e2e-admin.sh" \
+            cargo test -p onepass-mailbox --test conformance_e2e -- --nocapture
+      # pg_cron posts to mailbox-push (every 10 s) and the mailbox-gc job's
+      # command posts to mailbox-gc, through pg_net and Kong, with the cron
+      # key from Vault.
+      - name: pg_cron to pg_net to the janitor functions
+        run: mailbox/scripts/cron-check.sh http://kong:8000/functions/v1
+      - name: Logs
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP/functions-serve.log" || true
+          docker logs supabase_db_onepass-mailbox 2>&1 | tail -n 200 || true
+      - name: Stop the stack
+        if: always()
+        working-directory: mailbox
+        run: npx --yes "supabase@$SUPABASE_CLI" stop --no-backup || true
