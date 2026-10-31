@@ -469,3 +469,25 @@ Vérifié le 2026-10-30 par recherche web. Les points marqués « à vérifier �
 13. **`onepass run` sous l'app Mac : appairage et Touch ID comme le MCP ?** Je prendrais oui, sinon un agent contourne ses portées MCP par le shell.
 14. **Clé d'API du fournisseur d'alias : item synchronisé ou réglage local par appareil ?** Je prendrais l'item synchronisé, pour créer des alias depuis l'iPhone.
 15. **Ordre des jalons ?** Je prendrais D1, D3, E1, D5, D6, E2, D2, D4, E3, E4.
+
+## Décisions du fondateur (2026-10-30)
+
+Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
+
+Toutes les décisions de cette spec sont une première passe ; le fondateur n'a pas encore répondu. Elles reprennent les recommandations de la spec.
+
+1. **Environnements : nouveau type d'item, `.env` à références toujours acceptés (première passe).**
+2. **Pas de `.env` par tube nommé en v1 (première passe).**
+3. **CI : paquet scellé maintenant, sans serveur (première passe).**
+4. **Paquet dans le dépôt, jeton seul dans les secrets GitHub (première passe).**
+5. **Pas de `onepass ci push-github` (première passe).**
+6. **Création d'un compte de service : appareil `Current` avec présence fraîche, jamais l'extension ni la CLI sous agent (première passe).** Un PC peut le faire (cohérent avec la décision 8 de la spec multi-plateforme).
+7. **Paquet : 90 jours par défaut, 1 an au plus, rappel Watchtower à 14 jours (première passe).**
+8. **Alias : SimpleLogin et addy.io, puis Fastmail (première passe).**
+9. **Pas de service d'alias OnePass en v1 (première passe).**
+10. **Domaine du site non envoyé au fournisseur par défaut (première passe).**
+11. **iCloud Hide My Email : saisie manuelle seulement (première passe).**
+12. **Configuration Git écrite dans le dépôt avec `--apply`, aperçu par défaut, jamais en global (première passe).**
+13. **`onepass run` sous l'app Mac : appairage et Touch ID comme le MCP (première passe).**
+14. **Clé d'API du fournisseur d'alias : item synchronisé (première passe).**
+15. **Ordre : D1, D3, E1, D5, D6, E2, D2, D4, E3, E4 (première passe).**
