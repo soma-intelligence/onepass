@@ -228,6 +228,20 @@ reset role;
 select onepass_test.ok(
     (select b.refs = 2 from onepass_test.blob('A', onepass_test.sha(1)) b),
     'two_rows_count_two_references');
+-- A referenced blob keeps its size: an object re-uploaded under the same
+-- name with another size does not rewrite it.
+update storage.objects set metadata = '{"size": 31000}'
+where name = encode(onepass_test.mbx('A'), 'hex') || '/' || encode(onepass_test.sha(1), 'hex');
+set local role onepass_mailbox_api;
+select onepass_test.answers(
+    $$select * from onepass_test.put_blob('a', 'A', 6, null, onepass_test.sha(1), 31000)$$,
+    'malformed', 'commit_of_a_referenced_blob_with_another_size_refused');
+reset role;
+select onepass_test.ok(
+    (select b.refs = 2 and b.size = 30000 from onepass_test.blob('A', onepass_test.sha(1)) b),
+    'referenced_blob_size_unchanged');
+update storage.objects set metadata = '{"size": 30000}'
+where name = encode(onepass_test.mbx('A'), 'hex') || '/' || encode(onepass_test.sha(1), 'hex');
 set local role onepass_mailbox_api;
 -- Same blob again on the same row: no change in the count.
 select onepass_test.ok(
@@ -334,35 +348,56 @@ select onepass_test.ok(
     (select b.state = 3 from onepass_test.blob('A', onepass_test.sha(1)) b),
     'taken_blob_is_marked_orphaned');
 
--- A taken blob may be deleted from Storage at any time: a commit refuses
--- it, an announce takes it back and asks for an upload.
+-- While a take is pending the collector may delete the object at any
+-- moment: the blob is neither committable nor revived by an announce
+-- (retry, with retry_after). The collector deletes the object, then calls
+-- gc_done, which drops the row; the client announces again, sees no object,
+-- uploads and commits. End to end, in that order.
 set local role onepass_mailbox_api;
 select onepass_test.answers(
     $$select * from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)$$,
     'malformed', 'commit_of_a_blob_taken_by_gc_refused');
 select onepass_test.ok(
-    (select needs_upload from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])),
-    'announce_of_a_taken_blob_needs_an_upload');
+    (select count(*) = 1 and bool_and(status = 'retry' and retry_after between 1 and 3600 and sha256 is null)
+     from onepass_test.announce('a', 'A', array[onepass_test.sha(2), onepass_test.sha(1)], array[20000, 30000])),
+    'announce_of_a_blob_with_a_pending_take_is_retry');
 reset role;
 select onepass_test.ok(
-    (select b.state = 1 and b.orphaned_at is null from onepass_test.blob('A', onepass_test.sha(1)) b),
-    'announce_takes_the_blob_back_from_gc');
-set local role onepass_mailbox_janitor;
-select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(1));
+    (select b.state = 3 and b.gc_taken_at is not null from onepass_test.blob('A', onepass_test.sha(1)) b)
+    and (select b.state = 1 and b.orphaned_at is null from onepass_test.blob('A', onepass_test.sha(2)) b),
+    'announce_refused_for_a_pending_take_changes_nothing');
+set local role onepass_mailbox_api;
+select onepass_test.answers(
+    $$select * from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)$$,
+    'malformed', 'commit_after_a_refused_announce_still_refused');
 reset role;
-select onepass_test.ok(
-    (select count(*) = 1 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1)),
-    'gc_done_keeps_a_blob_taken_back');
-
-update onepass_mailbox.blobs set orphaned_at = now() - interval '2 days'
-where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1);
+-- The collector deletes the object, then confirms.
+delete from storage.objects where name = encode(onepass_test.mbx('A'), 'hex') || '/' || encode(onepass_test.sha(1), 'hex');
 set local role onepass_mailbox_janitor;
-select onepass_test.ok((select count(*) = 1 from onepass_mailbox.gc_take(100)), 'gc_take_takes_it_again');
 select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(1));
 reset role;
 select onepass_test.ok(
     (select count(*) = 0 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(1)),
     'gc_done_deletes_the_collected_blob');
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select status = 'ok' and needs_upload from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])),
+    'announce_after_collection_needs_an_upload');
+reset role;
+select onepass_test.object('A', onepass_test.sha(1), 30000);
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select status = 'ok' from onepass_test.put_blob('a', 'A', 5, null, onepass_test.sha(1), 30000)),
+    'commit_after_reupload_is_applied');
+reset role;
+select onepass_test.ok(
+    (select b.refs = 1 and b.state = 2 and b.gc_taken_at is null from onepass_test.blob('A', onepass_test.sha(1)) b),
+    'collected_then_reuploaded_blob_is_referenced_with_its_object');
+-- Back to an orphan for what follows.
+set local role onepass_mailbox_api;
+select onepass_test.ok((select status = 'ok' from onepass_test.del('a', 'A', 5)), 'reuploaded_blob_row_deleted');
+reset role;
+
 -- A take the collector never confirmed is handed out again an hour later.
 update onepass_mailbox.blobs set orphaned_at = now() - interval '2 days'
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
@@ -373,6 +408,26 @@ update onepass_mailbox.blobs set gc_taken_at = now() - interval '61 minutes'
 where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
 set local role onepass_mailbox_janitor;
 select onepass_test.ok((select count(*) = 1 from onepass_mailbox.gc_take(100)), 'unconfirmed_take_is_retried_after_an_hour');
+reset role;
+-- A take whose lease (an hour) ran out is abandoned: an announce takes the
+-- blob back, and a late gc_done leaves it alone.
+update onepass_mailbox.blobs set gc_taken_at = now() - interval '61 minutes'
+where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2);
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select status = 'ok' and needs_upload from onepass_test.announce('a', 'A', array[onepass_test.sha(2)], array[20000])),
+    'announce_after_an_expired_take_revives_the_blob');
+reset role;
+select onepass_test.ok(
+    (select b.state = 1 and b.gc_taken_at is null and b.orphaned_at is null from onepass_test.blob('A', onepass_test.sha(2)) b),
+    'expired_take_is_cleared_by_the_announce');
+set local role onepass_mailbox_janitor;
+select onepass_mailbox.gc_done(onepass_test.mbx('A'), onepass_test.sha(2));
+reset role;
+select onepass_test.ok(
+    (select count(*) = 1 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('A') and sha256 = onepass_test.sha(2)),
+    'late_gc_done_keeps_a_revived_blob');
+set local role onepass_mailbox_janitor;
 select onepass_test.throws($$select * from onepass_mailbox.gc_take(0)$$, '22023', 'gc_take_limit_zero_refused');
 select onepass_test.throws(
     $$select * from onepass_test.announce('a', 'A', array[onepass_test.sha(1)], array[30000])$$, '42501',

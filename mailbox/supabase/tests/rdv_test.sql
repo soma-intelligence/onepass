@@ -258,6 +258,26 @@ select onepass_test.ok(
        and window_start = date_trunc('hour', now(), 'UTC')),
     'rdv_bytes_bucket_counts_the_frame');
 
+-- ------------------------------------------------ ids are never reused
+
+-- Maintenance drops the frames of a session past 600 s but keeps its row
+-- for a day: the id cannot start a second session.
+set local role onepass_mailbox_api;
+select onepass_test.ok((select status = 'ok' from onepass_test.rput(8, 0, 0, '\x01', 'ip3')), 'rdv_session_8_started');
+reset role;
+update onepass_mailbox.rdv_sessions set created_at = now() - interval '700 seconds' where session_id = onepass_test.sid(8);
+select onepass_mailbox.maintenance();
+select onepass_test.ok(
+    exists (select 1 from onepass_mailbox.rdv_sessions where session_id = onepass_test.sid(8))
+    and not exists (select 1 from onepass_mailbox.rdv_chunks where session_id = onepass_test.sid(8)),
+    'rdv_expired_session_keeps_its_row_without_frames');
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select status = 'not_found' from onepass_test.rput(8, 0, 1, '\x01', 'ip3'))
+    and (select status = 'not_found' from onepass_test.rget(8, 0, 0, 'ip3')),
+    'rdv_id_of_an_expired_session_cannot_start_again');
+reset role;
+
 -- ---------------------------------------------------------------- roles
 
 select onepass_test.throws(

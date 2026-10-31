@@ -3,6 +3,8 @@
 -- 20261031120100: refusals before authentication raise, every other outcome
 -- is returned in band with `status text, retry_after integer` first, and a
 -- refused write leaves only the consumed counters.
+-- One addition: api_blob_announce may answer 'retry' (HTTP 503) with
+-- retry_after set, like rate_limited.
 --
 -- Blobs. A body above 16 KiB (INLINE_MAX) lives in the private Storage
 -- bucket 'onepass-mailbox' under hex(mailbox) || '/' || hex(sha256), the
@@ -19,7 +21,11 @@
 --     absent and answers, sorted by hash, whether it needs an upload: yes
 --     unless its object is in Storage with that size, and always when the
 --     collector has taken it (state 3), since its object may go at any
---     moment. Quota: bytes_used counts committed bodies through their
+--     moment. While the collector holds a take on one of them (gc_take less
+--     than an hour ago) the whole announce is 'retry' with retry_after 60
+--     and changes nothing: the object may be deleted at any moment, so the
+--     blob must not become committable before gc_done (C1 of the Task 6
+--     review). Quota: bytes_used counts committed bodies through their
 --     records (inline and blob alike); blobs no record references yet are
 --     counted at announce, so the bytes a mailbox holds in Storage stay
 --     under its plan. Only growth is refused, like a commit.
@@ -37,11 +43,18 @@
 --
 -- Blob states: 1 announced (no commit has seen its object yet), 2 present (a
 -- commit checked its object), 3 orphaned and handed to the collector
--- (gc_take). A taken blob is never referenced again: a commit refuses it,
--- an announce takes it back (state 1) and asks for a new upload. If the
--- collector deletes the object anyway (it took the blob before), the next
--- commit finds no object, the client announces again, uploads, and the
--- loop converges.
+-- (gc_take). A taken blob is never referenced again: a commit refuses it
+-- (malformed) and an announce answers 'retry' while the take is pending.
+-- The collector deletes the object, then calls gc_done, which deletes the
+-- row; the client announces again, finds no object, uploads, commits. So no
+-- commit can reference a blob between the take and the object's deletion.
+-- A take older than an hour (far above an edge function's run time) is
+-- abandoned: an announce then takes the blob back (state 1, upload asked),
+-- gc_take may take it again, and a late gc_done leaves a revived row alone.
+--
+-- Lock order: blob rows are locked in (mailbox, sha256) order by every
+-- writer (announce and commit insert in hash order and lock the rows they
+-- touch in that order; maintenance and gc_take skip locked rows).
 --
 -- Rendezvous (spec 5.3, T-RDV). No credential: the session id from the QR
 -- code is the only key, and every call counts on the per-IP minute bucket of
@@ -166,6 +179,9 @@ declare
     v_growth bigint;
     v_pending bigint;
     v_prefix text;
+    v_out_sha bytea[];
+    v_out_needs boolean[];
+    v_rows integer;
 begin
     v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
     if v_retry is not null then
@@ -201,6 +217,17 @@ begin
             perform onepass_mailbox._fail('frozen');
         end if;
 
+        -- A blob the collector holds (its take is less than an hour old) may
+        -- lose its object at any moment: come back once the take is over.
+        if exists (select 1 from unnest(p_shas) as o (s)
+                   join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s
+                   where b.state = 3 and b.gc_taken_at >= now() - interval '1 hour') then
+            v_err := 'retry';
+            v_retry := 60;
+        end if;
+    end if;
+
+    if v_err is null then
         -- A referenced blob has a known size: another one is a lie. An
         -- unreferenced one takes the new size.
         select coalesce(bool_or(b.refs > 0 and b.size <> o.z), false),
@@ -225,31 +252,49 @@ begin
         return;
     end if;
 
+    -- Whether each blob needs an upload, read before the rows change.
     v_prefix := encode(p_mailbox, 'hex') || '/';
-    return query
-    with o as (
-        select o.s, o.z from unnest(p_shas, p_sizes) as o (s, z)
-    ), cur as (
-        select o.s, b.state,
-               exists (select 1 from storage.objects so
-                       where so.bucket_id = 'onepass-mailbox'
-                         and so.name collate "C" = v_prefix || encode(o.s, 'hex')
-                         and so.metadata ->> 'size' = o.z::text) as present
-        from o left join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s
-    ), up as (
+    select array_agg(o.s order by o.s),
+           array_agg(not exists (select 1 from storage.objects so
+                                 where so.bucket_id = 'onepass-mailbox'
+                                   and so.name collate "C" = v_prefix || encode(o.s, 'hex')
+                                   and so.metadata ->> 'size' = o.z::text)
+                     or b.state is not distinct from 3::smallint
+                     order by o.s)
+    into v_out_sha, v_out_needs
+    from unnest(p_shas, p_sizes) as o (s, z)
+    left join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s;
+
+    -- Rows in hash order (the order every writer of blobs locks them in).
+    -- A take that starts meanwhile is not undone: the batch is then retry.
+    begin
         insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state)
-        select p_mailbox, o.s, o.z, 1 from o
+        select p_mailbox, o.s, o.z, 1 from unnest(p_shas, p_sizes) as o (s, z)
+        order by o.s
         on conflict (mailbox_id, sha256) do update set
             size = case when b.refs = 0 then excluded.size else b.size end,
-            -- Taken back from the collector, or kept alive another 24 hours.
+            -- An abandoned take (lease over) is taken back; an unreferenced
+            -- blob is kept alive another 24 hours.
             state = case when b.state = 3 then 1 else b.state end,
             gc_taken_at = null,
             orphaned_at = case when b.refs = 0 then null else b.orphaned_at end
-        returning 1
-    )
-    select 'ok'::text, null::integer, cur.s, not cur.present or cur.state is not distinct from 3::smallint
-    from cur
-    order by cur.s;
+        where not (b.state = 3 and b.gc_taken_at >= now() - interval '1 hour');
+        get diagnostics v_rows = row_count;
+        if v_rows <> v_n then
+            raise exception using errcode = 'OP503', message = 'retry';
+        end if;
+    exception when sqlstate 'OP503' then
+        v_err := 'retry';
+    end;
+    if v_err is not null then
+        return query select v_err, 60, null::bytea, null::boolean;
+        return;
+    end if;
+
+    return query
+    select 'ok'::text, null::integer, o.s, o.needs
+    from unnest(v_out_sha, v_out_needs) as o (s, needs)
+    order by o.s;
 end
 $$;
 
@@ -420,9 +465,11 @@ begin
 
     if v_err is null then
         -- Every blob the batch puts: its object under this mailbox's prefix,
-        -- with this size, and not taken by the collector.
+        -- with this size, not taken by the collector, and the size it is
+        -- known by when rows already reference it.
         v_prefix := encode(p_mailbox, 'hex') || '/';
-        select coalesce(bool_or(so.id is null or bl.state is not distinct from 3::smallint), false)
+        select coalesce(bool_or(so.id is null or bl.state is not distinct from 3::smallint
+                                or (bl.refs > 0 and bl.size <> x.s)), false)
         into v_bad
         from (select distinct o.b, o.s from unnest(p_ops, p_blob_sha, p_sizes) as o (op, b, s)
               where o.op = 1 and o.b is not null) x
@@ -503,9 +550,9 @@ begin
         -- Net reference change per blob, read before the rows change: +1 for
         -- each written put of the blob, -1 for each written op whose row held
         -- it. Blobs whose net is 0 are left alone.
-        select array_agg(d.b) filter (where d.n > 0), array_agg(d.n) filter (where d.n > 0),
-               array_agg(d.s) filter (where d.n > 0),
-               array_agg(d.b) filter (where d.n < 0), array_agg(-d.n) filter (where d.n < 0)
+        select array_agg(d.b order by d.b) filter (where d.n > 0), array_agg(d.n order by d.b) filter (where d.n > 0),
+               array_agg(d.s order by d.b) filter (where d.n > 0),
+               array_agg(d.b order by d.b) filter (where d.n < 0), array_agg(-d.n order by d.b) filter (where d.n < 0)
         into v_inc_sha, v_inc_n, v_inc_size, v_dec_sha, v_dec_n
         from (
             select x.b, sum(x.n)::integer as n, max(x.s) as s
@@ -545,14 +592,21 @@ begin
                 data = excluded.data,
                 blob_sha256 = excluded.blob_sha256;
 
+            -- Blob rows locked in hash order, as every writer of blobs does.
+            perform 1 from onepass_mailbox.blobs b
+            where b.mailbox_id = p_mailbox
+              and b.sha256 = any (coalesce(v_inc_sha, '{}'::bytea[]) || coalesce(v_dec_sha, '{}'::bytea[]))
+            order by b.sha256
+            for no key update;
             if v_inc_sha is not null then
                 insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state, refs)
                 select p_mailbox, i.b, i.s, 2, i.n
                 from unnest(v_inc_sha, v_inc_n, v_inc_size) as i (b, n, s)
+                order by i.b
                 on conflict (mailbox_id, sha256) do update set
                     refs = b.refs + excluded.refs,
                     state = 2,
-                    size = excluded.size,
+                    size = case when b.refs = 0 then excluded.size else b.size end,
                     orphaned_at = null,
                     gc_taken_at = null
                 where b.state <> 3;

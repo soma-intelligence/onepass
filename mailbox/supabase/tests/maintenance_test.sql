@@ -153,7 +153,8 @@ insert into onepass_mailbox.used_tickets (ticket_hash, mailbox_id, used_at) valu
     (extensions.digest('t2', 'sha256'), onepass_test.mbx('M'), now() - interval '59 minutes');
 insert into onepass_mailbox.rdv_sessions (session_id, created_at) values
     (onepass_test.nonce(800001), now() - interval '601 seconds'),
-    (onepass_test.nonce(800002), now() - interval '200 seconds');
+    (onepass_test.nonce(800002), now() - interval '200 seconds'),
+    (onepass_test.nonce(800003), now() - interval '24 hours 1 second');
 insert into onepass_mailbox.rdv_chunks (session_id, dir, n, data, written_at) values
     (onepass_test.nonce(800001), 0, 0, '\x01', now() - interval '500 seconds'),
     (onepass_test.nonce(800002), 0, 0, '\x01', now() - interval '121 seconds'),
@@ -170,9 +171,10 @@ select onepass_test.ok(
     and exists (select 1 from onepass_mailbox.used_tickets where ticket_hash = extensions.digest('t2', 'sha256')),
     'used_tickets_older_than_an_hour_purged');
 select onepass_test.ok(
-    not exists (select 1 from onepass_mailbox.rdv_sessions where session_id = onepass_test.nonce(800001))
+    not exists (select 1 from onepass_mailbox.rdv_sessions where session_id = onepass_test.nonce(800003))
+    and exists (select 1 from onepass_mailbox.rdv_sessions where session_id = onepass_test.nonce(800001))
     and exists (select 1 from onepass_mailbox.rdv_sessions where session_id = onepass_test.nonce(800002)),
-    'rdv_sessions_older_than_600_s_purged');
+    'rdv_session_rows_purged_after_a_day');
 select onepass_test.ok(
     (select array_agg(n order by n) = array[1] from onepass_mailbox.rdv_chunks where session_id = onepass_test.nonce(800002))
     and not exists (select 1 from onepass_mailbox.rdv_chunks where session_id = onepass_test.nonce(800001)),
