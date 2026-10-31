@@ -2294,6 +2294,10 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::ParamsRollback => 13,
         IntegrityError::DeviceListRollback => 14,
         IntegrityError::VaultListRollback => 15,
+        IntegrityError::ContactBookRollback => 16,
+        IntegrityError::MembershipRollback => 17,
+        IntegrityError::MembershipFork => 18,
+        IntegrityError::FamilyRollback => 19,
     }
 }
 
@@ -2315,6 +2319,10 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         13 => IntegrityError::ParamsRollback,
         14 => IntegrityError::DeviceListRollback,
         15 => IntegrityError::VaultListRollback,
+        16 => IntegrityError::ContactBookRollback,
+        17 => IntegrityError::MembershipRollback,
+        18 => IntegrityError::MembershipFork,
+        19 => IntegrityError::FamilyRollback,
         _ => return None,
     })
 }
@@ -2662,19 +2670,19 @@ fn protected_from_remote_deletion(
     seen: &BTreeSet<Id>,
     deleted: &BTreeSet<Id>,
 ) -> bool {
+    if kind.server_deletion_refused() {
+        return true;
+    }
     match kind {
         RecordKind::AccountParams
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
-        | RecordKind::VaultList
-        | RecordKind::Lineage
-        | RecordKind::DeviceIntro
-        | RecordKind::KeyDelivery => true,
+        | RecordKind::VaultList => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
-        RecordKind::Item => false,
+        _ => false,
     }
 }
 
@@ -4866,6 +4874,10 @@ mod tests {
         ParamsRollback,
         DeviceListRollback,
         VaultListRollback,
+        ContactBookRollback,
+        MembershipRollback,
+        MembershipFork,
+        FamilyRollback,
     );
 
     #[test]
@@ -4931,7 +4943,7 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 16);
+        assert_eq!(ALL_CAUSES.len(), 20);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);

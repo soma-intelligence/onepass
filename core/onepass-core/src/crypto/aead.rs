@@ -38,6 +38,12 @@ pub enum BlobKind {
     Companion = 11,
     /// A frame of the pairing channel (milestone 2b, `pairing::channel`).
     Pairing = 12,
+    /// A remote contact invitation reply (sharing, spec 19.1).
+    ContactInvite = 13,
+    /// A sent item (sharing, spec 19.1).
+    ItemSend = 14,
+    /// A recovery slot (sharing, spec 19.1).
+    RecoverySlot = 15,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -274,6 +280,30 @@ mod tests {
     fn blob_kind_companion_code() {
         assert_eq!(BlobKind::Companion as u8, 11);
         assert_eq!(BlobKind::Pairing as u8, 12);
+    }
+
+    #[test]
+    fn blob_kind_codes_unchanged() {
+        let all = [
+            (BlobKind::Keyset, 1),
+            (BlobKind::VaultKey, 2),
+            (BlobKind::VaultMeta, 3),
+            (BlobKind::ItemKey, 4),
+            (BlobKind::Item, 5),
+            (BlobKind::Manifest, 6),
+            (BlobKind::Attachment, 7),
+            (BlobKind::DeviceState, 8),
+            (BlobKind::Archive, 9),
+            (BlobKind::TravelState, 10),
+            (BlobKind::Companion, 11),
+            (BlobKind::Pairing, 12),
+            (BlobKind::ContactInvite, 13),
+            (BlobKind::ItemSend, 14),
+            (BlobKind::RecoverySlot, 15),
+        ];
+        for (kind, code) in all {
+            assert_eq!(kind as u8, code);
+        }
     }
 
     use super::*;

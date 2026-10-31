@@ -37,6 +37,28 @@ pub enum RecordKind {
     DeviceIntro,
     /// A Secret Key delivery envelope, immutable (spec 6.5).
     KeyDelivery,
+    /// The signed contact book (spec 19.1).
+    ContactBook,
+    /// A family or share membership record (spec 19.1).
+    Membership,
+    /// A member's public key record, written once (spec 19.1).
+    MemberKey,
+    /// A member's lineage record, written once (spec 19.1).
+    MemberLineage,
+    /// A request to rekey a share (spec 19.1).
+    RekeyRequest,
+    /// A family record (spec 19.1).
+    Family,
+    /// A recovery slot (spec 19.1).
+    RecoverySlot,
+    /// A recovery half (spec 19.1).
+    RecoveryHalf,
+    /// A recovery message (spec 19.1).
+    RecoveryMessage,
+    /// A sent item (spec 19.1).
+    ItemSend,
+    /// A share invitation (spec 19.1).
+    ShareInvite,
 }
 
 impl RecordKind {
@@ -54,6 +76,17 @@ impl RecordKind {
             Self::Lineage => 10,
             Self::DeviceIntro => 11,
             Self::KeyDelivery => 12,
+            Self::ContactBook => 13,
+            Self::Membership => 14,
+            Self::MemberKey => 15,
+            Self::MemberLineage => 16,
+            Self::RekeyRequest => 17,
+            Self::Family => 18,
+            Self::RecoverySlot => 19,
+            Self::RecoveryHalf => 20,
+            Self::RecoveryMessage => 21,
+            Self::ItemSend => 22,
+            Self::ShareInvite => 23,
         }
     }
 
@@ -71,6 +104,17 @@ impl RecordKind {
             10 => Self::Lineage,
             11 => Self::DeviceIntro,
             12 => Self::KeyDelivery,
+            13 => Self::ContactBook,
+            14 => Self::Membership,
+            15 => Self::MemberKey,
+            16 => Self::MemberLineage,
+            17 => Self::RekeyRequest,
+            18 => Self::Family,
+            19 => Self::RecoverySlot,
+            20 => Self::RecoveryHalf,
+            21 => Self::RecoveryMessage,
+            22 => Self::ItemSend,
+            23 => Self::ShareInvite,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -81,7 +125,29 @@ impl RecordKind {
     /// 6.5): a second write under the same key is a conflict, and a
     /// deletion coming from the server is refused.
     pub fn is_immutable(self) -> bool {
-        matches!(self, Self::Lineage | Self::DeviceIntro | Self::KeyDelivery)
+        matches!(
+            self,
+            Self::Lineage
+                | Self::DeviceIntro
+                | Self::KeyDelivery
+                | Self::MemberKey
+                | Self::MemberLineage
+        )
+    }
+
+    /// The kinds whose deletion coming from the server is refused and
+    /// logged by `commit_remote` (spec 13.2): the immutable chain records
+    /// plus memberships and families, which only a signed change retires.
+    pub fn server_deletion_refused(self) -> bool {
+        matches!(
+            self,
+            Self::Lineage
+                | Self::DeviceIntro
+                | Self::KeyDelivery
+                | Self::Membership
+                | Self::Family
+                | Self::MemberLineage
+        )
     }
 }
 
@@ -485,9 +551,38 @@ mod tests {
             RecordKind::Lineage,
             RecordKind::DeviceIntro,
             RecordKind::KeyDelivery,
+            RecordKind::ContactBook,
+            RecordKind::Membership,
+            RecordKind::MemberKey,
+            RecordKind::MemberLineage,
+            RecordKind::RekeyRequest,
+            RecordKind::Family,
+            RecordKind::RecoverySlot,
+            RecordKind::RecoveryHalf,
+            RecordKind::RecoveryMessage,
+            RecordKind::ItemSend,
+            RecordKind::ShareInvite,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
+        for (kind, code) in [
+            (RecordKind::ContactBook, 13),
+            (RecordKind::Membership, 14),
+            (RecordKind::MemberKey, 15),
+            (RecordKind::MemberLineage, 16),
+            (RecordKind::RekeyRequest, 17),
+            (RecordKind::Family, 18),
+            (RecordKind::RecoverySlot, 19),
+            (RecordKind::RecoveryHalf, 20),
+            (RecordKind::RecoveryMessage, 21),
+            (RecordKind::ItemSend, 22),
+            (RecordKind::ShareInvite, 23),
+        ] {
+            assert_eq!(kind.code(), code);
+        }
+        assert!(RecordKind::MemberKey.is_immutable());
+        assert!(RecordKind::MemberLineage.is_immutable());
+        assert!(!RecordKind::Membership.is_immutable());
         assert_eq!(RecordKind::Lineage.code(), 10);
         assert_eq!(RecordKind::DeviceIntro.code(), 11);
         assert_eq!(RecordKind::KeyDelivery.code(), 12);
@@ -496,7 +591,7 @@ mod tests {
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(
-            RecordKind::from_code(13).unwrap_err(),
+            RecordKind::from_code(24).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(
