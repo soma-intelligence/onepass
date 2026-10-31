@@ -12,6 +12,13 @@
 #   mailbox/scripts/hosted-admin.sh signup on|off
 #       The open_signup row of onepass_mailbox.settings. Keep it off on the
 #       hosted instance: creation then needs an invite.
+#   mailbox/scripts/hosted-admin.sh signup-plan <plan>|default
+#       The open_signup_plan row: the plan open signup gives (default deletes
+#       the row: selfhost). The plan must exist; it changes nothing while
+#       signup is off.
+#   mailbox/scripts/hosted-admin.sh create-cap <n>|none
+#       The daily_create_cap row: mailboxes the whole instance creates per
+#       UTC day (none deletes the row: no cap). Over it creation answers 503.
 #   mailbox/scripts/hosted-admin.sh e2e-setup
 #       Plan `conformance` and one invite for a conformance run (2 hours,
 #       1 000 uses: every case creates mailboxes). Prints the invite.
@@ -104,6 +111,36 @@ SQL
                       on conflict (name) do update set value = excluded.value;" ;;
             off) stmt="delete from onepass_mailbox.settings where name = 'open_signup';" ;;
             *) echo "usage: $0 signup on|off" >&2; exit 2 ;;
+        esac
+        sql >/dev/null <<SQL
+begin;
+select set_config('onepass.maintenance', 'on', true);
+${stmt}
+commit;
+SQL
+        ;;
+    signup-plan)
+        case "${2:-}" in
+            default) stmt="delete from onepass_mailbox.settings where name = 'open_signup_plan';" ;;
+            *)
+                printf '%s' "${2:-}" | grep -Eq '^[a-z][a-z0-9_]{0,31}$' || { echo "bad plan" >&2; exit 2; }
+                stmt="insert into onepass_mailbox.settings (name, value) values ('open_signup_plan', '${2}')
+                      on conflict (name) do update set value = excluded.value;" ;;
+        esac
+        sql >/dev/null <<SQL
+begin;
+select set_config('onepass.maintenance', 'on', true);
+${stmt}
+commit;
+SQL
+        ;;
+    create-cap)
+        case "${2:-}" in
+            none) stmt="delete from onepass_mailbox.settings where name = 'daily_create_cap';" ;;
+            *)
+                printf '%s' "${2:-}" | grep -Eq '^[1-9][0-9]{0,8}$' || { echo "bad cap" >&2; exit 2; }
+                stmt="insert into onepass_mailbox.settings (name, value) values ('daily_create_cap', '${2}')
+                      on conflict (name) do update set value = excluded.value;" ;;
         esac
         sql >/dev/null <<SQL
 begin;

@@ -69,7 +69,12 @@ on conflict (name) do update set value = excluded.value;
 commit;
 ```
 
-Without the row, creation needs an invite (`onepass_mailbox.invites`, token
+Two optional rows in the same table, written the same way: `open_signup_plan`
+(an existing plan name; absent means `selfhost`) and `daily_create_cap` (an
+integer: mailboxes this instance creates per UTC day, then `503 retry`; absent
+means no cap). A valid invite keeps its own plan.
+
+Without the `open_signup` row, creation needs an invite (`onepass_mailbox.invites`, token
 stored as its SHA-256), as on the hosted instance.
 
 ### Private certificate authority

@@ -360,6 +360,16 @@ Deno.test("the IP key is HMAC-SHA-256(secret, UTC date || ip) and the address ne
   for (const c of db2.calls) assert(!containsIp(c.args));
 });
 
+Deno.test("creation: the daily cap row (in-band retry) is a 503 retry without retry-after", async () => {
+  const k = await newKey();
+  const db = new FakeDb((fn) => (fn === "api_create_mailbox" ? [{ status: "retry", retry_after: null }] : [ok()]));
+  const create = createBody(k.pub, new Uint8Array([1, 2, 3]));
+  const r = await handler(deps(db))(await signed(k, "POST", "/v1/mailboxes", create), IP);
+  assertEquals(r.status, 503);
+  assertEquals(r.headers.get("retry-after"), null);
+  await assertError(r, "retry");
+});
+
 /** CreateMailbox by hand: version, key, Some(invite), label. */
 function createBody(pub: Uint8Array, invite: Uint8Array | null, label = new Uint8Array()): Uint8Array {
   const out = [1, ...pub];

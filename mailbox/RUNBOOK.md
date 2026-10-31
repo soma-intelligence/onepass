@@ -107,7 +107,18 @@ spoofed values) before changing the setting.
   API role, so whoever holds only the function's environment cannot open the
   instance. `scripts/hosted-admin.sh signup on|off` writes or deletes the row.
   Keep it off on the hosted instance unless the founder decides otherwise (spec
-  D.6 plans open hosted signup with per-IP limits; not enabled yet).
+  D.6 plans open hosted signup with per-IP limits; not enabled yet). The
+  default is closed and nothing below turns it on by itself.
+- Opening signup, once decided: `scripts/hosted-admin.sh signup-plan free`
+  (plan open signup gives; `default` = selfhost), `create-cap <n>` (global
+  mailboxes per UTC day, `none` = no cap), then `signup on` and
+  `MAILBOX_OPEN_SIGNUP=true` on the function. Per-IP limits (60 a minute, 5 a
+  day) use the client IP from `MAILBOX_CLIENT_IP_HEADER`, HMAC'd with
+  `MAILBOX_IP_HMAC_SECRET`. At the cap, creation answers `503 retry` (no
+  retry-after) until the next UTC day or a higher cap. A refused creation is
+  not counted. A valid invite always keeps its own plan, and the cap counts
+  invite creations too. An `open_signup_plan` naming no plan makes creation
+  fail with 503 until fixed. Closing again: `signup off`.
 
 ## Freezing a mailbox
 
