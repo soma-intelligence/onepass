@@ -256,7 +256,7 @@ pub fn inspect(ctx: &Ctx, file: &Path) -> Result<(), CliError> {
 }
 
 /// `YYYY-MM-DD HH:MM:SS UTC`, or the raw seconds when out of range.
-fn created_text(unix: i64) -> String {
+pub fn created_text(unix: i64) -> String {
     match OffsetDateTime::from_unix_timestamp(unix) {
         Ok(t) => format!(
             "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",

@@ -7,6 +7,7 @@ mod rebase;
 mod store;
 
 pub use rebase::RebaseReport;
+pub(crate) use store::merge_chain;
 pub use store::{
     AccountState, DroppedVaultWrites, IgnoredDeletion, IgnoredParams, MAX_IGNORED_DELETIONS,
     PhaseOutcome, SyncStore,

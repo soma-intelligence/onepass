@@ -252,17 +252,17 @@ pub trait RecordStore {
     }
 
     /// The pinned chain state this store keeps for the device, read by the
-    /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
-    /// `chain`); other stores give the default, so each session pins on
-    /// first use.
+    /// `Repository` unlock functions. `SyncStore` and `SqliteStore` persist
+    /// one (meta key `chain`); other stores give the default, so each
+    /// session pins on first use.
     fn chain_state(&self) -> Result<ChainState> {
         Ok(ChainState::default())
     }
 
     /// Whether `chain_state` gives back, in a later session, the chain state
-    /// saved with `put_all_if_version_with_chain` (only `SyncStore`). A
-    /// device registers itself in the device list only on such a store: its
-    /// id must outlive the session.
+    /// saved with `put_all_if_version_with_chain` (`SyncStore` and
+    /// `SqliteStore`). A device registers itself in the device list only on
+    /// such a store: its id must outlive the session.
     fn persists_chain(&self) -> bool {
         false
     }

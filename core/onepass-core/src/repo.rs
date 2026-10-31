@@ -522,6 +522,15 @@ impl<S: RecordStore> Repository<S> {
     /// chain state, see `devices`), the vault list, and the "Personnel"
     /// vault.
     /// The device pins the new account.
+    ///
+    /// Pre-v2 constructor (key rotation v2, Task 18): no device keys, no
+    /// genesis, so the device is a legacy one that must `migrate_to_v2` at
+    /// its first unlock. New accounts use `create_account_v2`; the CLI
+    /// does. This stays `pub` on purpose, for the callers that cannot make
+    /// device keys: `onepass-native-host` (its `MemoryStore` keeps no chain
+    /// state, so `create_account_v2` refuses there), the pre-v2 FFI entry
+    /// points the shipped Swift app still calls until its own plan, and the
+    /// integration tests of this crate.
     pub fn create_account(
         store: S,
         password: &str,
