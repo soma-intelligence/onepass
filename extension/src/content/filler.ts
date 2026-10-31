@@ -149,6 +149,12 @@ export interface FillerOptions {
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   /** Called with each control written and the role it received (never the value). */
   onFill?: (el: Element, role: FieldRole) => void;
+  /**
+   * The focused element, inside the page's shadow roots (`deepActiveElement`);
+   * defaults to `document.activeElement`, which is the host when the focus is
+   * in a root.
+   */
+  activeElement?: () => Element | null;
 }
 
 export interface Filler {
@@ -187,12 +193,13 @@ export function createFiller(opts: FillerOptions): Filler {
    * field (as typing would), then the field that had the focus (the one the
    * menu was opened from, say) gets it back.
    */
+  const active = opts.activeElement ?? (() => (typeof document !== "undefined" ? document.activeElement : null));
   const keepFocus = <T>(fn: () => T): T => {
-    const had = typeof document !== "undefined" ? document.activeElement : null;
+    const had = active();
     try {
       return fn();
     } finally {
-      if (had instanceof HTMLInputElement && had.isConnected && document.activeElement !== had) had.focus({ preventScroll: true });
+      if (had instanceof HTMLInputElement && had.isConnected && active() !== had) had.focus({ preventScroll: true });
     }
   };
 

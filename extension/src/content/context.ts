@@ -216,7 +216,10 @@ function groupButtons(doc: Document, container: Element, submit: Element | null,
   const candidates = Array.from(container.querySelectorAll(BUTTON_SELECTOR));
   // Buttons that belong to the form from outside: `form="id"`, and the one the detector chose.
   if (form !== null && form.id !== "") {
-    for (const b of Array.from(doc.querySelectorAll("[form]"))) {
+    // `form="id"` is scoped to the form's own tree: the document, or its shadow root (spec D1, D2).
+    const tree = form.getRootNode();
+    const scope: ParentNode = typeof (tree as Partial<ParentNode>).querySelectorAll === "function" ? (tree as ParentNode) : doc;
+    for (const b of Array.from(scope.querySelectorAll("[form]"))) {
       // Compared as text, no selector built from the id (nothing to escape).
       if (b.getAttribute("form") === form.id && b.matches(BUTTON_SELECTOR) && !candidates.includes(b)) candidates.push(b);
     }

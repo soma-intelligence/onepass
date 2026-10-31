@@ -14,17 +14,35 @@
 // field (`auto`), a page load or a mutation. When the worker answers "menu",
 // fails or does not answer, the menu opens instead (never a blind fill).
 //
-// Limit: fields inside the page's own shadow roots are not detected (the
-// analysis queries the document tree only). Closed roots are never attempted;
-// open roots are left for later, since walking every element for `shadowRoot`
-// on each mutation burst is not cheap on large pages.
-import { ext as browserExt } from "../shared/browser";
+// Shadow roots (spec D1, D2): each analysis walks the page for the shadow
+// roots of its web components and reads their forms as the document's.
+// Open roots through `el.shadowRoot`; closed ones through
+// `chrome.dom.openOrClosedShadowRoot` where the browser gives it to content
+// scripts (Chromium; feature-detected). Limit: without that API (Safari) a
+// closed root stays out of reach. The walk is bounded (3000 elements, roots
+// nested 8 deep, `detect/shadow.ts`): a form past the bound is not seen. Our
+// own closed root is never walked. Every root found is observed as the
+// document is, and gets the document's listeners: an event from a root is
+// read from its real target, not the host it is retargeted to, so trusted
+// gestures, the menu keys and submissions work across the boundary. A root
+// attached without any mutation the observer can see is found on the next
+// trusted focus or ArrowDown into its host.
+import { ext as browserExt, openOrClosedShadowRoot } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
 import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
 import { classifierFor, createModelHook, type ModelHook, remoteSession } from "./detect/classifier";
 import { analyzeDocument } from "./detect/forms";
 import { FormLineage, RefRegistry } from "./detect/refs";
+import {
+  collectShadowRoots,
+  composedContains,
+  deepActiveElement,
+  openShadowRoot,
+  type ShadowRootOf,
+  TreeListeners,
+  WatchedRoots,
+} from "./detect/shadow";
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller } from "./filler";
 import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
@@ -57,6 +75,12 @@ export interface ContentOptions {
   isTrusted?: (e: Event) => boolean;
   /** Frame scheduler for repositioning; `requestAnimationFrame` by default. */
   raf?: (cb: () => void) => void;
+  /**
+   * The shadow root of a page element the script may read: open and closed
+   * roots through `chrome.dom.openOrClosedShadowRoot` where the browser has
+   * it, else open roots only.
+   */
+  shadowRootOf?: ShadowRootOf;
 }
 
 export interface ContentScript {
@@ -105,7 +129,21 @@ export function createContentScript(o: ContentOptions): ContentScript {
   const raf = o.raf ?? ((cb: () => void) => (view ? view.requestAnimationFrame(() => cb()) : setTimeout(cb, 16)));
   const refs = new RefRegistry();
   const lineage = new FormLineage(refs);
+  const shadowRootOf: ShadowRootOf = o.shadowRootOf ?? openOrClosedShadowRoot ?? openShadowRoot;
+  const watched = new WatchedRoots();
+  const tree = new TreeListeners(watched);
   let shell: Shell | null = null;
+  /** Our own host: its closed root is never walked nor read. */
+  const isOwnHost = (el: Element): boolean => shell?.isHost(el) === true;
+  /** The readable shadow root of `t`, or null (never ours; the API may throw on odd nodes). */
+  const rootOf = (t: EventTarget | null): ShadowRoot | null => {
+    if (!(t instanceof Element) || isOwnHost(t)) return null;
+    try {
+      return shadowRootOf(t);
+    } catch {
+      return null;
+    }
+  };
   let stopped = false;
   const cleanups: (() => void)[] = [];
   // Dev-only form flow recorder: loaded only when the build defines it.
@@ -124,7 +162,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   const analyze = (): PageAnalysis => {
     refs.prune();
-    const a = analyzeDocument(doc, refs, model ? { url: o.href(), geometry, model } : { url: o.href(), geometry });
+    const shadowRoots = collectShadowRoots(doc, { shadowRootOf, skip: isOwnHost });
+    // New roots get the observer and the listeners at once.
+    watched.add(shadowRoots);
+    const base = { url: o.href(), geometry, shadowRoots };
+    const a = analyzeDocument(doc, refs, model ? { ...base, model } : base);
     lineage.record(a);
     return a;
   };
@@ -184,7 +226,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
   /** Where the menu opens for a gesture without a field (popup, command): the focused field, else the first one. */
   const fallbackTarget = (): IconTarget | null => {
     if (!parts) return null;
-    const focused = parts.icons.targetOf(doc.activeElement);
+    const focused = parts.icons.targetOf(deepActiveElement(doc, shadowRootOf, isOwnHost));
     if (focused) return focused;
     return parts.icons.all().find((x) => x.el.isConnected) ?? null;
   };
@@ -294,10 +336,17 @@ export function createContentScript(o: ContentOptions): ContentScript {
     return undefined;
   };
 
-  const listen = (target: EventTarget, type: string, fn: (e: Event) => void, options: AddEventListenerOptions) => {
-    target.addEventListener(type, fn, options);
-    cleanups.push(() => target.removeEventListener(type, fn, options));
+  /** Listens on `target` and on every watched shadow root (an event once, from its real target). */
+  const listen = (target: EventTarget, type: string, fn: (e: Event) => void, options: AddEventListenerOptions, filter = true) => {
+    cleanups.push(tree.listen(target, type, fn, options, filter));
   };
+
+  /** A host whose shadow root no analysis has seen yet (attached without a mutation, say). */
+  const unseenRoot = (t: EventTarget | null): boolean => {
+    const r = rootOf(t);
+    return r !== null && !watched.has(r);
+  };
+  let lastRootAnalysis = Number.NEGATIVE_INFINITY;
 
   return {
     get internals() {
@@ -350,6 +399,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         analyze: () => observer.refresh(),
         resolve: (ref, a) => lineage.resolve(ref, a),
         onFill: (el, role) => recorder?.noteFilled(el, role),
+        activeElement: () => deepActiveElement(doc, shadowRootOf, isOwnHost),
       });
       const submit = createSubmitWatcher({
         doc,
@@ -361,12 +411,14 @@ export function createContentScript(o: ContentOptions): ContentScript {
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
         onStep: (c) => recorder?.step(c),
+        listen: (t, type, fn, options) => tree.listen(t, type, fn, options),
       });
       parts = { shell: sh, frames, icons, observer, filler, submit };
 
       ext.runtime.onMessage.addListener(onMessage);
       const target: EventTarget = view ?? doc;
-      listen(target, "scroll", queueLayout, { capture: true, passive: true });
+      // Unfiltered: a scroll of a host itself is not seen inside its root.
+      listen(target, "scroll", queueLayout, { capture: true, passive: true }, false);
       listen(target, "resize", queueLayout, { passive: true });
       listen(
         doc,
@@ -397,9 +449,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
           // after a mutation burst): analyse now rather than miss the key.
           // At most one such analysis per observer delay: a held key does not
           // analyse the page on every repeat.
+          // A host whose root is not known yet: the analysis finds it, and
+          // the root's own listener (attached now) reads this very key.
           let t = icons.targetOf(e.target);
           const now = Date.now();
-          if (!t && isControl(e.target) && now - lastKeyAnalysis >= OBSERVER_DELAY_MS) {
+          if (!t && (isControl(e.target) || unseenRoot(e.target)) && now - lastKeyAnalysis >= OBSERVER_DELAY_MS) {
             lastKeyAnalysis = now;
             observer.refresh();
             t = icons.targetOf(e.target);
@@ -420,7 +474,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
           if (!isTrusted(e) || !(e.target instanceof Node) || sh.isHost(e.target)) return;
           const a = observer.latest();
           if (!a) return;
-          const hit = (ref: string) => refs.get(ref)?.contains(e.target as Node) === true;
+          // A button's own shadow root (its label, say) is inside the button.
+          const hit = (ref: string) => {
+            const el = refs.get(ref);
+            return el !== null && composedContains(el, e.target as Node);
+          };
           const b = a.providerButtons.find((x) => hit(x.ref));
           if (b) {
             void send({ type: "provider_click", provider: b.provider, ref: b.ref });
@@ -462,8 +520,26 @@ export function createContentScript(o: ContentOptions): ContentScript {
         },
         { capture: true },
       );
+      listen(
+        doc,
+        "focusin",
+        (e) => {
+          // attachShadow makes no mutation record: a trusted focus into a
+          // root no analysis has seen analyses now, at most once per
+          // observer delay.
+          if (!isTrusted(e) || !unseenRoot(e.target)) return;
+          const now = Date.now();
+          if (now - lastRootAnalysis < OBSERVER_DELAY_MS) return;
+          lastRootAnalysis = now;
+          observer.refresh();
+        },
+        { capture: true },
+      );
       submit.start();
       observer.start();
+      // After start: the observer observes the roots the first analysis found.
+      watched.use(observer);
+      watched.use(tree);
     },
     stop() {
       stopped = true;
@@ -475,6 +551,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         parts.frames.destroy();
       }
       recorder?.stop();
+      watched.clear();
       shell?.destroy();
       parts = null;
     },

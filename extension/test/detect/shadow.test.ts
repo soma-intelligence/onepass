@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { FieldFeatures } from "../../src/content/detect/features";
+import { extractFeatures } from "../../src/content/detect/features";
 import { analyzeDocument } from "../../src/content/detect/forms";
 import { RefRegistry } from "../../src/content/detect/refs";
 import {
@@ -8,6 +10,7 @@ import {
   MAX_SHADOW_ELEMENTS,
 } from "../../src/content/detect/shadow";
 import { isRendered } from "../../src/content/detect/visibility";
+import type { FieldRole } from "../../src/shared/messages";
 import { testGeometry } from "./helpers";
 
 const SITE = "https://atlas-cloud.test/login";
@@ -136,5 +139,55 @@ describe("shadow roots (D1, D2)", () => {
       [root.getElementById("e"), "email"],
       [root.getElementById("pw"), "current_password"],
     ]);
+  });
+
+  describe("with the field classifier", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    /** jsdom has no layout: the feature extractor would read every field as zero_size. */
+    const withLayout = () =>
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+        () => ({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 30, width: 200, height: 30, toJSON: () => ({}) }) as DOMRect,
+      );
+
+    const FORM = `<form id="f"><span id="l1">Member number</span><input id="u" name="q1" aria-labelledby="l1"><input id="p" name="q2" type="password"><button type="submit">Go</button></form>`;
+
+    it("the features of a root's fields are read inside the root", () => {
+      withLayout();
+      page(`<p>outside text</p><x-s></x-s>`);
+      const root = host("x-s", "closed", FORM);
+      // Without roots (corpus, dataset): unchanged, the root's fields are not emitted.
+      expect(extractFeatures(document).forms).toEqual([]);
+      const els = new Map<FieldFeatures, Element>();
+      const p = extractFeatures(document, { roots: [root], onField: (el, f) => els.set(f, el) });
+      expect(p.forms).toHaveLength(1);
+      const [u, pw] = p.forms[0]!.fields;
+      expect(els.get(u!)).toBe(root.getElementById("u"));
+      expect(u!.label).toBe("member number");
+      // Neighbour text never crosses from the document into the root.
+      expect(u!.before).toBe("member number");
+      expect(pw!.type).toBe("password");
+      expect(p.forms[0]!.buttons).toEqual(["go"]);
+    });
+
+    it("the model classifies the fields of a root as it does the document's", () => {
+      withLayout();
+      page(`<x-s></x-s>`);
+      const root = host("x-s", "closed", FORM);
+      const seen: FieldFeatures[][] = [];
+      const model = {
+        crossSite: false,
+        lookup: (fs: FieldFeatures[]) => (seen.push(fs), fs.map((f) => ({ role: (f.type === "password" ? "current_password" : "username") as FieldRole, score: 0.99 }))),
+      };
+      const refs = new RefRegistry();
+      const shadowRoots = collectShadowRoots(document, { shadowRootOf: fakeDomApi(new Map([[root.host, root]])) });
+      const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry, shadowRoots, model });
+      expect(seen.flat().map((f) => f.name)).toEqual(["q1", "q2"]);
+      expect(a.forms.map((f) => f.kind)).toEqual(["login"]);
+      expect(a.forms[0]!.fields.map((x) => [refs.get(x.ref), x.role])).toEqual([
+        [root.getElementById("u"), "username"],
+        [root.getElementById("p"), "current_password"],
+      ]);
+    });
   });
 });

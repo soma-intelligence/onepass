@@ -361,11 +361,12 @@ const documentOrder = composedOrder;
  * stays unknown. Never consulted in a cross-site frame, nor for a field whose autocomplete token
  * the detector recognizes (R21).
  */
-function modelRoles(doc: Document, geometry: Geometry, model: ModelHook): Map<Element, RoleScore> {
+function modelRoles(doc: Document, roots: readonly ShadowRoot[], geometry: Geometry, model: ModelHook): Map<Element, RoleScore> {
   const out = new Map<Element, RoleScore>();
   if (model.crossSite) return out;
   const elOf = new Map<FieldFeatures, Element>();
-  const page = extractFeatures(doc, { maxFields: MAX_FIELDS, onField: (el, f) => elOf.set(f, el) });
+  // The shadow roots' forms are read as the document's (spec D1, D2).
+  const page = extractFeatures(doc, { maxFields: MAX_FIELDS, roots, onField: (el, f) => elOf.set(f, el) });
   for (const form of page.forms) {
     // Ruling R21: a recognized autocomplete token decides (spec 8.2); such a field is never sent to the model.
     const asked = form.fields.filter((f) => autocompleteRole(elOf.get(f) as FieldElement) === null);
@@ -399,7 +400,7 @@ export function detectForms(
   if (roots.length > 0) visible.sort(documentOrder);
   const cells = splitOtpCells(visible);
   // Order (Task 15): features, classifier, safety rules, then the existing logic below.
-  const fromModel = model ? modelRoles(doc, geometry, model) : null;
+  const fromModel = model ? modelRoles(doc, roots, geometry, model) : null;
   const classified: Classified[] = [];
   for (const el of visible) {
     if (cells.has(el)) {

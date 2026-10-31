@@ -91,6 +91,44 @@ export function composedParent(el: Element): Element | null {
   return p !== null && "host" in p ? ((p as ShadowRoot).host ?? null) : null;
 }
 
+/** `el.closest(selector)`, else the same from the host of each shadow tree holding `el`, outward. */
+export function composedClosest(el: Element, selector: string): Element | null {
+  for (let t: Element | null = el, i = 0; t !== null && i <= MAX_SHADOW_DEPTH; t = hostOf(t), i++) {
+    const hit = t.closest(selector);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Whether `n` is inside `container` (or is it), across the shadow trees nested in `container`. */
+export function composedContains(container: Node, n: Node): boolean {
+  for (let t: Node | null = n, i = 0; t !== null && i <= MAX_SHADOW_DEPTH; t = hostOf(t), i++) {
+    if (container.contains(t)) return true;
+  }
+  return false;
+}
+
+/**
+ * The focused element, inside the shadow roots `rootOf` can read: the
+ * document's `activeElement` is the host when the focus is in a root. A
+ * skipped host (our own UI) is never entered.
+ */
+export function deepActiveElement(doc: Document, rootOf: ShadowRootOf = openShadowRoot, skip?: (el: Element) => boolean): Element | null {
+  let a = doc.activeElement;
+  for (let i = 0; a !== null && i < MAX_SHADOW_DEPTH && !skip?.(a); i++) {
+    let r: ShadowRoot | null = null;
+    try {
+      r = rootOf(a);
+    } catch {
+      r = null;
+    }
+    const inner = r?.activeElement ?? null;
+    if (inner === null) break;
+    a = inner;
+  }
+  return a;
+}
+
 /** `n`, then the host of each shadow tree holding it, outward. */
 function hostChain(n: Node): Node[] {
   const out: Node[] = [n];
@@ -175,5 +213,64 @@ export class WatchedRoots {
     for (const r of this.roots()) for (const u of this.users) u.detach(r);
     this.users.length = 0;
     this.live = [];
+  }
+}
+
+type Listener = (e: Event) => void;
+
+interface TreeListener {
+  base: EventTarget;
+  type: string;
+  fn: Listener;
+  options: AddEventListenerOptions;
+}
+
+/**
+ * Event listeners on the document (or window) and on every watched root.
+ * An event from inside a root reaches the document retargeted to the root's
+ * host, and the root's own listener with its real target: a listener skips
+ * events whose target is a watched host (`filter`, the default), so each
+ * event is handled once, from its real target. Events that do not cross a
+ * shadow boundary (`submit`) reach the root's listener only. Hand it to
+ * `WatchedRoots.use` to follow the roots.
+ */
+export class TreeListeners implements RootUser {
+  private readonly entries = new Set<TreeListener>();
+  /** Held weakly, as by `WatchedRoots`: a removed component is not kept alive. */
+  private readonly attached = new WeakSet<ShadowRoot>();
+
+  constructor(private readonly watched: WatchedRoots) {}
+
+  /** Listens on `base` and on every watched root; returns the removal. */
+  listen(base: EventTarget, type: string, fn: Listener, options: AddEventListenerOptions, filter = true): () => void {
+    const wrapped: Listener = filter
+      ? (e) => {
+          if (!this.watched.isHost(e.target)) fn(e);
+        }
+      : fn;
+    const entry: TreeListener = { base, type, fn: wrapped, options };
+    this.entries.add(entry);
+    base.addEventListener(type, wrapped, options);
+    for (const r of this.attachedRoots()) r.addEventListener(type, wrapped, options);
+    return () => {
+      if (!this.entries.delete(entry)) return;
+      base.removeEventListener(type, wrapped, options);
+      for (const r of this.attachedRoots()) r.removeEventListener(type, wrapped, options);
+    };
+  }
+
+  private attachedRoots(): ShadowRoot[] {
+    return this.watched.roots().filter((r) => this.attached.has(r));
+  }
+
+  attach(root: ShadowRoot): void {
+    if (this.attached.has(root)) return;
+    this.attached.add(root);
+    for (const e of this.entries) root.addEventListener(e.type, e.fn, e.options);
+  }
+
+  detach(root: ShadowRoot): void {
+    if (!this.attached.delete(root)) return;
+    for (const e of this.entries) root.removeEventListener(e.type, e.fn, e.options);
   }
 }
