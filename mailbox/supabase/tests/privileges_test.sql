@@ -10,7 +10,7 @@ insert into t_allow (role, signature) values
     ('onepass_mailbox_api', 'onepass_mailbox.credential_key(bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_create_mailbox(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,boolean)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_mailbox_info(bytea,bytea,timestamp with time zone,bytea)'),
-    ('onepass_mailbox_api', 'onepass_mailbox.api_changes(bytea,bytea,timestamp with time zone,bytea,bigint,integer)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_changes(bytea,bytea,timestamp with time zone,bytea,bigint,integer,boolean)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_record(bytea,bytea,timestamp with time zone,bytea,smallint,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_enroll(bytea,bytea,timestamp with time zone,bytea,bytea,bytea,timestamp with time zone,bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_revoke_credential(bytea,bytea,timestamp with time zone,bytea,bytea)'),
