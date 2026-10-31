@@ -93,17 +93,62 @@ fn check_method(method: &str) -> Result<(), ProtoError> {
     }
 }
 
+/// A target the edge function sees exactly as the client signed it: the
+/// WHATWG URL parser of Deno leaves these bytes alone. Path: `/v1/` then
+/// non-empty segments of `A-Z a-z 0-9 - . _ ~` and `%XX`, never a dot
+/// segment (`.`, `..`, or their `%2e` spellings, which the parser resolves).
+/// Query, when there is one: non-empty, the same bytes plus `=` and `&`.
 fn check_target(target: &str) -> Result<(), ProtoError> {
     if target.len() > TARGET_MAX {
         return Err(ProtoError::Signature("target length"));
     }
-    if !target.starts_with("/v1/") {
-        return Err(ProtoError::Signature("target prefix"));
+    let rest = target
+        .strip_prefix("/v1/")
+        .ok_or(ProtoError::Signature("target prefix"))?;
+    let (path, query) = match rest.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (rest, None),
+    };
+    let bad = ProtoError::Signature("target character");
+    for segment in path.split('/') {
+        if segment.is_empty() || !escaped(segment, b"-._~") {
+            return Err(bad);
+        }
+        let lower = segment.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "." | ".." | "%2e" | "%2e%2e" | ".%2e" | "%2e."
+        ) {
+            return Err(ProtoError::Signature("target dot segment"));
+        }
     }
-    if !target.bytes().all(|b| b.is_ascii_graphic()) {
-        return Err(ProtoError::Signature("target character"));
+    if let Some(q) = query
+        && (q.is_empty() || !escaped(q, b"-._~=&"))
+    {
+        return Err(bad);
     }
     Ok(())
+}
+
+/// Only ASCII letters, digits, the bytes of `extra`, and `%` followed by two
+/// hex digits.
+fn escaped(s: &str, extra: &[u8]) -> bool {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'%' {
+            if i + 2 >= b.len() || !(b[i + 1].is_ascii_hexdigit() && b[i + 2].is_ascii_hexdigit()) {
+                return false;
+            }
+            i += 3;
+        } else if c.is_ascii_alphanumeric() || extra.contains(&c) {
+            i += 1;
+        } else {
+            return false;
+        }
+    }
+    true
 }
 
 fn check_digest(digest: &str) -> Result<(), ProtoError> {
@@ -312,8 +357,51 @@ mod tests {
         for m in ["get", "PATCH", "HEAD", ""] {
             assert!(signature_base(m, "/v1/x", &d, &p).is_err(), "{m}");
         }
-        for t in ["/v2/x", "v1/x", "/v1/a b", "/v1/\u{e9}", "/v1/a\nb"] {
+        for t in [
+            "/v2/x",
+            "v1/x",
+            "/v1/a b",
+            "/v1/\u{e9}",
+            "/v1/a\nb",
+            // What the WHATWG URL parser of the edge would rewrite.
+            "/v1/a\"b",
+            "/v1/a<b",
+            "/v1/a>b",
+            "/v1/a`b",
+            "/v1/a{b",
+            "/v1/a}b",
+            "/v1/a#b",
+            "/v1/a\\b",
+            "/v1/a|b",
+            "/v1/a^b",
+            "/v1/../x",
+            "/v1/./x",
+            "/v1/x/..",
+            "/v1/x/.",
+            "/v1/x/%2e%2e",
+            "/v1/x/.%2E",
+            "/v1//x",
+            "/v1/x/",
+            "/v1/",
+            "/v1/x?",
+            "/v1/x?a?b",
+            "/v1/x?a#b",
+            "/v1/x?a b",
+            "/v1/x?a'b",
+            "/v1/x%zz",
+            "/v1/x%2",
+            "/v1/x?a=%g0",
+        ] {
             assert!(signature_base("GET", t, &d, &p).is_err(), "{t}");
+        }
+        for t in [
+            "/v1/mailboxes/00/commit",
+            "/v1/x?after=1&limit=2&full=0",
+            "/v1/a-b_c.d~e",
+            "/v1/a%2Fb?x=%41",
+            "/v1/x/.a/..b",
+        ] {
+            assert!(signature_base("GET", t, &d, &p).is_ok(), "{t}");
         }
         let long = format!("/v1/{}", "a".repeat(TARGET_MAX));
         assert!(signature_base("GET", &long, &d, &p).is_err());

@@ -78,6 +78,7 @@ deno_version = 2
 
 # The gateway is open: requests carry our own signature (spec 4.7), never a
 # Supabase JWT.
+# The proto module is imported as JavaScript (its WebAssembly embedded as
+# base64, see mailbox/scripts/build-proto-wasm.sh): no static file to ship.
 [functions.mailbox]
 verify_jwt = false
-static_files = ["./functions/_shared/proto/*"]
