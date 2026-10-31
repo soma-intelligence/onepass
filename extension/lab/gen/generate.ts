@@ -170,35 +170,6 @@ export function parseDriverGroups(raw: string): DriverGroup[] {
   return DRIVER_GROUPS.filter((g) => groups.includes(g));
 }
 
-export const DRIVER_GROUPS: readonly DriverGroup[] = ["current", "smart_fill"];
-
-/** The driver set a scenario belongs to: smart_fill alone, every other driver is "current". */
-export const groupOf = (d: DriverId): DriverGroup => (d === "smart_fill" ? "smart_fill" : "current");
-
-/**
- * The world with the scenarios of `groups` only: "current" keeps the
- * generated ones, "smart_fill" adds one smart_fill scenario per site (same
- * capability table). Sites, fixture and hosts are untouched, so one seed
- * gives the same world to every driver set.
- */
-export function withDrivers(world: World, groups: readonly DriverGroup[]): World {
-  const scenarios: Scenario[] = groups.includes("current") ? [...world.scenarios] : [];
-  if (groups.includes("smart_fill")) {
-    for (const s of world.sites) {
-      scenarios.push({ id: `${s.index}:smart_fill`, site: s.index, driver: "smart_fill", ...expectationFor(s, "smart_fill") });
-    }
-  }
-  return { ...world, scenarios };
-}
-
-/** Parses a comma list of driver sets ("current,smart_fill"). */
-export function parseDriverGroups(raw: string): DriverGroup[] {
-  const groups = raw.split(",").map((x) => x.trim()).filter((x) => x !== "");
-  const bad = groups.filter((g) => !(DRIVER_GROUPS as readonly string[]).includes(g));
-  if (groups.length === 0 || bad.length > 0) throw new Error(`lab: unknown driver set ${bad.join(", ") || "(empty)"}; expected ${DRIVER_GROUPS.join(", ")}`);
-  return DRIVER_GROUPS.filter((g) => groups.includes(g));
-}
-
 /**
  * Site languages (spec 4.2, fr and en in the majority): fr 0.4, en 0.4, and
  * 0.2 shared by the other corpus languages in proportion to their corpus
