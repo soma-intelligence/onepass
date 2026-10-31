@@ -1727,6 +1727,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-mailbox-proto"
+version = "0.2.0"
+dependencies = [
+ "data-encoding",
+ "postcard",
+ "serde",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "onepass-mcp"
 version = "0.2.0"
 dependencies = [

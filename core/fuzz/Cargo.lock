@@ -831,6 +831,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "onepass-core",
+ "onepass-mailbox-proto",
  "onepass-mcp",
  "onepass-ssh-agent",
  "postcard",
@@ -853,6 +854,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "time",
+]
+
+[[package]]
+name = "onepass-mailbox-proto"
+version = "0.2.0"
+dependencies = [
+ "data-encoding",
+ "postcard",
+ "serde",
+ "sha2 0.10.9",
 ]
 
 [[package]]
