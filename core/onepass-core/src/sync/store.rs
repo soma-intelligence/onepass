@@ -1468,9 +1468,16 @@ impl SyncStore {
                 }
             }
             match data {
+                // A row staged without server meta (a pairing snapshot,
+                // `repair_from_grant`) that the device already holds with
+                // the same version and bytes keeps the meta it had: it is
+                // the same server record, and its tag is still the one the
+                // next conditional push must name (Task 14 fix round 1).
                 Some(data) => tx.execute(
                     "INSERT OR REPLACE INTO base (kind, id, version, data, server_meta)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                     VALUES (?1, ?2, ?3, ?4, COALESCE(?5,
+                        (SELECT server_meta FROM base
+                         WHERE kind = ?1 AND id = ?2 AND version = ?3 AND data = ?4)))",
                     params![kind_code, id, version, data, server_meta],
                 ),
                 None => tx.execute(

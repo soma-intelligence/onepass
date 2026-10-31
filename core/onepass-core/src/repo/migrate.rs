@@ -30,18 +30,19 @@
 //! rotation that does not list it leaves it `Orphaned` (re-pair), one that
 //! lists it prompts as usual.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::follow::lineage_records;
 use super::pairing::{insert_sorted, same_keys};
 use super::{Repository, trust_of};
-use crate::crypto::HybridSignature;
+use crate::crypto::{HybridKemPublic, HybridSignature, HybridVerifyingKey};
 use crate::device_keys::{DeviceKeys, DevicePublic, sign_pop, verify_pop};
 use crate::devices::{DeviceEntry, now};
 use crate::lineage::{
     GenesisBody, LINEAGE_FORMAT, LegacyAnchor, LegacyIntroBody, LegacyIntros, LineageRecord,
     MAX_ROSTER, RosterEntry, Signed, SignedIntro, SignedLegacyIntro, accept_legacy_intros,
-    legacy_intro_id, sign_genesis, sign_legacy_intro, verify_genesis, verify_legacy_intro,
+    body_bytes, legacy_intro_id, sign_genesis, sign_legacy_intro, verify_genesis,
+    verify_legacy_intro,
 };
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::trust::{DeviceLineageState, LineageHead, MAX_OTHER_GENESIS, TrustLevel, TrustState};
@@ -129,6 +130,88 @@ fn valid_geneses<'a>(
         .collect();
     out.sort_by_key(|(h, _)| *h);
     out
+}
+
+/// Spec 15 step 2 as amended (Task 14 review I3): the genesis every
+/// device of a legacy account settles on, among `geneses` (valid, signed by
+/// the generation 0 identity): the smallest hash whose creator is in
+/// `eligible` (listed and not revoked, and listed when this device
+/// migrated), not in `excluded`, and not contested: no other valid record
+/// (another genesis, a valid legacy intro under any genesis, or this
+/// device's own key) claims the creator's id with other keys. A contested
+/// creator proves a forgery by a holder of the account keys: such a
+/// genesis is never chosen, so grinding a smaller hash under a real
+/// device's id captures nothing.
+fn winner<'a>(
+    geneses: &[([u8; 32], &'a Signed<GenesisBody>)],
+    intros: &[SignedLegacyIntro],
+    account_id: Id,
+    account_sign: &HybridVerifyingKey,
+    eligible: &BTreeSet<Id>,
+    excluded: &BTreeSet<Id>,
+    me: &DevicePublic,
+) -> Option<([u8; 32], &'a Signed<GenesisBody>)> {
+    let mut claims: BTreeMap<Id, BTreeSet<Vec<u8>>> = BTreeMap::new();
+    let mut claim = |id: Id, sign: &HybridVerifyingKey, kem: &HybridKemPublic| {
+        claims
+            .entry(id)
+            .or_default()
+            .insert(body_bytes(&(sign, kem)));
+    };
+    claim(me.device_id, &me.sign_pub, &me.kem_pub);
+    for (_, g) in geneses {
+        let c = &g.body.creator;
+        claim(c.device_id, &c.sign_pub, &c.kem_pub);
+    }
+    for i in intros {
+        let e = &i.body.entry;
+        if i.body.account_id == account_id && verify_legacy_intro(i, account_sign).is_ok() {
+            claim(e.device_id, &e.sign_pub, &e.kem_pub);
+        }
+    }
+    geneses
+        .iter()
+        .find(|(_, g)| {
+            let id = g.body.creator.device_id;
+            eligible.contains(&id)
+                && !excluded.contains(&id)
+                && claims.get(&id).is_some_and(|k| k.len() == 1)
+        })
+        .map(|(h, g)| (*h, *g))
+}
+
+/// Ids present and not revoked, and ids revoked, in the device list.
+fn split_list(entries: &[DeviceEntry]) -> (BTreeSet<Id>, BTreeSet<Id>) {
+    let (live, gone): (Vec<&DeviceEntry>, Vec<&DeviceEntry>) =
+        entries.iter().partition(|e| e.revoked_at.is_none());
+    (
+        live.iter().map(|e| e.device_id).collect(),
+        gone.iter().map(|e| e.device_id).collect(),
+    )
+}
+
+/// A legacy intro record for `entry` under `genesis`.
+fn legacy_intro_record(
+    account_id: Id,
+    genesis: [u8; 32],
+    entry: RosterEntry,
+    keys: &DeviceKeys,
+    me: &DevicePublic,
+    account_sign: &crate::crypto::HybridSigningKey,
+) -> Result<Record> {
+    let body = LegacyIntroBody {
+        account_id,
+        genesis_hash: genesis,
+        entry,
+        pop: sign_pop(keys, &account_id.0, me)?,
+    };
+    let signed = sign_legacy_intro(body, account_sign)?;
+    Ok(Record {
+        id: legacy_intro_id(&signed.body),
+        kind: RecordKind::DeviceIntro,
+        version: 0,
+        data: signed.encode(),
+    })
 }
 
 /// The genesis at the root of the chain from `head`, walked back by parent
@@ -239,8 +322,11 @@ impl<S: RecordStore> Repository<S> {
     /// (`Validation("device")`, it must not join), a lost race with another
     /// migration on this device (`Conflict`).
     pub fn migrate_to_v2(&mut self, device_keys: &DeviceKeys) -> Result<Migration> {
-        if trust_of(&self.store)?.is_some() {
-            return Ok(Migration::Already);
+        if let Some(trust) = trust_of(&self.store)? {
+            return Ok(match self.join_winner(trust, device_keys)? {
+                Some(h) => Migration::Joined(h),
+                None => Migration::Already,
+            });
         }
         if !self.store.persists_chain() {
             return Err(Error::InvalidFormat(
@@ -260,56 +346,40 @@ impl<S: RecordStore> Repository<S> {
         }
         let me = device_keys.public(me_id)?;
         let my_entry = entry_from(&me, &mine);
-        let listed: BTreeSet<Id> = list
-            .body
-            .entries
-            .iter()
-            .filter(|e| e.revoked_at.is_none())
-            .map(|e| e.device_id)
-            .collect();
-        let revoked_2b: BTreeSet<Id> = list
-            .body
-            .entries
-            .iter()
-            .filter(|e| e.revoked_at.is_some())
-            .map(|e| e.device_id)
-            .collect();
+        let (listed, revoked_2b) = split_list(&list.body.entries);
 
         let records = lineage_records(&self.store)?;
         let identity = self.account.params.identity_pub.clone();
         let geneses = valid_geneses(&records, account_id, &identity);
-        let own = geneses
-            .iter()
-            .find(|(_, g)| g.body.creator.device_id == me_id && same_keys(&g.body.creator, &me));
-        let chosen = own.or_else(|| {
-            geneses.iter().find(|(_, g)| {
-                g.body.creator.device_id != me_id && listed.contains(&g.body.creator.device_id)
-            })
-        });
+        let intros = stored_legacy_intros(&self.store)?;
+        let chosen = winner(
+            &geneses,
+            &intros,
+            account_id,
+            &self.account.params.signing_pub,
+            &listed,
+            &revoked_2b,
+            &me,
+        );
         let keyset = self.account.keyset();
         let mut writes = Vec::new();
         let (genesis_hash, creator, outcome) = match chosen {
             Some((h, g)) if g.body.creator.device_id == me_id => {
-                (*h, g.body.creator.clone(), Migration::Genesis(*h))
+                (h, g.body.creator.clone(), Migration::Genesis(h))
             }
             Some((h, g)) => {
-                let body = LegacyIntroBody {
-                    account_id,
-                    genesis_hash: *h,
-                    entry: my_entry.clone(),
-                    pop: sign_pop(device_keys, &account_id.0, &me)?,
-                };
-                let signed = sign_legacy_intro(body, &keyset.signing)?;
                 writes.push((
-                    Record {
-                        id: legacy_intro_id(&signed.body),
-                        kind: RecordKind::DeviceIntro,
-                        version: 0,
-                        data: signed.encode(),
-                    },
+                    legacy_intro_record(
+                        account_id,
+                        h,
+                        my_entry.clone(),
+                        device_keys,
+                        &me,
+                        &keyset.signing,
+                    )?,
                     None,
                 ));
-                (*h, g.body.creator.clone(), Migration::Joined(*h))
+                (h, g.body.creator.clone(), Migration::Joined(h))
             }
             None => {
                 let body = GenesisBody {
@@ -363,8 +433,9 @@ impl<S: RecordStore> Repository<S> {
         trust
             .excluded
             .extend(revoked_2b.iter().filter(|id| **id != me_id));
+        trust.migration_listed = listed.clone();
         let out = accept_legacy_intros(
-            &stored_legacy_intros(&self.store)?,
+            &intros,
             &LegacyAnchor {
                 account_id,
                 genesis_hash,
@@ -378,10 +449,9 @@ impl<S: RecordStore> Repository<S> {
         // an excluded one has no level.
         let excluded = trust.excluded.clone();
         trust.levels.retain(|id, _| !excluded.contains(id));
-        trust.rotate_now = !revoked_2b.is_empty()
-            && !records.iter().any(
-                |r| matches!(r, LineageRecord::Rotation(s) if s.body.account_id == account_id),
-            );
+        // Review I1: never from unverified records; a rotation that moves
+        // the head hides it (`migration_alerts`).
+        trust.rotate_now = !revoked_2b.is_empty();
         // Spec 15 step 2: the other valid genesis records are never
         // followed; seen at migration, they alert at once.
         trust.other_genesis = geneses
@@ -422,12 +492,25 @@ impl<S: RecordStore> Repository<S> {
                 records.iter().find(|r| r.hash() == trust.head.hash)
             && let Ok(Some(list)) = self.read_list::<DeviceEntry>()
         {
-            let listed: BTreeSet<Id> = list
-                .body
-                .entries
-                .iter()
-                .filter(|e| e.revoked_at.is_none())
-                .map(|e| e.device_id)
+            let (listed, revoked_now) = split_list(&list.body.entries);
+            // Review M1: a 2b revocation written after this device migrated
+            // (by a device not updated yet) drops a `Tofu` device here and
+            // asks for the rotation again; a `Verified` pin stays.
+            for id in &revoked_now {
+                if *id != trust.me.device_id
+                    && next.levels.get(id) == Some(&TrustLevel::Tofu)
+                    && !next.excluded.contains(id)
+                {
+                    next.roster.retain(|e| e.device_id != *id);
+                    next.levels.remove(id);
+                    next.excluded.insert(*id);
+                    next.rotate_now = true;
+                }
+            }
+            // Review I2: only devices listed when this device migrated.
+            let eligible: BTreeSet<Id> = listed
+                .intersection(&trust.migration_listed)
+                .copied()
                 .collect();
             let out = accept_legacy_intros(
                 &stored_legacy_intros(&self.store)?,
@@ -436,7 +519,7 @@ impl<S: RecordStore> Repository<S> {
                     genesis_hash: trust.head.hash,
                     account_sign: &self.account.params.signing_pub,
                     creator: g.body.creator.device_id,
-                    listed: &listed,
+                    listed: &eligible,
                 },
             );
             apply_legacy(&mut next, &out);
@@ -461,7 +544,13 @@ impl<S: RecordStore> Repository<S> {
     pub fn migration_alerts(&self) -> Result<MigrationAlerts> {
         Ok(
             trust_of(&self.store)?.map_or_else(MigrationAlerts::default, |t| MigrationAlerts {
-                rotate_now: t.rotate_now && t.head.generation == 0,
+                rotate_now: t.rotate_now
+                    && t.head.generation == 0
+                    && !matches!(
+                        t.state,
+                        DeviceLineageState::Quarantined { .. }
+                            | DeviceLineageState::Orphaned { .. }
+                    ),
                 other_genesis: t.genesis_alert,
             }),
         )
@@ -489,6 +578,154 @@ impl<S: RecordStore> Repository<S> {
         }
         self.store
             .put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)
+    }
+
+    /// Review I3 (spec 15 step 2 as amended): a device still at generation
+    /// 0 on a genesis that is not the winner (`winner`, computed with the
+    /// devices listed now and when this device migrated) moves to the
+    /// winner, with no user step, when nothing makes the move costly: the
+    /// state is `Current`, no rotation record of the account is known on
+    /// either side, and it pins no other device `Verified` (no SAS pairing
+    /// or verification made on its own genesis). It publishes its legacy
+    /// intro under the winner (unless it created it), and its trust state
+    /// moves in the same transaction: head the winner, roster this device
+    /// and the winner's creator (`Tofu`), the devices it pinned before
+    /// pending `Tofu` until their own intro under the winner (they move the
+    /// same way), the genesis it left noted with the alert kept. Then the
+    /// legacy intros under the winner are applied. Run by `migrate_to_v2`,
+    /// which the app calls at each unlock. `None` when it does not move.
+    /// Once a rotation exists the divergence is left to the user: the
+    /// alert, then a re-pair (`repair_from_grant`, an A9 follow).
+    fn join_winner(&mut self, trust: TrustState, keys: &DeviceKeys) -> Result<Option<[u8; 32]>> {
+        let me = trust.me.device_id;
+        if trust.head.generation != 0
+            || trust.state != DeviceLineageState::Current
+            || self.pending.is_some()
+            || self.lineage_lock.is_some()
+            || self.records_id != trust.account_id
+            || self.account.params.identity_pub != trust.identity_pub
+            || keys.public(me)? != trust.me
+            || trust.roster.iter().any(|e| {
+                e.device_id != me && trust.levels.get(&e.device_id) == Some(&TrustLevel::Verified)
+            })
+        {
+            return Ok(None);
+        }
+        let records = lineage_records(&self.store)?;
+        if records
+            .iter()
+            .any(|r| matches!(r, LineageRecord::Rotation(_)) && r.account_id() == trust.account_id)
+        {
+            return Ok(None);
+        }
+        let Some(list) = self.read_list::<DeviceEntry>()? else {
+            return Ok(None);
+        };
+        let (listed, _) = split_list(&list.body.entries);
+        let eligible: BTreeSet<Id> = listed
+            .intersection(&trust.migration_listed)
+            .copied()
+            .collect();
+        let geneses = valid_geneses(&records, trust.account_id, &trust.identity_pub);
+        let intros = stored_legacy_intros(&self.store)?;
+        let Some((h, g)) = winner(
+            &geneses,
+            &intros,
+            trust.account_id,
+            &self.account.params.signing_pub,
+            &eligible,
+            &trust.excluded,
+            &trust.me,
+        ) else {
+            return Ok(None);
+        };
+        if h == trust.head.hash {
+            return Ok(None);
+        }
+        let mine = trust
+            .roster
+            .iter()
+            .find(|e| e.device_id == me)
+            .cloned()
+            .ok_or_else(|| refused("device", "not in its own roster"))?;
+        let creator = g.body.creator.clone();
+        let mut writes = Vec::new();
+        if creator.device_id != me {
+            writes.push((
+                legacy_intro_record(
+                    trust.account_id,
+                    h,
+                    mine.clone(),
+                    keys,
+                    &trust.me,
+                    &self.account.keyset().signing,
+                )?,
+                None,
+            ));
+        }
+        let mut next = trust.clone();
+        next.head.hash = h;
+        for e in &trust.roster {
+            if e.device_id != me {
+                next.levels.insert(e.device_id, TrustLevel::Tofu);
+            }
+        }
+        next.roster = vec![mine];
+        if creator.device_id != me {
+            next.levels.insert(creator.device_id, TrustLevel::Tofu);
+            insert_sorted(&mut next.roster, creator.clone());
+        }
+        next.other_genesis.retain(|x| *x != h);
+        if !next.other_genesis.contains(&trust.head.hash) {
+            next.other_genesis.push(trust.head.hash);
+            next.other_genesis.sort();
+            next.other_genesis.truncate(MAX_OTHER_GENESIS);
+        }
+        next.genesis_alert = true;
+        let out = accept_legacy_intros(
+            &intros,
+            &LegacyAnchor {
+                account_id: trust.account_id,
+                genesis_hash: h,
+                account_sign: &self.account.params.signing_pub,
+                creator: creator.device_id,
+                listed: &eligible,
+            },
+        );
+        apply_legacy(&mut next, &out);
+        self.store
+            .put_with_trust_cas(writes, Vec::new(), None, &trust, &next)?;
+        self.refresh_pending_rotation()?;
+        Ok(Some(h))
+    }
+
+    /// Concern 5 (spec 15, Task 17 UI): the devices of the account that
+    /// have not migrated, as this device sees them: listed and not revoked
+    /// in the device list, not this device, not in the roster, neither
+    /// revoked along the lineage nor excluded, and pinned `Tofu` with no
+    /// roster entry (listed when this device migrated, no accepted legacy
+    /// intro since). A rotation now leaves them out ("devra être
+    /// réappairé"): the rotation screen lists them before a generation 0
+    /// rotation, and after one they are the devices to re-pair. Sorted.
+    /// Empty without a trust state.
+    pub fn unmigrated_devices(&self) -> Result<Vec<Id>> {
+        let Some(t) = trust_of(&self.store)? else {
+            return Ok(Vec::new());
+        };
+        let Some(list) = self.read_list::<DeviceEntry>()? else {
+            return Ok(Vec::new());
+        };
+        let (listed, _) = split_list(&list.body.entries);
+        Ok(listed
+            .into_iter()
+            .filter(|id| {
+                *id != t.me.device_id
+                    && !t.roster.iter().any(|e| e.device_id == *id)
+                    && !t.revoked.contains(id)
+                    && !t.excluded.contains(id)
+                    && t.levels.get(id) == Some(&TrustLevel::Tofu)
+            })
+            .collect())
     }
 
     /// "Vérifier mes appareils" (spec 15 step 4, R17): the pairing QR and
@@ -535,7 +772,10 @@ impl<S: RecordStore> Repository<S> {
                 return Err(IntegrityError::WrongContext.into());
             }
             next.levels.insert(id, TrustLevel::Verified);
-        } else if trust.conflicted.contains(&id) && trust.head.generation == 0 {
+        } else if trust.conflicted.contains(&id)
+            && trust.head.generation == 0
+            && self.account.params.identity_pub == trust.identity_pub
+        {
             let signer = &self.account.params.signing_pub;
             let entry = stored_legacy_intros(&self.store)?
                 .into_iter()
@@ -545,7 +785,6 @@ impl<S: RecordStore> Repository<S> {
                         && i.body.entry.device_id == id
                         && i.body.entry.introduced_by.is_none()
                         && same_keys(&i.body.entry, peer)
-                        && self.account.params.identity_pub == trust.identity_pub
                         && verify_legacy_intro(i, signer).is_ok()
                 })
                 .map(|i| i.body.entry)

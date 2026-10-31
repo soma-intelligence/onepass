@@ -973,6 +973,7 @@ fn repair_of_known_account_is_a_follow() {
                 new_secret_key: &new_sk,
                 device_keys: &v.me.keys,
                 reason: RotationReason::Revoke,
+                keep_tofu: &[],
             })
             .unwrap();
     sync(&mut v.server, &mut v.a).unwrap();
@@ -1036,6 +1037,7 @@ fn reintro_after_adoption() {
                 new_secret_key: &new_sk,
                 device_keys: &v.me.keys,
                 reason: RotationReason::Revoke,
+                keep_tofu: &[],
             })
             .unwrap();
     sync(&mut v.server, &mut v.a).unwrap();
@@ -1262,6 +1264,7 @@ fn repair_from_rotating_drops_the_abandoned_rotation() {
             new_secret_key: &c_sk,
             device_keys: &c_keys.keys,
             reason: RotationReason::Revoke,
+            keep_tofu: &[],
         })
         .unwrap();
     assert!(matches!(
@@ -1280,6 +1283,7 @@ fn repair_from_rotating_drops_the_abandoned_rotation() {
                 new_secret_key: &a_sk,
                 device_keys: &v.me.keys,
                 reason: RotationReason::Revoke,
+                keep_tofu: &[],
             })
             .unwrap();
     sync(&mut v.server, &mut v.a).unwrap();

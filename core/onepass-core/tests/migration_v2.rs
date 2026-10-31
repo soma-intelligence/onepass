@@ -110,13 +110,17 @@ fn legacy_intro(
     }
 }
 
-/// A and B of one legacy account (no trust state), both synced; B is not
-/// registered in the device list yet.
+/// A and B of one legacy account (no trust state), both listed in the
+/// device list (a 2b pairing lists the newcomer) and synced.
 fn legacy_pair() -> (Server, Device, Device, SecretKey) {
     let mut server = Server::default();
     let (mut a, mut b, sk, _) = setup(&mut server, &[("alice", T0), ("bob", T0 + 1)]);
     sync(&mut server, &mut a).unwrap();
+    b.repo()
+        .register_this_device("Mac", DeviceKind::Mac, DeviceMode::Personal)
+        .unwrap();
     sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
     (server, a, b, sk)
 }
 
@@ -380,41 +384,161 @@ fn conflicting_keys_excluded() {
     let _ = ka;
 }
 
-#[test]
-fn second_genesis_alerts() {
-    let (mut server, mut a, mut b, _sk) = legacy_pair();
+/// A and B listed, then both migrate offline, each before seeing the
+/// other's genesis; then both sync. Returns (ga, gb).
+fn diverged() -> (
+    Server,
+    Device,
+    Device,
+    SecretKey,
+    Keys,
+    Keys,
+    [u8; 32],
+    [u8; 32],
+) {
+    let (server, mut a, mut b, sk) = legacy_pair();
     let (ka, kb) = (Keys::new(), Keys::new());
-    // Both migrate offline, each before seeing the other's genesis.
     let Migration::Genesis(ga) = migrate(&mut a, &ka) else {
         panic!("genesis");
     };
     let Migration::Genesis(gb) = migrate(&mut b, &kb) else {
         panic!("genesis");
     };
+    (server, a, b, sk, ka, kb, ga, gb)
+}
+
+/// Review I3: two offline migrations converge on one deterministic winner
+/// (the smallest valid genesis hash, creator listed and uncontested) at
+/// the next unlock-time `migrate_to_v2`, with no user step while no
+/// rotation exists and no `Verified` peer; the alert stays.
+#[test]
+fn second_genesis_alerts_and_converges() {
+    let (mut server, mut a, mut b, sk, ka, kb, ga, gb) = diverged();
     sync(&mut server, &mut a).unwrap();
     sync(&mut server, &mut b).unwrap();
     sync(&mut server, &mut a).unwrap();
     refresh(&mut a);
     refresh(&mut b);
+    // Seen: the alert, on both sides.
+    assert!(trust(&a).genesis_alert && trust(&b).genesis_alert);
+    assert_eq!(trust(&a).other_genesis, vec![gb]);
 
-    // A later genesis with another creator is not followed: an alert.
-    let ta = trust(&a);
-    assert_eq!(ta.head.hash, ga);
-    assert_eq!(ta.other_genesis, vec![gb]);
-    assert!(ta.genesis_alert);
-    assert!(a.repo().migration_alerts().unwrap().other_genesis);
-    let tb = trust(&b);
-    assert_eq!(tb.head.hash, gb);
-    assert!(tb.genesis_alert);
+    // The unlock-time call moves the loser to the winner.
+    let win = ga.min(gb);
+    let (ma, mb) = (migrate(&mut a, &ka), migrate(&mut b, &kb));
+    let moved = if win == ga { mb } else { ma };
+    assert_eq!(moved, Migration::Joined(win));
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    refresh(&mut a);
+    refresh(&mut b);
+    let (ta, tb) = (trust(&a), trust(&b));
+    assert_eq!(ta.head.hash, win);
+    assert_eq!(tb.head.hash, win);
+    let both = BTreeSet::from([ka.public(&mut a).device_id, kb.public(&mut b).device_id]);
+    assert_eq!(roster_ids(&ta), both);
+    assert_eq!(roster_ids(&tb), both);
+    assert!(ta.genesis_alert && tb.genesis_alert);
+    assert_eq!(migrate(&mut a, &ka), Migration::Already);
+    assert_eq!(migrate(&mut b, &kb), Migration::Already);
 
     // Seen: cleared, and it stays cleared.
     a.repo().clear_genesis_alert().unwrap();
     refresh(&mut a);
     assert!(!trust(&a).genesis_alert);
     a.lock();
-    a.unlock(&_sk);
+    a.unlock(&sk);
     assert!(!a.repo().migration_alerts().unwrap().other_genesis);
-    assert_eq!(trust(&a).head.hash, ga);
+    assert_eq!(trust(&a).head.hash, win);
+}
+
+/// Review I3: once a rotation exists, no automatic switch: the alert,
+/// then a re-pair from a device of the other lineage works as an A9
+/// follow (local items kept, own writes replayed under the new keys).
+#[test]
+fn diverged_after_a_rotation_alerts_then_repairs() {
+    use onepass_core::pairing::{FullGrant, FullGrantV2, snapshot_from_store};
+    use onepass_core::repo::pairing::repair_from_grant;
+
+    let (mut server, mut a, mut b, sk, ka, kb, _ga, gb) = diverged();
+    // A pushes its genesis and rotates before B's genesis arrives.
+    sync(&mut server, &mut a).unwrap();
+    let (head, new_sk) = rotate_a(&mut server, &mut a, &ka, &sk, &[]);
+    // B writes offline on its own genesis, then fetches (its push would
+    // fail: the server's vaults are sealed under A's new identity).
+    let v = b.vault();
+    let offline = login(v.id, "offline", T0 + 50);
+    b.save(&offline);
+    pull(&server, &mut b);
+    refresh(&mut b);
+    assert_eq!(
+        migrate(&mut b, &kb),
+        Migration::Already,
+        "no automatic switch"
+    );
+    let tb = trust(&b);
+    assert_eq!(tb.head.hash, gb);
+    assert!(tb.genesis_alert);
+
+    // B re-pairs from A (the grant as the SAS session carries it).
+    let b_id = kb.public(&mut b).device_id;
+    let grant = {
+        let repo = a.repo();
+        FullGrantV2 {
+            full: FullGrant {
+                account_id: repo.account().params.account_id,
+                secret_key: zeroize::Zeroizing::new(new_sk.to_display()),
+                mode: DeviceMode::Personal,
+                device_id: b_id,
+                snapshot: snapshot_from_store(repo.store()).unwrap(),
+            },
+            trust: repo.trust_snapshot().unwrap(),
+            sync: None,
+            enroll: None,
+        }
+    };
+    let session = b.repo.take().unwrap();
+    let (repo, _auk, got) = repair_from_grant(session, &grant, PASSWORD, &kb.0).unwrap();
+    assert_eq!(got.to_display(), new_sk.to_display());
+    b.repo = Some(repo);
+    assert_eq!(trust(&b).head.hash, head);
+    assert!(b.items().iter().any(|i| i.id == offline.id));
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert!(a.items().iter().any(|i| i.id == offline.id));
+}
+
+/// A rotation record that decodes but verifies under nothing.
+fn junk_rotation(account_id: Id) -> Record {
+    use onepass_core::crypto::IdentityKey;
+    use onepass_core::lineage::{RotationBody, sign_rotation};
+    let keys = DeviceKeys::generate_software().unwrap();
+    let p = keys.public(Id::new()).unwrap();
+    let identity = IdentityKey::generate().unwrap();
+    let body = RotationBody {
+        format: LINEAGE_FORMAT,
+        account_id,
+        generation: 1,
+        parent: [0x42; 32],
+        rotator: p.device_id,
+        reason: RotationReason::Rotate,
+        revoked: vec![],
+        roster: vec![entry_of(&p, "junk")],
+        identity_pub: identity.verifying_key(),
+        params_hash: [0; 32],
+        keyset_hash: [0; 32],
+        deliveries: vec![],
+        from_heads: BTreeMap::new(),
+        issued_at: T0,
+    };
+    let r = LineageRecord::Rotation(sign_rotation(body, &keys, &identity).unwrap());
+    Record {
+        id: r.record_id(),
+        kind: RecordKind::Lineage,
+        version: 1,
+        data: r.encode(),
+    }
 }
 
 #[test]
@@ -424,6 +548,10 @@ fn rotate_now_prompt_once() {
     let r_id = r.repo().this_device_id().unwrap();
     sync(&mut server, &mut a).unwrap();
     a.repo().revoke_device(r_id).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    // Review I1: a decodable record nobody signed does not hide the prompt.
+    let account_id = r.repo().account().params.account_id;
+    push_record(&mut server, &mut r, junk_rotation(account_id));
     sync(&mut server, &mut a).unwrap();
 
     let ka = Keys::new();
@@ -444,7 +572,120 @@ fn rotate_now_prompt_once() {
     let kb = Keys::new();
     migrate(&mut b, &kb);
     assert!(trust(&b).rotate_now);
-    let _ = r;
+}
+
+/// Review I2: a holder of the account keys (here a legacy device's
+/// session, as a 2b-revoked one could sign the same) lists a fresh id and
+/// posts its legacy intro before the first rotation: it is a `Tofu` roster
+/// entry, but the rotation the user runs keeps only the `Tofu` devices the
+/// user confirmed: no delivery for it. An id listed after this device
+/// migrated never joins.
+#[test]
+fn unconfirmed_tofu_devices_get_no_delivery() {
+    use onepass_core::devices::DeviceEntry;
+    use onepass_core::lineage::RotationBody;
+
+    let (mut server, mut a, mut b, sk) = legacy_pair();
+    let mut c = third(&mut server, &sk, "iPad");
+    let x = DeviceKeys::generate_software().unwrap();
+    let x_pub = x.public(Id::new()).unwrap();
+    let entry = |id: Id| DeviceEntry {
+        device_id: id,
+        name: "Mac caché".into(),
+        kind: DeviceKind::Mac,
+        mode: DeviceMode::Personal,
+        added_at: T0,
+        added_by: None,
+        revoked_at: None,
+    };
+    c.repo().add_device(entry(x_pub.device_id)).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let ka = Keys::new();
+    let Migration::Genesis(g) = migrate(&mut a, &ka) else {
+        panic!("genesis");
+    };
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    let kb = Keys::new();
+    migrate(&mut b, &kb);
+    sync(&mut server, &mut b).unwrap();
+
+    // X's intro under A's genesis, and a fresh Y listed after A migrated.
+    sync(&mut server, &mut c).unwrap();
+    let intro = legacy_intro(&mut c, g, &x, &x_pub);
+    push_record(&mut server, &mut c, intro);
+    let y = DeviceKeys::generate_software().unwrap();
+    let y_pub = y.public(Id::new()).unwrap();
+    c.repo().add_device(entry(y_pub.device_id)).unwrap();
+    let intro = legacy_intro(&mut c, g, &y, &y_pub);
+    push_record(&mut server, &mut c, intro);
+    sync(&mut server, &mut a).unwrap();
+    refresh(&mut a);
+    let ta = trust(&a);
+    let b_id = kb.public(&mut b).device_id;
+    assert!(
+        roster_ids(&ta).contains(&x_pub.device_id),
+        "inside the TOFU window"
+    );
+    assert!(
+        !roster_ids(&ta).contains(&y_pub.device_id),
+        "listed after migration"
+    );
+    assert!(roster_ids(&ta).contains(&b_id));
+    // Concern 5: C never migrated: the rotation screen names it.
+    let c_id = c.repo().this_device_id().unwrap();
+    assert_eq!(a.repo().unmigrated_devices().unwrap(), vec![c_id]);
+
+    // A keep of a device that is not `Tofu` in the roster is refused.
+    let new_sk = SecretKey::generate().unwrap();
+    let r = a.repo().rotate(RotateRequest {
+        revoke: vec![],
+        new_password: None,
+        password: PASSWORD,
+        secret_key: &sk,
+        new_secret_key: &new_sk,
+        device_keys: &ka.0,
+        reason: RotationReason::Rotate,
+        keep_tofu: &[y_pub.device_id],
+    });
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+
+    // The user confirms B only.
+    let (head, _) = rotate_a(&mut server, &mut a, &ka, &sk, &[b_id]);
+    let rec = a
+        .store()
+        .list(RecordKind::Lineage)
+        .unwrap()
+        .into_iter()
+        .filter_map(|r| LineageRecord::decode(&r.data).ok())
+        .find(|r| r.hash() == head)
+        .unwrap();
+    let LineageRecord::Rotation(rot) = rec else {
+        panic!("a rotation");
+    };
+    let body: RotationBody = rot.body;
+    let delivered: BTreeSet<Id> = body.deliveries.iter().map(|(id, _)| *id).collect();
+    assert_eq!(delivered, BTreeSet::from([b_id]));
+    assert!(!body.roster.iter().any(|e| e.device_id == x_pub.device_id));
+}
+
+/// Review M1: a 2b revocation written after this device migrated (by a
+/// device not updated yet) drops a `Tofu` device and asks for the rotation.
+#[test]
+fn late_2b_revocation_drops_a_tofu_device() {
+    let (mut server, mut a, mut b, sk, _ka, kb, _g) = migrated_pair();
+    let b_id = kb.public(&mut b).device_id;
+    assert!(!trust(&a).rotate_now);
+    let mut old = third(&mut server, &sk, "Vieux iPad");
+    old.repo().revoke_device(b_id).unwrap();
+    sync(&mut server, &mut old).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    refresh(&mut a);
+    let ta = trust(&a);
+    assert!(!roster_ids(&ta).contains(&b_id));
+    assert!(ta.excluded.contains(&b_id));
+    assert!(a.repo().migration_alerts().unwrap().rotate_now);
 }
 
 #[test]
@@ -493,6 +734,7 @@ fn rotate_a(
     a: &mut Device,
     ka: &Keys,
     sk: &SecretKey,
+    keep_tofu: &[Id],
 ) -> ([u8; 32], SecretKey) {
     let new_sk = SecretKey::generate().unwrap();
     let out = a
@@ -505,6 +747,7 @@ fn rotate_a(
             new_secret_key: &new_sk,
             device_keys: &ka.0,
             reason: RotationReason::Rotate,
+            keep_tofu,
         })
         .unwrap();
     sync(server, a).unwrap();
@@ -524,7 +767,7 @@ fn legacy_device_seeing_rotation_before_migrating_is_not_locked_out() {
     let ka = Keys::new();
     migrate(&mut a, &ka);
     sync(&mut server, &mut a).unwrap();
-    rotate_a(&mut server, &mut a, &ka, &sk);
+    rotate_a(&mut server, &mut a, &ka, &sk, &[]);
 
     // B fetches everything while locked, then unlocks with its keys.
     pull(&server, &mut b);
@@ -546,8 +789,9 @@ fn legacy_device_seeing_rotation_before_migrating_is_not_locked_out() {
 #[test]
 fn migrated_legacy_device_follows_a_rotation() {
     let (mut server, mut a, mut b, sk, ka, kb, _g) = migrated_pair();
+    let b_id = kb.public(&mut b).device_id;
     b.lock();
-    let (head, new_sk) = rotate_a(&mut server, &mut a, &ka, &sk);
+    let (head, new_sk) = rotate_a(&mut server, &mut a, &ka, &sk, &[b_id]);
     pull(&server, &mut b);
     let prompt = pending_rotation(&b.store()).unwrap().expect("a prompt");
     assert!(prompt.tofu_signer);

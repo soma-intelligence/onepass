@@ -12,7 +12,8 @@
 //! strictly: the whole buffer, a canonical re-encoding equal to the input,
 //! sorted and unique lists, bounded sizes and well-formed keys. Version 2
 //! added the own-write log (spec 10.4), version 3 the migration notes of
-//! spec 15 (`other_genesis`, `genesis_alert`, `rotate_now`, `conflicted`);
+//! spec 15 (`other_genesis`, `genesis_alert`, `rotate_now`, `conflicted`,
+//! `migration_listed`);
 //! versions 1 and 2 are refused (they never shipped).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -256,6 +257,12 @@ pub struct TrustState {
     /// keys. Always a subset of `excluded`; a verification
     /// (`Repository::verify_device`) lifts it.
     pub conflicted: BTreeSet<Id>,
+    /// Spec 15 step 3 (Task 14 review I2): the devices listed and not
+    /// revoked in the account-signed device list when this device migrated
+    /// (or created the account). Only they can join by a legacy intro, or
+    /// create a genesis this device switches to: a device listed later came
+    /// through the extended pairing (`Verified`), never through TOFU.
+    pub migration_listed: BTreeSet<Id>,
 }
 
 impl TrustState {
@@ -287,6 +294,7 @@ impl TrustState {
             genesis_alert: false,
             rotate_now: false,
             conflicted: BTreeSet::new(),
+            migration_listed: BTreeSet::new(),
         }
     }
 
@@ -461,6 +469,7 @@ pub mod tests {
         s.genesis_alert = true;
         s.rotate_now = true;
         s.conflicted.insert(Id([6; 16]));
+        s.migration_listed.insert(Id([2; 16]));
         s
     }
 

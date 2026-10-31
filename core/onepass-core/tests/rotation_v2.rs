@@ -166,6 +166,7 @@ fn request<'a>(
         new_secret_key: new_sk,
         device_keys: &f.me.keys,
         reason,
+        keep_tofu: &[],
     }
 }
 
