@@ -665,6 +665,15 @@ fn follow_with<S: RecordStore>(
     // deliveries of the losing Secret Key, its params, keyset and lists):
     // nobody acts on a lineage record that never reached the server.
     let mut drop_pending = Vec::new();
+    // Fix round 2: a password change made under the identity left is
+    // dropped (never pushed: review I3), not held forever. The prompt
+    // reported it (`pending_password_change`) before this call.
+    let left_id = current_records_id(&trust);
+    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+        if store.is_pending_write(kind, left_id)? {
+            drop_pending.push((kind, left_id));
+        }
+    }
     if let Some(own_head) = bodies.get(&trust.head.hash)
         && switch
         && own_head.rotator == me
@@ -678,13 +687,7 @@ fn follow_with<S: RecordStore>(
                 .iter()
                 .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
         );
-        let left_id = current_records_id(&trust);
-        for kind in [
-            RecordKind::AccountParams,
-            RecordKind::Keyset,
-            RecordKind::DeviceList,
-            RecordKind::VaultList,
-        ] {
+        for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
             rows.push((kind, left_id));
         }
         for (kind, id) in rows {

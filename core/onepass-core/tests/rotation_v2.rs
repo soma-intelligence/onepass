@@ -3242,9 +3242,18 @@ fn password_change_of_left_identity_never_pushed() {
         |_, _, _| true,
     );
     let old_id = f_identity_record_id(&c, &f);
+    assert!(
+        c.store()
+            .is_pending_write(RecordKind::AccountParams, old_id)
+            .unwrap()
+    );
     let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
     c.repo = Some(repo);
     assert!(no_account_pair_out(&c, old_id));
+    // Fix round 2: dropped at the follow, not held forever.
+    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+        assert!(!c.store().is_pending_write(kind, old_id).unwrap());
+    }
     sync(&mut server, &mut c).unwrap();
     assert_eq!(
         server
@@ -3421,4 +3430,93 @@ fn cross_branch_revocation_alerts() {
     let t = e.store().trust_state().unwrap().unwrap();
     assert_eq!(t.head.hash, ra.head);
     assert!(t.revoked.contains(&f.others[B].id()));
+}
+
+/// Review M1 (fix round 2): the loser switches before its own phase 1 went
+/// out. Its lineage record, deliveries, params, keyset and lists are
+/// dropped from its outbox and never reach the server.
+#[test]
+fn switch_drops_the_losers_unsent_phase_one() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let a_sk = SecretKey::generate().unwrap();
+    let ra = a
+        .repo
+        .as_mut()
+        .unwrap()
+        .rotate(request(&f, &a_sk, vec![], RotationReason::Rotate))
+        .unwrap();
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    let a_wins = ra.head < rc.head;
+    let (wh, lh) = if a_wins {
+        (ra.head, rc.head)
+    } else {
+        (rc.head, ra.head)
+    };
+    let (mut w, mut l) = if a_wins { (a, c) } else { (c, a) };
+    // Only the winner's phase 1 goes out.
+    push_outbox(&mut server, &w).unwrap();
+    assert_eq!(
+        w.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    pull(&server, &mut l);
+    l.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(
+        state(&l),
+        DeviceLineageState::Candidate {
+            children: vec![wh],
+            resume: Some(1),
+        }
+    );
+    let body = rotation_of(&l.store(), &lh);
+    let left_id = identity_id(&body.identity_pub);
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&lh[..16]);
+    let mut rows = vec![(RecordKind::Lineage, Id(id))];
+    rows.extend(
+        body.deliveries
+            .iter()
+            .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&lh, *r))),
+    );
+    for kind in [
+        RecordKind::AccountParams,
+        RecordKind::Keyset,
+        RecordKind::DeviceList,
+        RecordKind::VaultList,
+    ] {
+        rows.push((kind, left_id));
+    }
+    for (kind, id) in &rows {
+        assert!(l.store().is_pending_write(*kind, *id).unwrap(), "{kind:?}");
+    }
+
+    sync(&mut server, &mut w).unwrap();
+    pull(&server, &mut l);
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, keys_of(&f, !a_wins)).unwrap();
+    l.repo = Some(repo);
+    assert_eq!(head_of(&l), wh);
+    for (kind, id) in &rows {
+        assert!(!l.store().is_pending_write(*kind, *id).unwrap(), "{kind:?}");
+    }
+    sync(&mut server, &mut l).unwrap();
+    for (kind, id) in &rows {
+        assert!(server.get(*kind, *id).is_none(), "{kind:?} on the server");
+        assert!(
+            outbox(&l)
+                .iter()
+                .all(|(ch, _)| (ch.kind, ch.id) != (*kind, *id)),
+            "{kind:?} in the outbox"
+        );
+    }
+    assert_eq!(
+        users(&l.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
 }

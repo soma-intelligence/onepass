@@ -358,7 +358,13 @@ pub trait RecordStore {
     /// pending rows `drop_pending` dropped without a deletion being queued
     /// (the phase-1 records of a rotation that lost before they went out),
     /// and what a rotation being pushed needed forgotten, all or nothing.
-    /// The default writes them one after the other.
+    ///
+    /// The default is for a store that pushes nothing: it keeps no pending
+    /// rows and no rotation push to forget. A row of `drop_pending` it
+    /// reports pending (`is_pending_write`) would be left behind, so the
+    /// default refuses then (`Error::Store`), nothing written: a store
+    /// with pending rows implements this. Otherwise it writes the trust
+    /// state (`put_with_trust_cas`), then the retained rows.
     fn put_follow(
         &mut self,
         chain: ChainState,
@@ -367,7 +373,11 @@ pub trait RecordStore {
         retained: Vec<Record>,
         drop_pending: Vec<(RecordKind, Id)>,
     ) -> Result<()> {
-        let _ = drop_pending;
+        for (kind, id) in drop_pending {
+            if self.is_pending_write(kind, id)? {
+                return Err(Error::Store("pending rows to drop unsupported".into()));
+            }
+        }
         self.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain), expected, trust)?;
         if retained.is_empty() {
             return Ok(());
