@@ -274,8 +274,8 @@ On a device with no pins (new device, or after "Restaurer avec mon Emergency Kit
 | `Current { head }` | normal | yes |
 | `Candidate { head, children }` | at least one valid child of `head` is known, not yet decided by the user | **no**: read-only (R10) |
 | `Rotating { head, phase }` | this device made `head`, pushing phases 1 to 3 | yes, under the new identity |
-| `Quarantined { head, by, since }` | a valid child of `head` revokes this device, first read at device time `since` | no; locked, biometric enrollment deleted, erased at `since` + 7 days |
-| `Orphaned { head, child }` | a valid child of `head` does not list this device | no; local data readable after unlock |
+| `Quarantined { head, by, rotator, since, resume }` | a valid child of `head` revokes this device, first read at device time `since` | no; locked, biometric enrollment deleted, erased at `since` + 7 days |
+| `Orphaned { head, child, rotator, resume }` | a valid child of `head` does not list this device | no; local data readable after unlock |
 
 ### 8.2 Transitions
 
@@ -294,7 +294,7 @@ On a device with no pins (new device, or after "Restaurer avec mon Emergency Kit
 | `Candidate` entered from `Rotating { phase }` | user: "Ce n'était pas moi" for the winning sibling, or the sibling is no longer known | `Rotating { phase }`: the push of its own rotation resumes | user / yes |
 | `Quarantined` | user: "Effacer cet appareil" | erased (as spec 2b A5) | user |
 | `Quarantined` | device time reaches `since` + 7 days, checked at launch and on the quarantine screen | erased | yes |
-| `Quarantined` | user: "Ce n'était pas moi", password | `Current`, signer excluded, offer to remove it | user |
+| `Quarantined` or `Orphaned` | user: "Ce n'était pas moi", password | `Current`, or `Rotating { phase }` when the lock stopped the device's own rotation (the phase is kept in the state); the signer, kept in the state when the lock was entered, excluded even if the record is gone; offer to remove it | user |
 | `Orphaned` | an intro for me under the child, from a trusted device | `Candidate` | yes |
 | `Orphaned` | re-pair or Emergency Kit | `Current` | user |
 | any | "Restaurer avec mon Emergency Kit" | section 7.5 | user |

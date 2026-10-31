@@ -406,8 +406,13 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Mark a device revoked (now). Revoking it again changes nothing. An
-    /// unknown id is `NotFound`.
+    /// unknown id is `NotFound`. Refused on a device with a trust state
+    /// (`Validation("device")`, key rotation v2 spec 10.1): there removing
+    /// a device is a rotation (`Repository::rotate`), never a list edit.
     pub fn revoke_device(&mut self, id: Id) -> Result<()> {
+        if trust_of(&self.store)?.is_some() {
+            return Err(invalid("device", "remove by rotation"));
+        }
         let at = now();
         self.edit_devices(|entries| {
             let e = entries
