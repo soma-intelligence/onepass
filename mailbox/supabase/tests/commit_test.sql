@@ -20,7 +20,7 @@ grant usage on sequence t_n to public;
 insert into t_keys (name, pk, cid)
 select n, pk, substring(extensions.digest('onepass/mailbox-credential-id/v1'::bytea || pk, 'sha256') from 1 for 16)
 from (select n, extensions.digest('onepass-commit-test-key/' || n, 'sha256') as pk
-      from unnest(array['a', 'a2', 'b', 'f', 'q', 's', 'r']) as n) k;
+      from unnest(array['a', 'a2', 'b', 'f', 'q', 's', 'r', 'k', 'c']) as n) k;
 
 create function onepass_test.cid(text) returns bytea language sql stable as $$ select cid from t_keys where name = $1 $$;
 create function onepass_test.mbx(text) returns bytea language sql stable as $$ select id from t_mbx where name = $1 $$;
@@ -83,7 +83,7 @@ revoke all on function onepass_test.next_seq(text), onepass_test.nrec(text), one
 set local role onepass_mailbox_api;
 select onepass_test.ok(
     (select bool_and(onepass_test.open(m, k) = 'ok')
-     from (values ('A', 'a'), ('B', 'b'), ('F', 'f'), ('Q', 'q'), ('S', 's'), ('R', 'r')) v (m, k)),
+     from (values ('A', 'a'), ('B', 'b'), ('F', 'f'), ('Q', 'q'), ('S', 's'), ('R', 'r'), ('K', 'k'), ('C', 'c')) v (m, k)),
     'commit_fixture_mailboxes_created');
 reset role;
 
@@ -96,6 +96,8 @@ values ('t_tiny', 100, 3, 4, 1000, 4), ('t_slow', 1000000, 1000, 4, 3, 20000);
 reset onepass.maintenance;
 update onepass_mailbox.mailboxes set plan = 't_tiny' where id = onepass_test.mbx('Q');
 update onepass_mailbox.mailboxes set plan = 't_slow' where id = onepass_test.mbx('S');
+-- C churns on the free plan (100 000 records, 120 requests a minute).
+update onepass_mailbox.mailboxes set plan = 'free' where id = onepass_test.mbx('C');
 
 -- ------------------------------------------------------- authentication
 
@@ -276,9 +278,9 @@ select onepass_test.ok(
      from onepass_mailbox.records r where r.mailbox_id = onepass_test.mbx('A') and r.kind = 1 and r.id = onepass_test.rid(1)),
     'delete_leaves_a_tombstone');
 select onepass_test.ok(
-    (select bytes_used = 2 and records_count = 2 and next_seq = 6
+    (select bytes_used = 2 + 128 and records_count = 3 and next_seq = 6
      from onepass_mailbox.mailboxes where id = onepass_test.mbx('A')),
-    'delete_decrements_bytes_and_records');
+    'delete_swaps_the_row_size_for_the_tombstone_cost');
 set local role onepass_mailbox_api;
 
 select onepass_test.ok(
@@ -376,16 +378,32 @@ set local role onepass_mailbox_api;
 select onepass_test.answers(
     $$select * from onepass_test.put('q', 'Q', 1, 1, decode(repeat('00', 98), 'hex'))$$,
     'ok', 'bytes_up_to_quota_are_accepted');
--- Swapping one record for another inside the quota passes.
-select onepass_test.ok(
-    (select count(*) = 2 and bool_and(status = 'ok')
-     from onepass_test.commit('q', 'Q', array[1, 1]::smallint[], array[onepass_test.rid(2), onepass_test.rid(9)],
+-- Q now: rid(1) 98 bytes at seq 4, rid(2) and rid(3) 1 byte: 100 bytes, 3 records.
+select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 2, 2, '\x02')$$,
+    'ok', 'rewriting_in_place_within_quota_passes');
+-- A tombstone stays a record and costs 128 bytes.
+select onepass_test.answers(
+    $$select * from onepass_test.commit('q', 'Q', array[1, 1]::smallint[], array[onepass_test.rid(2), onepass_test.rid(9)],
         array[2, 2]::bigint[], array[2, 1]::smallint[], array[null, null]::bigint[], array[null, '\x09']::bytea[],
-        array[null, null]::bytea[], array[null, 1])),
-    'delete_and_put_in_one_batch_stay_within_quota');
+        array[null, null]::bytea[], array[null, 1])$$,
+    'quota', 'tombstone_still_counts_as_a_record');
+select onepass_test.answers(
+    $$select * from onepass_test.commit('q', 'Q', array[1, 1]::smallint[], array[onepass_test.rid(1), onepass_test.rid(2)],
+        array[2, 2]::bigint[], array[1, 2]::smallint[], array[4, null]::bigint[], array['\x01', null]::bytea[],
+        array[null, null]::bytea[], array[1, null])$$,
+    'quota', 'tombstone_costs_128_bytes');
+-- Deletes only always pass, even past the byte limit: a full mailbox can delete.
+select onepass_test.answers($$select * from onepass_test.del('q', 'Q', 3)$$, 'ok', 'delete_only_batch_passes_quota');
 reset role;
 select onepass_test.ok(
-    (select bytes_used = 100 and records_count = 3 and next_seq = 7 from onepass_mailbox.mailboxes where id = onepass_test.mbx('Q')),
+    (select bytes_used = 100 - 1 + 128 and records_count = 3 from onepass_mailbox.mailboxes where id = onepass_test.mbx('Q')),
+    'delete_only_batch_may_go_over_the_byte_limit');
+set local role onepass_mailbox_api;
+select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 3, null, '\x03')$$,
+    'ok', 'reviving_a_tombstone_gives_back_its_cost');
+reset role;
+select onepass_test.ok(
+    (select bytes_used = 100 and records_count = 3 and next_seq = 8 from onepass_mailbox.mailboxes where id = onepass_test.mbx('Q')),
     'quota_counters_at_the_limit');
 -- A mailbox over its quota (the plan shrank) may still shrink, never grow.
 set local onepass.maintenance = 'on';
@@ -393,9 +411,10 @@ update onepass_mailbox.plans set max_bytes = 10, max_records = 1 where plan = 't
 reset onepass.maintenance;
 set local role onepass_mailbox_api;
 select onepass_test.answers($$select * from onepass_test.del('q', 'Q', 3)$$, 'ok', 'over_quota_mailbox_may_delete');
-select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 9, 6, '\x0909')$$, 'quota', 'over_quota_mailbox_may_not_grow');
-select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 5, null, '')$$, 'quota', 'over_quota_mailbox_may_not_add_a_record');
-select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 9, 6, '')$$, 'ok', 'over_quota_mailbox_may_shrink_a_body');
+select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 9, null, '\x0909')$$, 'quota', 'over_quota_mailbox_may_not_add_a_record');
+select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 2, 5, '\x020202')$$, 'quota', 'over_quota_mailbox_may_not_grow');
+select onepass_test.answers($$select * from onepass_test.put('q', 'Q', 1, 4, '')$$, 'ok', 'over_quota_mailbox_may_shrink_a_body');
+
 
 -- ------------------------------------------------- rate and consumed nonce
 
@@ -564,8 +583,9 @@ select onepass_test.ok(
     onepass_test.next_seq('R') = (select max(seq) + 1 from t_applied),
     'random_batches_next_seq_follows_the_last_seq');
 select onepass_test.ok(
-    (select bytes_used = (select coalesce(sum(size), 0) from onepass_mailbox.records where mailbox_id = m.id)
-            and records_count = (select count(*) from onepass_mailbox.records where mailbox_id = m.id and not deleted)
+    (select bytes_used = (select coalesce(sum(case when deleted then 128 else size end), 0)
+                          from onepass_mailbox.records where mailbox_id = m.id)
+            and records_count = (select count(*) from onepass_mailbox.records where mailbox_id = m.id)
      from onepass_mailbox.mailboxes m where m.id = onepass_test.mbx('R')),
     'random_batches_counters_match_the_rows');
 
@@ -582,3 +602,97 @@ select onepass_test.ok(
 select onepass_test.ok(
     (select bool_and(head = (select max(seq) from t_applied)) from t_feed),
     'change_feed_head_is_the_last_applied_seq');
+
+-- ------------------------------------------------------ capped conflicts
+
+-- K: 2000 rows of 16 KiB, written 200 at a time (3.2 MiB a batch).
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select bool_and(c.status = 'ok')
+     from generate_series(0, 9) b,
+          onepass_test.commit('k', 'K', array_fill(1::smallint, array[200]),
+              array(select onepass_test.rid(b * 200 + i) from generate_series(1, 200) i), array_fill(1::bigint, array[200]),
+              array_fill(1::smallint, array[200]), array_fill(null::bigint, array[200]),
+              array_fill(decode(repeat('ee', 16384), 'hex'), array[200]),
+              array_fill(null::bytea, array[200]), array_fill(16384, array[200])) c),
+    'conflict_fixture_2000_rows_of_16_kib');
+-- 2000 puts with expected none on those keys, plus one new key at the end.
+create temporary table t_conflict on commit drop as
+select row_number() over () as o, c.*
+from onepass_test.commit('k', 'K', array_fill(1::smallint, array[2001]),
+    array(select onepass_test.rid(i) from generate_series(1, 2001) i), array_fill(2::bigint, array[2001]),
+    array_fill(1::smallint, array[2001]), array_fill(null::bigint, array[2001]), array_fill('\x01'::bytea, array[2001]),
+    array_fill(null::bytea, array[2001]), array_fill(1, array[2001])) c;
+reset role;
+select onepass_test.ok(
+    (select count(*) = 256 and bool_and(status = 'conflict') and sum(octet_length(data)) = 4194304
+            and array_agg(id order by o) = array(select onepass_test.rid(i) from generate_series(1, 256) i)
+     from t_conflict),
+    'conflict_reply_is_a_prefix_capped_at_4_mib');
+select onepass_test.ok(
+    onepass_test.nrec('K') = 2000 and onepass_test.next_seq('K') = 2001
+    and not exists (select 1 from onepass_mailbox.records where mailbox_id = onepass_test.mbx('K') and version <> 1),
+    'capped_conflict_applied_nothing');
+-- Small rows: the cap is 1000 rows.
+set local role onepass_mailbox_api;
+select onepass_test.ok(
+    (select bool_and(status = 'ok')
+     from onepass_test.commit('k', 'K', array_fill(2::smallint, array[2000]),
+         array(select onepass_test.rid(i) from generate_series(1, 2000) i), array_fill(1::bigint, array[2000]),
+         array_fill(1::smallint, array[2000]), array_fill(null::bigint, array[2000]), array_fill('\x01'::bytea, array[2000]),
+         array_fill(null::bytea, array[2000]), array_fill(1, array[2000]))),
+    'conflict_fixture_2000_small_rows');
+select onepass_test.ok(
+    (select count(*) = 1000 and bool_and(status = 'conflict' and kind = 2)
+     from onepass_test.commit('k', 'K', array_fill(2::smallint, array[2000]),
+         array(select onepass_test.rid(i) from generate_series(1, 2000) i), array_fill(1::bigint, array[2000]),
+         array_fill(1::smallint, array[2000]), array_fill(null::bigint, array[2000]), array_fill('\x01'::bytea, array[2000]),
+         array_fill(null::bytea, array[2000]), array_fill(1, array[2000]))),
+    'conflict_reply_is_capped_at_1000_rows');
+
+-- ------------------------------------------- tombstone churn on free
+
+-- Put then delete 20 000 fresh keys a round: the tombstones keep counting,
+-- so the fifth round reaches the free plan's 100 000 records and the next
+-- put is refused in band.
+reset role;
+do $$
+declare
+    rnd integer;
+    st text;
+begin
+    for rnd in 0 .. 4 loop
+        select min(c.status) into st
+        from onepass_mailbox.api_commit(onepass_test.cid('c'), onepass_test.n(), now(), onepass_test.mbx('C'),
+            array_fill(4::smallint, array[20000]),
+            array(select onepass_test.rid(rnd * 20000 + i) from generate_series(1, 20000) i), array_fill(1::bigint, array[20000]),
+            array_fill(1::smallint, array[20000]), array_fill(null::bigint, array[20000]), array_fill('\x01'::bytea, array[20000]),
+            array_fill(null::bytea, array[20000]), array_fill(1, array[20000])) c;
+        if st <> 'ok' then
+            raise exception 'churn put round %: %', rnd, st;
+        end if;
+        select min(c.status) into st
+        from onepass_mailbox.api_commit(onepass_test.cid('c'), onepass_test.n(), now(), onepass_test.mbx('C'),
+            array_fill(4::smallint, array[20000]),
+            array(select onepass_test.rid(rnd * 20000 + i) from generate_series(1, 20000) i), array_fill(2::bigint, array[20000]),
+            array_fill(2::smallint, array[20000]), array_fill(null::bigint, array[20000]), array_fill(null::bytea, array[20000]),
+            array_fill(null::bytea, array[20000]), array_fill(null::integer, array[20000])) c;
+        if st <> 'ok' then
+            raise exception 'churn delete round %: %', rnd, st;
+        end if;
+    end loop;
+end
+$$;
+select onepass_test.ok(
+    (select records_count = 100000 and bytes_used = 100000 * 128
+     from onepass_mailbox.mailboxes where id = onepass_test.mbx('C'))
+    and not exists (select 1 from onepass_mailbox.records where mailbox_id = onepass_test.mbx('C') and not deleted),
+    'churned_tombstones_count_against_the_quota');
+set local role onepass_mailbox_api;
+select onepass_test.answers($$select * from onepass_test.put('c', 'C', 999999, null, '\x01')$$,
+    'quota', 'churn_reaches_the_free_plan_quota');
+select onepass_test.answers(
+    $$select * from onepass_test.commit('c', 'C', array[4]::smallint[], array[onepass_test.rid(1)], array[3]::bigint[],
+        array[1]::smallint[], array[null]::bigint[], array['\x01']::bytea[], array[null]::bytea[], array[1])$$,
+    'ok', 'reviving_a_churned_tombstone_still_passes');
+reset role;
