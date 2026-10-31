@@ -112,6 +112,10 @@ pub struct ContactEntry {
     pub verified_at: i64,
     /// The device of this account that verified.
     pub verified_on: Id,
+    /// Evidence only: the face-to-face transcript hash is
+    /// `SHA-256(QR text || Hello)`, which commits to neither the key
+    /// exchange nor the cards (the SAS over K is what binds the session),
+    /// and is the same on both sides even under a swapped key exchange.
     pub transcript_hash: [u8; 32],
     /// The name the owner chose: never the card's, never the server's.
     pub name_local: String,

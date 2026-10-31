@@ -6,8 +6,9 @@ mod common;
 
 use common::*;
 use onepass_core::contact::{
-    ContactHello, ContactInitiator, ContactLevel, ContactMessage, ContactOutcome, ContactResponder,
-    SignedContactCard,
+    CONTACT_LABEL, CONTACT_SESSION_SECS, ContactHello, ContactInitiator, ContactLevel,
+    ContactMessage, ContactOutcome, ContactResponder, MAX_CONTACT_MESSAGE_BYTES, SignedContactCard,
+    VerifiedPeer,
 };
 use onepass_core::crypto::{Aad, BlobKind, HybridKemSecret, SymmetricKey, open};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic, sign_pop};
@@ -96,6 +97,22 @@ fn person(name: &str) -> Person {
 
 const NOW: i64 = T0 + 100;
 
+/// The context a contact proof of possession signs.
+fn ctx(transcript: [u8; 32]) -> Vec<u8> {
+    [CONTACT_LABEL, &transcript].concat()
+}
+
+/// `device`'s card message with a proof over `context`.
+fn card_msg(p: &Person, context: &[u8]) -> ContactMessage {
+    let device = p.keys.public(p.device_id).unwrap();
+    let pop = sign_pop(&p.keys, context, &device).unwrap();
+    ContactMessage::Card {
+        card: p.card.clone(),
+        device,
+        pop,
+    }
+}
+
 fn is_validation<T: std::fmt::Debug>(r: &Result<T>) -> bool {
     matches!(r, Err(Error::Validation(_)))
 }
@@ -125,28 +142,31 @@ fn face_to_face_pins_both_sides() {
         r.on_frame(&to_alice, NOW + 3).unwrap(),
         ContactOutcome::Waiting
     );
-    assert!(r.peer_card().is_none());
+    assert!(r.verified_peer().is_none());
     let to_bob = r
         .confirm_and_send_card(&alice.card, &alice.keys, alice.device_id, NOW + 4)
         .unwrap();
-    let bob_card = r.peer_card().expect("verified once confirmed").clone();
-    let alice_card = match i.on_frame(&to_bob, NOW + 4).unwrap() {
+    let bob_peer = r.verified_peer().expect("verified once confirmed");
+    let alice_peer = match i.on_frame(&to_bob, NOW + 4).unwrap() {
         ContactOutcome::PeerCard(c) => c,
         other => panic!("{other:?}"),
     };
-    assert_eq!(bob_card, bob.card);
-    assert_eq!(alice_card, alice.card);
+    assert_eq!(*bob_peer.card(), bob.card);
+    assert_eq!(*alice_peer.card(), alice.card);
+    assert_eq!(bob_peer.transcript_hash(), r.transcript_hash());
+    assert_eq!(alice_peer.transcript_hash(), i.transcript_hash());
+    // A real card is far below the message cap.
+    assert!(alice.card.encode().len() < MAX_CONTACT_MESSAGE_BYTES / 20);
 
-    let t = r.transcript_hash();
     let on_alice = alice
         .dev
         .repo()
-        .finish_contact_session(&bob_card, t, NOW + 5)
+        .finish_contact_session(bob_peer, NOW + 5)
         .unwrap();
     let on_bob = bob
         .dev
         .repo()
-        .finish_contact_session(&alice_card, i.transcript_hash(), NOW + 5)
+        .finish_contact_session(alice_peer, NOW + 5)
         .unwrap();
     assert_eq!(on_alice.level, ContactLevel::Verified);
     assert_eq!(on_bob.level, ContactLevel::Verified);
@@ -196,10 +216,10 @@ fn mitm_on_transport_refused() {
         .confirm_and_send_card(&mallory.card, &mallory.keys, mallory.device_id, NOW + 3)
         .unwrap();
     assert_eq!(r.on_frame(&f, NOW + 3).unwrap(), ContactOutcome::Waiting);
-    assert!(r.peer_card().is_none());
+    assert!(r.verified_peer().is_none());
     // Bob's side has nothing from the responder: it never confirmed, so
     // no card was sealed for anyone.
-    assert!(honest.peer_card().is_none());
+    assert!(honest.verified_peer().is_none());
 }
 
 #[test]
@@ -223,24 +243,15 @@ fn pop_for_other_transcript_refused() {
     let (mut r, mut i, _, _) = handshake();
     r.confirm_and_send_card(&alice.card, &alice.keys, alice.device_id, NOW + 3)
         .unwrap();
-    // Bob's card with a proof over another transcript.
-    let device = bob.keys.public(bob.device_id).unwrap();
-    let pop = sign_pop(&bob.keys, &[0x55; 32], &device).unwrap();
+    // Bob's card with a proof over another session's transcript.
     let f = i
-        .test_seal(
-            &ContactMessage::Card {
-                card: bob.card.clone(),
-                device,
-                pop,
-            },
-            NOW + 4,
-        )
+        .test_seal(&card_msg(&bob, &ctx([0x55; 32])), NOW + 4)
         .unwrap();
     assert!(matches!(
         r.on_frame(&f, NOW + 4),
         Err(Error::Integrity(IntegrityError::Signature))
     ));
-    assert!(r.peer_card().is_none());
+    assert!(r.verified_peer().is_none());
     // The session is closed.
     assert!(r.end(NOW + 5).is_err());
     assert!(alice.dev.repo().contacts().unwrap().is_empty());
@@ -257,7 +268,7 @@ fn device_outside_the_roster_refused() {
     // valid proof over this transcript.
     let thief = DeviceKeys::generate_software().unwrap();
     let device = thief.public(Id::new()).unwrap();
-    let pop = sign_pop(&thief, &i.transcript_hash(), &device).unwrap();
+    let pop = sign_pop(&thief, &ctx(i.transcript_hash()), &device).unwrap();
     let f = i
         .test_seal(
             &ContactMessage::Card {
@@ -272,8 +283,88 @@ fn device_outside_the_roster_refused() {
         r.on_frame(&f, NOW + 4),
         Err(Error::Integrity(IntegrityError::WrongContext))
     ));
-    assert!(r.peer_card().is_none());
+    assert!(r.verified_peer().is_none());
     assert!(r.end(NOW + 5).is_err());
+}
+
+#[test]
+fn pairing_pop_refused() {
+    let bob = person("Bob");
+    let (mut r, mut i, _, _) = handshake();
+    // A proof of possession over the bare transcript, as the rotation v2
+    // pairing proof is made: not a contact proof.
+    let f = i
+        .test_seal(&card_msg(&bob, &i.transcript_hash()), NOW + 3)
+        .unwrap();
+    assert!(matches!(
+        r.on_frame(&f, NOW + 3),
+        Err(Error::Integrity(IntegrityError::Signature))
+    ));
+    assert!(r.end(NOW + 4).is_err());
+
+    // A second card in one session closes it, even the same good one.
+    let (mut r, mut i, _, _) = handshake();
+    let msg = card_msg(&bob, &ctx(i.transcript_hash()));
+    let f = i.test_seal(&msg, NOW + 3).unwrap();
+    assert_eq!(r.on_frame(&f, NOW + 3).unwrap(), ContactOutcome::Waiting);
+    let f = i.test_seal(&msg, NOW + 3).unwrap();
+    assert!(is_validation(&r.on_frame(&f, NOW + 3)));
+    assert!(r.verified_peer().is_none());
+    assert!(r.end(NOW + 4).is_err());
+}
+
+#[test]
+fn state_machine_refusals() {
+    // The key exchange is taken once.
+    let (mut r, qr, hello) = ContactResponder::new(NOW).unwrap();
+    let (_, kx, _) = ContactInitiator::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    r.on_key_exchange(&kx, NOW + 2).unwrap();
+    assert!(is_validation(&r.on_key_exchange(&kx, NOW + 2)));
+
+    // Not after the QR expired, and the failed try uses the session up.
+    let (mut r, qr, hello) = ContactResponder::new(NOW).unwrap();
+    let (_, kx, _) = ContactInitiator::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    assert!(r.on_key_exchange(&kx, NOW + 121).is_err());
+    assert!(r.on_key_exchange(&kx, NOW + 2).is_err());
+    assert!(r.end(NOW + 2).is_err());
+
+    // `Confirmed` before any card: refused, closed.
+    let (mut r, mut i, _, _) = handshake();
+    let f = i.test_seal(&ContactMessage::Confirmed, NOW + 3).unwrap();
+    assert!(is_validation(&r.on_frame(&f, NOW + 3)));
+    assert!(r.end(NOW + 4).is_err());
+    // `confirm_pinned` before a card was handed over: refused.
+    assert!(is_validation(&i.confirm_pinned(NOW + 3)));
+
+    // Nothing after `End`, either side.
+    let (mut r, mut i, _, _) = handshake();
+    let f = i.end(NOW + 3).unwrap();
+    assert!(i.test_seal(&ContactMessage::Confirmed, NOW + 3).is_err());
+    assert_eq!(r.on_frame(&f, NOW + 3).unwrap(), ContactOutcome::Done);
+    assert!(r.on_frame(&f, NOW + 3).is_err());
+    assert!(r.end(NOW + 3).is_err());
+}
+
+#[test]
+fn session_expires_after_the_sas() {
+    // The responder showed its SAS at NOW + 2: no frame after that plus
+    // `CONTACT_SESSION_SECS`, and the session stays closed.
+    let (mut r, mut i, _, _) = handshake();
+    let late = NOW + 2 + CONTACT_SESSION_SECS + 1;
+    let f = i.test_seal(&ContactMessage::Confirmed, NOW + 3).unwrap();
+    assert!(r.on_frame(&f, late).is_err());
+    assert!(r.end(NOW + 4).is_err());
+    // The initiator showed its SAS at NOW + 1.
+    assert!(i.end(NOW + 1 + CONTACT_SESSION_SECS + 1).is_err());
+    assert!(i.end(NOW + 4).is_err());
+
+    // Just in time still passes.
+    let (mut r, mut i, _, _) = handshake();
+    let f = i.end(NOW + 1 + CONTACT_SESSION_SECS).unwrap();
+    assert_eq!(
+        r.on_frame(&f, NOW + 2 + CONTACT_SESSION_SECS).unwrap(),
+        ContactOutcome::Done
+    );
 }
 
 #[test]
@@ -312,7 +403,7 @@ fn own_card_refused() {
         alice.device_id,
         NOW + 4
     )));
-    assert!(r.peer_card().is_none());
+    assert!(r.verified_peer().is_none());
     assert!(r.end(NOW + 5).is_err());
 
     // The other order: the initiator already confirmed when the card comes.
@@ -323,15 +414,14 @@ fn own_card_refused() {
     i2.confirm_and_send_card(&alice.card, &alice.keys, alice.device_id, NOW + 3)
         .unwrap();
     assert!(is_validation(&i2.on_frame(&to_i, NOW + 4)));
-    assert!(i2.peer_card().is_none());
+    assert!(i2.verified_peer().is_none());
 
-    // And the repository refuses to pin it whatever the caller does.
-    let own = alice.card.clone();
-    assert!(is_validation(&alice.dev.repo().finish_contact_session(
-        &own,
-        [1; 32],
-        NOW + 6
-    )));
+    // A session never yields one's own card; the repository refuses it
+    // anyway.
+    let own = VerifiedPeer::test_new(alice.card.clone(), [1; 32]);
+    assert!(is_validation(
+        &alice.dev.repo().finish_contact_session(own, NOW + 6)
+    ));
     assert!(alice.dev.repo().contacts().unwrap().is_empty());
 }
 
@@ -406,4 +496,9 @@ fn contact_frames_reject_garbage() {
     assert!(ContactMessage::decode(&[1, 0]).is_err());
     assert!(ContactMessage::decode(&[9]).is_err());
     assert!(ContactMessage::decode(&[]).is_err());
+    // Over the cap: refused unread.
+    assert!(matches!(
+        ContactMessage::decode(&vec![0u8; MAX_CONTACT_MESSAGE_BYTES + 1]),
+        Err(Error::InvalidFormat(_))
+    ));
 }
