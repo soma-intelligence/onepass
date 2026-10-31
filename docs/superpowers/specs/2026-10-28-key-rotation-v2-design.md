@@ -191,7 +191,7 @@ SignedIntro { body, sig }   // introducer's device key, onepass/device-intro/v1
 
 ### 6.5 Secret Key delivery
 
-`RecordKind::KeyDelivery` (12), id = `SHA-256("onepass/delivery-id/v1" || h || recipient_id)[..16]`, data = `wrap_key_labeled(recipient kem_pub, label "onepass/rotation/secret-key/v1", context postcard((account_id, h, recipient_id)), new Secret Key)`. Immutable. The envelope hash is in the rotation body, so a substituted envelope is refused before any decapsulation. The revoked device is never a recipient.
+`RecordKind::KeyDelivery` (12), id = `SHA-256("onepass/delivery-id/v1" || h || recipient_id)[..16]`, data = `wrap_key_labeled(recipient kem_pub, label "onepass/rotation/secret-key/v1", context postcard((account_id, parent, recipient_id)), new Secret Key)`, where `parent` is the lineage hash of the rotation's parent. Immutable. (The context cannot hold `h` itself: `h` hashes a body that already holds each envelope's hash. The envelope is bound to its rotation by that hash in the body, and to its account, parent and recipient by the context.) The envelope hash is in the rotation body, so a substituted envelope is refused before any decapsulation. The revoked device is never a recipient.
 
 ### 6.6 Identity-keyed account records
 
