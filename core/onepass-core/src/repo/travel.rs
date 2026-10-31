@@ -451,7 +451,38 @@ impl<S: RecordStore> Repository<S> {
     /// other length, a body that does not verify under the account's local
     /// signature, non-zero padding, or a state that does not open is an
     /// error.
+    ///
+    /// R18/R19: a state made before a rotation also opens (retired KEM
+    /// secrets, retired signing keys). The revoked device holds those keys
+    /// and can forge such a file, so one that verifies only under a retired
+    /// key is trusted for nothing but what the rotation itself says: it is
+    /// refused (`Integrity(Signature)`) if it lists a vault outside the
+    /// head rotation's `from_heads` (a genuine one cannot: a parked vault
+    /// is covered by the rotator), and its pins are replaced by
+    /// `from_heads`. `reseal_travel_state` binds it to the new identity.
     pub fn open_travel_state(&self, bytes: &[u8]) -> Result<TravelState> {
+        let (mut state, retired_only) = self.open_travel_state_raw(bytes)?;
+        if retired_only {
+            let heads = self.head_from_heads()?;
+            for (id, seen) in &mut state.parked {
+                *seen = heads
+                    .get(id)
+                    .cloned()
+                    .ok_or(Error::Integrity(IntegrityError::Signature))?;
+            }
+        }
+        Ok(state)
+    }
+
+    /// Re-seal a state made before a rotation under the current identity
+    /// (the follower holds the genuine file when it adopts): the result is
+    /// signed and sealed with the current keys, so it no longer depends on
+    /// the retired ones. The pins are those `open_travel_state` returns.
+    pub fn reseal_travel_state(&self, bytes: &[u8]) -> Result<Vec<u8>> {
+        self.seal_travel_state(&self.open_travel_state(bytes)?)
+    }
+
+    fn open_travel_state_raw(&self, bytes: &[u8]) -> Result<(TravelState, bool)> {
         if bytes.len() != SEALED_TRAVEL_STATE_LEN {
             return Err(BAD);
         }
@@ -464,18 +495,30 @@ impl<S: RecordStore> Repository<S> {
         if padding.iter().any(|b| *b != 0) {
             return Err(BAD);
         }
-        // R18: a state sealed before a rotation is signed by a retired
-        // signing key and sealed to a retired KEM key, both kept.
-        self.verify_local_or_retired(SIG_DOMAIN, body, &sig)?;
+        let mut retired_only = self.verify_local_or_retired(SIG_DOMAIN, body, &sig)?;
         let (envelope, blob): (Vec<u8>, Vec<u8>) = decode_exact(body)?;
         let account_id = self.account_id();
         let ctx = kem_context(account_id);
         let keyset = self.account.keyset();
-        let key = std::iter::once(&keyset.kem)
+        let mut first_err = None;
+        let mut found = None;
+        for (i, k) in std::iter::once(&keyset.kem)
             .chain(&keyset.retired_kem)
-            .find_map(|k| unwrap_key(k, &envelope, &ctx).ok())
-            .map_or_else(|| unwrap_key(&keyset.kem, &envelope, &ctx), Ok)?;
+            .enumerate()
+        {
+            match unwrap_key(k, &envelope, &ctx) {
+                Ok(key) => {
+                    retired_only |= i > 0;
+                    found = Some(key);
+                    break;
+                }
+                Err(e) => {
+                    first_err.get_or_insert(e);
+                }
+            }
+        }
+        let key = found.ok_or_else(|| first_err.unwrap_or(BAD))?;
         let plain = open(&key, BlobKind::TravelState, &state_aad(account_id), &blob)?;
-        decode_exact(&plain)
+        Ok((decode_exact(&plain)?, retired_only))
     }
 }

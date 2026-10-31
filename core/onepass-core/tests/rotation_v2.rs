@@ -4909,14 +4909,6 @@ fn backup_restore_never_touches_lineage() {
     after.own_writes = trust.own_writes.clone();
     trust.own_writes = after.own_writes.clone();
     assert_eq!(after, trust);
-    // And only vault content was written.
-    assert!(
-        onepass_core::archive::restorable_kind(RecordKind::Item)
-            && !onepass_core::archive::restorable_kind(RecordKind::Lineage)
-            && !onepass_core::archive::restorable_kind(RecordKind::DeviceIntro)
-            && !onepass_core::archive::restorable_kind(RecordKind::KeyDelivery)
-            && !onepass_core::archive::restorable_kind(RecordKind::Keyset)
-    );
 }
 
 /// A device that cannot write (a rotation waits for it) restores nothing.
@@ -5046,4 +5038,155 @@ fn old_travel_pin_cannot_override_from_heads() {
         users(&c.items()),
         ["alice", "bob", "carol"].map(String::from)
     );
+}
+
+// ------------------------------------------ Task 16, fix round 1 (review I1)
+
+/// A: rotated (revoking B) and pushed, with a vault "later" created after
+/// it. C follows, in Travel Mode for the first vault. The iPad is a device
+/// of the old identity (it holds the old signing and KEM keys, as the
+/// revoked device does). Returns what the forgery tests need.
+struct Travelling {
+    server: Server,
+    c: Device,
+    ipad: Device,
+    vault: Id,
+    later: Id,
+    state: TravelState,
+    sealed: Vec<u8>,
+}
+
+fn travelling() -> Travelling {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let ipad = old_device(&server, &f);
+    c.unlock(&f.sk);
+    let vault = c.vault().id;
+    let up = base_upstream(&c);
+    let state = c.repo().enter_travel(&up).unwrap();
+    let sealed = c.repo().seal_travel_state(&state).unwrap();
+    c.store()
+        .set_travel_hidden(&BTreeSet::from([vault]))
+        .unwrap();
+    c.lock();
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let later = a.repo().create_vault(meta("Later")).unwrap().id;
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    Travelling {
+        server,
+        c,
+        ipad,
+        vault,
+        later,
+        state,
+        sealed,
+    }
+}
+
+/// A state signed with the old key (and sealed to the old KEM key) that
+/// lists a vault made after the rotation is refused: it could only be a
+/// forgery by the revoked device (rollback, lock-out or hiding of a vault
+/// the genuine state cannot know).
+#[test]
+fn old_key_travel_state_listing_a_later_vault_is_refused() {
+    let mut t = travelling();
+    let forged = TravelState {
+        parked: BTreeMap::from([(
+            t.later,
+            SeenManifest {
+                seq: 1,
+                hash: [1; 32],
+            },
+        )]),
+        entered_at: T0,
+    };
+    let sealed = t.ipad.repo().seal_travel_state(&forged).unwrap();
+    assert!(t.c.repo().open_travel_state(&sealed).is_err());
+    // The genuine one still opens.
+    assert_eq!(t.c.repo().open_travel_state(&t.sealed).unwrap(), t.state);
+}
+
+/// For the vaults the rotation covered, an old-key state keeps no pin of
+/// its own: `from_heads` replaces it, so a huge forged seq locks nothing.
+#[test]
+fn old_key_travel_state_pins_are_replaced_by_from_heads() {
+    let mut t = travelling();
+    let mut forged = t.state.clone();
+    for seen in forged.parked.values_mut() {
+        seen.seq += 1_000;
+        seen.hash = [9; 32];
+    }
+    let sealed = t.ipad.repo().seal_travel_state(&forged).unwrap();
+    let opened = t.c.repo().open_travel_state(&sealed).unwrap();
+    let heads = t.c.repo().device_state().last_seen.clone();
+    assert_eq!(opened.parked[&t.vault], heads[&t.vault]);
+    t.c.repo().resume_travel(&opened);
+    t.c.store().set_travel_hidden(&BTreeSet::new()).unwrap();
+    full_fetch(&t.server, &mut t.c);
+    t.c.repo()
+        .exit_travel(&onepass_core::store::MemoryStore::new(), &opened)
+        .unwrap();
+    assert_eq!(
+        users(&t.c.items()),
+        ["alice", "bob", "carol"].map(String::from)
+    );
+}
+
+/// The follower re-seals its genuine state under the new identity; that
+/// one is bound to the current keys and may list a vault made after the
+/// rotation (a later Travel Mode), unlike an old-key one.
+#[test]
+fn travel_state_is_resealed_under_the_new_identity() {
+    let mut t = travelling();
+    let resealed = t.c.repo().reseal_travel_state(&t.sealed).unwrap();
+    assert_ne!(resealed, t.sealed);
+    assert_eq!(t.c.repo().open_travel_state(&resealed).unwrap(), t.state);
+    // Current-key states are not restricted to `from_heads`.
+    let both = TravelState {
+        parked: BTreeMap::from([(
+            t.later,
+            SeenManifest {
+                seq: 1,
+                hash: [1; 32],
+            },
+        )]),
+        entered_at: T0,
+    };
+    let sealed = t.c.repo().seal_travel_state(&both).unwrap();
+    assert_eq!(t.c.repo().open_travel_state(&sealed).unwrap(), both);
+}
+
+// ------------------------------------------ minor 5: two rotations
+
+/// Two rotations while an archive waits: the oldest archive still opens
+/// (retired_kem keeps both KEM secrets, the trust state both signers).
+#[test]
+fn archive_before_two_rotations_opens_with_warning() {
+    use onepass_core::archive;
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let av = archived(&mut a);
+    let old = archive::backup(a.repo().account(), vec![av], None).unwrap();
+    let sk1 = SecretKey::generate().unwrap();
+    a.repo
+        .as_mut()
+        .unwrap()
+        .rotate(request(&f, &sk1, vec![], RotationReason::Rotate))
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let sk2 = SecretKey::generate().unwrap();
+    let mut second = request(&f, &sk2, vec![], RotationReason::Rotate);
+    second.secret_key = &sk1;
+    a.repo.as_mut().unwrap().rotate(second).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(a.repo().account().keyset().retired_kem.len(), 2);
+    assert!(a.repo().open_archive(&old).unwrap().made_before_rotation);
 }

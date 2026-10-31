@@ -410,6 +410,29 @@ fn diverged() -> (
     (server, a, b, sk, ka, kb, ga, gb)
 }
 
+/// `diverged()` until A's genesis is the winner (the smallest hash), or
+/// until B's is when `a_wins` is false: the winner rule is deterministic,
+/// only the fixture's hash order is random.
+fn diverged_ordered(
+    a_wins: bool,
+) -> (
+    Server,
+    Device,
+    Device,
+    SecretKey,
+    Keys,
+    Keys,
+    [u8; 32],
+    [u8; 32],
+) {
+    loop {
+        let d = diverged();
+        if (d.6 < d.7) == a_wins {
+            return d;
+        }
+    }
+}
+
 /// Review I3: two offline migrations converge on one deterministic winner
 /// (the smallest valid genesis hash, creator listed and uncontested) at
 /// the next unlock-time `migrate_to_v2`, with no user step while no
@@ -458,6 +481,30 @@ fn second_genesis_alerts_and_converges() {
     assert_eq!(trust(&a).head.hash, win);
 }
 
+/// The reverse order: B already sits on the winning genesis and A rotated
+/// on the losing one. B keeps its lineage: `Current`, alert raised,
+/// nothing read-only, no automatic switch.
+#[test]
+fn diverged_after_a_rotation_on_the_losing_genesis_leaves_the_winner_writable() {
+    let (mut server, mut a, mut b, sk, ka, kb, _ga, gb) = diverged_ordered(false);
+    sync(&mut server, &mut a).unwrap();
+    let (_head, _new_sk) = rotate_a(&mut server, &mut a, &ka, &sk, &[]);
+    let v = b.vault();
+    let offline = login(v.id, "offline", T0 + 50);
+    b.save(&offline);
+    pull(&server, &mut b);
+    refresh(&mut b);
+    assert_eq!(migrate(&mut b, &kb), Migration::Already);
+    let tb = trust(&b);
+    assert_eq!(tb.head.hash, gb);
+    assert!(tb.genesis_alert);
+    assert_eq!(tb.state, DeviceLineageState::Current);
+    let late = login(v.id, "late", T0 + 60);
+    // Never the read-only lock (the pulled vaults are sealed by A's
+    // identity, which fails otherwise: that is the repair's business).
+    assert_ne!(b.repo().save_item(&v, late).err(), Some(Error::ReadOnly));
+}
+
 /// Review I3: once a rotation exists, no automatic switch: the alert,
 /// then a re-pair from a device of the other lineage works as an A9
 /// follow (local items kept, own writes replayed under the new keys).
@@ -466,7 +513,7 @@ fn diverged_after_a_rotation_alerts_then_repairs() {
     use onepass_core::pairing::{FullGrant, FullGrantV2, snapshot_from_store};
     use onepass_core::repo::pairing::repair_from_grant;
 
-    let (mut server, mut a, mut b, sk, ka, kb, _ga, gb) = diverged();
+    let (mut server, mut a, mut b, sk, ka, kb, _ga, gb) = diverged_ordered(true);
     // A pushes its genesis and rotates before B's genesis arrives.
     sync(&mut server, &mut a).unwrap();
     let (head, new_sk) = rotate_a(&mut server, &mut a, &ka, &sk, &[]);

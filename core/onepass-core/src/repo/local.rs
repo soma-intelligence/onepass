@@ -42,17 +42,17 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// `verify_local`, also under the signing keys of the identities this
-    /// device left (R18): a state signed before a rotation. A revoked
-    /// device holds those keys, so the caller must not give the result
-    /// more weight than data from the file system.
+    /// device left (R18): a state signed before a rotation. Returns whether
+    /// only a retired key verified it. A revoked device holds those keys,
+    /// so the caller gives such data no authority a forger could use.
     pub(crate) fn verify_local_or_retired(
         &self,
         domain: &[u8],
         msg: &[u8],
         sig: &HybridSignature,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if self.verify_local(domain, msg, sig).is_ok() {
-            return Ok(());
+            return Ok(false);
         }
         let d = local_domain(domain);
         if self
@@ -60,7 +60,7 @@ impl<S: RecordStore> Repository<S> {
             .iter()
             .any(|k| k.verify(&d, msg, sig).is_ok())
         {
-            return Ok(());
+            return Ok(true);
         }
         Err(Error::Integrity(IntegrityError::Signature))
     }

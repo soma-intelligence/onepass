@@ -717,9 +717,10 @@ pub(crate) fn abandoned_rotation_rows<S: RecordStore + ?Sized>(
         return Ok(drop);
     }
     let left_id = current_records_id(trust);
-    let mut id = [0u8; 16];
-    id.copy_from_slice(&trust.head.hash[..16]);
-    let mut rows = vec![(RecordKind::Lineage, Id(id))];
+    let mut rows = vec![(
+        RecordKind::Lineage,
+        crate::lineage::record_id_of(&trust.head.hash),
+    )];
     rows.extend(
         own_head
             .deliveries
