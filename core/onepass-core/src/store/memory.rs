@@ -80,6 +80,21 @@ impl RecordStore for MemoryStore {
         self.trust = Some(trust.clone());
         Ok(())
     }
+
+    /// `put_all_if_version_with_trust` if the trust state is `expected`.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        if self.trust.as_ref() != Some(expected) {
+            return Err(Error::Conflict);
+        }
+        self.put_all_if_version_with_trust(writes, deletes, chain, trust)
+    }
 }
 
 #[cfg(test)]
@@ -112,6 +127,15 @@ mod tests {
         assert_eq!(r, Err(Error::Conflict));
         assert_eq!(s.trust_state().unwrap(), Some(before));
         assert_eq!(s.get(RecordKind::Item, a).unwrap().unwrap().version, 1);
+
+        // Conditional on the stored trust state.
+        let stored = s.trust_state().unwrap().unwrap();
+        let r = s.put_with_trust_cas(vec![(rec(9, 1), None)], vec![], None, &trust, &trust);
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(s.trust_state().unwrap(), Some(stored.clone()));
+        s.put_with_trust_cas(vec![], vec![], None, &stored, &trust)
+            .unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(trust.clone()));
     }
 
     #[test]

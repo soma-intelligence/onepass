@@ -369,6 +369,9 @@ struct Faulty {
     inner: SyncStore,
     fail_commit: bool,
     broken: Cell<bool>,
+    /// A trust state another writer saves right before this store's next
+    /// conditional trust commit (a lost race).
+    race: Option<TrustState>,
 }
 
 impl Faulty {
@@ -378,6 +381,14 @@ impl Faulty {
         } else {
             Ok(())
         }
+    }
+
+    fn race(&mut self) -> Result<()> {
+        if let Some(t) = self.race.take() {
+            self.inner
+                .put_all_if_version_with_trust(vec![], vec![], None, &t)?;
+        }
+        Ok(())
     }
 }
 
@@ -487,10 +498,29 @@ impl RecordStore for Faulty {
         self.broken.set(true);
         Ok(())
     }
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        self.ok()?;
+        if self.fail_commit {
+            return Err(Error::Store("disk full".into()));
+        }
+        self.race()?;
+        self.inner
+            .put_with_trust_cas(writes, deletes, chain, expected, trust)?;
+        self.broken.set(true);
+        Ok(())
+    }
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
+        expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
     ) -> Result<()> {
@@ -498,9 +528,15 @@ impl RecordStore for Faulty {
         if self.fail_commit {
             return Err(Error::Store("disk full".into()));
         }
-        self.inner.put_rotation(writes, chain, trust, rotation)?;
+        self.race()?;
+        self.inner
+            .put_rotation(writes, chain, expected, trust, rotation)?;
         self.broken.set(true);
         Ok(())
+    }
+    fn is_pending_write(&self, kind: RecordKind, id: Id) -> Result<bool> {
+        self.ok()?;
+        self.inner.is_pending_write(kind, id)
     }
 }
 
@@ -511,6 +547,7 @@ fn faulty_session(a: &Device, f: &Fixture, fail_commit: bool) -> Repository<Faul
         inner,
         fail_commit,
         broken: Cell::new(false),
+        race: None,
     };
     Repository::unlock(store, PASSWORD, &f.sk, state).unwrap()
 }
@@ -1441,4 +1478,482 @@ fn lost_acknowledgement_in_phase_one() {
     assert_eq!(state(&a), DeviceLineageState::Current);
     assert!(outbox(&a).is_empty());
     assert_eq!(a.items(), expected);
+}
+
+// ---------------------------------------------------------------- follow
+
+use onepass_core::lineage::resolve::PromptKind;
+use onepass_core::repo::follow::{
+    RotationPrompt, follow_rotation, pending_rotation, reject_rotation, stored_params_epoch,
+};
+
+/// Index of the follower C ("Mac") and of the revoked B ("iPad") in
+/// `Fixture::others`.
+const C: usize = 1;
+const B: usize = 0;
+
+/// A device on the server's account whose trust state is A's (before A
+/// rotates), seen from `others[who]`: same genesis head and roster, its
+/// own device public key. `edit` changes it before it is saved (local
+/// names, levels). Locked, its device state persisted.
+fn follower_with(
+    server: &mut Server,
+    a: &Device,
+    f: &Fixture,
+    who: usize,
+    edit: impl FnOnce(&mut TrustState),
+) -> Device {
+    let mut c = Device::empty();
+    pull(server, &mut c);
+    c.unlock(&f.sk);
+    let mut trust = a.store().trust_state().unwrap().unwrap();
+    trust.me = f.others[who].public.clone();
+    edit(&mut trust);
+    c.repo()
+        .store_mut()
+        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+        .unwrap();
+    c.lock();
+    c
+}
+
+/// A and C on one server; A rotates revoking B and pushes every phase; C
+/// pulls everything (`keep` filters what reaches it). C stays locked.
+fn rotated_with(
+    edit: impl FnOnce(&mut TrustState),
+    before_rotation: impl FnOnce(&mut Server, &mut Device, &Fixture),
+    keep: impl Fn(&RemoteChange, &RotationOutcome, &Fixture) -> bool,
+) -> (Server, Device, Device, Fixture, RotationOutcome, SecretKey) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, edit);
+    before_rotation(&mut server, &mut c, &f);
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    pull_only(&server, &mut c, |ch| keep(ch, &out, &f));
+    (server, a, c, f, out, new_sk)
+}
+
+fn rotated() -> (Server, Device, Device, Fixture, RotationOutcome, SecretKey) {
+    rotated_with(|_| {}, |_, _, _| {}, |_, _, _| true)
+}
+
+fn prompt_of(c: &Device) -> Option<RotationPrompt> {
+    pending_rotation(&c.store()).unwrap()
+}
+
+#[test]
+fn honest_follow() {
+    let (_server, mut a, mut c, f, out, new_sk) = rotated();
+    let body = rotation_of(&a.store(), &out.head);
+    let old_identity = c.store().trust_state().unwrap().unwrap().identity_pub;
+
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert_eq!(prompt.kind, PromptKind::Single);
+    assert_eq!(prompt.choices.len(), 1);
+    let choice = &prompt.choices[0];
+    assert_eq!(choice.hash, out.head);
+    assert_eq!(choice.rotator_name, "iPhone");
+    assert_eq!(choice.revoked_names, vec!["iPad".to_string()]);
+    assert_eq!(choice.issued_at, body.issued_at);
+    assert_eq!(prompt.code, Some(out.code));
+    assert!(!prompt.tofu_signer);
+    assert!(!prompt.pending_password_change);
+
+    let (repo, auk, sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    assert_eq!(sk.to_display(), new_sk.to_display());
+    // R12: the vaults start from the manifests the rotation was made from.
+    assert_eq!(repo.device_state().last_seen, body.from_heads);
+    assert_eq!(repo.account().params.identity_pub, body.identity_pub);
+    c.repo = Some(repo);
+
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(
+        trust.head,
+        LineageHead {
+            generation: 1,
+            hash: out.head
+        }
+    );
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    assert_eq!(trust.identity_pub, body.identity_pub);
+    assert_eq!(trust.roster, body.roster);
+    assert!(trust.revoked.contains(&f.others[B].id()));
+    assert_eq!(trust.retired.last().unwrap().identity_pub, old_identity);
+    assert_eq!(
+        RecordStore::chain_state(&c.store()).unwrap().params_epoch,
+        1
+    );
+    assert_eq!(prompt_of(&c), None);
+
+    // Every item, under the new identity.
+    assert_eq!(c.items(), a.items());
+    let v = c.vault();
+    c.save(&login(v.id, "dave", T0 + 90));
+    c.lock();
+    // The new keys open the device again; the old ones do not.
+    assert!(c.try_unlock(PASSWORD, &f.sk).is_err());
+    c.try_unlock(PASSWORD, &new_sk).unwrap();
+    c.try_unlock_with_auk(&auk).unwrap();
+    assert_eq!(c.items().len(), a.items().len() + 1);
+}
+
+#[test]
+fn prompt_names_come_from_local_roster() {
+    let (_server, _a, c, f, _out, _sk) = rotated_with(
+        |t| {
+            for e in &mut t.roster {
+                if e.name == "iPhone" {
+                    e.name = "Téléphone de Camille".into();
+                } else if e.name == "iPad" {
+                    e.name = "Tablette du salon".into();
+                }
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+    let _ = &f;
+    let prompt = prompt_of(&c).unwrap();
+    assert_eq!(prompt.choices[0].rotator_name, "Téléphone de Camille");
+    assert_eq!(
+        prompt.choices[0].revoked_names,
+        vec!["Tablette du salon".to_string()]
+    );
+}
+
+/// Port of `zz6`: a device that only ever unlocked with biometrics (the
+/// Account Unlock Key) follows with the master password and its device
+/// keys; there is no Secret Key to type.
+#[test]
+fn biometric_device_follows_with_password_only() {
+    let mut auk_kept = None;
+    let (_server, a, mut c, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, c, f| {
+            let auk = c.try_unlock(PASSWORD, &f.sk).unwrap();
+            c.lock();
+            c.try_unlock_with_auk(&auk).unwrap();
+            c.lock();
+            auk_kept = Some(auk);
+        },
+        |_, _, _| true,
+    );
+    let old_auk = auk_kept.unwrap();
+    let (repo, auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    drop(repo);
+    // The old enrollment no longer opens the account; the new one does.
+    assert!(c.try_unlock_with_auk(&old_auk).is_err());
+    c.try_unlock_with_auk(&auk).unwrap();
+    assert_eq!(c.items().len(), f.items.len());
+    drop(a);
+}
+
+#[test]
+fn wrong_password_changes_nothing() {
+    let (_server, _a, c, f, out, _sk) = rotated();
+    let before = snapshot(&c.store());
+    let device = c.store().device_state().unwrap();
+    let r = follow_rotation(c.store(), out.head, NEW_PASSWORD, &f.others[C].keys);
+    assert!(matches!(r, Err(Error::WrongPassword)), "{:?}", r.err());
+    assert_eq!(snapshot(&c.store()), before);
+    assert_eq!(c.store().device_state().unwrap(), device);
+    assert!(prompt_of(&c).is_some());
+}
+
+#[test]
+fn follow_waits_for_completeness() {
+    let (_server, _a, c, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, _, _| {},
+        |ch, out, f| {
+            !(ch.kind == RecordKind::KeyDelivery
+                && ch.id == delivery_id(&out.head, f.others[C].id()))
+        },
+    );
+    assert_eq!(prompt_of(&c), None);
+    let before = snapshot(&c.store());
+    let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
+    assert!(r.is_err());
+    assert_eq!(snapshot(&c.store()), before);
+}
+
+#[test]
+fn substituted_delivery_refused() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let c_dev = follower_with(&mut server, &a, &f, C, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    // The server swaps C's envelope for one of its own making.
+    let id = delivery_id(&out.head, f.others[C].id());
+    let mut env = server.get(RecordKind::KeyDelivery, id).unwrap();
+    *env.data.last_mut().unwrap() ^= 1;
+    server.replay(env);
+    let mut c = c_dev;
+    pull(&server, &mut c);
+
+    let before = snapshot(&c.store());
+    let r = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys);
+    assert_eq!(integrity(r.map(|_| ())), IntegrityError::Signature);
+    assert_eq!(snapshot(&c.store()), before);
+}
+
+#[test]
+fn cut_during_follow() {
+    let (_server, _a, c, f, out, _sk) = rotated();
+    let before = snapshot(&c.store());
+    let device = c.store().device_state().unwrap();
+    let store = Faulty {
+        inner: c.store(),
+        fail_commit: true,
+        broken: Cell::new(false),
+        race: None,
+    };
+    let r = follow_rotation(store, out.head, PASSWORD, &f.others[C].keys);
+    assert!(matches!(r, Err(Error::Store(_))), "{:?}", r.err());
+    assert_eq!(snapshot(&c.store()), before);
+    assert_eq!(c.store().device_state().unwrap(), device);
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.head.generation, 0);
+    assert_eq!(trust.state, DeviceLineageState::Current);
+}
+
+/// K9: a normal unlock never follows. It opens the old identity, read
+/// only, and reports the pending prompt. C has the rotation's phase 1
+/// records, not yet the re-sealed vaults, so its vault still reads.
+#[test]
+fn normal_unlock_never_follows() {
+    let (_server, _a, mut c, f, out, _sk) = rotated_with(
+        |_| {},
+        |_, _, _| {},
+        |ch, _, _| {
+            !matches!(
+                ch.kind,
+                RecordKind::VaultKey
+                    | RecordKind::VaultMeta
+                    | RecordKind::Manifest
+                    | RecordKind::Item
+            )
+        },
+    );
+    let old = c.store().trust_state().unwrap().unwrap();
+    c.unlock(&f.sk);
+    assert_eq!(c.repo().account().params.identity_pub, old.identity_pub);
+    let prompt = c.repo().pending_prompt().cloned().expect("pending prompt");
+    assert_eq!(prompt.choices[0].hash, out.head);
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.head, old.head);
+    assert_eq!(trust.identity_pub, old.identity_pub);
+    assert_eq!(
+        trust.state,
+        DeviceLineageState::Candidate {
+            children: vec![out.head]
+        }
+    );
+    let before = snapshot(&c.store());
+    let v = c.vault();
+    assert_eq!(c.repo().items(&v).unwrap().len(), f.items.len());
+    let ro = Some(Error::ReadOnly);
+    assert_eq!(
+        c.repo().save_item(&v, login(v.id, "eve", T0 + 80)).err(),
+        ro
+    );
+    assert_eq!(c.repo().create_vault(meta("Travail")).err(), ro);
+    assert_eq!(snapshot(&c.store()), before);
+    // Locked and unlocked again: still the old identity, still waiting.
+    c.lock();
+    c.unlock(&f.sk);
+    assert!(c.repo().pending_prompt().is_some());
+    assert_eq!(c.repo().account().params.identity_pub, old.identity_pub);
+}
+
+/// R10: nothing is written while the device is `Candidate`.
+#[test]
+fn candidate_is_read_only() {
+    let (mut a, f) = fixture();
+    let mut trust = a.store().trust_state().unwrap().unwrap();
+    trust.state = DeviceLineageState::Candidate {
+        children: vec![[1; 32]],
+    };
+    a.repo()
+        .store_mut()
+        .put_all_if_version_with_trust(vec![], vec![], None, &trust)
+        .unwrap();
+    let before = snapshot(&a.store());
+    let v = a.vault();
+    let items = a.repo().items(&v).unwrap();
+    assert_eq!(items.len(), f.items.len());
+    let ro = Some(Error::ReadOnly);
+    assert_eq!(
+        a.repo().save_item(&v, login(v.id, "eve", T0 + 80)).err(),
+        ro
+    );
+    assert_eq!(a.repo().trash_item(&v, f.items[0].id).err(), ro);
+    assert_eq!(a.repo().delete_item(&v, f.items[0].id).err(), ro);
+    assert_eq!(a.repo().create_vault(meta("Travail")).err(), ro);
+    assert_eq!(a.repo().update_vault_meta(&v, meta("Perso")).err(), ro);
+    assert_eq!(
+        a.repo()
+            .change_password(PASSWORD, &f.sk, NEW_PASSWORD)
+            .err(),
+        ro
+    );
+    assert_eq!(a.repo().issue_restore_epoch(EpochReason::Restore).err(), ro);
+    assert_eq!(snapshot(&a.store()), before);
+}
+
+#[test]
+fn reject_excludes_the_signer() {
+    let (_server, _a, mut c, f, out, _sk) = rotated();
+    let mut store = c.store();
+    reject_rotation(&mut store, out.head, true).unwrap();
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    assert!(trust.excluded.contains(&f.me.id()));
+    assert_eq!(trust.ignored, vec![out.head]);
+    assert_eq!(trust.head.generation, 0);
+    assert_eq!(prompt_of(&c), None);
+    // A choice that is not offered any more is refused.
+    let r = reject_rotation(&mut store, out.head, false);
+    assert!(is_validation(&r), "{r:?}");
+    // The next unlock opens the old identity with nothing pending.
+    c.unlock(&f.sk);
+    assert!(c.repo().pending_prompt().is_none());
+    assert_eq!(state(&c), DeviceLineageState::Current);
+}
+
+#[test]
+fn pending_password_change_is_reported() {
+    let (_server, _a, c, _f, _out, _sk) = rotated_with(
+        |_| {},
+        |_, c, f| {
+            c.unlock(&f.sk);
+            c.repo()
+                .change_password(PASSWORD, &f.sk, NEW_PASSWORD)
+                .unwrap();
+            c.lock();
+        },
+        |_, _, _| true,
+    );
+    let prompt = prompt_of(&c).unwrap();
+    assert!(prompt.pending_password_change);
+}
+
+/// Task 6 deferred minor: the "password changed elsewhere" poll reads the
+/// params of the trust state's identity, before and after following.
+#[test]
+fn params_epoch_poll_follows_the_trust_state() {
+    let (_server, _a, c, f, out, _sk) = rotated();
+    let pin = c.store().device_state().unwrap().pinned;
+    assert_eq!(stored_params_epoch(&c.store(), pin.as_ref()).unwrap(), 1);
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    drop(repo);
+    let pin = c.store().device_state().unwrap().pinned;
+    assert_eq!(stored_params_epoch(&c.store(), pin.as_ref()).unwrap(), 1);
+}
+
+/// Ledger (Task 7): a trust state changed by another writer since follow
+/// read it is a conflict, and nothing is written.
+#[test]
+fn follow_loses_a_trust_race() {
+    let (_server, _a, c, f, out, _sk) = rotated();
+    let device = c.store().device_state().unwrap();
+    let chain = RecordStore::chain_state(&c.store()).unwrap();
+    let records = snapshot(&c.store()).records;
+    let mut other = c.store().trust_state().unwrap().unwrap();
+    other.excluded.insert(Id([0xEE; 16]));
+    let store = Faulty {
+        inner: c.store(),
+        fail_commit: false,
+        broken: Cell::new(false),
+        race: Some(other.clone()),
+    };
+    let r = follow_rotation(store, out.head, PASSWORD, &f.others[C].keys);
+    assert!(matches!(r, Err(Error::Conflict)), "{:?}", r.err());
+    // Only the other writer's trust state landed.
+    assert_eq!(c.store().trust_state().unwrap(), Some(other));
+    assert_eq!(c.store().device_state().unwrap(), device);
+    assert_eq!(RecordStore::chain_state(&c.store()).unwrap(), chain);
+    assert_eq!(snapshot(&c.store()).records, records);
+}
+
+#[test]
+fn rotate_loses_a_trust_race() {
+    let (a, f) = fixture();
+    let mut other = a.store().trust_state().unwrap().unwrap();
+    other.excluded.insert(Id([0xEE; 16]));
+    let inner = a.store();
+    let state = inner.device_state().unwrap();
+    let store = Faulty {
+        inner,
+        fail_commit: false,
+        broken: Cell::new(false),
+        race: Some(other.clone()),
+    };
+    let mut repo = Repository::unlock(store, PASSWORD, &f.sk, state).unwrap();
+    let before = snapshot(&a.store());
+    let new_sk = SecretKey::generate().unwrap();
+    let r = repo.rotate(request(&f, &new_sk, vec![], RotationReason::Rotate));
+    assert!(matches!(r, Err(Error::Conflict)), "{r:?}");
+    let after = snapshot(&a.store());
+    assert_eq!(after.records, before.records);
+    assert_eq!(after.outbox, before.outbox);
+    assert_eq!(after.trust, Some(other.encode()));
+}
+
+/// Spec 8.3: A revokes B, B revokes A. C asks which one the user still
+/// holds; keeping A excludes B and ignores B's record.
+#[test]
+fn mutual_choice_excludes_the_other_signer() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+
+    let a_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &a_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let ra = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![f.me.id()], RotationReason::Revoke);
+    req.device_keys = &f.others[B].keys;
+    let rb = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    // Phase 1 only: B's record, deliveries, params and keyset.
+    push_outbox(&mut server, &b).unwrap();
+
+    pull(&server, &mut c);
+    let prompt = prompt_of(&c).expect("a prompt");
+    assert_eq!(prompt.kind, PromptKind::Mutual);
+    assert_eq!(prompt.code, None);
+    let mut hashes: Vec<[u8; 32]> = prompt.choices.iter().map(|ch| ch.hash).collect();
+    hashes.sort();
+    let mut both = vec![ra.head, rb.head];
+    both.sort();
+    assert_eq!(hashes, both);
+    let of_a = prompt.choices.iter().find(|ch| ch.hash == ra.head).unwrap();
+    assert_eq!(of_a.rotator_name, "iPhone");
+    assert_eq!(of_a.revoked_names, vec!["iPad".to_string()]);
+    let of_b = prompt.choices.iter().find(|ch| ch.hash == rb.head).unwrap();
+    assert_eq!(of_b.rotator_name, "iPad");
+    assert_eq!(of_b.revoked_names, vec!["iPhone".to_string()]);
+
+    let (repo, _, sk) = follow_rotation(c.store(), ra.head, PASSWORD, &f.others[C].keys).unwrap();
+    assert_eq!(sk.to_display(), a_sk.to_display());
+    drop(repo);
+    let trust = c.store().trust_state().unwrap().unwrap();
+    assert_eq!(trust.head.hash, ra.head);
+    assert!(trust.excluded.contains(&f.others[B].id()));
+    assert!(trust.revoked.contains(&f.others[B].id()));
+    assert_eq!(trust.ignored, vec![rb.head]);
+    assert_eq!(prompt_of(&c), None);
 }

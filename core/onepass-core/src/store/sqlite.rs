@@ -101,6 +101,45 @@ impl SqliteStore {
     }
 }
 
+impl SqliteStore {
+    /// Records, deletions and the trust row in one transaction, the trust
+    /// row compared with `expected` first when given (`Conflict`).
+    fn put_with_trust_if(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        expected: Option<&TrustState>,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        if let Some(expected) = expected {
+            let stored: Option<Vec<u8>> = tx
+                .query_row(
+                    "SELECT value FROM meta WHERE key = ?1",
+                    params![TRUST_KEY],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(store_err)?;
+            if stored != Some(expected.encode()) {
+                return Err(Error::Conflict);
+            }
+        }
+        for (r, expected) in &writes {
+            put_if_version_on(&tx, r, *expected)?;
+        }
+        for (kind, id) in deletes {
+            delete_on(&tx, kind, id)?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+            params![TRUST_KEY, trust.encode()],
+        )
+        .map_err(store_err)?;
+        tx.commit().map_err(store_err)
+    }
+}
+
 impl RecordStore for SqliteStore {
     /// Versions above `i64::MAX` do not fit an SQLite integer and are refused.
     fn put(&mut self, r: Record) -> Result<()> {
@@ -172,19 +211,21 @@ impl RecordStore for SqliteStore {
         trust: &TrustState,
     ) -> Result<()> {
         let _ = chain;
-        let tx = self.conn.transaction().map_err(store_err)?;
-        for (r, expected) in &writes {
-            put_if_version_on(&tx, r, *expected)?;
-        }
-        for (kind, id) in deletes {
-            delete_on(&tx, kind, id)?;
-        }
-        tx.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
-            params![TRUST_KEY, trust.encode()],
-        )
-        .map_err(store_err)?;
-        tx.commit().map_err(store_err)
+        self.put_with_trust_if(writes, deletes, None, trust)
+    }
+
+    /// `put_all_if_version_with_trust` if the stored trust state is
+    /// `expected`, compared inside the transaction.
+    fn put_with_trust_cas(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
+        expected: &TrustState,
+        trust: &TrustState,
+    ) -> Result<()> {
+        let _ = chain;
+        self.put_with_trust_if(writes, deletes, Some(expected), trust)
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
@@ -421,6 +462,32 @@ mod tests {
         assert_eq!(s.trust_state().unwrap(), Some(before));
         assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
         assert_eq!(s.get(RecordKind::Item, a).unwrap().unwrap().version, 1);
+    }
+
+    #[test]
+    fn sqlite_trust_cas() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = SqliteStore::open(&dir.path().join("db")).unwrap();
+        let first = crate::trust::tests::sample();
+        // Nothing stored yet: no expected state can match.
+        assert_eq!(
+            s.put_with_trust_cas(vec![], vec![], None, &first, &first),
+            Err(Error::Conflict)
+        );
+        s.put_all_if_version_with_trust(vec![], vec![], None, &first)
+            .unwrap();
+        let mut second = first.clone();
+        second.add_revoked(&[Id([0xEE; 16])]);
+        let a = Id::new();
+        s.put_with_trust_cas(vec![(item(a, 1, 1), None)], vec![], None, &first, &second)
+            .unwrap();
+        assert_eq!(s.trust_state().unwrap(), Some(second.clone()));
+        // A writer that read `first` lost the race: nothing is written.
+        let b = Id::new();
+        let r = s.put_with_trust_cas(vec![(item(b, 1, 1), None)], vec![], None, &first, &first);
+        assert_eq!(r, Err(Error::Conflict));
+        assert_eq!(s.trust_state().unwrap(), Some(second));
+        assert_eq!(s.get(RecordKind::Item, b).unwrap(), None);
     }
 
     #[test]

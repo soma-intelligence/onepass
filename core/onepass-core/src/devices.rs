@@ -336,6 +336,7 @@ impl<S: RecordStore> Repository<S> {
         kind: DeviceKind,
         mode: DeviceMode,
     ) -> Result<Id> {
+        self.writable()?;
         check_name(name)?;
         check_mode(mode)?;
         if !self.store.persists_chain() {
@@ -433,6 +434,7 @@ impl<S: RecordStore> Repository<S> {
         &mut self,
         edit: impl FnOnce(&mut Vec<DeviceEntry>) -> Result<bool>,
     ) -> Result<()> {
+        self.writable()?;
         self.maintain_lists(None)?;
         if self.is_revoked_here()? {
             return Err(revoked());
