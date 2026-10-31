@@ -142,7 +142,8 @@ impl From<Error> for CliError {
             | Error::InvalidFormat(_)
             | Error::Crypto
             | Error::Store(_)
-            | Error::ReadOnly => CliError::usage(e),
+            | Error::ReadOnly
+            | Error::OutdatedKit { .. } => CliError::usage(e),
         }
     }
 }

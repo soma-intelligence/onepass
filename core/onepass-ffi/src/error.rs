@@ -84,6 +84,12 @@ impl From<Error> for OnePassError {
                 field: "rotation".to_owned(),
                 reason: "read only".to_owned(),
             },
+            // No FFI kind of its own yet (Task 17 wires the restore and
+            // carries the rotator and the date): a refused input.
+            Error::OutdatedKit { .. } => Self::Validation {
+                field: "emergency kit".to_owned(),
+                reason: "outdated".to_owned(),
+            },
         }
     }
 }

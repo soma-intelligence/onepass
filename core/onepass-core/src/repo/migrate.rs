@@ -110,7 +110,7 @@ pub(crate) fn stored_legacy_intros<S: RecordStore + ?Sized>(
 
 /// The genesis records of `account_id` signed by `identity` whose two
 /// signatures verify, with their lineage hashes, smallest hash first.
-fn valid_geneses<'a>(
+pub(crate) fn valid_geneses<'a>(
     records: &'a [LineageRecord],
     account_id: Id,
     identity: &crate::crypto::IdentityVerifyingKey,
@@ -142,7 +142,7 @@ fn valid_geneses<'a>(
 /// creator proves a forgery by a holder of the account keys: such a
 /// genesis is never chosen, so grinding a smaller hash under a real
 /// device's id captures nothing.
-fn winner<'a>(
+pub(crate) fn winner<'a>(
     geneses: &[([u8; 32], &'a Signed<GenesisBody>)],
     intros: &[SignedLegacyIntro],
     account_id: Id,
@@ -181,7 +181,7 @@ fn winner<'a>(
 }
 
 /// Ids present and not revoked, and ids revoked, in the device list.
-fn split_list(entries: &[DeviceEntry]) -> (BTreeSet<Id>, BTreeSet<Id>) {
+pub(crate) fn split_list(entries: &[DeviceEntry]) -> (BTreeSet<Id>, BTreeSet<Id>) {
     let (live, gone): (Vec<&DeviceEntry>, Vec<&DeviceEntry>) =
         entries.iter().partition(|e| e.revoked_at.is_none());
     (
@@ -257,7 +257,7 @@ fn note_other_genesis(trust: &mut TrustState, records: &[LineageRecord]) -> bool
 /// excluded; a `Tofu` device a later intro gives another key, or that the
 /// rule excludes, leaves the roster for `excluded` and `conflicted`.
 /// Whether anything changed.
-fn apply_legacy(trust: &mut TrustState, out: &LegacyIntros) -> bool {
+pub(crate) fn apply_legacy(trust: &mut TrustState, out: &LegacyIntros) -> bool {
     let before = trust.clone();
     let me = trust.me.device_id;
     let verified =
@@ -711,6 +711,8 @@ impl<S: RecordStore> Repository<S> {
             || self.records_id != trust.account_id
             || self.account.params.identity_pub != trust.identity_pub
             || keys.public(me)? != trust.me
+            // Task 15: a kit-restored device joins nothing by itself.
+            || super::kit::kit_unpinned(&trust)
             || trust.roster.iter().any(|e| {
                 e.device_id != me && trust.levels.get(&e.device_id) == Some(&TrustLevel::Verified)
             })

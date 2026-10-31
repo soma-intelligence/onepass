@@ -250,6 +250,11 @@ impl<S: RecordStore> Repository<S> {
         if revoked {
             return Ok(());
         }
+        // Task 15 (spec 7.5 step 5): a kit-restored device signs no list
+        // before a device pins it: no self-registration, no adoption.
+        if trust_of(&self.store)?.is_some_and(|t| crate::repo::kit::kit_unpinned(&t)) {
+            return Ok(());
+        }
         match self.writable() {
             Ok(()) => {}
             Err(Error::ReadOnly) => return Ok(()),
@@ -743,15 +748,27 @@ mod tests {
             // An account from before milestone 2b: no vault list yet.
             repo.store.delete(RecordKind::VaultList, id).unwrap();
             repo.chain.vault_list = None;
+            let me = keys.public(Id::new()).unwrap();
+            // In its own roster (Task 15: a device outside it is a
+            // kit-restored one that signs no list).
+            let roster = vec![crate::lineage::RosterEntry {
+                device_id: me.device_id,
+                sign_pub: me.sign_pub.clone(),
+                kem_pub: me.kem_pub.clone(),
+                name: "iPhone".into(),
+                kind: DeviceKind::Phone,
+                mode: DeviceMode::Personal,
+                introduced_by: None,
+            }];
             let trust = TrustState::new(
                 id,
-                keys.public(Id::new()).unwrap(),
+                me,
                 LineageHead {
                     generation: 0,
                     hash: [9; 32],
                 },
                 identity.clone(),
-                vec![],
+                roster,
                 state.clone(),
             );
             repo.store

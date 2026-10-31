@@ -4156,3 +4156,392 @@ fn answers_before_the_first_tick() {
     );
     assert_erased(&c);
 }
+
+// ------------------------------------------------- Emergency Kit (Task 15)
+
+use onepass_core::lineage::{SignedIntro, verify_intro, verify_intro_identity};
+use onepass_core::repo::kit::{KitRestore, UNKNOWN_ROTATOR};
+
+/// The keys the app creates for a device restored with the kit.
+fn kit_keys() -> DeviceKeys {
+    DeviceKeys::generate_software().unwrap()
+}
+
+/// "Restaurer avec mon Emergency Kit" on `dev` (spec 7.5), as the app
+/// calls it: the device state it saved, fresh device keys. The session
+/// stays open and its device state is saved.
+fn restore_kit(dev: &mut Device, sk: &SecretKey, keys: &DeviceKeys) -> Result<()> {
+    let store = dev.store();
+    let device = store.device_state()?;
+    let repo = Repository::restore_from_kit(
+        store,
+        KitRestore {
+            password: PASSWORD,
+            secret_key: sk,
+            device_keys: keys,
+            name: "iPad neuf",
+            kind: DeviceKind::Tablet,
+            mode: DeviceMode::Personal,
+            device,
+        },
+    )?;
+    dev.repo = Some(repo);
+    dev.repo().persist_device_state()
+}
+
+fn trust_of_dev(dev: &Device) -> Option<TrustState> {
+    dev.store().trust_state().unwrap()
+}
+
+fn in_roster(t: &TrustState, id: Id) -> bool {
+    t.roster.iter().any(|e| e.device_id == id)
+}
+
+/// The lineage record id of `h`.
+fn lineage_id(h: &[u8; 32]) -> Id {
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&h[..16]);
+    Id(id)
+}
+
+/// Spec 7.5 steps 1 to 3, R14 (`rotation.pv`, `restore_new`): the latest
+/// kit opens the identity of the head; its signature over the head is
+/// what pins the roster; the device is new, outside the roster, and
+/// publishes a self-intro signed by its key and by the identity.
+#[test]
+fn latest_kit_pins_roster_through_identity_sig() {
+    let (server, mut a, _c, f, out, new_sk) = rotated();
+    let body = rotation_of(&a.store(), &out.head);
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    restore_kit(&mut n, &new_sk, &keys).unwrap();
+
+    let t = trust_of_dev(&n).expect("a trust state");
+    assert_eq!(
+        t.head,
+        LineageHead {
+            generation: 1,
+            hash: out.head
+        }
+    );
+    assert_eq!(t.identity_pub, body.identity_pub);
+    assert_eq!(t.roster, body.roster);
+    assert!(t.revoked.contains(&f.others[B].id()));
+    assert_eq!(t.state, DeviceLineageState::Current);
+    let me = t.me.device_id;
+    assert_eq!(t.me, keys.public(me).unwrap());
+    assert!(
+        !in_roster(&t, me),
+        "a kit-restored device is pinned by others"
+    );
+    assert!(body.roster.iter().all(|e| e.device_id != me));
+    assert_eq!(n.repo().this_device_id(), Some(me));
+    assert!(n.repo().awaiting_pin().unwrap());
+
+    // The self-intro, under the head, by its own key and the identity.
+    let intro = n
+        .store()
+        .list(RecordKind::DeviceIntro)
+        .unwrap()
+        .iter()
+        .filter_map(|r| SignedIntro::decode(&r.data).ok())
+        .find(|i| i.body.entry.device_id == me)
+        .expect("a self-intro");
+    assert_eq!(intro.body.head, out.head);
+    assert_eq!(intro.body.introducer, me);
+    assert_eq!(intro.body.entry.name, "iPad neuf");
+    verify_intro(&intro, &t.me.sign_pub).unwrap();
+    verify_intro_identity(&intro, &body.identity_pub).unwrap();
+
+    // It reads the account, and unlocks again with the kit.
+    assert_eq!(n.items(), a.items());
+    n.lock();
+    n.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(n.items(), a.items());
+}
+
+/// R14: the roster comes from the identity's signature, never from what
+/// the server hands over. A head whose roster was changed (the identity
+/// signature no longer verifies) pins nothing, and nothing is written.
+#[test]
+fn kit_restore_refuses_a_roster_the_identity_did_not_sign() {
+    let (mut server, _a, _c, _f, out, new_sk) = rotated();
+    let rec = server
+        .get(RecordKind::Lineage, lineage_id(&out.head))
+        .unwrap();
+    let LineageRecord::Rotation(mut forged) = LineageRecord::decode(&rec.data).unwrap() else {
+        panic!("a rotation");
+    };
+    let thief = kit_keys();
+    let i = forged
+        .body
+        .roster
+        .iter()
+        .position(|e| e.device_id != forged.body.rotator)
+        .unwrap();
+    forged.body.roster[i].sign_pub = thief.public(Id::new()).unwrap().sign_pub;
+    let forged = LineageRecord::Rotation(forged);
+    server.replay(Record {
+        id: forged.record_id(),
+        kind: RecordKind::Lineage,
+        version: 1,
+        data: forged.encode(),
+    });
+    let mut n = Device::empty();
+    pull_only(&server, &mut n, |c| {
+        !(c.kind == RecordKind::Lineage && c.id == lineage_id(&out.head))
+    });
+    let before = snapshot(&n.store());
+    let r = restore_kit(&mut n, &new_sk, &kit_keys());
+    assert_eq!(r, Err(Error::Integrity(IntegrityError::Signature)));
+    assert_eq!(snapshot(&n.store()), before);
+    assert!(trust_of_dev(&n).is_none());
+}
+
+/// Spec 7.5 step 4: a kit whose identity has a visible child is outdated,
+/// refused with the rotator and the date. On a new device the rotator's
+/// name is the neutral label (never the record's text).
+#[test]
+fn outdated_kit_refused_when_children_visible() {
+    let (server, a, _c, f, out, _new_sk) = rotated();
+    let body = rotation_of(&a.store(), &out.head);
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let before = snapshot(&n.store());
+    let r = restore_kit(&mut n, &f.sk, &kit_keys());
+    assert_eq!(
+        r,
+        Err(Error::OutdatedKit {
+            rotator: UNKNOWN_ROTATOR.to_string(),
+            at: body.issued_at,
+        })
+    );
+    assert_eq!(snapshot(&n.store()), before);
+    // A wrong password stays a wrong password.
+    let store = n.store();
+    let device = store.device_state().unwrap();
+    let r = Repository::restore_from_kit(
+        store,
+        KitRestore {
+            password: NEW_PASSWORD,
+            secret_key: &f.sk,
+            device_keys: &kit_keys(),
+            name: "iPad neuf",
+            kind: DeviceKind::Tablet,
+            mode: DeviceMode::Personal,
+            device,
+        },
+    );
+    assert!(matches!(r, Err(Error::WrongPassword)));
+}
+
+/// Documented limit (spec 7.5 step 4, 11, `rotation.pv` `restore_old`
+/// false by design): a server that hides the child lets an outdated kit
+/// restore onto the old identity, which the revoked device also holds.
+/// Asserted so that a change of this behaviour is noticed.
+#[test]
+fn outdated_kit_with_hidden_rotation_lands_on_old_identity() {
+    let (server, a, _c, f, out, _new_sk) = rotated();
+    let old_identity = f_old_identity(&a.store());
+    let mut n = Device::empty();
+    pull_only(&server, &mut n, |c| {
+        !(c.kind == RecordKind::Lineage && c.id == lineage_id(&out.head))
+    });
+    restore_kit(&mut n, &f.sk, &kit_keys()).unwrap();
+    let t = trust_of_dev(&n).unwrap();
+    assert_eq!(t.head.generation, 0);
+    assert_eq!(t.identity_pub, old_identity);
+    assert_eq!(t.state, DeviceLineageState::Current);
+}
+
+/// Spec 7.5 step 5, R14: the self-intro shows on A as a question; A pins
+/// the device only on an explicit yes, which writes A's intro and the
+/// device list entry; the restored device sees itself pinned, and the
+/// other devices take A's intro as any intro.
+#[test]
+fn kit_restored_device_needs_yes() {
+    let (mut server, mut a, mut c, f, out, new_sk) = rotated();
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    sync(&mut server, &mut c).unwrap();
+
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    restore_kit(&mut n, &new_sk, &keys).unwrap();
+    sync(&mut server, &mut n).unwrap();
+    let nid = n.repo().this_device_id().unwrap();
+    // Nothing but the self-intro went out: no list signed by it.
+    assert!(server.live(RecordKind::DeviceList, nid).is_none());
+
+    sync(&mut server, &mut a).unwrap();
+    a.repo().refresh_pending_rotation().unwrap();
+    sync(&mut server, &mut c).unwrap();
+    c.repo().refresh_pending_rotation().unwrap();
+    // Seen, not pinned, anywhere.
+    let asked = a.repo().kit_restored_devices().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].device_id, nid);
+    assert_eq!(asked[0].name, "iPad neuf");
+    assert_eq!(asked[0].kind, DeviceKind::Tablet);
+    assert!(!in_roster(&trust_of_dev(&a).unwrap(), nid));
+    assert!(!in_roster(&trust_of_dev(&c).unwrap(), nid));
+    assert!(
+        !a.repo()
+            .devices()
+            .unwrap()
+            .iter()
+            .any(|d| d.device_id == nid)
+    );
+
+    // The yes, on A.
+    a.repo().accept_kit_restored(nid, &f.me.keys).unwrap();
+    let ta = trust_of_dev(&a).unwrap();
+    assert!(in_roster(&ta, nid));
+    assert_eq!(ta.levels.get(&nid), Some(&TrustLevel::Verified));
+    assert!(a.repo().kit_restored_devices().unwrap().is_empty());
+    assert!(
+        a.repo()
+            .devices()
+            .unwrap()
+            .iter()
+            .any(|d| d.device_id == nid && d.revoked_at.is_none())
+    );
+    sync(&mut server, &mut a).unwrap();
+
+    // N sees itself pinned; C pins it through A's intro.
+    sync(&mut server, &mut n).unwrap();
+    n.repo().refresh_pending_rotation().unwrap();
+    let tn = trust_of_dev(&n).unwrap();
+    assert!(in_roster(&tn, nid));
+    assert!(!n.repo().awaiting_pin().unwrap());
+    n.repo().trust_snapshot().unwrap();
+    sync(&mut server, &mut c).unwrap();
+    c.repo().refresh_pending_rotation().unwrap();
+    assert!(in_roster(&trust_of_dev(&c).unwrap(), nid));
+}
+
+/// A "non" on the question excludes the restored device on that device.
+#[test]
+fn kit_restored_device_refused() {
+    let (mut server, mut a, _c, _f, _out, new_sk) = rotated();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    restore_kit(&mut n, &new_sk, &kit_keys()).unwrap();
+    sync(&mut server, &mut n).unwrap();
+    let nid = n.repo().this_device_id().unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo().reject_kit_restored(nid).unwrap();
+    let ta = trust_of_dev(&a).unwrap();
+    assert!(ta.excluded.contains(&nid));
+    assert!(!in_roster(&ta, nid));
+    assert!(a.repo().kit_restored_devices().unwrap().is_empty());
+    assert!(is_validation(
+        &a.repo().accept_kit_restored(nid, &kit_keys())
+    ));
+}
+
+/// Spec 7.5 step 5 as ruled (Task 15): before another device pins it, a
+/// kit-restored device neither rotates, nor approves a pairing, nor signs
+/// a list; its item writes work. Spec 7.5 as amended: when it is the only
+/// device left, the user says so ("Je n'ai plus d'autre appareil"), it
+/// pins itself, and from then on it rotates.
+#[test]
+fn restored_device_cannot_rotate_before_pinned() {
+    let (mut server, mut a, _c, _f, _out, new_sk) = rotated();
+    // A restore over a device that is fine is refused.
+    assert!(is_validation(&restore_kit(&mut a, &new_sk, &kit_keys())));
+
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    restore_kit(&mut n, &new_sk, &keys).unwrap();
+    let sk2 = SecretKey::generate().unwrap();
+    let req = RotateRequest {
+        revoke: vec![],
+        new_password: None,
+        password: PASSWORD,
+        secret_key: &new_sk,
+        new_secret_key: &sk2,
+        device_keys: &keys,
+        reason: RotationReason::Rotate,
+        keep_tofu: &[],
+    };
+    let before = snapshot(&n.store());
+    assert!(is_validation(&n.repo().rotate(req)));
+    assert!(is_validation(&n.repo().trust_snapshot()));
+    assert!(is_validation(&n.repo().create_vault(meta("Travail"))));
+    assert_eq!(snapshot(&n.store()), before);
+    // Lists are read, never written (no self-registration).
+    n.repo().devices().unwrap();
+    assert_eq!(snapshot(&n.store()).outbox, before.outbox);
+    // Item writes go on.
+    let v = n.vault();
+    n.save(&login(v.id, "erin", T0 + 70));
+
+    // The only device left: the user's statement pins it.
+    n.repo().claim_only_device().unwrap();
+    let t = trust_of_dev(&n).unwrap();
+    assert!(in_roster(&t, t.me.device_id));
+    assert!(!n.repo().awaiting_pin().unwrap());
+    assert!(is_validation(&n.repo().claim_only_device()));
+    sync(&mut server, &mut n).unwrap();
+    let req = RotateRequest {
+        revoke: vec![],
+        new_password: None,
+        password: PASSWORD,
+        secret_key: &new_sk,
+        new_secret_key: &sk2,
+        device_keys: &keys,
+        reason: RotationReason::Rotate,
+        keep_tofu: &[],
+    };
+    let out = n.repo().rotate(req).unwrap();
+    assert_eq!(trust_of_dev(&n).unwrap().head.hash, out.head);
+}
+
+/// Spec 8.2 (exits of a locked device) as ruled (Task 15): a kit restore
+/// over a quarantined device cancels the 7-day erase only when it
+/// succeeds, i.e. with the kit of the identity that has no visible child
+/// (the latest). The record that locked the device is in its store, so an
+/// older kit is always refused there, with the rotator's local name, and
+/// the clock keeps running.
+#[test]
+fn kit_restore_cancels_quarantine_only_with_latest_kit() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut b);
+    assert_eq!(tick(&b, T), QuarantineTick::Waiting { erase_at: T + Q });
+    let locked = trust_of_dev(&b).unwrap();
+    let body = rotation_of(&a.store(), &out.head);
+
+    let r = restore_kit(&mut b, &f.sk, &kit_keys());
+    assert_eq!(
+        r,
+        Err(Error::OutdatedKit {
+            rotator: "iPhone".to_string(),
+            at: body.issued_at,
+        })
+    );
+    assert_eq!(trust_of_dev(&b).unwrap(), locked);
+    assert_eq!(tick(&b, T + 1), QuarantineTick::Waiting { erase_at: T + Q });
+
+    restore_kit(&mut b, &new_sk, &kit_keys()).unwrap();
+    let t = trust_of_dev(&b).unwrap();
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_eq!(t.head.hash, out.head);
+    assert_ne!(t.me.device_id, f.others[B].id(), "a new device");
+    assert!(t.revoked.contains(&f.others[B].id()));
+    assert!(!in_roster(&t, t.me.device_id));
+    assert_eq!(b.items(), a.items());
+    b.lock();
+    assert_eq!(tick(&b, T + Q + 1), QuarantineTick::NotQuarantined);
+    b.try_unlock(PASSWORD, &new_sk).unwrap();
+    assert_eq!(b.items(), a.items());
+}

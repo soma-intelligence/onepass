@@ -371,6 +371,9 @@ impl<S: RecordStore> Repository<S> {
         current: Option<&Stored<E>>,
         entries: Vec<E>,
     ) -> Result<(Record, Option<u64>, ListBody<E>)> {
+        // Task 15 (spec 7.5 step 5): a kit-restored device signs no list
+        // before a device pins it.
+        self.signs_lists()?;
         let body = ListBody::next(
             current.map(|c| &c.body),
             self.account.params.account_id,

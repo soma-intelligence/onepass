@@ -91,7 +91,7 @@ pub(crate) fn insert_sorted(roster: &mut Vec<RosterEntry>, e: RosterEntry) {
 
 /// Every intro record of the store that decodes as a `SignedIntro`; the
 /// others (legacy intros, garbage) are skipped.
-fn stored_intros<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<SignedIntro>> {
+pub(crate) fn stored_intros<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<SignedIntro>> {
     Ok(store
         .list(RecordKind::DeviceIntro)?
         .iter()
@@ -101,7 +101,7 @@ fn stored_intros<S: RecordStore + ?Sized>(store: &S) -> Result<Vec<SignedIntro>>
 
 /// The intro record for `entry` under `trust`'s head, signed by this
 /// device.
-fn intro_record(
+pub(crate) fn intro_record(
     trust: &TrustState,
     entry: RosterEntry,
     pop: HybridSignature,
@@ -132,9 +132,15 @@ fn intro_record(
 /// verifies; the new device must not be this one, revoked, excluded or in
 /// the roster already (a roster device is never re-keyed). Two valid
 /// intros that give one device two keys add neither. The device joins at
-/// `Verified` (pinned through a SAS pairing), the roster stays sorted and
-/// within 64 entries. `None` when nothing changes, or the device is not
-/// `Current`, `Candidate` or `Rotating`.
+/// `Verified` (pinned through a SAS pairing, or a user's yes to a kit
+/// self-intro), the roster stays sorted and within 64 entries. `None` when
+/// nothing changes, or the device is not `Current`, `Candidate` or
+/// `Rotating`.
+///
+/// Task 15 (spec 7.5 step 5): a device restored with the Emergency Kit is
+/// outside its own roster until another device pins it. An intro of this
+/// very device, with its own keys, by a roster device is that pin: this
+/// device then joins its own roster (`repo::kit`).
 pub(crate) fn accept_intros(trust: &TrustState, intros: &[SignedIntro]) -> Option<TrustState> {
     if !matches!(
         trust.state,
@@ -151,7 +157,7 @@ pub(crate) fn accept_intros(trust: &TrustState, intros: &[SignedIntro]) -> Optio
         if i.identity_sig.is_some()
             || b.account_id != trust.account_id
             || b.head != trust.head.hash
-            || new == trust.me.device_id
+            || (new == trust.me.device_id && !same_keys(&b.entry, &trust.me))
             || new == b.introducer
             || b.entry.introduced_by != Some(b.introducer)
             || trust.revoked.contains(&new)
@@ -279,6 +285,9 @@ impl<S: RecordStore> Repository<S> {
         ) {
             return Err(refused("device", "state"));
         }
+        // Task 15: a kit-restored device approves no pairing before a
+        // device pins it.
+        super::kit::check_pinned(&trust)?;
         let records = lineage_records(&self.store)?;
         let by_hash: BTreeMap<[u8; 32], &LineageRecord> =
             records.iter().map(|r| (r.hash(), r)).collect();
@@ -355,6 +364,7 @@ impl<S: RecordStore> Repository<S> {
         if device_keys.public(me)? != trust.me {
             return Err(refused("device", "other device keys"));
         }
+        super::kit::check_pinned(&trust)?;
         check_name(&info.name)?;
         let id = newcomer.device_id;
         if id != info.device_id

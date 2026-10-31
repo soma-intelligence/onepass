@@ -231,7 +231,7 @@ pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32
 }
 
 /// The id of the account records of the trust state's identity (spec 6.6).
-fn current_records_id(trust: &TrustState) -> Id {
+pub(crate) fn current_records_id(trust: &TrustState) -> Id {
     account_record_id(
         trust.account_id,
         (trust.head.generation > 0).then_some(&trust.identity_pub),
