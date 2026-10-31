@@ -7,8 +7,10 @@
 -- retry_after set, like rate_limited.
 --
 -- Blobs. A body above 16 KiB (INLINE_MAX) lives in the private Storage
--- bucket 'onepass-mailbox' under hex(mailbox) || '/' || hex(sha256), the
--- object name of the proto's `hex` helper. The edge function (Task 7) signs
+-- bucket 'onepass-mailbox' under hex(mailbox) || '/' || hex(sha256) || '.'
+-- || gen (lowercase hex, `_blob_object`), gen being the blob's upload
+-- generation. Only the server builds names: announce and lookup return the
+-- current one, and the edge function signs URLs for exactly that name. The edge function (Task 7) signs
 -- the upload and download URLs with the service key, for Storage only; this
 -- schema only reads storage.objects, through a policy scoped to the mailbox
 -- of the request. The server never sees a body, so it cannot check that the
@@ -16,6 +18,7 @@
 -- client checks the SHA-256 of everything it downloads. A client that
 -- uploads a body under the wrong hash hurts only its own mailbox.
 --
+--   (Every announce and lookup row carries object_name.)
 --   api_blob_announce: 1 to 1 000 (PAGE_MAX_RECORDS) distinct blobs of
 --     16 385 to 921 600 bytes. Records each one as announced (state 1) when
 --     absent and answers, sorted by hash, whether it needs an upload: yes
@@ -43,14 +46,18 @@
 --
 -- Blob states: 1 announced (no commit has seen its object yet), 2 present (a
 -- commit checked its object), 3 orphaned and handed to the collector
--- (gc_take). A taken blob is never referenced again: a commit refuses it
+-- (gc_take, which returns the generation, a take token and the exact object
+-- name to delete). A taken blob is never referenced again: a commit refuses it
 -- (malformed) and an announce answers 'retry' while the take is pending.
 -- The collector deletes the object, then calls gc_done, which deletes the
 -- row; the client announces again, finds no object, uploads, commits. So no
 -- commit can reference a blob between the take and the object's deletion.
 -- A take older than an hour (far above an edge function's run time) is
--- abandoned: an announce then takes the blob back (state 1, upload asked),
--- gc_take may take it again, and a late gc_done leaves a revived row alone.
+-- abandoned: an announce then takes the blob back under a new generation
+-- (state 1, a new object name, upload asked), or gc_take takes it again
+-- under a new token. A late collector deletes only the old name, and its
+-- gc_done(mailbox, sha, gen, take) is a no-op unless gen and take are still
+-- the row's: timers alone do not guard the object (Task 6 review, round 2).
 --
 -- Lock order: blob rows are locked in (mailbox, sha256) order by every
 -- writer (announce and commit insert in hash order and lock the rows they
@@ -83,10 +90,20 @@
 
 set role onepass_mailbox_owner;
 
--- When the collector took the blob (gc_take); NULL otherwise.
-alter table onepass_mailbox.blobs add column gc_taken_at timestamptz;
+-- Upload generations and take tokens, drawn from one sequence so no value
+-- is ever handed out twice (a row deleted by gc_done and announced again
+-- gets a new generation, never an old object name).
+create sequence onepass_mailbox.blob_gen_seq as bigint;
+-- The generation names the object: hex(mailbox)/hex(sha256).gen. A new row
+-- takes one, a revived row (abandoned take) takes a new one.
 alter table onepass_mailbox.blobs
-    add constraint blobs_taken check ((state = 3) = (gc_taken_at is not null));
+    add column gen bigint not null default nextval('onepass_mailbox.blob_gen_seq') check (gen >= 1);
+-- When the collector took the blob, and the token of that take (gc_take);
+-- NULL otherwise.
+alter table onepass_mailbox.blobs add column gc_taken_at timestamptz;
+alter table onepass_mailbox.blobs add column gc_take bigint;
+alter table onepass_mailbox.blobs
+    add constraint blobs_taken check ((state = 3) = (gc_taken_at is not null) and (state = 3) = (gc_take is not null));
 
 -- Live rows by the blob they reference: lookups and reference counts.
 create index records_blob_idx on onepass_mailbox.records (mailbox_id, blob_sha256) where blob_sha256 is not null;
@@ -118,6 +135,17 @@ create policy onepass_mailbox_owner_read on storage.objects
 set role onepass_mailbox_owner;
 
 -- ------------------------------------------------------------ helpers
+
+-- Storage object name of a blob generation, under the mailbox's prefix.
+-- Only the server builds names; clients get signed URLs.
+create function onepass_mailbox._blob_object(p_mailbox bytea, p_sha bytea, p_gen bigint)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+    select encode(p_mailbox, 'hex') || '/' || encode(p_sha, 'hex') || '.' || p_gen::text;
+$$;
 
 -- Adds p_amount to a fixed UTC window if the total stays within p_limit,
 -- and returns NULL; otherwise adds nothing and returns the seconds left in
@@ -157,7 +185,7 @@ $$;
 create function onepass_mailbox.api_blob_announce(
     p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea,
     p_shas bytea[], p_sizes integer[])
-returns table (status text, retry_after integer, sha256 bytea, needs_upload boolean)
+returns table (status text, retry_after integer, sha256 bytea, needs_upload boolean, object_name text)
 language plpgsql
 security definer
 set search_path = ''
@@ -180,8 +208,8 @@ declare
     v_pending bigint;
     v_prefix text;
     v_out_sha bytea[];
-    v_out_needs boolean[];
-    v_rows integer;
+    v_out_gen bigint[];
+    v_out_size integer[];
 begin
     v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
     if v_retry is not null then
@@ -248,52 +276,56 @@ begin
     end if;
 
     if v_err is not null then
-        return query select v_err, v_retry, null::bytea, null::boolean;
+        return query select v_err, v_retry, null::bytea, null::boolean, null::text;
         return;
     end if;
 
-    -- Whether each blob needs an upload, read before the rows change.
-    v_prefix := encode(p_mailbox, 'hex') || '/';
-    select array_agg(o.s order by o.s),
-           array_agg(not exists (select 1 from storage.objects so
-                                 where so.bucket_id = 'onepass-mailbox'
-                                   and so.name collate "C" = v_prefix || encode(o.s, 'hex')
-                                   and so.metadata ->> 'size' = o.z::text)
-                     or b.state is not distinct from 3::smallint
-                     order by o.s)
-    into v_out_sha, v_out_needs
-    from unnest(p_shas, p_sizes) as o (s, z)
-    left join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s;
-
     -- Rows in hash order (the order every writer of blobs locks them in).
     -- A take that starts meanwhile is not undone: the batch is then retry.
+    -- A revived blob (its take abandoned) gets a new generation, so a new
+    -- object name: whatever a late collector deletes is the old name.
     begin
-        insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state)
-        select p_mailbox, o.s, o.z, 1 from unnest(p_shas, p_sizes) as o (s, z)
-        order by o.s
-        on conflict (mailbox_id, sha256) do update set
-            size = case when b.refs = 0 then excluded.size else b.size end,
-            -- An abandoned take (lease over) is taken back; an unreferenced
-            -- blob is kept alive another 24 hours.
-            state = case when b.state = 3 then 1 else b.state end,
-            gc_taken_at = null,
-            orphaned_at = case when b.refs = 0 then null else b.orphaned_at end
-        where not (b.state = 3 and b.gc_taken_at >= now() - interval '1 hour');
-        get diagnostics v_rows = row_count;
-        if v_rows <> v_n then
+        with up as (
+            insert into onepass_mailbox.blobs as b (mailbox_id, sha256, size, state)
+            select p_mailbox, o.s, o.z, 1 from unnest(p_shas, p_sizes) as o (s, z)
+            order by o.s
+            on conflict (mailbox_id, sha256) do update set
+                size = case when b.refs = 0 then excluded.size else b.size end,
+                -- An abandoned take (lease over) is taken back; an
+                -- unreferenced blob is kept alive another 24 hours.
+                state = case when b.state = 3 then 1 else b.state end,
+                gen = case when b.state = 3 then nextval('onepass_mailbox.blob_gen_seq') else b.gen end,
+                gc_taken_at = null,
+                gc_take = null,
+                orphaned_at = case when b.refs = 0 then null else b.orphaned_at end
+            where not (b.state = 3 and b.gc_taken_at >= now() - interval '1 hour')
+            returning b.sha256, b.gen, b.size
+        )
+        select array_agg(up.sha256 order by up.sha256), array_agg(up.gen order by up.sha256),
+               array_agg(up.size order by up.sha256)
+        into v_out_sha, v_out_gen, v_out_size
+        from up;
+        if coalesce(cardinality(v_out_sha), 0) <> v_n then
             raise exception using errcode = 'OP503', message = 'retry';
         end if;
     exception when sqlstate 'OP503' then
         v_err := 'retry';
     end;
     if v_err is not null then
-        return query select v_err, 60, null::bytea, null::boolean;
+        return query select v_err, 60, null::bytea, null::boolean, null::text;
         return;
     end if;
 
+    -- An upload is needed unless the current generation's object is there
+    -- with the blob's size.
     return query
-    select 'ok'::text, null::integer, o.s, o.needs
-    from unnest(v_out_sha, v_out_needs) as o (s, needs)
+    select 'ok'::text, null::integer, o.s,
+           not exists (select 1 from storage.objects so
+                       where so.bucket_id = 'onepass-mailbox'
+                         and so.name collate "C" = onepass_mailbox._blob_object(p_mailbox, o.s, o.g)
+                         and so.metadata ->> 'size' = o.z::text),
+           onepass_mailbox._blob_object(p_mailbox, o.s, o.g)
+    from unnest(v_out_sha, v_out_gen, v_out_size) as o (s, g, z)
     order by o.s;
 end
 $$;
@@ -301,7 +333,7 @@ $$;
 -- POST /v1/mailboxes/{m}/blobs/downloads.
 create function onepass_mailbox.api_blob_lookup(
     p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea, p_shas bytea[])
-returns table (status text, retry_after integer, sha256 bytea, size integer)
+returns table (status text, retry_after integer, sha256 bytea, size integer, object_name text)
 language plpgsql
 security definer
 set search_path = ''
@@ -332,19 +364,19 @@ begin
         end if;
     end if;
     if v_err is not null then
-        return query select v_err, v_retry, null::bytea, null::integer;
+        return query select v_err, v_retry, null::bytea, null::integer, null::text;
         return;
     end if;
 
     -- Tombstones carry no blob: a row with blob_sha256 is live.
     return query
-    select 'ok'::text, null::integer, b.sha256, b.size
+    select 'ok'::text, null::integer, b.sha256, b.size, onepass_mailbox._blob_object(p_mailbox, b.sha256, b.gen)
     from unnest(p_shas) as o (s)
     join onepass_mailbox.blobs b on b.mailbox_id = p_mailbox and b.sha256 = o.s
     where exists (select 1 from onepass_mailbox.records r where r.mailbox_id = p_mailbox and r.blob_sha256 = o.s)
     order by b.sha256;
     if not found then
-        return query select 'ok'::text, null::integer, null::bytea, null::integer;
+        return query select 'ok'::text, null::integer, null::bytea, null::integer, null::text;
     end if;
 end
 $$;
@@ -467,17 +499,18 @@ begin
         -- Every blob the batch puts: its object under this mailbox's prefix,
         -- with this size, not taken by the collector, and the size it is
         -- known by when rows already reference it.
-        v_prefix := encode(p_mailbox, 'hex') || '/';
-        select coalesce(bool_or(so.id is null or bl.state is not distinct from 3::smallint
+        -- The blob must be announced: the announce gave it the generation
+        -- its object is named after.
+        select coalesce(bool_or(bl.sha256 is null or so.id is null or bl.state = 3
                                 or (bl.refs > 0 and bl.size <> x.s)), false)
         into v_bad
         from (select distinct o.b, o.s from unnest(p_ops, p_blob_sha, p_sizes) as o (op, b, s)
               where o.op = 1 and o.b is not null) x
+        left join onepass_mailbox.blobs bl on bl.mailbox_id = p_mailbox and bl.sha256 = x.b
         left join storage.objects so
             on so.bucket_id = 'onepass-mailbox'
-           and so.name collate "C" = v_prefix || encode(x.b, 'hex')
-           and so.metadata ->> 'size' = x.s::text
-        left join onepass_mailbox.blobs bl on bl.mailbox_id = p_mailbox and bl.sha256 = x.b;
+           and so.name collate "C" = onepass_mailbox._blob_object(p_mailbox, x.b, bl.gen)
+           and so.metadata ->> 'size' = x.s::text;
         if v_bad then
             v_err := 'malformed';
         end if;
@@ -608,7 +641,8 @@ begin
                     state = 2,
                     size = case when b.refs = 0 then excluded.size else b.size end,
                     orphaned_at = null,
-                    gc_taken_at = null
+                    gc_taken_at = null,
+                    gc_take = null
                 where b.state <> 3;
                 get diagnostics v_rows = row_count;
                 if v_rows <> cardinality(v_inc_sha) then
