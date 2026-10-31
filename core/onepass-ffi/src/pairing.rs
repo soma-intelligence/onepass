@@ -111,12 +111,21 @@ impl From<FfiAuditAction> for AuditAction {
 /// fields; the caller keeps the grant itself.
 fn message_to_ffi(msg: &Message) -> FfiPairingMessage {
     match msg {
-        Message::Confirmed => FfiPairingMessage::Confirmed,
+        // Key rotation v2 (Task 13): a newcomer with device keys confirms
+        // with them; the app sees a confirmation. Granting it a `FullV2`
+        // through the FFI is Task 17.
+        Message::Confirmed | Message::ConfirmedWithKey { .. } => FfiPairingMessage::Confirmed,
         Message::Grant(Grant::Full(g)) => FfiPairingMessage::FullGrant {
             account_id: id_hex(g.account_id),
             mode: g.mode.into(),
             device_id: id_hex(g.device_id),
             snapshot_records: u32::try_from(g.snapshot.len()).unwrap_or(u32::MAX),
+        },
+        Message::Grant(Grant::FullV2(g)) => FfiPairingMessage::FullGrant {
+            account_id: id_hex(g.full.account_id),
+            mode: g.full.mode.into(),
+            device_id: id_hex(g.full.device_id),
+            snapshot_records: u32::try_from(g.full.snapshot.len()).unwrap_or(u32::MAX),
         },
         Message::Grant(Grant::Public(g)) => FfiPairingMessage::PublicGrant {
             expires_at: g.expires_at,
@@ -726,6 +735,9 @@ impl PairingApprover {
             // the cap (or any refusal) rolls the addition back.
             let secret_key = secret_key.clone();
             repo.add_device_then(entry, |repo| {
+                // Key rotation v2 (spec 15, Task 13): a newcomer paired
+                // without a device key is trusted on first use.
+                repo.mark_legacy_device(peer.device_id)?;
                 let snapshot = match base {
                     Some(snapshot) => snapshot,
                     None => local_snapshot(repo.store())?,

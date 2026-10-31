@@ -198,13 +198,14 @@ fn completeness<S: RecordStore + ?Sized>(
 }
 
 /// A digest of everything a rotation prompt depends on: the lineage
-/// records, the deliveries, the account params and keysets (ids, versions,
-/// contents) and the trust state. A change means the prompt must be looked
+/// records, the intros, the deliveries, the account params and keysets
+/// (ids, versions, contents) and the trust state. A change means the prompt must be looked
 /// for again.
 fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
     let mut ctx = digest::Context::new(&SHA256);
     for kind in [
         RecordKind::Lineage,
+        RecordKind::DeviceIntro,
         RecordKind::KeyDelivery,
         RecordKind::AccountParams,
         RecordKind::Keyset,
@@ -525,7 +526,7 @@ pub fn follow_switch<S: RecordStore>(
 }
 
 fn follow_with<S: RecordStore>(
-    mut store: S,
+    store: S,
     choice: [u8; 32],
     password: &str,
     device_keys: &DeviceKeys,
@@ -673,48 +674,12 @@ fn follow_with<S: RecordStore>(
     let no_heads = BTreeMap::new();
     next.own_writes
         .adopt(if switch { &no_heads } else { &body.from_heads });
-    let chain = ChainState {
-        params_epoch: account.params.epoch,
-        device_list: None,
-        vault_list: None,
-        device_id: store.chain_state()?.device_id,
-    };
-    // Every vault a stored `last_seen` may name: the session's map replaces
-    // them on the next persist.
-    let mut dropped: BTreeSet<Id> = body.from_heads.keys().copied().collect();
-    let keys = store.list(RecordKind::VaultKey)?;
-    dropped.extend(keys.iter().map(|r| r.id));
-    // The vaults whose own copy the replay needs: intents to replay, or a
-    // vault this device wrote and has not pushed (created there).
-    let mut own: BTreeSet<Id> = next.own_writes.replay_vaults();
-    for k in &keys {
-        if store.is_pending_write(RecordKind::Manifest, k.id)? {
-            own.insert(k.id);
-        }
-    }
-
-    // A switch keeps the own copies for the replay, in the same
-    // transaction (review M7: the left KEM secrets are gone after this
-    // call). A vault whose copy cannot be kept is reported by the replay as
-    // lost, with the log's alert.
-    let retained = match left_kem {
-        Some(left_kem) => own_copies(&store, &own, left_kem, &account)?,
-        None => Vec::new(),
-    };
     // Review M1 (Task 11): a switch away from this device's own rotation
     // drops what of its phase 1 has not gone out (the lineage record, the
     // deliveries of the losing Secret Key, its params, keyset and lists):
     // nobody acts on a lineage record that never reached the server.
     let mut drop_pending = Vec::new();
-    // Fix round 2: a password change made under the identity left is
-    // dropped (never pushed: review I3), not held forever. The prompt
-    // reported it (`pending_password_change`) before this call.
     let left_id = current_records_id(&trust);
-    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
-        if store.is_pending_write(kind, left_id)? {
-            drop_pending.push((kind, left_id));
-        }
-    }
     if let Some(own_head) = bodies.get(&trust.head.hash)
         && switch
         && own_head.rotator == me
@@ -737,15 +702,106 @@ fn follow_with<S: RecordStore>(
             }
         }
     }
+    let repo = commit_adoption(
+        store,
+        Adoption {
+            trust: &trust,
+            next,
+            account,
+            rid,
+            from_heads: body.from_heads.clone(),
+            left_kem,
+            drop_pending,
+            device_keys,
+        },
+    )?;
+    Ok((repo, auk, secret_key))
+}
 
-    store.put_follow(chain.clone(), &trust, &next, retained, drop_pending)?;
+/// An adoption ready to commit: the trust state read (`trust`) and the one
+/// to write (`next`: new head, identity, roster, own-write log moved to its
+/// replay list), the account of the new identity opened with the password,
+/// its records id, the manifests its vaults start from, the left KEM
+/// secrets of a session-based adoption, and the extra pending rows to drop.
+pub(crate) struct Adoption<'a> {
+    pub(crate) trust: &'a TrustState,
+    pub(crate) next: TrustState,
+    pub(crate) account: Account,
+    pub(crate) rid: Id,
+    pub(crate) from_heads: BTreeMap<Id, crate::manifest::SeenManifest>,
+    pub(crate) left_kem: Option<&'a [HybridKemSecret]>,
+    pub(crate) drop_pending: Vec<(RecordKind, Id)>,
+    pub(crate) device_keys: &'a DeviceKeys,
+}
+
+/// The commit of a follow, a switch or a re-pair (spec 7.2 step 3, 7.4,
+/// 8.5, 10.4): one local transaction (`RecordStore::put_follow`) with the
+/// chain state of the new identity, the trust state, the own copies kept
+/// for the replay and the pending rows dropped; then, best effort (nothing
+/// fails after the commit), the re-introductions this device owes (spec
+/// 6.4, 8.5), the replay of its own writes and a fresh look at the lineage.
+pub(crate) fn commit_adoption<S: RecordStore>(
+    mut store: S,
+    a: Adoption<'_>,
+) -> Result<Repository<S>> {
+    let Adoption {
+        trust,
+        next,
+        account,
+        rid,
+        from_heads,
+        left_kem,
+        mut drop_pending,
+        device_keys,
+    } = a;
+    let chain = ChainState {
+        params_epoch: account.params.epoch,
+        device_list: None,
+        vault_list: None,
+        device_id: store.chain_state()?.device_id,
+    };
+    // Every vault a stored `last_seen` may name: the session's map replaces
+    // them on the next persist.
+    let mut dropped: BTreeSet<Id> = from_heads.keys().copied().collect();
+    let keys = store.list(RecordKind::VaultKey)?;
+    dropped.extend(keys.iter().map(|r| r.id));
+    // The vaults whose own copy the replay needs: intents to replay, or a
+    // vault this device wrote and has not pushed (created there).
+    let mut own: BTreeSet<Id> = next.own_writes.replay_vaults();
+    for k in &keys {
+        if store.is_pending_write(RecordKind::Manifest, k.id)? {
+            own.insert(k.id);
+        }
+    }
+
+    // A switch keeps the own copies for the replay, in the same
+    // transaction (review M7: the left KEM secrets are gone after this
+    // call). A vault whose copy cannot be kept is reported by the replay as
+    // lost, with the log's alert.
+    let retained = match left_kem {
+        Some(left_kem) => own_copies(&store, &own, left_kem, &account)?,
+        None => Vec::new(),
+    };
+    // Fix round 2: a password change made under the identity left is
+    // dropped (never pushed: review I3), not held forever. The prompt
+    // reported it (`pending_password_change`) before this call.
+    let left_id = current_records_id(trust);
+    for kind in [RecordKind::AccountParams, RecordKind::Keyset] {
+        if store.is_pending_write(kind, left_id)? && !drop_pending.contains(&(kind, left_id)) {
+            drop_pending.push((kind, left_id));
+        }
+    }
+    store.put_follow(chain.clone(), trust, &next, retained, drop_pending)?;
+    // Spec 6.4, 8.5: the devices this one introduced that the new roster
+    // misses, introduced again under the new head (best effort).
+    let _ = super::pairing::reintroduce(&mut store, &next, trust, device_keys);
 
     // Committed: nothing below can fail the call.
     // Step 4: the session on the new identity, its vaults from
     // `from_heads` (R12).
     let device = DeviceState {
         pinned: Some(pin(&account)),
-        last_seen: body.from_heads.clone(),
+        last_seen: from_heads.clone(),
         epoch: 0,
     };
     let repo = Repository {
@@ -771,7 +827,7 @@ fn follow_with<S: RecordStore>(
     // known makes it wait and prompts at once (review I2 of Task 9).
     let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
-    Ok((repo, auk, secret_key))
+    Ok(repo)
 }
 
 /// After a switch: for each vault of `vaults`, the device's own copy sealed
@@ -1190,12 +1246,20 @@ impl<S: RecordStore> Repository<S> {
     /// since (only the user's answer, `quarantine_resolve`, does). Other
     /// states (rotating with no switch, quarantined, orphaned) are left as
     /// they are.
+    ///
+    /// Task 13: first, the valid intros under the head join the roster
+    /// (`pairing::accept_intros`, spec 6.4), written conditionally on the
+    /// trust state read.
     pub fn refresh_pending_rotation(&mut self) -> Result<Option<RotationPrompt>> {
         let Some(trust) = trust_of(&self.store)? else {
             self.pending = None;
             self.lineage_lock = None;
             return Ok(None);
         };
+        // Task 13 (spec 6.4): the intros made under the head by a trusted
+        // device join the roster first, so a rotation they sign is judged
+        // with their keys.
+        let trust = super::pairing::apply_intros(&mut self.store, trust)?;
         let look = look_for(&self.store, &trust)?;
         let found = look.prompt;
         let state = match (&trust.state, &found, look.lock) {

@@ -6,9 +6,11 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use crate::crypto::HybridKemPublic;
 use crate::crypto::kem::envelope_len;
+use crate::crypto::{HybridKemPublic, HybridSignature};
+use crate::device_keys::DevicePublic;
 use crate::devices::{DeviceKind, DeviceMode, check_name};
+use crate::lineage::{LineageRecord, MAX_ROSTER, RosterEntry, check_entry};
 use crate::model::Item;
 use crate::{Error, Id, Result};
 
@@ -104,6 +106,26 @@ pub enum Message {
     /// full grant: how the account shows itself (name and photo), so the
     /// new device looks like the others. Appended: index 5.
     Profile(ProfileCard),
+    /// N -> A, key rotation v2 (spec 5.2, R16). Appended: index 6. Sent
+    /// twice by a newcomer with device keys:
+    ///
+    /// 1. in place of `Confirmed`, once its user confirmed the SAS: `pop`
+    ///    is the device's proof of possession over the session transcript
+    ///    hash (`sign_pop(keys, transcript, device)`, domain
+    ///    `onepass/device-pop/v1`); `device.device_id` is the Hello's;
+    /// 2. in place of `Ack`, once a `Grant::FullV2` arrived: the same
+    ///    `device`, `pop` now over the granted account id, the form an intro
+    ///    carries (spec 6.4). The approver writes its intro for N with it.
+    ///
+    /// `mailbox_credential`: opaque, reserved for the mailbox plan, `None`
+    /// on this branch. Every field is authenticated by the channel (the
+    /// SAS-confirmed session key and the frame counter); the pop binds the
+    /// device key to the session or the account.
+    ConfirmedWithKey {
+        device: DevicePublic,
+        pop: HybridSignature,
+        mailbox_credential: Option<[u8; 32]>,
+    },
 }
 
 /// The account's display name and photo, as the approver's settings hold
@@ -152,16 +174,179 @@ impl Message {
         if !rest.is_empty() {
             return Err(BAD);
         }
+        // The variants of key rotation v2 decode strictly (spec 6): a
+        // canonical re-encoding equal to the input and their structural
+        // rules, so no trailing or non-canonical field can be added later.
+        let strict = match &msg {
+            Message::ConfirmedWithKey { device, .. } => {
+                DevicePublic::decode(&device.encode()).map_err(|_| BAD)?;
+                true
+            }
+            Message::Grant(Grant::FullV2(g)) => {
+                g.check()?;
+                true
+            }
+            _ => false,
+        };
+        if strict && *msg.encode()? != *b {
+            return Err(BAD);
+        }
         Ok(msg)
     }
 }
 
+// `FullV2` is the large variant: one grant per session, never stored in
+// bulk, and the interface the plan fixes holds it by value.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Grant {
     /// Personal or shared device: the account itself.
     Full(FullGrant),
     /// Public device: a read-only session, no key.
     Public(PublicGrant),
+    /// Key rotation v2 (spec 5.2): a full grant and the approver's trust
+    /// snapshot, for a newcomer that sent its device key
+    /// (`Message::ConfirmedWithKey`). Appended: index 2.
+    FullV2(FullGrantV2),
+}
+
+/// Most lineage records a trust snapshot carries (the approver's chain,
+/// genesis to head).
+pub const MAX_TRUST_LINEAGE: usize = 1024;
+/// Largest opaque `sync` blob of a `FullGrantV2` (mailbox plan).
+pub const MAX_GRANT_SYNC_BYTES: usize = 64 * 1024;
+/// Largest opaque `enroll` blob of a `FullGrantV2` (mailbox plan).
+pub const MAX_GRANT_ENROLL_BYTES: usize = 64 * 1024;
+
+/// What the approver trusts (spec 5.2): its lineage chain from the genesis
+/// to its head, in order, its roster at that head (sorted by device id, at
+/// most 64), and its own device public key. The newcomer pins the head and
+/// the roster: it trusts the approver because of the SAS, as it does for
+/// the Secret Key and the snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrustSnapshot {
+    pub lineage: Vec<LineageRecord>,
+    pub roster: Vec<RosterEntry>,
+    pub approver: DevicePublic,
+}
+
+impl TrustSnapshot {
+    /// Structural rules: 1 to `MAX_TRUST_LINEAGE` records, each passing the
+    /// strict lineage checks, a genesis first and each next record a
+    /// rotation whose parent is the previous record's hash, one account;
+    /// a sorted, unique roster of at most 64 well-formed entries, none
+    /// revoked along the chain, holding the approver with its keys.
+    pub fn check(&self) -> Result<()> {
+        const BAD: Error = Error::InvalidFormat("trust snapshot");
+        DevicePublic::decode(&self.approver.encode()).map_err(|_| BAD)?;
+        let first = self.lineage.first().ok_or(BAD)?;
+        if self.lineage.len() > MAX_TRUST_LINEAGE || !matches!(first, LineageRecord::Genesis(_)) {
+            return Err(BAD);
+        }
+        let account = first.account_id();
+        let mut prev: Option<([u8; 32], u64)> = None;
+        let mut revoked = std::collections::BTreeSet::new();
+        for r in &self.lineage {
+            LineageRecord::decode(&r.encode()).map_err(|_| BAD)?;
+            if r.account_id() != account {
+                return Err(BAD);
+            }
+            match (r, prev) {
+                (LineageRecord::Genesis(_), None) => {}
+                (LineageRecord::Rotation(s), Some((h, g)))
+                    if s.body.parent == h && s.body.generation == g + 1 =>
+                {
+                    revoked.extend(s.body.revoked.iter().copied());
+                }
+                _ => return Err(BAD),
+            }
+            prev = Some((r.hash(), r.generation()));
+        }
+        if self.roster.len() > MAX_ROSTER
+            || !self
+                .roster
+                .windows(2)
+                .all(|w| w[0].device_id < w[1].device_id)
+        {
+            return Err(BAD);
+        }
+        for e in &self.roster {
+            check_entry(e).map_err(|_| BAD)?;
+            if revoked.contains(&e.device_id) {
+                return Err(BAD);
+            }
+        }
+        let a = &self.approver;
+        if !self.roster.iter().any(|e| {
+            e.device_id == a.device_id && e.sign_pub == a.sign_pub && e.kem_pub == a.kem_pub
+        }) {
+            return Err(BAD);
+        }
+        Ok(())
+    }
+
+    /// The last record of the chain: the approver's head.
+    pub fn head(&self) -> Option<&LineageRecord> {
+        self.lineage.last()
+    }
+
+    /// Every device revoked along the chain.
+    pub fn revoked(&self) -> Vec<Id> {
+        let mut out = std::collections::BTreeSet::new();
+        for r in &self.lineage {
+            if let LineageRecord::Rotation(s) = r {
+                out.extend(s.body.revoked.iter().copied());
+            }
+        }
+        out.into_iter().collect()
+    }
+}
+
+/// A `FullGrant` and the approver's trust snapshot (spec 5.2). `sync` and
+/// `enroll` are opaque, reserved for the mailbox plan (`None` on this
+/// branch), at most `MAX_GRANT_SYNC_BYTES` and `MAX_GRANT_ENROLL_BYTES`.
+/// The whole grant travels in one channel frame: the SAS-confirmed channel
+/// authenticates every field, the opaque ones included.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct FullGrantV2 {
+    pub full: FullGrant,
+    pub trust: TrustSnapshot,
+    pub sync: Option<Vec<u8>>,
+    pub enroll: Option<Vec<u8>>,
+}
+
+impl FullGrantV2 {
+    /// The trust snapshot's rules, the opaque caps, and a chain of the
+    /// granted account.
+    pub fn check(&self) -> Result<()> {
+        const BAD: Error = Error::InvalidFormat("pairing grant");
+        self.trust.check()?;
+        if self
+            .sync
+            .as_ref()
+            .is_some_and(|b| b.len() > MAX_GRANT_SYNC_BYTES)
+            || self
+                .enroll
+                .as_ref()
+                .is_some_and(|b| b.len() > MAX_GRANT_ENROLL_BYTES)
+            || self.trust.lineage[0].account_id() != self.full.account_id
+        {
+            return Err(BAD);
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for FullGrantV2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FullGrantV2")
+            .field("full", &self.full)
+            .field("lineage", &self.trust.lineage.len())
+            .field("roster", &self.trust.roster.len())
+            .field("sync", &self.sync.as_ref().map(Vec::len))
+            .field("enroll", &self.enroll.as_ref().map(Vec::len))
+            .finish()
+    }
 }
 
 /// Everything a personal or shared device needs to open the account: the
@@ -306,6 +491,133 @@ mod tests {
         assert_eq!(Message::decode(&audit.encode().unwrap()).unwrap(), audit);
         assert!(Message::decode(&[4, 0]).is_err());
         assert!(Message::decode(&[5]).is_err());
+    }
+
+    fn snapshot(account: Id) -> (TrustSnapshot, crate::device_keys::DeviceKeys) {
+        use crate::crypto::IdentityKey;
+        use crate::device_keys::DeviceKeys;
+        use crate::lineage::{GenesisBody, LINEAGE_FORMAT, sign_genesis};
+        let keys = DeviceKeys::generate_software().unwrap();
+        let approver = keys.public(Id::new()).unwrap();
+        let entry = RosterEntry {
+            device_id: approver.device_id,
+            sign_pub: approver.sign_pub.clone(),
+            kem_pub: approver.kem_pub.clone(),
+            name: "iPhone".into(),
+            kind: DeviceKind::Phone,
+            mode: DeviceMode::Personal,
+            introduced_by: None,
+        };
+        let identity = IdentityKey::generate().unwrap();
+        let genesis = sign_genesis(
+            GenesisBody {
+                format: LINEAGE_FORMAT,
+                account_id: account,
+                identity_pub: identity.verifying_key(),
+                creator: entry.clone(),
+                created_at: 1,
+            },
+            &keys,
+            &identity,
+        )
+        .unwrap();
+        let snap = TrustSnapshot {
+            lineage: vec![LineageRecord::Genesis(genesis)],
+            roster: vec![entry],
+            approver,
+        };
+        (snap, keys)
+    }
+
+    fn v2_grant() -> FullGrantV2 {
+        let account = Id::new();
+        FullGrantV2 {
+            full: FullGrant {
+                account_id: account,
+                secret_key: Zeroizing::new("A3-SECRET-KEY".into()),
+                mode: DeviceMode::Personal,
+                device_id: Id::new(),
+                snapshot: vec![],
+            },
+            trust: snapshot(account).0,
+            sync: None,
+            enroll: None,
+        }
+    }
+
+    #[test]
+    fn confirmed_encoding_unchanged() {
+        // Existing frames stay byte for byte (global constraint).
+        assert_eq!(*Message::Confirmed.encode().unwrap(), [0]);
+        assert_eq!(Message::decode(&[0]).unwrap(), Message::Confirmed);
+    }
+
+    #[test]
+    fn v2_variants_are_appended_and_strict() {
+        let (snap, keys) = snapshot(Id::new());
+        let device = snap.approver.clone();
+        let pop = crate::device_keys::sign_pop(&keys, &[1; 32], &device).unwrap();
+        for credential in [None, Some([5u8; 32])] {
+            let m = Message::ConfirmedWithKey {
+                device: device.clone(),
+                pop: pop.clone(),
+                mailbox_credential: credential,
+            };
+            let b = m.encode().unwrap();
+            assert_eq!(b[0], 6, "ConfirmedWithKey is index 6");
+            assert_eq!(Message::decode(&b).unwrap(), m);
+            let mut trailing = b.to_vec();
+            trailing.push(0);
+            assert!(Message::decode(&trailing).is_err());
+        }
+        let g = v2_grant();
+        let m = Message::Grant(Grant::FullV2(g.clone()));
+        let b = m.encode().unwrap();
+        assert_eq!(&b[..2], &[1, 2], "Grant::FullV2 is index 2");
+        assert_eq!(Message::decode(&b).unwrap(), m);
+        assert!(!format!("{m:?}").contains("A3-SECRET-KEY"));
+
+        // Bounded opaque fields, and the snapshot's rules, at decode.
+        let mut big = g.clone();
+        big.sync = Some(vec![0; MAX_GRANT_SYNC_BYTES + 1]);
+        let b = Message::Grant(Grant::FullV2(big)).encode().unwrap();
+        assert!(Message::decode(&b).is_err());
+        let mut big = g.clone();
+        big.enroll = Some(vec![0; MAX_GRANT_ENROLL_BYTES + 1]);
+        let b = Message::Grant(Grant::FullV2(big)).encode().unwrap();
+        assert!(Message::decode(&b).is_err());
+        let mut no_approver = g.clone();
+        no_approver.trust.approver = snapshot(Id::new()).0.approver;
+        let b = Message::Grant(Grant::FullV2(no_approver)).encode().unwrap();
+        assert!(Message::decode(&b).is_err());
+        let mut other_account = g.clone();
+        other_account.full.account_id = Id::new();
+        let b = Message::Grant(Grant::FullV2(other_account))
+            .encode()
+            .unwrap();
+        assert!(Message::decode(&b).is_err());
+        let mut empty = g;
+        empty.trust.lineage.clear();
+        let b = Message::Grant(Grant::FullV2(empty)).encode().unwrap();
+        assert!(Message::decode(&b).is_err());
+    }
+
+    #[test]
+    fn trust_snapshot_rules() {
+        let (snap, _) = snapshot(Id::new());
+        snap.check().unwrap();
+        // Unsorted or duplicated roster.
+        let mut dup = snap.clone();
+        dup.roster.push(dup.roster[0].clone());
+        assert!(dup.check().is_err());
+        // A chain that does not start with a genesis, or does not link.
+        let mut twice = snap.clone();
+        twice.lineage.push(twice.lineage[0].clone());
+        assert!(twice.check().is_err());
+        // The approver with another key than the roster's.
+        let mut rekeyed = snap;
+        rekeyed.approver.sign_pub = snapshot(Id::new()).0.approver.sign_pub;
+        assert!(rekeyed.check().is_err());
     }
 
     #[test]
