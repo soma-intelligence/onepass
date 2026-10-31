@@ -32,4 +32,7 @@ fuzz_target!(|data: &[u8]| {
     run::<BlobUrls>(data);
     run::<BlobLookup>(data);
     run::<ErrorBody>(data);
+    run::<CredentialRole>(data);
+    run::<GrantCredential>(data);
+    run::<SetCredentialRole>(data);
 });

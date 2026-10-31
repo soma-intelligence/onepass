@@ -10,8 +10,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::{
-    Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, ErrorCode, MailboxId, Op,
-    PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+    Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, CredentialRole, ErrorCode,
+    MailboxId, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256, put_kinds_of,
 };
 
 use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
@@ -64,6 +64,10 @@ pub const CASES: &[(&str, Case)] = &[
     ("record_quota", record_quota),
     ("rendezvous_round_trip", rendezvous_round_trip),
     ("rendezvous_written_once", rendezvous_written_once),
+    ("grant_then_granted_key_reads", grant_then_granted_key_reads),
+    ("reader_commit_forbidden", reader_commit_forbidden),
+    ("limited_writer_kinds", limited_writer_kinds),
+    ("manager_changes_role", manager_changes_role),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -792,4 +796,179 @@ fn rendezvous_written_once(t: &mut dyn ConformanceTarget) {
         MailboxError::Server(Code::NotFound),
         "a closed id never starts again"
     );
+}
+
+// -------------------------------------------------------------------- roles
+
+/// A credential `owner` grants with `role`, opened on its mailbox.
+fn granted(
+    t: &mut dyn ConformanceTarget,
+    owner: &dyn MailboxApi,
+    role: CredentialRole,
+    put_kinds: Option<[u8; 32]>,
+) -> Box<dyn MailboxApi> {
+    let mut c = t.client();
+    let key = c.credential_key();
+    let id = owner
+        .grant(key.to_bytes(), role, put_kinds, b"granted")
+        .unwrap_or_else(|e| panic!("grant {role:?}: {e:?}"));
+    assert_eq!(id, key.id(), "grant returns the key's credential id");
+    c.open(owner.mailbox().expect("open"));
+    c
+}
+
+fn forbidden<T: std::fmt::Debug>(r: Result<T, MailboxError>, what: &str) {
+    match r {
+        Err(MailboxError::Forbidden) => {}
+        other => panic!("{what}: expected Forbidden, got {other:?}"),
+    }
+}
+
+/// A key a manager grants signs requests at once, without a ticket; the
+/// same key cannot be granted twice, and a reader grants nothing.
+fn grant_then_granted_key_reads(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    applied(a.commit(vec![put(1, 1, None, b"from a")]), "a writes");
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    r.info().expect("granted key signs info");
+    let rec = r
+        .record(KIND, id(1))
+        .expect("reader reads")
+        .expect("a's record");
+    assert_eq!(rec.body, Some(Body::Inline(b"from a".to_vec())));
+    assert_eq!(seqs(&page(r.as_ref(), 0, 10, false).records), vec![1]);
+    assert_eq!(usage(a.as_ref()).2, 2, "two active credentials");
+
+    match a.grant(
+        r.credential_key().to_bytes(),
+        CredentialRole::Read,
+        None,
+        b"again",
+    ) {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("granting a key already in: {other:?}"),
+    }
+    let stranger = owner(t);
+    match a.grant(
+        stranger.credential_key().to_bytes(),
+        CredentialRole::Read,
+        None,
+        b"x",
+    ) {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("granting a key of another mailbox: {other:?}"),
+    }
+    let other = t.client();
+    forbidden(
+        r.grant(
+            other.credential_key().to_bytes(),
+            CredentialRole::Read,
+            None,
+            b"x",
+        ),
+        "a reader grants",
+    );
+    assert_eq!(usage(a.as_ref()).2, 2, "still two credentials");
+}
+
+/// A reader commits nothing, uploads nothing and revokes no one but itself.
+fn reader_commit_forbidden(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(r.commit(vec![put(1, 1, None, b"x")]), "reader puts");
+    forbidden(r.commit(vec![del(1, 1)]), "reader deletes");
+    let big = vec![9u8; 20 * 1024];
+    forbidden(r.upload_blobs(&[&big]), "reader uploads");
+    forbidden(
+        r.revoke(a.credential_key().id()),
+        "reader revokes the owner",
+    );
+    assert_eq!(page(a.as_ref(), 0, 10, false).head, 0, "nothing written");
+    r.revoke(r.credential_key().id())
+        .expect("a reader revokes itself");
+    match r.info() {
+        Err(MailboxError::Server(ErrorCode::RevokedCredential)) => {}
+        other => panic!("self revoked reader: {other:?}"),
+    }
+    a.info().expect("the owner is untouched");
+}
+
+/// A writer limited to kinds 14 to 17 puts those, nothing else, and
+/// deletes nothing.
+fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let w = granted(
+        t,
+        a.as_ref(),
+        CredentialRole::Write,
+        Some(put_kinds_of(&[14, 15, 16, 17])),
+    );
+    let at = |kind: u8, n: u32| CommitOp {
+        kind,
+        id: id(n),
+        version: 1,
+        op: Op::Put {
+            expected: None,
+            body: Body::Inline(vec![kind]),
+        },
+    };
+    let s = applied(
+        w.commit(vec![at(14, 1), at(15, 2), at(16, 3), at(17, 4)]),
+        "kinds 14 to 17",
+    );
+    assert_eq!(s, vec![Some(1), Some(2), Some(3), Some(4)]);
+    forbidden(w.commit(vec![at(5, 5)]), "kind 5");
+    forbidden(
+        w.commit(vec![at(14, 6), at(5, 7)]),
+        "kind 5 in a batch of 14",
+    );
+    forbidden(w.commit(vec![at(18, 8)]), "kind 18");
+    let gone = CommitOp {
+        kind: 14,
+        id: id(1),
+        version: 2,
+        op: Op::Delete,
+    };
+    forbidden(w.commit(vec![gone]), "a delete of kind 14");
+    assert_eq!(page(a.as_ref(), 0, 10, false).head, 4, "only the four puts");
+    applied(
+        a.commit(vec![put(9, 1, None, b"owner")]),
+        "the owner writes kind 5",
+    );
+}
+
+/// A manager changes roles; a demoted credential loses what it could do, a
+/// promoted one manages, and the last manager stays a manager.
+fn manager_changes_role(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let b = granted(t, a.as_ref(), CredentialRole::Write, None);
+    let b_id = b.credential_key().id();
+    applied(b.commit(vec![put(1, 1, None, b"b")]), "writer writes");
+    a.set_role(b_id, CredentialRole::Read, None)
+        .expect("demote to read");
+    forbidden(b.commit(vec![put(2, 1, None, b"b")]), "demoted writer");
+    forbidden(
+        b.set_role(b_id, CredentialRole::Manage, None),
+        "a reader promotes itself",
+    );
+    a.set_role(b_id, CredentialRole::Manage, None)
+        .expect("promote");
+    let c = granted(t, b.as_ref(), CredentialRole::Read, None);
+    c.info().expect("granted by the promoted manager");
+    match a.set_role([0xee; 16], CredentialRole::Read, None) {
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {}
+        other => panic!("role of an unknown credential: {other:?}"),
+    }
+    // b demotes a; b is then the last manager and keeps its role.
+    let a_id = a.credential_key().id();
+    b.set_role(a_id, CredentialRole::Read, None)
+        .expect("demote a");
+    forbidden(a.revoke(b_id), "a reader revokes a manager");
+    forbidden(
+        b.set_role(b_id, CredentialRole::Write, None),
+        "last manager demotes itself",
+    );
+    forbidden(b.revoke(b_id), "last manager revokes itself");
+    b.revoke(a_id).expect("the manager revokes a");
+    b.info().expect("the last manager is still in");
 }

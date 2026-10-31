@@ -619,6 +619,12 @@ pub enum ErrorCode {
     /// 404 for a method and path the mailbox does not serve, so a client can
     /// tell a wrong base URL from a record that is absent (`NotFound`).
     NoRoute,
+    /// 403: the credential's role does not allow the request (a reader
+    /// that commits, a limited writer outside its kinds, a non-manager that
+    /// grants, changes a role or revokes another credential, the last
+    /// manager or an owner that would lose its place). Appended after
+    /// `NoRoute`: the codes before it keep their bytes.
+    Forbidden,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -628,6 +634,84 @@ pub struct ErrorBody {
 }
 
 impl Message for ErrorBody {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+// ------------------------------------------------------------------ roles
+
+/// What a credential may do in its mailbox (spec D.7). The server enforces
+/// it as defence in depth; a client never reads it to decide a right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CredentialRole {
+    /// Reads only.
+    Read,
+    /// Reads and writes; with `put_kinds`, puts only those kinds and
+    /// deletes nothing.
+    Write,
+    /// Writes, grants, changes roles, revokes other credentials.
+    Manage,
+}
+
+/// The 256 bit kind set of `put_kinds`: bit k (byte k / 8, bit k % 8 from
+/// the least significant, as Postgres `get_bit` numbers them) is kind k.
+pub fn put_kinds_of(kinds: &[u8]) -> [u8; 32] {
+    let mut set = [0u8; 32];
+    for &k in kinds {
+        set[usize::from(k / 8)] |= 1 << (k % 8);
+    }
+    set
+}
+
+/// Kind `kind` is in the set.
+pub fn put_kinds_allow(set: &[u8; 32], kind: u8) -> bool {
+    set[usize::from(kind / 8)] & (1 << (kind % 8)) != 0
+}
+
+fn role_check(role: CredentialRole, put_kinds: &Option<[u8; 32]>) -> Result<(), ProtoError> {
+    if put_kinds.is_some() && role != CredentialRole::Write {
+        return Err(ProtoError::Format("put_kinds without write role"));
+    }
+    Ok(())
+}
+
+/// `POST /v1/mailboxes/{m}/grants`: a manager adds a credential, no ticket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrantCredential {
+    #[serde(with = "crate::bytes::fixed")]
+    pub public_key: [u8; 32],
+    pub role: CredentialRole,
+    #[serde(with = "crate::bytes::opt_fixed")]
+    pub put_kinds: Option<[u8; 32]>,
+    #[serde(with = "crate::bytes::vec")]
+    pub label: Vec<u8>,
+}
+
+impl Message for GrantCredential {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.label.len() > LABEL_MAX {
+            return Err(ProtoError::TooLarge("label"));
+        }
+        role_check(self.role, &self.put_kinds)
+    }
+}
+
+/// `PUT /v1/mailboxes/{m}/credentials/{c}/role`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetCredentialRole {
+    pub role: CredentialRole,
+    #[serde(with = "crate::bytes::opt_fixed")]
+    pub put_kinds: Option<[u8; 32]>,
+}
+
+impl Message for SetCredentialRole {
+    fn check(&self) -> Result<(), ProtoError> {
+        role_check(self.role, &self.put_kinds)
+    }
+}
+
+impl Message for CredentialRole {
     fn check(&self) -> Result<(), ProtoError> {
         Ok(())
     }
@@ -803,12 +887,111 @@ mod tests {
             ErrorCode::RateLimited,
             ErrorCode::Retry,
             ErrorCode::NoRoute,
+            ErrorCode::Forbidden,
         ] {
             rt(ErrorBody {
                 code,
                 retry_after: Some(30),
             });
         }
+        for role in [
+            CredentialRole::Read,
+            CredentialRole::Write,
+            CredentialRole::Manage,
+        ] {
+            rt(role);
+            rt(SetCredentialRole {
+                role,
+                put_kinds: None,
+            });
+            rt(GrantCredential {
+                public_key: [6; 32],
+                role,
+                put_kinds: None,
+                label: b"follower".to_vec(),
+            });
+        }
+        let mut kinds = [0u8; 32];
+        kinds[1] = 0b1100_0000;
+        kinds[2] = 0b0000_0011;
+        rt(GrantCredential {
+            public_key: [7; 32],
+            role: CredentialRole::Write,
+            put_kinds: Some(kinds),
+            label: vec![],
+        });
+        rt(SetCredentialRole {
+            role: CredentialRole::Write,
+            put_kinds: Some(kinds),
+        });
+    }
+
+    /// The codes before `Forbidden` keep their bytes: it was appended.
+    #[test]
+    fn error_code_forbidden_appended() {
+        let body = |code| {
+            encode(&ErrorBody {
+                code,
+                retry_after: None,
+            })
+        };
+        // Frozen before the change: version, variant index 13, no retry_after.
+        assert_eq!(body(ErrorCode::NoRoute), [PROTO_VERSION, 13, 0]);
+        assert_eq!(body(ErrorCode::Retry), [PROTO_VERSION, 12, 0]);
+        assert_eq!(body(ErrorCode::Malformed), [PROTO_VERSION, 0, 0]);
+        assert_eq!(body(ErrorCode::Forbidden), [PROTO_VERSION, 14, 0]);
+    }
+
+    #[test]
+    fn put_kinds_only_with_write_role() {
+        let kinds = Some([0xffu8; 32]);
+        for role in [CredentialRole::Read, CredentialRole::Manage] {
+            let g = GrantCredential {
+                public_key: [1; 32],
+                role,
+                put_kinds: kinds,
+                label: vec![],
+            };
+            assert_eq!(
+                decode::<GrantCredential>(&encode(&g)),
+                Err(ProtoError::Format("put_kinds without write role"))
+            );
+            let s = SetCredentialRole {
+                role,
+                put_kinds: kinds,
+            };
+            assert_eq!(
+                decode::<SetCredentialRole>(&encode(&s)),
+                Err(ProtoError::Format("put_kinds without write role"))
+            );
+        }
+        let long = GrantCredential {
+            public_key: [1; 32],
+            role: CredentialRole::Read,
+            put_kinds: None,
+            label: vec![b'a'; LABEL_MAX + 1],
+        };
+        assert_eq!(
+            decode::<GrantCredential>(&encode(&long)),
+            Err(ProtoError::TooLarge("label"))
+        );
+    }
+
+    /// Bit k of `put_kinds` is kind k: byte k / 8, bit k % 8 from the least
+    /// significant (Postgres `get_bit`).
+    #[test]
+    fn put_kinds_bits() {
+        let set = put_kinds_of(&[14, 15, 16, 17]);
+        assert_eq!(set[1], 0b1100_0000);
+        assert_eq!(set[2], 0b0000_0011);
+        assert!(
+            set.iter()
+                .enumerate()
+                .all(|(i, b)| i == 1 || i == 2 || *b == 0)
+        );
+        assert!(put_kinds_allow(&set, 14) && put_kinds_allow(&set, 17));
+        assert!(!put_kinds_allow(&set, 13) && !put_kinds_allow(&set, 18));
+        assert!(put_kinds_allow(&put_kinds_of(&[255]), 255));
     }
 
     #[test]

@@ -70,6 +70,9 @@ pub enum MailboxError {
     /// (its `/v1/config` may still say `open_signup`, spec 4.9), or this key
     /// already belongs to a mailbox.
     InviteRequired,
+    /// `403 forbidden`: this credential's role does not allow the request
+    /// (spec D.7). Not a sign the credential is gone: it still reads.
+    Forbidden,
     /// The system random source failed.
     Rng,
     /// The mailbox answers for another incarnation than the one this feed
@@ -95,6 +98,7 @@ impl fmt::Display for MailboxError {
             Self::Integrity(w) => write!(f, "integrity check failed: {w}"),
             Self::TooLarge => f.write_str("too large for the mailbox"),
             Self::InviteRequired => f.write_str("this mailbox server needs an invite"),
+            Self::Forbidden => f.write_str("this credential's role does not allow it"),
             Self::Rng => f.write_str("system random source failed"),
             Self::IncarnationChanged { expected, found } => write!(
                 f,

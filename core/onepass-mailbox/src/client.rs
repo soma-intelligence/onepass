@@ -5,10 +5,11 @@ use std::collections::HashMap;
 
 use onepass_mailbox_proto::{
     COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, CommitOp,
-    CommitRequest, CommitResponse, CreateMailbox, CredentialId, Enroll, EnrollTicket, ErrorBody,
-    ErrorCode, MailboxCreated, MailboxId, MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError,
-    PushKind, ServerConfig, ServerRecord, SetPush, SignatureParams, SignedEnrollTicket,
-    TICKET_VERSION, content_digest, decode, encode, hex, signature_base, signature_header,
+    CommitRequest, CommitResponse, CreateMailbox, CredentialId, CredentialRole, Enroll,
+    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, MailboxCreated, MailboxId, MailboxInfo,
+    Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig, ServerRecord,
+    SetCredentialRole, SetPush, SignatureParams, SignedEnrollTicket, TICKET_VERSION,
+    content_digest, credential_id, decode, encode, hex, signature_base, signature_header,
     signature_input_header, ticket_signed_bytes,
 };
 
@@ -247,6 +248,38 @@ impl MailboxClient {
         expect_empty(self.signed(Method::Delete, &target, &[])?)
     }
 
+    /// `POST /v1/mailboxes/{m}/grants`: a manager lets `public_key` in with
+    /// `role`, without a ticket (spec D.7). Returns the new credential's id,
+    /// computed here from the key (the answer carries none).
+    pub fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        let target = format!("{}/grants", self.mailbox_path()?);
+        let req = grant_request(public_key, role, put_kinds, label)?;
+        expect_empty(self.signed(Method::Post, &target, &encode(&req))?)?;
+        Ok(credential_id(&public_key))
+    }
+
+    /// `PUT /v1/mailboxes/{m}/credentials/{c}/role` (manager only).
+    pub fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        let target = format!(
+            "{}/credentials/{}/role",
+            self.mailbox_path()?,
+            hex(&credential)
+        );
+        let req = role_request(role, put_kinds)?;
+        expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
+    }
+
     /// `PUT /v1/mailboxes/{m}/push`.
     pub fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         let target = format!("{}/push", self.mailbox_path()?);
@@ -380,6 +413,31 @@ pub(crate) fn enroll_request(
     Ok(req)
 }
 
+pub(crate) fn grant_request(
+    public_key: [u8; 32],
+    role: CredentialRole,
+    put_kinds: Option<[u8; 32]>,
+    label: &[u8],
+) -> Result<GrantCredential, MailboxError> {
+    let req = GrantCredential {
+        public_key,
+        role,
+        put_kinds,
+        label: label.to_vec(),
+    };
+    req.check().map_err(local)?;
+    Ok(req)
+}
+
+pub(crate) fn role_request(
+    role: CredentialRole,
+    put_kinds: Option<[u8; 32]>,
+) -> Result<SetCredentialRole, MailboxError> {
+    let req = SetCredentialRole { role, put_kinds };
+    req.check().map_err(local)?;
+    Ok(req)
+}
+
 pub(crate) fn push_request(kind: PushKind, token: &[u8]) -> Result<SetPush, MailboxError> {
     let req = SetPush {
         kind,
@@ -435,6 +493,7 @@ pub(crate) fn error_of(code: ErrorCode, retry_after: Option<u32>) -> MailboxErro
         ErrorCode::StaleRequest => MailboxError::Stale,
         ErrorCode::CursorExpired => MailboxError::CursorExpired,
         ErrorCode::TooLarge => MailboxError::TooLarge,
+        ErrorCode::Forbidden => MailboxError::Forbidden,
         ErrorCode::RateLimited | ErrorCode::Retry => MailboxError::Retry {
             after: cap(retry_after),
         },
@@ -538,7 +597,10 @@ fn status_of(code: ErrorCode) -> u16 {
     match code {
         ErrorCode::Malformed => 400,
         ErrorCode::BadSignature | ErrorCode::StaleRequest | ErrorCode::Replay => 401,
-        ErrorCode::UnknownCredential | ErrorCode::RevokedCredential | ErrorCode::Frozen => 403,
+        ErrorCode::UnknownCredential
+        | ErrorCode::RevokedCredential
+        | ErrorCode::Frozen
+        | ErrorCode::Forbidden => 403,
         ErrorCode::NotFound | ErrorCode::NoRoute => 404,
         ErrorCode::CursorExpired => 410,
         ErrorCode::TooLarge => 413,

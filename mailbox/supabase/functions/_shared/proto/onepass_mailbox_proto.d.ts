@@ -22,7 +22,17 @@ export function decodeCreate(bytes: Uint8Array): any;
 
 export function decodeEnroll(bytes: Uint8Array): any;
 
+/**
+ * `{ public_key, role: "Read" | "Write" | "Manage", put_kinds, label }`.
+ */
+export function decodeGrant(bytes: Uint8Array): any;
+
 export function decodeSetPush(bytes: Uint8Array): any;
+
+/**
+ * `{ role, put_kinds }`.
+ */
+export function decodeSetRole(bytes: Uint8Array): any;
 
 export function encodeBlobUrls(v: any): Uint8Array;
 
@@ -79,7 +89,9 @@ export interface InitOutput {
     readonly decodeCommit: (a: number, b: number) => [number, number, number];
     readonly decodeCreate: (a: number, b: number) => [number, number, number];
     readonly decodeEnroll: (a: number, b: number) => [number, number, number];
+    readonly decodeGrant: (a: number, b: number) => [number, number, number];
     readonly decodeSetPush: (a: number, b: number) => [number, number, number];
+    readonly decodeSetRole: (a: number, b: number) => [number, number, number];
     readonly encodeBlobUrls: (a: any) => [number, number, number, number];
     readonly encodeChanges: (a: any) => [number, number, number, number];
     readonly encodeCommitResponse: (a: any) => [number, number, number, number];

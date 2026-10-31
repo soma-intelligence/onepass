@@ -15,7 +15,8 @@ export type Code =
   | "quota"
   | "rate_limited"
   | "retry"
-  | "no_route";
+  | "no_route"
+  | "forbidden";
 
 export const CODES: Record<Code, { status: number; wire: string }> = {
   malformed: { status: 400, wire: "Malformed" },
@@ -35,6 +36,9 @@ export const CODES: Record<Code, { status: number; wire: string }> = {
   // record that is absent (not_found), so a wrong base URL never reads as
   // "no such record" on the client.
   no_route: { status: 404, wire: "NoRoute" },
+  // The role of the credential does not allow the request (spec D.7),
+  // answered in band by SQL after authentication.
+  forbidden: { status: 403, wire: "Forbidden" },
 };
 
 export function isCode(s: unknown): s is Code {

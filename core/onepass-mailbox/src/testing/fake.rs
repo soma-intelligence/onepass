@@ -10,7 +10,11 @@
 //! and ignores `min_cursor`, `min_cursor` = highest purged seq, growth-only
 //! quotas, enroll tickets checked and used once, blobs announced under an
 //! upload generation and committed only while that generation's object is
-//! in Storage.
+//! in Storage, credential roles (a reader commits and uploads nothing, a
+//! writer limited to `put_kinds` puts only those kinds and deletes nothing,
+//! only a manager grants, changes roles, approves tickets and revokes
+//! another credential, an owner is revoked or demoted only by itself, the
+//! last manager stays).
 //!
 //! `FakeMailboxClient` runs the real client's request building and answer
 //! checks (`crate::client`, `crate::blobs`), and every answer goes through
@@ -37,16 +41,17 @@ use std::time::{Duration, Instant};
 
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox_proto::{
-    BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, CommitOp, CommitResponse, ConflictEntry,
-    CredentialId, ErrorCode, INLINE_MAX, Limits, MailboxCreated, MailboxId, MailboxInfo, Message,
-    Op, PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind, RECORD_MAX, ServerConfig, ServerRecord, Sha256,
-    SignedEnrollTicket, Usage, decode, encode, hex, ticket_hash, ticket_signed_bytes,
+    BlobUrls, Body, COMMIT_BODY_MAX, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse,
+    ConflictEntry, CredentialId, CredentialRole, ErrorCode, INLINE_MAX, Limits, MailboxCreated,
+    MailboxId, MailboxInfo, Message, Op, PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind, RECORD_MAX,
+    ServerConfig, ServerRecord, Sha256, SignedEnrollTicket, Usage, credential_id, decode, encode,
+    hex, put_kinds_allow, ticket_hash, ticket_signed_bytes,
 };
 
 use crate::blobs::{BodyRef, blob_of, blob_set, check_answers, check_blob};
 use crate::client::{
     check_changes_query, check_commit, check_page, check_record, commit_request, create_refusal,
-    enroll_request, error_of, issue_ticket, local, push_request,
+    enroll_request, error_of, grant_request, issue_ticket, local, push_request, role_request,
 };
 use crate::rendezvous::{
     RDV_CHUNK_MAX, RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, RdvTransport, Rendezvous,
@@ -166,6 +171,26 @@ struct Cred {
     key: [u8; 32],
     revoked: bool,
     push: Option<(PushKind, Vec<u8>)>,
+    role: CredentialRole,
+    /// Write role only: the kinds it may put; no delete when set.
+    put_kinds: Option<[u8; 32]>,
+    /// Revoked or demoted only by itself (Task 24 sets it).
+    owner: bool,
+}
+
+impl Cred {
+    /// What a creation, an enroll or a row from before roles holds.
+    fn manager(mailbox: MailboxId, key: [u8; 32]) -> Cred {
+        Cred {
+            mailbox,
+            key,
+            revoked: false,
+            push: None,
+            role: CredentialRole::Manage,
+            put_kinds: None,
+            owner: false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -229,6 +254,112 @@ impl State {
         Ok(())
     }
 
+    /// The authenticated caller's row.
+    fn caller(&self, credential: &CredentialId) -> &Cred {
+        self.credentials
+            .get(credential)
+            .expect("authenticated credential")
+    }
+
+    /// Active managers of `m` other than `except`.
+    fn other_managers(&self, m: &MailboxId, except: &CredentialId) -> usize {
+        self.credentials
+            .iter()
+            .filter(|(id, c)| {
+                c.mailbox == *m && !c.revoked && c.role == CredentialRole::Manage && *id != except
+            })
+            .count()
+    }
+
+    /// `api_revoke_credential`, in its order.
+    fn revoke(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        target: &CredentialId,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage && target != caller {
+            return refused(ErrorCode::Forbidden);
+        }
+        let Some(t) = self.credentials.get(target).filter(|c| c.mailbox == *m) else {
+            return refused(ErrorCode::NotFound);
+        };
+        if t.revoked {
+            return Ok(());
+        }
+        if (t.owner && target != caller)
+            || (t.role == CredentialRole::Manage && self.other_managers(m, target) == 0)
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let t = self.credentials.get_mut(target).expect("found");
+        t.revoked = true;
+        t.push = None;
+        Ok(())
+    }
+
+    /// `api_grant_credential` after the shapes (the client checked them).
+    fn grant(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
+        if self.active_credentials(m) >= usize::from(self.limits.max_credentials) {
+            return refused(ErrorCode::Quota);
+        }
+        let id = credential_id(&key);
+        if self.credentials.contains_key(&id) {
+            // In some mailbox, this one included, even revoked.
+            return refused(ErrorCode::Malformed);
+        }
+        self.credentials.insert(
+            id,
+            Cred {
+                role,
+                put_kinds,
+                ..Cred::manager(*m, key)
+            },
+        );
+        Ok(())
+    }
+
+    /// `api_set_credential_role` after the shapes.
+    fn set_role(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        target: &CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
+        let Some(t) = self
+            .credentials
+            .get(target)
+            .filter(|c| c.mailbox == *m && !c.revoked)
+        else {
+            return refused(ErrorCode::NotFound);
+        };
+        let manage = CredentialRole::Manage;
+        if (t.owner && target != caller && role != manage)
+            || (t.role == manage && role != manage && self.other_managers(m, target) == 0)
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let t = self.credentials.get_mut(target).expect("found");
+        t.role = role;
+        t.put_kinds = put_kinds;
+        Ok(())
+    }
+
     fn active_credentials(&self, m: &MailboxId) -> usize {
         self.credentials
             .values()
@@ -282,9 +413,17 @@ impl State {
 
     fn commit(
         &mut self,
+        caller: &CredentialId,
         m: &MailboxId,
         ops: &[CommitOp],
     ) -> Result<(CommitResponse, u16), MailboxError> {
+        let (role, put_kinds) = {
+            let c = self.caller(caller);
+            (c.role, c.put_kinds)
+        };
+        if role == CredentialRole::Read {
+            return refused(ErrorCode::Forbidden);
+        }
         let limits = self.limits.clone();
         let objects = &self.objects;
         let mbx = self.mailboxes.get_mut(m).expect("authenticated mailbox");
@@ -306,7 +445,17 @@ impl State {
                 }
             })
             .sum();
-        if carried > COMMIT_BODY_MAX || ops.len() > limits.max_commit_ops as usize {
+        if carried > COMMIT_BODY_MAX || ops.len() > COMMIT_OPS_MAX {
+            return refused(ErrorCode::TooLarge);
+        }
+        if let Some(set) = put_kinds
+            && ops
+                .iter()
+                .any(|o| matches!(o.op, Op::Delete) || !put_kinds_allow(&set, o.kind))
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        if ops.len() > limits.max_commit_ops as usize {
             return refused(ErrorCode::TooLarge);
         }
 
@@ -509,6 +658,9 @@ impl State {
         if approver.revoked {
             return refused(ErrorCode::RevokedCredential);
         }
+        if approver.role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
         if t.expires_at < now {
             return refused(ErrorCode::StaleRequest);
         }
@@ -528,24 +680,21 @@ impl State {
             return refused(ErrorCode::Malformed);
         }
         self.used_tickets.insert(hash);
-        self.credentials.insert(
-            id,
-            Cred {
-                mailbox: m,
-                key: new_key.to_bytes(),
-                revoked: false,
-                push: None,
-            },
-        );
+        self.credentials
+            .insert(id, Cred::manager(m, new_key.to_bytes()));
         Ok(())
     }
 
     /// `api_blob_announce`: (hash, needs upload, object name), by hash.
     fn announce(
         &mut self,
+        caller: &CredentialId,
         m: &MailboxId,
         blobs: &[(Sha256, u32)],
     ) -> Result<Vec<(Sha256, bool, String)>, MailboxError> {
+        if self.caller(caller).role == CredentialRole::Read {
+            return refused(ErrorCode::Forbidden);
+        }
         let max_bytes = self.limits.max_bytes as i64;
         let objects = &self.objects;
         let next_gen = &mut self.next_gen;
@@ -1071,15 +1220,7 @@ impl MailboxApi for FakeMailboxClient {
                 wake_topic: mbx.wake_topic,
             };
             s.mailboxes.insert(m, mbx);
-            s.credentials.insert(
-                id,
-                Cred {
-                    mailbox: m,
-                    key: req.public_key,
-                    revoked: false,
-                    push: None,
-                },
-            );
+            s.credentials.insert(id, Cred::manager(m, req.public_key));
             wire(&created)
         })();
         let created = create_refusal(r, invite.is_none())?;
@@ -1132,7 +1273,7 @@ impl MailboxApi for FakeMailboxClient {
         if std::mem::take(&mut s.collect_before_commit) {
             s.collect();
         }
-        let (answer, status) = s.commit(&m, &req.ops)?;
+        let (answer, status) = s.commit(&self.credential.id(), &m, &req.ops)?;
         let answer = wire(&answer)?;
         check_commit(&req.ops, &answer, status)?;
         Ok(answer)
@@ -1161,18 +1302,45 @@ impl MailboxApi for FakeMailboxClient {
 
     fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
         let (mut s, m) = self.signed()?;
-        match s
-            .credentials
-            .get_mut(&credential)
-            .filter(|c| c.mailbox == m)
-        {
-            Some(c) => {
-                c.revoked = true;
-                c.push = None;
-                Ok(())
-            }
-            None => refused(ErrorCode::NotFound),
-        }
+        s.revoke(&self.credential.id(), &m, &credential)
+    }
+
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        self.open_mailbox()?;
+        let req = grant_request(public_key, role, put_kinds, label)?;
+        let (mut s, m) = self.signed()?;
+        s.grant(
+            &self.credential.id(),
+            &m,
+            req.public_key,
+            req.role,
+            req.put_kinds,
+        )?;
+        Ok(credential_id(&public_key))
+    }
+
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        self.open_mailbox()?;
+        let req = role_request(role, put_kinds)?;
+        let (mut s, m) = self.signed()?;
+        s.set_role(
+            &self.credential.id(),
+            &m,
+            &credential,
+            req.role,
+            req.put_kinds,
+        )
     }
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
@@ -1207,7 +1375,7 @@ impl MailboxApi for FakeMailboxClient {
             let announced: Vec<(Sha256, u32)> =
                 chunk.iter().map(|(h, d)| (*h, d.len() as u32)).collect();
             let (mut s, m) = self.signed()?;
-            let rows = s.announce(&m, &announced)?;
+            let rows = s.announce(&self.credential.id(), &m, &announced)?;
             let urls = wire(&BlobUrls {
                 urls: rows
                     .iter()

@@ -15,8 +15,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
-    CreateMailbox, Enroll, EnrollTicket, ErrorBody, MailboxCreated, MailboxInfo, Message,
-    ServerConfig, ServerRecord, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
+    CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, MailboxCreated, MailboxInfo,
+    Message, ServerConfig, ServerRecord, SetCredentialRole, SetPush, SignatureParams,
+    SignedEnrollTicket, decode, encode,
 };
 
 fn err(e: impl Display) -> JsError {
@@ -64,6 +65,18 @@ pub fn decode_enroll(bytes: &[u8]) -> Result<JsValue, JsError> {
 #[wasm_bindgen(js_name = decodeSetPush)]
 pub fn decode_set_push(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<SetPush>(bytes)
+}
+
+/// `{ public_key, role: "Read" | "Write" | "Manage", put_kinds, label }`.
+#[wasm_bindgen(js_name = decodeGrant)]
+pub fn decode_grant(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<GrantCredential>(bytes)
+}
+
+/// `{ role, put_kinds }`.
+#[wasm_bindgen(js_name = decodeSetRole)]
+pub fn decode_set_role(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<SetCredentialRole>(bytes)
 }
 
 #[wasm_bindgen(js_name = decodeBlobAnnounce)]

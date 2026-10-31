@@ -307,6 +307,61 @@ async function revoke(c: Ctx): Promise<Response> {
   return empty(204);
 }
 
+/** CredentialRole on the wire, as the SQL role number. */
+const ROLE: Record<string, number> = { Read: 1, Write: 2, Manage: 3 };
+
+function role(wire: string, kinds: Uint8Array | null): number {
+  const r = ROLE[wire];
+  // The proto refuses put_kinds without the write role; checked again here.
+  if (r === undefined || (kinds !== null && r !== 2)) throw new Refusal("malformed");
+  return r;
+}
+
+async function grant(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const g = decode(proto.decodeGrant, c.body) as {
+    public_key: Uint8Array;
+    role: string;
+    put_kinds: Uint8Array | null;
+    label: Uint8Array;
+  };
+  const r = role(g.role, g.put_kinds);
+  // A curve point, as on create (SQL refuses the weak encodings).
+  try {
+    await importCredentialKey(g.public_key);
+  } catch (e) {
+    if (e instanceof BadKey) throw new Refusal("malformed");
+    throw e;
+  }
+  const rows = await call(c.deps.db, "api_grant_credential", [
+    ...signedArgs(c, m),
+    a.bytea(g.public_key),
+    a.smallint(r),
+    a.bytea(g.put_kinds),
+    a.bytea(g.label),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+async function setRole(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const s = decode(proto.decodeSetRole, c.body) as { role: string; put_kinds: Uint8Array | null };
+  const r = role(s.role, s.put_kinds);
+  const rows = await call(c.deps.db, "api_set_credential_role", [
+    ...signedArgs(c, m),
+    a.bytea(unhex(c.groups[1])),
+    a.smallint(r),
+    a.bytea(s.put_kinds),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
 const PUSH_KIND: Record<string, number> = { None: 0, Fcm: 1, Apns: 2, UnifiedPush: 3 };
 
 async function setPush(c: Ctx): Promise<Response> {
@@ -610,6 +665,15 @@ const ROUTES: Route[] = [
     maxBody: MAX,
     run: revoke,
   },
+  {
+    method: "PUT",
+    re: new RegExp(`^${MB}/credentials/${H}/role$`),
+    auth: "signed",
+    query: "none",
+    maxBody: MAX,
+    run: setRole,
+  },
+  { method: "POST", re: new RegExp(`^${MB}/grants$`), auth: "signed", query: "none", maxBody: MAX, run: grant },
   { method: "PUT", re: new RegExp(`^${MB}/push$`), auth: "signed", query: "none", maxBody: MAX, run: setPush },
   { method: "GET", re: new RegExp(`^${MB}/changes$`), auth: "signed", query: "changes", maxBody: MAX, run: changes },
   { method: "POST", re: new RegExp(`^${MB}/commit$`), auth: "signed", query: "none", maxBody: MAX, run: commit },

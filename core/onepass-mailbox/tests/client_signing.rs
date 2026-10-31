@@ -14,10 +14,11 @@ use onepass_mailbox::{
 };
 use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery, CommitOp,
-    CommitRequest, CommitResponse, ConflictEntry, CreateMailbox, Enroll, ErrorBody, ErrorCode,
-    INLINE_MAX, Limits, MailboxCreated, MailboxInfo, Op, PushKind, RECORD_MAX, ServerConfig,
-    ServerRecord, SetPush, Usage, blob_sha256, check_skew, content_digest, credential_id, decode,
-    encode, hex, parse_signature_headers, signature_base, ticket_signed_bytes,
+    CommitRequest, CommitResponse, ConflictEntry, CreateMailbox, CredentialRole, Enroll, ErrorBody,
+    ErrorCode, GrantCredential, INLINE_MAX, Limits, MailboxCreated, MailboxInfo, Op, PushKind,
+    RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole, SetPush, Usage, blob_sha256,
+    check_skew, content_digest, credential_id, decode, encode, hex, parse_signature_headers,
+    signature_base, ticket_signed_bytes,
 };
 
 const PREFIX: &str = "/functions/v1/mailbox";
@@ -264,6 +265,14 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
             decode::<Enroll>(&req.body).unwrap();
             Resp::empty(204)
         }
+        ("POST", r) if r == format!("{m}/grants") => {
+            decode::<GrantCredential>(&req.body).unwrap();
+            Resp::empty(204)
+        }
+        ("PUT", r) if r.starts_with(&format!("{m}/credentials/")) && r.ends_with("/role") => {
+            decode::<SetCredentialRole>(&req.body).unwrap();
+            Resp::empty(204)
+        }
         ("DELETE", r) if r.starts_with(&format!("{m}/credentials/")) => Resp::empty(204),
         ("PUT", r) if r == format!("{m}/push") => {
             decode::<SetPush>(&req.body).unwrap();
@@ -384,6 +393,29 @@ fn every_request_is_signed() {
         .unwrap();
     a.record(1, [1; 16]).unwrap().unwrap();
     a.revoke([7; 16]).unwrap();
+    let granted = Credential::generate().unwrap().public_key();
+    assert_eq!(
+        a.grant(granted.to_bytes(), CredentialRole::Read, None, b"follower")
+            .unwrap(),
+        granted.id(),
+        "grant returns the key's credential id"
+    );
+    a.set_role(
+        [8; 16],
+        CredentialRole::Write,
+        Some(onepass_mailbox_proto::put_kinds_of(&[14, 15, 16, 17])),
+    )
+    .unwrap();
+    assert_eq!(
+        a.grant(
+            granted.to_bytes(),
+            CredentialRole::Manage,
+            Some([1; 32]),
+            b""
+        ),
+        Err(MailboxError::Malformed("request")),
+        "put_kinds without the write role is refused before sending"
+    );
     a.set_push(PushKind::Fcm, b"token").unwrap();
     let big = vec![5u8; INLINE_MAX + 1];
     let body = a.body_for(&big).unwrap();
@@ -440,6 +472,8 @@ fn every_request_is_signed() {
         ("POST", format!("{m}/commit")),
         ("GET", format!("{m}/records/1/{}", hex(&[1; 16]))),
         ("DELETE", format!("{m}/credentials/{}", hex(&[7; 16]))),
+        ("POST", format!("{m}/grants")),
+        ("PUT", format!("{m}/credentials/{}/role", hex(&[8; 16]))),
         ("PUT", format!("{m}/push")),
         ("POST", format!("{m}/blobs/uploads")),
         ("POST", format!("{m}/blobs/downloads")),
@@ -565,6 +599,7 @@ fn error_bodies_map() {
             404,
             MailboxError::Server(ErrorCode::NoRoute),
         ),
+        (ErrorCode::Forbidden, 403, MailboxError::Forbidden),
     ];
     for (code, status, want) in cases {
         *answer.lock().unwrap() = Resp::error(code, status, None);

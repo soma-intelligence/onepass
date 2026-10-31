@@ -761,6 +761,110 @@ Deno.test("enroll: request signed by the ticket's new key, ticket signed by the 
   assertEquals(db4.calls.length, 0);
 });
 
+// ---------------------------------------------------------------- roles
+
+/** GrantCredential: version, key, role index, put_kinds option, label. */
+function grantBody(pub: Uint8Array, role: number, kinds: Uint8Array | null, label = new Uint8Array()): Uint8Array {
+  const out = [1, ...pub, role];
+  if (kinds) out.push(1, ...kinds);
+  else out.push(0);
+  out.push(label.length, ...label);
+  return new Uint8Array(out);
+}
+
+/** SetCredentialRole: version, role index, put_kinds option. */
+function roleBody(role: number, kinds: Uint8Array | null): Uint8Array {
+  return new Uint8Array(kinds ? [1, role, 1, ...kinds] : [1, role, 0]);
+}
+
+Deno.test("grant_route_calls_one_function: POST grants is one api_grant_credential call, 204", async () => {
+  const k = await newKey();
+  const fresh = await newKey();
+  const kinds = new Uint8Array(32);
+  kinds[1] = 0xc0;
+  kinds[2] = 0x03;
+  const db = new FakeDb(withKey(k, () => [ok({ credential_id: fresh.id })]));
+  const target = `/v1/mailboxes/${MHEX}/grants`;
+  const r = await handler(deps(db))(
+    await signed(k, "POST", target, grantBody(fresh.pub, 1, kinds, new Uint8Array([9]))),
+    IP,
+  );
+  assertEquals(r.status, 204);
+  assertEquals(await bytes(r), new Uint8Array());
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_grant_credential"]);
+  const args = db.calls[2].args;
+  assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+  assertEquals(args.slice(4).map((x) => [x.type, x.value]), [
+    ["bytea", fresh.pub],
+    ["smallint", 2],
+    ["bytea", kinds],
+    ["bytea", new Uint8Array([9])],
+  ]);
+
+  // Read and Manage, no put_kinds: role 1 and 3, a null put_kinds.
+  for (const [index, role] of [[0, 1], [2, 3]]) {
+    const db2 = new FakeDb(withKey(k, () => [ok({ credential_id: fresh.id })]));
+    const r2 = await handler(deps(db2))(await signed(k, "POST", target, grantBody(fresh.pub, index, null)), IP);
+    assertEquals(r2.status, 204);
+    assertEquals(db2.calls[2].args.slice(5, 7).map((x) => x.value), [role, null]);
+  }
+
+  // An off-curve key is malformed and never reaches SQL; so are put_kinds
+  // with another role than write, and an unknown role.
+  const offCurve = new Uint8Array(32);
+  offCurve[0] = 2;
+  for (const body of [grantBody(offCurve, 0, null), grantBody(fresh.pub, 2, kinds), grantBody(fresh.pub, 3, null)]) {
+    const db3 = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db3))(await signed(k, "POST", target, body), IP), "malformed");
+    assert(!db3.fns().includes("api_grant_credential"));
+  }
+});
+
+Deno.test("PUT credentials/{c}/role is one api_set_credential_role call, 204", async () => {
+  const k = await newKey();
+  const c = new Uint8Array(16).fill(0x33);
+  const kinds = new Uint8Array(32).fill(0xff);
+  const target = `/v1/mailboxes/${MHEX}/credentials/${toHex(c)}/role`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "PUT", target, roleBody(1, kinds)), IP);
+  assertEquals(r.status, 204);
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_set_credential_role"]);
+  assertEquals(db.calls[2].args.slice(3).map((x) => [x.type, x.value]), [
+    ["bytea", M],
+    ["bytea", c],
+    ["smallint", 2],
+    ["bytea", kinds],
+  ]);
+  const db2 = new FakeDb(withKey(k));
+  await assertError(await handler(deps(db2))(await signed(k, "PUT", target, roleBody(0, kinds)), IP), "malformed");
+  assert(!db2.fns().includes("api_set_credential_role"));
+  // Only PUT: another method on the path is no_route.
+  await assertError(
+    await handler(deps(new FakeDb()))(await signed(k, "POST", target, roleBody(2, null)), IP),
+    "no_route",
+  );
+});
+
+Deno.test("forbidden_maps_to_403: in band and raised, with the Forbidden wire code", async () => {
+  const k = await newKey();
+  assertEquals(CODES.forbidden, { status: 403, wire: "Forbidden" });
+  const target = `/v1/mailboxes/${MHEX}/commit`;
+  const body = commitBody([{ kind: 5, id: 1, version: 1, put: { expected: null, data: [7] } }]);
+  const inBand = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  const r = await handler(deps(inBand))(await signed(k, "POST", target, body), IP);
+  assertEquals(r.status, 403);
+  assertEquals(await bytes(r), proto.encodeError({ code: "Forbidden", retry_after: null }));
+  assertEquals(inBand.rollbacks, 0);
+  assertEquals(inBand.commits, 2);
+  const raised = new FakeDb(withKey(k, () => {
+    throw { code: "OP403", message: "forbidden" };
+  }));
+  await assertError(await handler(deps(raised))(await signed(k, "POST", target, body), IP), "forbidden");
+  // The wire bytes of the codes before it did not move: Forbidden is appended.
+  assertEquals(proto.encodeError({ code: "NoRoute", retry_after: null }), new Uint8Array([1, 13, 0]));
+  assertEquals(proto.encodeError({ code: "Forbidden", retry_after: null }), new Uint8Array([1, 14, 0]));
+});
+
 // ------------------------------------------------------------ client address
 
 Deno.test("spoofed left X-Forwarded-For entries never change the key; IPv6 counts as its /64", async () => {

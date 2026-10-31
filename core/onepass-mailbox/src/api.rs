@@ -3,8 +3,8 @@
 //! in-memory model. The sync engine and the conformance suite take either.
 
 use onepass_mailbox_proto::{
-    Body, ChangesPage, CommitOp, CommitResponse, CredentialId, MailboxCreated, MailboxId,
-    MailboxInfo, PushKind, ServerConfig, ServerRecord, SignedEnrollTicket,
+    Body, ChangesPage, CommitOp, CommitResponse, CredentialId, CredentialRole, MailboxCreated,
+    MailboxId, MailboxInfo, PushKind, ServerConfig, ServerRecord, SignedEnrollTicket,
 };
 
 use crate::client::{ChangeFeed, FeedPage, MailboxClient};
@@ -51,7 +51,30 @@ pub trait MailboxApi: Send {
     /// Joins the mailbox a ticket names, then opens it.
     fn enroll(&mut self, ticket: &SignedEnrollTicket, label: &[u8]) -> Result<(), MailboxError>;
 
+    /// Revokes a credential of the open mailbox: any one for a manager,
+    /// only itself otherwise. An owner is revoked only by itself, and the
+    /// last manager not at all (`Forbidden`).
     fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError>;
+
+    /// `POST /v1/mailboxes/{m}/grants` (manager only): lets `public_key` in
+    /// with `role`, no ticket. `put_kinds` (write role only) limits it to
+    /// those kinds and no delete. Returns the new credential's id, computed
+    /// here from the key.
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError>;
+
+    /// `PUT /v1/mailboxes/{m}/credentials/{c}/role` (manager only).
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError>;
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError>;
 
@@ -126,6 +149,25 @@ impl MailboxApi for MailboxClient {
 
     fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
         MailboxClient::revoke(self, credential)
+    }
+
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        MailboxClient::grant(self, public_key, role, put_kinds, label)
+    }
+
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        MailboxClient::set_role(self, credential, role, put_kinds)
     }
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
