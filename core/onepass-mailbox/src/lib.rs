@@ -16,16 +16,20 @@
 #[cfg(all(feature = "testing", not(debug_assertions)))]
 compile_error!("onepass-mailbox: feature `testing` is for debug test builds only");
 
+mod api;
 mod blobs;
 mod client;
 mod credential;
 mod http;
+#[cfg(feature = "testing")]
+pub mod testing;
 
 use std::fmt;
 
 /// Longest `Retry { after }` the client hands on, seconds.
 pub const RETRY_AFTER_MAX: u32 = 3600;
 
+pub use api::MailboxApi;
 pub use client::{ChangeFeed, FeedPage, MailboxClient};
 pub use credential::{Credential, CredentialKey};
 pub use http::{Endpoint, tls_client_config};

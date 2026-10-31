@@ -9,7 +9,7 @@
 import { assert, assertEquals } from "@std/assert";
 import * as proto from "./proto.ts";
 import { a, client, over } from "./db.ts";
-import { edSign, newKey, signedHeaders, type TestKey, toHex } from "./testutil.ts";
+import { newKey, signedHeaders, type TestKey, toHex } from "./testutil.ts";
 
 const DB_URL = Deno.env.get("MAILBOX_TEST_DB_URL");
 const FN_URL = Deno.env.get("MAILBOX_TEST_FUNCTION_URL");
@@ -30,7 +30,7 @@ Deno.test({
       const pid = async () => (await sql`select pg_backend_pid() as p`)[0].p;
       const firstPid = await pid();
 
-      async function mailboxWithRecord(key: TestKey, id: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+      const mailboxWithRecord = async (key: TestKey, id: Uint8Array, data: Uint8Array): Promise<Uint8Array> => {
         const created = await db.transaction((tx) =>
           tx.call("api_create_mailbox", [
             a.bytea(key.pub),
@@ -65,7 +65,7 @@ Deno.test({
         // A delete of an absent key takes no seq.
         assertEquals(done[1].seq, null);
         return m;
-      }
+      };
 
       const ka = await newKey();
       const kb = await newKey();

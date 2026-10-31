@@ -33,8 +33,6 @@ export interface Deps {
 
 // ----------------------------------------------------------------- helpers
 
-const enc = new TextEncoder();
-
 function hex(b: Uint8Array): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }

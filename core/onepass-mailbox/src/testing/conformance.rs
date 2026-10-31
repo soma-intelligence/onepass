@@ -1,0 +1,715 @@
+//! One suite of mailbox behaviours, run against the in-memory model
+//! (`tests/conformance_fake.rs`) and against a real local Supabase stack
+//! (`tests/conformance_e2e.rs`), so the fast tests of the sync engine cannot
+//! lie about the server (spec 11).
+//!
+//! Every case gets fresh mailboxes, asserts exact seqs (each mailbox counts
+//! from 1), and panics with its own name in the message.
+
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+
+use onepass_mailbox_proto::{
+    Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, ErrorCode, MailboxId, Op,
+    PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+};
+
+use crate::{ChangeFeed, MailboxApi, MailboxError};
+
+/// Where the suite runs. Clients all talk to the same server.
+pub trait ConformanceTarget {
+    /// A client with a fresh credential and no mailbox open.
+    fn client(&mut self) -> Box<dyn MailboxApi>;
+
+    /// The invite `create` sends (`None`: open signup). The quota case needs
+    /// a plan of at most `QUOTA_CASE_MAX_RECORDS` records.
+    fn invite(&self) -> Option<Vec<u8>>;
+
+    /// Removes every tombstone of `mailbox` the way the 90 day maintenance
+    /// does (each frees 1 record and 128 bytes, `min_cursor` rises to the
+    /// highest seq purged).
+    fn purge_tombstones(&mut self, mailbox: MailboxId);
+
+    /// Runs before each case (the end-to-end target clears the per-IP
+    /// creation day window there: every case creates mailboxes).
+    fn before_case(&mut self) {}
+}
+
+/// The quota case fills a mailbox to its plan: above this, it refuses to
+/// run (point the target at a small plan instead).
+pub const QUOTA_CASE_MAX_RECORDS: u32 = 200_000;
+
+/// Kind used for the records of the suite.
+const KIND: u8 = 5;
+
+type Case = fn(&mut dyn ConformanceTarget);
+
+/// Every case, in order. The name is the one a failure panics with.
+pub const CASES: &[(&str, Case)] = &[
+    ("create", create),
+    ("info", info),
+    ("conditional_write", conditional_write),
+    ("atomic_batch_with_conflict", atomic_batch_with_conflict),
+    ("conflict_reply_is_capped", conflict_reply_is_capped),
+    ("idempotent_delete", idempotent_delete),
+    ("pages_of_changes", pages_of_changes),
+    ("full_fetch_skips_tombstones", full_fetch_skips_tombstones),
+    ("cursor_expired_after_purge", cursor_expired_after_purge),
+    ("enroll_by_ticket_then_replay", enroll_by_ticket_then_replay),
+    ("revoked_credential_refused", revoked_credential_refused),
+    ("blob_round_trip", blob_round_trip),
+    ("record_quota", record_quota),
+];
+
+/// Runs every case of `CASES` against `target`. A failing case panics with
+/// `conformance case <name>: <what failed>`.
+pub fn run_conformance(target: &mut dyn ConformanceTarget) {
+    for (name, case) in CASES {
+        run_case(target, name, *case);
+    }
+}
+
+/// Runs one case by name (`CASES`), for a focused rerun.
+pub fn run_case(target: &mut dyn ConformanceTarget, name: &str, case: Case) {
+    target.before_case();
+    let outcome = catch_unwind(AssertUnwindSafe(|| case(target)));
+    match outcome {
+        Ok(()) => eprintln!("conformance case {name}: ok"),
+        Err(e) => {
+            let what = e
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| e.downcast_ref::<&str>().copied());
+            match what {
+                Some(w) => panic!("conformance case {name}: {w}"),
+                None => resume_unwind(e),
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ helpers
+
+fn id(n: u32) -> [u8; 16] {
+    let mut i = [0u8; 16];
+    i[0] = 0xc0;
+    i[12..].copy_from_slice(&n.to_be_bytes());
+    i
+}
+
+fn put(n: u32, version: u64, expected: Option<u64>, data: &[u8]) -> CommitOp {
+    CommitOp {
+        kind: KIND,
+        id: id(n),
+        version,
+        op: Op::Put {
+            expected,
+            body: Body::Inline(data.to_vec()),
+        },
+    }
+}
+
+fn del(n: u32, version: u64) -> CommitOp {
+    CommitOp {
+        kind: KIND,
+        id: id(n),
+        version,
+        op: Op::Delete,
+    }
+}
+
+fn applied(r: Result<CommitResponse, MailboxError>, what: &str) -> Vec<Option<u64>> {
+    match r {
+        Ok(CommitResponse::Applied { seqs }) => seqs,
+        other => panic!("{what}: expected Applied, got {other:?}"),
+    }
+}
+
+fn conflict(
+    r: Result<CommitResponse, MailboxError>,
+    what: &str,
+) -> Vec<onepass_mailbox_proto::ConflictEntry> {
+    match r {
+        Ok(CommitResponse::Conflict { current }) => current,
+        other => panic!("{what}: expected Conflict, got {other:?}"),
+    }
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// A client with a new mailbox of its own, open.
+fn owner(t: &mut dyn ConformanceTarget) -> Box<dyn MailboxApi> {
+    let mut c = t.client();
+    let invite = t.invite();
+    c.create(invite.as_deref(), b"conformance")
+        .unwrap_or_else(|e| panic!("create: {e:?}"));
+    c
+}
+
+/// A second client enrolled in `owner`'s mailbox by ticket.
+fn enrolled(t: &mut dyn ConformanceTarget, owner: &dyn MailboxApi) -> Box<dyn MailboxApi> {
+    let mut c = t.client();
+    let ticket = owner
+        .issue_ticket(c.credential_key(), now())
+        .unwrap_or_else(|e| panic!("issue_ticket: {e:?}"));
+    c.enroll(&ticket, b"second")
+        .unwrap_or_else(|e| panic!("enroll: {e:?}"));
+    c
+}
+
+fn page(c: &dyn MailboxApi, after: u64, limit: u32, full: bool) -> ChangesPage {
+    c.changes(after, limit, full)
+        .unwrap_or_else(|e| panic!("changes(after {after}, limit {limit}, full {full}): {e:?}"))
+}
+
+fn seqs(records: &[ServerRecord]) -> Vec<u64> {
+    records.iter().map(|r| r.seq).collect()
+}
+
+fn usage(c: &dyn MailboxApi) -> (u64, u32, u16) {
+    let u = c.info().expect("info").usage;
+    (u.bytes, u.records, u.credentials)
+}
+
+// -------------------------------------------------------------------- cases
+
+/// Create opens the new mailbox; the same key cannot create a second one.
+fn create(t: &mut dyn ConformanceTarget) {
+    let mut c = t.client();
+    let invite = t.invite();
+    let created = c.create(invite.as_deref(), b"conformance").expect("create");
+    assert_eq!(
+        c.mailbox(),
+        Some(created.mailbox_id),
+        "create opens the mailbox"
+    );
+    let again = c.create(invite.as_deref(), b"conformance");
+    match (invite.is_some(), again) {
+        (false, Err(MailboxError::InviteRequired)) => {}
+        (true, Err(MailboxError::Server(ErrorCode::Malformed))) => {}
+        (_, other) => panic!("same key, second create: {other:?}"),
+    }
+    // A second client creates a different mailbox.
+    let d = owner(t);
+    assert_ne!(
+        d.mailbox(),
+        Some(created.mailbox_id),
+        "two mailboxes, two ids"
+    );
+}
+
+/// Info echoes the creation and starts empty.
+fn info(t: &mut dyn ConformanceTarget) {
+    let mut c = t.client();
+    let invite = t.invite();
+    let created = c.create(invite.as_deref(), b"conformance").expect("create");
+    let i = c.info().expect("info");
+    assert_eq!(i.incarnation, created.incarnation, "incarnation");
+    assert_eq!(i.wake_topic, created.wake_topic, "wake topic");
+    assert_eq!(i.min_cursor, 0, "min_cursor of a new mailbox");
+    assert_eq!(
+        (i.usage.bytes, i.usage.records, i.usage.credentials),
+        (0, 0, 1),
+        "usage of a new mailbox"
+    );
+    assert!(i.limits.max_records > 0 && i.limits.max_bytes > 0, "limits");
+    assert!(
+        i.limits.max_commit_ops >= 1 && i.limits.max_commit_ops as usize <= COMMIT_OPS_MAX,
+        "max_commit_ops within the protocol"
+    );
+    let empty = page(c.as_ref(), 0, 10, false);
+    assert_eq!(
+        (
+            empty.head,
+            empty.next_after,
+            empty.more,
+            empty.records.len()
+        ),
+        (0, 0, false, 0),
+        "a new mailbox has no change"
+    );
+    assert_eq!(empty.incarnation, created.incarnation, "page incarnation");
+}
+
+/// `expected: None` passes on an absent key or a tombstone, `Some(s)` only
+/// on a live row at seq `s`; a conflict returns the server row.
+fn conditional_write(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    assert_eq!(
+        applied(c.commit(vec![put(1, 1, None, b"a")]), "put absent"),
+        [Some(1)]
+    );
+    let r = c.record(KIND, id(1)).expect("record").expect("present");
+    assert_eq!(
+        (r.seq, r.version, &r.body),
+        (1, 1, &Some(Body::Inline(b"a".to_vec())))
+    );
+
+    let cur = conflict(
+        c.commit(vec![put(1, 2, None, b"b")]),
+        "put None on a live row",
+    );
+    assert_eq!(cur.len(), 1);
+    assert_eq!((cur[0].kind, cur[0].id), (KIND, id(1)));
+    let s = cur[0].server.as_ref().expect("server row");
+    assert_eq!(
+        (s.seq, s.version, &s.body),
+        (1, 1, &Some(Body::Inline(b"a".to_vec())))
+    );
+
+    assert_eq!(
+        applied(c.commit(vec![put(1, 2, Some(1), b"b")]), "put at seq"),
+        [Some(2)]
+    );
+    let cur = conflict(
+        c.commit(vec![put(1, 3, Some(1), b"c")]),
+        "put at an old seq",
+    );
+    assert_eq!(cur[0].server.as_ref().map(|s| s.seq), Some(2));
+
+    assert_eq!(applied(c.commit(vec![del(1, 3)]), "delete"), [Some(3)]);
+    let r = c.record(KIND, id(1)).expect("record").expect("tombstone");
+    assert_eq!((r.seq, r.version, &r.body), (3, 3, &None), "tombstone");
+
+    let cur = conflict(
+        c.commit(vec![put(1, 4, Some(3), b"d")]),
+        "put Some on a tombstone",
+    );
+    let s = cur[0].server.as_ref().expect("tombstone in the conflict");
+    assert_eq!((s.seq, &s.body), (3, &None));
+    assert_eq!(
+        applied(
+            c.commit(vec![put(1, 4, None, b"d")]),
+            "put None on a tombstone"
+        ),
+        [Some(4)]
+    );
+
+    let cur = conflict(
+        c.commit(vec![put(2, 1, Some(9), b"x")]),
+        "put Some on an absent key",
+    );
+    assert_eq!((cur[0].id, &cur[0].server), (id(2), &None));
+    assert_eq!(c.record(KIND, id(2)).expect("record"), None, "absent key");
+    assert_eq!(usage(c.as_ref()), (1, 1, 1), "one live row of one byte");
+}
+
+/// A batch with one conflict writes nothing and takes no seq.
+fn atomic_batch_with_conflict(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    assert_eq!(
+        applied(c.commit(vec![put(1, 1, None, b"x")]), "first"),
+        [Some(1)]
+    );
+    let cur = conflict(
+        c.commit(vec![
+            put(2, 1, None, b"y"),
+            put(1, 2, None, b"x2"),
+            put(3, 1, None, b"z"),
+            del(4, 1),
+        ]),
+        "batch with one conflict",
+    );
+    assert_eq!(cur.len(), 1, "only the conflicting key");
+    assert_eq!(cur[0].id, id(1));
+    assert_eq!(
+        c.record(KIND, id(2)).expect("record"),
+        None,
+        "nothing written"
+    );
+    assert_eq!(
+        c.record(KIND, id(3)).expect("record"),
+        None,
+        "nothing written"
+    );
+    assert_eq!(usage(c.as_ref()), (1, 1, 1), "counters unchanged");
+    assert_eq!(
+        applied(
+            c.commit(vec![put(2, 1, None, b"y"), put(3, 1, None, b"z")]),
+            "after"
+        ),
+        [Some(2), Some(3)],
+        "no seq taken by the refused batch"
+    );
+    assert_eq!(page(c.as_ref(), 0, 10, false).head, 3);
+}
+
+/// More than 1000 conflicts: the reply is the first 1000, in batch order.
+fn conflict_reply_is_capped(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    let n = PAGE_MAX_RECORDS + 1;
+    let first: Vec<CommitOp> = (0..n).map(|i| put(i, 1, None, b"v")).collect();
+    assert_eq!(applied(c.commit(first), "fill").len(), n as usize);
+    let again: Vec<CommitOp> = (0..n).map(|i| put(i, 2, None, b"w")).collect();
+    let cur = conflict(c.commit(again), "every key conflicts");
+    assert_eq!(cur.len(), PAGE_MAX_RECORDS as usize, "capped at 1000 rows");
+    for (i, e) in cur.iter().enumerate() {
+        assert_eq!(e.id, id(i as u32), "a prefix in batch order");
+        assert_eq!(e.server.as_ref().map(|s| s.seq), Some(i as u64 + 1));
+    }
+}
+
+/// A delete is unconditional and idempotent: absent key and tombstone take
+/// no seq; a tombstone costs 1 record and 128 bytes.
+fn idempotent_delete(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    assert_eq!(applied(c.commit(vec![del(1, 1)]), "delete absent"), [None]);
+    assert_eq!(usage(c.as_ref()), (0, 0, 1), "nothing stored");
+    assert_eq!(
+        applied(c.commit(vec![put(1, 1, None, b"xyz")]), "put"),
+        [Some(1)]
+    );
+    assert_eq!(applied(c.commit(vec![del(1, 2)]), "delete live"), [Some(2)]);
+    assert_eq!(
+        applied(c.commit(vec![del(1, 3)]), "delete tombstone"),
+        [None]
+    );
+    assert_eq!(
+        usage(c.as_ref()),
+        (128, 1, 1),
+        "a tombstone costs 1 and 128"
+    );
+    assert_eq!(
+        applied(
+            c.commit(vec![del(1, 4), del(9, 1), put(2, 1, None, b"ab")]),
+            "mixed"
+        ),
+        [None, None, Some(3)],
+        "no-op deletes take no seq"
+    );
+    assert_eq!(usage(c.as_ref()), (130, 2, 1));
+    let p = page(c.as_ref(), 0, 10, false);
+    assert_eq!(
+        seqs(&p.records),
+        [2, 3],
+        "the feed shows the tombstone once"
+    );
+}
+
+/// 2 500 records come in pages of 1 000, 1 000 and 500.
+fn pages_of_changes(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    let ops: Vec<CommitOp> = (0..2500)
+        .map(|i| put(i, 1, None, &i.to_be_bytes()))
+        .collect();
+    let s = applied(c.commit(ops), "2500 puts");
+    assert_eq!(s.first().copied().flatten(), Some(1));
+    assert_eq!(s.last().copied().flatten(), Some(2500));
+
+    let mut after = 0;
+    for (n, (len, more)) in [(1000, true), (1000, true), (500, false)]
+        .into_iter()
+        .enumerate()
+    {
+        let p = page(c.as_ref(), after, 1000, false);
+        let want: Vec<u64> = (after + 1..=after + len).collect();
+        assert_eq!(seqs(&p.records), want, "page {n} seqs");
+        assert_eq!(p.next_after, after + len, "page {n} next_after");
+        assert_eq!(p.more, more, "page {n} more");
+        assert_eq!(p.head, 2500, "page {n} head");
+        after = p.next_after;
+    }
+    let end = page(c.as_ref(), 2500, 1000, false);
+    assert_eq!(
+        (end.records.len(), end.next_after, end.more),
+        (0, 2500, false),
+        "past the head"
+    );
+
+    // A small limit, and the feed through a full fetch.
+    let p = page(c.as_ref(), 10, 3, false);
+    assert_eq!(
+        (seqs(&p.records), p.next_after, p.more),
+        (vec![11, 12, 13], 13, true)
+    );
+    let mut feed = ChangeFeed::full();
+    let mut got = Vec::new();
+    loop {
+        let fp = c.next_changes(&mut feed, 1000).expect("next_changes");
+        got.extend(seqs(&fp.records));
+        if fp.full_done {
+            assert!(!fp.more, "nothing written during the fetch");
+            break;
+        }
+        assert!(fp.more && fp.full, "a full page before the last");
+    }
+    assert_eq!(got.len(), 2500, "the full fetch reads every record once");
+    assert_eq!(
+        feed,
+        ChangeFeed::incremental(2500),
+        "incremental from the first head"
+    );
+}
+
+/// `after = 0`: a full fetch skips tombstones, an incremental one has them.
+fn full_fetch_skips_tombstones(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    applied(
+        c.commit(vec![
+            put(1, 1, None, b"a"),
+            put(2, 1, None, b"b"),
+            put(3, 1, None, b"c"),
+        ]),
+        "three puts",
+    );
+    assert_eq!(applied(c.commit(vec![del(2, 2)]), "delete b"), [Some(4)]);
+    let full = page(c.as_ref(), 0, 1000, true);
+    assert_eq!(seqs(&full.records), [1, 3], "live rows only");
+    assert!(full.records.iter().all(|r| r.body.is_some()));
+    assert_eq!(
+        (full.head, full.next_after, full.more),
+        (4, 3, true),
+        "more up to the head"
+    );
+    let rest = page(c.as_ref(), 3, 1000, true);
+    assert_eq!(
+        (rest.records.len(), rest.next_after, rest.more),
+        (0, 3, false),
+        "only a tombstone left"
+    );
+
+    let inc = page(c.as_ref(), 0, 1000, false);
+    assert_eq!(seqs(&inc.records), [1, 3, 4], "tombstones included");
+    assert_eq!(inc.records[2].body, None);
+    assert_eq!((inc.next_after, inc.more), (4, false));
+
+    let mut feed = ChangeFeed::full();
+    let first = c.next_changes(&mut feed, 1000).expect("feed");
+    assert_eq!(seqs(&first.records), [1, 3]);
+    assert!(first.more && !first.full_done);
+    let last = c.next_changes(&mut feed, 1000).expect("feed");
+    assert!(last.full_done && !last.more && last.records.is_empty());
+    assert_eq!(feed, ChangeFeed::incremental(4));
+}
+
+/// After the purge, `after` below `min_cursor` is `CursorExpired`; a full
+/// fetch still works, and the quota cost of the tombstone is freed.
+fn cursor_expired_after_purge(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    applied(
+        c.commit(vec![put(1, 1, None, b"a"), put(2, 1, None, b"bb")]),
+        "two puts",
+    );
+    assert_eq!(applied(c.commit(vec![del(1, 2)]), "delete"), [Some(3)]);
+    assert_eq!(usage(c.as_ref()), (130, 2, 1));
+    let m = c.mailbox().expect("open");
+    t.purge_tombstones(m);
+
+    let i = c.info().expect("info");
+    assert_eq!(i.min_cursor, 3, "min_cursor = highest seq purged");
+    assert_eq!(
+        (i.usage.bytes, i.usage.records),
+        (2, 1),
+        "tombstone cost freed"
+    );
+    assert_eq!(
+        c.record(KIND, id(1)).expect("record"),
+        None,
+        "tombstone gone"
+    );
+    for after in [0, 2] {
+        match c.changes(after, 1000, false) {
+            Err(MailboxError::CursorExpired) => {}
+            other => panic!("incremental after {after} below min_cursor: {other:?}"),
+        }
+    }
+    let at = page(c.as_ref(), 3, 1000, false);
+    assert_eq!(
+        (at.records.len(), at.min_cursor, at.head),
+        (0, 3, 3),
+        "after = min_cursor is valid"
+    );
+    let full = page(c.as_ref(), 0, 1000, true);
+    assert_eq!(seqs(&full.records), [2], "a full fetch ignores min_cursor");
+    // The purged key is absent again: expected None writes it.
+    assert_eq!(
+        applied(c.commit(vec![put(1, 3, None, b"a")]), "rewrite"),
+        [Some(4)]
+    );
+}
+
+/// A ticket lets a second credential in once; the same ticket again is a
+/// replay, and a ticket for another key is refused by the client.
+fn enroll_by_ticket_then_replay(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let m = a.mailbox().expect("open");
+    applied(a.commit(vec![put(1, 1, None, b"from a")]), "a writes");
+
+    let mut b = t.client();
+    let ticket = a.issue_ticket(b.credential_key(), now()).expect("ticket");
+    b.enroll(&ticket, b"b").expect("enroll");
+    assert_eq!(b.mailbox(), Some(m), "enroll opens the mailbox");
+    let r = b.record(KIND, id(1)).expect("b reads").expect("a's record");
+    assert_eq!(r.body, Some(Body::Inline(b"from a".to_vec())));
+    applied(b.commit(vec![put(2, 1, None, b"from b")]), "b writes");
+    assert!(
+        a.record(KIND, id(2)).expect("a reads").is_some(),
+        "a sees b's write"
+    );
+    assert_eq!(usage(a.as_ref()).2, 2, "two active credentials");
+
+    match b.enroll(&ticket, b"b") {
+        Err(MailboxError::Server(ErrorCode::Replay)) => {}
+        other => panic!("same ticket again: {other:?}"),
+    }
+    let mut c = t.client();
+    match c.enroll(&ticket, b"c") {
+        Err(MailboxError::Malformed(_)) => {}
+        other => panic!("ticket for another key: {other:?}"),
+    }
+    assert_eq!(c.mailbox(), None, "a refused enroll opens nothing");
+    // A ticket the mailbox never issued: signed by a credential of another
+    // mailbox, for this one.
+    let stranger = owner(t);
+    let mut forged = stranger
+        .issue_ticket(c.credential_key(), now())
+        .expect("ticket");
+    forged.ticket.mailbox_id = m;
+    match c.enroll(&forged, b"c") {
+        Err(MailboxError::Server(ErrorCode::UnknownCredential | ErrorCode::BadSignature)) => {}
+        other => panic!("ticket from outside the mailbox: {other:?}"),
+    }
+    assert_eq!(usage(a.as_ref()).2, 2, "still two credentials");
+}
+
+/// A revoked credential and a credential from elsewhere are refused.
+fn revoked_credential_refused(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let m = a.mailbox().expect("open");
+    let b = enrolled(t, a.as_ref());
+    b.info().expect("b before revoke");
+    let b_id = b.credential_key().id();
+    a.revoke(b_id).expect("revoke");
+    for (what, r) in [
+        ("info", b.info().map(|_| ())),
+        ("commit", b.commit(vec![put(1, 1, None, b"x")]).map(|_| ())),
+        ("changes", b.changes(0, 10, false).map(|_| ())),
+    ] {
+        match r {
+            Err(MailboxError::Server(ErrorCode::RevokedCredential)) => {}
+            other => panic!("revoked credential, {what}: {other:?}"),
+        }
+    }
+    a.revoke(b_id).expect("revoking twice changes nothing");
+    assert_eq!(usage(a.as_ref()).2, 1, "one active credential");
+    match a.revoke([7u8; 16]) {
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {}
+        other => panic!("revoke an unknown credential: {other:?}"),
+    }
+    let mut s = t.client();
+    s.open(m);
+    match s.info() {
+        Err(MailboxError::Server(ErrorCode::UnknownCredential)) => {}
+        other => panic!("credential not in the mailbox: {other:?}"),
+    }
+    assert_eq!(
+        page(a.as_ref(), 0, 10, false).head,
+        0,
+        "nothing written by b"
+    );
+}
+
+/// A 20 KiB body goes through Storage and comes back identical.
+fn blob_round_trip(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    let data: Vec<u8> = (0..20 * 1024u32).map(|i| (i * 31 + 7) as u8).collect();
+    let sha256 = blob_sha256(&data);
+    let body = Body::Blob {
+        sha256,
+        size: data.len() as u32,
+    };
+    let op = CommitOp {
+        kind: KIND,
+        id: id(1),
+        version: 1,
+        op: Op::Put {
+            expected: None,
+            body: body.clone(),
+        },
+    };
+    match c.commit(vec![op.clone()]) {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("a blob never announced: {other:?}"),
+    }
+    assert_eq!(
+        applied(c.commit_with_blobs(vec![op], &[&data]), "commit with blob"),
+        [Some(1)]
+    );
+    let r = c.record(KIND, id(1)).expect("record").expect("present");
+    assert_eq!(r.body.as_ref(), Some(&body));
+    assert_eq!(c.fetch_body(&body).expect("fetch"), data, "same bytes back");
+    let p = page(c.as_ref(), 0, 10, false);
+    assert_eq!(p.records[0].body.as_ref(), Some(&body));
+    assert_eq!(
+        usage(c.as_ref()),
+        (data.len() as u64, 1, 1),
+        "a blob counts its size"
+    );
+    // Announcing it again uploads nothing and changes nothing.
+    c.upload_blobs(&[&data]).expect("announce again");
+    assert_eq!(usage(c.as_ref()), (data.len() as u64, 1, 1));
+    // A blob nobody references cannot be read.
+    let other = Body::Blob {
+        sha256: blob_sha256(b"never written"),
+        size: 20_000,
+    };
+    match c.fetch_body(&other) {
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {}
+        other => panic!("unreferenced blob: {other:?}"),
+    }
+}
+
+/// The plan's record count is a hard cap on growth; tombstones count until
+/// purged; deletes always pass.
+fn record_quota(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    let limits = c.info().expect("info").limits;
+    let max = limits.max_records;
+    assert!(
+        max <= QUOTA_CASE_MAX_RECORDS,
+        "plan allows {max} records: point the target at a plan of at most {QUOTA_CASE_MAX_RECORDS}"
+    );
+    let per = (limits.max_commit_ops as usize).min(COMMIT_OPS_MAX) as u32;
+    let mut n = 0;
+    while n < max {
+        let end = (n + per).min(max);
+        let ops: Vec<CommitOp> = (n..end).map(|i| put(i, 1, None, b"q")).collect();
+        applied(c.commit(ops), "fill");
+        n = end;
+    }
+    assert_eq!(usage(c.as_ref()).1, max, "full");
+    match c.commit(vec![put(max, 1, None, b"q")]) {
+        Err(MailboxError::Server(ErrorCode::Quota)) => {}
+        other => panic!("one record over the plan: {other:?}"),
+    }
+    assert_eq!(
+        c.record(KIND, id(max)).expect("record"),
+        None,
+        "nothing written"
+    );
+    assert_eq!(
+        applied(c.commit(vec![del(0, 2)]), "a full mailbox deletes"),
+        [Some(u64::from(max) + 1)]
+    );
+    assert_eq!(usage(c.as_ref()).1, max, "the tombstone still counts");
+    match c.commit(vec![put(max, 1, None, b"q")]) {
+        Err(MailboxError::Server(ErrorCode::Quota)) => {}
+        other => panic!("new key while a tombstone counts: {other:?}"),
+    }
+    assert_eq!(
+        applied(
+            c.commit(vec![put(0, 3, None, b"q")]),
+            "rewrite over the tombstone"
+        ),
+        [Some(u64::from(max) + 2)],
+        "replacing a tombstone does not grow the count"
+    );
+    assert_eq!(
+        applied(c.commit(vec![put(1, 2, Some(2), b"qq")]), "update"),
+        [Some(u64::from(max) + 3)]
+    );
+}
