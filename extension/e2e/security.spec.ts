@@ -12,6 +12,7 @@
 // real sender, or a forged sender): they run on the `--e2e` build, whose
 // worker exposes its router, session and filler (src/background/e2e-entry.ts).
 // Everything else runs on the regular build.
+import { generateKeyPairSync } from "node:crypto";
 import type { Frame, Page, Worker } from "@playwright/test";
 import { type Ext, expect, paired } from "./fixtures";
 import { FX } from "./server";
@@ -453,13 +454,37 @@ paired("S17_fixed_extension_url_not_reachable", async ({ ext }) => {
 paired("S18_passkey_needs_user_click", async ({ ext }) => {
   const { page } = ext;
   const windows = countPasskeyWindows(ext);
+  // The browser's own authenticator (Chromium's virtual one, with a key of its
+  // own for this site): what answers a call OnePass leaves to the browser.
+  const cdp = await ext.context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable", { enableUI: false });
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  const nativeKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "der" });
+  await cdp.send("WebAuthn.addCredential", {
+    authenticatorId,
+    credential: {
+      credentialId: Buffer.from("native-only-1").toString("base64"), isResidentCredential: true, rpId: FX.passkey.rpId,
+      userHandle: Buffer.from("native-1").toString("base64"), privateKey: nativeKey.toString("base64"), signCount: 0,
+    },
+  });
+  let nativeAsserted = 0;
+  cdp.on("WebAuthn.credentialAsserted", () => nativeAsserted++);
   // The page asks on load, without any gesture: no user activation, so no
-  // window and nothing listed; the browser's own API answers (and refuses).
+  // OnePass window and nothing signed by OnePass; the browser's own API answers.
   await page.goto(`${ATLAS}/passkey?auto=1`);
-  await expect(page.locator("#result")).toHaveAttribute("data-status", /^error:/, { timeout: 15_000 });
+  await expect.poll(() => nativeAsserted, { timeout: 15_000, message: "the browser's own authenticator never answered" }).toBe(1);
+  // Its assertion is the browser's (a key the site does not know): refused by the site, never signed in.
+  await expect(page.locator("#result")).toHaveAttribute("data-status", /.+/, { timeout: 15_000 });
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", "Connecté");
   await ext.settle(1000);
   expect(windows.count()).toBe(0);
-  expect(ext.audit()).not.toContain("passkey_list");
+  expect(ext.audit()).not.toContain("passkey_get");
+  await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  // A fresh page (the refused answer above stays in #result otherwise).
+  await page.goto(`${ATLAS}/passkey`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
   // The user's click on the page gives the activation: the window opens.
   const opened = nextPasskeyWindow(ext);
   await page.locator("#signin").click();
