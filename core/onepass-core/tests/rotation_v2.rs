@@ -4845,7 +4845,8 @@ fn kit_restored_device_needs_yes() {
     a.repo().accept_kit_restored(nid, &f.me.keys).unwrap();
     let ta = trust_of_dev(&a).unwrap();
     assert!(in_roster(&ta, nid));
-    assert_eq!(ta.levels.get(&nid), Some(&TrustLevel::Verified));
+    // Fix round 3 (N3): a yes is not a verification.
+    assert_eq!(ta.levels.get(&nid), Some(&TrustLevel::Tofu));
     assert!(a.repo().kit_restored_devices().unwrap().is_empty());
     assert!(
         a.repo()
