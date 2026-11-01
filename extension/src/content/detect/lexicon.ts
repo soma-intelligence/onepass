@@ -253,10 +253,15 @@ export const TERMS: readonly Term[] = [
   // WordPress names its identifier "log" (wp-login.php: log, pwd). Whole text
   // only: "log level", "change log" or "search the log" are not identifiers.
   { re: /^log$/, w: { username: 3, given_name: -3, family_name: -3, full_name: -3 } },
-  // "Email, phone or Skype": one field that takes any account identifier. Only
-  // an email first: "phone or email" stays a phone, "mobile phone" too.
+  // "Email, phone or Skype": one field that takes any account identifier.
+  // "Phone or email" too, but only with "or" between them: "mobile phone"
+  // and "phone number" stay a phone.
   {
     re: /\b(e ?mail|correo|user ?name)( (or|ou|oder|o|of))? (phone|telephone|mobile|skype|telefon\w*|telefono|telefone|telefoon\w*)\b/,
+    w: { username: 6, tel: -6, email: -3 },
+  },
+  {
+    re: /\b(phone|telephone|mobile|telefon\w*|telefono|telefone|telefoon\w*)( (number|nummer|numero))? (or|ou|oder|o|of) (e ?mail|correo|user ?name)\b/,
     w: { username: 6, tel: -6, email: -3 },
   },
   {

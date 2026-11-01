@@ -148,6 +148,20 @@ describe("classifyField: weighted scoring", () => {
     expect(role("f")).toBe("unknown");
   });
 
+  it("phone_or_email_is_an_identifier", () => {
+    // Lab sites 34, 39, 104 (lab-2026-10-26): "phone or email" on a sign-in step.
+    for (const label of ["phone or email", "Phone number or email", "Mobile or e-mail", "Téléphone ou e-mail", "Telefon oder E-Mail", "teléfono o correo"]) {
+      document.body.innerHTML = `<label for="f">${label}</label><input id="f" type="text" name="id_username">`;
+      expect(role("f"), label).toBe("username");
+      document.body.innerHTML = `<label for="f">${label}</label><input id="f" type="text" name="url">`;
+      expect(role("f"), label).toBe("username");
+    }
+    for (const label of ["Phone", "Mobile phone", "Téléphone portable"]) {
+      document.body.innerHTML = `<label for="f">${label}</label><input id="f" type="text" name="x1">`;
+      expect(role("f"), label).toBe("tel");
+    }
+  });
+
   it("classifies a textarea street address", () => {
     document.body.innerHTML = '<label for="f">Adresse</label><textarea id="f" name="adresse"></textarea>';
     expect(role("f")).toBe("address_line1");
