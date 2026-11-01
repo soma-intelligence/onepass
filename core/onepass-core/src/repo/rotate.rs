@@ -37,6 +37,7 @@ use aws_lc_rs::digest::{SHA256, digest};
 use super::replay::meta_hash;
 use super::{Repository, entry, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
+use crate::approvers::ApproverEntry;
 use crate::chain::{ChainState, Seen};
 use crate::contact::ContactEntry;
 use crate::crypto::kem::wrap_key_labeled;
@@ -345,6 +346,7 @@ impl<S: RecordStore> Repository<S> {
         let devices = self.read_list::<DeviceEntry>()?;
         let vault_list = self.read_list::<VaultListEntry>()?;
         let book = self.read_list::<ContactEntry>()?;
+        let approvers = self.read_list::<ApproverEntry>()?;
 
         // The current password and Secret Key, with every unlock check, on
         // the records of the current identity (spec 6.6). This also gives
@@ -559,6 +561,23 @@ impl<S: RecordStore> Repository<S> {
             }
             None => None,
         };
+        // The approver list follows (agent-ready spec 4): without it the
+        // other devices' approval keys would be gone until each one enrolls
+        // again. A revoked device's entries are retired.
+        let approver_seen = match approvers {
+            Some(a) => {
+                let mut entries = a.body.entries;
+                for e in &mut entries {
+                    if revoked.contains(&e.device_id) {
+                        e.retired_at.get_or_insert(at);
+                    }
+                }
+                let (rec, seen) = first_list(&account, new_id, entries)?;
+                writes.push((rec, None));
+                Some(seen)
+            }
+            None => None,
+        };
 
         // Step 5: the rotation record, signed by this device and by the new
         // identity.
@@ -657,7 +676,7 @@ impl<S: RecordStore> Repository<S> {
             params_epoch: account.params.epoch,
             device_list: Some(device_seen),
             vault_list: Some(vault_seen),
-            approver_list: None,
+            approver_list: approver_seen,
             device_id: self.chain.device_id,
             contact_book: book_seen,
         };

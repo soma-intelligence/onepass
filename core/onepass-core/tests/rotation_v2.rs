@@ -587,6 +587,31 @@ fn never_fails_after_commit() {
     assert_eq!(trust.state, DeviceLineageState::Rotating { phase: 1 });
 }
 
+/// The approver list follows the rotation, re-signed under the new identity:
+/// the devices' approval keys stay enrolled.
+#[test]
+fn approver_list_survives_rotation() {
+    use onepass_core::approvers::ApproverRole;
+    use onepass_core::crypto::{HybridKemSecret, HybridSigningKey};
+    let (mut a, f) = fixture();
+    let sign_pub = HybridSigningKey::generate()
+        .unwrap()
+        .verifying_key()
+        .unwrap();
+    let kem_pub = HybridKemSecret::generate().unwrap().public().unwrap();
+    a.repo()
+        .register_this_approver(sign_pub.clone(), kem_pub, ApproverRole::Phone)
+        .unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    a.repo()
+        .rotate(request(&f, &new_sk, vec![], RotationReason::Rotate))
+        .unwrap();
+    let listed = a.repo().approvers().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].sign_pub, sign_pub);
+    assert_eq!(listed[0].role, ApproverRole::Phone);
+}
+
 // ---------------------------------------------------------------- content
 
 #[test]
