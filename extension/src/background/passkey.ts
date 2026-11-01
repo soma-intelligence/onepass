@@ -140,8 +140,8 @@ export class Passkeys {
   /** Per tab: times of the windows opened, of the lists asked (last minute). */
   private readonly opened = new Map<number, number[]>();
   private readonly probes = new Map<number, number[]>();
-  /** Tabs whose running chain already signed once without a window. */
-  private readonly chainSigned = new Set<number>();
+  /** Chains (`tabId:itemId:startedAt`) that already signed once without a window. */
+  private readonly chainSigned = new Set<string>();
   private readonly timers: NonNullable<PasskeyDeps["timers"]>;
   private readonly now: () => number;
 
@@ -166,7 +166,7 @@ export class Passkeys {
       for (const p of [...this.byToken.values()]) if (p.cs.tabId === tabId) this.finish(p, fail("NotAllowedError"));
       this.opened.delete(tabId);
       this.probes.delete(tabId);
-      this.chainSigned.delete(tabId);
+      this.forgetChains(tabId);
       for (const k of [...this.cooldown.keys()]) if (k.startsWith(`${tabId}:`)) this.cooldown.delete(k);
     });
     this.deps.windows?.onRemoved.addListener((windowId) => {
@@ -214,19 +214,32 @@ export class Passkeys {
    * origin's host or one of its parents, and no silent assertion yet in this
    * chain. Anything else: the window.
    */
-  private async silentChain(c: Ctx): Promise<{ itemId: string } | null> {
+  private async silentChain(c: Ctx): Promise<{ itemId: string; key: string } | null> {
     const { cs, rpId } = c;
-    const chain = await this.deps.chain.state(cs.tabId).catch(() => null);
-    if (chain?.status !== "running") {
-      this.chainSigned.delete(cs.tabId);
+    let chain;
+    try {
+      chain = await this.deps.chain.state(cs.tabId);
+    } catch {
+      // Unreadable: no silent assertion, and what this tab's chains signed is kept.
       return null;
     }
-    if (cs.frameId !== 0 || this.chainSigned.has(cs.tabId)) return null;
+    if (chain?.status !== "running") {
+      this.forgetChains(cs.tabId);
+      return null;
+    }
+    if (chain.startedAt === undefined) return null;
+    const key = `${cs.tabId}:${chain.itemId}:${chain.startedAt}`;
+    if (cs.frameId !== 0 || this.chainSigned.has(key)) return null;
     if (chain.origin === undefined || chain.origin !== cs.origin) return null;
     const host = hostOf(cs.origin);
     if (host === "" || !(rpId === host || host.endsWith(`.${rpId}`))) return null;
     if (chain.provider !== undefined && !(chain.phase === "back" || chain.phase === "signin" || chain.phase === "code")) return null;
-    return { itemId: chain.itemId };
+    return { itemId: chain.itemId, key };
+  }
+
+  /** No chain runs in this tab any more: what its chains signed is forgotten. */
+  private forgetChains(tabId: number): void {
+    for (const k of [...this.chainSigned]) if (k.startsWith(`${tabId}:`)) this.chainSigned.delete(k);
   }
 
   /**
@@ -288,15 +301,16 @@ export class Passkeys {
     reqId: string,
     req: PasskeyGetRequest,
     listed: PasskeyAccount[],
-    chain: { itemId: string } | null,
+    chain: { itemId: string; key: string } | null,
     canOpen: boolean,
   ): Promise<PasskeyResult> {
     const offered = req.allow.length === 0 ? listed : listed.filter((p) => req.allow.includes(p.credentialId));
     if (offered.length === 0) return FALLBACK;
     // Spec 3.2: the click that started this tab's chain for this very item is the consent.
-    const own = chain ? offered.find((p) => p.itemId === chain.itemId) : undefined;
-    if (own) {
-      this.chainSigned.add(c.cs.tabId);
+    // Checked again here, with no wait before it is noted: two requests listed side by side sign once.
+    const own = chain && !this.chainSigned.has(chain.key) ? offered.find((p) => p.itemId === chain.itemId) : undefined;
+    if (chain && own) {
+      this.chainSigned.add(chain.key);
       try {
         return await this.assert(c, req, own, "chain");
       } catch {

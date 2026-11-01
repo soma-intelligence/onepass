@@ -74,6 +74,8 @@ interface Setup {
   tabActive?: boolean;
   passkeys?: ReturnType<typeof summary>[];
   chain?: ChainView | null;
+  /** `chain.state` throws (read each call). */
+  chainFails?: boolean;
   sameOriginAncestors?: boolean;
   answer?: (req: Record<string, unknown>) => unknown;
 }
@@ -108,7 +110,12 @@ function setup(o: Setup = {}) {
     checkFillTarget: async () => ({ ok: true }) as const,
     frameOrigin: async () => ORIGIN,
   };
-  const chain = { state: async () => o.chain ?? null };
+  const chain = {
+    state: async () => {
+      if (o.chainFails) throw new Error("storage");
+      return o.chain ?? null;
+    },
+  };
   const windows = new FakeWindows();
   const nav: ((d: { tabId: number; frameId: number; url: string }) => void)[] = [];
   const removedTabs: ((tabId: number) => void)[] = [];
@@ -609,6 +616,48 @@ describe("passkey hardening (review)", () => {
       expect(t.ops()).not.toContain("passkey_get");
       expect(t.windows.created).toHaveLength(1);
     }
+  });
+
+  it("L2: a failed read of the chain does not allow a second silent assertion", async () => {
+    const o: Parameters<typeof setup>[0] = { chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN, startedAt: 1 } };
+    const t = setup(o);
+    expect((await t.pk.request(cs(), "r1", GET, false)).kind).toBe("assertion");
+    o.chainFails = true;
+    expect(await t.pk.request(cs(), "r2", GET, false)).toEqual({ kind: "fallback" });
+    o.chainFails = false;
+    void t.pk.request(cs(), "r3", GET, true);
+    await flush();
+    expect(t.ops().filter((x) => x === "passkey_get")).toHaveLength(1);
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("L2: once per chain: a new chain of the tab may sign once again", async () => {
+    const view: ChainView = { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN, startedAt: 1 };
+    const o: Parameters<typeof setup>[0] = { chain: view };
+    const t = setup(o);
+    expect((await t.pk.request(cs(), "r1", GET, false)).kind).toBe("assertion");
+    o.chain = { ...view, startedAt: 2 };
+    expect((await t.pk.request(cs(), "r2", GET, false)).kind).toBe("assertion");
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("L2: two requests side by side in a chain sign once", async () => {
+    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN, startedAt: 1 } });
+    let release = () => undefined as void;
+    t.gate.hold = new Promise<void>((r) => (release = r));
+    const a = t.pk.request(cs(), "r1", GET, false);
+    const b = t.pk.request(cs(), "r2", GET, false);
+    await flush();
+    release();
+    const kinds = [(await a).kind, (await b).kind];
+    expect(kinds.filter((k) => k === "assertion")).toHaveLength(1);
+    expect(t.ops().filter((x) => x === "passkey_get")).toHaveLength(1);
+  });
+
+  it("L2: a chain view without its start never signs silently", async () => {
+    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN } });
+    expect(await t.pk.request(cs(), "r1", GET, false)).toEqual({ kind: "fallback" });
+    expect(t.ops()).not.toContain("passkey_get");
   });
 
   it("F3: an abort while the host lists cancels: AbortError, no window", async () => {
