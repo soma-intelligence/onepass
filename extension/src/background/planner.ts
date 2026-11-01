@@ -219,6 +219,10 @@ export class Planner {
               if (written > 0 && !remembered) {
                 this.saveFlow.rememberGenerated(t.tabId, t.origin, generated);
                 remembered = true;
+                // In the vault before the form is sent (spec 7.1): a lock or a closed tab loses nothing.
+                if (plan.intent === "signup" || plan.intent === "reset") {
+                  await this.saveFlow.savePending(t.tabId, t.origin, generated, { weak });
+                }
               }
             } else if (g.item_id !== null) {
               written = await this.fillGroup(gt, g, g.item_id, roles);
@@ -228,10 +232,6 @@ export class Planner {
             }
             if (written === 0) complete = false;
             else wrote = true;
-          }
-          // In the vault before the form is sent (spec 7): a lock or a closed tab loses nothing.
-          if (remembered && generated !== undefined && (plan.intent === "signup" || plan.intent === "reset")) {
-            await this.saveFlow.savePending(t.tabId, t.origin, generated, { weak });
           }
         } finally {
           generated = undefined;

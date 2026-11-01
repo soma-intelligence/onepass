@@ -2,10 +2,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CHECK_DELAY_MS,
-  PENDING_TAG,
   SUBMIT_TTL_MS,
   SaveFlow,
-  WEAK_BY_SITE_TAG,
   type Timers,
   autoSubmitFor,
   setAutoSubmit,
@@ -14,7 +12,8 @@ import type { FillTarget } from "../../../src/background/fill";
 import type { CsContext } from "../../../src/background/frames";
 import { Planner } from "../../../src/background/planner";
 import type { PlanOut } from "../../../src/shared/messages";
-import type { SavePending } from "../../../src/background/save";
+import { PENDING_TAG, type SavePending, WEAK_BY_SITE_TAG } from "../../../src/background/save";
+import { BgError } from "../../../src/background/session";
 import { FakeArea } from "../fake-ext";
 
 const SITE = "https://atlas-cloud.test";
@@ -327,7 +326,6 @@ describe("generated passwords memory hygiene", () => {
   });
 });
 
-
 describe("pending save of a generated password (spec 7)", () => {
   const GEN = "Gen-Pass-123";
   const signup = (): PlanOut => ({
@@ -409,22 +407,65 @@ describe("pending save of a generated password (spec 7)", () => {
     expect(ops(t)).toEqual(["vaults", "save_login", "update_password", "vaults", "save_login", "vaults", "save_login"]);
   });
 
+  /**
+   * The host's `check_credentials` contract for pending items: the pending
+   * item (saved with an empty username) answers `pending` for its own
+   * password whatever the username, `new` otherwise.
+   */
+  const pendingHost = (r: Record<string, unknown>) =>
+    r.op === "check_credentials" ? (r.password === GEN ? { status: "pending", item_id: "it_new", title: "Atlas Cloud" } : { status: "new" }) : undefined;
+
   it("lock_after_fill_keeps_item", async () => {
-    // The host answers `same` for the stored pending item once unlocked.
-    const t = setup("new", [], (r) => (r.op === "check_credentials" ? { status: "same", item_id: "it_new", title: "Atlas Cloud" } : undefined));
+    const t = setup("new", [], pendingHost);
     await plannerFor(t).run(target, signup());
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login", username: "", tags: [PENDING_TAG] });
     const before = [...t.requests];
-    expect(ops(t)).toEqual(["vaults", "save_login"]);
     // The vault locks before the submit: the generated password is forgotten here...
     t.flow.clearGenerated();
     // ...but it was saved before the lock, and the lock removes nothing.
     expect(t.requests).toEqual(before);
-    // Unlocked again, the form goes: the host recognizes the pending item, it is confirmed.
-    await t.submit("alex@atlas.dev", GEN, true);
+    // And the service worker restarts: no memory of the pending item at all.
+    const fresh = new SaveFlow({
+      session: { request: (async (r: Record<string, unknown>) => (t.requests.push(r), pendingHost(r) ?? {})) as never },
+      saves: { open: async (p: SavePending) => (t.opened.push(p), "tok") },
+      neverSave: { has: async () => false },
+      topFrame: async () => ({ url: `${SITE}/signup`, documentId: "doc-1" }),
+      now: () => t.timers.t,
+      timers: t.timers,
+    });
+    // Unlocked again, the form goes: the host finds the pending item, it is confirmed.
+    await fresh.onSubmitted({ type: "submitted_credentials", formRef: "f1", username: "alex@atlas.dev", password: GEN, isNew: true }, {
+      tabId: 7,
+      frameId: 0,
+      origin: SITE,
+    });
     await t.timers.advance(CHECK_DELAY_MS);
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials", "confirm_pending"]);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
     expect(t.opened).toEqual([]);
+  });
+
+  it("pending verdict without a username: stays pending, no prompt, no second save", async () => {
+    const t = setup("new", [], pendingHost);
+    await plannerFor(t).run(target, signup());
+    t.flow.clearGenerated();
+    t.flow.rememberGenerated(7, SITE, GEN);
+    (t.flow as unknown as { saved: Map<number, unknown> }).saved.clear();
+    await t.submit("", GEN, true);
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
+    expect(t.opened).toEqual([]);
+  });
+
+  it("a refused password update keeps the pending item, unless it is gone", async () => {
+    let refusal: BgError = new BgError("rate_limited");
+    const t = setup("new", [], (r) => (r.op === "update_password" ? refusal : undefined));
+    await t.flow.savePending(7, SITE, "first-Pass-1");
+    expect(await t.flow.savePending(7, SITE, "second-Pass-2")).toBe(false);
+    expect(ops(t)).toEqual(["vaults", "save_login", "update_password"]);
+    refusal = new BgError("not_found");
+    expect(await t.flow.savePending(7, SITE, "third-Pass-3")).toBe(true);
+    expect(ops(t)).toEqual(["vaults", "save_login", "update_password", "update_password", "vaults", "save_login"]);
   });
 
   it("submit_confirms_pending", async () => {

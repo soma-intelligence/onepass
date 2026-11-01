@@ -509,6 +509,9 @@ pub enum CredentialStatus {
     New,
     Same,
     Update,
+    /// A pending Login of the site (tag `onepass:pending`) holds this very
+    /// password, whatever its username: confirm it, never save a second one.
+    Pending,
 }
 
 /// A field of a plan group.

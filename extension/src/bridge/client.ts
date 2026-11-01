@@ -162,7 +162,8 @@ interface Ops {
   reveal: { req: { ctx: Ctx; item_id: string; field: string }; res: { value: string } };
   check_credentials: {
     req: { ctx: Ctx; origin: string; username: string; password: string };
-    res: { status: "new" | "same" | "update"; item_id?: string; title?: string };
+    /** `pending`: a pending Login of the site holds this password, whatever its username. */
+    res: { status: "new" | "same" | "update" | "pending"; item_id?: string; title?: string };
   };
   save_login: {
     req: {

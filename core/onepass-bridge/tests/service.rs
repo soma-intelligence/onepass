@@ -2103,3 +2103,67 @@ fn confirm_pending_checks_origin() {
     assert_eq!(err(&v), "invalid");
     assert!(h.vault().item(item).is_pending());
 }
+
+fn check(origin: &str, user: &str, pass: &str) -> Value {
+    json!({"op":"check_credentials","ctx":"save_prompt","origin":origin,
+           "username":user,"password":pass})
+}
+
+#[test]
+fn check_credentials_finds_pending_any_username() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, "https://signup.atlas-cloud.test/join", "");
+    for user in ["alex@atlas.dev", "", "someone@else.test"] {
+        let v = h.call(check("https://app.atlas-cloud.test", user, "Gen-Pass-0042"));
+        assert_eq!(
+            ok(&v),
+            &json!({"status":"pending","item_id":id(item),"title":"atlas-cloud.test"}),
+            "{user}"
+        );
+    }
+    // A pending item with a known username: still `pending`, never `same`.
+    let known = save_pending(&mut h, ATLAS, "alex@atlas.dev");
+    h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"username":"first@atlas.dev"}),
+    );
+    let v = h.call(check(ATLAS, "alex@atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["status"], "pending");
+    assert_eq!(ok(&v)["item_id"], id(known));
+    // Confirmed items answer as before.
+    ok(&h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(known),
+        "origin":ATLAS,"username":""}),
+    ));
+    let v = h.call(check(ATLAS, "first@atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["status"], "same");
+    assert_eq!(ok(&v)["item_id"], id(item));
+    // Non-pending items keep their verdicts.
+    let v = h.call(check(ATLAS, "alex@atlas.dev", ATLAS_PASSWORD));
+    assert_eq!(ok(&v)["status"], "same");
+    assert_eq!(ok(&v)["item_id"], id(h.ids.atlas));
+}
+
+#[test]
+fn check_credentials_pending_wrong_password_is_new() {
+    let mut h = H::new();
+    save_pending(&mut h, ATLAS, "");
+    let v = h.call(check(ATLAS, "nobody@atlas.dev", "Typed-Pass-0099"));
+    assert_eq!(ok(&v), &json!({"status":"new"}));
+    // The pending item is no update candidate either: the known login is.
+    let v = h.call(check(ATLAS, "alex@atlas.dev", "Typed-Pass-0099"));
+    assert_eq!(ok(&v)["status"], "update");
+    assert_eq!(ok(&v)["item_id"], id(h.ids.atlas));
+}
+
+#[test]
+fn check_credentials_pending_other_site_ignored() {
+    let mut h = H::new();
+    save_pending(&mut h, ATLAS, "");
+    let v = h.call(check(
+        "https://evil.test",
+        "alex@atlas.dev",
+        "Gen-Pass-0042",
+    ));
+    assert_eq!(ok(&v), &json!({"status":"new"}));
+}

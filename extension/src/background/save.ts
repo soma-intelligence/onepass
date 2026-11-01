@@ -45,6 +45,13 @@ interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" |
   decided: boolean;
 }
 
+/** Tag of a Login saved before its form was sent (onepass_core::model::PENDING_TAG). */
+export const PENDING_TAG = "onepass:pending";
+/** Tag of a Login whose password the site forced to be weak (onepass_core::model::WEAK_BY_SITE_TAG). */
+export const WEAK_BY_SITE_TAG = "onepass:weak-by-site";
+/** Tags only OnePass sets: never taken from what a user types in the prompt. */
+const RESERVED_TAGS: ReadonlySet<string> = new Set([PENDING_TAG, WEAK_BY_SITE_TAG]);
+
 /** "atlas-cloud.test" -> "Atlas Cloud". */
 export function titleFromSite(site: string): string {
   const label = site.split(".")[0] ?? site;
@@ -197,7 +204,7 @@ export class SavePrompts {
             password,
             vault_id: edits.vaultId,
             rule: edits.rule,
-            tags: edits.tags,
+            tags: edits.tags.filter((t) => !RESERVED_TAGS.has(t.trim())),
           });
           savedItem = saved.item_id;
         }

@@ -435,6 +435,15 @@ describe("save prompt", () => {
     expect(client.requests.at(-1)).toMatchObject({ op: "save_login", password: "Gen-Pass-123" });
   });
 
+  it("tags only OnePass sets are dropped from the prompt's edits", async () => {
+    const { ext, bg, client } = await setup();
+    const token = await bg.saves.open(pending);
+    const ui = uiSender(`save.html#${token}`, 7);
+    const tags = ["Travail", "onepass:pending", " onepass:weak-by-site "];
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, tags } }, ui)).toEqual({ ok: {} });
+    expect(client.requests.at(-1)).toMatchObject({ op: "save_login", tags: ["Travail"] });
+  });
+
   it("update targets only the item check_credentials named", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open({ ...pending, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });

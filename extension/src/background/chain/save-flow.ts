@@ -18,7 +18,11 @@
 // generation on the same tab and site replaces the item's password
 // (`update_password`, the old one goes to its history). The submission of
 // that password confirms the item (`confirm_pending`) instead of opening the
-// save prompt; when nothing was saved or the host refuses, the prompt stays.
+// save prompt. When this memory is gone (lock, service worker restart), the
+// host still finds the item: `check_credentials` answers `pending` for it
+// whatever the username, and the submission confirms it, or leaves it pending
+// silently without a username; never a second save. The confirmation happens
+// at the submission: a signup the server then refuses stays confirmed.
 //
 // Also here: the per item auto-submit preference of the chain (R-12), in
 // `storage.local` key `autoSubmit:<itemId>`, true unless set to false.
@@ -27,18 +31,13 @@ import type { CsToBg } from "../../shared/messages";
 import type { StorageArea } from "../ext";
 import type { CsContext } from "../frames";
 import type { NeverSave } from "../never-save";
-import { type SavePending, type SavePrompts, titleFromSite } from "../save";
+import { PENDING_TAG, type SavePending, type SavePrompts, WEAK_BY_SITE_TAG, titleFromSite } from "../save";
 import { BgError, type Session } from "../session";
 
 export const SUBMIT_TTL_MS = 2 * 60 * 1000;
 export const CHECK_DELAY_MS = 1500;
 /** A generated password feeds the proposal of a submission this recent. */
 export const GENERATED_TTL_MS = 10 * 60 * 1000;
-
-/** Tag of a Login saved before its form was sent (onepass_core::model::PENDING_TAG). */
-export const PENDING_TAG = "onepass:pending";
-/** Tag of a Login whose password the site forced to be weak (onepass_core::model::WEAK_BY_SITE_TAG). */
-export const WEAK_BY_SITE_TAG = "onepass:weak-by-site";
 
 const AUTO_SUBMIT_PREFIX = "autoSubmit:";
 
@@ -143,9 +142,9 @@ export class SaveFlow {
         await this.deps.session.request({ op: "update_password", ctx: "save_prompt", item_id: prev.itemId, origin, password });
         return true;
       } catch (e) {
-        // Locked: the item is still there, try again on the next generation.
-        if (e instanceof BgError && e.code === "locked") return false;
-        // Gone or edited elsewhere: a new pending item.
+        // Gone, or no longer of this site: a new pending item. Any other
+        // refusal (locked, rate limited...) keeps the item, no second one.
+        if (!(e instanceof BgError) || (e.code !== "not_found" && e.code !== "origin_mismatch")) return false;
         if (this.saved.get(tabId) === prev) this.saved.delete(tabId);
       }
     }
@@ -174,12 +173,12 @@ export class SaveFlow {
 
   /**
    * The pending item of `tabId` for the site of `origin` was sent: drop its
-   * tag, complete its username. `itemId`, when given, must be that item.
-   * False when there is none or the host refused (the prompt then applies).
+   * tag, complete its username. False when there is none or the host
+   * refused (the host's `pending` verdict then applies).
    */
-  private async confirm(tabId: number, origin: string, username: string, itemId?: string): Promise<boolean> {
+  private async confirm(tabId: number, origin: string, username: string): Promise<boolean> {
     const s = this.saved.get(tabId);
-    if (!s || s.site !== parseOrigin(origin)?.site || (itemId !== undefined && itemId !== s.itemId)) return false;
+    if (!s || s.site !== parseOrigin(origin)?.site) return false;
     try {
       await this.deps.session.request({
         op: "confirm_pending",
@@ -290,16 +289,25 @@ export class SaveFlow {
     // The prompt goes to the top frame: it must show this site (checked
     // again below, after the host answered).
     if (!(await this.verifiedTop(tabId, origin))) return;
-    let r: { status: "new" | "same" | "update"; item_id?: string; title?: string };
+    let r: { status: "new" | "same" | "update" | "pending"; item_id?: string; title?: string };
     try {
       r = await this.deps.session.request({ op: "check_credentials", ctx: "save_prompt", origin, username, password });
     } catch {
       return;
     }
-    // The pending item's own password (the generated one, forgotten here by a
-    // lock): the host found it, the submission confirms it.
-    if (r.status === "same") {
-      if (r.item_id !== undefined) await this.confirm(tabId, origin, username, r.item_id);
+    if (r.status === "same") return;
+    // A pending item of this site holds this password (memory of it lost
+    // here): confirmed with the submitted username, never a second save.
+    // Without a username it stays pending, silently.
+    if (r.status === "pending") {
+      if (r.item_id === undefined || username.trim() === "") return;
+      const itemId = r.item_id;
+      try {
+        await this.deps.session.request({ op: "confirm_pending", ctx: "save_prompt", item_id: itemId, origin, username });
+      } catch {
+        return;
+      }
+      if (this.saved.get(tabId)?.itemId === itemId) this.saved.delete(tabId);
       return;
     }
     // The top frame may have moved during the host request (or before the

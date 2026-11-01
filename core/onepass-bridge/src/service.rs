@@ -835,11 +835,24 @@ impl<V: VaultAccess> Service<V> {
         let page = origin(o)?;
         let user = username.trim();
         let all = self.items()?;
-        let mut candidates: Vec<(Option<MatchQuality>, &Item)> = all
+        let mut site: Vec<(Option<MatchQuality>, &Item)> = all
             .iter()
             .map(|(_, i)| i)
             .filter(|i| eligible(i) && i.item_type == ItemType::Login)
             .filter_map(|i| item_match(i, &page).map(|q| (Some(q), i)))
+            .collect();
+        site.sort_by_key(|(q, _)| rank(*q));
+        // A pending login (saved before its form was sent, often without a
+        // username) holding this password answers first, whatever the
+        // username: the submission confirms it (spec 7.2).
+        if let Some((_, i)) = site.iter().find(|(_, i)| {
+            i.is_pending() && stored_password(i).is_some_and(|p| same_secret(p, password.expose()))
+        }) {
+            return Ok(verdict(CredentialStatus::Pending, Some(i)));
+        }
+        let mut candidates: Vec<(Option<MatchQuality>, &Item)> = site
+            .into_iter()
+            .filter(|(_, i)| !i.is_pending())
             .filter(|(_, i)| login_identifier(i).is_some_and(|u| u.eq_ignore_ascii_case(user)))
             .collect();
         candidates.sort_by_key(|(q, _)| rank(*q));
