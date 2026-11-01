@@ -57,7 +57,10 @@ fn run_with_secrets_injects_and_masks() {
     // `sh` runs code the approval cannot pin: never remembered.
     assert!(!req.remember_allowed);
     let program = req.details.iter().find(|(l, _)| l == "program").unwrap();
-    assert!(program.1.ends_with("/sh"), "{}", program.1);
+    // The grant binds to the resolved binary: `/bin/sh` is a symlink to
+    // `dash` on Debian and Ubuntu, so compare against its canonical path.
+    let sh = std::fs::canonicalize("/bin/sh").unwrap();
+    assert_eq!(program.1, sh.to_string_lossy(), "{}", program.1);
     assert_eq!(req.targets.len(), 1);
     assert_eq!(req.targets[0].vault, "Dev");
     assert_eq!(req.targets[0].item, "GitHub");
