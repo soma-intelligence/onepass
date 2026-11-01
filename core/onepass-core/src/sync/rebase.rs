@@ -379,6 +379,47 @@ impl Repository<SyncStore> {
         Ok(RebaseReport { rebased, error })
     }
 
+    /// Review I3 of Task 19: this device created `v` (its vault key and
+    /// meta are pending, never confirmed) and the server holds another
+    /// creation of it under the same vault key: a vault re-created after a
+    /// rotation by two devices before either one synced (its key is
+    /// derived, `crate::lineage::recreated_vault_key`). The server's key
+    /// and meta are kept and this device's pending ones dropped, so the
+    /// rebase merges its manifest into the server's as a vault with no
+    /// ancestor (module doc). Nothing for any other vault.
+    /// `mine` is the vault as this device holds it; the plan was read from
+    /// it before. `true` when the server's key and meta replaced its own.
+    fn join_concurrent_creation(&mut self, mine: &Vault) -> Result<bool> {
+        let v = mine.id;
+        let (Some(key), Some(meta)) = (
+            self.store.base_record(RecordKind::VaultKey, v)?,
+            self.store.base_record(RecordKind::VaultMeta, v)?,
+        ) else {
+            return Ok(false);
+        };
+        if !self.store.is_pending_write(RecordKind::VaultKey, v)?
+            || self
+                .store
+                .ancestor_record(RecordKind::Manifest, v)?
+                .is_some()
+            || self.store.base_record(RecordKind::Manifest, v)?.is_none()
+        {
+            return Ok(false);
+        }
+        let Ok(theirs) = Vault::open(&self.account, v, &key.data, &meta.data) else {
+            return Ok(false);
+        };
+        if !mine.has_same_key(&theirs) {
+            return Ok(false);
+        }
+        self.store.drop_pending_record(RecordKind::VaultKey, v)?;
+        self.store.drop_pending_record(RecordKind::VaultMeta, v)?;
+        // The pin was this device's own creation, never confirmed: the
+        // server's creation starts the vault's history instead.
+        self.device.last_seen.remove(&v);
+        Ok(true)
+    }
+
     /// Classify a failed vault rebase: the error to report, or `None` when
     /// the server's newer state is only incomplete and the device serves
     /// its own copy meanwhile (`ServerBehind`). A fork (`ManifestRollback`)
@@ -426,10 +467,18 @@ impl Repository<SyncStore> {
         let dropped = self.dropped.clone();
         let epoch_rewound = self.epoch_rewound;
         self.store.begin_batch()?;
-        let result = self
-            .apply(&vault, plan, epoch)
-            .and_then(|()| self.persist_device_state_forcing(&[v]))
-            .and_then(|()| self.store.commit_batch());
+        let result = (|| {
+            // Review I3 of Task 19: a concurrent creation of a re-created
+            // vault, joined in the same batch.
+            let vault = if self.join_concurrent_creation(&vault)? {
+                self.open_vault(v)?
+            } else {
+                vault
+            };
+            self.apply(&vault, plan, epoch)
+        })()
+        .and_then(|()| self.persist_device_state_forcing(&[v]))
+        .and_then(|()| self.store.commit_batch());
         if let Err(e) = result {
             match last_seen {
                 Some(s) => self.device.last_seen.insert(v, s),

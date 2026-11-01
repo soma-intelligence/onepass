@@ -1203,13 +1203,19 @@ impl<S: RecordStore> Repository<S> {
     /// A kit-restored device no device pinned yet signs no vault list:
     /// `Validation("device")` (Task 15).
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
-        self.create_vault_with_id(Id::new(), meta)
+        self.create_vault_with_id(Id::new(), None, meta)
     }
 
     /// `create_vault` under the vault id `id` (a vault re-created under a
     /// new identity, `crate::repo::replay`). An id the store already holds
     /// a vault key for is `Conflict`.
-    pub(crate) fn create_vault_with_id(&mut self, id: Id, meta: VaultMeta) -> Result<Vault> {
+    /// `key`: the vault key to use, a fresh one when `None`.
+    pub(crate) fn create_vault_with_id(
+        &mut self,
+        id: Id,
+        key: Option<crate::crypto::SymmetricKey>,
+        meta: VaultMeta,
+    ) -> Result<Vault> {
         self.writable()?;
         self.signs_lists()?;
         self.sync_epoch()?;
@@ -1221,7 +1227,10 @@ impl<S: RecordStore> Repository<S> {
         if self.store.get(RecordKind::VaultKey, id)?.is_some() {
             return Err(Error::Conflict);
         }
-        let (vault, envelope, meta_blob) = Vault::create_with_id(&self.account, id, meta)?;
+        let (vault, envelope, meta_blob) = match key {
+            Some(key) => Vault::create_with_key(&self.account, id, key, meta)?,
+            None => Vault::create_with_id(&self.account, id, meta)?,
+        };
         let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
         // Spec 10.4: the creation is this device's own meta write (a
         // re-creation after a rotation takes it, never another device's).

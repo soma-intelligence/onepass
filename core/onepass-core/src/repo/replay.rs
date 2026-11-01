@@ -57,7 +57,7 @@ use time::OffsetDateTime;
 
 use super::{Repository, Use, seen, split_item_record, trust_of};
 use crate::crypto::unwrap_key;
-use crate::lineage::recreated_vault_id;
+use crate::lineage::{recreated_vault_id, recreated_vault_key};
 use crate::manifest::{
     Manifest, SeenManifest, SignedManifest, record_hash, signed_by, verify_manifest,
 };
@@ -603,15 +603,42 @@ impl<S: RecordStore> Repository<S> {
         // Task 19 carried item 2: one id per (identity, old vault), so a
         // device that replays after another one did joins the vault that
         // one re-created, under the same merge rule as a replay.
+        //
+        // Review I3 (fix round 1): the id is predictable, so a server can
+        // plant rows there. Only a vault that opens under the session's
+        // keys and loads through the verified path (a manifest this
+        // identity signed) is joined; any other row at that id, a key or a
+        // meta alone, or one that does not verify, sends the re-creation to
+        // a fresh random id instead of wedging the replay.
         let id = recreated_vault_id(&self.account.params.identity_pub, vault);
+        let key = recreated_vault_key(&self.account.keyset().kem.to_bytes(), vault)?;
+        let joined = match self.current_vault(id)? {
+            Some(existing)
+                if existing.has_key(&key) && self.served(&existing, Use::Write).is_ok() =>
+            {
+                Some(existing)
+            }
+            _ => None,
+        };
+        let planted = joined.is_none()
+            && (self.store.get(RecordKind::VaultKey, id)?.is_some()
+                || self.store.get(RecordKind::VaultMeta, id)?.is_some()
+                || self.store.get(RecordKind::Manifest, id)?.is_some());
+        let (id, key) = if planted {
+            (Id::new(), None)
+        } else {
+            (id, Some(key))
+        };
         self.store.batch_begin()?;
         let done = (|| {
-            let fresh = match (self.current_vault(id)?, own_meta) {
+            let fresh = match (joined, own_meta) {
                 (Some(existing), Some(m)) if m != existing.meta => {
                     self.update_vault_meta(&existing, m)?
                 }
                 (Some(existing), _) => existing,
-                (None, m) => self.create_vault_with_id(id, m.unwrap_or_else(recovered_meta))?,
+                (None, m) => {
+                    self.create_vault_with_id(id, key, m.unwrap_or_else(recovered_meta))?
+                }
             };
             let loaded = self.served(&fresh, Use::Write)?;
             for mut item in items {

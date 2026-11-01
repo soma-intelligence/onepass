@@ -2775,6 +2775,107 @@ fn recreated_vault_is_one_across_devices() {
     }
 }
 
+/// C and D write in a vault C created under the old identity after
+/// `from_heads` (a "Travail" vault); A has rotated. Returns the server,
+/// the three devices, the old vault id, the head and the derived id.
+fn recreate_setup() -> (Server, Device, Device, Device, Fixture, Id, [u8; 32], Id) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut d = follower_with(&mut server, &a, &f, 2, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    let old = c.repo().create_vault(meta("Travail")).unwrap();
+    c.repo()
+        .save_item(&old, login(old.id, "work", T0 + 80))
+        .unwrap();
+    sync(&mut server, &mut c).unwrap();
+    d.unlock(&f.sk);
+    pull(&server, &mut d);
+    let theirs = d.vault_named("Travail");
+    d.repo()
+        .save_item(&theirs, login(old.id, "dora", T0 + 81))
+        .unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let identity = rotation_of(&a.store(), &out.head).identity_pub;
+    let derived = onepass_core::lineage::recreated_vault_id(&identity, old.id);
+    (server, a, c, d, f, old.id, out.head, derived)
+}
+
+fn follow_and_check(dev: &mut Device, head: [u8; 32], keys: &DeviceKeys) {
+    dev.repo = None;
+    let (repo, _, _) = follow_rotation(dev.store(), head, PASSWORD, keys).unwrap();
+    dev.repo = Some(repo);
+    let t = dev.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert);
+}
+
+/// Review I3 (fix round 1): the server plants a vault key at the derived
+/// id before C replays. C does not join it (it does not verify) and
+/// re-creates under a fresh id: the replay completes, nothing waits.
+#[test]
+fn planted_row_at_the_recreated_id_never_wedges_the_replay() {
+    let (mut server, _a, mut c, _d, f, _old, head, derived) = recreate_setup();
+    // A vault key and meta of another vault, served at the derived id.
+    let any = f_any_vault(&server);
+    for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
+        let mut junk = server.get(kind, any).unwrap();
+        junk.id = derived;
+        server.replay(junk);
+    }
+    pull(&server, &mut c);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    let work = c.vault_named("Travail");
+    assert_ne!(work.id, derived);
+    assert_eq!(
+        users(&c.repo().items(&work).unwrap()),
+        vec!["work".to_string()]
+    );
+    sync(&mut server, &mut c).unwrap();
+}
+
+/// A vault key the server holds, any.
+fn f_any_vault(server: &Server) -> Id {
+    server
+        .records
+        .iter()
+        .find(|((k, _), e)| *k == RecordKind::VaultKey && e.record.is_some())
+        .map(|((_, id), _)| *id)
+        .unwrap()
+}
+
+/// Review I3 (fix round 1): the honest race, C and D re-create the vault
+/// before either one synced. Both derive the same id and the same vault
+/// key: the second push conflicts, its rebase joins the first creation
+/// (the server's key and meta, its own items merged), and every device
+/// ends with one vault holding both writes.
+#[test]
+fn honest_race_to_recreate_keeps_both_writes() {
+    let (mut server, mut a, mut c, mut d, f, _old, head, derived) = recreate_setup();
+    pull(&server, &mut c);
+    pull(&server, &mut d);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    follow_and_check(&mut d, head, &f.others[2].keys);
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(vaults.len(), 2);
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, derived);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
 /// Review I2: a rename made under the old identity is replayed under the
 /// new keys, not dropped.
 #[test]
