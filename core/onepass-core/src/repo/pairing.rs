@@ -44,7 +44,7 @@
 //! `accept_intros` here takes `SignedIntro`s only, and skips a kit
 //! self-intro (an intro with an identity signature, Task 15).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::follow::{
     Adoption, abandoned_rotation_rows, commit_adoption, lineage_records, rotations,
@@ -151,6 +151,14 @@ pub(crate) fn accept_intros(trust: &TrustState, intros: &[SignedIntro]) -> Optio
         return None;
     }
     let mut found: BTreeMap<Id, Vec<(Id, &RosterEntry)>> = BTreeMap::new();
+    // Fix round 3 (N3): a device with a kit self-intro was restored with
+    // the Emergency Kit; whoever accepted it said yes without a
+    // verification, so it joins here `Tofu` whatever its introducer.
+    let kit_restored: BTreeSet<Id> = intros
+        .iter()
+        .filter(|i| i.identity_sig.is_some() && i.body.introducer == i.body.entry.device_id)
+        .map(|i| i.body.entry.device_id)
+        .collect();
     for i in intros {
         let b = &i.body;
         let new = b.entry.device_id;
@@ -194,9 +202,11 @@ pub(crate) fn accept_intros(trust: &TrustState, intros: &[SignedIntro]) -> Optio
         // introduced it, `Verified` only if every introducer is; this
         // device's own pin (a kit restore) is its own, `Verified`.
         let verified = id == trust.me.device_id
-            || candidates.iter().all(|(_, e)| {
-                e.introduced_by.and_then(|i| trust.levels.get(&i)) == Some(&TrustLevel::Verified)
-            });
+            || !kit_restored.contains(&id)
+                && candidates.iter().all(|(_, e)| {
+                    e.introduced_by.and_then(|i| trust.levels.get(&i))
+                        == Some(&TrustLevel::Verified)
+                });
         let level = if verified {
             TrustLevel::Verified
         } else {
@@ -755,6 +765,34 @@ mod tests {
         );
         // Accepted once: nothing more to do.
         assert_eq!(accept_intros(&next, &[intro(&t, &b, &n)]), None);
+    }
+
+    /// Fix round 3 (N3): a device with a kit self-intro joins `Tofu`, even
+    /// through an intro by a `Verified` device.
+    #[test]
+    fn a_kit_restored_device_joins_tofu() {
+        let (me, b, n) = (dev(), dev(), dev());
+        let mut t = trust_of_me(&me, &[&b]);
+        t.levels.insert(b.public.device_id, TrustLevel::Verified);
+        let pop = sign_pop(&n.keys, &t.account_id.0, &n.public).unwrap();
+        let selfie = sign_intro(
+            IntroBody {
+                format: LINEAGE_FORMAT,
+                account_id: t.account_id,
+                head: t.head.hash,
+                entry: entry(&n, None),
+                introducer: n.public.device_id,
+                pop,
+            },
+            &n.keys,
+            Some(&IdentityKey::generate().unwrap()),
+        )
+        .unwrap();
+        let next = accept_intros(&t, &[intro(&t, &b, &n), selfie]).unwrap();
+        assert_eq!(
+            next.levels.get(&n.public.device_id),
+            Some(&TrustLevel::Tofu)
+        );
     }
 
     #[test]

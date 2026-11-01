@@ -794,8 +794,9 @@ impl<S: RecordStore> Repository<S> {
     /// this device's intro for it (signed by `device_keys`, its proof of
     /// possession taken from its self-intro), its device list entry
     /// (added by this device) unless listed already, and the trust state
-    /// with it in the roster, `Verified`. The other devices pin it from
-    /// that intro, as any intro.
+    /// with it in the roster, `Tofu` (fix round 3: a yes is not a
+    /// verification; `verify_device` upgrades it). The other devices pin
+    /// it from that intro, `Tofu` too (it has a kit self-intro).
     ///
     /// Refused: a read-only or locked device (`ReadOnly`); no trust state,
     /// other device keys, a device not pinned itself, a state other than
@@ -862,7 +863,10 @@ impl<S: RecordStore> Repository<S> {
         }
         let mut next = trust.clone();
         insert_sorted(&mut next.roster, entry);
-        next.levels.insert(id, TrustLevel::Verified);
+        // Fix round 3 (N3): a yes is not a verification. Anyone with the
+        // kit and the password can restore, so the device is `Tofu` until
+        // "Vérifier mes appareils" (`verify_device`) runs with it.
+        next.levels.insert(id, TrustLevel::Tofu);
         self.store
             .put_with_trust_cas(writes, Vec::new(), None, &trust, &next)?;
         if let Some(body) = list_body {

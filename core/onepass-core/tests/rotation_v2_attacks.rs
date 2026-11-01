@@ -1457,6 +1457,98 @@ fn intro_by_a_tofu_device_is_tofu() {
     assert_eq!(quarantine_erase_at(&a.store()).unwrap(), None);
 }
 
+/// Fix round 3, N3: a device restored with the kit at a genesis head (the
+/// 2b-revoked holder has the Secret Key and the password) that the user
+/// accepts with a plain yes is `Tofu` on A, and on B, which pins it from
+/// A's intro: its removal of A only locks. Once "Vérifier mes appareils"
+/// ran between A and K, the same removal erases as before.
+#[test]
+fn accepted_kit_device_is_tofu_until_verified() {
+    use onepass_core::repo::kit::KitRestore;
+    for verify in [false, true] {
+        let mut server = Server::default();
+        let (mut a, mut b, sk, _) = setup(&mut server, &[("alice", T0), ("bob", T0 + 1)]);
+        sync(&mut server, &mut a).unwrap();
+        b.repo()
+            .register_this_device("Mac", DeviceKind::Mac, DeviceMode::Personal)
+            .unwrap();
+        sync(&mut server, &mut b).unwrap();
+        sync(&mut server, &mut a).unwrap();
+        let ka = DeviceKeys::generate_software().unwrap();
+        let Migration::Genesis(g) = a.repo().migrate_to_v2(&ka).unwrap() else {
+            panic!("A writes the genesis");
+        };
+        sync(&mut server, &mut a).unwrap();
+        sync(&mut server, &mut b).unwrap();
+        let kb = DeviceKeys::generate_software().unwrap();
+        assert_eq!(b.repo().migrate_to_v2(&kb).unwrap(), Migration::Joined(g));
+        sync(&mut server, &mut b).unwrap();
+        sync(&mut server, &mut a).unwrap();
+        a.repo().refresh_pending_rotation().unwrap();
+        let a_id = device_id_of(&mut a, &ka);
+
+        // The holder restores K with the kit.
+        let mut k = Device::empty();
+        pull(&server, &mut k);
+        let kk = DeviceKeys::generate_software().unwrap();
+        let store = k.store();
+        let device = store.device_state().unwrap();
+        let repo = Repository::restore_from_kit(
+            store,
+            KitRestore {
+                password: PASSWORD,
+                secret_key: &sk,
+                device_keys: &kk,
+                name: "iPad neuf",
+                kind: DeviceKind::Tablet,
+                mode: DeviceMode::Personal,
+                device,
+            },
+        )
+        .unwrap();
+        k.repo = Some(repo);
+        k.repo().persist_device_state().unwrap();
+        sync(&mut server, &mut k).unwrap();
+        let k_id = k.repo().this_device_id().unwrap();
+        let k_pub = kk.public(k_id).unwrap();
+
+        // The user's plain yes on A.
+        sync(&mut server, &mut a).unwrap();
+        a.repo().refresh_pending_rotation().unwrap();
+        a.repo().accept_kit_restored(k_id, &ka).unwrap();
+        assert_eq!(trust(&a).levels.get(&k_id), Some(&TrustLevel::Tofu));
+        if verify {
+            let transcript = [9u8; 32];
+            let pop = sign_pop(&kk, &transcript, &k_pub).unwrap();
+            a.repo().verify_device(&k_pub, &transcript, &pop).unwrap();
+            assert_eq!(trust(&a).levels.get(&k_id), Some(&TrustLevel::Verified));
+        }
+        sync(&mut server, &mut a).unwrap();
+        sync(&mut server, &mut b).unwrap();
+        b.repo().refresh_pending_rotation().unwrap();
+        assert_eq!(trust(&b).levels.get(&k_id), Some(&TrustLevel::Tofu));
+
+        // K, pinned, removes A.
+        sync(&mut server, &mut k).unwrap();
+        k.repo().refresh_pending_rotation().unwrap();
+        rotate_pushed(&mut server, &mut k, &kk, &sk, vec![a_id], &[]);
+        a.lock();
+        pull(&server, &mut a);
+        if verify {
+            assert_eq!(
+                tick(&a, NOW),
+                QuarantineTick::Waiting {
+                    erase_at: NOW + 7 * 86_400
+                }
+            );
+            assert_eq!(tick(&a, NOW + 7 * 86_400), QuarantineTick::Erased);
+        } else {
+            assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+            assert_eq!(tick(&a, NOW + YEAR), QuarantineTick::Locked);
+        }
+    }
+}
+
 /// A device V that A introduces itself (`Verified` on A), known to X too.
 fn verified_by_a(server: &mut Server, a: &mut Device, ka: &DeviceKeys, x: &mut Device) -> Peer {
     let v = Peer::new(Id::new());
