@@ -55,7 +55,7 @@ describe("content script in shadow roots (D1, D2)", () => {
     const f = last(r).forms[0]!;
     expect(f.kind).toBe("login");
     const reply = r.ext.deliver({ type: "fill", origin: ORIGIN, formRef: f.ref, values: { username: "alex@atlas.dev", current_password: "pw" } });
-    expect(reply).toEqual({ ok: true });
+    expect(reply).toMatchObject({ ok: true });
     expect(field(root, "u").value).toBe("alex@atlas.dev");
     expect(field(root, "p").value).toBe("pw");
     // The chain's submit clicks the button inside the root.
@@ -111,7 +111,7 @@ describe("content script in shadow roots (D1, D2)", () => {
     const r = begin();
     field(root, "u").focus();
     const f = last(r).forms[0]!;
-    expect(r.ext.deliver({ type: "fill", origin: ORIGIN, formRef: f.ref, values: { username: "alex@atlas.dev", current_password: "pw" } })).toEqual({ ok: true });
+    expect(r.ext.deliver({ type: "fill", origin: ORIGIN, formRef: f.ref, values: { username: "alex@atlas.dev", current_password: "pw" } })).toMatchObject({ ok: true });
     expect(root.activeElement).toBe(field(root, "u"));
   });
 

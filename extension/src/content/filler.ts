@@ -226,12 +226,27 @@ export interface FillerOptions {
   settleMs?: number;
 }
 
+export interface FillResult {
+  /** Controls written at once. */
+  now: number;
+  /** Roles written at once. */
+  filled: FieldRole[];
+  /** True when writes are still to come (region list reload, combobox pick). */
+  pending: boolean;
+  /** Every role this fill wrote, once its later writes are over (bounded by `settleMs` per wait). */
+  done: Promise<FieldRole[]>;
+  /** The roles written until now. */
+  soFar(): FieldRole[];
+}
+
 export interface Filler {
   /**
-   * Fills the fields of `formRef`; returns how many controls were written
-   * at once (a combobox counts when it was typed into). A region that waits
-   * for its list is written later, not counted.
+   * Fills the fields of `formRef`. A combobox counts only once an option
+   * was picked, a region that waits for its list once it is written: both
+   * come later, in `done`.
    */
+  fill(formRef: string, values: Partial<Record<FieldRole, string>>): FillResult;
+  /** `fill(...).now`: how many controls were written at once. */
   fillForm(formRef: string, values: Partial<Record<FieldRole, string>>): number;
   /** Resolves when every later write (region wait, combobox pick) is over. */
   settled(): Promise<void>;
@@ -302,6 +317,7 @@ export function createFiller(opts: FillerOptions): Filler {
   const pickInCombobox = async (
     input: HTMLInputElement,
     role: FieldRole,
+    tally: FieldRole[],
     typed: readonly string[],
     match: (o: OptionLike[]) => number,
     matchSelect: (sel: HTMLSelectElement) => number,
@@ -360,30 +376,35 @@ export function createFiller(opts: FillerOptions): Filler {
     if (input.isConnected) {
       written.set(input, nativeValue(input));
       opts.onFill?.(input, role);
+      tally.push(role);
       input.blur();
     }
     if (had instanceof HTMLElement && had !== input && had.isConnected) had.focus({ preventScroll: true });
     return true;
   };
 
-  return {
-    fillForm(formRef, values) {
-      return keepFocus(() => fillOnce(formRef, values));
-    },
-    settled() {
-      // Tasks queued while waiting are waited for too.
-      const wait = async (): Promise<void> => {
-        let seen: Promise<unknown>;
-        do {
-          seen = chain;
-          await seen;
-        } while (seen !== chain);
-      };
-      return wait();
-    },
+  // Tasks queued while waiting are waited for too.
+  const settled = async (): Promise<void> => {
+    let seen: Promise<unknown>;
+    do {
+      seen = chain;
+      await seen;
+    } while (seen !== chain);
   };
 
-  function fillOnce(formRef: string, values: Partial<Record<FieldRole, string>>): number {
+  const fill = (formRef: string, values: Partial<Record<FieldRole, string>>): FillResult => {
+    const tally: FieldRole[] = [];
+    const before = chain;
+    const now = keepFocus(() => fillOnce(formRef, values, tally));
+    const unique = () => [...new Set(tally)];
+    const filled = unique();
+    const pending = chain !== before;
+    return { now, filled, pending, done: pending ? settled().then(unique) : Promise.resolve(filled), soFar: unique };
+  };
+
+  return { fill, fillForm: (formRef, values) => fill(formRef, values).now, settled };
+
+  function fillOnce(formRef: string, values: Partial<Record<FieldRole, string>>, tally: FieldRole[]): number {
     {
       const first = opts.resolve(formRef, opts.analyze());
       if (!first) return 0;
@@ -431,6 +452,7 @@ export function createFiller(opts: FillerOptions): Filler {
         const el = target(slot, part);
         if (!el || !write(el, value, slot.role, geoNow())) return false;
         opts.onFill?.(el, slot.role);
+        tally.push(slot.role);
         written.push({ slot, part, el, value });
         return true;
       };
@@ -456,9 +478,8 @@ export function createFiller(opts: FillerOptions): Filler {
           if (el && isCombobox(el)) {
             const cc = itemCountry;
             const typed = cc ? [...langs.map((l) => countryName(cc, l)), v] : [v];
-            later(() => pickInCombobox(el, slot.role, typed, (o) => pickCountry(o, v, langs), (s) => matchOption(s, v, "country", geoNow())));
+            later(() => pickInCombobox(el, slot.role, tally, typed, (o) => pickCountry(o, v, langs), (s) => matchOption(s, v, "country", geoNow())));
             countryPending = true;
-            n++;
             continue;
           }
           const before = el ? nativeValue(el) : "";
@@ -485,8 +506,8 @@ export function createFiller(opts: FillerOptions): Filler {
         // A region field may also appear only once the country is chosen.
         const todo: Slot[] = regionSlots.length > 0 ? regionSlots.map((x) => x.slot) : countryChanged || countryPending ? [{ role: "region", nth: 0 }] : [];
         const formRef0 = form.ref;
-        /** One try at the region: true once it is written (or its combobox launched). */
-        const tryRegion = (slot: Slot, fresh: boolean): boolean => {
+        /** One try at the region: "written", "picking" (its combobox, counted once picked) or false. */
+        const tryRegion = (slot: Slot, fresh: boolean): "written" | "picking" | false => {
           if (fresh) {
             const again = opts.resolve(form.ref, opts.analyze()) ?? opts.resolve(formRef0, opts.analyze());
             if (!again) return false;
@@ -499,27 +520,27 @@ export function createFiller(opts: FillerOptions): Filler {
             const wanted = regionWanted(region, geo.country, postal);
             if (wanted.length === 0 && region === "") return false;
             const typed = typedRegion(wanted, region);
-            later(() => pickInCombobox(el, "region", typed, (o) => pickRegion(o, wanted, geo.country, region), (s) => matchOption(s, region, "region", geo)));
-            return true;
+            later(() => pickInCombobox(el, "region", tally, typed, (o) => pickRegion(o, wanted, geo.country, region), (s) => matchOption(s, region, "region", geo)));
+            return "picking";
           }
           // A region deduced from the postal code goes into a list only.
           if (region === "" && !(el instanceof HTMLSelectElement)) return false;
           if (!write(el, region, "region", geo)) return false;
           opts.onFill?.(el, "region");
+          tally.push("region");
           if (!fresh) written.push({ slot, part: undefined, el, value: region });
-          return true;
+          return "written";
         };
         for (const slot of todo) {
-          if (!countryPending && tryRegion(slot, false)) {
-            n++;
-            continue;
-          }
+          const r = countryPending ? false : tryRegion(slot, false);
+          if (r === "written") n++;
+          if (r !== false) continue;
           if (!countryChanged && !countryPending) continue;
           // Wait for the page to reload the list (or show the field).
           later(async () => {
             const container = refs.get(form.ref);
             const root = container?.getRootNode() ?? document;
-            await settle(root, () => tryRegion(slot, true), settleMs);
+            await settle(root, () => tryRegion(slot, true) !== false, settleMs);
           });
         }
       }

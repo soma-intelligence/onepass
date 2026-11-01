@@ -65,8 +65,8 @@ describe("country/state lab fixtures", () => {
       });
       const form = analyze().forms[0];
       expect(form, "the page's form is detected").toBeDefined();
-      expect(filler.fillForm(form!.ref, c.values)).toBeGreaterThan(0);
-      await filler.settled();
+      const r = filler.fill(form!.ref, c.values);
+      expect((await r.done).length).toBeGreaterThan(0);
       const got = Object.fromEntries(Object.keys(c.expect).map((k) => [k, read(k)]));
       expect(got).toEqual(c.expect);
     }, 10_000);

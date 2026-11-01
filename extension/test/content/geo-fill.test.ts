@@ -34,7 +34,8 @@ function setup(html: string, settleMs = 400) {
     settleMs,
   });
   const fill = (values: Values) => filler.fillForm(analyze().forms[0]!.ref, values);
-  return { filler, fill };
+  const fillAll = (values: Values) => filler.fill(analyze().forms[0]!.ref, values);
+  return { filler, fill, fillAll };
 }
 
 const ADDRESS = (country: string, region: string) => `
@@ -249,7 +250,7 @@ describe("ARIA comboboxes", () => {
       combobox("s", "State", [["CA", "California"], ["OR", "Oregon"]])));
     const pickedCountry = wireCombobox("c");
     const pickedState = wireCombobox("s");
-    expect(fill({ country: "FR", region: "Oregon" })).toBeGreaterThan(0);
+    expect(fill({ country: "FR", region: "Oregon" })).toBe(0);
     await filler.settled();
     expect(pickedCountry).toEqual(["FR"]);
     expect(pickedState).toEqual(["OR"]);
@@ -291,11 +292,29 @@ describe("ARIA comboboxes", () => {
     expect(clicks).toBe(0);
   });
 
-  it("does not click anything when the list never shows the value", async () => {
+  it("does not click anything when the list never shows the value, and counts nothing", async () => {
     const { fill, filler } = setup(ADDRESS(combobox("c", "Country", [["US", "United States"]]), ""), 150);
     const picked = wireCombobox("c");
-    fill({ country: "FR" });
+    expect(fill({ country: "FR" })).toBe(0);
     await filler.settled();
     expect(picked).toEqual([]);
+  });
+
+  it("a combobox counts only once an option is picked; typed text is restored", async () => {
+    const page = ADDRESS(combobox("c", "Country", [["US", "United States"], ["FR", "France"]]), "");
+    let t = setup(page, 150);
+    wireCombobox("c");
+    let r = t.fillAll({ country: "FR" });
+    expect(r.now).toBe(0);
+    expect(await r.done).toEqual(["country"]);
+
+    t = setup(page.replace(`["FR","France"]`, `["DE","Germany"]`), 150);
+    const picked = wireCombobox("c");
+    inp("c").value = "";
+    r = t.fillAll({ country: "FR" });
+    expect(r.now).toBe(0);
+    expect(await r.done).toEqual([]);
+    expect(picked).toEqual([]);
+    expect(inp("c").value).toBe("");
   });
 });

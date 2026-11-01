@@ -44,7 +44,7 @@ import {
   WatchedRoots,
 } from "./detect/shadow";
 import { domGeometry, type Geometry } from "./detect/visibility";
-import { createFiller } from "./filler";
+import { createFiller, SETTLE_MS } from "./filler";
 import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
@@ -120,6 +120,9 @@ function replyUrl(r: unknown): string | null {
   const url = (ok as { url?: unknown } | null | undefined)?.url;
   return typeof url === "string" ? url : null;
 }
+
+/** Longest wait of a fill reply for later writes (region list reload, combobox pick). */
+export const REPLY_MAX_MS = SETTLE_MS + 500;
 
 export function createContentScript(o: ContentOptions): ContentScript {
   const { doc, ext } = o;
@@ -265,7 +268,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
     return typeof origin === "string" && here !== null && origin === here;
   };
 
-  const onMessage = (message: unknown, sender: Sender, sendResponse: (r: unknown) => void): undefined => {
+  const onMessage = (message: unknown, sender: Sender, sendResponse: (r: unknown) => void): true | undefined => {
     if (!parts || stopped || sender?.id !== ext.runtime.id) return undefined;
     if (typeof message !== "object" || message === null) return undefined;
     const m = message as Partial<BgToCs> & Record<string, unknown>;
@@ -274,8 +277,29 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "fill": {
         const values = fillValues(m.values);
         if (pinned(m.origin) && typeof m.formRef === "string" && values) {
-          ok = parts.filler.fillForm(m.formRef, values) > 0;
-          if (ok) closeMenu(true);
+          const r = parts.filler.fill(m.formRef, values);
+          const reply = (filled: FieldRole[]) => {
+            const done = filled.length > 0;
+            if (done && parts && !stopped) closeMenu(true);
+            sendResponse({ ok: done, filled });
+          };
+          // A region that waits for its list, a combobox pick: the reply
+          // waits too (bounded), so it names what the page really holds.
+          if (r.pending) {
+            let sent = false;
+            const once = (filled: FieldRole[]) => {
+              if (sent) return;
+              sent = true;
+              clearTimeout(cap);
+              reply(filled);
+            };
+            // Later writes may chain (combobox, then region): the reply never waits past the cap.
+            const cap = setTimeout(() => once(r.soFar()), REPLY_MAX_MS);
+            void r.done.then(once, () => once(r.filled));
+            return true;
+          }
+          reply(r.filled);
+          return undefined;
         }
         break;
       }
