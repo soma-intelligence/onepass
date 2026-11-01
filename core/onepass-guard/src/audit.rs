@@ -82,6 +82,13 @@ pub struct AuditEntry {
     /// when nobody was asked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approved_on: Option<String>,
+    /// SSH: the destination a signature was bound to (host key fingerprint
+    /// and the bookmarks it matched), when the connection was bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    /// SSH: the SSHSIG namespace of a signature request, if it is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 /// An entry as stored, with its position and time.
@@ -125,10 +132,15 @@ struct Line {
     field: Option<String>,
     decision: String,
     outcome: String,
-    // Last before `prev`, and omitted when absent: lines written before it
-    // keep their exact bytes (the hash chain covers those bytes).
+    // These optional fields come last before `prev` and are omitted when
+    // absent: lines written before them keep their exact bytes (the hash
+    // chain covers those bytes).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     approved_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    destination: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace: Option<String>,
     prev: String,
 }
 
@@ -294,6 +306,8 @@ impl AuditLog {
             decision: e.decision.clone(),
             outcome: e.outcome.clone(),
             approved_on: e.approved_on.clone(),
+            destination: e.destination.clone(),
+            namespace: e.namespace.clone(),
             prev: state.hash.clone(),
         };
         let json = serde_json::to_string(&line).map_err(|_| GuardError::Format("audit line"))?;
@@ -437,6 +451,8 @@ pub fn verify_log(path: &Path, signer: &dyn LocalSigner) -> Result<AuditVerifica
                 decision: l.decision.clone(),
                 outcome: l.outcome.clone(),
                 approved_on: l.approved_on.clone(),
+                destination: l.destination.clone(),
+                namespace: l.namespace.clone(),
             },
         });
         last = Some(l);
@@ -517,6 +533,8 @@ mod tests {
             decision: "allow_once".into(),
             outcome: "ok".into(),
             approved_on: None,
+            destination: None,
+            namespace: None,
         }
     }
 

@@ -15,6 +15,7 @@ onepass-core = { path = "../onepass-core" }
 onepass-guard = { path = "../onepass-guard" }
 onepass-mcp = { path = "../onepass-mcp" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
+onepass-peer = { path = "../onepass-peer" }
 data-encoding.workspace = true
 # SIGINT and SIGTERM handlers of `onepass ssh-agent` (commands/ssh_agent.rs).
 libc = "0.2.191"

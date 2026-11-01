@@ -1,25 +1,49 @@
 //! Agent logic: which request gets which response, behind user approval
-//! (spec 6.2 to 6.4).
+//! (milestone 7 spec 6.2 to 6.4, hardening spec 2026-10-26 section 6).
 //!
 //! The keys live in the vault: a [`KeySource`] lists them on every request
 //! and loads a private key only to sign, after approval. Nothing is added to
 //! or removed from the agent by clients.
+//!
+//! The agent runs in one of two modes, chosen by its [`AgentGuards`]:
+//!
+//! - Paired ([`AgentGuards::new`], `onepass ssh-agent`): only paired clients
+//!   are served. The server identifies each connection once (code identity
+//!   through `onepass-peer`) and the agent reads the client registry at
+//!   every request. A sign request goes through, in this order: uid,
+//!   control channel, identity, pairing, lock, key known and allowed for the
+//!   client, RSA SHA-1 refusal, forwarding, host binding (with the `git`
+//!   exception), audit log ready, signature rate limit, grant (signed
+//!   grants file), prompt rate limit, prompt (identical requests
+//!   coalesced), strong authentication (`--strong`), then the signature.
+//! - Open ([`AgentGuards::open`], the app's agent until it pairs SSH
+//!   clients): every client of this user is asked, no rate limit, grants in
+//!   memory, and a key whose bookmarks the destination does not match is
+//!   asked about with a warning instead of refused.
+//!
+//! In both modes a grant is keyed by the client's code identity (never the
+//! path of a pid), the key and the destination the connection is bound to,
+//! and a client whose code cannot be read is never remembered.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use data_encoding::BASE64;
+use data_encoding::{BASE64, HEXLOWER};
 use onepass_core::Id;
 use onepass_core::model::{FieldValue, Item, ItemType};
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
 use onepass_guard::{
-    ApprovalRequest, Approver, AuditEntry, AuditSink, Decision, Surface, Target, challenge_code,
-    decision_label,
+    Admit, Answer, ApprovalRequest, Approver, AuditEntry, AuditSink, ClientRecord, ClientRegistry,
+    ClientRegistryLoader, Clock, Decision, Gated, GrantCheck, GrantRequest, GrantStore, GuardError,
+    Kind, Limits, LocalSigner, MAX_GRANT_TTL, OUTCOME_CLIENT_COOLING_DOWN, OUTCOME_GRANT_EXPIRED,
+    OUTCOME_GRANT_REVOKED, OUTCOME_HOST_NOT_BOUND, OUTCOME_NOT_PAIRED, OUTCOME_RATE_LIMITED,
+    OUTCOME_REGISTRY_UNUSABLE, OUTCOME_STRONG_AUTH_FAILED, PromptGate, StrongAuth, StrongOutcome,
+    Surface, SystemClock, Target, Throttle, challenge_code, decision_label, sanitize_for_display,
 };
-use onepass_peer::effective_uid;
+use onepass_peer::{ClientIdentity, CodeIdentity, effective_uid};
 use zeroize::Zeroizing;
 
 use crate::keys::{AgentKey, fingerprint_of_blob, verify_signature};
@@ -33,9 +57,19 @@ use crate::wire::{Request, Response, SSH_AGENT_RSA_SHA2_256, SSH_AGENT_RSA_SHA2_
 const ACTION_SIGN: &str = "ssh_sign";
 /// Field that holds the private key of an SSH Key item.
 const KEY_FIELD: &str = "private_key";
+/// Audit action of a key listing refused before pairing.
+const ACTION_LIST: &str = "ssh_list";
+/// Audit action of a lock or unlock refused before pairing.
+const ACTION_LOCK: &str = "ssh_lock";
 /// Client name when the peer's executable is unknown.
 const UNKNOWN_PROCESS: &str = "unknown process";
 const SESSION_BIND: &str = "session-bind@openssh.com";
+/// SSHSIG namespace that may sign without a host binding (commit signing),
+/// for keys whose `git_signing` is yes.
+const GIT_NAMESPACE: &str = "git";
+/// Most audit entries per minute for refusals before pairing: a client
+/// looping on requests must not flood the log (it is still refused).
+pub const MAX_UNPAIRED_AUDIT_PER_MIN: usize = 6;
 
 /// What the kernel says about a connected client (spec 6.3). Each part is
 /// `None` when the platform or the kernel cannot tell.
@@ -49,10 +83,14 @@ pub struct PeerInfo {
     /// the process can exec another program after connecting.
     pub exe: Option<String>,
     /// Code-signing client id of the process that connected, read through
-    /// its audit token (`onepass_peer::identify_peer`): the identity grants
-    /// are keyed by. `None` when it cannot be read; such a peer is never
-    /// remembered.
+    /// its audit token (`onepass_peer::identify_peer`): the identity open
+    /// mode keys grants by. `None` when it cannot be read; such a peer is
+    /// never remembered.
     pub code: Option<String>,
+    /// Code identity of the peer, read once when the connection was
+    /// accepted; `None` when the system could not tell (never served in
+    /// paired mode).
+    pub identity: Option<ClientIdentity>,
 }
 
 /// A key the agent offers: public data and settings of one SSH Key item.
@@ -72,8 +110,12 @@ pub struct KeyInfo {
     pub fingerprint: String,
     /// Ask at every signature, never remember.
     pub confirm_each_use: bool,
-    /// Host bookmarks (names or OpenSSH `Host` patterns).
+    /// Host bookmarks (names or OpenSSH `Host` patterns). When not empty,
+    /// the key only signs for a bound connection to one of them.
     pub hosts: Vec<String>,
+    /// May sign SSHSIG requests of the `git` namespace without a host
+    /// binding (commit signing).
+    pub git_signing: bool,
 }
 
 /// Where the agent's keys come from. Errors are plain messages without
@@ -182,6 +224,7 @@ pub fn ssh_keys_of<S: RecordStore>(
                 public_blob,
                 confirm_each_use: field_truthy(&item, "confirm_each_use"),
                 hosts,
+                git_signing: field_truthy(&item, "git_signing"),
             });
         }
     }
@@ -228,6 +271,16 @@ pub struct BoundHost {
     pub forwarded: bool,
 }
 
+/// When the user is asked (`onepass ssh-agent --confirm`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Confirm {
+    /// A prompt may grant the client the key for a few minutes.
+    #[default]
+    Session,
+    /// Every signature is asked: no grant is ever given or used.
+    Always,
+}
+
 /// Agent settings.
 #[derive(Clone, Debug)]
 pub struct AgentConfig {
@@ -236,8 +289,13 @@ pub struct AgentConfig {
     /// `known_hosts` files read to name a bound destination.
     pub known_hosts: Vec<PathBuf>,
     /// Ceiling of a grant: an "allow for N minutes" answer lasts N minutes,
-    /// at most this long.
+    /// at most this long (and never more than [`MAX_GRANT_TTL`]).
     pub remember_for: Duration,
+    /// Session (grants allowed) or always ask.
+    pub confirm: Confirm,
+    /// Strong authentication (Touch ID or master password) at every
+    /// signature, grant or not.
+    pub strong: bool,
 }
 
 impl Default for AgentConfig {
@@ -246,8 +304,171 @@ impl Default for AgentConfig {
             allow_forwarded: false,
             known_hosts: Vec::new(),
             remember_for: Duration::from_secs(3600),
+            confirm: Confirm::Session,
+            strong: false,
         }
     }
+}
+
+/// Reads the client registry, verified (called at every request). `Send`:
+/// the agent serves connections from several threads.
+pub type RegistryFn = Box<dyn FnMut() -> Result<ClientRegistry, GuardError> + Send>;
+
+/// Liveness of the control channel: false once the agent can no longer be
+/// told about revocations (it must stop serving).
+pub type LivenessFn = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// How long a request waits for an identical pending prompt by default
+/// (the terminal approver's answer timeout).
+pub const DEFAULT_PROMPT_WAIT: Duration = Duration::from_secs(60);
+
+/// The pairing state of a paired agent.
+struct Pairing {
+    /// Reads the paired clients, at every request.
+    registry: RegistryFn,
+    /// The grants file, shared with the control channel callback.
+    grants: Arc<Mutex<GrantStore>>,
+    /// Signs and verifies the grants file (the account's local key).
+    grants_signer: Box<dyn LocalSigner + Send>,
+}
+
+/// Strong authentication that never succeeds: `strong` asked of an open
+/// agent refuses every signature.
+struct NoStrong;
+
+impl StrongAuth for NoStrong {
+    fn verify(&self, _reason: &str) -> StrongOutcome {
+        StrongOutcome::Unavailable
+    }
+}
+
+/// The hardening state of the agent (mirrors the MCP server's guards).
+pub struct AgentGuards {
+    /// Registry and grants file of a paired agent; `None` for an open one.
+    pairing: Option<Pairing>,
+    /// Rate limits and the approval fatigue guard (paired agent only).
+    pub throttle: Throttle,
+    /// Strong authentication for `--strong`.
+    pub strong: Arc<dyn StrongAuth>,
+    /// Wall and monotonic time.
+    pub clock: Arc<dyn Clock>,
+    /// The control channel's liveness, when one is running: every request
+    /// is refused (and the server stops) once it reports false.
+    pub liveness: Option<LivenessFn>,
+    /// How long a request waits for an identical pending prompt.
+    pub prompt_wait: Duration,
+}
+
+impl AgentGuards {
+    /// Guards with the SSH limits ([`Limits::ssh`]), no control channel and
+    /// the default prompt wait. Set the public fields to change them.
+    pub fn new(
+        registry: RegistryFn,
+        grants: Arc<Mutex<GrantStore>>,
+        grants_signer: Box<dyn LocalSigner + Send>,
+        strong: Arc<dyn StrongAuth>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        AgentGuards {
+            pairing: Some(Pairing {
+                registry,
+                grants,
+                grants_signer,
+            }),
+            throttle: Throttle::new(Limits::ssh()),
+            strong,
+            clock,
+            liveness: None,
+            prompt_wait: DEFAULT_PROMPT_WAIT,
+        }
+    }
+
+    /// Guards of an open agent (the app's, until it pairs SSH clients):
+    /// every client of this user is asked, without rate limits, and grants
+    /// live in memory until they expire, the agent stops or LOCK. A
+    /// bookmarked key is asked about with a warning on another destination
+    /// instead of refused. Strong authentication is not available
+    /// (`AgentConfig::strong` then refuses every signature).
+    pub fn open() -> Self {
+        AgentGuards {
+            pairing: None,
+            throttle: Throttle::new(Limits::ssh()),
+            strong: Arc::new(NoStrong),
+            clock: Arc::new(SystemClock),
+            liveness: None,
+            prompt_wait: DEFAULT_PROMPT_WAIT,
+        }
+    }
+}
+
+/// A registry reader over `<path>` (normally `<data-dir>/clients.json`):
+/// each call verifies the signed file through `loader`, which refuses a
+/// registry older than one already seen and drops the clients unpaired by
+/// control notifications (share `loader` with the control channel
+/// callback, which calls `apply_unpairs` on it).
+pub fn file_registry<S: LocalSigner + Send + 'static>(
+    path: PathBuf,
+    signer: S,
+    account_id: String,
+    loader: Arc<Mutex<ClientRegistryLoader>>,
+) -> RegistryFn {
+    Box::new(move || {
+        let mut loader = loader.lock().unwrap_or_else(|e| e.into_inner());
+        loader.load(&path, &signer, &account_id)
+    })
+}
+
+/// The verified code identity as stored in a client record (`code`).
+pub fn code_json(code: &CodeIdentity) -> serde_json::Value {
+    match code {
+        CodeIdentity::Platform { identifier } => {
+            serde_json::json!({ "kind": "platform", "identifier": identifier })
+        }
+        CodeIdentity::Team {
+            team_id,
+            identifier,
+        } => serde_json::json!({ "kind": "team", "team_id": team_id, "identifier": identifier }),
+        CodeIdentity::AdHoc {
+            path,
+            cdhash,
+            hardened,
+        } => serde_json::json!({
+            "kind": "adhoc", "path": path.to_string_lossy(), "cdhash": cdhash, "hardened": hardened
+        }),
+        CodeIdentity::Unsigned { path, sha256 } => serde_json::json!({
+            "kind": "unsigned", "path": path.to_string_lossy(), "sha256": sha256
+        }),
+    }
+}
+
+/// A client record paired for SSH: `ssh_keys` lists the fingerprints the
+/// client may see and use (`None` = every key). Used by pairing code and
+/// tests.
+pub fn ssh_client_record(
+    code: &CodeIdentity,
+    label: &str,
+    ssh_keys: Option<BTreeSet<String>>,
+    paired_at: i64,
+) -> ClientRecord {
+    ClientRecord {
+        id: code.client_id(),
+        surface: Surface::Ssh,
+        label: label.to_owned(),
+        code: code_json(code),
+        paired_at,
+        mcp_scopes: None,
+        ssh_keys,
+    }
+}
+
+/// The grant key of a signature: a digest of the client id, the key
+/// fingerprint and the fingerprint of the host key the connection is bound
+/// to (`None` when unbound), so the grants file names none of them. A grant
+/// given for one destination does not sign for another.
+pub fn grant_key(client_id: &str, fingerprint: &str, destination: Option<&str>) -> String {
+    let canonical = serde_json::json!([client_id, fingerprint, destination]).to_string();
+    let d = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, canonical.as_bytes());
+    HEXLOWER.encode(d.as_ref())
 }
 
 /// The response to a request, and whether to close the connection after it.
@@ -270,58 +491,222 @@ impl Reply {
     fn failure() -> Reply {
         Reply::send(Response::Failure)
     }
+
+    fn close() -> Reply {
+        Reply {
+            response: Response::Failure,
+            close: true,
+        }
+    }
 }
 
-/// The SSH agent: approvals, session grants, lock state and audit.
-pub struct Agent<K: KeySource> {
+/// An approver shared behind an `Arc`, for [`PromptGate`].
+struct SharedApprover(Arc<dyn Approver>);
+
+impl Approver for SharedApprover {
+    fn approve(&self, req: &ApprovalRequest) -> Answer {
+        self.0.approve(req)
+    }
+
+    fn code_is_public(&self) -> bool {
+        self.0.code_is_public()
+    }
+}
+
+/// The client behind a request: a paired client as the registry describes
+/// it, or (open agent) the peer as the kernel describes it.
+struct Client {
+    /// Client id (code identity). Always set for a paired client; `None`
+    /// for an open agent's peer whose code cannot be read (never
+    /// remembered).
+    id: Option<String>,
+    /// Pairing label, or the executable path for an open agent.
+    label: String,
+    /// Admitted through the registry (paired agent).
+    paired: bool,
+    /// Platform or team identity (the system vouches for the code).
+    verified: bool,
+    /// Ad hoc code only: whether it runs with the hardened runtime.
+    hardened: Option<bool>,
+    /// Fingerprints the client may use, `None` = all.
+    ssh_keys: Option<BTreeSet<String>>,
+}
+
+impl Client {
+    fn allows(&self, key: &KeyInfo) -> bool {
+        self.ssh_keys
+            .as_ref()
+            .is_none_or(|k| k.contains(&key.fingerprint))
+    }
+}
+
+/// Who an audit entry names.
+#[derive(Clone)]
+struct Who {
+    exe: String,
+    client_id: Option<String>,
+    label: Option<String>,
+}
+
+impl Who {
+    fn of(peer: &PeerInfo) -> Who {
+        let exe = peer
+            .exe
+            .clone()
+            .or_else(|| {
+                peer.identity
+                    .as_ref()
+                    .and_then(|i| i.exe.as_ref())
+                    .map(|p| p.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| UNKNOWN_PROCESS.to_owned());
+        Who {
+            exe,
+            client_id: peer
+                .identity
+                .as_ref()
+                .map(|i| i.code.client_id())
+                .or_else(|| peer.code.clone()),
+            label: None,
+        }
+    }
+
+    fn paired(mut self, client: &Client) -> Who {
+        if client.paired {
+            self.label = Some(client.label.clone());
+        }
+        self
+    }
+}
+
+/// Destination, namespace and approval origin of a sign request, for the
+/// audit log.
+#[derive(Clone, Default)]
+struct SignCtx {
+    destination: Option<String>,
+    namespace: Option<String>,
+    /// Where the prompt was answered (`mac`, `phone:<id>`), once known.
+    approved_on: Option<String>,
+}
+
+/// The mutable state of the agent, behind one mutex never held during a
+/// prompt or a strong authentication.
+struct Inner<K: KeySource> {
     source: K,
-    approver: Arc<dyn Approver>,
     audit: Box<dyn AuditSink + Send>,
-    config: AgentConfig,
     /// SHA-256 of the lock passphrase while locked.
     locked: Option<Zeroizing<Vec<u8>>>,
-    /// "Allow for the session" grants: (key fingerprint, client code id,
-    /// bound destination host key fingerprint) to expiry.
-    grants: HashMap<(String, String, Option<String>), Instant>,
+    /// Wall time of the last LOCK: grants created at or before it are not
+    /// used (a grant lasts at most until LOCK).
+    lock_floor: Option<i64>,
+    /// Registry and grants file of a paired agent.
+    pairing: Option<Pairing>,
+    /// Grants of an open agent: grant key to expiry (monotonic).
+    memory_grants: HashMap<String, Instant>,
+    throttle: Throttle,
+    /// When the last refusals before pairing were audited, within the last
+    /// minute.
+    unpaired_audited: VecDeque<Instant>,
+}
+
+/// The SSH agent: paired clients, approvals, grants, lock state and audit.
+/// Shared between the connection threads (`&self` everywhere); prompts and
+/// strong authentication run without holding the agent's state, so other
+/// clients are served meanwhile and identical requests share one prompt.
+pub struct Agent<K: KeySource> {
+    inner: Mutex<Inner<K>>,
+    /// Paired agent (see the module documentation).
+    paired: bool,
+    gate: PromptGate<SharedApprover>,
+    strong: Arc<dyn StrongAuth>,
+    clock: Arc<dyn Clock>,
+    liveness: Option<LivenessFn>,
+    config: AgentConfig,
+}
+
+/// The outcome of the checks before a prompt.
+struct Prepared {
+    who: Who,
+    client: Client,
+    key: KeyInfo,
+    ctx: SignCtx,
+    /// The grant key when the request may be remembered.
+    grant_key: Option<String>,
+    /// Set when a live grant covers the request (no prompt).
+    remembered: bool,
+    req: ApprovalRequest,
 }
 
 impl<K: KeySource> Agent<K> {
-    /// An unlocked agent with no grant.
+    /// An unlocked agent, paired or open as `guards` say.
     pub fn new(
         source: K,
         approver: Arc<dyn Approver>,
         audit: Box<dyn AuditSink + Send>,
         config: AgentConfig,
+        guards: AgentGuards,
     ) -> Self {
         Agent {
-            source,
-            approver,
-            audit,
+            paired: guards.pairing.is_some(),
+            inner: Mutex::new(Inner {
+                source,
+                audit,
+                locked: None,
+                lock_floor: None,
+                pairing: guards.pairing,
+                memory_grants: HashMap::new(),
+                throttle: guards.throttle,
+                unpaired_audited: VecDeque::new(),
+            }),
+            gate: PromptGate::new(SharedApprover(approver), guards.prompt_wait),
+            strong: guards.strong,
+            clock: guards.clock,
+            liveness: guards.liveness,
             config,
-            locked: None,
-            grants: HashMap::new(),
         }
     }
 
+    /// False once the control channel is lost: the agent refuses every
+    /// request and [`crate::serve`] stops.
+    pub fn control_alive(&self) -> bool {
+        self.liveness.as_ref().is_none_or(|alive| alive())
+    }
+
+    /// Requests of `client_id` for the key `fingerprint`, on a connection
+    /// not bound to a destination, waiting for an identical pending prompt
+    /// (diagnostics and tests).
+    pub fn waiting_for_prompt(&self, client_id: &str, fingerprint: &str) -> usize {
+        self.gate
+            .waiting(client_id, &grant_key(client_id, fingerprint, None))
+    }
+
+    fn state(&self) -> MutexGuard<'_, Inner<K>> {
+        // A panic under the lock leaves counters behind at worst; every
+        // decision is taken again from the files and the registry.
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Handles one request from a peer on a connection.
-    pub fn handle(&mut self, conn: &mut ConnState, peer: &PeerInfo, req: Request) -> Reply {
+    pub fn handle(&self, conn: &mut ConnState, peer: &PeerInfo, req: Request) -> Reply {
         // A peer of another uid, or whose uid the system cannot tell, is
         // refused and disconnected.
         if peer.uid != Some(effective_uid()) {
-            return Reply {
-                response: Response::Failure,
-                close: true,
-            };
+            return Reply::close();
+        }
+        if !self.control_alive() {
+            let mut st = self.state();
+            st.refuse_unpaired(&*self.clock, &Who::of(peer), ACTION_SIGN, "refused");
+            return Reply::close();
         }
         match req {
-            Request::RequestIdentities => self.identities(),
+            Request::RequestIdentities => self.identities(peer),
             Request::Sign {
                 key_blob,
                 data,
                 flags,
             } => self.sign(conn, peer, &key_blob, &data, flags),
-            Request::Lock(pass) => self.lock(&pass),
-            Request::Unlock(pass) => self.unlock(&pass),
+            Request::Lock(pass) => self.lock(peer, &pass),
+            Request::Unlock(pass) => self.unlock(peer, &pass),
             Request::Extension { name, contents } if name == SESSION_BIND => {
                 self.session_bind(conn, peer, &contents)
             }
@@ -329,41 +714,67 @@ impl<K: KeySource> Agent<K> {
         }
     }
 
-    fn identities(&mut self) -> Reply {
-        if self.locked.is_some() {
+    /// The paired client behind `peer`, or the refusal already audited
+    /// (at most [`MAX_UNPAIRED_AUDIT_PER_MIN`] entries a minute).
+    fn admit(&self, st: &mut Inner<K>, peer: &PeerInfo, action: &str) -> Result<Client, ()> {
+        st.admit(peer).map_err(|outcome| {
+            st.refuse_unpaired(&*self.clock, &Who::of(peer), action, outcome);
+        })
+    }
+
+    fn identities(&self, peer: &PeerInfo) -> Reply {
+        let mut st = self.state();
+        let Ok(client) = self.admit(&mut st, peer, ACTION_LIST) else {
+            return Reply::send(Response::Identities(Vec::new()));
+        };
+        if st.locked.is_some() {
             return Reply::send(Response::Identities(Vec::new()));
         }
-        match self.source.list() {
+        match st.source.list() {
             Ok(keys) => Reply::send(Response::Identities(
-                keys.into_iter().map(|k| (k.public_blob, k.title)).collect(),
+                keys.into_iter()
+                    .filter(|k| client.allows(k))
+                    .map(|k| (k.public_blob, k.title))
+                    .collect(),
             )),
             Err(_) => Reply::failure(),
         }
     }
 
-    fn lock(&mut self, pass: &[u8]) -> Reply {
-        if self.locked.is_some() {
+    fn lock(&self, peer: &PeerInfo, pass: &[u8]) -> Reply {
+        let mut st = self.state();
+        if self.admit(&mut st, peer, ACTION_LOCK).is_err() || st.locked.is_some() {
             return Reply::failure();
         }
-        self.locked = Some(digest(pass));
-        // Spec 6.3: a session grant lasts at most until LOCK.
-        self.grants.clear();
+        st.locked = Some(digest(pass));
+        // Spec 6.3: a grant lasts at most until LOCK.
+        st.lock_floor = Some(self.clock.now_unix());
+        st.memory_grants.clear();
         Reply::send(Response::Success)
     }
 
-    fn unlock(&mut self, pass: &[u8]) -> Reply {
-        let Some(expected) = &self.locked else {
+    fn unlock(&self, peer: &PeerInfo, pass: &[u8]) -> Reply {
+        let mut st = self.state();
+        if self.admit(&mut st, peer, ACTION_LOCK).is_err() {
+            return Reply::failure();
+        }
+        let Some(expected) = &st.locked else {
             return Reply::failure();
         };
         let given = digest(pass);
         if aws_lc_rs::constant_time::verify_slices_are_equal(expected, &given).is_err() {
             return Reply::failure();
         }
-        self.locked = None;
+        st.locked = None;
         Reply::send(Response::Success)
     }
 
-    fn session_bind(&mut self, conn: &mut ConnState, peer: &PeerInfo, contents: &[u8]) -> Reply {
+    fn session_bind(&self, conn: &mut ConnState, peer: &PeerInfo, contents: &[u8]) -> Reply {
+        let mut st = self.state();
+        let Ok(client) = self.admit(&mut st, peer, ACTION_SIGN) else {
+            return Reply::failure();
+        };
+        let who = Who::of(peer).paired(&client);
         let parsed = (|| {
             let mut r = SshReader::new(contents);
             let host_key = r.string()?.to_vec();
@@ -374,25 +785,19 @@ impl<K: KeySource> Agent<K> {
             Ok::<_, crate::wire::WireError>((host_key, session_id, signature, forwarding))
         })();
         let Ok((host_key, session_id, signature, forwarding)) = parsed else {
-            self.record_bind(peer, "bind_malformed");
-            return Reply {
-                response: Response::Failure,
-                close: true,
-            };
+            st.record_bind(&who, "bind_malformed");
+            return Reply::close();
         };
         if verify_signature(&host_key, &session_id, &signature).is_err() {
-            self.record_bind(peer, "bind_bad_signature");
-            return Reply {
-                response: Response::Failure,
-                close: true,
-            };
+            st.record_bind(&who, "bind_bad_signature");
+            return Reply::close();
         }
         let forwarded = forwarding != 0;
         match &conn.bound {
             // As OpenSSH: a connection bound for direct use cannot be bound
             // again (only forwarded hops add binds).
             Some(prev) if !prev.forwarded => {
-                self.record_bind(peer, "bind_refused");
+                st.record_bind(&who, "bind_refused");
                 Reply::failure()
             }
             // Once forwarded, always forwarded: a later hop cannot clear it.
@@ -413,157 +818,408 @@ impl<K: KeySource> Agent<K> {
         }
     }
 
+    /// Counts a request of `kind` for the client, or refuses it (audited;
+    /// a cooling down period is told once on the terminal). An open agent
+    /// has no rate limit.
+    fn throttle(&self, st: &mut Inner<K>, p: &Prepared, kind: Kind) -> Result<(), ()> {
+        let Some(id) = p.client.id.as_deref().filter(|_| self.paired) else {
+            return Ok(());
+        };
+        let outcome = match st.throttle.admit(&*self.clock, id, kind) {
+            Admit::Ok => return Ok(()),
+            Admit::RateLimited => OUTCOME_RATE_LIMITED,
+            Admit::CoolingDown {
+                until,
+                first_notice,
+            } => {
+                if first_notice {
+                    let left = until.saturating_duration_since(self.clock.monotonic());
+                    eprintln!(
+                        "onepass ssh-agent: {} refused for {} min after repeated denials",
+                        sanitize_for_display(&p.client.label),
+                        left.as_secs().div_ceil(60)
+                    );
+                }
+                OUTCOME_CLIENT_COOLING_DOWN
+            }
+        };
+        st.record(&p.who, Some(&p.key), &p.ctx, "policy", outcome);
+        Err(())
+    }
+
+    /// Counts a user decision for the approval fatigue guard (paired agent
+    /// only).
+    fn record_decision(&self, st: &mut Inner<K>, client: &Client, denied: bool) {
+        if let Some(id) = client.id.as_deref().filter(|_| self.paired) {
+            st.throttle.record_decision(&*self.clock, id, denied);
+        }
+    }
+
+    /// Every check up to the prompt, under the state lock. `Err` carries the
+    /// reply of a refusal, already audited.
+    fn prepare(
+        &self,
+        st: &mut Inner<K>,
+        conn: &ConnState,
+        peer: &PeerInfo,
+        key_blob: &[u8],
+        data: &[u8],
+        flags: u32,
+    ) -> Result<Prepared, Reply> {
+        let client = self
+            .admit(st, peer, ACTION_SIGN)
+            .map_err(|()| Reply::failure())?;
+        let who = Who::of(peer).paired(&client);
+        let mut ctx = SignCtx {
+            destination: None,
+            namespace: sshsig_namespace(data),
+            approved_on: None,
+        };
+        let refuse = |st: &mut Inner<K>, key: Option<&KeyInfo>, ctx: &SignCtx, outcome: &str| {
+            st.record(&who, key, ctx, "policy", outcome);
+            Reply::failure()
+        };
+        if st.locked.is_some() {
+            return Err(refuse(st, None, &ctx, "refused"));
+        }
+        let key = match st.source.list() {
+            Ok(keys) => keys.into_iter().find(|k| k.public_blob == key_blob),
+            Err(_) => return Err(refuse(st, None, &ctx, "error")),
+        };
+        let Some(key) = key else {
+            return Err(refuse(st, None, &ctx, "refused"));
+        };
+        // A key outside the client's list is unknown to it.
+        if !client.allows(&key) {
+            return Err(refuse(st, None, &ctx, "refused"));
+        }
+        // RSA with SHA-1 (no SHA-2 flag) is refused before asking anyone.
+        if is_rsa(&key.public_blob)
+            && flags & (SSH_AGENT_RSA_SHA2_256 | SSH_AGENT_RSA_SHA2_512) == 0
+        {
+            return Err(refuse(st, Some(&key), &ctx, "refused"));
+        }
+        let forwarded = conn.bound.as_ref().is_some_and(|b| b.forwarded);
+        let matched = conn.bound.as_ref().map(|b| {
+            let hosts = self.bookmarked_hosts(&b.host_key, &key.hosts);
+            let fp = fingerprint_of_blob(&b.host_key);
+            ctx.destination = Some(if hosts.is_empty() {
+                fp
+            } else {
+                format!("{fp} ({})", hosts.join(", "))
+            });
+            !hosts.is_empty()
+        });
+        if forwarded && !self.config.allow_forwarded {
+            return Err(refuse(st, Some(&key), &ctx, "refused"));
+        }
+        // Host binding (spec 6), paired agent: a key with bookmarks signs
+        // only for a connection bound to one of them, except a commit
+        // signature by a `git_signing` key. An open agent asks with a
+        // warning instead.
+        let git_exception = key.git_signing && ctx.namespace.as_deref() == Some(GIT_NAMESPACE);
+        if self.paired && !key.hosts.is_empty() && matched != Some(true) && !git_exception {
+            return Err(refuse(st, Some(&key), &ctx, OUTCOME_HOST_NOT_BOUND));
+        }
+        // Fail closed: no signature unless it can be logged.
+        if st.audit.ready().is_err() {
+            return Err(refuse(st, Some(&key), &ctx, "audit_unusable"));
+        }
+
+        // A grant is only possible for identified code: one id shared by
+        // every unidentified peer would share its grants. It is keyed by
+        // the code the kernel vouches for, never by the path of a pid (a
+        // client can fork, exec `ssh` and keep the connection), and by the
+        // destination the session is bound to.
+        let rememberable = self.config.confirm == Confirm::Session
+            && !key.confirm_each_use
+            && !forwarded
+            && client.id.is_some();
+        let destination = conn
+            .bound
+            .as_ref()
+            .map(|b| fingerprint_of_blob(&b.host_key));
+        let mut p = Prepared {
+            grant_key: client
+                .id
+                .as_deref()
+                .filter(|_| rememberable)
+                .map(|id| grant_key(id, &key.fingerprint, destination.as_deref())),
+            req: self.approval_request(conn, &client, peer, &key, &ctx, forwarded, rememberable),
+            who,
+            client,
+            key,
+            ctx,
+            remembered: false,
+        };
+        self.throttle(st, &p, Kind::Secret)
+            .map_err(|()| Reply::failure())?;
+        if let Some(gk) = &p.grant_key {
+            p.remembered = self.grant_live(st, &p, gk);
+        }
+        if !p.remembered {
+            self.throttle(st, &p, Kind::Prompt)
+                .map_err(|()| Reply::failure())?;
+        }
+        Ok(p)
+    }
+
+    /// Whether a live grant covers the request: the signed grants file of a
+    /// paired agent (an expired or revoked grant is audited), the memory of
+    /// an open one. A grant from before the last LOCK is not used.
+    fn grant_live(&self, st: &mut Inner<K>, p: &Prepared, gk: &str) -> bool {
+        let Some(id) = p.client.id.as_deref() else {
+            return false;
+        };
+        let Some(pairing) = &st.pairing else {
+            let now = self.clock.monotonic();
+            st.memory_grants.retain(|_, until| *until > now);
+            return st.memory_grants.contains_key(gk);
+        };
+        let check = pairing
+            .grants
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .check(
+                &*pairing.grants_signer,
+                &*self.clock,
+                id,
+                Surface::Ssh,
+                ACTION_SIGN,
+                gk,
+            );
+        match check {
+            GrantCheck::Valid(g) => st.lock_floor.is_none_or(|floor| g.created_at > floor),
+            GrantCheck::Expired => {
+                st.record(
+                    &p.who,
+                    Some(&p.key),
+                    &p.ctx,
+                    "policy",
+                    OUTCOME_GRANT_EXPIRED,
+                );
+                false
+            }
+            GrantCheck::Revoked => {
+                st.record(
+                    &p.who,
+                    Some(&p.key),
+                    &p.ctx,
+                    "policy",
+                    OUTCOME_GRANT_REVOKED,
+                );
+                false
+            }
+            GrantCheck::None => false,
+        }
+    }
+
+    /// Stores a grant of `d` for the request: in the signed grants file of
+    /// a paired agent, in memory for an open one.
+    fn add_grant(&self, st: &mut Inner<K>, p: &Prepared, gk: &str, d: Duration) {
+        let Some(id) = p.client.id.as_deref() else {
+            return;
+        };
+        let Some(pairing) = &st.pairing else {
+            st.memory_grants
+                .insert(gk.to_owned(), self.clock.monotonic() + d);
+            return;
+        };
+        let req = GrantRequest {
+            client_id: id.to_owned(),
+            surface: Surface::Ssh,
+            action: ACTION_SIGN.to_owned(),
+            key: gk.to_owned(),
+            vault_id: Some(p.key.vault_id.clone()),
+        };
+        let added = pairing
+            .grants
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .add(&*pairing.grants_signer, &*self.clock, req, d);
+        // The user allowed this signature: it goes ahead even if the grant
+        // could not be stored (the next one asks again).
+        if let Err(err) = added {
+            eprintln!("onepass ssh-agent: grant not recorded: {err}");
+        }
+    }
+
     fn sign(
-        &mut self,
+        &self,
         conn: &ConnState,
         peer: &PeerInfo,
         key_blob: &[u8],
         data: &[u8],
         flags: u32,
     ) -> Reply {
-        let exe = peer
-            .exe
-            .clone()
-            .unwrap_or_else(|| UNKNOWN_PROCESS.to_owned());
-        if self.locked.is_some() {
-            self.record_sign(&exe, None, "policy", "refused");
-            return Reply::failure();
-        }
-        let key = match self.source.list() {
-            Ok(keys) => keys.into_iter().find(|k| k.public_blob == key_blob),
-            Err(_) => {
-                self.record_sign(&exe, None, "policy", "error");
-                return Reply::failure();
-            }
+        let mut p = match self.prepare(&mut self.state(), conn, peer, key_blob, data, flags) {
+            Ok(p) => p,
+            Err(reply) => return reply,
         };
-        let Some(key) = key else {
-            self.record_sign(&exe, None, "policy", "refused");
-            return Reply::failure();
-        };
-        // RSA with SHA-1 (no SHA-2 flag) is refused before asking anyone.
-        if is_rsa(&key.public_blob)
-            && flags & (SSH_AGENT_RSA_SHA2_256 | SSH_AGENT_RSA_SHA2_512) == 0
-        {
-            self.record_sign(&exe, Some(&key), "policy", "refused");
-            return Reply::failure();
-        }
-        let forwarded = conn.bound.as_ref().is_some_and(|b| b.forwarded);
-        if forwarded && !self.config.allow_forwarded {
-            self.record_sign(&exe, Some(&key), "policy", "refused");
-            return Reply::failure();
-        }
 
-        // A grant is only possible for identified code: "unknown process"
-        // would share one grant between every unidentified peer. It is
-        // keyed by the code the kernel vouches for, never by the path of a
-        // pid (a client can fork, exec `ssh` and keep the connection), and
-        // by the destination the session is bound to.
-        let rememberable = !key.confirm_each_use && !forwarded && peer.code.is_some();
-        let destination = conn
-            .bound
-            .as_ref()
-            .map(|b| fingerprint_of_blob(&b.host_key));
-        let grant_key = (
-            key.fingerprint.clone(),
-            peer.code.clone().unwrap_or_default(),
-            destination,
-        );
-        // Fail closed: no signature unless it can be logged.
-        if self.audit.ready().is_err() {
-            self.record_sign(&exe, Some(&key), "policy", "audit_unusable");
-            return Reply::failure();
-        }
-        let now = Instant::now();
-        self.grants.retain(|_, until| *until > now);
-        let mut approved_on: Option<String> = None;
-        let decision = if rememberable && self.grants.contains_key(&grant_key) {
-            "remembered"
+        // The prompt, without the state lock. Only a request that may be
+        // remembered is coalesced with an identical pending one: a joined
+        // request gets a deny or a grant, never someone else's "once". The
+        // guard draws the code the user confirms; no code, no prompt.
+        let gated = if p.remembered {
+            None
+        } else if let (Some(gk), Some(id)) = (&p.grant_key, &p.client.id) {
+            Some(self.gate.approve(id, gk, &p.req))
         } else {
-            let mut req =
-                self.approval_request(conn, peer, &key, &exe, data, forwarded, rememberable);
-            // The guard draws the code the user confirms; no code, no prompt.
             let Some(code) = challenge_code() else {
-                self.record_sign(&exe, Some(&key), "denied", "refused");
+                self.state()
+                    .record(&p.who, Some(&p.key), &p.ctx, "denied", "refused");
                 return Reply::failure();
             };
+            let mut req = p.req.clone();
             req.confirm_code = code;
-            let answer = self.approver.approve(&req);
-            approved_on = answer.approved_on;
-            match answer.decision {
+            let answer = self.gate.inner().approve(&req);
+            Some(Gated {
+                decision: answer.decision,
+                approved_on: answer.approved_on,
+                joined: false,
+            })
+        };
+        let mut decision = "remembered";
+        let mut allow_for = None;
+        if let Some(gated) = gated {
+            p.ctx.approved_on = gated.approved_on.clone();
+            let label = |l: &'static str| if gated.joined { "joined" } else { l };
+            let mut st = self.state();
+            // With strong authentication to come, an allowed prompt does not
+            // end a run of denials by itself (see below).
+            let strong_follows = self.config.strong && gated.decision != Decision::Deny;
+            if !gated.joined && !strong_follows {
+                self.record_decision(&mut st, &p.client, gated.decision == Decision::Deny);
+            }
+            match gated.decision {
                 Decision::Deny => {
-                    self.record_sign_on(
-                        &exe,
-                        Some(&key),
-                        "denied",
-                        "refused",
-                        approved_on.as_deref(),
+                    st.record(&p.who, Some(&p.key), &p.ctx, label("denied"), "refused");
+                    return Reply::failure();
+                }
+                Decision::AllowFor(d) if p.grant_key.is_some() => {
+                    let d = d.min(MAX_GRANT_TTL).min(self.config.remember_for);
+                    allow_for = Some(d);
+                    decision = label(decision_label(&Decision::AllowFor(d)));
+                }
+                Decision::AllowOnce | Decision::AllowFor(_) => decision = label("once"),
+            }
+        }
+
+        // Strong authentication proves who answered: a failure counts as a
+        // denial, an unavailable method refuses without counting.
+        if self.config.strong {
+            let reason = sanitize_for_display(&format!(
+                "{ACTION_SIGN} for {}: {} / {}",
+                p.client.label, p.key.vault_name, p.key.title
+            ));
+            let outcome = self.strong.verify(&reason);
+            let mut st = self.state();
+            match outcome {
+                StrongOutcome::Verified => self.record_decision(&mut st, &p.client, false),
+                StrongOutcome::Denied | StrongOutcome::Unavailable => {
+                    if outcome == StrongOutcome::Denied {
+                        self.record_decision(&mut st, &p.client, true);
+                    }
+                    st.record(
+                        &p.who,
+                        Some(&p.key),
+                        &p.ctx,
+                        decision,
+                        OUTCOME_STRONG_AUTH_FAILED,
                     );
                     return Reply::failure();
                 }
-                Decision::AllowOnce => "once",
-                Decision::AllowFor(d) if rememberable => {
-                    let d = d.min(self.config.remember_for);
-                    self.grants.insert(grant_key, Instant::now() + d);
-                    decision_label(&Decision::AllowFor(d))
-                }
-                Decision::AllowFor(_) => "once",
             }
-        };
+        }
 
-        let signature = self
+        let mut st = self.state();
+        // Locked while the user was asked: nothing is signed.
+        if st.locked.is_some() {
+            st.record(&p.who, Some(&p.key), &p.ctx, decision, "refused");
+            return Reply::failure();
+        }
+        if let (Some(d), Some(gk)) = (allow_for, &p.grant_key) {
+            self.add_grant(&mut st, &p, gk, d);
+        }
+        let signature = st
             .source
-            .load(&key.item_id)
+            .load(&p.key.item_id)
             .ok()
             // The loaded key must be the one that was listed and approved.
-            .filter(|k| k.public_blob() == key.public_blob)
+            .filter(|k| k.public_blob() == p.key.public_blob)
             .and_then(|k| k.sign(data, flags).ok());
         match signature {
             Some(sig) => {
-                self.record_sign_on(&exe, Some(&key), decision, "ok", approved_on.as_deref());
+                st.record(&p.who, Some(&p.key), &p.ctx, decision, "ok");
                 Reply::send(Response::Signature(sig))
             }
             None => {
-                self.record_sign_on(&exe, Some(&key), decision, "error", approved_on.as_deref());
+                st.record(&p.who, Some(&p.key), &p.ctx, decision, "error");
                 Reply::failure()
             }
         }
     }
 
+    /// The approval request of a signature: paired clients by label and
+    /// client id, an open agent's peers by executable and code identity.
     #[allow(clippy::too_many_arguments)]
     fn approval_request(
         &self,
         conn: &ConnState,
+        client: &Client,
         peer: &PeerInfo,
         key: &KeyInfo,
-        exe: &str,
-        data: &[u8],
+        ctx: &SignCtx,
         forwarded: bool,
         remember_allowed: bool,
     ) -> ApprovalRequest {
         let pid = peer
             .pid
             .map_or_else(|| "unknown pid".to_owned(), |p| p.to_string());
+        let exe = peer.exe.as_deref().unwrap_or(UNKNOWN_PROCESS);
         let mut details = vec![
             ("key".to_owned(), key.title.clone()),
             ("fingerprint".to_owned(), key.fingerprint.clone()),
-            ("process".to_owned(), format!("{exe} ({pid})")),
-            (
+        ];
+        if client.paired {
+            details.push((
+                "client id".to_owned(),
+                client.id.clone().unwrap_or_default(),
+            ));
+            if let Some(h) = client.hardened {
+                details.push((
+                    "hardened runtime".to_owned(),
+                    if h { "yes" } else { "no" }.to_owned(),
+                ));
+            }
+            details.push(("process".to_owned(), format!("{exe} ({pid})")));
+        } else {
+            details.push(("process".to_owned(), format!("{exe} ({pid})")));
+            details.push((
                 "code".to_owned(),
-                peer.code
+                client
+                    .id
                     .clone()
                     .unwrap_or_else(|| "unidentified".to_owned()),
-            ),
-        ];
-        if let Some(bound) = &conn.bound {
-            let hosts = self.bookmarked_hosts(&bound.host_key, &key.hosts);
-            let host_fp = fingerprint_of_blob(&bound.host_key);
-            let destination = if hosts.is_empty() {
-                host_fp
-            } else {
-                format!("{host_fp} ({})", hosts.join(", "))
-            };
-            details.push(("destination".to_owned(), destination));
-            if hosts.is_empty() && !key.hosts.is_empty() {
+            ));
+        }
+        if let (Some(_), Some(destination)) = (&conn.bound, &ctx.destination) {
+            details.push(("destination".to_owned(), destination.clone()));
+        }
+        let unmatched = |b: &BoundHost| self.bookmarked_hosts(&b.host_key, &key.hosts).is_empty();
+        if !key.hosts.is_empty() {
+            if self.paired {
+                // Only the git exception reaches a prompt with a key whose
+                // bookmarks the destination does not match.
+                if conn.bound.as_ref().is_none_or(unmatched) {
+                    details.push((
+                        "warning".to_owned(),
+                        "not bound to one of this key's hosts: allowed for git commit signing only"
+                            .to_owned(),
+                    ));
+                }
+            } else if conn.bound.as_ref().is_some_and(unmatched) {
                 details.push((
                     "warning".to_owned(),
                     "the destination matches none of this key's host bookmarks".to_owned(),
@@ -574,13 +1230,13 @@ impl<K: KeySource> Agent<K> {
             "forwarded".to_owned(),
             if forwarded { "yes" } else { "no" }.to_owned(),
         ));
-        if let Some(ns) = sshsig_namespace(data) {
-            details.push(("namespace".to_owned(), ns));
+        if let Some(ns) = &ctx.namespace {
+            details.push(("namespace".to_owned(), ns.clone()));
         }
         ApprovalRequest {
             surface: Surface::Ssh,
-            client_verified: false,
-            client: exe.to_owned(),
+            client: client.label.clone(),
+            client_verified: client.verified,
             action: ACTION_SIGN.to_owned(),
             details,
             targets: vec![Target {
@@ -589,6 +1245,7 @@ impl<K: KeySource> Agent<K> {
                 field: Some(KEY_FIELD.to_owned()),
             }],
             remember_allowed,
+            // `--strong` runs its own check after the prompt.
             strong_required: false,
             // Drawn right before the prompt.
             confirm_code: String::new(),
@@ -614,64 +1271,115 @@ impl<K: KeySource> Agent<K> {
         }
         out
     }
+}
 
-    /// Records a sign attempt. A failed write cannot undo a signature
-    /// already returned: it goes to stderr. Signing itself checked the log
-    /// with [`AuditSink::ready`] first.
-    fn record_sign(&mut self, exe: &str, key: Option<&KeyInfo>, decision: &str, outcome: &str) {
-        self.record_sign_on(exe, key, decision, outcome, None);
+impl<K: KeySource> Inner<K> {
+    /// The paired client behind `peer`, or the audit outcome of the refusal
+    /// (`not_paired`, `registry_unusable`). An open agent admits every peer
+    /// (the uid was checked before), unverified, by its executable.
+    fn admit(&mut self, peer: &PeerInfo) -> Result<Client, &'static str> {
+        let Some(pairing) = &mut self.pairing else {
+            return Ok(Client {
+                id: peer
+                    .code
+                    .clone()
+                    .or_else(|| peer.identity.as_ref().map(|i| i.code.client_id())),
+                label: peer
+                    .exe
+                    .clone()
+                    .unwrap_or_else(|| UNKNOWN_PROCESS.to_owned()),
+                paired: false,
+                verified: false,
+                hardened: None,
+                ssh_keys: None,
+            });
+        };
+        let identity = peer.identity.as_ref().ok_or(OUTCOME_NOT_PAIRED)?;
+        let id = identity.code.client_id();
+        let reg = (pairing.registry)().map_err(|_| OUTCOME_REGISTRY_UNUSABLE)?;
+        let rec = reg.find(Surface::Ssh, &id).ok_or(OUTCOME_NOT_PAIRED)?;
+        Ok(Client {
+            label: rec.label.clone(),
+            paired: true,
+            verified: identity.code.is_signed(),
+            hardened: match &identity.code {
+                CodeIdentity::AdHoc { hardened, .. } => Some(*hardened),
+                _ => None,
+            },
+            ssh_keys: rec.ssh_keys.clone(),
+            id: Some(id),
+        })
     }
 
-    /// [`Self::record_sign`] with the place where the approval was given.
-    fn record_sign_on(
-        &mut self,
-        exe: &str,
-        key: Option<&KeyInfo>,
-        decision: &str,
-        outcome: &str,
-        approved_on: Option<&str>,
-    ) {
-        let written = self.audit.record(&AuditEntry {
+    /// Audits a refusal before pairing, at most
+    /// [`MAX_UNPAIRED_AUDIT_PER_MIN`] a minute over every client.
+    fn refuse_unpaired(&mut self, clock: &dyn Clock, who: &Who, action: &str, outcome: &str) {
+        let now = clock.monotonic();
+        let minute = Duration::from_secs(60);
+        while self
+            .unpaired_audited
+            .front()
+            .is_some_and(|&t| now.saturating_duration_since(t) >= minute)
+        {
+            self.unpaired_audited.pop_front();
+        }
+        if self.unpaired_audited.len() >= MAX_UNPAIRED_AUDIT_PER_MIN {
+            return;
+        }
+        self.unpaired_audited.push_back(now);
+        self.write(AuditEntry {
             surface: Surface::Ssh,
-            client: exe.to_owned(),
-            client_id: None,
+            client: who.exe.clone(),
+            client_id: who.client_id.clone(),
             client_label: None,
-            action: ACTION_SIGN.to_owned(),
-            vault_id: key.map(|k| k.vault_id.clone()),
-            item_id: key.map(|k| k.item_id.clone()),
-            field: key.map(|_| KEY_FIELD.to_owned()),
-            decision: decision.to_owned(),
-            outcome: outcome.to_owned(),
-            approved_on: approved_on.map(str::to_owned),
-        });
-        report_audit_failure(written);
-    }
-
-    fn record_bind(&mut self, peer: &PeerInfo, outcome: &str) {
-        let exe = peer
-            .exe
-            .clone()
-            .unwrap_or_else(|| UNKNOWN_PROCESS.to_owned());
-        let written = self.audit.record(&AuditEntry {
-            surface: Surface::Ssh,
-            client: exe,
-            client_id: None,
-            client_label: None,
-            action: ACTION_SIGN.to_owned(),
+            action: action.to_owned(),
             vault_id: None,
             item_id: None,
             field: None,
             decision: "policy".to_owned(),
             outcome: outcome.to_owned(),
             approved_on: None,
+            destination: None,
+            namespace: None,
         });
-        report_audit_failure(written);
     }
-}
 
-fn report_audit_failure(written: Result<(), onepass_guard::GuardError>) {
-    if let Err(err) = written {
-        eprintln!("onepass: audit log write failed: {err}");
+    /// Records a sign attempt. A failed write cannot undo a signature
+    /// already returned: it goes to stderr. Signing itself checked the log
+    /// with [`AuditSink::ready`] first.
+    fn record(
+        &mut self,
+        who: &Who,
+        key: Option<&KeyInfo>,
+        ctx: &SignCtx,
+        decision: &str,
+        outcome: &str,
+    ) {
+        self.write(AuditEntry {
+            surface: Surface::Ssh,
+            client: who.exe.clone(),
+            client_id: who.client_id.clone(),
+            client_label: who.label.clone(),
+            action: ACTION_SIGN.to_owned(),
+            vault_id: key.map(|k| k.vault_id.clone()),
+            item_id: key.map(|k| k.item_id.clone()),
+            field: key.map(|_| KEY_FIELD.to_owned()),
+            decision: decision.to_owned(),
+            outcome: outcome.to_owned(),
+            approved_on: ctx.approved_on.clone(),
+            destination: ctx.destination.clone(),
+            namespace: ctx.namespace.clone(),
+        });
+    }
+
+    fn record_bind(&mut self, who: &Who, outcome: &str) {
+        self.record(who, None, &SignCtx::default(), "policy", outcome);
+    }
+
+    fn write(&mut self, e: AuditEntry) {
+        if let Err(err) = self.audit.record(&e) {
+            eprintln!("onepass: audit log write failed: {err}");
+        }
     }
 }
 

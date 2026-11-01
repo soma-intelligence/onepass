@@ -5,8 +5,9 @@
 //!   (draft-miller-ssh-agent).
 //! - [`keys`]: key generation, import (OpenSSH, PEM), OpenSSH export,
 //!   signing and verification.
-//! - [`agent`]: request handling behind approvals, session grants, lock,
-//!   session binding, and the vault key source.
+//! - [`agent`]: request handling for paired clients behind approvals,
+//!   revocable grants, rate limits, strong authentication, lock, session
+//!   binding and host-bound keys, and the vault key source.
 //! - [`knownhosts`]: host bookmarks against `known_hosts`.
 //! - [`sshsig`]: namespace of SSHSIG signature requests.
 //! - [`server`]: the Unix socket, its accept loop and the credentials of
@@ -24,8 +25,9 @@ pub mod wire;
 
 pub use agent::PeerInfo;
 pub use agent::{
-    Agent, AgentConfig, BoundHost, ConnState, KeyInfo, KeySource, Reply, RepoKeySource,
-    load_key_of, menu_truthy, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, BoundHost, Confirm, ConnState, DEFAULT_PROMPT_WAIT, KeyInfo,
+    KeySource, LivenessFn, MAX_UNPAIRED_AUDIT_PER_MIN, RegistryFn, Reply, RepoKeySource, code_json,
+    file_registry, grant_key, load_key_of, menu_truthy, ssh_client_record, ssh_keys_of,
 };
 pub use knownhosts::{matching_hosts, pattern_matches};
 pub use server::peer_info;

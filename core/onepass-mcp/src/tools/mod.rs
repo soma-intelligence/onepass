@@ -657,6 +657,8 @@ impl<P: VaultPort> McpTools<P> {
                 decision: call.decision.to_owned(),
                 outcome: outcome.to_owned(),
                 approved_on: call.approved_on.clone(),
+                destination: None,
+                namespace: None,
             });
             if let Err(err) = written {
                 eprintln!("onepass: audit log write failed: {err}");

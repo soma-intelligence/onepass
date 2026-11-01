@@ -1,13 +1,14 @@
 //! The agent's Unix socket (spec 6.2): parent directory `0700`, socket
-//! `0600`, one thread per connection.
+//! `0600`, one thread per connection. Each connection is identified once,
+//! when accepted (kernel credentials and code identity).
 
 use std::fs::{self, DirBuilder, Permissions};
 use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -16,20 +17,29 @@ use onepass_peer::{effective_uid, exe_path, identify_peer, peer_cred};
 use crate::agent::{Agent, ConnState, KeySource, PeerInfo};
 use crate::wire::{decode_request, encode_response, read_frame};
 
-/// Credentials of the peer of `s`: uid, pid, executable path, and the
-/// code identity read through the audit token the kernel kept from
-/// `connect` (macOS), so a process that execs another program afterwards
-/// is not taken for it.
+/// Credentials of the peer of `s`: uid, pid, executable path (from the
+/// code identity when there is one), and the code identity read through
+/// the audit token the kernel kept from `connect` (macOS), so a reused pid
+/// or a process that execs another program afterwards is not taken for it.
 pub fn peer_info(s: &UnixStream) -> PeerInfo {
     let cred = peer_cred(s);
+    // Another uid is refused before anything else: no need to identify it.
+    let identity = if cred.uid == Some(effective_uid()) {
+        identify_peer(&cred).ok()
+    } else {
+        None
+    };
+    let exe = identity
+        .as_ref()
+        .and_then(|i| i.exe.clone())
+        .or_else(|| cred.pid.and_then(exe_path))
+        .and_then(|p| p.into_os_string().into_string().ok());
     PeerInfo {
         uid: cred.uid,
         pid: cred.pid,
-        exe: cred
-            .pid
-            .and_then(exe_path)
-            .and_then(|p| p.into_os_string().into_string().ok()),
-        code: identify_peer(&cred).ok().map(|id| id.code.client_id()),
+        exe,
+        code: identity.as_ref().map(|id| id.code.client_id()),
+        identity,
     }
 }
 
@@ -102,11 +112,12 @@ pub fn bind_socket(path: &Path) -> io::Result<UnixListener> {
 
 /// Accepts connections until `stop` is set, checked every 100 ms between
 /// non-blocking `accept` calls. Each connection gets its own thread; all of
-/// them share `agent`, so approval prompts are serialized. Connections
-/// already open when `stop` is set are not interrupted.
+/// them share `agent` (prompts are shown one at a time by the approver).
+/// Connections already open when `stop` is set are not interrupted. Once
+/// the agent's control channel is lost, the loop ends with an error.
 pub fn serve<K: KeySource + 'static>(
     listener: UnixListener,
-    agent: Arc<Mutex<Agent<K>>>,
+    agent: Arc<Agent<K>>,
     stop: Arc<AtomicBool>,
 ) -> io::Result<()> {
     serve_on(listener, agent, stop, None)
@@ -117,7 +128,7 @@ pub fn serve<K: KeySource + 'static>(
 /// session) needs more than the default stack.
 pub fn serve_with_stack<K: KeySource + 'static>(
     listener: UnixListener,
-    agent: Arc<Mutex<Agent<K>>>,
+    agent: Arc<Agent<K>>,
     stop: Arc<AtomicBool>,
     stack_size: usize,
 ) -> io::Result<()> {
@@ -126,12 +137,15 @@ pub fn serve_with_stack<K: KeySource + 'static>(
 
 fn serve_on<K: KeySource + 'static>(
     listener: UnixListener,
-    agent: Arc<Mutex<Agent<K>>>,
+    agent: Arc<Agent<K>>,
     stop: Arc<AtomicBool>,
     stack_size: Option<usize>,
 ) -> io::Result<()> {
     listener.set_nonblocking(true)?;
     while !stop.load(Ordering::SeqCst) {
+        if !agent.control_alive() {
+            return Err(io::Error::other("control channel lost"));
+        }
         match listener.accept() {
             Ok((stream, _)) => {
                 // BSD sockets inherit O_NONBLOCK from the listener. A
@@ -160,7 +174,7 @@ fn serve_on<K: KeySource + 'static>(
 
 /// Serves one client until it disconnects, sends a malformed message, or
 /// the agent asks to close.
-fn connection<K: KeySource>(mut stream: UnixStream, agent: &Mutex<Agent<K>>) {
+fn connection<K: KeySource>(mut stream: UnixStream, agent: &Agent<K>) {
     let peer = peer_info(&stream);
     let mut conn = ConnState::default();
     loop {
@@ -172,14 +186,7 @@ fn connection<K: KeySource>(mut stream: UnixStream, agent: &Mutex<Agent<K>>) {
         let Ok(request) = decode_request(&body) else {
             return;
         };
-        let reply = {
-            // A panic under the lock leaves the agent state suspect: stop
-            // serving this client rather than reuse it.
-            let Ok(mut agent) = agent.lock() else {
-                return;
-            };
-            agent.handle(&mut conn, &peer, request)
-        };
+        let reply = agent.handle(&mut conn, &peer, request);
         if stream.write_all(&encode_response(&reply.response)).is_err() || reply.close {
             return;
         }

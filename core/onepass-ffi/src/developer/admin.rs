@@ -603,6 +603,8 @@ pub(crate) fn audit_admin(
         decision: "allowed".into(),
         outcome: "ok".into(),
         approved_on: None,
+        destination: None,
+        namespace: None,
     });
 }
 

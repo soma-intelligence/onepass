@@ -1729,6 +1729,7 @@ dependencies = [
  "onepass-core",
  "onepass-guard",
  "onepass-mcp",
+ "onepass-peer",
  "onepass-ssh-agent",
  "postcard",
  "predicates",
@@ -1935,6 +1936,7 @@ dependencies = [
  "onepass-core",
  "onepass-guard",
  "onepass-peer",
+ "serde_json",
  "tempfile",
  "zeroize",
 ]

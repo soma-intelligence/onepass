@@ -427,6 +427,8 @@ fn refused(ctx: &Ctx, client: &str, action: &str) {
             decision: "denied".into(),
             outcome: OUTCOME_NOT_PAIRED.into(),
             approved_on: None,
+            destination: None,
+            namespace: None,
         });
     }
 }

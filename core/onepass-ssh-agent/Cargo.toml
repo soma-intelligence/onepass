@@ -12,6 +12,8 @@ onepass-guard = { path = "../onepass-guard" }
 aws-lc-rs.workspace = true
 zeroize.workspace = true
 data-encoding.workspace = true
+# Client records (code identity as JSON) and grant keys.
+serde_json.workspace = true
 # Key derivation of encrypted OpenSSH private keys (openssh-key-v1). The
 # container itself is parsed here: ssh-key 0.6 needs `signature` ^2, which
 # cannot share the lock file with the `=2.3.0-pre.4` pin of onepass-core.

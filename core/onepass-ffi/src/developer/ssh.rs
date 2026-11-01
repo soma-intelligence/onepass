@@ -10,7 +10,8 @@ use onepass_core::model::{FieldValue, Item, ItemType, SshKeyValue, new_item};
 use onepass_guard::{AuditLog, SignedAuditSink};
 use onepass_ssh_agent::keys::{AgentKey, KeyError, KeyType, is_encrypted};
 use onepass_ssh_agent::{
-    Agent, AgentConfig, KeyInfo, KeySource, bind_socket, load_key_of, serve_with_stack, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of,
+    serve_with_stack, ssh_keys_of,
 };
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
@@ -107,6 +108,9 @@ impl SshAgentHost {
                 known_hosts: config.known_hosts.iter().map(PathBuf::from).collect(),
                 ..AgentConfig::default()
             },
+            // Open agent: the app does not pair SSH clients yet, every
+            // client of this user is asked as before.
+            AgentGuards::open(),
         );
         let listener = bind_socket(&socket).map_err(|e| match e.kind() {
             std::io::ErrorKind::AddrInUse => invalid("another agent is serving this socket"),
@@ -119,8 +123,7 @@ impl SshAgentHost {
                 .name("onepass-ssh-agent".into())
                 .stack_size(SERVER_STACK)
                 .spawn(move || {
-                    let _ =
-                        serve_with_stack(listener, Arc::new(Mutex::new(agent)), stop, SERVER_STACK);
+                    let _ = serve_with_stack(listener, Arc::new(agent), stop, SERVER_STACK);
                 })
                 .map_err(|_| invalid("cannot start the agent"))?
         };

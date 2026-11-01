@@ -849,6 +849,7 @@ mod tests {
             fingerprint: key.fingerprint(),
             confirm_each_use: false,
             hosts: hosts.iter().map(|h| h.to_string()).collect(),
+            git_signing: false,
         };
         let keys = [
             info("A\nHost *", &["a.test", "bad host"]),
