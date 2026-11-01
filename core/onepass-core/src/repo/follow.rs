@@ -1069,7 +1069,8 @@ pub const QUARANTINE_ERASE_AFTER_SECS: u64 = 7 * 86_400;
 pub enum LineageLock {
     /// A valid record (`by`, its lineage hash) revokes this device: locked,
     /// erased 7 days after `since` unless the user answers "Ce n'était pas
-    /// moi" (`quarantine_resolve`).
+    /// moi" (`quarantine_resolve`); never erased by the clock when a `Tofu`
+    /// device signed the removal (`QuarantineTick::Locked`).
     Quarantine { by: [u8; 32] },
     /// A valid record (`child`) does not list this device: it reads, writes
     /// nothing, pushes nothing, never erases.
@@ -1175,6 +1176,11 @@ pub enum QuarantineTick {
     /// Locked; erased at device time `erase_at` (Unix seconds) unless the
     /// user answers first.
     Waiting { erase_at: u64 },
+    /// Locked, with no erase clock (final review I1): the removal was
+    /// signed by a device this device trusts on first use only (`Tofu`),
+    /// here or along the records that lead to it. Nothing erases it until
+    /// the user answers ("Effacer cet appareil" or "Ce n'était pas moi").
+    Locked,
     /// The store was erased now (`RecordStore::erase_device`). The app
     /// deletes what it keeps for the account outside the store (Keychain
     /// items: Secret Key, Account Unlock Key, device keys).
@@ -1197,8 +1203,13 @@ pub enum QuarantineTick {
 /// - Once quarantined, the state stays whatever the server holds since:
 ///   only `quarantine_resolve` or the erase ends it. `since` is never
 ///   moved.
-/// - The store is erased (`RecordStore::erase_device`, conditional on the
-///   trust state read) once `now - since` reaches
+/// - The erase clock runs only for a removal by devices this device
+///   verified (final review I1): when the stored signer, or a signer of
+///   the records between this device's chain and the removal, is `Tofu`
+///   here, the tick is `Locked` (never erased, no date) until the user
+///   answers with `quarantine_resolve`.
+/// - Otherwise the store is erased (`RecordStore::erase_device`,
+///   conditional on the trust state read) once `now - since` reaches
 ///   `QUARANTINE_ERASE_AFTER_SECS`; a clock moved back only delays it
 ///   (saturating arithmetic, never early). Otherwise `Waiting` with
 ///   `erase_at = since + QUARANTINE_ERASE_AFTER_SECS` (saturating).
@@ -1228,6 +1239,9 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
             (next, now)
         }
     };
+    if !erase_clock_runs(&trust, &lineage_records(&*store)?) {
+        return Ok(QuarantineTick::Locked);
+    }
     if now.saturating_sub(since) < QUARANTINE_ERASE_AFTER_SECS {
         return Ok(QuarantineTick::Waiting {
             erase_at: since.saturating_add(QUARANTINE_ERASE_AFTER_SECS),
@@ -1235,6 +1249,43 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
     }
     store.erase_device(&trust)?;
     Ok(QuarantineTick::Erased)
+}
+
+/// Whether the quarantine `trust` records runs the erase clock (final
+/// review I1, controller ruling 2026-10-31): only a removal by devices
+/// this device verified does. `false` when the stored signer (`rotator`)
+/// is `Tofu` on this device, or when any signer of the records known
+/// between this device's own chain and the removal (`by`) is: a `Tofu`
+/// device cannot launder its removal through a device it introduced. A
+/// record the server withholds after the lock only hides the path, so the
+/// stored signer still counts. Any other state: `false`.
+fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
+    let DeviceLineageState::Quarantined { by, rotator, .. } = &trust.state else {
+        return false;
+    };
+    let tofu = |id: &Id| trust.levels.get(id) == Some(&TrustLevel::Tofu);
+    if tofu(rotator) {
+        return false;
+    }
+    let bodies = rotations(records);
+    !path_to(trust, &bodies, *by)
+        .iter()
+        .any(|b| tofu(&b.rotator))
+}
+
+/// The device time (Unix seconds) at which the quarantine erases this
+/// device, or `None`: not quarantined, or quarantined with no erase clock
+/// (`QuarantineTick::Locked`, final review I1). Read only, no password:
+/// for the lock screen.
+pub fn quarantine_erase_at(store: &dyn RecordStore) -> Result<Option<u64>> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(None);
+    };
+    let DeviceLineageState::Quarantined { since, .. } = trust.state else {
+        return Ok(None);
+    };
+    Ok(erase_clock_runs(&trust, &lineage_records(store)?)
+        .then(|| since.saturating_add(QUARANTINE_ERASE_AFTER_SECS)))
 }
 
 /// The user's answer on a locked device (spec 8.2, 8.4).

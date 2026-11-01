@@ -580,7 +580,8 @@ fn quarantine_erases_only_after_seven_days() {
         panic!("quarantined at the commit");
     };
     assert!(since >= before && since <= now_u());
-    assert_eq!(erase_at, since + WEEK);
+    assert_eq!(erase_at, Some(since + WEEK));
+    let erase_at = erase_at.unwrap();
     assert!(matches!(
         lineage_lock(b.path.clone()).unwrap(),
         Some(FfiLineageLock::Quarantine { .. })
@@ -675,6 +676,62 @@ fn not_me_cancels_the_erase() {
         FfiQuarantineTick::NotQuarantined
     );
     assert_eq!(s.item_summaries().unwrap().len(), 1);
+}
+
+/// Final review I1: on a migrated legacy account the other device is
+/// trusted on first use only. Its removal locks B (`Quarantined` with no
+/// `erase_at`, tick `Locked`) and never erases it, even a year later; "Ce
+/// n'était pas moi" still gets B back, and "Effacer cet appareil" still
+/// erases it by hand.
+#[test]
+fn tofu_removal_locks_without_erase_clock() {
+    for erase in [false, true] {
+        let mut server = Server::default();
+        let (a, b) = legacy_pair(&mut server);
+        let b_id = this_id(&b);
+        rotate(&a, vec![b_id], vec![]);
+        push(&mut server, &a.path);
+        let commit = pull(&server, &b);
+        assert_eq!(commit.quarantine, FfiQuarantineTick::Locked);
+        assert!(matches!(
+            lineage_status(b.path.clone()).unwrap().state,
+            FfiLineageState::Quarantined { erase_at: None, .. }
+        ));
+        assert!(matches!(
+            lineage_lock(b.path.clone()).unwrap(),
+            Some(FfiLineageLock::Quarantine { .. })
+        ));
+        assert_eq!(b.session.vaults().unwrap_err(), OnePassError::Quarantined);
+        assert_eq!(
+            quarantine_tick(b.path.clone(), now_u() + 52 * WEEK).unwrap(),
+            FfiQuarantineTick::Locked
+        );
+        assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
+        if erase {
+            let gone = quarantine_resolve(b.path.clone(), FfiQuarantineChoice::Erase).unwrap();
+            assert!(gone.is_none());
+            assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+        } else {
+            let s = quarantine_resolve(
+                b.path.clone(),
+                FfiQuarantineChoice::NotMe {
+                    password: PASSWORD.into(),
+                    secret_key: b.secret_key.clone(),
+                },
+            )
+            .unwrap()
+            .expect("a session");
+            assert_eq!(
+                lineage_status(b.path.clone()).unwrap().state,
+                FfiLineageState::Current
+            );
+            assert_eq!(
+                quarantine_tick(b.path.clone(), now_u() + 52 * WEEK).unwrap(),
+                FfiQuarantineTick::NotQuarantined
+            );
+            assert!(s.vaults().is_ok());
+        }
+    }
 }
 
 /// Two legacy devices migrate through the FFI; A's rotation lists B for an

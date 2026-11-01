@@ -1321,6 +1321,13 @@ fn quarantine_message(erase_at: u64) -> String {
     )
 }
 
+/// The refusal of a command on a device locked by a removal a device
+/// trusted on first use signed (final review I1): no erase date.
+const QUARANTINE_LOCKED: &str = "this device was removed from the account by a key rotation \
+     made on another device that was never verified. Its data is locked, and it is not \
+     erased on its own: answer that it was not you with `onepass account not-me` (master \
+     password; the Secret Key is read from this device's secret store), or erase it";
+
 /// What a quarantine that ran out leaves behind: the Secret Key entries
 /// and `device.bin` (the store itself was erased by the core).
 fn erase_leftovers(ctx: &Ctx, at_rest: &Stored) {
@@ -1340,6 +1347,7 @@ fn guard_lock(ctx: &Ctx, at_rest: &Stored) -> Result<(), CliError> {
     match stored(quarantine_tick(&mut store, now_unix()))? {
         QuarantineTick::NotQuarantined => Ok(()),
         QuarantineTick::Waiting { erase_at } => Err(CliError::usage(quarantine_message(erase_at))),
+        QuarantineTick::Locked => Err(CliError::usage(QUARANTINE_LOCKED)),
         QuarantineTick::Erased => {
             drop(store);
             erase_leftovers(ctx, at_rest);

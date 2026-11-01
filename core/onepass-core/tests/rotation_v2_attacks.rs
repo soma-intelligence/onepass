@@ -14,7 +14,7 @@ mod common;
 use std::collections::BTreeSet;
 
 use common::*;
-use onepass_core::device_keys::{DeviceKeys, DevicePublic};
+use onepass_core::device_keys::{DeviceKeys, DevicePublic, sign_pop};
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use onepass_core::lineage::resolve::PromptKind;
@@ -23,9 +23,11 @@ use onepass_core::lineage::{
     delivery_id, identity_id, sign_genesis, sign_rotation,
 };
 use onepass_core::repo::follow::{
-    QuarantineTick, RotationPrompt, follow_rotation, follow_switch, pending_rotation,
-    quarantine_tick, reject_rotation, stored_params_epoch,
+    QuarantineChoice, QuarantineTick, RotationPrompt, follow_rotation, follow_switch,
+    pending_rotation, quarantine_erase_at, quarantine_resolve, quarantine_tick, reject_rotation,
+    stored_params_epoch,
 };
+use onepass_core::repo::migrate::Migration;
 use onepass_core::repo::{RotateRequest, RotationOutcome};
 use onepass_core::store::account_record_id;
 use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
@@ -1129,6 +1131,173 @@ fn revoked_device_can_revoke_its_revoker() {
     assert!(t.excluded.contains(&f.b().id()) && t.revoked.contains(&f.b().id()));
     assert_eq!(d.repo().refresh_pending_rotation().unwrap(), None);
     assert_never_locked(&d);
+}
+
+// ------------------------------------------ 2b-revoked holder, Tofu device
+
+/// A legacy device of the account (no trust state), registered under
+/// `name` and synced: what an unmodified client before v2 makes.
+fn legacy_device(server: &mut Server, sk: &SecretKey, name: &str) -> Device {
+    let mut d = Device::empty();
+    pull(server, &mut d);
+    d.unlock(sk);
+    d.repo()
+        .register_this_device(name, DeviceKind::Mac, DeviceMode::Personal)
+        .unwrap();
+    sync(server, &mut d).unwrap();
+    d
+}
+
+fn device_id_of(dev: &mut Device, keys: &DeviceKeys) -> Id {
+    let id = dev.repo().this_device_id().expect("registered");
+    keys.public(id).unwrap().device_id
+}
+
+/// The phantom device of a 2b revocation, up to "X removes A": A revokes R
+/// under milestone 2b (the signed device list only, keys not rotated:
+/// audit F1); before A updates, R's holder (Secret Key and master
+/// password) registers X with an unmodified client, so X is listed and not
+/// revoked. A migrates (X is `Tofu`), X migrates and joins A's genesis
+/// with a legacy intro, A accepts it, then X rotates revoking A. A has
+/// fetched the record. Returns A, its keys, the Secret Key and X's id.
+fn phantom_tofu_removes(verify_x: bool) -> (Server, Device, DeviceKeys, SecretKey, Id, [u8; 32]) {
+    let mut server = Server::default();
+    let (mut a, _b, sk, _) = setup(&mut server, &[("alice", T0), ("bob", T0 + 1)]);
+    sync(&mut server, &mut a).unwrap();
+    let r = legacy_device(&mut server, &sk, "Vieux Mac");
+    let r_id = r.repo.as_ref().unwrap().this_device_id().unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo().revoke_device(r_id).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut x = legacy_device(&mut server, &sk, "Mac caché");
+    sync(&mut server, &mut a).unwrap();
+
+    let ka = DeviceKeys::generate_software().unwrap();
+    let Migration::Genesis(g) = a.repo().migrate_to_v2(&ka).unwrap() else {
+        panic!("A writes the genesis");
+    };
+    assert!(
+        trust(&a).rotate_now,
+        "the 2b revocation asks for a rotation"
+    );
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut x).unwrap();
+    let kx = DeviceKeys::generate_software().unwrap();
+    assert_eq!(x.repo().migrate_to_v2(&kx).unwrap(), Migration::Joined(g));
+    sync(&mut server, &mut x).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo().refresh_pending_rotation().unwrap();
+    let a_id = device_id_of(&mut a, &ka);
+    let x_pub = kx.public(x.repo().this_device_id().unwrap()).unwrap();
+    assert_eq!(
+        trust(&a).levels.get(&x_pub.device_id),
+        Some(&TrustLevel::Tofu)
+    );
+    if verify_x {
+        // The contrast: the user verified X in person (SAS ceremony).
+        let transcript = [7u8; 32];
+        let pop = sign_pop(&kx, &transcript, &x_pub).unwrap();
+        a.repo().verify_device(&x_pub, &transcript, &pop).unwrap();
+        assert_eq!(
+            trust(&a).levels.get(&x_pub.device_id),
+            Some(&TrustLevel::Verified)
+        );
+    }
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut x).unwrap();
+    x.repo().refresh_pending_rotation().unwrap();
+
+    // X runs an ordinary "Retirer cet appareil" on A.
+    let new_sk = SecretKey::generate().unwrap();
+    let out = x
+        .repo()
+        .rotate(RotateRequest {
+            reason: RotationReason::Revoke,
+            revoke: vec![a_id],
+            new_password: None,
+            password: PASSWORD,
+            secret_key: &sk,
+            new_secret_key: &new_sk,
+            device_keys: &kx,
+            keep_tofu: &[],
+        })
+        .unwrap();
+    sync(&mut server, &mut x).unwrap();
+    a.lock();
+    pull(&server, &mut a);
+    (server, a, ka, sk, x_pub.device_id, out.head)
+}
+
+/// Final review I1 (residual of GHSA-8wp4-pjw5-pppg): a device revoked
+/// under milestone 2b, through a phantom device X it registered before the
+/// update, removes its revoker A. X is `Tofu` on A, so its removal only
+/// locks A: no erase clock, A is never erased, a year later still locked.
+/// The user gets A back with "Ce n'était pas moi" (X excluded) or erases
+/// it by hand.
+#[test]
+fn phantom_tofu_device_never_erases_its_revoker() {
+    let (_server, mut a, _ka, sk, x_id, head) = phantom_tofu_removes(false);
+    assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+    assert!(matches!(
+        state(&a),
+        DeviceLineageState::Quarantined { by, rotator, since: NOW, .. }
+            if by == head && rotator == x_id
+    ));
+    assert_eq!(quarantine_erase_at(&a.store()).unwrap(), None);
+    for later in [NOW + 7 * 86_400, NOW + 8 * 86_400, NOW + YEAR] {
+        assert_eq!(tick(&a, later), QuarantineTick::Locked);
+    }
+    assert!(matches!(state(&a), DeviceLineageState::Quarantined { .. }));
+    assert!(!a.store().list(RecordKind::Lineage).unwrap().is_empty());
+
+    // "Ce n'était pas moi": X excluded, A usable again.
+    let device = a.store().device_state().unwrap();
+    let repo = quarantine_resolve(
+        a.store(),
+        QuarantineChoice::NotMe {
+            password: PASSWORD,
+            secret_key: &sk,
+            device,
+        },
+    )
+    .unwrap()
+    .expect("a session");
+    a.repo = Some(repo);
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    let t = trust(&a);
+    assert!(t.excluded.contains(&x_id) && t.ignored.contains(&head));
+    assert_never_locked(&a);
+    let v = a.vault();
+    a.save(&login(v.id, "after", T0 + 99));
+}
+
+/// The same removal signed by a device the user verified still runs the
+/// 7-day clock, and erases (spec 8.4, unchanged); the user can also erase
+/// a `Tofu`-locked device by hand.
+#[test]
+fn verified_signer_still_erases_and_tofu_lock_erases_by_hand() {
+    let (_server, a, _ka, _sk, _x_id, _head) = phantom_tofu_removes(true);
+    assert_eq!(
+        tick(&a, NOW),
+        QuarantineTick::Waiting {
+            erase_at: NOW + 7 * 86_400
+        }
+    );
+    assert_eq!(
+        quarantine_erase_at(&a.store()).unwrap(),
+        Some(NOW + 7 * 86_400)
+    );
+    assert_eq!(tick(&a, NOW + 7 * 86_400), QuarantineTick::Erased);
+    assert!(a.store().trust_state().unwrap().is_none());
+
+    let (_server, a, _ka, _sk, _x_id, _head) = phantom_tofu_removes(false);
+    assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+    assert!(
+        quarantine_resolve(a.store(), QuarantineChoice::Erase)
+            .unwrap()
+            .is_none()
+    );
+    assert!(a.store().trust_state().unwrap().is_none());
 }
 
 // ------------------------------------------------------- spec 8.3 race

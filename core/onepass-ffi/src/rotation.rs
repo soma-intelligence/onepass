@@ -149,10 +149,13 @@ pub enum FfiLineageState {
         phase: u8,
     },
     /// Locked, erased at `erase_at` (device time, Unix seconds) unless the
-    /// user answers "Ce n'était pas moi".
+    /// user answers "Ce n'était pas moi". `erase_at` is `None` when the
+    /// removal was signed by a device trusted on first use only (final
+    /// review I1): no erase date, the device stays locked until the user
+    /// answers ("Ce n'était pas moi" or "Effacer cet appareil").
     Quarantined {
         since: u64,
-        erase_at: u64,
+        erase_at: Option<u64>,
     },
     /// Not in the account's keys any more: reads, never writes.
     Orphaned,
@@ -175,7 +178,9 @@ pub struct FfiLineageStatus {
     pub awaiting_pin: bool,
 }
 
-fn state_of(t: Option<&TrustState>) -> FfiLineageState {
+/// `erase_at`: `follow::quarantine_erase_at` for the store `t` was read
+/// from (only read for `Quarantined`).
+fn state_of(t: Option<&TrustState>, erase_at: Option<u64>) -> FfiLineageState {
     match t.map(|t| &t.state) {
         None | Some(DeviceLineageState::Legacy) => FfiLineageState::Legacy,
         Some(DeviceLineageState::Current) => FfiLineageState::Current,
@@ -183,14 +188,18 @@ fn state_of(t: Option<&TrustState>) -> FfiLineageState {
         Some(DeviceLineageState::Rotating { phase }) => FfiLineageState::Rotating { phase: *phase },
         Some(DeviceLineageState::Quarantined { since, .. }) => FfiLineageState::Quarantined {
             since: *since,
-            erase_at: since.saturating_add(follow::QUARANTINE_ERASE_AFTER_SECS),
+            erase_at,
         },
         Some(DeviceLineageState::Orphaned { .. }) => FfiLineageState::Orphaned,
     }
 }
 
-fn status_of(t: Option<&TrustState>, awaiting_pin: bool) -> FfiLineageStatus {
-    let state = state_of(t);
+fn status_of(
+    t: Option<&TrustState>,
+    erase_at: Option<u64>,
+    awaiting_pin: bool,
+) -> FfiLineageStatus {
+    let state = state_of(t, erase_at);
     FfiLineageStatus {
         usable: matches!(state, FfiLineageState::Legacy | FfiLineageState::Current),
         state,
@@ -209,7 +218,8 @@ pub fn lineage_status(db_path: String) -> Result<FfiLineageStatus, OnePassError>
     let unpinned = t
         .as_ref()
         .is_some_and(|t| !t.roster.iter().any(|e| e.device_id == t.me.device_id));
-    Ok(status_of(t.as_ref(), unpinned))
+    let erase_at = follow::quarantine_erase_at(&store)?;
+    Ok(status_of(t.as_ref(), erase_at, unpinned))
 }
 
 /// `RotationPending`, `Quarantined` or `Orphaned` unless the trust state
@@ -531,7 +541,8 @@ impl Session {
     pub fn lineage_status(&self) -> Result<FfiLineageStatus, OnePassError> {
         self.with(|repo| {
             let t = repo.store().trust_state()?;
-            Ok(status_of(t.as_ref(), repo.awaiting_pin()?))
+            let erase_at = follow::quarantine_erase_at(repo.store())?;
+            Ok(status_of(t.as_ref(), erase_at, repo.awaiting_pin()?))
         })
     }
 
@@ -967,6 +978,10 @@ pub enum FfiQuarantineTick {
     Waiting {
         erase_at: u64,
     },
+    /// Locked with no erase clock: a device trusted on first use only
+    /// signed the removal (final review I1). The quarantine screen offers
+    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date.
+    Locked,
     /// The store was erased: the app deletes what it keeps for the account
     /// in the Keychain (Secret Key, Account Unlock Key, device keys).
     Erased,
@@ -976,6 +991,7 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
     match t {
         QuarantineTick::NotQuarantined => FfiQuarantineTick::NotQuarantined,
         QuarantineTick::Waiting { erase_at } => FfiQuarantineTick::Waiting { erase_at },
+        QuarantineTick::Locked => FfiQuarantineTick::Locked,
         QuarantineTick::Erased => FfiQuarantineTick::Erased,
     }
 }
@@ -983,7 +999,8 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 /// The quarantine clock (spec 8.4, R8, O1) with the app's clock `now`
 /// (Unix seconds): at launch and on the quarantine screen. Erases only
 /// 7 days after a valid lineage record revoking this device was first
-/// read; a clock moved back only delays it.
+/// read, and only when devices this device verified signed it (`Locked`
+/// otherwise); a clock moved back only delays it.
 #[uniffi::export]
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;
