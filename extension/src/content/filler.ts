@@ -28,6 +28,7 @@ import { type Geometry, isVisible } from "./detect/visibility";
 import { countryName, nameLangs, resolveCountry } from "./geo/countries";
 import { type OptionLike, pickCountry, pickRegion, postalFallback, regionWanted } from "./geo/options";
 import { parentRegion, REGIONS, regionText } from "./geo/regions";
+import { OBSERVER_DELAY_MS } from "./observer";
 import { settle } from "./settle";
 
 // Captured once, at content script start. The content script runs in an
@@ -160,6 +161,11 @@ export function filledByUs(el: Element): boolean {
 }
 
 /** What to type into a region combobox: the names of the region, then of its parent, then the item's text. */
+/** What a list offers now (its options' values and labels): a reload changes it. */
+function optionsSignature(sel: HTMLSelectElement): string {
+  return Array.from(sel.options, (o) => `${o.value}\u0000${o.text}`).join("\u0001");
+}
+
 function typedRegion(wanted: readonly string[], raw: string): string[] {
   if (wanted.length !== 1) return [raw];
   const code = wanted[0]!;
@@ -506,15 +512,8 @@ export function createFiller(opts: FillerOptions): Filler {
         // A region field may also appear only once the country is chosen.
         const todo: Slot[] = regionSlots.length > 0 ? regionSlots.map((x) => x.slot) : countryChanged || countryPending ? [{ role: "region", nth: 0 }] : [];
         const formRef0 = form.ref;
-        /** One try at the region: "written", "picking" (its combobox, counted once picked) or false. */
-        const tryRegion = (slot: Slot, fresh: boolean): "written" | "picking" | false => {
-          if (fresh) {
-            const again = opts.resolve(form.ref, opts.analyze()) ?? opts.resolve(formRef0, opts.analyze());
-            if (!again) return false;
-            form = again;
-          }
-          const el = target(slot, undefined);
-          if (!el) return false;
+        /** One try at the region in `el`: "written", "picking" (its combobox, counted once picked) or false. */
+        const regionInto = (el: FieldElement, slot: Slot, fresh: boolean): "written" | "picking" | false => {
           const geo = geoNow();
           if (isCombobox(el)) {
             const wanted = regionWanted(region, geo.country, postal);
@@ -531,8 +530,45 @@ export function createFiller(opts: FillerOptions): Filler {
           if (!fresh) written.push({ slot, part: undefined, el, value: region });
           return "written";
         };
+        /**
+         * The tries of a wait for the region (a list the page reloads, a
+         * field it shows). A live field is tried again only once its options
+         * changed, without analysing the page; a dead or missing one is looked
+         * for in a fresh analysis, at most once per OBSERVER_DELAY_MS (and at
+         * the last try): a page that mutates all the time is not analysed on
+         * every batch.
+         */
+        const regionWait = (slot: Slot) => {
+          let lookedAt = Date.now();
+          let tried: string | null = null;
+          return (final: boolean): boolean => {
+            let r = lookup(slot, undefined);
+            if (r.dead) {
+              const now = Date.now();
+              if (!final && now - lookedAt < OBSERVER_DELAY_MS) return false;
+              lookedAt = now;
+              const again = opts.resolve(form.ref, opts.analyze()) ?? opts.resolve(formRef0, opts.analyze());
+              if (!again) return false;
+              form = again;
+              r = lookup(slot, undefined);
+              tried = null;
+            }
+            const el = r.el;
+            if (!el) return false;
+            if (el instanceof HTMLSelectElement) {
+              const sig = optionsSignature(el);
+              if (sig === tried) return false;
+              tried = sig;
+            }
+            return regionInto(el, slot, true) !== false;
+          };
+        };
         for (const slot of todo) {
-          const r = countryPending ? false : tryRegion(slot, false);
+          let r: "written" | "picking" | false = false;
+          if (!countryPending) {
+            const el = target(slot, undefined);
+            r = el ? regionInto(el, slot, false) : false;
+          }
           if (r === "written") n++;
           if (r !== false) continue;
           if (!countryChanged && !countryPending) continue;
@@ -540,7 +576,7 @@ export function createFiller(opts: FillerOptions): Filler {
           later(async () => {
             const container = refs.get(form.ref);
             const root = container?.getRootNode() ?? document;
-            await settle(root, () => tryRegion(slot, true) !== false, settleMs);
+            await settle(root, regionWait(slot), settleMs);
           });
         }
       }

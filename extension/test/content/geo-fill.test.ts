@@ -25,7 +25,11 @@ afterEach(() => {
 function setup(html: string, settleMs = 400) {
   document.body.innerHTML = html;
   const refs = new RefRegistry();
-  const analyze = () => analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+  const count = { analyses: 0 };
+  const analyze = () => {
+    count.analyses++;
+    return analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+  };
   const filler = createFiller({
     refs,
     geometry: testGeometry,
@@ -35,7 +39,16 @@ function setup(html: string, settleMs = 400) {
   });
   const fill = (values: Values) => filler.fillForm(analyze().forms[0]!.ref, values);
   const fillAll = (values: Values) => filler.fill(analyze().forms[0]!.ref, values);
-  return { filler, fill, fillAll };
+  return { filler, fill, fillAll, count };
+}
+
+/** A page that mutates every few milliseconds (a clock, a carousel) until stopped. */
+function noisy(): () => void {
+  const tick = document.createElement("span");
+  document.body.append(tick);
+  let n = 0;
+  const id = setInterval(() => (tick.textContent = String(n++)), 5);
+  return () => clearInterval(id);
 }
 
 const ADDRESS = (country: string, region: string) => `
@@ -127,6 +140,47 @@ describe("region lists", () => {
     fill({ country: "CA", region: "Quebec" });
     await filler.settled();
     expect(sel("p").value).toBe("QC");
+  });
+
+  it("on a noisy page, waits for a live list without analysing the page again", async () => {
+    const { fill, filler, count } = setup(ADDRESS(
+      `<label for="c">Country</label><select id="c" autocomplete="country"><option value="US">United States</option><option value="FR">France</option></select>`,
+      `<label for="s">State</label><select id="s" autocomplete="address-level1">${US_STATES}</select>`), 800);
+    const stop = noisy();
+    try {
+      sel("c").addEventListener("change", () => later(() => (sel("s").innerHTML = FR_DEPTS), 400));
+      fill({ country: "FR", region: "Rhone" });
+      const before = count.analyses;
+      await filler.settled();
+      expect(sel("s").value).toBe("69");
+      expect(count.analyses - before).toBe(0);
+    } finally {
+      stop();
+    }
+  });
+
+  it("on a noisy page, a region field still to come is looked for at most once per observer delay", async () => {
+    const { fill, filler, count } = setup(ADDRESS(
+      `<label for="c">Country</label><select id="c" autocomplete="country"><option value="GB">United Kingdom</option><option value="CA">Canada</option></select>`,
+      `<div id="slot"></div>`), 800);
+    const stop = noisy();
+    try {
+      sel("c").addEventListener("change", () => {
+        later(() => {
+          document.getElementById("slot")!.innerHTML =
+            `<label for="p">Province</label><select id="p" autocomplete="address-level1"><option value="">Province</option><option value="ON">Ontario</option><option value="QC">Québec</option></select>`;
+        }, 600);
+      });
+      const t0 = Date.now();
+      fill({ country: "CA", region: "Quebec" });
+      const before = count.analyses;
+      await filler.settled();
+      expect(sel("p").value).toBe("QC");
+      // 150 ms apart at most, plus the first and the last look.
+      expect(count.analyses - before).toBeLessThanOrEqual(Math.ceil((Date.now() - t0) / 150) + 2);
+    } finally {
+      stop();
+    }
   });
 
   it("gives up after the bound and leaves the list alone", async () => {
