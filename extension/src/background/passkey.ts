@@ -110,9 +110,13 @@ interface Pending extends Ctx {
   resolve: (r: PasskeyResult) => void;
 }
 
-/** A request between its arrival and its window: an abort lands here (no window then). */
+/** A request between its arrival and its window: an abort or a navigation lands here (no window then). */
 interface Early {
+  tabId: number;
+  frameId: number;
   aborted: boolean;
+  /** The requesting document went away (a navigation of its frame or of the top frame). */
+  gone: boolean;
 }
 
 const FALLBACK: PasskeyResult = { kind: "fallback" };
@@ -151,6 +155,9 @@ export class Passkeys {
 
   install(ext: { webNavigation: Pick<BgExt["webNavigation"], "onCommitted">; tabs: Pick<BgExt["tabs"], "onRemoved"> }): void {
     ext.webNavigation.onCommitted.addListener((d) => {
+      for (const e of this.early.values()) {
+        if (e.tabId === d.tabId && (d.frameId === 0 || d.frameId === e.frameId)) e.gone = true;
+      }
       for (const p of [...this.byToken.values()]) {
         if (p.cs.tabId === d.tabId && (d.frameId === 0 || d.frameId === p.cs.frameId)) this.finish(p, fail("NotAllowedError"));
       }
@@ -229,7 +236,7 @@ export class Passkeys {
   async request(cs: CsContext, reqId: string, req: PasskeyRequest, activated: boolean): Promise<PasskeyResult> {
     const key = `${cs.tabId}:${cs.frameId}:${reqId}`;
     if (this.early.has(key) || this.byKey.has(key)) return fail("NotAllowedError");
-    const e: Early = { aborted: false };
+    const e: Early = { tabId: cs.tabId, frameId: cs.frameId, aborted: false, gone: false };
     this.early.set(key, e);
     try {
       return await this.route(cs, reqId, req, activated, e);
@@ -269,8 +276,9 @@ export class Passkeys {
       // Locked, unpaired, an rpId the host refuses: the browser decides.
       return FALLBACK;
     }
-    // The page aborted while the host listed: no window.
+    // The page aborted, or its document went away, while the host listed: no window.
     if (e.aborted) return fail("AbortError");
+    if (e.gone) return fail("NotAllowedError");
     if (req.kind === "get") return this.get(c, reqId, req, listed, chain, canOpen);
     return this.create(c, reqId, req, listed, canOpen);
   }

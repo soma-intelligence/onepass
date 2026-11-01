@@ -623,6 +623,35 @@ describe("passkey hardening (review)", () => {
     expect(t.windows.created).toHaveLength(0);
   });
 
+  it("L1: a navigation while the host lists cancels the request: no window", async () => {
+    for (const frameId of [0, 2]) {
+      const t = setup();
+      let release = () => undefined as void;
+      t.gate.hold = new Promise<void>((r) => (release = r));
+      const p = t.pk.request(cs({ frameId }), "r1", GET, true);
+      await flush();
+      for (const l of t.nav) l({ tabId: 7, frameId, url: "https://login.atlas-cloud.test/next" });
+      release();
+      expect(await p).toEqual({ kind: "error", name: "NotAllowedError" });
+      expect(t.windows.created).toHaveLength(0);
+    }
+  });
+
+  it("L1: a navigation of another tab or frame leaves the request alone", async () => {
+    const t = setup();
+    let release = () => undefined as void;
+    t.gate.hold = new Promise<void>((r) => (release = r));
+    void t.pk.request(cs({ frameId: 2 }), "r1", GET, true);
+    await flush();
+    for (const l of t.nav) {
+      l({ tabId: 8, frameId: 0, url: "https://x.test/" });
+      l({ tabId: 7, frameId: 3, url: "https://x.test/" });
+    }
+    release();
+    await flush();
+    expect(t.windows.created).toHaveLength(1);
+  });
+
   it("M2: a content sender without a browser origin gets the browser's API", async () => {
     const t = setup();
     const router = createPasskeyRouter({ id: EXT_ID, getURL: (p) => EXT_ORIGIN + p }, t.pk);
