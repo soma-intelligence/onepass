@@ -72,6 +72,8 @@ export interface PasskeyWindows {
     focused: boolean;
   }): Promise<{ id?: number; tabs?: { id?: number }[] } | undefined>;
   remove(windowId: number): Promise<void>;
+  /** "Autre appareil": the requesting tab's window comes back to the front first. */
+  update?(windowId: number, o: { focused: boolean }): Promise<unknown>;
   onRemoved: Event<(windowId: number) => void>;
 }
 
@@ -82,7 +84,7 @@ export interface PasskeyDeps {
   windows?: PasskeyWindows;
   runtime: Pick<BgExt["runtime"], "getURL">;
   /** The requesting tab must be the active one of its window. */
-  tabs: { get(tabId: number): Promise<{ active?: boolean } | undefined> };
+  tabs: { get(tabId: number): Promise<{ active?: boolean; windowId?: number } | undefined> };
   now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
@@ -504,9 +506,27 @@ export class Passkeys {
     });
   }
 
+  /**
+   * "Autre appareil": the requesting tab's window is focused again, then the
+   * page's call goes to the browser, whose own dialog then shows over that
+   * tab rather than behind the closing window.
+   */
   async other(token: string, ui: UiContext): Promise<object> {
-    this.finish(await this.pending(token, ui), FALLBACK);
+    const p = await this.pending(token, ui);
+    await this.refocus(p.cs.tabId);
+    this.finish(p, FALLBACK);
     return {};
+  }
+
+  private async refocus(tabId: number): Promise<void> {
+    const update = this.deps.windows?.update;
+    if (!update) return;
+    try {
+      const tab = await this.deps.tabs.get(tabId);
+      if (typeof tab?.windowId === "number") await update.call(this.deps.windows, tab.windowId, { focused: true });
+    } catch {
+      // The tab or its window is gone: the browser's API all the same.
+    }
   }
 
   async cancel(token: string, ui: UiContext): Promise<object> {

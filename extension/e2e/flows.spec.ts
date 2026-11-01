@@ -1,5 +1,6 @@
 // User flows of spec 11.3, end to end: real extension, real native host
 // (fixture vault), local HTTPS pages of the fictional Atlas Cloud.
+import { generateKeyPairSync } from "node:crypto";
 import { expect, paired, test } from "./fixtures";
 import { FX } from "./server";
 
@@ -382,4 +383,42 @@ paired("passkey_sign_in", async ({ ext }) => {
   await win.getByRole("button", { name: "Annuler" }).click();
   // The private key never left the host.
   expect(ext.audit()).not.toContain("MIGHAgEAMBMGByqGSM49");
+});
+
+paired("passkey_other_device_hands_off_to_the_browser", async ({ ext }) => {
+  const { page } = ext;
+  // The browser's own authenticator (Chromium's virtual one, with a key of its
+  // own for this site): what answers once OnePass hands the call back.
+  const cdp = await ext.context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable", { enableUI: false });
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  const nativeKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "der" });
+  await cdp.send("WebAuthn.addCredential", {
+    authenticatorId,
+    credential: {
+      credentialId: Buffer.from("native-only-2").toString("base64"), isResidentCredential: true, rpId: FX.passkey.rpId,
+      userHandle: Buffer.from("native-2").toString("base64"), privateKey: nativeKey.toString("base64"), signCount: 0,
+    },
+  });
+  let nativeAsserted = 0;
+  cdp.on("WebAuthn.credentialAsserted", () => nativeAsserted++);
+  await page.goto(`${ATLAS}/passkey`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
+  const opened = ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 15_000 });
+  await page.locator("#signin").click();
+  const win = await opened;
+  await ext.settle();
+  // "Autre appareil": OnePass's window closes, the site's tab is focused again
+  // first, so the browser's own call is not refused for an unfocused document.
+  await win.getByRole("button", { name: "Autre appareil" }).click();
+  await expect.poll(() => win.isClosed()).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+  await expect.poll(() => nativeAsserted, { timeout: 15_000, message: "the browser's own authenticator never answered" }).toBe(1);
+  await expect(page.locator("#result")).toHaveAttribute("data-status", /.+/, { timeout: 15_000 });
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", "error:NotAllowedError");
+  // OnePass signed nothing.
+  expect(ext.audit()).not.toContain("passkey_get");
+  await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
 });

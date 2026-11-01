@@ -53,6 +53,12 @@ const CREATE: PasskeyRequest = {
 class FakeWindows implements PasskeyWindows {
   created: { url: string }[] = [];
   removed: number[] = [];
+  /** What happened, in order: a window focused (once the browser did it). */
+  log: string[] = [];
+  async update(id: number, o: { focused: boolean }) {
+    await new Promise((r) => setTimeout(r, 5));
+    this.log.push(`focus:${id}:${o.focused}`);
+  }
   listeners: ((id: number) => void)[] = [];
   next = 100;
   async create(o: { url: string }) {
@@ -125,7 +131,7 @@ function setup(o: Setup = {}) {
     chain,
     windows,
     runtime: { getURL: (p: string) => EXT_ORIGIN + p },
-    tabs: { get: async () => ({ active: o.tabActive ?? true }) },
+    tabs: { get: async () => ({ active: o.tabActive ?? true, windowId: 42 }) },
     now: () => clock.t,
   });
   pk.install({
@@ -303,6 +309,21 @@ describe("passkey choice window", () => {
     await t.pk.init(t.tokenOf(), t.ui());
     await expect(t.pk.pick(t.tokenOf(), t.ui(), ITEM, CRED)).rejects.toMatchObject({ code: "reprompt_required" });
     expect(t.windows.removed).toEqual([]);
+  });
+});
+
+describe("passkey other device", () => {
+  it("L3: Autre appareil focuses the requesting tab's window, then hands the call to the browser", async () => {
+    const t = setup();
+    const p = t.pk.request(cs(), "r1", GET, true).then((r) => {
+      t.windows.log.push("resolved");
+      return r;
+    });
+    await flush();
+    await t.pk.other(t.tokenOf(), t.ui());
+    expect(await p).toEqual({ kind: "fallback" });
+    expect(t.windows.log).toEqual(["focus:42:true", "resolved"]);
+    expect(t.windows.removed).toEqual([100]);
   });
 });
 
