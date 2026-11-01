@@ -1,0 +1,8 @@
+# Android 15+ devices may use 16 KiB pages: every shared object we ship must
+# have its LOAD segments aligned to 16 KiB (checked by
+# android/scripts/build-core.sh with llvm-readelf).
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]

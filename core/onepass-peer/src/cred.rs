@@ -145,7 +145,7 @@ pub fn exe_path(pid: i32) -> Option<PathBuf> {
     Some(PathBuf::from(std::ffi::OsString::from_vec(buf)))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn linux_peer_cred(s: &UnixStream) -> Option<libc::ucred> {
     use std::os::fd::AsRawFd;
     let mut cred = libc::ucred {
@@ -169,12 +169,12 @@ fn linux_peer_cred(s: &UnixStream) -> Option<libc::ucred> {
     (rc == 0 && len as usize == std::mem::size_of::<libc::ucred>()).then_some(cred)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn peer_uid(s: &UnixStream) -> Option<u32> {
     linux_peer_cred(s).map(|c| c.uid)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn peer_pid(s: &UnixStream) -> Option<i32> {
     linux_peer_cred(s).map(|c| c.pid).filter(|&p| p > 0)
 }
@@ -185,7 +185,7 @@ fn peer_audit_token(_s: &UnixStream) -> Option<[u8; 32]> {
 }
 
 /// Parent pid of `pid`, `None` when the process is gone or unreadable.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn parent_of(pid: i32) -> Option<i32> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     parse_stat_ppid(&stat)
@@ -193,7 +193,7 @@ pub fn parent_of(pid: i32) -> Option<i32> {
 
 /// Parent pid in the contents of `/proc/<pid>/stat`: the fourth field, read
 /// after the last `)` because the command name may hold spaces and parens.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "android", test))]
 fn parse_stat_ppid(stat: &str) -> Option<i32> {
     let rest = &stat[stat.rfind(')')? + 1..];
     let mut fields = rest.split_ascii_whitespace();
@@ -204,29 +204,29 @@ fn parse_stat_ppid(stat: &str) -> Option<i32> {
 }
 
 /// Executable path of `pid`. Informative: a pid can be reused.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn exe_path(pid: i32) -> Option<PathBuf> {
     std::fs::read_link(format!("/proc/{pid}/exe")).ok()
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
 fn peer_uid(_s: &UnixStream) -> Option<u32> {
     None
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
 fn peer_pid(_s: &UnixStream) -> Option<i32> {
     None
 }
 
 /// Parent pid of `pid`: unknown on this platform.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
 pub fn parent_of(_pid: i32) -> Option<i32> {
     None
 }
 
 /// Executable path of `pid`: unknown on this platform.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
 pub fn exe_path(_pid: i32) -> Option<PathBuf> {
     None
 }
@@ -242,7 +242,13 @@ mod tests {
         assert!(pid_exists(1));
         assert!(!pid_exists(0));
         assert!(!pid_exists(-1));
-        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        // Android keeps its tools in /system/bin.
+        let true_program = if cfg!(target_os = "android") {
+            "/system/bin/true"
+        } else {
+            "/usr/bin/true"
+        };
+        let mut child = std::process::Command::new(true_program).spawn().unwrap();
         let pid = child.id() as i32;
         child.wait().unwrap();
         assert!(!pid_exists(pid));

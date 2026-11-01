@@ -1,0 +1,29 @@
+# Exact versions only (plan X4, global constraints). Every artifact is
+# checked against gradle/verification-metadata.xml: after a change here,
+# regenerate it from android/ with
+#   ./gradlew --write-verification-metadata sha256 help \
+#     testPlayDebugUnitTest testFdroidDebugUnitTest lintPlayDebug assemblePlayDebug
+[versions]
+# Android 17 (API 37) for compile and target, Android 10 (API 29) minimum.
+compileSdk = "37"
+targetSdk = "37"
+minSdk = "29"
+agp = "9.5.0"
+kotlin = "2.4.21"
+# UniFFI's Kotlin runtime dependency. The UniFFI crate itself stays at
+# =0.32.2 in core/onepass-ffi/Cargo.toml, shared with the Swift bindings.
+jna = "5.19.1"
+junit = "6.1.3"
+
+[libraries]
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+# AGP 9 compiles Kotlin itself (built-in Kotlin); this pins the Kotlin
+# Gradle plugin, hence the compiler, it uses.
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

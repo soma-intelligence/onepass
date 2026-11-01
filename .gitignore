@@ -24,3 +24,11 @@ extension/lab/corpus/private/
 # ML project
 ml/.venv/
 ml/out/
+
+# Android: libraries built by android/scripts/build-core.sh
+android/vaultkit-android/src/main/jniLibs/
+# Android: Gradle and IDE state
+android/**/.gradle/
+android/**/.kotlin/
+android/**/build/
+android/local.properties

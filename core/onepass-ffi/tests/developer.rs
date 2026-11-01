@@ -394,6 +394,13 @@ fn the_app_policy_exposes_only_what_it_lists() {
     ));
 }
 
+/// A program every system has: Android keeps its tools in /system/bin.
+const TRUE_PROGRAM: &str = if cfg!(target_os = "android") {
+    "/system/bin/true"
+} else {
+    "/usr/bin/true"
+};
+
 #[test]
 fn programs_pair_and_unpair_and_the_audit_log_rotates() {
     let fx = fixture();
@@ -401,7 +408,7 @@ fn programs_pair_and_unpair_and_the_audit_log_rotates() {
     let id = fx
         .session
         .clone()
-        .pair_program(data.clone(), "/usr/bin/true".into())
+        .pair_program(data.clone(), TRUE_PROGRAM.into())
         .unwrap();
     // macOS signs /usr/bin/true; other systems have no code signature.
     if cfg!(target_os = "macos") {

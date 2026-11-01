@@ -1,0 +1,6 @@
+# UniFFI binding settings, read by `uniffi-bindgen generate --library`.
+# The Swift bindings keep their defaults.
+
+[bindings.kotlin]
+# The generated Kotlin package of the Android app (android/vaultkit-android).
+package_name = "me.somalabs.onepass.core"
