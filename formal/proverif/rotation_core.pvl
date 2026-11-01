@@ -2,11 +2,17 @@
    (spec docs/superpowers/specs/2026-10-28-key-rotation-v2-design.md).
    Shared declarations and processes of rotation.pv and its two negative
    controls (rotation_autofollow.pv, rotation_account_anchor.pv). Each
-   model defines its own Follow process (the part the variants change),
+   model defines its own follow_rotation process (the part the variants change),
    its queries and its main process.
 
-   Status: design model, written BEFORE the implementation. It names the
-   records and labels of the spec (sections 5 and 6), not code.
+   Status: design model, written before the implementation; since Task 20
+   its processes and events carry the names of the Rust code:
+   rotate = Repository::rotate, follow_rotation = repo/follow.rs
+   follow_rotation, open_key_delivery = repo/rotate.rs open_key_delivery,
+   restore_from_kit = repo/kit.rs restore_from_kit, RotationSigned =
+   lineage sign_rotation, CommitAdoption = follow.rs commit_adoption,
+   KitRestored = kit.rs KitRestored, RecreatedVault* = the recreated vault
+   of lineage recreated_vault_id. Queries are unchanged.
 
    Cast (spec section 2):
    - devA, devC: honest devices of the account. Their device keys (hybrid
@@ -125,16 +131,16 @@ table heads(bitstring, bitstring).
 
 (* An honest device rotated: signer, new identity pub, revoked device,
    roster, new Secret Key, new identity secret. *)
-event Rotated(bitstring, pkey, bitstring, bitstring, key, skey).
+event RotationSigned(bitstring, pkey, bitstring, bitstring, key, skey).
 (* Device `dev` adopted the identity `ip` introduced by `signer`. *)
-event Adopt(bitstring, bitstring, pkey).
+event CommitAdoption(bitstring, bitstring, pkey).
 (* An item written under the new keys, by the rotator or a follower. *)
 event ItemSealedNew(bitstring, bitstring).
 (* A vault created under a new identity / accepted by a follower. *)
-event VaultCreatedNew(pkey, bitstring, key).
-event VaultAcceptedNew(bitstring, pkey, bitstring, key).
+event RecreatedVaultCreated(pkey, bitstring, key).
+event RecreatedVaultAccepted(bitstring, pkey, bitstring, key).
 (* A device restored from a kit pinned this identity and roster. *)
-event PinRoster(bitstring, pkey, bitstring).
+event KitRestored(bitstring, pkey, bitstring).
 
 (* ------------------------------------------------------------------ *)
 (* Rotation by an honest device (spec 6.3, phases 1 and 2).           *)
@@ -143,7 +149,7 @@ event PinRoster(bitstring, pkey, bitstring).
 (* two devices trusted afterwards, each receiving the new Secret Key  *)
 (* sealed to its device KEM key.                                       *)
 (* ------------------------------------------------------------------ *)
-let Rotate(signer: bitstring, dsk: skey, parent: bitstring,
+let rotate(signer: bitstring, dsk: skey, parent: bitstring,
            revoked: bitstring, roster: bitstring) =
   new skn: key; new idk: skey; new ssk: skey; new km: seed; new kx: seed;
   new salt_n: nonce;
@@ -160,7 +166,7 @@ let Rotate(signer: bitstring, dsk: skey, parent: bitstring,
   new r1m: seed; new r1x: seed; new r2m: seed; new r2x: seed;
   let d1 = core_wrap_labeled(m1, x1, r1m, r1x, lbl_sk_delivery, delivery_ctx(hb, i1), skn) in
   let d2 = core_wrap_labeled(m2, x2, r2m, r2x, lbl_sk_delivery, delivery_ctx(hb, i2), skn) in
-  event Rotated(signer, pk(idk), revoked, roster, skn, idk);
+  event RotationSigned(signer, pk(idk), revoked, roster, skn, idk);
   (* The user did this, and keeps the new kit. *)
   insert userDid(signer, revoked);
   insert kit(pk(idk), skn);
@@ -177,7 +183,7 @@ let Rotate(signer: bitstring, dsk: skey, parent: bitstring,
   let vid = n2b(vid_n) in
   let env = core_wrap(kem_pk_m(km), kem_pk_x(kx), rvm, rvx, vault_ctx(vid), vk) in
   let mb = aead_seal(vk, manifest_aad_r(vid), vid) in
-  event VaultCreatedNew(pk(idk), vid, vk);
+  event RecreatedVaultCreated(pk(idk), vid, vk);
   event ItemSealedNew(signer, content);
   out(c, (vid, env, mb, sign_dom(ssk, dom_manifest, mb),
           aead_seal(vk, item_aad_r(vid), content))).
@@ -190,7 +196,7 @@ let Rotate(signer: bitstring, dsk: skey, parent: bitstring,
    with its device KEM key, check the params against the record, open
    the keyset under AUK(password, delivered Secret Key) and check that it
    holds the identity the record names. Returns the new keys. *)
-letfun open_rotation(me: bitstring, dkm: seed, dkx: seed, body: bitstring,
+letfun open_key_delivery(me: bitstring, dkm: seed, dkx: seed, body: bitstring,
                      ip: pkey, ph: bitstring, params: bitstring,
                      ks: bitstring, deliv: bitstring) =
   let skn = core_unwrap_labeled(dkm, dkx, lbl_sk_delivery,
@@ -210,12 +216,12 @@ letfun open_rotation(me: bitstring, dkm: seed, dkx: seed, body: bitstring,
 (* After adoption: accept a vault of the new identity (its manifest is
    signed by the new signing key and opens under the vault key) and write
    an item in it. *)
-let UseVault(me: bitstring, ip: pkey, km: seed, kx: seed, ssk: skey) =
+let use_recreated_vault(me: bitstring, ip: pkey, km: seed, kx: seed, ssk: skey) =
   in(c, (vid: bitstring, env: bitstring, mb: bitstring, ms: bitstring));
   let vk = core_unwrap(km, kx, vault_ctx(vid), env) in
   if verify_dom(pk(ssk), dom_manifest, mb, ms) = true then
   if aead_open(vk, manifest_aad_r(vid), mb) = vid then
-  event VaultAcceptedNew(me, ip, vid, vk);
+  event RecreatedVaultAccepted(me, ip, vid, vk);
   new wcontent: bitstring;
   event ItemSealedNew(me, wcontent);
   out(c, aead_seal(vk, item_aad_r(vid), wcontent)).
@@ -227,7 +233,7 @@ let UseVault(me: bitstring, ip: pkey, km: seed, kx: seed, ssk: skey) =
 (* identity of the record), the roster by the identity signature over  *)
 (* the record. No device key is checked: the device has none pinned.   *)
 (* ------------------------------------------------------------------ *)
-let RestoreWith(rtag: bitstring, skk: key) =
+let restore_from_kit(rtag: bitstring, skk: key) =
   in(c, (body: bitstring, sid: bitstring, params: bitstring, ks: bitstring));
   let rr_body(=acct, parent: bitstring, signer: bitstring, ip: pkey,
               revoked: bitstring, roster: bitstring, ph: bitstring) = body in
@@ -239,10 +245,10 @@ let RestoreWith(rtag: bitstring, skk: key) =
   let (km: seed, kx: seed, ssk: skey, idk: skey) =
     aead_open(derive_auk(pw, skk, salt), keyset_aad_r(acct), ks) in
   if pk(idk) = ip then
-  event PinRoster(rtag, ip, roster).
+  event KitRestored(rtag, ip, roster).
 
 (* The latest kit (a Secret Key the user printed at a rotation). *)
-let RestoreKit = get kit(ipk, skk) in RestoreWith(restore_new, skk).
+let restore_latest_kit = get kit(ipk, skk) in restore_from_kit(restore_new, skk).
 (* An outdated kit from before the rotation: its Secret Key is the one
    the revoked device holds. *)
-let RestoreOldKit = RestoreWith(restore_old, sk_old).
+let restore_outdated_kit = restore_from_kit(restore_old, sk_old).

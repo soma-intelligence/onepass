@@ -409,17 +409,17 @@ pub trait RecordStore {
     }
 
     /// The pinned chain state this store keeps for the device, read by the
-    /// `Repository` unlock functions. Only `SyncStore` persists one (meta key
-    /// `chain`); other stores give the default, so each session pins on
-    /// first use.
+    /// `Repository` unlock functions. `SyncStore` and `SqliteStore` persist
+    /// one (meta key `chain`); other stores give the default, so each
+    /// session pins on first use.
     fn chain_state(&self) -> Result<ChainState> {
         Ok(ChainState::default())
     }
 
     /// Whether `chain_state` gives back, in a later session, the chain state
-    /// saved with `put_all_if_version_with_chain` (only `SyncStore`). A
-    /// device registers itself in the device list only on such a store: its
-    /// id must outlive the session.
+    /// saved with `put_all_if_version_with_chain` (`SyncStore` and
+    /// `SqliteStore`). A device registers itself in the device list only on
+    /// such a store: its id must outlive the session.
     fn persists_chain(&self) -> bool {
         false
     }
@@ -440,6 +440,15 @@ pub trait RecordStore {
     /// one was saved. A store that keeps none refuses.
     fn trust_state(&self) -> Result<Option<TrustState>> {
         Err(Error::Store("trust state unsupported".into()))
+    }
+
+    /// A counter that changes whenever a row of the kinds a rotation prompt
+    /// depends on (account params, keysets, lineage, intro and delivery
+    /// records) is written or removed, local or fetched, on any connection
+    /// (Task 19 carried item 6; `SyncStore`: SQLite triggers). `None`: the
+    /// store keeps none, and the caller digests the rows themselves.
+    fn lineage_stamp(&self) -> Result<Option<u64>> {
+        Ok(None)
     }
 
     /// `put_all_if_version_and_delete`, and the trust state (and `chain`,
@@ -607,6 +616,17 @@ pub trait RecordStore {
     /// none, so it writes nothing.
     fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
         let _ = rows;
+        Ok(())
+    }
+
+    /// Queue the server deletion of these item records, which this device
+    /// holds as server rows and no device needs any more (R21: the content
+    /// of a rotation that lost, Task 19 carried item 5). A store with a
+    /// push queue sends each as a deletion until it is confirmed or the
+    /// row is gone; nothing is deleted locally before. The default keeps
+    /// no queue.
+    fn collect_foreign_items(&mut self, ids: Vec<Id>) -> Result<()> {
+        let _ = ids;
         Ok(())
     }
 

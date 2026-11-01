@@ -1,34 +1,47 @@
 //! Development session: the data directory, `device.bin` and unlocking.
 //!
-//! `<data-dir>/device.bin` (mode 0600) holds the `DeviceState` and says
-//! where the Secret Key is: in the secret store of the system
-//! (`secret_store.rs`), or, only when the user chose it with
-//! `--insecure-file-secret-key`, in clear in the file itself. A Secret Key
-//! still in clear from an older CLI moves into the store at the next unlock
-//! (spec `docs/superpowers/specs/2026-10-28-cli-secret-key-design.md`).
+//! `<data-dir>/device.bin` (mode 0600) holds the `DeviceState`, says where
+//! the Secret Key is (in the secret store of the system, `secret_store.rs`,
+//! or, only when the user chose it with `--insecure-file-secret-key`, in
+//! clear in the file itself) and, since key rotation v2, this device's keys:
+//! the classical halves and a software post-quantum half, next to the Secret
+//! Key's protection, as `docs/superpowers/specs/2026-10-28-key-rotation-v2-design.md`
+//! 5.1 says (the CLI has no Secure Enclave). A Secret Key still in clear
+//! from an older CLI moves into the store at the next unlock (spec
+//! `docs/superpowers/specs/2026-10-28-cli-secret-key-design.md`); an account
+//! from before key rotation v2 gains device keys and a genesis at the next
+//! unlock (spec 15).
 
 use std::fmt;
 use std::fs;
 use std::io::{IsTerminal, Seek, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use onepass_core::crypto::{KdfParams, SecretKey};
+use onepass_core::device_keys::{DeviceKeys, SoftwarePqHalf};
+use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::repo::follow::{
+    QuarantineChoice, QuarantineTick, quarantine_resolve, quarantine_tick, reject_rotation,
+};
 use onepass_core::repo::travel::SEALED_TRAVEL_STATE_LEN;
 use onepass_core::repo::{DeviceState, Repository};
-use onepass_core::store::SqliteStore;
+use onepass_core::store::{RecordStore, SqliteStore};
 use onepass_core::{Error, Id};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use crate::secret_store::{SecretStore, StoreError, entry_name};
+use crate::secret_store::{SecretStore, StoreError, entry_name, pending_entry};
 
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
 const LOCK_FILE: &str = "lock";
 const SERVERS_LOCK_FILE: &str = "servers.lock";
 const TRAVEL_FILE: &str = "travel.bin";
+
+/// The name this device gives itself in the device list and the roster.
+pub const DEVICE_NAME: &str = "onepass CLI";
 
 /// Refusal of a command that must not run under a long-running server.
 pub const SERVER_RUNNING: &str =
@@ -138,11 +151,16 @@ impl From<Error> for CliError {
                 code: 5,
                 msg: e.to_string(),
             },
+            // Read only until the user answers a rotation, or for good on a
+            // device a rotation left behind (spec 8.1, 8.2, 10.8).
+            Error::ReadOnly => CliError::usage(format!(
+                "read only: a key rotation made on another device waits for your answer or \
+                 left this device behind. {FOLLOW_HINT}"
+            )),
             Error::Validation(_)
             | Error::InvalidFormat(_)
             | Error::Crypto
             | Error::Store(_)
-            | Error::ReadOnly
             | Error::OutdatedKit { .. } => CliError::usage(e),
         }
     }
@@ -202,7 +220,7 @@ macro_rules! out {
 mod tests {
     use super::*;
     use crate::secret_store::memory::MemoryStore;
-    use crate::secret_store::{NoStore, StoreError, entry_name};
+    use crate::secret_store::{NoStore, StoreError, entry_name, pending_entry};
 
     #[test]
     fn fast_kdf_switch_is_debug_only() {
@@ -303,6 +321,7 @@ mod tests {
     fn device_bin_roundtrips() {
         let mut state = fixed_state();
         state.epoch = 9;
+        let blob = DeviceKeyBlob::generate().unwrap();
         for key in [
             KeyAt::Store {
                 account_id: onepass_core::Id([7; 16]),
@@ -311,14 +330,77 @@ mod tests {
                 secret_key: Zeroizing::new("sk".to_owned()),
             },
         ] {
-            let mut bytes = encode(&key, &state).unwrap();
-            assert_eq!(&bytes[..4], DEVICE_MAGIC);
-            let file = decode(&bytes).unwrap();
-            assert_eq!(file.state, state);
-            assert_eq!(file.key, Stored::from(key));
-            bytes.push(0);
-            assert!(decode(&bytes).is_err());
+            for (device, pending) in [
+                (None, None),
+                (Some(&blob), None),
+                (Some(&blob), Some(PendingKey::Store)),
+                (
+                    Some(&blob),
+                    Some(PendingKey::File {
+                        secret_key: Zeroizing::new("next".to_owned()),
+                    }),
+                ),
+            ] {
+                let mut bytes = encode(&FileParts {
+                    key: &key,
+                    state: &state,
+                    device,
+                    pending: pending.as_ref(),
+                })
+                .unwrap();
+                assert_eq!(&bytes[..4], DEVICE_MAGIC);
+                let file = decode(&bytes).unwrap();
+                assert_eq!(file.state, state);
+                assert_eq!(file.pending, pending);
+                assert_eq!(file.device.is_some(), device.is_some());
+                if let (Some(a), Some(b)) = (&file.device, device) {
+                    assert_eq!(
+                        a.keys().unwrap().public(Id([1; 16])).unwrap(),
+                        b.keys().unwrap().public(Id([1; 16])).unwrap()
+                    );
+                }
+                match &key {
+                    KeyAt::Store { account_id } => {
+                        assert_eq!(file.key, Stored::Store(*account_id));
+                    }
+                    KeyAt::File { secret_key } => {
+                        assert_eq!(file.key, Stored::File(secret_key.clone()));
+                    }
+                }
+                bytes.push(0);
+                assert!(decode(&bytes).is_err());
+            }
         }
+    }
+
+    /// The version 3 layout (state and Secret Key location, no device keys),
+    /// as the CLI before key rotation v2 wrote it.
+    #[test]
+    fn device_bin_version_3_reads_without_device_keys() {
+        #[derive(Serialize)]
+        struct V3<'a> {
+            #[serde(with = "onepass_core::format::device_state_bytes")]
+            state: &'a DeviceState,
+            secret_key: &'a KeyAt,
+        }
+        let state = fixed_state();
+        let key = KeyAt::Store {
+            account_id: onepass_core::Id([7; 16]),
+        };
+        let mut bytes = DEVICE_MAGIC_V3.to_vec();
+        bytes.extend(
+            postcard::to_allocvec(&V3 {
+                state: &state,
+                secret_key: &key,
+            })
+            .unwrap(),
+        );
+        let file = decode(&bytes).unwrap();
+        assert_eq!(file.state, state);
+        assert_eq!(file.key, Stored::Store(onepass_core::Id([7; 16])));
+        assert!(file.device.is_none() && file.pending.is_none());
+        bytes.push(0);
+        assert!(decode(&bytes).is_err());
     }
 
     /// The version 2 layout (Secret Key in clear, then the versioned
@@ -353,10 +435,41 @@ mod tests {
     fn new_account(ctx: &Ctx) -> Result<Zeroizing<String>, CliError> {
         ensure_dir(&ctx.data_dir)?;
         let store = SqliteStore::open(&ctx.store_path())?;
-        let (repo, key) = Repository::create_account(store, PASSWORD, fast_kdf())?;
+        let device = DeviceKeyBlob::generate()?;
+        let (repo, key) = Repository::create_account_v2(
+            store,
+            PASSWORD,
+            fast_kdf(),
+            &device.keys()?,
+            DEVICE_NAME,
+            DeviceKind::Other,
+            DeviceMode::Personal,
+        )?;
         let shown = Zeroizing::new(key.to_display());
-        Session::create(ctx, repo, &key)?.persist()?;
+        Session::create(ctx, repo, &key, device)?.persist()?;
         Ok(shown)
+    }
+
+    /// An account from before key rotation v2: generation 0, no device
+    /// keys in `device.bin`, no trust state in the store.
+    fn legacy_account(ctx: &Ctx) -> Zeroizing<String> {
+        ensure_dir(&ctx.data_dir).unwrap();
+        let store = SqliteStore::open(&ctx.store_path()).unwrap();
+        let (repo, key) = Repository::create_account(store, PASSWORD, fast_kdf()).unwrap();
+        let shown = Zeroizing::new(key.to_display());
+        let key_at = KeyAt::Store {
+            account_id: repo.account_id(),
+        };
+        put_key(ctx, repo.account_id(), &shown).unwrap();
+        let bytes = encode(&FileParts {
+            key: &key_at,
+            state: repo.device_state(),
+            device: None,
+            pending: None,
+        })
+        .unwrap();
+        fs::write(ctx.device_path(), &*bytes).unwrap();
+        shown
     }
 
     /// Whether `bytes` hold the Secret Key in any of its text forms.
@@ -505,6 +618,235 @@ mod tests {
         }
     }
 
+    /// Spec 15: an account from before key rotation v2 gains device keys
+    /// (kept in `device.bin` first) and a legacy genesis at the next unlock,
+    /// once; later unlocks change nothing.
+    #[test]
+    fn a_legacy_account_gains_device_keys_and_a_genesis_on_unlock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        legacy_account(&c);
+        assert!(
+            decode(&fs::read(c.device_path()).unwrap())
+                .unwrap()
+                .device
+                .is_none()
+        );
+        let session = Session::open(&c, PASSWORD).unwrap();
+        session.persist().unwrap();
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        let blob = file.device.expect("device keys written");
+        let trust = session.repo.store().trust_state().unwrap().unwrap();
+        assert_eq!(
+            trust.me,
+            blob.keys().unwrap().public(trust.me.device_id).unwrap(),
+            "the genesis is signed by the keys device.bin holds"
+        );
+        assert_eq!(trust.roster.len(), 1);
+        assert_eq!(
+            trust.state,
+            onepass_core::trust::DeviceLineageState::Current
+        );
+        assert_eq!(trust.head.generation, 0);
+        let head = trust.head;
+        drop(session);
+        // Idempotent: same keys, same head.
+        let again = Session::open(&c, PASSWORD).unwrap();
+        again.persist().unwrap();
+        let trust2 = again.repo.store().trust_state().unwrap().unwrap();
+        assert_eq!(trust2.head, head);
+        assert_eq!(trust2.me, trust.me);
+        let file2 = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert_eq!(
+            file2
+                .device
+                .unwrap()
+                .keys()
+                .unwrap()
+                .public(trust.me.device_id)
+                .unwrap(),
+            trust.me
+        );
+    }
+
+    /// The oldest layout (Secret Key in clear) opens, moves the key into the
+    /// store and gains device keys in the same unlock.
+    #[test]
+    fn a_version_2_device_bin_gains_device_keys_too() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = memory();
+        let c = ctx(tmp.path(), first.clone(), false);
+        let shown = legacy_account(&c);
+        write_legacy(&c, &shown);
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let session = Session::open(&c, PASSWORD).unwrap();
+        session.persist().unwrap();
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert_eq!(file.key, Stored::Store(session.repo.account_id()));
+        assert!(file.device.is_some());
+        assert!(session.repo.store().trust_state().unwrap().is_some());
+        assert!(!holds_key(&fs::read(c.device_path()).unwrap(), &shown));
+    }
+
+    fn rotate_request<'a>(
+        keys: &'a DeviceKeys,
+        current: &'a SecretKey,
+        next: &'a SecretKey,
+    ) -> onepass_core::repo::RotateRequest<'a> {
+        onepass_core::repo::RotateRequest {
+            revoke: Vec::new(),
+            new_password: None,
+            password: PASSWORD,
+            secret_key: current,
+            new_secret_key: next,
+            device_keys: keys,
+            reason: onepass_core::lineage::RotationReason::Rotate,
+            keep_tofu: &[],
+        }
+    }
+
+    /// K6, K12: the new Secret Key is kept before the rotation commits. A
+    /// cut between the commit and the promotion leaves the old key in the
+    /// store and the new one pending; the next unlock opens with the pending
+    /// key and finishes the move.
+    #[test]
+    fn a_cut_after_the_commit_finishes_with_the_pending_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let first = new_account(&c).unwrap();
+        let mut session = Session::open(&c, PASSWORD).unwrap();
+        let account = session.repo.account_id();
+        let keys = session.device_keys().unwrap();
+        let current = session.secret_key().unwrap();
+        let next = SecretKey::generate().unwrap();
+        let next_shown = Zeroizing::new(next.to_display());
+        session.stage_pending(&c, &next).unwrap();
+        // Staged: both keys are in the store, device.bin names the pending one.
+        assert_eq!(
+            entries(&store),
+            vec![
+                (entry_name(account), first.as_str().to_owned()),
+                (pending_entry(account), next_shown.as_str().to_owned()),
+            ]
+        );
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert_eq!(file.pending, Some(PendingKey::Store));
+        assert!(!holds_key(&fs::read(c.device_path()).unwrap(), &next_shown));
+        session
+            .repo
+            .rotate(rotate_request(&keys, &current, &next))
+            .unwrap();
+        // The process dies here: no promotion, device.bin not rewritten.
+        drop(session);
+        assert_eq!(
+            store
+                .entries
+                .lock()
+                .unwrap()
+                .get(&entry_name(account))
+                .map(|k| k.as_str().to_owned()),
+            Some(first.as_str().to_owned())
+        );
+        let again = Session::open(&c, PASSWORD).unwrap();
+        assert_eq!(
+            entries(&store),
+            vec![(entry_name(account), next_shown.as_str().to_owned())],
+            "the new key replaced the old one and the pending entry is gone"
+        );
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert_eq!(file.pending, None);
+        assert_eq!(again.secret_key().unwrap().to_display(), *next_shown);
+        drop(again);
+        // And the next unlock needs nothing more.
+        Session::open(&c, PASSWORD).unwrap();
+    }
+
+    /// A rotation that never committed leaves a pending key behind: the
+    /// next unlock opens with the current key and drops the pending one.
+    #[test]
+    fn a_pending_key_of_a_rotation_that_never_committed_is_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let first = new_account(&c).unwrap();
+        let mut session = Session::open(&c, PASSWORD).unwrap();
+        let account = session.repo.account_id();
+        session
+            .stage_pending(&c, &SecretKey::generate().unwrap())
+            .unwrap();
+        drop(session);
+        let again = Session::open(&c, PASSWORD).unwrap();
+        assert_eq!(
+            entries(&store),
+            vec![(entry_name(account), first.as_str().to_owned())]
+        );
+        assert_eq!(
+            decode(&fs::read(c.device_path()).unwrap()).unwrap().pending,
+            None
+        );
+        assert_eq!(again.secret_key().unwrap().to_display(), *first);
+    }
+
+    /// A refused rotation stages a key and then discards it in the same
+    /// session: `device.bin` must stop naming it (the second write is
+    /// compared with what the first one left, not with what was read).
+    #[test]
+    fn discarding_a_staged_key_rewrites_device_bin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = memory();
+        let c = ctx(tmp.path(), store.clone(), false);
+        let first = new_account(&c).unwrap();
+        let mut session = Session::open(&c, PASSWORD).unwrap();
+        let account = session.repo.account_id();
+        session
+            .stage_pending(&c, &SecretKey::generate().unwrap())
+            .unwrap();
+        assert_eq!(
+            decode(&fs::read(c.device_path()).unwrap()).unwrap().pending,
+            Some(PendingKey::Store)
+        );
+        session.discard_pending(&c).unwrap();
+        assert_eq!(
+            decode(&fs::read(c.device_path()).unwrap()).unwrap().pending,
+            None
+        );
+        assert_eq!(
+            entries(&store),
+            vec![(entry_name(account), first.as_str().to_owned())]
+        );
+    }
+
+    /// With the explicit file layout the pending key lives in `device.bin`
+    /// and the promotion rewrites the Secret Key there.
+    #[test]
+    fn the_file_layout_keeps_the_pending_key_in_device_bin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let none: Arc<dyn SecretStore> = Arc::new(NoStore::new("no store here"));
+        let c = ctx(tmp.path(), none, true);
+        new_account(&c).unwrap();
+        let mut session = Session::open(&c, PASSWORD).unwrap();
+        let keys = session.device_keys().unwrap();
+        let current = session.secret_key().unwrap();
+        let next = SecretKey::generate().unwrap();
+        let next_shown = Zeroizing::new(next.to_display());
+        session.stage_pending(&c, &next).unwrap();
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert!(matches!(file.pending, Some(PendingKey::File { .. })));
+        session
+            .repo
+            .rotate(rotate_request(&keys, &current, &next))
+            .unwrap();
+        drop(session);
+        let again = Session::open(&c, PASSWORD).unwrap();
+        let file = decode(&fs::read(c.device_path()).unwrap()).unwrap();
+        assert_eq!(file.key, Stored::File(next_shown.clone()));
+        assert_eq!(file.pending, None);
+        assert_eq!(again.secret_key().unwrap().to_display(), *next_shown);
+    }
+
     #[test]
     fn a_legacy_device_bin_with_the_option_becomes_an_explicit_file_key() {
         let tmp = tempfile::tempdir().unwrap();
@@ -571,11 +913,14 @@ mod tests {
     }
 }
 
-/// Header of the version 3 `device.bin`. The older layouts start with the
-/// length of the Secret Key in clear (53 characters, `0x35`), never `O`.
-const DEVICE_MAGIC: &[u8; 4] = b"ODF\x03";
+/// Header of the version 4 `device.bin` (version 3 plus the device keys and
+/// a pending Secret Key). The older layouts start with the length of the
+/// Secret Key in clear (53 characters, `0x35`), never `O`.
+const DEVICE_MAGIC: &[u8; 4] = b"ODF\x04";
+/// Header of the version 3 `device.bin`, still read.
+const DEVICE_MAGIC_V3: &[u8; 4] = b"ODF\x03";
 
-/// Where the Secret Key is, as `device.bin` version 3 records it.
+/// Where the Secret Key is, as `device.bin` version 3 and 4 record it.
 #[derive(Serialize, Deserialize)]
 enum KeyAt {
     /// In the secret store, entry `secretkey.<account_id>`.
@@ -584,11 +929,73 @@ enum KeyAt {
     File { secret_key: Zeroizing<String> },
 }
 
-/// `device.bin` version 3, after its header, encoded with postcard: the
+/// A new Secret Key drawn for a rotation, kept before the rotation commits
+/// (K6, spec 7.1 step 1): a cut between the commit and the promotion of the
+/// key then loses nothing, the next unlock finds it here.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+enum PendingKey {
+    /// In the secret store, entry `secretkey.<account_id>.pending`.
+    Store,
+    /// In clear in `device.bin`, as the Secret Key itself is.
+    File { secret_key: Zeroizing<String> },
+}
+
+impl fmt::Debug for PendingKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PendingKey::Store => f.write_str("Store"),
+            PendingKey::File { .. } => f.write_str("File(..)"),
+        }
+    }
+}
+
+/// This device's keys as `device.bin` keeps them: `DeviceKeys::
+/// classical_bytes` and `SoftwarePqHalf::to_bytes`. Same protection as the
+/// Secret Key in clear: documented, as in `core/README.md`.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct DeviceKeyBlob {
+    classical: Zeroizing<Vec<u8>>,
+    pq: Zeroizing<Vec<u8>>,
+}
+
+impl DeviceKeyBlob {
+    /// Fresh, fully software device keys.
+    pub fn generate() -> Result<DeviceKeyBlob, CliError> {
+        Ok(DeviceKeyBlob {
+            classical: stored(DeviceKeys::generate_classical())?,
+            pq: stored(SoftwarePqHalf::generate())?.to_bytes(),
+        })
+    }
+
+    /// The keys, rebuilt for a core call.
+    pub fn keys(&self) -> Result<DeviceKeys, CliError> {
+        let pq = stored(SoftwarePqHalf::from_bytes(&self.pq))?;
+        stored(DeviceKeys::new(&self.classical, Box::new(pq)))
+    }
+}
+
+impl fmt::Debug for DeviceKeyBlob {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DeviceKeyBlob(**)")
+    }
+}
+
+/// `device.bin` version 4, after its header, encoded with postcard: the
 /// device state first (as the byte string of `DeviceState::encode`), so a
 /// reader that only wants the state need not know the rest.
 #[derive(Deserialize)]
 struct DeviceFile {
+    #[serde(with = "onepass_core::format::device_state_bytes")]
+    state: DeviceState,
+    secret_key: KeyAt,
+    device: Option<DeviceKeyBlob>,
+    pending: Option<PendingKey>,
+}
+
+/// `device.bin` version 3: the same without the device keys and the
+/// pending Secret Key. Read only.
+#[derive(Deserialize)]
+struct DeviceFileV3 {
     #[serde(with = "onepass_core::format::device_state_bytes")]
     state: DeviceState,
     secret_key: KeyAt,
@@ -645,10 +1052,13 @@ impl From<KeyAt> for Stored {
 struct Decoded {
     state: DeviceState,
     key: Stored,
+    /// `None` in a file written before key rotation v2.
+    device: Option<DeviceKeyBlob>,
+    pending: Option<PendingKey>,
 }
 
-/// Decode `device.bin`: version 3 behind its header (whole buffer), else
-/// version 2, else version 1.
+/// Decode `device.bin`: version 4 or 3 behind their header (whole buffer),
+/// else version 2, else version 1.
 fn decode(bytes: &[u8]) -> Result<Decoded, CliError> {
     let unreadable = || CliError::usage("device.bin is unreadable");
     if let Some(body) = bytes.strip_prefix(DEVICE_MAGIC) {
@@ -656,6 +1066,19 @@ fn decode(bytes: &[u8]) -> Result<Decoded, CliError> {
             Ok((file, [])) => Ok(Decoded {
                 state: file.state,
                 key: file.secret_key.into(),
+                device: file.device,
+                pending: file.pending,
+            }),
+            _ => Err(unreadable()),
+        };
+    }
+    if let Some(body) = bytes.strip_prefix(DEVICE_MAGIC_V3) {
+        return match postcard::take_from_bytes::<DeviceFileV3>(body) {
+            Ok((file, [])) => Ok(Decoded {
+                state: file.state,
+                key: file.secret_key.into(),
+                device: None,
+                pending: None,
             }),
             _ => Err(unreadable()),
         };
@@ -664,30 +1087,46 @@ fn decode(bytes: &[u8]) -> Result<Decoded, CliError> {
         return Ok(Decoded {
             state: file.state,
             key: Stored::Legacy(file.secret_key),
+            device: None,
+            pending: None,
         });
     }
     match postcard::take_from_bytes::<DeviceFileV1>(bytes) {
         Ok((old, [])) => Ok(Decoded {
             state: old.state,
             key: Stored::Legacy(old.secret_key),
+            device: None,
+            pending: None,
         }),
         _ => Err(unreadable()),
     }
 }
 
-/// Encode `device.bin` version 3.
-fn encode(key: &KeyAt, state: &DeviceState) -> Result<Zeroizing<Vec<u8>>, CliError> {
+/// What `device.bin` version 4 is made of.
+struct FileParts<'a> {
+    key: &'a KeyAt,
+    state: &'a DeviceState,
+    device: Option<&'a DeviceKeyBlob>,
+    pending: Option<&'a PendingKey>,
+}
+
+/// Encode `device.bin` version 4.
+fn encode(parts: &FileParts<'_>) -> Result<Zeroizing<Vec<u8>>, CliError> {
     // Borrowed copy of the fields, so the state is encoded without a clone.
     #[derive(Serialize)]
     struct Ref<'a> {
         #[serde(with = "onepass_core::format::device_state_bytes")]
         state: &'a DeviceState,
         secret_key: &'a KeyAt,
+        device: Option<&'a DeviceKeyBlob>,
+        pending: Option<&'a PendingKey>,
     }
     let body = Zeroizing::new(
         postcard::to_allocvec(&Ref {
-            state,
-            secret_key: key,
+            state: parts.state,
+            secret_key: parts.key,
+            device: parts.device,
+            pending: parts.pending,
         })
         .map_err(|_| CliError::usage("cannot encode device.bin"))?,
     );
@@ -851,9 +1290,85 @@ pub fn harden(ctx: &Ctx) -> Result<(), CliError> {
 pub struct Session {
     pub repo: Repository<SqliteStore>,
     key_at: KeyAt,
+    /// The Secret Key this session unlocked with: the one of the identity
+    /// the device is on.
+    key_text: Zeroizing<String>,
+    /// `None` only on a device whose store holds a trust state made on
+    /// another copy of `device.bin` (keys lost): reads still work, a
+    /// rotation is refused.
+    device: Option<DeviceKeyBlob>,
+    pending: Option<PendingKey>,
     device_path: PathBuf,
     /// The bytes on disk, so an unchanged state is not rewritten.
-    on_disk: Option<Zeroizing<Vec<u8>>>,
+    on_disk: Mutex<Option<Zeroizing<Vec<u8>>>>,
+}
+
+/// Seconds since the Unix epoch on the device clock.
+pub fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// The refusal of a command on a quarantined device (spec 8.4, O1).
+fn quarantine_message(erase_at: u64) -> String {
+    format!(
+        "this device was removed from the account by a key rotation made on another \
+         device. Its data is locked, and this device erases itself on {} unless you \
+         answer that it was not you: `onepass account not-me` (master password; the \
+         Secret Key is read from this device's secret store)",
+        crate::commands::backup::created_text(i64::try_from(erase_at).unwrap_or(i64::MAX))
+    )
+}
+
+/// The refusal of a command on a device locked by a removal whose path is
+/// not verified here (final review I1): no erase date.
+const QUARANTINE_LOCKED: &str = "this device was removed from the account by a key rotation \
+     made by, or through, a device this one never verified. Its data is locked, and it is not \
+     erased on its own: answer that it was not you with `onepass account not-me` (master \
+     password; the Secret Key is read from this device's secret store), or erase it";
+
+/// What a quarantine that ran out leaves behind: the Secret Key entries
+/// and `device.bin` (the store itself was erased by the core).
+fn erase_leftovers(ctx: &Ctx, at_rest: &Stored) {
+    if let Stored::Store(account) = at_rest {
+        forget_key(ctx, *account);
+        let _ = ctx.secrets.delete(&pending_entry(*account));
+    }
+    let _ = fs::remove_file(ctx.device_path());
+}
+
+/// The quarantine clock (spec 8.4, O1), before anything opens: a device
+/// locked by a valid lineage record erases itself 7 days after `since`
+/// (`quarantine_tick` with the device clock), and until then refuses with
+/// the date and the way out. No password: a locked store does not open.
+fn guard_lock(ctx: &Ctx, at_rest: &Stored) -> Result<(), CliError> {
+    let mut store = stored(SqliteStore::open(&ctx.store_path()))?;
+    match stored(quarantine_tick(&mut store, now_unix()))? {
+        QuarantineTick::NotQuarantined => Ok(()),
+        QuarantineTick::Waiting { erase_at } => Err(CliError::usage(quarantine_message(erase_at))),
+        QuarantineTick::Locked => Err(CliError::usage(QUARANTINE_LOCKED)),
+        QuarantineTick::Erased => {
+            drop(store);
+            erase_leftovers(ctx, at_rest);
+            Err(CliError::usage(
+                "this device was removed from the account 7 days ago: it erased itself \
+                 (the store, device.bin and the Secret Key entries)",
+            ))
+        }
+    }
+}
+
+/// Unlock the store with one Secret Key.
+fn unlock_with(
+    ctx: &Ctx,
+    password: &str,
+    key_text: &str,
+    state: DeviceState,
+) -> Result<Repository<SqliteStore>, CliError> {
+    let key = SecretKey::parse(key_text)?;
+    let store = stored(SqliteStore::open(&ctx.store_path()))?;
+    stored(Repository::unlock(store, password, &key, state))
 }
 
 impl Session {
@@ -861,16 +1376,19 @@ impl Session {
     /// store (or, with `--insecure-file-secret-key`, stays for
     /// `device.bin`). Nothing is on disk yet: `persist` writes it. The
     /// caller removes the store entry ([`forget_key`]) if the creation is
-    /// undone.
+    /// undone. `device` are the keys the account's genesis was signed with.
     pub fn create(
         ctx: &Ctx,
         repo: Repository<SqliteStore>,
         key: &SecretKey,
+        device: DeviceKeyBlob,
     ) -> Result<Session, CliError> {
         let shown = Zeroizing::new(key.to_display());
         let key_at = if ctx.insecure_file_key {
             warn_file_key(ctx);
-            KeyAt::File { secret_key: shown }
+            KeyAt::File {
+                secret_key: shown.clone(),
+            }
         } else {
             let account = repo.account_id();
             if let Err(e) = put_key(ctx, account, &shown) {
@@ -884,8 +1402,11 @@ impl Session {
         Ok(Session {
             repo,
             key_at,
+            key_text: shown,
+            device: Some(device),
+            pending: None,
             device_path: ctx.device_path(),
-            on_disk: None,
+            on_disk: Mutex::new(None),
         })
     }
 
@@ -893,6 +1414,13 @@ impl Session {
     /// caller holds the data directory lock: this reads `device.bin` and
     /// the store. A Secret Key in clear moves into the store here, once
     /// the unlock proved it right (unless `--insecure-file-secret-key`).
+    ///
+    /// Before the unlock, the quarantine clock runs (`guard_lock`). A
+    /// rotation this device made and did not finish promoting (a cut
+    /// between the commit and the new Secret Key's promotion, K6) is
+    /// finished here: the pending key is the one that opens. An account
+    /// from before key rotation v2 gains its device keys and a genesis
+    /// (spec 15, `ensure_v2`).
     pub fn open(ctx: &Ctx, password: &str) -> Result<Session, CliError> {
         let device_path = ctx.device_path();
         if !ctx.has_account() {
@@ -902,32 +1430,225 @@ impl Session {
         let Decoded {
             state,
             key: at_rest,
+            device,
+            pending,
         } = decode(&bytes)?;
         let key_text = match &at_rest {
             Stored::Store(account) => fetch_key(ctx, *account)?,
             Stored::File(k) | Stored::Legacy(k) => k.clone(),
         };
-        let key = SecretKey::parse(&key_text)?;
-        let store = stored(SqliteStore::open(&ctx.store_path()))?;
         harden(ctx)?;
-        let mut repo = stored(Repository::unlock(store, password, &key, state))?;
+        guard_lock(ctx, &at_rest)?;
+        let (mut repo, used, from_pending) =
+            match unlock_with(ctx, password, &key_text, state.clone()) {
+                Ok(repo) => (repo, key_text.clone(), false),
+                // The rotation committed and the key was not promoted yet.
+                Err(e) if e.code == 2 && pending.is_some() => {
+                    // Only now is the pending key needed (a missing entry
+                    // must not stop a device whose current key opens).
+                    let Some(pending_text) = pending_text(ctx, &at_rest, pending.as_ref())? else {
+                        return Err(e);
+                    };
+                    match unlock_with(ctx, password, &pending_text, state) {
+                        Ok(repo) => (repo, pending_text, true),
+                        Err(e2) if e2.code == 2 => return Err(e),
+                        Err(e2) => return Err(e2),
+                    }
+                }
+                Err(e) => return Err(e),
+            };
+        harden(ctx)?;
         resume_travel(ctx, &mut repo);
         let (key_at, moved) = settle_key(ctx, at_rest, &key_text, repo.account_id())?;
         let mut session = Session {
             repo,
             key_at,
+            key_text: used,
+            device,
+            pending,
             device_path,
-            on_disk: Some(bytes),
+            on_disk: Mutex::new(Some(bytes)),
         };
         if moved {
-            session.on_disk = Some(session.write(true)?);
+            session.write(true)?;
             eprintln!(
                 "The Secret Key moved from device.bin into the {}. Copies of device.bin \
                  made before now (backups, snapshots, synced folders) still hold it in clear.",
                 ctx.secrets.name()
             );
         }
+        if from_pending {
+            session.promote_pending(ctx)?;
+        } else if session.pending.is_some() {
+            // The rotation never committed: the key drawn for it is void.
+            session.discard_pending(ctx)?;
+        }
+        session.ensure_v2()?;
+        session.warn_locked();
         Ok(session)
+    }
+
+    /// Say on stderr why writes will be refused, when they will be: a
+    /// rotation made elsewhere waits for an answer, or this device was left
+    /// behind by one (spec 8.1, 8.2).
+    fn warn_locked(&self) {
+        use onepass_core::trust::DeviceLineageState as S;
+        let state = self
+            .repo
+            .store()
+            .trust_state()
+            .ok()
+            .flatten()
+            .map(|t| t.state);
+        match state {
+            Some(S::Candidate { .. }) => eprintln!(
+                "WARNING: read only: a key rotation made on another device waits for your \
+                 answer. {FOLLOW_HINT}"
+            ),
+            Some(S::Orphaned { .. }) => eprintln!(
+                "WARNING: read only: a key rotation made on another device left this \
+                 device behind. {FOLLOW_HINT}"
+            ),
+            _ if self.repo.pending_prompt().is_some() => eprintln!(
+                "WARNING: read only: a key rotation made on another device waits for your \
+                 answer. {FOLLOW_HINT}"
+            ),
+            _ => {}
+        }
+    }
+
+    /// Spec 15 steps 1 to 3 on the first unlock after the update: an
+    /// account with no trust state gets device keys (kept in `device.bin`
+    /// before anything signs with them), this device is registered, and the
+    /// legacy genesis is written (`Repository::migrate_to_v2`). A store
+    /// that already holds a trust state is left as it is: the CLI has no
+    /// sync, so it sees no other genesis to move to.
+    fn ensure_v2(&mut self) -> Result<(), CliError> {
+        if stored(self.repo.store().trust_state())?.is_some() {
+            return Ok(());
+        }
+        let blob = match &self.device {
+            Some(b) => b.clone(),
+            None => {
+                let b = DeviceKeyBlob::generate()?;
+                self.device = Some(b.clone());
+                // Durable before anything is signed with them.
+                self.write(false)?;
+                b
+            }
+        };
+        let keys = blob.keys()?;
+        stored(self.repo.register_this_device(
+            DEVICE_NAME,
+            DeviceKind::Other,
+            DeviceMode::Personal,
+        ))?;
+        stored(self.repo.migrate_to_v2(&keys))?;
+        eprintln!(
+            "This account now has device keys and a lineage (key rotation v2): \
+             `onepass account devices` lists the devices it trusts."
+        );
+        Ok(())
+    }
+
+    /// This device's keys.
+    pub fn device_keys(&self) -> Result<DeviceKeys, CliError> {
+        match &self.device {
+            Some(b) => b.keys(),
+            None => Err(CliError::usage(
+                "device.bin holds no device keys for this account",
+            )),
+        }
+    }
+
+    /// The Secret Key of the identity this session is on.
+    pub fn secret_key(&self) -> Result<SecretKey, CliError> {
+        Ok(SecretKey::parse(&self.key_text)?)
+    }
+
+    /// Keep the Secret Key a rotation is about to use (K6): in the secret
+    /// store next to the current one, or in `device.bin` for the explicit
+    /// file layout, durable before the rotation is called.
+    pub fn stage_pending(&mut self, ctx: &Ctx, key: &SecretKey) -> Result<(), CliError> {
+        let shown = Zeroizing::new(key.to_display());
+        let pending = match &self.key_at {
+            KeyAt::Store { account_id } => {
+                let entry = pending_entry(*account_id);
+                let put = ctx.secrets.set(&entry, &shown).and_then(|()| {
+                    match ctx.secrets.get(&entry)? {
+                        Some(back) if back.as_str() == shown.as_str() => Ok(()),
+                        _ => Err(StoreError::Failed(
+                            "the stored Secret Key did not read back unchanged".to_owned(),
+                        )),
+                    }
+                });
+                if let Err(e) = put {
+                    let _ = ctx.secrets.delete(&entry);
+                    return Err(no_store(ctx, &e, "the keys were not rotated"));
+                }
+                PendingKey::Store
+            }
+            KeyAt::File { .. } => PendingKey::File { secret_key: shown },
+        };
+        self.pending = Some(pending);
+        if let Err(e) = self.write(false) {
+            self.drop_pending_entry(ctx);
+            self.pending = None;
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// The rotation committed: the pending Secret Key becomes the Secret
+    /// Key, in the store or in the file, and `device.bin` records it.
+    pub fn promote_pending(&mut self, ctx: &Ctx) -> Result<(), CliError> {
+        let Some(pending) = self.pending.clone() else {
+            return Ok(());
+        };
+        let new_text = match (&pending, &self.key_at) {
+            (PendingKey::File { secret_key }, _) => secret_key.clone(),
+            (PendingKey::Store, KeyAt::Store { account_id }) => fetch_pending(ctx, *account_id)?,
+            (PendingKey::Store, KeyAt::File { .. }) => {
+                return Err(CliError::usage("device.bin is inconsistent"));
+            }
+        };
+        match &self.key_at {
+            KeyAt::Store { account_id } => {
+                put_key(ctx, *account_id, &new_text).map_err(|e| {
+                    no_store(
+                        ctx,
+                        &e,
+                        "the new Secret Key could not replace the old one (it stays pending, \
+                         the next command finishes the move)",
+                    )
+                })?;
+            }
+            KeyAt::File { .. } => {
+                self.key_at = KeyAt::File {
+                    secret_key: new_text.clone(),
+                };
+            }
+        }
+        self.pending = None;
+        self.write(false)?;
+        self.drop_pending_entry(ctx);
+        self.key_text = new_text;
+        Ok(())
+    }
+
+    /// The rotation did not commit: forget the key drawn for it.
+    pub fn discard_pending(&mut self, ctx: &Ctx) -> Result<(), CliError> {
+        if self.pending.take().is_some() {
+            self.write(false)?;
+            self.drop_pending_entry(ctx);
+        }
+        Ok(())
+    }
+
+    fn drop_pending_entry(&self, ctx: &Ctx) {
+        if let KeyAt::Store { account_id } = &self.key_at {
+            let _ = ctx.secrets.delete(&pending_entry(*account_id));
+        }
     }
 
     /// Write `device.bin` (0600, atomically, file and directory synced) if
@@ -941,8 +1662,14 @@ impl Session {
     /// new one is in place: through a descriptor opened before the rename,
     /// so `device.bin` is whole at every instant.
     fn write(&self, wipe: bool) -> Result<Zeroizing<Vec<u8>>, CliError> {
-        let bytes = encode(&self.key_at, self.repo.device_state())?;
-        if self.on_disk.as_deref() == Some(&*bytes) {
+        let bytes = encode(&FileParts {
+            key: &self.key_at,
+            state: self.repo.device_state(),
+            device: self.device.as_ref(),
+            pending: self.pending.as_ref(),
+        })?;
+        let mut on_disk = self.on_disk.lock().unwrap_or_else(|e| e.into_inner());
+        if on_disk.as_deref() == Some(&*bytes) {
             return Ok(bytes);
         }
         let tmp = self.device_path.with_extension("bin.tmp");
@@ -977,7 +1704,46 @@ impl Session {
             old.write_all(&vec![0u8; len])?;
             old.sync_all()?;
         }
+        *on_disk = Some(bytes.clone());
         Ok(bytes)
+    }
+}
+
+/// What every refused write says about a rotation made elsewhere (spec
+/// 10.8: the CLI has no pairing, so it follows a rotation only through the
+/// Emergency Kit path of spec 7.5).
+pub const FOLLOW_HINT: &str = "This CLI cannot follow a key rotation: take the newest Emergency \
+     Kit (its Secret Key and the master password) to a device that can restore it. If the \
+     rotation was not yours to answer, `onepass account not-me` rejects it";
+
+/// The pending Secret Key of `device.bin`, as text.
+fn pending_text(
+    ctx: &Ctx,
+    at_rest: &Stored,
+    pending: Option<&PendingKey>,
+) -> Result<Option<Zeroizing<String>>, CliError> {
+    match (pending, at_rest) {
+        (None, _) => Ok(None),
+        (Some(PendingKey::File { secret_key }), _) => Ok(Some(secret_key.clone())),
+        (Some(PendingKey::Store), Stored::Store(account)) => {
+            Ok(Some(fetch_pending(ctx, *account)?))
+        }
+        (Some(PendingKey::Store), _) => Err(CliError::usage("device.bin is inconsistent")),
+    }
+}
+
+fn fetch_pending(ctx: &Ctx, account: Id) -> Result<Zeroizing<String>, CliError> {
+    let entry = pending_entry(account);
+    match ctx.secrets.get(&entry) {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => Err(CliError::usage(format!(
+            "the pending Secret Key of a key rotation is not in the {} (entry {entry})",
+            ctx.secrets.name()
+        ))),
+        Err(e) => Err(CliError::usage(format!(
+            "cannot read the pending Secret Key from the {}: {e}",
+            ctx.secrets.name()
+        ))),
     }
 }
 
@@ -1032,6 +1798,96 @@ fn settle_key(
     }
 }
 
+/// What `account not-me` answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotMe {
+    /// A rotation waiting for the user: rejected, its signer excluded.
+    Prompt,
+    /// A quarantined or orphaned device: unlocked again, the erase cancelled.
+    Locked,
+}
+
+/// "Ce n'etait pas moi" (spec 8.2, 8.4, O1): the answer to a rotation this
+/// device did not make. The master password is checked, together with the
+/// Secret Key of the identity the device is on (read from the secret store
+/// or `device.bin`, as every unlock does), by an unlock; the record that
+/// locked or waits is ignored, its signer excluded. A quarantined device
+/// whose 7 days ran out is erased by the clock first, never saved by a late
+/// answer. The caller holds the data directory lock.
+pub fn answer_not_me(ctx: &Ctx, password: &str) -> Result<NotMe, CliError> {
+    use onepass_core::trust::DeviceLineageState as S;
+    if !ctx.has_account() {
+        return Err(no_account(ctx));
+    }
+    let bytes = Zeroizing::new(fs::read(ctx.device_path())?);
+    let Decoded {
+        state,
+        key: at_rest,
+        device,
+        pending,
+    } = decode(&bytes)?;
+    let key_text = match &at_rest {
+        Stored::Store(account) => fetch_key(ctx, *account)?,
+        Stored::File(k) | Stored::Legacy(k) => k.clone(),
+    };
+    harden(ctx)?;
+    let mut store = stored(SqliteStore::open(&ctx.store_path()))?;
+    if stored(quarantine_tick(&mut store, now_unix()))? == QuarantineTick::Erased {
+        drop(store);
+        erase_leftovers(ctx, &at_rest);
+        return Err(CliError::usage(
+            "this device was removed from the account 7 days ago: it erased itself",
+        ));
+    }
+    let lineage = stored(store.trust_state())?.map(|t| t.state);
+    match lineage {
+        Some(S::Quarantined { .. } | S::Orphaned { .. }) => {
+            let key = SecretKey::parse(&key_text)?;
+            let repo = stored(quarantine_resolve(
+                store,
+                QuarantineChoice::NotMe {
+                    password,
+                    secret_key: &key,
+                    device: state,
+                },
+            ))?
+            .ok_or_else(|| CliError::usage("nothing to answer"))?;
+            let (key_at, _) = settle_key(ctx, at_rest, &key_text, repo.account_id())?;
+            let session = Session {
+                repo,
+                key_at,
+                key_text,
+                device,
+                pending,
+                device_path: ctx.device_path(),
+                on_disk: Mutex::new(Some(bytes)),
+            };
+            harden(ctx)?;
+            session.persist()?;
+            Ok(NotMe::Locked)
+        }
+        Some(S::Candidate { .. }) => {
+            drop(store);
+            let mut session = Session::open(ctx, password)?;
+            let choices: Vec<[u8; 32]> = session
+                .repo
+                .pending_prompt()
+                .map(|p| p.choices.iter().map(|c| c.hash).collect())
+                .unwrap_or_default();
+            for hash in choices {
+                stored(reject_rotation(session.repo.store_mut(), hash, true))?;
+            }
+            stored(session.repo.refresh_pending_rotation())?;
+            harden(ctx)?;
+            session.persist()?;
+            Ok(NotMe::Prompt)
+        }
+        _ => Err(CliError::usage(
+            "nothing to answer: no key rotation waits for an answer and this device is not locked",
+        )),
+    }
+}
+
 /// While Travel Mode is on, tell the repository which vaults are hidden on
 /// purpose (`Repository::resume_travel`), so the signed vault list does not
 /// report them missing. A `travel.bin` that does not open is left to the
@@ -1049,7 +1905,7 @@ fn resume_travel(ctx: &Ctx, repo: &mut Repository<SqliteStore>) {
     }
 }
 
-fn no_account(ctx: &Ctx) -> CliError {
+pub fn no_account(ctx: &Ctx) -> CliError {
     CliError::usage(format!(
         "no account in {}; run `onepass account create` first",
         ctx.data_dir.display()
@@ -1314,16 +2170,34 @@ impl LongSession {
             return Err(CliError::usage(TRAVEL_CHANGED));
         }
         let bytes = Zeroizing::new(fs::read(self.ctx.device_path())?);
-        let Decoded { state, key } = decode(&bytes)?;
+        let Decoded {
+            state,
+            key,
+            device,
+            pending,
+        } = decode(&bytes)?;
         // Another command moved the Secret Key into the store: never write
         // it back in clear.
         if let Stored::Store(account_id) = key {
             self.session.key_at = KeyAt::Store { account_id };
         }
+        if device.is_some() {
+            self.session.device = device;
+        }
+        self.session.pending = pending;
         stored(self.session.repo.adopt_device_state(&state))?;
         // What is on disk now (same encoding, same key), so an unchanged
         // state is not rewritten and a changed one always is.
-        self.session.on_disk = Some(encode(&self.session.key_at, &state)?);
+        *self
+            .session
+            .on_disk
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(encode(&FileParts {
+            key: &self.session.key_at,
+            state: &state,
+            device: self.session.device.as_ref(),
+            pending: self.session.pending.as_ref(),
+        })?);
         let result = f(&mut self.session.repo);
         save_after(&self.ctx, &self.session, result)
     }

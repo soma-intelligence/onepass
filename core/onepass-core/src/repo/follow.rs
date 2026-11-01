@@ -203,6 +203,13 @@ fn completeness<S: RecordStore + ?Sized>(
 /// for again.
 pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32]> {
     let mut ctx = digest::Context::new(&SHA256);
+    // Task 19 carried item 6: a store that stamps every change of those
+    // rows (`RecordStore::lineage_stamp`) stands for them.
+    let stamped = store.lineage_stamp()?;
+    if let Some(stamp) = stamped {
+        ctx.update(b"stamp");
+        ctx.update(&stamp.to_be_bytes());
+    }
     for kind in [
         RecordKind::Lineage,
         RecordKind::DeviceIntro,
@@ -210,6 +217,9 @@ pub(crate) fn lineage_mark<S: RecordStore + ?Sized>(store: &S) -> Result<[u8; 32
         RecordKind::AccountParams,
         RecordKind::Keyset,
     ] {
+        if stamped.is_some() {
+            break;
+        }
         let mut rows = store.list(kind)?;
         rows.sort_by_key(|r| r.id);
         for r in rows {
@@ -274,6 +284,40 @@ fn path_to<'a>(
     path
 }
 
+/// The levels along `path` (fix round 2, N2): from this device's levels,
+/// each record's new roster devices take the level of that record's
+/// rotator, and a rotator this device holds no level for counts as
+/// `Tofu` (fail closed). A device already known keeps its level.
+fn levels_along(trust: &TrustState, path: &[&RotationBody]) -> BTreeMap<Id, TrustLevel> {
+    let mut levels = trust.levels.clone();
+    for b in path {
+        let level = levels.get(&b.rotator).copied().unwrap_or(TrustLevel::Tofu);
+        for e in &b.roster {
+            levels.entry(e.device_id).or_insert(level);
+        }
+    }
+    levels
+}
+
+/// `path_to(target)` when every record from this device's own chain to
+/// `target` is known (the first record's parent is on the own chain), else
+/// `None`.
+fn whole_path_to<'a>(
+    trust: &TrustState,
+    bodies: &BTreeMap<[u8; 32], &'a RotationBody>,
+    target: [u8; 32],
+) -> Option<Vec<&'a RotationBody>> {
+    let path = path_to(trust, bodies, target);
+    let first = path.first()?;
+    let mut own = BTreeSet::from([trust.head.hash]);
+    let mut h = trust.head.hash;
+    while let Some(b) = bodies.get(&h) {
+        own.insert(b.parent);
+        h = b.parent;
+    }
+    (bodies.contains_key(&target) && own.contains(&first.parent)).then_some(path)
+}
+
 /// The resolver's prompt and what the screen shows for it, or `None` for
 /// any other decision.
 ///
@@ -331,8 +375,14 @@ fn look_in<S: RecordStore + ?Sized>(
         let path = path_to(trust, &bodies, *h);
         let first = path.first().copied().unwrap_or(target);
         let mut revoked = Vec::new();
+        let mut levels = trust.levels.clone();
         for b in &path {
-            tofu_signer |= trust.levels.get(&b.rotator) == Some(&TrustLevel::Tofu);
+            // Fix round 2: the levels the path hands down; unknown = `Tofu`.
+            let level = levels.get(&b.rotator).copied().unwrap_or(TrustLevel::Tofu);
+            tofu_signer |= level != TrustLevel::Verified;
+            for e in &b.roster {
+                levels.entry(e.device_id).or_insert(level);
+            }
             for id in &b.revoked {
                 if !revoked.contains(id) {
                     revoked.push(*id);
@@ -353,21 +403,27 @@ fn look_in<S: RecordStore + ?Sized>(
     };
     let pending_password_change =
         store.is_pending_write(RecordKind::AccountParams, current_records_id(trust))?;
-    // The rotators of the device's own chain, from the head back.
-    let mut own_rotators = BTreeSet::new();
-    let mut h = trust.head.hash;
-    while let Some(b) = bodies.get(&h) {
-        own_rotators.insert(b.rotator);
-        h = b.parent;
-        if own_rotators.len() > bodies.len() {
-            break;
-        }
-    }
     let mut cross_branch_revocation = false;
     let mut reapply = BTreeSet::new();
     if matches!(p.kind, PromptKind::Switch | PromptKind::Reapply) {
         for target in &p.children {
             let path = path_to(trust, &bodies, *target);
+            // The divergence point: the parent of the first record past the
+            // own chain. Only the own records after it count (Task 19
+            // carried item 4): a rotator of a record both branches share
+            // is not one of "another set of keys".
+            let fork = path.first().map(|b| b.parent);
+            let mut own_rotators = BTreeSet::new();
+            let mut h = trust.head.hash;
+            let mut steps = 0;
+            while Some(h) != fork
+                && let Some(b) = bodies.get(&h)
+                && steps <= bodies.len()
+            {
+                own_rotators.insert(b.rotator);
+                h = b.parent;
+                steps += 1;
+            }
             cross_branch_revocation |= path
                 .iter()
                 .any(|b| b.revoked.iter().any(|id| own_rotators.contains(id)));
@@ -629,17 +685,15 @@ fn follow_with<S: RecordStore>(
         hash: choice,
     };
     next.identity_pub = body.identity_pub.clone();
-    let rotator_level = trust
-        .levels
-        .get(&body.rotator)
-        .copied()
-        .unwrap_or(TrustLevel::Verified);
+    // Fix round 2 (N2): each device the path adds takes the level of the
+    // rotator that added it; an unknown rotator counts as `Tofu`.
+    let along = levels_along(&trust, &path_to(&trust, &bodies, choice));
     next.levels = body
         .roster
         .iter()
         .map(|e| {
-            let level = trust.levels.get(&e.device_id).copied();
-            (e.device_id, level.unwrap_or(rotator_level))
+            let level = along.get(&e.device_id).copied();
+            (e.device_id, level.unwrap_or(TrustLevel::Tofu))
         })
         .collect();
     next.roster = body.roster.clone();
@@ -804,6 +858,12 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         Some(left_kem) => own_copies(&store, &own, left_kem, &account)?,
         None => Vec::new(),
     };
+    // Task 19 carried item 5 (R21): the item records this device's own
+    // rotation sealed, which lost, are collected once it switched away.
+    let collect: Vec<Id> = match left_kem {
+        Some(left_kem) => lost_rotation_items(&store, trust, left_kem)?,
+        None => Vec::new(),
+    };
     // Fix round 2: a password change made under the identity left is
     // dropped (never pushed: review I3), not held forever. The prompt
     // reported it (`pending_password_change`) before this call.
@@ -814,6 +874,8 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         }
     }
     store.put_follow(chain.clone(), trust, &next, retained, drop_pending)?;
+    // Best effort: a leftover not collected is what R21 tolerates anyway.
+    let _ = store.collect_foreign_items(collect);
     // Spec 6.4, 8.5: the devices this one introduced that the new roster
     // misses, introduced again under the new head (best effort).
     let _ = super::pairing::reintroduce(&mut store, &next, trust, device_keys);
@@ -851,6 +913,64 @@ pub(crate) fn commit_adoption<S: RecordStore>(
     let _ = repo.replay_own_writes();
     let _ = repo.refresh_pending_rotation();
     Ok(repo)
+}
+
+/// Task 19 carried item 5 (R21, M2 of an earlier review): when the head
+/// this device leaves for a switch is its own rotation, the item records
+/// of the vaults it re-sealed that open under the vault key of that
+/// rotation (`left_kem[0]` is its identity's KEM secret), and that the
+/// server holds (not a pending write). They are the losing sibling's
+/// content: no device stays on it once it sees the winner, and every
+/// device replays its own writes from its own copy (spec 10.4), so the
+/// server copy goes instead of staying for good.
+fn lost_rotation_items<S: RecordStore>(
+    store: &S,
+    trust: &TrustState,
+    left_kem: &[HybridKemSecret],
+) -> Result<Vec<Id>> {
+    let Some(own_kem) = left_kem.first() else {
+        return Ok(Vec::new());
+    };
+    let records = lineage_records(store)?;
+    let bodies = rotations(&records);
+    let Some(own) = bodies.get(&trust.head.hash) else {
+        return Ok(Vec::new());
+    };
+    if own.rotator != trust.me.device_id {
+        return Ok(Vec::new());
+    }
+    let items = store.list(RecordKind::Item)?;
+    let mut out = Vec::new();
+    for &v in own.from_heads.keys() {
+        let mut rows = store.retained_rows(v)?;
+        for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
+            rows.extend(store.get(kind, v)?);
+        }
+        let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+        let vault = of(RecordKind::VaultKey).find_map(|k| {
+            of(RecordKind::VaultMeta)
+                .find_map(|m| Vault::open_with_kem(own_kem, v, &k.data, &m.data).ok())
+        });
+        let Some(vault) = vault else {
+            continue;
+        };
+        for r in &items {
+            let Ok((prefix, body)) = super::split_item_record(&r.data) else {
+                continue;
+            };
+            if prefix != v || store.is_pending_write(RecordKind::Item, r.id)? {
+                continue;
+            }
+            let opens = crate::vault::ItemRecord::decode(body)
+                .is_ok_and(|rec| vault.open_item(&rec).is_ok());
+            if opens {
+                out.push(r.id);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 /// After a switch: for each vault of `vaults`, the device's own copy sealed
@@ -990,7 +1110,8 @@ pub const QUARANTINE_ERASE_AFTER_SECS: u64 = 7 * 86_400;
 pub enum LineageLock {
     /// A valid record (`by`, its lineage hash) revokes this device: locked,
     /// erased 7 days after `since` unless the user answers "Ce n'était pas
-    /// moi" (`quarantine_resolve`).
+    /// moi" (`quarantine_resolve`); never erased by the clock unless the
+    /// whole path of the removal is `Verified` here (`QuarantineTick::Locked`).
     Quarantine { by: [u8; 32] },
     /// A valid record (`child`) does not list this device: it reads, writes
     /// nothing, pushes nothing, never erases.
@@ -1096,6 +1217,12 @@ pub enum QuarantineTick {
     /// Locked; erased at device time `erase_at` (Unix seconds) unless the
     /// user answers first.
     Waiting { erase_at: u64 },
+    /// Locked, with no erase clock (final review I1, fix round 2): a signer
+    /// of the removal or of the records that lead to it is not `Verified`
+    /// on this device (`Tofu`, or no level), or one of those records is
+    /// missing. Nothing erases it until the user answers ("Effacer cet
+    /// appareil" or "Ce n'était pas moi").
+    Locked,
     /// The store was erased now (`RecordStore::erase_device`). The app
     /// deletes what it keeps for the account outside the store (Keychain
     /// items: Secret Key, Account Unlock Key, device keys).
@@ -1118,8 +1245,12 @@ pub enum QuarantineTick {
 /// - Once quarantined, the state stays whatever the server holds since:
 ///   only `quarantine_resolve` or the erase ends it. `since` is never
 ///   moved.
-/// - The store is erased (`RecordStore::erase_device`, conditional on the
-///   trust state read) once `now - since` reaches
+/// - The erase clock runs only when the whole path of the removal is
+///   known and `Verified` here (`erase_clock_runs`, final review I1, fix
+///   round 2); otherwise the tick is `Locked` (never erased, no date)
+///   until the user answers with `quarantine_resolve`.
+/// - Otherwise the store is erased (`RecordStore::erase_device`,
+///   conditional on the trust state read) once `now - since` reaches
 ///   `QUARANTINE_ERASE_AFTER_SECS`; a clock moved back only delays it
 ///   (saturating arithmetic, never early). Otherwise `Waiting` with
 ///   `erase_at = since + QUARANTINE_ERASE_AFTER_SECS` (saturating).
@@ -1149,6 +1280,9 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
             (next, now)
         }
     };
+    if !erase_clock_runs(&trust, &lineage_records(&*store)?) {
+        return Ok(QuarantineTick::Locked);
+    }
     if now.saturating_sub(since) < QUARANTINE_ERASE_AFTER_SECS {
         return Ok(QuarantineTick::Waiting {
             erase_at: since.saturating_add(QUARANTINE_ERASE_AFTER_SECS),
@@ -1156,6 +1290,51 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
     }
     store.erase_device(&trust)?;
     Ok(QuarantineTick::Erased)
+}
+
+/// Whether the quarantine `trust` records runs the erase clock (final
+/// review I1 and fix round 2, controller rulings 2026-10-31), failing
+/// closed: only when every record from this device's own chain to the
+/// removal (`by`) is known, each of their rotators is `Verified` on this
+/// device (with the levels those records hand down, `levels_along`), and
+/// the stored signer (`rotator`) is the removal's rotator and `Verified`.
+/// A `Tofu` or unknown signer anywhere, or a missing record, means no
+/// clock: a `Tofu` device cannot launder its removal through a device it
+/// introduced. Any other state: `false`.
+fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
+    let DeviceLineageState::Quarantined { by, rotator, .. } = &trust.state else {
+        return false;
+    };
+    let bodies = rotations(records);
+    let Some(path) = whole_path_to(trust, &bodies, *by) else {
+        return false;
+    };
+    let mut levels = trust.levels.clone();
+    for b in &path {
+        if levels.get(&b.rotator) != Some(&TrustLevel::Verified) {
+            return false;
+        }
+        for e in &b.roster {
+            levels.entry(e.device_id).or_insert(TrustLevel::Verified);
+        }
+    }
+    path.last().is_some_and(|b| b.rotator == *rotator)
+        && levels.get(rotator) == Some(&TrustLevel::Verified)
+}
+
+/// The device time (Unix seconds) at which the quarantine erases this
+/// device, or `None`: not quarantined, or quarantined with no erase clock
+/// (`QuarantineTick::Locked`, final review I1). Read only, no password:
+/// for the lock screen.
+pub fn quarantine_erase_at(store: &dyn RecordStore) -> Result<Option<u64>> {
+    let Some(trust) = trust_of(store)? else {
+        return Ok(None);
+    };
+    let DeviceLineageState::Quarantined { since, .. } = trust.state else {
+        return Ok(None);
+    };
+    Ok(erase_clock_runs(&trust, &lineage_records(store)?)
+        .then(|| since.saturating_add(QUARANTINE_ERASE_AFTER_SECS)))
 }
 
 /// The user's answer on a locked device (spec 8.2, 8.4).

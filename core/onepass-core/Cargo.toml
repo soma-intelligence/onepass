@@ -122,3 +122,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "contact_vectors"
 required-features = ["dev-fast-kdf"]
+
+# Spec 12 attack regressions of key rotation v2: needs the dev floor.
+[[test]]
+name = "rotation_v2_attacks"
+required-features = ["dev-fast-kdf"]

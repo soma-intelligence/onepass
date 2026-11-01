@@ -733,3 +733,828 @@ fn without_a_secret_store_the_key_stays_in_clear_only_by_choice() {
     let out = output(c);
     assert_eq!(out.code, 1, "{}", out.stderr);
 }
+
+// ---------------------------------------------------------------------
+// Key rotation v2 (spec 10.8): device keys in device.bin, rotate-keys,
+// remove-device, and the states a rotation made elsewhere leaves.
+//
+// These tests change the Secret Key of their account, so each works on a
+// copy of the template directory with a secret store of its own: the shared
+// one would change the key of every other test's copy.
+// ---------------------------------------------------------------------
+
+use onepass_core::device_keys::{DeviceKeys, DevicePublic};
+use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::lineage::{LineageRecord, RosterEntry, RotationReason};
+use onepass_core::repo::{DeviceState, Repository, RotateRequest};
+use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
+use onepass_core::trust::{DeviceLineageState, TrustLevel, TrustState};
+use onepass_core::{Id, crypto::SecretKey};
+
+/// A copy of the template account with its own secret store.
+struct Rot {
+    tmp: tempfile::TempDir,
+    key: String,
+}
+
+impl Rot {
+    fn new() -> Rot {
+        let t = template();
+        let key = shown_key(&t.account.stdout);
+        let tmp = fresh();
+        // `fresh` copies the files into the root of the temp dir: move them
+        // under `data/`, next to a `secrets/` of this test alone.
+        let data = tmp.path().join("data");
+        fs::create_dir(&data).unwrap();
+        for e in fs::read_dir(tmp.path()).unwrap() {
+            let e = e.unwrap();
+            if e.file_name() != "data" {
+                fs::rename(e.path(), data.join(e.file_name())).unwrap();
+            }
+        }
+        let secrets = tmp.path().join("secrets");
+        fs::create_dir(&secrets).unwrap();
+        let shared = PathBuf::from(SECRET_STORE.strip_prefix("dir:").unwrap());
+        for e in fs::read_dir(shared).unwrap() {
+            let p = e.unwrap().path();
+            if fs::read_to_string(&p).is_ok_and(|k| k == key) {
+                fs::copy(&p, secrets.join(p.file_name().unwrap())).unwrap();
+            }
+        }
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+        Rot { tmp, key }
+    }
+
+    fn data(&self) -> PathBuf {
+        self.tmp.path().join("data")
+    }
+
+    fn secrets(&self) -> PathBuf {
+        self.tmp.path().join("secrets")
+    }
+
+    fn cmd(&self) -> Command {
+        let mut c = onepass(&self.data(), PASSWORD);
+        c.env(
+            "ONEPASS_DEV_SECRET_STORE",
+            format!("dir:{}", self.secrets().display()),
+        );
+        c
+    }
+
+    fn run(&self, args: &[&str]) -> Out {
+        let mut c = self.cmd();
+        c.args(args);
+        output(c)
+    }
+
+    fn sqlite(&self) -> PathBuf {
+        self.data().join("vault.sqlite")
+    }
+
+    fn trust(&self) -> TrustState {
+        SqliteStore::open(&self.sqlite())
+            .unwrap()
+            .trust_state()
+            .unwrap()
+            .expect("a trust state")
+    }
+
+    fn set_trust(&self, trust: &TrustState) {
+        let c = rusqlite::Connection::open(self.sqlite()).unwrap();
+        c.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'trust'",
+            rusqlite::params![trust.encode()],
+        )
+        .unwrap();
+    }
+
+    /// The secret store entries of the account (Secret Key, pending key).
+    fn store_entries(&self) -> Vec<(String, String)> {
+        let mut v: Vec<_> = fs::read_dir(self.secrets())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .map(|p| {
+                (
+                    p.file_name().unwrap().to_string_lossy().into_owned(),
+                    fs::read_to_string(&p).unwrap(),
+                )
+            })
+            .collect();
+        v.sort();
+        v
+    }
+}
+
+/// Another device of the account, with keys the test holds.
+struct Other {
+    keys: DeviceKeys,
+    public: DevicePublic,
+}
+
+fn other_device(name: &str) -> (Other, RosterEntry) {
+    let keys = DeviceKeys::generate_software().unwrap();
+    let public = keys.public(Id::new()).unwrap();
+    let entry = RosterEntry {
+        device_id: public.device_id,
+        sign_pub: public.sign_pub.clone(),
+        kem_pub: public.kem_pub.clone(),
+        name: name.to_owned(),
+        kind: DeviceKind::Phone,
+        mode: DeviceMode::Personal,
+        introduced_by: None,
+    };
+    (Other { keys, public }, entry)
+}
+
+/// Pin `entry` in the roster of the CLI's account, as a pairing or a
+/// migration would have.
+fn trust_device(rot: &Rot, entry: &RosterEntry, level: TrustLevel) {
+    let mut t = rot.trust();
+    t.roster.push(entry.clone());
+    t.roster.sort_by_key(|e| e.device_id);
+    t.levels.insert(entry.device_id, level);
+    rot.set_trust(&t);
+}
+
+#[test]
+fn a_new_account_keeps_its_device_keys_in_device_bin() {
+    use serde::Deserialize;
+    // device.bin version 4: state, where the Secret Key is, the device keys
+    // (classical bytes, software post-quantum half), no pending key.
+    #[derive(Deserialize)]
+    enum KeyAt {
+        Store { _account_id: [u8; 16] },
+        File { _secret_key: String },
+    }
+    #[derive(Deserialize)]
+    struct Blob {
+        classical: Vec<u8>,
+        pq: Vec<u8>,
+    }
+    #[derive(Deserialize)]
+    struct File {
+        _state: Vec<u8>,
+        _key: KeyAt,
+        device: Option<Blob>,
+        pending: Option<u8>,
+    }
+    let rot = Rot::new();
+    let path = rot.data().join("device.bin");
+    let bytes = fs::read(&path).unwrap();
+    let body = bytes.strip_prefix(b"ODF\x04").expect("version 4 header");
+    let (file, rest) = postcard::take_from_bytes::<File>(body).unwrap();
+    assert!(rest.is_empty());
+    assert!(file.pending.is_none());
+    let blob = file.device.expect("device keys in device.bin");
+    assert_eq!(
+        blob.classical.len(),
+        65,
+        "version, Ed25519 seed, X25519 secret"
+    );
+    assert_eq!(
+        blob.pq.len(),
+        32 + 3168,
+        "ML-DSA seed, ML-KEM decapsulation key"
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    // They are the keys the account's genesis was signed with.
+    let trust = rot.trust();
+    let pq = onepass_core::device_keys::SoftwarePqHalf::from_bytes(&blob.pq).unwrap();
+    let keys = DeviceKeys::new(&blob.classical, Box::new(pq)).unwrap();
+    assert_eq!(keys.public(trust.me.device_id).unwrap(), trust.me);
+    assert_eq!(trust.roster.len(), 1);
+    assert_eq!(trust.head.generation, 0);
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    let genesis = SqliteStore::open(&rot.sqlite())
+        .unwrap()
+        .list(RecordKind::Lineage)
+        .unwrap();
+    assert_eq!(genesis.len(), 1);
+    assert!(matches!(
+        LineageRecord::decode(&genesis[0].data).unwrap(),
+        LineageRecord::Genesis(_)
+    ));
+}
+
+/// The numbers of an output line, `Rotation code: 123456`.
+fn rotation_code(out: &str) -> String {
+    out.lines()
+        .find_map(|l| l.strip_prefix("Rotation code: "))
+        .expect("a rotation code line")
+        .to_owned()
+}
+
+fn kit_path(out: &str) -> PathBuf {
+    PathBuf::from(
+        out.lines()
+            .find_map(|l| l.strip_prefix("Emergency Kit: "))
+            .expect("an Emergency Kit line"),
+    )
+}
+
+#[test]
+fn rotate_keys_writes_the_kit_and_prints_the_code() {
+    let rot = Rot::new();
+    let old_key = rot.key.clone();
+    let out = rot.run(&["account", "rotate-keys"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let code = rotation_code(&out.stdout);
+    assert_eq!(code.len(), 6);
+    assert!(code.chars().all(|c| c.is_ascii_digit()));
+    let kit = kit_path(&out.stdout);
+    assert!(kit.starts_with(rot.data()) && kit.is_file(), "{kit:?}");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&kit).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    // The new Secret Key is in the kit and in the store; the old one is in
+    // neither; the Secret Key never goes to stdout or stderr.
+    let text = fs::read_to_string(&kit).unwrap();
+    let new_key = text
+        .lines()
+        .find_map(|l| l.strip_prefix("Secret Key: "))
+        .expect("a Secret Key line in the kit")
+        .to_owned();
+    assert_ne!(new_key, old_key);
+    assert!(!holds_key(text.as_bytes(), &old_key));
+    for stream in [&out.stdout, &out.stderr] {
+        assert!(!holds_key(stream.as_bytes(), &new_key), "{stream}");
+        assert!(!holds_key(stream.as_bytes(), &old_key), "{stream}");
+    }
+    let entries = rot.store_entries();
+    assert_eq!(entries.len(), 1, "no pending entry left: {entries:?}");
+    assert_eq!(entries[0].1, new_key);
+    assert!(!holds_key(
+        &fs::read(rot.data().join("device.bin")).unwrap(),
+        &new_key
+    ));
+    // The account opens with the new keys and still holds its items.
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    // One rotation: generation 1, the head moved, this device is Current.
+    let trust = rot.trust();
+    assert_eq!(trust.head.generation, 1);
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    // A second rotation works the same way (and the kit is never overwritten).
+    let again = rot.run(&["account", "rotate-keys"]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_ne!(kit_path(&again.stdout), kit);
+    assert_eq!(rot.trust().head.generation, 2);
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.stdout, "hunter2");
+}
+
+#[test]
+fn rotate_keys_json_and_explicit_kit_path() {
+    let rot = Rot::new();
+    let kit = rot.tmp.path().join("kit.txt");
+    let kit_arg = kit.to_str().unwrap();
+    let out = rot.run(&["--json", "account", "rotate-keys", "--kit-path", kit_arg]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v: serde_json::Value = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(v["emergency_kit"], kit_arg);
+    assert_eq!(v["rotation_code"].as_str().unwrap().len(), 6);
+    assert!(kit.is_file());
+    // Never over an existing file, nor into a missing folder: the refusal
+    // happens before anything changes (generation, Secret Key, kit file).
+    let generation = rot.trust().head.generation;
+    let entries = rot.store_entries();
+    let missing = format!("{}/missing/kit.txt", rot.tmp.path().display());
+    for bad in [kit_arg, missing.as_str()] {
+        let again = rot.run(&["account", "rotate-keys", "--kit-path", bad]);
+        assert_eq!(again.code, 1, "{}", again.stderr);
+        assert!(
+            again.stderr.contains("nothing was changed"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(rot.trust().head.generation, generation);
+        assert_eq!(rot.store_entries(), entries);
+    }
+    assert!(fs::read_to_string(&kit).unwrap().contains("Secret Key: "));
+}
+
+#[test]
+fn a_wrong_password_rotates_nothing() {
+    let rot = Rot::new();
+    let mut c = rot.cmd();
+    c.env("ONEPASS_PASSWORD", "not the password")
+        .args(["account", "rotate-keys"]);
+    let out = output(c);
+    assert_eq!(out.code, 2, "{}", out.stderr);
+    assert_eq!(rot.trust().head.generation, 0);
+    assert_eq!(rot.store_entries().len(), 1);
+}
+
+#[test]
+fn remove_device_rotates_with_reason_revoke() {
+    let rot = Rot::new();
+    let (other, entry) = other_device("iPhone de test");
+    trust_device(&rot, &entry, TrustLevel::Verified);
+    let listed = rot.run(&["account", "devices"]);
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    assert!(listed.stdout.contains(&other.public.device_id.to_string()));
+    assert!(listed.stdout.contains("iPhone de test"));
+    assert!(listed.stdout.contains("(this device)"));
+    assert_eq!(listed.stdout.lines().count(), 2);
+
+    let id = other.public.device_id.to_string();
+    let out = rot.run(&["account", "remove-device", &id]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let kit = kit_path(&out.stdout);
+    assert!(kit.is_file());
+    assert_eq!(rotation_code(&out.stdout).len(), 6);
+
+    // The removal is a rotation record with reason Revoke, never the list
+    // revocation of milestone 2b.
+    let trust = rot.trust();
+    assert!(trust.revoked.contains(&other.public.device_id));
+    assert!(
+        !trust
+            .roster
+            .iter()
+            .any(|e| e.device_id == other.public.device_id)
+    );
+    assert_eq!(trust.head.generation, 1);
+    let records = SqliteStore::open(&rot.sqlite())
+        .unwrap()
+        .list(RecordKind::Lineage)
+        .unwrap();
+    let reasons: Vec<RotationReason> = records
+        .iter()
+        .filter_map(|r| match LineageRecord::decode(&r.data).unwrap() {
+            LineageRecord::Rotation(s) => Some(s.body.reason),
+            LineageRecord::Genesis(_) => None,
+        })
+        .collect();
+    assert_eq!(reasons, vec![RotationReason::Revoke]);
+    let after = rot.run(&["account", "devices"]);
+    assert_eq!(after.stdout.lines().count(), 1);
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.stdout, "hunter2");
+}
+
+#[test]
+fn remove_device_refuses_unknown_and_own_ids() {
+    let rot = Rot::new();
+    let unknown = Id::new().to_string();
+    let out = rot.run(&["account", "remove-device", &unknown]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stderr.contains("not a device of this account"),
+        "{}",
+        out.stderr
+    );
+    let me = rot.trust().me.device_id.to_string();
+    let out = rot.run(&["account", "remove-device", &me]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stderr.contains("cannot remove itself"),
+        "{}",
+        out.stderr
+    );
+    let out = rot.run(&["account", "remove-device", "not-an-id"]);
+    assert_eq!(out.code, 1);
+    assert_eq!(rot.trust().head.generation, 0);
+    assert_eq!(rot.store_entries().len(), 1);
+}
+
+#[test]
+fn unverified_devices_are_kept_only_by_explicit_confirmation() {
+    let rot = Rot::new();
+    let (a, entry_a) = other_device("Legacy A");
+    let (b, entry_b) = other_device("Legacy B");
+    trust_device(&rot, &entry_a, TrustLevel::Tofu);
+    trust_device(&rot, &entry_b, TrustLevel::Tofu);
+    let listed = rot.run(&["account", "devices"]);
+    assert_eq!(
+        listed.stdout.matches("unverified").count(),
+        2,
+        "{}",
+        listed.stdout
+    );
+
+    // Not a tofu device (or not a device at all): refused, nothing written.
+    let me = rot.trust().me.device_id.to_string();
+    for bad in [me, Id::new().to_string()] {
+        let out = rot.run(&["account", "rotate-keys", "--keep-tofu", &bad]);
+        assert_eq!(out.code, 1);
+        assert!(
+            out.stderr.contains("not an unverified device"),
+            "{}",
+            out.stderr
+        );
+    }
+    assert_eq!(rot.trust().head.generation, 0);
+
+    // One kept by flag, the other dropped and said so.
+    let id_a = a.public.device_id.to_string();
+    let out = rot.run(&["account", "rotate-keys", "--keep-tofu", &id_a]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains("Legacy B"), "{}", out.stderr);
+    let trust = rot.trust();
+    let ids: Vec<Id> = trust.roster.iter().map(|e| e.device_id).collect();
+    assert!(ids.contains(&a.public.device_id));
+    assert!(!ids.contains(&b.public.device_id));
+
+    // No flag and no terminal: none is kept, and it is said.
+    let out = rot.run(&["account", "rotate-keys"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains("No terminal"), "{}", out.stderr);
+    let trust = rot.trust();
+    assert!(
+        !trust
+            .roster
+            .iter()
+            .any(|e| e.device_id == a.public.device_id)
+    );
+}
+
+/// How the rotation made elsewhere treats the CLI's device.
+#[derive(Clone, Copy, PartialEq)]
+enum Fate {
+    Keeps,
+    Revokes,
+    Drops,
+}
+
+/// Another device of the account rotates the keys and the CLI fetches what
+/// it wrote: the other device is a copy of the store, with its own device
+/// keys pinned as `me`, rotating through the core, and every record the CLI
+/// has not got yet goes into its store (a fetch, minus the rows a sync
+/// keeps aside).
+fn rotated_elsewhere(rot: &Rot, fate: Fate) -> Other {
+    let (other, entry) = other_device("iPhone de test");
+    trust_device(rot, &entry, TrustLevel::Verified);
+    let cli = rot.trust();
+
+    let there = rot.tmp.path().join("there");
+    fs::create_dir(&there).unwrap();
+    let there_db = there.join("vault.sqlite");
+    fs::copy(rot.sqlite(), &there_db).unwrap();
+    {
+        let c = rusqlite::Connection::open(&there_db).unwrap();
+        // Same chain state (the other device is another process on a copy).
+        let mut t = cli.clone();
+        t.me = other.public.clone();
+        if fate == Fate::Drops {
+            // The other device only trusts the CLI on first use: its
+            // rotation keeps no unverified device unless asked to.
+            t.levels.insert(cli.me.device_id, TrustLevel::Tofu);
+        }
+        c.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'trust'",
+            rusqlite::params![t.encode()],
+        )
+        .unwrap();
+        c.execute("DELETE FROM meta WHERE key = 'chain'", [])
+            .unwrap();
+    }
+    let key = SecretKey::parse(&rot.key).unwrap();
+    let next = SecretKey::generate().unwrap();
+    let store = SqliteStore::open(&there_db).unwrap();
+    let mut repo = Repository::unlock(store, PASSWORD, &key, DeviceState::default()).unwrap();
+    let (revoke, reason) = match fate {
+        Fate::Revokes => (vec![cli.me.device_id], RotationReason::Revoke),
+        _ => (Vec::new(), RotationReason::Rotate),
+    };
+    repo.rotate(RotateRequest {
+        revoke,
+        new_password: None,
+        password: PASSWORD,
+        secret_key: &key,
+        new_secret_key: &next,
+        device_keys: &other.keys,
+        reason,
+        keep_tofu: &[],
+    })
+    .unwrap();
+    drop(repo);
+
+    let c = rusqlite::Connection::open(rot.sqlite()).unwrap();
+    c.execute("ATTACH DATABASE ?1 AS there", [there_db.to_str().unwrap()])
+        .unwrap();
+    // The records a rotation adds under new ids (the lineage, the
+    // deliveries, the params, keyset and lists of the new identity): not
+    // the vault content, which a sync keeps aside until the device follows.
+    c.execute(
+        "INSERT OR IGNORE INTO records SELECT kind, id, version, data FROM there.records
+         WHERE kind IN (1, 2, 7, 8, 9, 10, 11, 12)",
+        [],
+    )
+    .unwrap();
+    other
+}
+
+#[test]
+fn a_rotation_waiting_makes_the_cli_read_only_and_names_the_emergency_kit() {
+    let rot = Rot::new();
+    rotated_elsewhere(&rot, Fate::Keeps);
+    // Reads go on with the keys this device still holds...
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    assert!(read.stderr.contains("read only"), "{}", read.stderr);
+    // ...writes are refused, with the way out.
+    let write = rot.run(&[
+        "item",
+        "create",
+        "login",
+        "--title",
+        "Nope",
+        "--field",
+        "username=x",
+    ]);
+    assert_eq!(write.code, 1, "{}", write.stderr);
+    assert!(write.stderr.contains("Emergency Kit"), "{}", write.stderr);
+    assert!(write.stderr.contains("not-me"), "{}", write.stderr);
+    // Rotating from this device is refused too.
+    let rotate = rot.run(&["account", "rotate-keys"]);
+    assert_eq!(rotate.code, 1, "{}", rotate.stderr);
+    assert!(rotate.stderr.contains("Emergency Kit"), "{}", rotate.stderr);
+    assert_eq!(rot.store_entries().len(), 1, "no pending key left behind");
+    // "Ce n'etait pas moi": the rotation is ignored, writes work again.
+    let answer = rot.run(&["account", "not-me"]);
+    assert_eq!(answer.code, 0, "{}", answer.stderr);
+    let write = rot.run(&[
+        "item",
+        "create",
+        "login",
+        "--title",
+        "Back",
+        "--field",
+        "username=x",
+    ]);
+    assert_eq!(write.code, 0, "{}", write.stderr);
+}
+
+#[test]
+fn a_device_left_behind_reads_and_refuses_writes() {
+    let rot = Rot::new();
+    rotated_elsewhere(&rot, Fate::Drops);
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    assert!(
+        read.stderr.contains("left this device behind"),
+        "{}",
+        read.stderr
+    );
+    let write = rot.run(&[
+        "item",
+        "create",
+        "login",
+        "--title",
+        "Nope",
+        "--field",
+        "username=x",
+    ]);
+    assert_eq!(write.code, 1, "{}", write.stderr);
+    assert!(write.stderr.contains("Emergency Kit"), "{}", write.stderr);
+    // It never erases: a left-behind device has no clock.
+    assert!(matches!(
+        rot.trust().state,
+        DeviceLineageState::Orphaned { .. }
+    ));
+    let answer = rot.run(&["account", "not-me"]);
+    assert_eq!(answer.code, 0, "{}", answer.stderr);
+    let write = rot.run(&[
+        "item",
+        "create",
+        "login",
+        "--title",
+        "Back",
+        "--field",
+        "username=x",
+    ]);
+    assert_eq!(write.code, 0, "{}", write.stderr);
+}
+
+#[test]
+fn a_quarantined_cli_shows_the_erase_date_and_can_answer_not_me() {
+    let rot = Rot::new();
+    let other = rotated_elsewhere(&rot, Fate::Revokes);
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 1, "{}", read.stderr);
+    assert!(read.stdout.is_empty());
+    assert!(read.stderr.contains("erases itself on"), "{}", read.stderr);
+    assert!(read.stderr.contains("not-me"), "{}", read.stderr);
+    let since = match rot.trust().state {
+        DeviceLineageState::Quarantined { since, rotator, .. } => {
+            assert_eq!(rotator, other.public.device_id);
+            since
+        }
+        s => panic!("expected a quarantine, got {s:?}"),
+    };
+    assert!(since >= before && since <= before + 600);
+    // The date shown is `since` + 7 days.
+    let erase =
+        time::OffsetDateTime::from_unix_timestamp(i64::try_from(since + 7 * 86_400).unwrap())
+            .unwrap();
+    assert!(
+        read.stderr.contains(&format!(
+            "{:04}-{:02}-{:02}",
+            erase.year(),
+            u8::from(erase.month()),
+            erase.day()
+        )),
+        "{}",
+        read.stderr
+    );
+    // The answer needs the master password...
+    let mut c = rot.cmd();
+    c.env("ONEPASS_PASSWORD", "wrong")
+        .args(["account", "not-me"]);
+    assert_eq!(output(c).code, 2);
+    assert!(matches!(
+        rot.trust().state,
+        DeviceLineageState::Quarantined { .. }
+    ));
+    // ...and cancels the erase: the device opens again.
+    let answer = rot.run(&["account", "not-me"]);
+    assert_eq!(answer.code, 0, "{}", answer.stderr);
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    assert!(rot.trust().excluded.contains(&other.public.device_id));
+}
+
+#[test]
+fn a_quarantined_cli_erases_itself_after_seven_days() {
+    let rot = Rot::new();
+    rotated_elsewhere(&rot, Fate::Revokes);
+    // First sight: locked, not erased.
+    assert_eq!(rot.run(&["vault", "list"]).code, 1);
+    let mut t = rot.trust();
+    let DeviceLineageState::Quarantined {
+        by,
+        rotator,
+        resume,
+        ..
+    } = t.state.clone()
+    else {
+        panic!("expected a quarantine");
+    };
+    // A clock moved to 6 days: still waiting.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    t.state = DeviceLineageState::Quarantined {
+        by,
+        rotator,
+        since: now - 6 * 86_400,
+        resume,
+    };
+    rot.set_trust(&t);
+    let out = rot.run(&["vault", "list"]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("erases itself on"), "{}", out.stderr);
+    assert!(rot.data().join("device.bin").exists());
+    // 8 days: it erases itself, and the secrets go with it.
+    t.state = DeviceLineageState::Quarantined {
+        by,
+        rotator,
+        since: now - 8 * 86_400,
+        resume,
+    };
+    rot.set_trust(&t);
+    let out = rot.run(&["vault", "list"]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("erased itself"), "{}", out.stderr);
+    assert!(!rot.data().join("device.bin").exists());
+    assert!(rot.store_entries().is_empty(), "{:?}", rot.store_entries());
+    let c = rusqlite::Connection::open(rot.sqlite()).unwrap();
+    let rows: i64 = c
+        .query_row("SELECT count(*) FROM records", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 0);
+    // The next command finds no account at all.
+    let out = rot.run(&["vault", "list"]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("no account"), "{}", out.stderr);
+}
+
+#[test]
+fn a_late_not_me_does_not_save_an_expired_quarantine() {
+    let rot = Rot::new();
+    rotated_elsewhere(&rot, Fate::Revokes);
+    assert_eq!(rot.run(&["vault", "list"]).code, 1);
+    let mut t = rot.trust();
+    let DeviceLineageState::Quarantined {
+        by,
+        rotator,
+        resume,
+        ..
+    } = t.state.clone()
+    else {
+        panic!("expected a quarantine");
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    t.state = DeviceLineageState::Quarantined {
+        by,
+        rotator,
+        since: now - 8 * 86_400,
+        resume,
+    };
+    rot.set_trust(&t);
+    let out = rot.run(&["account", "not-me"]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("erased itself"), "{}", out.stderr);
+    assert!(!rot.data().join("device.bin").exists());
+}
+
+#[test]
+fn not_me_without_anything_to_answer_is_refused() {
+    let rot = Rot::new();
+    let out = rot.run(&["account", "not-me"]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("nothing to answer"), "{}", out.stderr);
+}
+
+#[test]
+fn an_older_device_bin_opens_and_gains_device_keys() {
+    // An account made before key rotation v2: no trust state in the store,
+    // a device.bin without device keys (version 3).
+    let rot = Rot::new();
+    let c = rusqlite::Connection::open(rot.sqlite()).unwrap();
+    c.execute_batch(
+        "DELETE FROM meta WHERE key IN ('trust', 'chain');
+         DELETE FROM records WHERE kind IN (10, 11, 12);",
+    )
+    .unwrap();
+    drop(c);
+    // Back to a generation 0 device list: an old CLI never registered itself.
+    // (The signed device list written at creation stays: it is a valid list
+    // a legacy device may find.)
+    let bytes = fs::read(rot.data().join("device.bin")).unwrap();
+    let body = bytes.strip_prefix(b"ODF\x04").unwrap();
+    #[derive(serde::Deserialize, serde::Serialize)]
+    enum KeyAt {
+        Store { account_id: [u8; 16] },
+        File { secret_key: String },
+    }
+    #[derive(serde::Deserialize)]
+    struct Blob {
+        _classical: Vec<u8>,
+        _pq: Vec<u8>,
+    }
+    #[derive(serde::Deserialize)]
+    struct V4 {
+        state: Vec<u8>,
+        key: KeyAt,
+        _device: Option<Blob>,
+        _pending: Option<u8>,
+    }
+    #[derive(serde::Serialize)]
+    struct V3 {
+        state: Vec<u8>,
+        key: KeyAt,
+    }
+    let (v4, _) = postcard::take_from_bytes::<V4>(body).unwrap();
+    let mut v3 = b"ODF\x03".to_vec();
+    v3.extend(
+        postcard::to_allocvec(&V3 {
+            state: v4.state,
+            key: v4.key,
+        })
+        .unwrap(),
+    );
+    fs::write(rot.data().join("device.bin"), v3).unwrap();
+
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    assert!(read.stderr.contains("device keys"), "{}", read.stderr);
+    // device.bin is version 4 now, with the keys; the genesis is signed by
+    // them, and the device can rotate.
+    let bytes = fs::read(rot.data().join("device.bin")).unwrap();
+    assert!(bytes.starts_with(b"ODF\x04"));
+    let trust = rot.trust();
+    assert_eq!(trust.head.generation, 0);
+    assert_eq!(trust.state, DeviceLineageState::Current);
+    let out = rot.run(&["account", "rotate-keys"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(rot.trust().head.generation, 1);
+    let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.stdout, "hunter2");
+}

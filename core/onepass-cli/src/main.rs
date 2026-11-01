@@ -110,6 +110,16 @@ enum Command {
 enum AccountCmd {
     /// Create the account and show its Secret Key once.
     Create,
+    /// List the devices this device trusts.
+    Devices,
+    /// Rotate every key of the account. Writes a new Emergency Kit (the new
+    /// Secret Key goes only there) and prints the rotation code.
+    RotateKeys(commands::account::RotateArgs),
+    /// Remove a device: rotate every key of the account without it.
+    RemoveDevice(commands::account::RemoveArgs),
+    /// "Ce n'etait pas moi": answer a key rotation this device did not make
+    /// (master password; the Secret Key comes from this device).
+    NotMe,
 }
 
 fn default_data_dir() -> Result<PathBuf, CliError> {
@@ -146,6 +156,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
     ctx.banner();
     match command {
         Command::Account(AccountCmd::Create) => commands::account::create(&ctx),
+        Command::Account(AccountCmd::Devices) => commands::account::devices(&ctx),
+        Command::Account(AccountCmd::RotateKeys(a)) => commands::account::rotate_keys(&ctx, a),
+        Command::Account(AccountCmd::RemoveDevice(a)) => commands::account::remove_device(&ctx, a),
+        Command::Account(AccountCmd::NotMe) => commands::account::not_me(&ctx),
         Command::Vault(c) => commands::vault::run(&ctx, c),
         Command::Item(c) => commands::item::run(&ctx, c),
         Command::Read { reference } => commands::read::run(&ctx, &reference),

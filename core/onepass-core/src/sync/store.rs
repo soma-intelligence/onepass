@@ -15,7 +15,10 @@
 //!   `RecordStore::kept_rows` and `crate::sync::VaultSyncHealth`.
 //! - `retained`: the `base` vault key
 //!   and vault meta rows a fetch replaced with other bytes (the first such
-//!   row per key): the vault as the identity this device is on sealed it,
+//!   row per key and per identity this device was on, column `copy`: the
+//!   records id of that identity, Task 19 carried item 3, so a stale copy
+//!   of an identity left never takes the place of the current one): the
+//!   vault as the identity this device is on sealed it,
 //!   kept while a rotation re-sealed it under keys this device has not
 //!   followed yet (spec 9, read-only reads) and until its own writes are
 //!   replayed under the new keys (spec 10.4). See
@@ -67,12 +70,18 @@ const TRUST_STATE_KEY: &str = "trust";
 /// `meta` key of what the push phases of a rotation need
 /// (`RotationPush`), from the rotation's commit until phase 3 is confirmed.
 const ROTATION_PUSH_KEY: &str = "rotation_push";
+/// Item records to delete on the server (`collect_foreign_items`), in a
+/// `RotationPush` encoding with `collect` only.
+const FOREIGN_COLLECT_KEY: &str = "foreign_collect";
 /// Raised when a fetch dropped a local password change the server had
 /// overtaken (`SyncStore::take_password_change_superseded`).
 const SUPERSEDED_KEY: &str = "password_change_superseded";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
+/// Fetched changes dropped because their version exceeds `i64::MAX`
+/// (`stage_remote`), same encoding and cap as the ignored deletions.
+const IGNORED_VERSIONS_KEY: &str = "ignored_versions";
 /// The vaults the Travel Mode keeps off this device (16-byte ids).
 const TRAVEL_HIDDEN_KEY: &str = "travel_hidden";
 const IGNORED_LOG_VERSION: u8 = 1;
@@ -148,19 +157,45 @@ CREATE TABLE IF NOT EXISTS kept (
 CREATE TABLE IF NOT EXISTS retained (
     kind INTEGER NOT NULL,
     id BLOB NOT NULL,
+    copy BLOB NOT NULL,
     version INTEGER NOT NULL,
     data BLOB NOT NULL,
-    PRIMARY KEY (kind, id)
+    PRIMARY KEY (kind, id, copy)
 );
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT NOT NULL PRIMARY KEY,
     value BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS lineage_stamp (
+    k INTEGER NOT NULL PRIMARY KEY,
+    v INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO lineage_stamp (k, v) VALUES (1, 0);
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_ins AFTER INSERT ON base
+    WHEN NEW.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_upd AFTER UPDATE ON base
+    WHEN NEW.kind IN (1, 2, 10, 11, 12) OR OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_base_del AFTER DELETE ON base
+    WHEN OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_ins AFTER INSERT ON pending
+    WHEN NEW.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_upd AFTER UPDATE ON pending
+    WHEN NEW.kind IN (1, 2, 10, 11, 12) OR OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
+CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_del AFTER DELETE ON pending
+    WHEN OLD.kind IN (1, 2, 10, 11, 12)
+    BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
 ";
 
-/// Check `PRAGMA user_version`, then create what is missing and stamp the
-/// current version. 0 (a new file, or one from before the check) and the
-/// current version open; nothing is dropped or rewritten. A newer version is
+/// Check `PRAGMA user_version`, then migrate, create what is missing and
+/// stamp the current version. 0 (a new file, or one from before the check),
+/// 1 (a `retained` table from before its copy tag, migrated by
+/// `migrate_retained`, its rows kept) and the current version open; nothing
+/// else is dropped or rewritten. A newer version is
 /// `InvalidFormat("store from a newer version")`, the file left untouched.
 fn init_schema(conn: &Connection) -> Result<()> {
     let version: i64 = conn
@@ -169,10 +204,55 @@ fn init_schema(conn: &Connection) -> Result<()> {
     if version > STORE_USER_VERSION {
         return Err(Error::InvalidFormat("store from a newer version"));
     }
+    migrate_retained(conn)?;
     conn.execute_batch(SCHEMA).map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
+}
+
+/// A `retained` table from before its `copy` column (one copy per vault
+/// key and meta, Task 10) becomes the current one, its rows kept under an
+/// empty copy tag, in one transaction. Nothing to do on a new file or a
+/// current table.
+fn migrate_retained(conn: &Connection) -> Result<()> {
+    let columns: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info('retained')")
+            .map_err(store_err)?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(store_err)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(store_err)?
+    };
+    if columns.is_empty() || columns.iter().any(|c| c == "copy") {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "BEGIN IMMEDIATE;
+         ALTER TABLE retained RENAME TO retained_before_copy;
+         CREATE TABLE retained (
+             kind INTEGER NOT NULL,
+             id BLOB NOT NULL,
+             copy BLOB NOT NULL,
+             version INTEGER NOT NULL,
+             data BLOB NOT NULL,
+             PRIMARY KEY (kind, id, copy)
+         );
+         INSERT INTO retained (kind, id, copy, version, data)
+             SELECT kind, id, x'', version, data FROM retained_before_copy;
+         DROP TABLE retained_before_copy;
+         COMMIT;",
+    )
+    .map_err(store_err)
+}
+
+/// The `retained` copy tag of what this device holds now: the records id
+/// of the identity its trust state is on, empty without a trust state.
+fn copy_tag(conn: &Connection) -> Result<Vec<u8>> {
+    Ok(trust_in(conn)?
+        .map(|t| crate::repo::follow::current_records_id(&t).0.to_vec())
+        .unwrap_or_default())
 }
 
 /// A `staging` row: `(kind, id, version, data, server_meta)`.
@@ -180,6 +260,10 @@ type StagedRow = (i64, Vec<u8>, i64, Option<Vec<u8>>, Option<Vec<u8>>);
 
 pub struct SyncStore {
     conn: Connection,
+    /// The last trust state decoded, with the exact bytes it came from
+    /// (Task 19 carried item 6): a read whose bytes are the same returns a
+    /// copy without decoding again. Keyed by the bytes, so never stale.
+    trust_cache: std::sync::Mutex<Option<(Vec<u8>, TrustState)>>,
 }
 
 /// What `SyncStore::push_rotation_phase` found.
@@ -569,6 +653,44 @@ fn rotating_in(conn: &Connection) -> Result<Option<(u8, Id)>> {
     }))
 }
 
+/// The item records queued for collection on the server.
+fn foreign_collect_in(conn: &Connection) -> Result<Vec<Id>> {
+    Ok(meta_in(conn, FOREIGN_COLLECT_KEY)?
+        .map(|b| RotationPush::decode(&b))
+        .transpose()?
+        .map(|p| p.collect)
+        .unwrap_or_default())
+}
+
+fn set_foreign_collect_in(conn: &Connection, ids: &[Id]) -> Result<()> {
+    if ids.is_empty() {
+        conn.execute(
+            "DELETE FROM meta WHERE key = ?1",
+            params![FOREIGN_COLLECT_KEY],
+        )
+        .map_err(store_err)?;
+        return Ok(());
+    }
+    let push = RotationPush {
+        vaults: Vec::new(),
+        collect: ids.to_vec(),
+    };
+    set_meta_in(conn, FOREIGN_COLLECT_KEY, &push.encode())
+}
+
+/// The version of a `base` row, if any.
+fn base_version_in(conn: &Connection, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+    conn.query_row(
+        "SELECT version FROM base WHERE kind = ?1 AND id = ?2",
+        params![kind.code(), &id.0[..]],
+        |r| r.get::<_, i64>(0),
+    )
+    .optional()
+    .map_err(store_err)?
+    .map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+    .transpose()
+}
+
 /// What the rotation being pushed needs (`RotationPush`), if any.
 fn rotation_push_in(conn: &Connection) -> Result<Option<RotationPush>> {
     meta_in(conn, ROTATION_PUSH_KEY)?
@@ -809,6 +931,39 @@ fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
             deletions.push(change);
         }
     }
+    // Task 19 carried item 5: the foreign item records queued for
+    // collection, while the server row is still there and no local write
+    // replaced it.
+    if !hold.all && !hold.candidate {
+        for id in foreign_collect_in(tx)? {
+            let pending: bool = tx
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM pending WHERE kind = ?1 AND id = ?2)",
+                    params![RecordKind::Item.code(), &id.0[..]],
+                    |r| r.get(0),
+                )
+                .map_err(store_err)?;
+            if pending {
+                continue;
+            }
+            // Review C1 (fix round 1): never while the vault's own writes
+            // wait for their replay (`hold.left`): they may be sealed under
+            // that key generation and replayed from these very rows.
+            let vault = row_data(tx, "base", RecordKind::Item, id)?
+                .and_then(|d| split_item_record(&d).ok().map(|(v, _)| v));
+            if vault.is_none_or(|v| hold.left.contains(&v) || held.contains(&v)) {
+                continue;
+            }
+            if let Some(version) = base_version_in(tx, RecordKind::Item, id)? {
+                deletions.push(Change {
+                    kind: RecordKind::Item,
+                    id,
+                    version,
+                    data: None,
+                });
+            }
+        }
+    }
     // Deletions go last, highest kind first: a fetching device never
     // sees a manifest without its key.
     deletions.sort_by(|a, b| b.kind.cmp(&a.kind).then(a.id.cmp(&b.id)));
@@ -839,13 +994,19 @@ impl SyncStore {
         conn.execute_batch("PRAGMA synchronous = FULL;")
             .map_err(store_err)?;
         init_schema(&conn)?;
-        Ok(SyncStore { conn })
+        Ok(SyncStore {
+            conn,
+            trust_cache: Default::default(),
+        })
     }
 
     pub fn open_in_memory() -> Result<SyncStore> {
         let conn = Connection::open_in_memory().map_err(store_err)?;
         init_schema(&conn)?;
-        Ok(SyncStore { conn })
+        Ok(SyncStore {
+            conn,
+            trust_cache: Default::default(),
+        })
     }
 
     /// A write transaction: an `IMMEDIATE` one, or a savepoint inside an
@@ -1078,6 +1239,34 @@ impl SyncStore {
                 .is_some_and(|(p, _)| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
     }
 
+    /// `RecordStore::put_retained` under the copy tag `copy`.
+    fn put_retained_tagged(&mut self, rows: Vec<Record>, copy: &[u8]) -> Result<()> {
+        let tx = self.write_tx()?;
+        for r in rows {
+            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
+                return Err(Error::InvalidFormat("retained row"));
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO retained (kind, id, copy, version, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    r.kind.code(),
+                    &r.id.0[..],
+                    copy,
+                    to_i64(r.version)?,
+                    &r.data
+                ],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![r.kind.code(), &r.id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
     /// Every `base` row, ordered by kind then id: the store as the server
     /// sees it, never a `pending` write. The pairing snapshot (spec 5.1).
     pub fn export_records(&self) -> Result<Vec<Record>> {
@@ -1117,6 +1306,18 @@ impl SyncStore {
             .optional()
             .map_err(store_err)?;
         let Some(data) = pending else {
+            // A queued collection (`collect_foreign_items`) the server took.
+            let mut queue = foreign_collect_in(&tx)?;
+            if kind == RecordKind::Item && server_meta.is_none() && queue.contains(&id) {
+                tx.execute(
+                    "DELETE FROM base WHERE kind = ?1 AND id = ?2",
+                    params![kind.code(), &id.0[..]],
+                )
+                .map_err(store_err)?;
+                queue.retain(|q| *q != id);
+                set_foreign_collect_in(&tx, &queue)?;
+                return tx.commit();
+            }
             return Ok(());
         };
         match data {
@@ -1350,6 +1551,16 @@ impl SyncStore {
     ///
     /// While the Travel Mode hides vaults (`set_travel_hidden`), their
     /// records are dropped here: a fetch never brings them back.
+    ///
+    /// A change whose version does not fit the store's signed 64-bit
+    /// column (above `i64::MAX`: no honest writer gets there, every local
+    /// write checks it) is dropped here too, write or deletion, and the
+    /// rest of the fetch goes on: one forged record never wedges a fetch
+    /// (Task 19 carried item 7). Dropping a deletion only keeps a row. Each
+    /// drop is logged (`ignored_versions`). The wedge left is scoped to the
+    /// record: a server that serves an existing id only at such a version
+    /// keeps that one record at the version the device holds, and nothing
+    /// else, until it serves a valid version again.
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
         let hidden = self.travel_hidden()?;
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
@@ -1362,7 +1573,9 @@ impl SyncStore {
         if c.kind.is_immutable() && c.data.as_deref().is_some_and(|d| check_size(d).is_err()) {
             return Ok(());
         }
-        let v = to_i64(c.version)?;
+        let Ok(v) = to_i64(c.version) else {
+            return append_log(&self.conn, IGNORED_VERSIONS_KEY, &[(c.kind, c.id)]);
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO staging (kind, id, version, data, server_meta)
@@ -1398,6 +1611,7 @@ impl SyncStore {
     pub fn commit_remote(&mut self) -> Result<Vec<Id>> {
         let tx = self.write_tx()?;
         let seen: BTreeSet<Id> = device_state_in(&tx)?.last_seen.into_keys().collect();
+        let copy = copy_tag(&tx)?;
         let staged: Vec<StagedRow> = {
             let mut stmt = tx
                 .prepare(
@@ -1467,10 +1681,10 @@ impl SyncStore {
                 // key, review M1 of Task 10), so the retained meta pairs with
                 // the kept manifest.
                 tx.execute(
-                    "INSERT OR IGNORE INTO retained (kind, id, version, data)
-                     SELECT kind, id, version, data FROM base
+                    "INSERT OR IGNORE INTO retained (kind, id, copy, version, data)
+                     SELECT kind, id, ?4, version, data FROM base
                      WHERE kind = ?1 AND id = ?2 AND data != ?3",
-                    params![kind_code, &id, &data],
+                    params![kind_code, &id, &data, &copy],
                 )
                 .map_err(store_err)?;
             }
@@ -1814,6 +2028,13 @@ impl SyncStore {
                 .map_err(store_err)?;
         }
         tx.commit()
+    }
+
+    /// Fetched changes dropped for a version above `i64::MAX`, oldest
+    /// first, one entry per record with the latest time, at most
+    /// `MAX_IGNORED_DELETIONS`.
+    pub fn ignored_versions(&self) -> Result<Vec<IgnoredDeletion>> {
+        self.read(|c| Ok(log_in(c, IGNORED_VERSIONS_KEY).unwrap_or_default()))
     }
 
     /// Remote deletions (or removals by a full fetch) the store refused,
@@ -3404,9 +3625,30 @@ impl RecordStore for SyncStore {
     }
 
     fn trust_state(&self) -> Result<Option<TrustState>> {
-        self.meta(TRUST_STATE_KEY)?
-            .map(|b| TrustState::decode(&b))
-            .transpose()
+        let Some(bytes) = self.meta(TRUST_STATE_KEY)? else {
+            return Ok(None);
+        };
+        let mut cache = self
+            .trust_cache
+            .lock()
+            .map_err(|_| Error::Store("trust cache".into()))?;
+        if let Some((b, t)) = cache.as_ref()
+            && *b == bytes
+        {
+            return Ok(Some(t.clone()));
+        }
+        let t = TrustState::decode(&bytes)?;
+        *cache = Some((bytes, t.clone()));
+        Ok(Some(t))
+    }
+
+    fn lineage_stamp(&self) -> Result<Option<u64>> {
+        self.read(|c| {
+            let v: i64 = c
+                .query_row("SELECT v FROM lineage_stamp WHERE k = 1", [], |r| r.get(0))
+                .map_err(store_err)?;
+            Ok(Some(v as u64))
+        })
     }
 
     /// The conditional writes, the deletions (as `delete`), the chain state
@@ -3504,7 +3746,7 @@ impl RecordStore for SyncStore {
             let mut stmt = c
                 .prepare(
                     "SELECT kind, id, version, data FROM retained WHERE id = ?1
-                     ORDER BY kind",
+                     ORDER BY copy, kind",
                 )
                 .map_err(store_err)?;
             let rows = stmt
@@ -3579,7 +3821,11 @@ impl RecordStore for SyncStore {
                 .map_err(store_err)?;
                 tx.commit()?;
             }
-            self.put_retained(retained)
+            // Review M4 (fix round 1): tagged with the identity left, so
+            // the slot of the identity followed stays free for the copy a
+            // later fetch replaces.
+            let left = crate::repo::follow::current_records_id(expected).0.to_vec();
+            self.put_retained_tagged(retained, &left)
         })();
         match done {
             Ok(()) => self.commit_batch(),
@@ -3590,25 +3836,26 @@ impl RecordStore for SyncStore {
         }
     }
 
-    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+    fn collect_foreign_items(&mut self, ids: Vec<Id>) -> Result<()> {
         let tx = self.write_tx()?;
-        for r in rows {
-            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
-                return Err(Error::InvalidFormat("retained row"));
+        let mut queue = foreign_collect_in(&tx)?;
+        queue.extend(ids);
+        let mut kept = Vec::new();
+        for id in queue {
+            if base_version_in(&tx, RecordKind::Item, id)?.is_some() {
+                kept.push(id);
             }
-            tx.execute(
-                "INSERT OR REPLACE INTO retained (kind, id, version, data)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![r.kind.code(), &r.id.0[..], to_i64(r.version)?, &r.data],
-            )
-            .map_err(store_err)?;
-            tx.execute(
-                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
-                params![r.kind.code(), &r.id.0[..]],
-            )
-            .map_err(store_err)?;
         }
+        kept.sort();
+        kept.dedup();
+        set_foreign_collect_in(&tx, &kept)?;
         tx.commit()
+    }
+
+    fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
+        // Tagged with the identity the trust state is on now.
+        let copy = self.read(copy_tag)?;
+        self.put_retained_tagged(rows, &copy)
     }
 
     fn batch_begin(&mut self) -> Result<()> {
@@ -3805,7 +4052,8 @@ impl RecordStore for SyncStore {
                 // follows retains the meta of this load.
                 tx.execute(
                     "DELETE FROM retained WHERE id = ?1 AND kind = ?2
-                     AND NOT EXISTS (SELECT 1 FROM retained WHERE id = ?1 AND kind = ?3)",
+                     AND NOT EXISTS (SELECT 1 FROM retained AS k
+                         WHERE k.id = ?1 AND k.kind = ?3 AND k.copy = retained.copy)",
                     params![
                         &vault.0[..],
                         RecordKind::VaultMeta.code(),
@@ -4177,6 +4425,178 @@ mod tests {
         s.stage_remote(remote(kind, id, version, Some(data)))
             .unwrap();
         s.commit_remote().unwrap();
+    }
+
+    /// Task 19 carried item 3: the retained copy is kept per identity the
+    /// device was on. A copy of an identity left (kept for a replay that
+    /// still waits) never takes the place of the copy of the identity the
+    /// device is on now, which the next rotation re-seals.
+    #[test]
+    fn retained_copy_per_identity() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let v = Id::new();
+        let mut trust = crate::trust::tests::sample();
+        trust.head.generation = 0;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 1, vec![1]);
+        seed_base(&mut s, RecordKind::VaultKey, v, 2, vec![2]);
+        // Another identity (generation 3: its own records id).
+        let mut next = trust.clone();
+        next.head.generation = 3;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &next)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 3, vec![3]);
+        // The first replaced row per identity: [1] then [2], never [3].
+        seed_base(&mut s, RecordKind::VaultKey, v, 4, vec![4]);
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        assert_eq!(kept, vec![vec![1], vec![2]]);
+        // A switch's own copy, under the identity the trust state is on,
+        // replaces only that identity's copy.
+        s.put_retained(vec![rec(v, RecordKind::VaultKey, 9, &[9])])
+            .unwrap();
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        assert_eq!(kept, vec![vec![1], vec![9]]);
+    }
+
+    /// Task 19 carried item 6: the lineage stamp moves with every write or
+    /// removal of a kind a rotation prompt reads, local or fetched, and
+    /// not with item writes; the trust state read is the one stored.
+    #[test]
+    fn lineage_stamp_moves_only_with_prompt_kinds() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let stamp = |s: &SyncStore| s.lineage_stamp().unwrap().unwrap();
+        let mut last = stamp(&s);
+        let mut moved = |s: &SyncStore, expect: bool| {
+            let now = stamp(s);
+            assert_eq!(now != last, expect);
+            last = now;
+        };
+        let id = Id::new();
+        s.put(rec(id, RecordKind::Item, 1, &[1])).unwrap();
+        moved(&s, false);
+        for kind in [
+            RecordKind::AccountParams,
+            RecordKind::Keyset,
+            RecordKind::Lineage,
+            RecordKind::DeviceIntro,
+            RecordKind::KeyDelivery,
+        ] {
+            seed_base(&mut s, kind, id, 1, vec![1]);
+            moved(&s, true);
+        }
+        s.put(rec(id, RecordKind::AccountParams, 2, &[2])).unwrap();
+        moved(&s, true);
+        s.stage_remote(remote(RecordKind::AccountParams, id, 2, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        s.stage_remote(remote(RecordKind::Item, id, 2, None))
+            .unwrap();
+        s.commit_remote().unwrap();
+        moved(&s, false);
+
+        let mut trust = crate::trust::tests::sample();
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust.clone()));
+        trust.excluded.insert(Id([0xAB; 16]));
+        s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
+            .unwrap();
+        assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust));
+    }
+
+    /// Review M4 (fix round 1): the own copy a switch keeps is tagged with
+    /// the identity left, so a fetch that later replaces the followed
+    /// identity's vault key still retains that copy too.
+    #[test]
+    fn switch_copy_leaves_the_followed_slot_free() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let v = Id::new();
+        let mut left = crate::trust::tests::sample();
+        left.head.generation = 3;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &left)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 1, vec![1]);
+        let mut followed = left.clone();
+        followed.head.generation = 0;
+        let chain = s.chain_state().unwrap();
+        s.put_follow(
+            chain,
+            &left,
+            &followed,
+            vec![rec(v, RecordKind::VaultKey, 1, &[9])],
+            vec![],
+        )
+        .unwrap();
+        // Fetches replace the vault key twice on the identity followed.
+        seed_base(&mut s, RecordKind::VaultKey, v, 2, vec![2]);
+        seed_base(&mut s, RecordKind::VaultKey, v, 3, vec![3]);
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        // The switch copy under the identity left, and the first row a
+        // fetch replaced once on the identity followed.
+        assert_eq!(kept, vec![vec![1], vec![9]]);
+    }
+
+    /// A `retained` table from before the copy tag keeps its rows.
+    #[test]
+    fn retained_table_from_before_the_copy_tag_migrates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.sqlite");
+        let v = Id::new();
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE retained (
+                    kind INTEGER NOT NULL,
+                    id BLOB NOT NULL,
+                    version INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    PRIMARY KEY (kind, id)
+                );
+                PRAGMA user_version = 1;",
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO retained (kind, id, version, data) VALUES (?1, ?2, 1, x'07')",
+                params![RecordKind::VaultKey.code(), &v.0[..]],
+            )
+            .unwrap();
+        }
+        let s = SyncStore::open(&path).unwrap();
+        assert_eq!(
+            s.retained_rows(v).unwrap(),
+            vec![rec(v, RecordKind::VaultKey, 1, &[7])]
+        );
+        // Review M5 (fix round 1): stamped with the version of the copy
+        // tag, which a build from before refuses.
+        let version: i64 = s
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        assert_eq!(crate::format::STORE_USER_VERSION, 2);
+        drop(s);
+        // Opens again as a current file.
+        let s = SyncStore::open(&path).unwrap();
+        assert_eq!(s.retained_rows(v).unwrap().len(), 1);
     }
 
     fn count(s: &SyncStore, table: &str) -> i64 {
@@ -4716,6 +5136,50 @@ mod tests {
         }
     }
 
+    /// Carried item 7 (Task 19): a version above `i64::MAX` drops that
+    /// change alone; the others of the fetch commit, and nothing the
+    /// device holds goes.
+    #[test]
+    fn version_above_i64_max_drops_only_that_change() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let (kept, bad, next) = (Id::new(), Id::new(), Id::new());
+        s.stage_remote(remote(RecordKind::VaultMeta, kept, 1, Some(vec![1])))
+            .unwrap();
+        s.commit_remote().unwrap();
+        for v in [i64::MAX as u64 + 1, u64::MAX] {
+            s.stage_remote(remote(RecordKind::VaultMeta, bad, v, Some(vec![2])))
+                .unwrap();
+            s.stage_remote(remote(RecordKind::VaultMeta, kept, v, None))
+                .unwrap();
+        }
+        s.stage_remote(remote(
+            RecordKind::VaultMeta,
+            next,
+            i64::MAX as u64,
+            Some(vec![3]),
+        ))
+        .unwrap();
+        s.commit_remote().unwrap();
+        assert_eq!(s.get(RecordKind::VaultMeta, bad).unwrap(), None);
+        assert_eq!(
+            s.get(RecordKind::VaultMeta, kept).unwrap().unwrap().data,
+            vec![1]
+        );
+        let n = s.get(RecordKind::VaultMeta, next).unwrap().unwrap();
+        assert_eq!((n.version, n.data), (i64::MAX as u64, vec![3]));
+        // Review M6 (fix round 1): each dropped change is logged, once.
+        let logged: Vec<(RecordKind, Id)> = s
+            .ignored_versions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        assert_eq!(
+            logged,
+            vec![(RecordKind::VaultMeta, bad), (RecordKind::VaultMeta, kept)]
+        );
+    }
+
     #[test]
     fn oversize_remote_immutable_record_is_not_staged() {
         let mut s = SyncStore::open_in_memory().unwrap();
@@ -5197,7 +5661,11 @@ mod tests {
         // A newer one is refused, and left as it is.
         {
             let conn = Connection::open(&path).unwrap();
-            conn.execute_batch("PRAGMA user_version = 2;").unwrap();
+            conn.execute_batch(&format!(
+                "PRAGMA user_version = {};",
+                crate::format::STORE_USER_VERSION + 1
+            ))
+            .unwrap();
         }
         assert!(matches!(
             SyncStore::open(&path),
@@ -5207,7 +5675,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, crate::format::STORE_USER_VERSION + 1);
     }
 
     #[test]
@@ -5234,7 +5702,7 @@ mod tests {
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, crate::format::STORE_USER_VERSION);
     }
 
     #[test]

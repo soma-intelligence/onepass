@@ -57,6 +57,7 @@ use time::OffsetDateTime;
 
 use super::{Repository, Use, seen, split_item_record, trust_of};
 use crate::crypto::unwrap_key;
+use crate::lineage::{recreated_vault_id, recreated_vault_key};
 use crate::manifest::{
     Manifest, SeenManifest, SignedManifest, record_hash, signed_by, verify_manifest,
 };
@@ -94,9 +95,11 @@ pub struct ReplayReport {
 /// and meta row of the vault it still holds (visible, pending, kept,
 /// retained), and whether it holds a pending manifest of that identity.
 struct OldView {
-    key: Record,
-    kem: usize,
-    vault: Vault,
+    /// Every copy that opens: its vault key row, the index of the KEM
+    /// secret that opens it, the vault. Since the retained rows keep one
+    /// copy per identity (Task 19 carried item 3) there may be several,
+    /// and each intent's record opens under the one it was sealed with.
+    opened: Vec<(Record, usize, Vault)>,
     items: Vec<ItemRecord>,
     metas: Vec<Record>,
     pending: bool,
@@ -109,7 +112,9 @@ fn item_of(r: &Record, vault: Id) -> Option<ItemRecord> {
 }
 
 /// The meta of a re-created vault when this device logged none of its own.
-fn recovered_meta() -> VaultMeta {
+/// A rebase that joins another device's creation tells it from an own meta
+/// by this value (`Repository::rebase_report`, fix round 2 of Task 19).
+pub(crate) fn recovered_meta() -> VaultMeta {
     VaultMeta {
         name: "Coffre récupéré".into(),
         icon: "tray".into(),
@@ -288,20 +293,27 @@ impl<S: RecordStore> Repository<S> {
             return Ok(None);
         }
         let rows = self.store.retained_rows(vault)?;
-        let row = |kind| rows.iter().find(|r| r.kind == kind);
-        let (Some(key), Some(meta)) = (row(RecordKind::VaultKey), row(RecordKind::VaultMeta))
-        else {
-            return Ok(None);
-        };
-        let Ok(v) = Vault::open(&self.account, vault, &key.data, &meta.data) else {
-            return Ok(None);
-        };
+        let manifests = self.manifest_rows(vault)?;
         let signer = &self.account.params.signing_pub;
-        let verifies = self.manifest_rows(vault)?.iter().any(|r| {
-            SignedManifest::decode(&r.data)
-                .is_ok_and(|sm| verify_manifest(&v, signer, &sm, None).is_ok())
-        });
-        Ok(verifies.then_some(v))
+        // One copy per identity this device was on (Task 19 carried item
+        // 3): the one that opens under the session's keys and that a
+        // manifest it holds authenticates.
+        let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+        for key in of(RecordKind::VaultKey) {
+            for meta in of(RecordKind::VaultMeta) {
+                let Ok(v) = Vault::open(&self.account, vault, &key.data, &meta.data) else {
+                    continue;
+                };
+                let verifies = manifests.iter().any(|r| {
+                    SignedManifest::decode(&r.data)
+                        .is_ok_and(|sm| verify_manifest(&v, signer, &sm, None).is_ok())
+                });
+                if verifies {
+                    return Ok(Some(v));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// The session reads `vault` from its own copy: a rotation is known
@@ -353,20 +365,23 @@ impl<S: RecordStore> Repository<S> {
             .iter()
             .chain(std::iter::once(&keyset.kem))
             .collect();
-        let mut found = None;
-        'open: for key in of(RecordKind::VaultKey) {
-            for meta in of(RecordKind::VaultMeta) {
+        let mut opened: Vec<(Record, usize, Vault)> = Vec::new();
+        for key in of(RecordKind::VaultKey) {
+            if opened.iter().any(|(k, _, _)| k.data == key.data) {
+                continue;
+            }
+            'key: for meta in of(RecordKind::VaultMeta) {
                 for (kem, secret) in secrets.iter().enumerate() {
                     if let Ok(v) = Vault::open_with_kem(secret, vault, &key.data, &meta.data) {
-                        found = Some((key.clone(), kem, v));
-                        break 'open;
+                        opened.push((key.clone(), kem, v));
+                        break 'key;
                     }
                 }
             }
         }
-        let Some((key, kem, old)) = found else {
+        if opened.is_empty() {
             return Ok(None);
-        };
+        }
         let metas = of(RecordKind::VaultMeta).cloned().collect();
         let mut items: Vec<ItemRecord> = self
             .store
@@ -383,9 +398,7 @@ impl<S: RecordStore> Repository<S> {
         }
         let pending = self.left_signed_vaults()?.contains(&vault);
         Ok(Some(OldView {
-            key,
-            kem,
-            vault: old,
+            opened,
             items,
             metas,
             pending,
@@ -402,7 +415,7 @@ impl<S: RecordStore> Repository<S> {
         old.items
             .iter()
             .find(|i| i.item_id == w.item && record_hash(i) == h)
-            .and_then(|i| old.vault.open_item(i).ok())
+            .and_then(|i| old.opened.iter().find_map(|(_, _, v)| v.open_item(i).ok()))
             .map(Some)
             .ok_or(())
     }
@@ -413,13 +426,15 @@ impl<S: RecordStore> Repository<S> {
         let h = w.wrote?;
         let row = old.metas.iter().find(|m| meta_hash(&m.data) == h)?;
         let keyset = self.account.keyset();
-        let kem = keyset
-            .retired_kem
-            .get(old.kem)
-            .or_else(|| (old.kem == keyset.retired_kem.len()).then_some(&keyset.kem))?;
-        Vault::open_with_kem(kem, w.vault, &old.key.data, &row.data)
-            .ok()
-            .map(|v| v.meta)
+        old.opened.iter().find_map(|(key, kem, _)| {
+            let kem = keyset
+                .retired_kem
+                .get(*kem)
+                .or_else(|| (*kem == keyset.retired_kem.len()).then_some(&keyset.kem))?;
+            Vault::open_with_kem(kem, w.vault, &key.data, &row.data)
+                .ok()
+                .map(|v| v.meta)
+        })
     }
 
     /// Whether the visible vault key of `vault` opens under the session's
@@ -571,10 +586,10 @@ impl<S: RecordStore> Repository<S> {
         // Review M4 (Task 11): this device's own meta (a creation or a
         // change it logged), never one another device wrote there (R11);
         // without one, a neutral meta.
-        let mut meta = recovered_meta();
+        let mut own_meta = None;
         for w in intents.iter().filter(|w| w.item == w.vault) {
             match self.own_meta(&old, w) {
-                Some(m) => meta = m,
+                Some(m) => own_meta = Some(m),
                 None => r.lose(vault, w.item),
             }
         }
@@ -587,11 +602,60 @@ impl<S: RecordStore> Repository<S> {
                 Err(()) => r.lose(vault, w.item),
             }
         }
+        // Task 19 carried item 2: one id per (identity, old vault), so a
+        // device that replays after another one did joins the vault that
+        // one re-created, under the same merge rule as a replay.
+        //
+        // Review I3 (fix round 1): the id is predictable, so a server can
+        // plant rows there. Only a vault that opens under the session's
+        // keys and loads through the verified path (a manifest this
+        // identity signed) is joined; any other row at that id, a key or a
+        // meta alone, or one that does not verify, sends the re-creation to
+        // a fresh random id instead of wedging the replay.
+        let id = recreated_vault_id(&self.account.params.identity_pub, vault);
+        let key = recreated_vault_key(&self.account.keyset().kem.to_bytes(), vault)?;
+        let joined = match self.current_vault(id)? {
+            Some(existing)
+                if existing.has_key(&key) && self.served(&existing, Use::Write).is_ok() =>
+            {
+                Some(existing)
+            }
+            _ => None,
+        };
+        let planted = joined.is_none()
+            && (self.store.get(RecordKind::VaultKey, id)?.is_some()
+                || self.store.get(RecordKind::VaultMeta, id)?.is_some()
+                || self.store.get(RecordKind::Manifest, id)?.is_some());
+        let (id, key) = if planted {
+            (Id::new(), None)
+        } else {
+            (id, Some(key))
+        };
         self.store.batch_begin()?;
         let done = (|| {
-            let fresh = self.create_vault(meta)?;
+            let fresh = match (joined, own_meta) {
+                (Some(existing), Some(m)) if m != existing.meta => {
+                    self.update_vault_meta(&existing, m)?
+                }
+                (Some(existing), _) => existing,
+                (None, m) => {
+                    self.create_vault_with_id(id, key, m.unwrap_or_else(recovered_meta))?
+                }
+            };
+            let loaded = self.served(&fresh, Use::Write)?;
             for mut item in items {
                 item.vault_id = fresh.id;
+                if let Some((_, rec)) = loaded.listed(item.id) {
+                    let theirs = fresh.open_item(rec)?;
+                    if theirs == item {
+                        r.present += 1;
+                        continue;
+                    }
+                    if theirs.updated_at > item.updated_at {
+                        r.superseded += 1;
+                        continue;
+                    }
+                }
                 self.save_item(&fresh, item)?;
                 r.replayed += 1;
             }
@@ -642,12 +706,14 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             }
             let rows = self.store.retained_rows(key.id)?;
-            let row = |kind| rows.iter().find(|r| r.kind == kind);
-            let opens = match (row(RecordKind::VaultKey), row(RecordKind::VaultMeta)) {
-                (None, None) => continue,
-                (Some(k), Some(m)) => Vault::open(&self.account, key.id, &k.data, &m.data).is_ok(),
-                _ => false,
-            };
+            if rows.is_empty() {
+                continue;
+            }
+            let of = |kind| rows.iter().filter(move |r: &&Record| r.kind == kind);
+            let opens = of(RecordKind::VaultKey).any(|k| {
+                of(RecordKind::VaultMeta)
+                    .any(|m| Vault::open(&self.account, key.id, &k.data, &m.data).is_ok())
+            });
             if !opens {
                 self.store.drop_retained(key.id)?;
             }

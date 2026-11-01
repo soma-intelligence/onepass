@@ -55,6 +55,8 @@ const ROTATION_TAG: u8 = 0x01;
 const IDENTITY_ID_PREFIX: &[u8] = b"onepass/identity-id/v1";
 const DELIVERY_ID_PREFIX: &[u8] = b"onepass/delivery-id/v1";
 const INTRO_ID_PREFIX: &[u8] = b"onepass/intro-id/v1";
+const RECREATED_VAULT_ID_PREFIX: &[u8] = b"onepass/recreated-vault-id/v1";
+const RECREATED_VAULT_KEY_INFO: &[u8] = b"onepass/recreated-vault-key/v1";
 const ROTATION_CODE_INFO: &[u8] = b"onepass/rotation/code/v1";
 
 /// One trusted device of a roster.
@@ -309,6 +311,34 @@ pub fn delivery_id(h: &[u8; 32], recipient: Id) -> Id {
 /// `SHA-256("onepass/identity-id/v1" || identity_pub)[..16]`.
 pub fn identity_id(pubkey: &IdentityVerifyingKey) -> Id {
     id16(sha256(&[IDENTITY_ID_PREFIX, pubkey.as_bytes()]))
+}
+
+/// The id of a vault of a left identity re-created under `identity_pub`
+/// (spec 10.4): `SHA-256("onepass/recreated-vault-id/v1" || identity_pub
+/// || old vault id)[..16]`. Every device that replays its own writes of
+/// that vault under that identity re-creates the same vault (Task 19
+/// carried item 2), never one each.
+pub fn recreated_vault_id(identity_pub: &IdentityVerifyingKey, old: Id) -> Id {
+    id16(sha256(&[
+        RECREATED_VAULT_ID_PREFIX,
+        identity_pub.as_bytes(),
+        &old.0,
+    ]))
+}
+
+/// The vault key of a vault re-created under an identity (spec 10.4,
+/// review I3 of Task 19): `HKDF-SHA256(ikm = the identity's KEM secret,
+/// info = "onepass/recreated-vault-key/v1" || old vault id)`. Every
+/// device of that identity derives the same key, so two re-creations of
+/// one vault before either synced are concurrent edits of one vault, and a
+/// vault planted at the derived id under any other key is told apart. Only
+/// holders of the identity's KEM secret derive it, as only they open its
+/// envelope.
+pub(crate) fn recreated_vault_key(
+    kem_secret: &[u8],
+    old: Id,
+) -> Result<crate::crypto::SymmetricKey> {
+    crate::crypto::key::hkdf32(&[], kem_secret, &[RECREATED_VAULT_KEY_INFO, &old.0])
 }
 
 /// Sign a genesis with the creator's device key and the identity key.

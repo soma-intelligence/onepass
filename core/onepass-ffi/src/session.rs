@@ -41,7 +41,7 @@ pub(crate) fn account_id_of(repo: &Repo) -> Result<Id, OnePassError> {
 /// Whether the session is open on an identity the device left (another
 /// session or process followed a rotation): its writes would be refused
 /// (`Conflict` on persist, Task 8), so the app locks and unlocks again.
-fn identity_left(repo: &Repo) -> Result<bool, OnePassError> {
+pub(crate) fn identity_left(repo: &Repo) -> Result<bool, OnePassError> {
     Ok(repo
         .store()
         .trust_state()?
@@ -557,15 +557,20 @@ impl SyncStoreHandle {
         Ok(self.guard().stage_remote(change)?)
     }
 
-    /// Commit the staged fetch and return the vaults held for a rebase.
-    /// The key rotation v2 contract runs here (Tasks 9, 12): the quarantine
-    /// clock at the system time, then the prompt and the lock are looked
-    /// for again. Prefer `commit_remote_checked`, which returns them.
+    /// Deprecated (key rotation v2): use `commit_remote_checked` with the
+    /// app's clock. Commit the staged fetch and return the vaults held for
+    /// a rebase. It never runs the quarantine clock, never reads a clock and
+    /// never erases (review Critical 1, fix round 1): an app on this call
+    /// has no quarantine screen, so the erase of spec 8.4 must wait for one.
+    /// An open session still looks for the prompt and the lock again before
+    /// its next write (the lineage mark), so no write slips through.
     pub fn commit_remote(&self) -> Result<Vec<String>, OnePassError> {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
         Ok(self
-            .commit_remote_checked(u64::try_from(now).unwrap_or(0))?
-            .vaults)
+            .guard()
+            .commit_remote()?
+            .into_iter()
+            .map(id_hex)
+            .collect())
     }
 
     /// Commit the staged fetch, then, with the app's clock `now` (Unix

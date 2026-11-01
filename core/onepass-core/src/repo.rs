@@ -527,6 +527,15 @@ impl<S: RecordStore> Repository<S> {
     /// chain state, see `devices`), the vault list, and the "Personnel"
     /// vault.
     /// The device pins the new account.
+    ///
+    /// Pre-v2 constructor (key rotation v2, Task 18): no device keys, no
+    /// genesis, so the device is a legacy one that must `migrate_to_v2` at
+    /// its first unlock. New accounts use `create_account_v2`; the CLI
+    /// does. This stays `pub` on purpose, for the callers that cannot make
+    /// device keys: `onepass-native-host` (its `MemoryStore` keeps no chain
+    /// state, so `create_account_v2` refuses there), the pre-v2 FFI entry
+    /// points the shipped Swift app still calls until its own plan, and the
+    /// integration tests of this crate.
     pub fn create_account(
         store: S,
         password: &str,
@@ -1201,6 +1210,19 @@ impl<S: RecordStore> Repository<S> {
     /// A kit-restored device no device pinned yet signs no vault list:
     /// `Validation("device")` (Task 15).
     pub fn create_vault(&mut self, meta: VaultMeta) -> Result<Vault> {
+        self.create_vault_with_id(Id::new(), None, meta)
+    }
+
+    /// `create_vault` under the vault id `id` (a vault re-created under a
+    /// new identity, `crate::repo::replay`). An id the store already holds
+    /// a vault key for is `Conflict`.
+    /// `key`: the vault key to use, a fresh one when `None`.
+    pub(crate) fn create_vault_with_id(
+        &mut self,
+        id: Id,
+        key: Option<crate::crypto::SymmetricKey>,
+        meta: VaultMeta,
+    ) -> Result<Vault> {
         self.writable()?;
         self.signs_lists()?;
         self.sync_epoch()?;
@@ -1209,7 +1231,13 @@ impl<S: RecordStore> Repository<S> {
             self.maintain_lists(None)?;
         }
         let list = self.read_list::<VaultListEntry>()?;
-        let (vault, envelope, meta_blob) = Vault::create(&self.account, meta)?;
+        if self.store.get(RecordKind::VaultKey, id)?.is_some() {
+            return Err(Error::Conflict);
+        }
+        let (vault, envelope, meta_blob) = match key {
+            Some(key) => Vault::create_with_key(&self.account, id, key, meta)?,
+            None => Vault::create_with_id(&self.account, id, meta)?,
+        };
         let (manifest, seen) = self.manifest_record(&vault, None, vec![])?;
         // Spec 10.4: the creation is this device's own meta write (a
         // re-creation after a rotation takes it, never another device's).

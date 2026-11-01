@@ -5,14 +5,19 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    Record, RecordKind, RecordStore, TrustGuard, check_local_meta_key, check_local_meta_prefix,
+    Record, RecordKind, RecordStore, RotationPush, TrustGuard, check_local_meta_key,
+    check_local_meta_prefix,
 };
 use crate::chain::ChainState;
-use crate::trust::TrustState;
+use crate::sync::merge_chain;
+use crate::trust::{DeviceLineageState, TrustState};
 use crate::{Error, Id, Result};
 
 /// `meta` key of the local trust state.
 const TRUST_KEY: &str = "trust";
+/// `meta` key of the pinned chain state (the same key and encoding as the
+/// `SyncStore`).
+const CHAIN_KEY: &str = "chain";
 
 pub struct SqliteStore {
     conn: Connection,
@@ -31,6 +36,28 @@ type Row = (i64, Vec<u8>, i64, Vec<u8>);
 
 fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+}
+
+/// The chain state stored in `conn` (the default when none).
+fn chain_in(conn: &Connection) -> Result<ChainState> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![CHAIN_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    bytes.map_or(Ok(ChainState::default()), |b| ChainState::decode(&b))
+}
+
+fn set_chain(conn: &Connection, chain: &ChainState) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        params![CHAIN_KEY, chain.encode()],
+    )
+    .map_err(store_err)?;
+    Ok(())
 }
 
 /// Rows come from a file that may have been edited: check every column.
@@ -104,12 +131,17 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
-    /// Records, deletions and the trust row in one transaction, the trust
-    /// row checked against `guard` first (`Conflict`).
+    /// Records, deletions, the chain state (when given) and the trust row
+    /// in one transaction, the trust row checked against `guard` first
+    /// (`Conflict`). The chain state pins one identity's records: it is
+    /// merged with the stored one while the trust state keeps its identity
+    /// (nothing goes back), and replaces it when the identity changes (a
+    /// rotation: epochs and lists start again, spec 6.6, 10.2).
     fn put_with_trust_if(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         deletes: Vec<(RecordKind, Id)>,
+        chain: Option<ChainState>,
         guard: TrustGuard<'_>,
         trust: &TrustState,
     ) -> Result<()> {
@@ -130,6 +162,18 @@ impl SqliteStore {
         }
         for (kind, id) in deletes {
             delete_on(&tx, kind, id)?;
+        }
+        if let Some(chain) = chain {
+            let same_identity = match &stored {
+                Some(b) => TrustState::decode(b)?.identity_pub == trust.identity_pub,
+                None => true,
+            };
+            let chain = if same_identity {
+                merge_chain(&chain, &chain_in(&tx)?, false)?
+            } else {
+                chain
+            };
+            set_chain(&tx, &chain)?;
         }
         tx.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
@@ -221,6 +265,35 @@ impl RecordStore for SqliteStore {
         tx.commit().map_err(store_err)
     }
 
+    /// The chain state this store keeps for the device (meta key `chain`):
+    /// a device registers itself in the device list, and its id outlives
+    /// the session.
+    fn chain_state(&self) -> Result<ChainState> {
+        chain_in(&self.conn)
+    }
+
+    fn persists_chain(&self) -> bool {
+        true
+    }
+
+    /// The writes and the chain state in one transaction. The chain state
+    /// is merged with the stored one (`merge_chain`): another process on
+    /// the file may have pinned a newer list or params epoch, or this
+    /// device's id, meanwhile.
+    fn put_all_if_version_with_chain(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: &ChainState,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        for (r, expected) in &writes {
+            put_if_version_on(&tx, r, *expected)?;
+        }
+        let merged = merge_chain(chain, &chain_in(&tx)?, false)?;
+        set_chain(&tx, &merged)?;
+        tx.commit().map_err(store_err)
+    }
+
     fn trust_state(&self) -> Result<Option<TrustState>> {
         let bytes: Option<Vec<u8>> = self
             .conn
@@ -234,9 +307,8 @@ impl RecordStore for SqliteStore {
         bytes.map(|b| TrustState::decode(&b)).transpose()
     }
 
-    /// Records, deletions and the trust row in one transaction. This store
-    /// keeps no chain state (`persists_chain` is false): `chain` is not
-    /// saved, as in `put_all_if_version_with_chain`.
+    /// Records, deletions, the chain state and the trust row in one
+    /// transaction (see `put_with_trust_if`).
     fn put_all_if_version_with_trust(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
@@ -244,20 +316,18 @@ impl RecordStore for SqliteStore {
         chain: Option<ChainState>,
         trust: &TrustState,
     ) -> Result<()> {
-        let _ = chain;
-        self.put_with_trust_if(writes, deletes, TrustGuard::Any, trust)
+        self.put_with_trust_if(writes, deletes, chain, TrustGuard::Any, trust)
     }
 
     /// `put_all_if_version_with_trust` if no trust state is stored,
-    /// checked inside the transaction. No chain state here.
+    /// checked inside the transaction.
     fn put_first_trust(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
         chain: Option<ChainState>,
         trust: &TrustState,
     ) -> Result<()> {
-        let _ = chain;
-        self.put_with_trust_if(writes, Vec::new(), TrustGuard::Absent, trust)
+        self.put_with_trust_if(writes, Vec::new(), chain, TrustGuard::Absent, trust)
     }
 
     /// `put_all_if_version_with_trust` if the stored trust state is
@@ -270,8 +340,39 @@ impl RecordStore for SqliteStore {
         expected: &TrustState,
         trust: &TrustState,
     ) -> Result<()> {
-        let _ = chain;
-        self.put_with_trust_if(writes, deletes, TrustGuard::Is(expected), trust)
+        self.put_with_trust_if(writes, deletes, chain, TrustGuard::Is(expected), trust)
+    }
+
+    /// A rotation on a store with no server: there is nothing to push, so
+    /// the rotation is settled when it commits. In the same transaction as
+    /// the writes and the chain state of the new identity, the old item
+    /// records the rotation re-sealed are collected (`rotation.collect`,
+    /// R23: the new content is the only copy there is) and the device goes
+    /// straight to `Current`, not `Rotating { phase: 1 }`. This store must
+    /// never be the local layer of a synced store: settling at commit skips
+    /// the push phases.
+    fn put_rotation(
+        &mut self,
+        writes: Vec<(Record, Option<u64>)>,
+        chain: ChainState,
+        expected: &TrustState,
+        trust: &TrustState,
+        rotation: &RotationPush,
+    ) -> Result<()> {
+        let mut settled = trust.clone();
+        settled.state = DeviceLineageState::Current;
+        let collect = rotation
+            .collect
+            .iter()
+            .map(|id| (RecordKind::Item, *id))
+            .collect();
+        self.put_with_trust_if(
+            writes,
+            collect,
+            Some(chain),
+            TrustGuard::Is(expected),
+            &settled,
+        )
     }
 
     fn get(&self, kind: RecordKind, id: Id) -> Result<Option<Record>> {
@@ -410,6 +511,7 @@ fn put_if_version_on(conn: &Connection, r: &Record, expected: Option<u64>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trust::DeviceLineageState;
 
     #[test]
     fn sqlite_store_behaves_and_persists() {
@@ -622,5 +724,123 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(s.trust_state(), Err(Error::InvalidFormat(_))));
+    }
+
+    fn chain(epoch: u64, device: Option<Id>) -> ChainState {
+        ChainState {
+            params_epoch: epoch,
+            device_id: device,
+            ..ChainState::default()
+        }
+    }
+
+    #[test]
+    fn sqlite_keeps_the_chain_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let device = Id::new();
+        let a = Id::new();
+        {
+            let mut s = SqliteStore::open(&path).unwrap();
+            assert!(s.persists_chain());
+            assert_eq!(s.chain_state().unwrap(), ChainState::default());
+            s.put_all_if_version_with_chain(vec![(item(a, 1, 1), None)], &chain(4, Some(device)))
+                .unwrap();
+            // A lost race writes neither the records nor the chain state.
+            let r = s.put_all_if_version_with_chain(
+                vec![(item(a, 2, 2), Some(7))],
+                &chain(9, Some(device)),
+            );
+            assert_eq!(r, Err(Error::Conflict));
+            assert_eq!(s.chain_state().unwrap(), chain(4, Some(device)));
+            // The epoch only goes up, the device id stays.
+            s.put_all_if_version_with_chain(vec![], &chain(2, None))
+                .unwrap();
+            assert_eq!(s.chain_state().unwrap(), chain(4, Some(device)));
+        }
+        let s = SqliteStore::open(&path).unwrap();
+        assert_eq!(s.chain_state().unwrap(), chain(4, Some(device)));
+    }
+
+    #[test]
+    fn sqlite_trust_writes_save_the_chain_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = SqliteStore::open(&dir.path().join("db")).unwrap();
+        let device = Id::new();
+        let first = crate::trust::tests::sample();
+        s.put_first_trust(vec![], Some(chain(3, Some(device))), &first)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), chain(3, Some(device)));
+        // Same identity: merged, nothing goes back.
+        let mut second = first.clone();
+        second.add_revoked(&[Id([0xEE; 16])]);
+        s.put_with_trust_cas(vec![], vec![], Some(chain(1, None)), &first, &second)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), chain(3, Some(device)));
+        // Another identity (a rotation): the chain state starts again.
+        let mut third = second.clone();
+        third.identity_pub = crate::crypto::IdentityKey::generate()
+            .unwrap()
+            .verifying_key();
+        s.put_with_trust_cas(
+            vec![],
+            vec![],
+            Some(chain(1, Some(device))),
+            &second,
+            &third,
+        )
+        .unwrap();
+        assert_eq!(s.chain_state().unwrap(), chain(1, Some(device)));
+        // No chain state given: the stored one stays.
+        s.put_with_trust_cas(vec![], vec![], None, &third, &third)
+            .unwrap();
+        assert_eq!(s.chain_state().unwrap(), chain(1, Some(device)));
+    }
+
+    /// A store with no server has no push phases: a rotation is settled
+    /// when it commits (`Current`, the old item records collected, the
+    /// chain state of the new identity).
+    #[test]
+    fn sqlite_rotation_settles_at_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = SqliteStore::open(&dir.path().join("db")).unwrap();
+        let device = Id::new();
+        let (old, kept, new) = (Id::new(), Id::new(), Id::new());
+        let before = crate::trust::tests::sample();
+        s.put(item(old, 1, 1)).unwrap();
+        s.put(item(kept, 1, 2)).unwrap();
+        s.put_first_trust(vec![], Some(chain(3, Some(device))), &before)
+            .unwrap();
+        let mut after = before.clone();
+        after.state = DeviceLineageState::Rotating { phase: 1 };
+        after.identity_pub = crate::crypto::IdentityKey::generate()
+            .unwrap()
+            .verifying_key();
+        let push = crate::store::RotationPush {
+            vaults: vec![],
+            collect: vec![old],
+        };
+        let r = s.put_rotation(
+            vec![(item(new, 1, 3), None)],
+            chain(1, Some(device)),
+            &after,
+            &after,
+            &push,
+        );
+        assert_eq!(r, Err(Error::Conflict), "the expected state must match");
+        s.put_rotation(
+            vec![(item(new, 1, 3), None)],
+            chain(1, Some(device)),
+            &before,
+            &after,
+            &push,
+        )
+        .unwrap();
+        let stored = s.trust_state().unwrap().unwrap();
+        assert_eq!(stored.state, DeviceLineageState::Current);
+        assert_eq!(s.chain_state().unwrap(), chain(1, Some(device)));
+        assert_eq!(s.get(RecordKind::Item, old).unwrap(), None);
+        assert!(s.get(RecordKind::Item, kept).unwrap().is_some());
+        assert!(s.get(RecordKind::Item, new).unwrap().is_some());
     }
 }

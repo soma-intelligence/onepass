@@ -14,7 +14,7 @@
 //! transaction as the list that first lists it
 //! (`RecordStore::put_all_if_version_with_chain`), so a cut never leaves an
 //! entry nobody holds. A store that does not keep the chain state between
-//! sessions (`RecordStore::persists_chain`: memory, plain SQLite) never
+//! sessions (`RecordStore::persists_chain`: memory) never
 //! registers a device: there `register_this_device` is refused and the
 //! device list is only read and edited.
 

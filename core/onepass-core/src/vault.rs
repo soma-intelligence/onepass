@@ -170,7 +170,18 @@ impl Vault {
         id: Id,
         meta: VaultMeta,
     ) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
-        let key = SymmetricKey::generate()?;
+        Self::create_with_key(account, id, SymmetricKey::generate()?, meta)
+    }
+
+    /// `create_with_id` with the vault key `key` (a vault re-created under
+    /// a new identity, whose key every device of that identity derives the
+    /// same way: `crate::repo::replay`).
+    pub(crate) fn create_with_key(
+        account: &Account,
+        id: Id,
+        key: SymmetricKey,
+        meta: VaultMeta,
+    ) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
         let envelope = wrap_key(&account.params.kem_pub, &key, &kem_context(id))?;
         let meta_blob = seal_meta(&key, id, &meta)?;
         Ok((Vault { id, meta, key }, envelope, meta_blob))
@@ -185,6 +196,16 @@ impl Vault {
             meta,
             key: SymmetricKey::generate().unwrap(),
         }
+    }
+
+    /// Whether this vault's key is `key`.
+    pub(crate) fn has_key(&self, key: &SymmetricKey) -> bool {
+        aws_lc_rs::constant_time::verify_slices_are_equal(self.key.expose(), key.expose()).is_ok()
+    }
+
+    /// Whether two vaults share one vault key.
+    pub(crate) fn has_same_key(&self, other: &Vault) -> bool {
+        self.has_key(&other.key)
     }
 
     /// Open a vault from its stored envelope and meta blob.

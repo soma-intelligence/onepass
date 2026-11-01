@@ -579,6 +579,51 @@ fn diverged_after_a_rotation_alerts_then_repairs() {
     b.repo().clear_genesis_alert().unwrap();
 }
 
+/// Task 19 carried item 1, bounded outcome: as above, but the server
+/// withholds the first rotation of the winning chain from B. B cannot see
+/// that a rotation exists: it moves to the winning genesis by the offline
+/// rule (spec 15), the alert raised, nothing adopted. When the rotation
+/// arrives, it does not list B (made before B's intro): B is `Orphaned`,
+/// read-only with its offline write kept, and re-pairs as above.
+#[test]
+fn diverged_with_the_winning_rotation_withheld_alerts_only() {
+    let (mut server, mut a, mut b, sk, ka, kb, ga, _gb) = diverged_ordered(true);
+    sync(&mut server, &mut a).unwrap();
+    let (head, _new_sk) = rotate_a(&mut server, &mut a, &ka, &sk, &[]);
+    let v = b.vault();
+    let offline = login(v.id, "offline", T0 + 50);
+    b.save(&offline);
+    let mut hidden = [0u8; 16];
+    hidden.copy_from_slice(&head[..16]);
+    let cursor = b.cursor;
+    pull_only(&server, &mut b, |ch| {
+        ch.kind != RecordKind::Lineage || ch.id != Id(hidden)
+    });
+    b.cursor = cursor;
+    refresh(&mut b);
+    assert_eq!(migrate(&mut b, &kb), Migration::Joined(ga));
+    let tb = trust(&b);
+    assert_eq!(tb.head.hash, ga);
+    assert_eq!(tb.state, DeviceLineageState::Current);
+    assert!(tb.genesis_alert, "the alert is raised");
+    assert!(b.repo().pending_prompt().is_none());
+
+    // The rotation arrives: B is not in its roster.
+    pull(&server, &mut b);
+    refresh(&mut b);
+    let tb = trust(&b);
+    assert_eq!(tb.head.hash, ga, "nothing adopted");
+    assert!(
+        matches!(tb.state, DeviceLineageState::Orphaned { .. }),
+        "{:?}",
+        tb.state
+    );
+    assert!(tb.genesis_alert);
+    let late = login(v.id, "late", T0 + 60);
+    assert_eq!(b.repo().save_item(&v, late), Err(Error::ReadOnly));
+    assert!(b.items().iter().any(|i| i.id == offline.id));
+}
+
 /// A rotation record that decodes but verifies under nothing.
 fn junk_rotation(account_id: Id) -> Record {
     use onepass_core::crypto::IdentityKey;

@@ -47,7 +47,10 @@ use crate::travel::TRAVEL_STATE_KEY;
 /// The post-quantum half of this device's keys, implemented by the app:
 /// pure ML-DSA-87 with an empty context and FIPS 203 ML-KEM-1024, in the
 /// Secure Enclave where there is one. Same wire format as the software
-/// half of the core. Called on the thread of the FFI call.
+/// half of the core. Called on the thread of the FFI call, sometimes while
+/// that call holds its `Session` (rotate, reapply, migrate, kit accept,
+/// introduce): an implementation must never call back into the FFI from
+/// these methods, or it deadlocks.
 #[uniffi::export(with_foreign)]
 pub trait FfiPqDeviceHalf: Send + Sync {
     /// ML-DSA-87 public key, 2592 bytes.
@@ -146,10 +149,13 @@ pub enum FfiLineageState {
         phase: u8,
     },
     /// Locked, erased at `erase_at` (device time, Unix seconds) unless the
-    /// user answers "Ce n'était pas moi".
+    /// user answers "Ce n'était pas moi". `erase_at` is `None` when the
+    /// removal, or a record on its path, was not signed by a device this
+    /// one verified (final review I1): no erase date, the device stays locked until the user
+    /// answers ("Ce n'était pas moi" or "Effacer cet appareil").
     Quarantined {
         since: u64,
-        erase_at: u64,
+        erase_at: Option<u64>,
     },
     /// Not in the account's keys any more: reads, never writes.
     Orphaned,
@@ -172,7 +178,9 @@ pub struct FfiLineageStatus {
     pub awaiting_pin: bool,
 }
 
-fn state_of(t: Option<&TrustState>) -> FfiLineageState {
+/// `erase_at`: `follow::quarantine_erase_at` for the store `t` was read
+/// from (only read for `Quarantined`).
+fn state_of(t: Option<&TrustState>, erase_at: Option<u64>) -> FfiLineageState {
     match t.map(|t| &t.state) {
         None | Some(DeviceLineageState::Legacy) => FfiLineageState::Legacy,
         Some(DeviceLineageState::Current) => FfiLineageState::Current,
@@ -180,14 +188,18 @@ fn state_of(t: Option<&TrustState>) -> FfiLineageState {
         Some(DeviceLineageState::Rotating { phase }) => FfiLineageState::Rotating { phase: *phase },
         Some(DeviceLineageState::Quarantined { since, .. }) => FfiLineageState::Quarantined {
             since: *since,
-            erase_at: since.saturating_add(follow::QUARANTINE_ERASE_AFTER_SECS),
+            erase_at,
         },
         Some(DeviceLineageState::Orphaned { .. }) => FfiLineageState::Orphaned,
     }
 }
 
-fn status_of(t: Option<&TrustState>, awaiting_pin: bool) -> FfiLineageStatus {
-    let state = state_of(t);
+fn status_of(
+    t: Option<&TrustState>,
+    erase_at: Option<u64>,
+    awaiting_pin: bool,
+) -> FfiLineageStatus {
+    let state = state_of(t, erase_at);
     FfiLineageStatus {
         usable: matches!(state, FfiLineageState::Legacy | FfiLineageState::Current),
         state,
@@ -206,7 +218,8 @@ pub fn lineage_status(db_path: String) -> Result<FfiLineageStatus, OnePassError>
     let unpinned = t
         .as_ref()
         .is_some_and(|t| !t.roster.iter().any(|e| e.device_id == t.me.device_id));
-    Ok(status_of(t.as_ref(), unpinned))
+    let erase_at = follow::quarantine_erase_at(&store)?;
+    Ok(status_of(t.as_ref(), erase_at, unpinned))
 }
 
 /// `RotationPending`, `Quarantined` or `Orphaned` unless the trust state
@@ -426,8 +439,10 @@ pub struct FfiMigrationAlerts {
 /// A session after a follow, a switch or a re-pair.
 #[derive(uniffi::Record)]
 pub struct FfiFollowed {
-    /// Open on the new identity.
-    pub session: Arc<Session>,
+    /// Open on the new identity; `None` when a step after the adoption
+    /// failed (`warning`): the adoption stands, the app stores the keys
+    /// below and opens the session again with a plain unlock.
+    pub session: Option<Arc<Session>>,
     /// To enroll biometrics again.
     pub auk: Vec<u8>,
     /// The new Secret Key, once: the app promotes it in the Keychain (no
@@ -438,6 +453,10 @@ pub struct FfiFollowed {
     pub reapply_needed: bool,
     /// Writes of this device the follow could not carry over.
     pub own_writes: FfiOwnWriteAlert,
+    /// The first step after the adoption that failed (saving the device
+    /// state, re-sealing the Travel Mode state, opening the session).
+    /// Never a reason to drop the keys: the adoption is committed.
+    pub warning: Option<OnePassError>,
 }
 
 fn alert_of(repo: &Repo) -> Result<FfiOwnWriteAlert, OnePassError> {
@@ -459,25 +478,61 @@ fn alert_of(repo: &Repo) -> Result<FfiOwnWriteAlert, OnePassError> {
 /// Travel Mode state re-sealed under the new identity (spec 10.6, Task 16:
 /// right after the adoption, before the session opens it), the session
 /// opened.
+///
+/// Review Important 1 (fix round 1): the adoption is committed when this
+/// runs, so nothing here fails the call. A failing step is reported in
+/// `warning` and the keys always go back to the app; every step is one a
+/// plain unlock with the new Secret Key runs again (`reconcile_pin`, the
+/// re-seal tolerance of `open_travel_state`).
 pub(crate) fn followed(
     mut repo: Repo,
     auk: onepass_core::account::Auk,
     secret_key: SecretKey,
-) -> Result<FfiFollowed, OnePassError> {
-    repo.persist_device_state()?;
-    if let Some(sealed) = repo.store().meta(TRAVEL_STATE_KEY)? {
-        let fresh = repo.reseal_travel_state(&sealed)?;
-        repo.store_mut().set_meta(TRAVEL_STATE_KEY, &fresh)?;
-    }
-    let reapply_needed = !repo.uncovered_removals()?.is_empty();
-    let own_writes = alert_of(&repo)?;
-    Ok(FfiFollowed {
-        session: Session::new(repo)?,
+) -> FfiFollowed {
+    let mut warning: Option<OnePassError> = None;
+    let mut note = |r: Result<(), OnePassError>| {
+        if let Err(e) = r {
+            warning.get_or_insert(e);
+        }
+    };
+    note(repo.persist_device_state().map_err(Into::into));
+    note((|| {
+        if let Some(sealed) = repo.store().meta(TRAVEL_STATE_KEY)? {
+            let fresh = repo.reseal_travel_state(&sealed)?;
+            repo.store_mut().set_meta(TRAVEL_STATE_KEY, &fresh)?;
+        }
+        Ok(())
+    })());
+    let reapply_needed = repo.uncovered_removals().is_ok_and(|r| !r.is_empty());
+    let own_writes = alert_of(&repo).unwrap_or(FfiOwnWriteAlert {
+        alert: false,
+        lost: Vec::new(),
+    });
+    let session = match Session::new(repo) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            warning.get_or_insert(e);
+            None
+        }
+    };
+    FfiFollowed {
+        session,
         auk: auk.as_bytes().to_vec(),
         secret_key: secret_key.to_display(),
         reapply_needed,
         own_writes,
-    })
+        warning,
+    }
+}
+
+/// Review Minor 2: a locked device answers with its own kind before any
+/// follow or reject (`Quarantined`, `Orphaned`).
+fn refuse_locked(store: &SyncStore) -> Result<(), OnePassError> {
+    match store.trust_state()?.map(|t| t.state) {
+        Some(DeviceLineageState::Quarantined { .. }) => Err(OnePassError::Quarantined),
+        Some(DeviceLineageState::Orphaned { .. }) => Err(OnePassError::Orphaned),
+        _ => Ok(()),
+    }
 }
 
 #[uniffi::export]
@@ -486,7 +541,8 @@ impl Session {
     pub fn lineage_status(&self) -> Result<FfiLineageStatus, OnePassError> {
         self.with(|repo| {
             let t = repo.store().trust_state()?;
-            Ok(status_of(t.as_ref(), repo.awaiting_pin()?))
+            let erase_at = follow::quarantine_erase_at(repo.store())?;
+            Ok(status_of(t.as_ref(), erase_at, repo.awaiting_pin()?))
         })
     }
 
@@ -593,6 +649,9 @@ impl Session {
     pub fn pending_rotation(&self) -> Result<Option<FfiRotationPrompt>, OnePassError> {
         let mut guard = self.guard();
         let repo = guard.as_mut().ok_or(OnePassError::Locked)?;
+        if crate::session::identity_left(repo)? {
+            return Err(OnePassError::IdentityLeft);
+        }
         Ok(repo.refresh_pending_rotation()?.as_ref().map(prompt_to_ffi))
     }
 
@@ -612,7 +671,7 @@ impl Session {
         let keys = device_keys(&classical, pq)?;
         let repo = self.take()?;
         let (repo, auk, sk) = follow::follow_switch(repo, choice, &password, &keys)?;
-        followed(repo, auk, sk)
+        Ok(followed(repo, auk, sk))
     }
 
     /// Replay this device's own writes of an identity it left (spec 10.4)
@@ -620,6 +679,20 @@ impl Session {
     /// answered. The follow already ran it once.
     pub fn replay_own_writes(&self) -> Result<FfiReplayReport, OnePassError> {
         self.with(|repo| Ok(report(&repo.replay_own_writes()?)))
+    }
+
+    /// Re-seal the stored Travel Mode state under the identity this session
+    /// is on (spec 10.6, Task 16). The follows of this crate already do it
+    /// right after the adoption; this is for a state the app put back
+    /// later. A no-op outside Travel Mode.
+    pub fn reseal_travel_state(&self) -> Result<(), OnePassError> {
+        self.with(|repo| {
+            if let Some(sealed) = repo.store().meta(TRAVEL_STATE_KEY)? {
+                let fresh = repo.reseal_travel_state(&sealed)?;
+                repo.store_mut().set_meta(TRAVEL_STATE_KEY, &fresh)?;
+            }
+            Ok(())
+        })
     }
 
     /// The own-write alert (spec 10.4).
@@ -741,9 +814,11 @@ impl Session {
         self.with(|repo| Ok(repo.reject_kit_restored(id)?))
     }
 
-    /// PROVISIONAL (spec 7.5 step 5, owner to confirm): "Je n'ai plus
+    /// Spec 7.5 step 5 (confirmed by the founder on 2026-10-31): "Je n'ai plus
     /// d'autre appareil" on a kit-restored device, after the master
-    /// password: it may rotate and pair from then on.
+    /// password: it may rotate and pair from then on. The core takes no
+    /// password here: the app asks for it first (`verify_password`), also
+    /// on a session opened with biometrics.
     pub fn claim_only_device(&self) -> Result<(), OnePassError> {
         self.with(|repo| Ok(repo.claim_only_device()?))
     }
@@ -877,8 +952,9 @@ pub fn follow_rotation(
     let choice = parse_hash(&choice)?;
     let keys = device_keys(&classical, pq)?;
     let store = open(&db_path)?;
+    refuse_locked(&store)?;
     let (repo, auk, sk) = follow::follow_rotation(store, choice, &password, &keys)?;
-    followed(repo, auk, sk)
+    Ok(followed(repo, auk, sk))
 }
 
 /// "Ce n'était pas moi" for `choice` (spec 8.2): rejected on this device,
@@ -889,6 +965,7 @@ pub fn follow_rotation(
 pub fn reject_rotation(db_path: String, choice: String, exclude: bool) -> Result<(), OnePassError> {
     let choice = parse_hash(&choice)?;
     let mut store = open(&db_path)?;
+    refuse_locked(&store)?;
     Ok(follow::reject_rotation(&mut store, choice, exclude)?)
 }
 
@@ -901,6 +978,10 @@ pub enum FfiQuarantineTick {
     Waiting {
         erase_at: u64,
     },
+    /// Locked with no erase clock: the removal, or a record on its path,
+    /// was not signed by a device this one verified (final review I1). The quarantine screen offers
+    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date.
+    Locked,
     /// The store was erased: the app deletes what it keeps for the account
     /// in the Keychain (Secret Key, Account Unlock Key, device keys).
     Erased,
@@ -910,6 +991,7 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
     match t {
         QuarantineTick::NotQuarantined => FfiQuarantineTick::NotQuarantined,
         QuarantineTick::Waiting { erase_at } => FfiQuarantineTick::Waiting { erase_at },
+        QuarantineTick::Locked => FfiQuarantineTick::Locked,
         QuarantineTick::Erased => FfiQuarantineTick::Erased,
     }
 }
@@ -917,7 +999,8 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 /// The quarantine clock (spec 8.4, R8, O1) with the app's clock `now`
 /// (Unix seconds): at launch and on the quarantine screen. Erases only
 /// 7 days after a valid lineage record revoking this device was first
-/// read; a clock moved back only delays it.
+/// read, and only when every signer on its path is verified here
+/// (`Locked` otherwise); a clock moved back only delays it.
 #[uniffi::export]
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;

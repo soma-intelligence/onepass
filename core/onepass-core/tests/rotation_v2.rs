@@ -1187,6 +1187,173 @@ fn phase_three_deletes_only_from_heads_items() {
     assert!(theirs.is_subset(&on_server), "the sibling's records stay");
 }
 
+/// Task 19 carried item 5 (R21): the loser of two sibling rotations pushed
+/// its phase 2 before it knew the winner. Its re-sealed item records,
+/// which the winner tolerates as a foreign generation, are collected on
+/// the server once the loser switched; the winner's stay.
+#[test]
+fn losers_items_collected_after_its_switch() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = a.vault().id;
+    let old = server_item_blobs(&server, v);
+    let ra = rotate(&mut a, &f, &SecretKey::generate().unwrap());
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    let a_wins = ra.head < rc.head;
+    let wh = if a_wins { ra.head } else { rc.head };
+    let (mut w, mut l, l_keys) = if a_wins {
+        (a, c, &f.others[C].keys)
+    } else {
+        (c, a, &f.me.keys)
+    };
+    // The loser goes first, phases 1 and 2.
+    for phase in [1, 2] {
+        push_outbox(&mut server, &l).unwrap();
+        assert_eq!(
+            l.store().push_rotation_phase(phase).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    let theirs: BTreeSet<Id> = &server_item_blobs(&server, v) - &old;
+    assert_eq!(theirs.len(), 3);
+    sync(&mut server, &mut w).unwrap();
+    assert_eq!(state(&w), DeviceLineageState::Current);
+    let mine: BTreeSet<Id> = &server_item_blobs(&server, v) - &(&old | &theirs);
+    assert_eq!(mine.len(), 3);
+
+    pull(&server, &mut l);
+    l.repo().refresh_pending_rotation().unwrap();
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    l.repo = Some(repo);
+    sync(&mut server, &mut l).unwrap();
+    let on_server = server_item_blobs(&server, v);
+    assert!(
+        on_server.is_disjoint(&theirs),
+        "the loser's records collected"
+    );
+    assert_eq!(on_server, mine);
+    for d in [&mut w, &mut l] {
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(
+            users(&d.items()),
+            ["alice", "bob", "carol"].map(String::from)
+        );
+    }
+}
+
+/// Fix round 1 of Task 19, review C1: the loser switches before the
+/// winner's content arrived, so the replay of its own writes (one made
+/// before its rotation, which the rotation re-sealed, one after) waits.
+/// Nothing of its key generation is collected while it waits; once the
+/// replay settled, its writes are under the winner's keys and the server
+/// records of its rotation go.
+#[test]
+fn losers_collection_waits_for_its_replay() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = a.vault().id;
+    let old = server_item_blobs(&server, v);
+    let (a_before, c_before) = (login(v, "a-before", T0 + 40), login(v, "c-before", T0 + 41));
+    a.save(&a_before);
+    c.save(&c_before);
+    let ra = rotate(&mut a, &f, &SecretKey::generate().unwrap());
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    let a_wins = ra.head < rc.head;
+    let wh = if a_wins { ra.head } else { rc.head };
+    let (mut w, mut l, l_keys, mine) = if a_wins {
+        (a, c, &f.others[C].keys, "c-before")
+    } else {
+        (c, a, &f.me.keys, "a-before")
+    };
+    let theirs = if a_wins { "a-before" } else { "c-before" };
+    let mine_id = if a_wins { c_before.id } else { a_before.id };
+    l.save(&login(v, "late", T0 + 60));
+    for phase in [1, 2] {
+        push_outbox(&mut server, &l).unwrap();
+        assert_eq!(
+            l.store().push_rotation_phase(phase).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    let loser_records: BTreeSet<Id> = &server_item_blobs(&server, v) - &old;
+    assert!(loser_records.len() >= 5, "{}", loser_records.len());
+    // The winner's phase 1 only: its record, not its content.
+    push_outbox(&mut server, &w).unwrap();
+    assert_eq!(
+        w.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    pull(&server, &mut l);
+    l.repo().refresh_pending_rotation().unwrap();
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    l.repo = Some(repo);
+    assert!(
+        !l.store()
+            .trust_state()
+            .unwrap()
+            .unwrap()
+            .own_writes
+            .replay
+            .is_empty()
+    );
+    sync(&mut server, &mut l).unwrap();
+    assert!(
+        loser_records.is_subset(&server_item_blobs(&server, v)),
+        "nothing collected while the replay waits"
+    );
+    let t = l.store().trust_state().unwrap().unwrap();
+    assert!(!t.own_writes.replay.is_empty());
+    assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
+
+    // The winner's content arrives: the replay settles, then the loser's
+    // records go.
+    sync(&mut server, &mut w).unwrap();
+    pull(&server, &mut l);
+    l.repo().replay_own_writes().unwrap();
+    let t = l.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
+    sync(&mut server, &mut l).unwrap();
+    // Left: only the loser's own write made before its rotation, under the
+    // identity it rotated from (its intent names the re-sealed record):
+    // an old-identity late write, which R21 tolerates and no rotation
+    // collects (a known limit, Task 19 report).
+    let left: BTreeSet<Id> = &server_item_blobs(&server, v) & &loser_records;
+    assert_eq!(left.len(), 1, "{left:?}");
+    let rec = server
+        .get(RecordKind::Item, *left.first().unwrap())
+        .unwrap();
+    let (_, body) = split_item_record(&rec.data).unwrap();
+    let rec = ItemRecord::decode(body).unwrap();
+    assert_eq!((rec.item_id, rec.version), (mine_id, 1));
+    let expected = {
+        let mut u: Vec<String> = ["alice", "bob", "carol", "late", mine, theirs]
+            .map(String::from)
+            .to_vec();
+        u.sort();
+        u
+    };
+    for d in [&mut w, &mut l] {
+        sync(&mut server, d).unwrap();
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(users(&d.items()), expected);
+    }
+}
+
 /// `zz2_hostile_epoch_inflation` (first design): epochs are per identity.
 /// A restore epoch at `u64::MAX`, validly signed by the identity this
 /// device left, or under another identity's id, changes nothing.
@@ -2550,6 +2717,195 @@ fn vault_created_under_old_identity_is_recreated() {
     );
 }
 
+/// Task 19 carried item 2: C creates a vault under the old identity after
+/// `from_heads` and D writes in it too. Each re-creates it from its own
+/// writes under one id derived from the new identity and the old vault:
+/// one vault in the end, with C's meta and both items, never two.
+#[test]
+fn recreated_vault_is_one_across_devices() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut d = follower_with(&mut server, &a, &f, 2, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    let old = c.repo().create_vault(meta("Travail")).unwrap();
+    c.repo()
+        .save_item(&old, login(old.id, "work", T0 + 80))
+        .unwrap();
+    sync(&mut server, &mut c).unwrap();
+    d.unlock(&f.sk);
+    pull(&server, &mut d);
+    let theirs = d.vault_named("Travail");
+    d.repo()
+        .save_item(&theirs, login(old.id, "dora", T0 + 81))
+        .unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let identity = rotation_of(&a.store(), &out.head).identity_pub;
+    let expected = onepass_core::lineage::recreated_vault_id(&identity, old.id);
+    for (dev, keys) in [(&mut c, &f.others[C].keys), (&mut d, &f.others[2].keys)] {
+        pull(&server, dev);
+        dev.repo = None;
+        let (repo, _, _) = follow_rotation(dev.store(), out.head, PASSWORD, keys).unwrap();
+        dev.repo = Some(repo);
+        let t = dev.store().trust_state().unwrap().unwrap();
+        assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+        assert!(!t.own_writes.alert);
+        sync(&mut server, dev).unwrap();
+    }
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(
+            vaults.len(),
+            2,
+            "{:?}",
+            vaults.iter().map(|v| &v.meta.name).collect::<Vec<_>>()
+        );
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, expected);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
+/// C and D write in a vault C created under the old identity after
+/// `from_heads` (a "Travail" vault); A has rotated. Returns the server,
+/// the three devices, the old vault id, the head and the derived id.
+fn recreate_setup() -> (Server, Device, Device, Device, Fixture, Id, [u8; 32], Id) {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut d = follower_with(&mut server, &a, &f, 2, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    c.unlock(&f.sk);
+    let old = c.repo().create_vault(meta("Travail")).unwrap();
+    c.repo()
+        .save_item(&old, login(old.id, "work", T0 + 80))
+        .unwrap();
+    sync(&mut server, &mut c).unwrap();
+    d.unlock(&f.sk);
+    pull(&server, &mut d);
+    let theirs = d.vault_named("Travail");
+    d.repo()
+        .save_item(&theirs, login(old.id, "dora", T0 + 81))
+        .unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let identity = rotation_of(&a.store(), &out.head).identity_pub;
+    let derived = onepass_core::lineage::recreated_vault_id(&identity, old.id);
+    (server, a, c, d, f, old.id, out.head, derived)
+}
+
+fn follow_and_check(dev: &mut Device, head: [u8; 32], keys: &DeviceKeys) {
+    dev.repo = None;
+    let (repo, _, _) = follow_rotation(dev.store(), head, PASSWORD, keys).unwrap();
+    dev.repo = Some(repo);
+    let t = dev.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert);
+}
+
+/// Review I3 (fix round 1): the server plants a vault key at the derived
+/// id before C replays. C does not join it (it does not verify) and
+/// re-creates under a fresh id: the replay completes, nothing waits.
+#[test]
+fn planted_row_at_the_recreated_id_never_wedges_the_replay() {
+    let (mut server, _a, mut c, _d, f, _old, head, derived) = recreate_setup();
+    // A vault key and meta of another vault, served at the derived id.
+    let any = f_any_vault(&server);
+    for kind in [RecordKind::VaultKey, RecordKind::VaultMeta] {
+        let mut junk = server.get(kind, any).unwrap();
+        junk.id = derived;
+        server.replay(junk);
+    }
+    pull(&server, &mut c);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    let work = c.vault_named("Travail");
+    assert_ne!(work.id, derived);
+    assert_eq!(
+        users(&c.repo().items(&work).unwrap()),
+        vec!["work".to_string()]
+    );
+    sync(&mut server, &mut c).unwrap();
+}
+
+/// A vault key the server holds, any.
+fn f_any_vault(server: &Server) -> Id {
+    server
+        .records
+        .iter()
+        .find(|((k, _), e)| *k == RecordKind::VaultKey && e.record.is_some())
+        .map(|((_, id), _)| *id)
+        .unwrap()
+}
+
+/// Review I3 (fix round 1): the honest race, C and D re-create the vault
+/// before either one synced. Both derive the same id and the same vault
+/// key: the second push conflicts, its rebase joins the first creation
+/// (the server's key and meta, its own items merged), and every device
+/// ends with one vault holding both writes.
+#[test]
+fn honest_race_to_recreate_keeps_both_writes() {
+    let (mut server, mut a, mut c, mut d, f, _old, head, derived) = recreate_setup();
+    pull(&server, &mut c);
+    pull(&server, &mut d);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    follow_and_check(&mut d, head, &f.others[2].keys);
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(vaults.len(), 2);
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, derived);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
+/// Fix round 2: the same race in the other order. D, which wrote no meta
+/// of its own, re-creates under the neutral meta and pushes first; C, which
+/// created the vault ("Travail"), joins that creation in its rebase. C's
+/// own meta replaces the neutral one (spec 10.4, G4): every device ends
+/// with "Travail" holding both writes.
+#[test]
+fn honest_race_to_recreate_keeps_the_creators_meta() {
+    let (mut server, mut a, mut c, mut d, f, _old, head, derived) = recreate_setup();
+    pull(&server, &mut c);
+    pull(&server, &mut d);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    follow_and_check(&mut d, head, &f.others[2].keys);
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut d).unwrap();
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(vaults.len(), 2);
+        let names: Vec<_> = vaults.iter().map(|v| v.meta.name.clone()).collect();
+        assert!(names.contains(&"Travail".to_string()), "{names:?}");
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, derived);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
 /// Review I2: a rename made under the old identity is replayed under the
 /// new keys, not dropped.
 #[test]
@@ -3451,6 +3807,76 @@ fn cross_branch_revocation_alerts() {
     let t = e.store().trust_state().unwrap().unwrap();
     assert_eq!(t.head.hash, ra.head);
     assert!(t.revoked.contains(&f.others[B].id()));
+}
+
+/// Task 19 carried item 4: the cross-branch flag counts only the records
+/// of the device's own chain after the divergence point. B rotates (R1),
+/// everyone follows; then A and C both rotate from R1 revoking B. E, on
+/// the losing sibling, is asked to switch: the winner revokes B, the
+/// rotator of R1, which both branches share, so it is no removal "on
+/// another set of keys".
+#[test]
+fn cross_branch_flag_stops_at_the_divergence() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut b = follower_with(&mut server, &a, &f, B, |_| {});
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let mut e = follower_with(&mut server, &a, &f, 2, |_| {});
+    b.unlock(&f.sk);
+    let b_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &b_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[B].keys;
+    let r1 = b.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    a.repo = None;
+    for (dev, keys) in [
+        (&mut a, &f.me.keys),
+        (&mut c, &f.others[C].keys),
+        (&mut e, &f.others[2].keys),
+    ] {
+        pull(&server, dev);
+        let (repo, _, _) = follow_rotation(dev.store(), r1.head, PASSWORD, keys).unwrap();
+        dev.repo = Some(repo);
+    }
+    let mut siblings = Vec::new();
+    for (dev, keys) in [(&mut a, &f.me.keys), (&mut c, &f.others[C].keys)] {
+        let new_sk = SecretKey::generate().unwrap();
+        let mut req = request(&f, &new_sk, vec![f.others[B].id()], RotationReason::Revoke);
+        req.secret_key = &b_sk;
+        req.device_keys = keys;
+        let out = dev.repo.as_mut().unwrap().rotate(req).unwrap();
+        push_outbox(&mut server, dev).unwrap();
+        assert_eq!(
+            dev.store().push_rotation_phase(1).unwrap(),
+            PhaseOutcome::Done
+        );
+        siblings.push(out.head);
+    }
+    siblings.sort();
+    let (wh, lh) = (siblings[0], siblings[1]);
+    // E sees the loser first and follows it.
+    let mut hidden = [0u8; 16];
+    hidden.copy_from_slice(&wh[..16]);
+    let cursor = e.cursor;
+    pull_mapped(&server, &mut e, |ch| {
+        (ch.kind != RecordKind::Lineage || ch.id != Id(hidden)).then_some(ch)
+    });
+    e.cursor = cursor;
+    let session = e.repo.take().unwrap();
+    drop(session);
+    let (repo, _, _) = follow_rotation(e.store(), lh, PASSWORD, &f.others[2].keys).unwrap();
+    e.repo = Some(repo);
+    // The winner arrives.
+    pull(&server, &mut e);
+    let p = e
+        .repo()
+        .refresh_pending_rotation()
+        .unwrap()
+        .expect("a switch");
+    assert_eq!(p.kind, PromptKind::Switch);
+    assert_eq!(p.choices[0].hash, wh);
+    assert_eq!(p.choices[0].revoked_names.len(), 1);
+    assert!(!p.cross_branch_revocation, "B's record is shared");
 }
 
 /// Review M1 (fix round 2): the loser switches before its own phase 1 went
@@ -5206,4 +5632,32 @@ fn archive_before_two_rotations_opens_with_warning() {
     sync(&mut server, &mut a).unwrap();
     assert_eq!(a.repo().account().keyset().retired_kem.len(), 2);
     assert!(a.repo().open_archive(&old).unwrap().made_before_rotation);
+}
+
+/// Task 19 carried item 6: timing of 1000 item writes and a push on a
+/// device with a trust state, in `Current`. Run by hand:
+/// `cargo test --release --features dev-fast-kdf --test rotation_v2
+/// write_loop_timing -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn write_loop_timing() {
+    let mut server = Server::default();
+    let (mut a, _f) = fixture_on(&mut server);
+    let v = a.vault();
+    let t = std::time::Instant::now();
+    for i in 0..1000 {
+        a.repo()
+            .save_item(&v, login(v.id, &format!("u{i}"), T0 + i64::from(i)))
+            .unwrap();
+    }
+    let writes = t.elapsed();
+    let t = std::time::Instant::now();
+    let changes = a.store().pending_changes().unwrap().len();
+    let outbox_time = t.elapsed();
+    let t = std::time::Instant::now();
+    push(&mut server, &a).unwrap();
+    let pushed = t.elapsed();
+    eprintln!(
+        "TIMING writes(1000)={writes:?} pending_changes({changes})={outbox_time:?} push={pushed:?}"
+    );
 }

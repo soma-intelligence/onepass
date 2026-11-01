@@ -190,7 +190,19 @@ pub(crate) fn accept_intros(trust: &TrustState, intros: &[SignedIntro]) -> Optio
             break;
         }
         insert_sorted(&mut next.roster, first.clone());
-        next.levels.insert(id, TrustLevel::Verified);
+        // Fix round 2 (N1): a device takes the level of the devices that
+        // introduced it, `Verified` only if every introducer is; this
+        // device's own pin (a kit restore) is its own, `Verified`.
+        let verified = id == trust.me.device_id
+            || candidates.iter().all(|(_, e)| {
+                e.introduced_by.and_then(|i| trust.levels.get(&i)) == Some(&TrustLevel::Verified)
+            });
+        let level = if verified {
+            TrustLevel::Verified
+        } else {
+            TrustLevel::Tofu
+        };
+        next.levels.insert(id, level);
     }
     (next.roster != trust.roster).then_some(next)
 }
@@ -709,7 +721,23 @@ mod tests {
     #[test]
     fn a_valid_intro_joins_the_roster() {
         let (me, b, n) = (dev(), dev(), dev());
-        let t = trust_of_me(&me, &[&b]);
+        let mut t = trust_of_me(&me, &[&b]);
+        // Fix round 2 (N1, intended policy change): the new device takes
+        // its introducer's level, `Tofu` for one with no level or `Tofu`.
+        for (level, expected) in [
+            (None, TrustLevel::Tofu),
+            (Some(TrustLevel::Tofu), TrustLevel::Tofu),
+            (Some(TrustLevel::Verified), TrustLevel::Verified),
+        ] {
+            let mut u = t.clone();
+            match level {
+                Some(l) => u.levels.insert(b.public.device_id, l),
+                None => u.levels.remove(&b.public.device_id),
+            };
+            let next = accept_intros(&u, &[intro(&u, &b, &n)]).unwrap();
+            assert_eq!(next.levels.get(&n.public.device_id), Some(&expected));
+        }
+        t.levels.insert(b.public.device_id, TrustLevel::Verified);
         let next = accept_intros(&t, &[intro(&t, &b, &n)]).unwrap();
         assert!(
             next.roster

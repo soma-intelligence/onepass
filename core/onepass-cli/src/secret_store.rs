@@ -30,6 +30,13 @@ pub fn entry_name(account: Id) -> String {
     format!("secretkey.{account}")
 }
 
+/// The entry of the Secret Key a rotation drew and has not committed yet
+/// (K6, spec 7.1): next to `entry_name`, never replacing it before the
+/// rotation commits.
+pub fn pending_entry(account: Id) -> String {
+    format!("{}.pending", entry_name(account))
+}
+
 /// Why the store did not answer. The message never holds a secret.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {

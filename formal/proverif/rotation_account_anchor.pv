@@ -18,7 +18,7 @@
 (* The old identity key: the revoked device has it. *)
 free id_old: skey.
 
-let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
+let follow_rotation(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
   in(c, (body: bitstring, sdev: bitstring, sid: bitstring, params: bitstring,
          ks: bitstring, deliv: bitstring));
   let rr_body(=acct, =head, signer: bitstring, ip: pkey, revoked: bitstring,
@@ -29,18 +29,18 @@ let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
   if revoked <> me then
   get userDid(=signer, =revoked) in
   let (km: seed, kx: seed, ssk: skey) =
-    open_rotation(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
-  event Adopt(me, signer, ip);
-  UseVault(me, ip, km, kx, ssk).
+    open_key_delivery(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
+  event CommitAdoption(me, signer, ip);
+  use_recreated_vault(me, ip, km, kx, ssk).
 
 (* Expected false: C adopts an identity A never introduced, believing A
    did. *)
 query d: bitstring, s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
-  event(Adopt(d, s, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+  event(CommitAdoption(d, s, ip)) ==> event(RotationSigned(s, ip, r, ro, k, ik)).
 (* Expected false: what C writes afterwards reaches the attacker. *)
 query d: bitstring, m: bitstring; event(ItemSealedNew(d, m)) && attacker(m).
 (* Sanity (expected false): C follows A's honest rotation. *)
-query ip: pkey; event(Adopt(devC, devA, ip)).
+query ip: pkey; event(CommitAdoption(devC, devA, ip)).
 
 process
   new dkmA: seed; new dkxA: seed;
@@ -49,5 +49,5 @@ process
   let rosterAC = (ros_entry(devA, pk(id_old), kem_pk_m(dkmA), kem_pk_x(dkxA)),
                   ros_entry(devC, pk(id_old), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
   (* A signs its record with the old account identity. *)
-  ( Rotate(devA, id_old, h_genesis, devB, rosterAC)
-  | !Follow(devC, dkmC, dkxC, h_genesis) )
+  ( rotate(devA, id_old, h_genesis, devB, rosterAC)
+  | !follow_rotation(devC, dkmC, dkxC, h_genesis) )

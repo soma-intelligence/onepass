@@ -101,7 +101,7 @@ fn fresh() -> tempfile::TempDir {
 
 /// `last_seen` of `device.bin`, decoded like `session.rs` does.
 fn last_seen(dir: &Path) -> BTreeMap<Id, SeenManifest> {
-    // Version 3: header, then the state first (the Secret Key location
+    // Version 4: header, then the state first (the Secret Key location
     // follows and is not read here).
     #[derive(serde::Deserialize)]
     struct DeviceFile {
@@ -110,8 +110,8 @@ fn last_seen(dir: &Path) -> BTreeMap<Id, SeenManifest> {
     }
     let bytes = fs::read(dir.join("device.bin")).unwrap();
     let body = bytes
-        .strip_prefix(b"ODF\x03")
-        .expect("device.bin version 3");
+        .strip_prefix(b"ODF\x04")
+        .expect("device.bin version 4");
     let (file, _): (DeviceFile, _) = postcard::take_from_bytes(body).unwrap();
     file.state.last_seen
 }

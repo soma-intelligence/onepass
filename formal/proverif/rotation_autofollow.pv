@@ -11,7 +11,7 @@
    keys alone cannot settle the race; the user is the arbiter. This is
    why every adoption in the design is a user step (R6). *)
 
-let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
+let follow_rotation(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
   in(c, (body: bitstring, sdev: bitstring, sid: bitstring, params: bitstring,
          ks: bitstring, deliv: bitstring));
   let rr_body(=acct, =head, signer: bitstring, ip: pkey, revoked: bitstring,
@@ -22,19 +22,19 @@ let Follow(me: bitstring, dkm: seed, dkx: seed, head: bitstring) =
   if revoked <> me then
   (* No user confirmation here. *)
   let (km: seed, kx: seed, ssk: skey) =
-    open_rotation(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
-  event Adopt(me, signer, ip);
-  UseVault(me, ip, km, kx, ssk).
+    open_key_delivery(me, dkm, dkx, body, ip, ph, params, ks, deliv) in
+  event CommitAdoption(me, signer, ip);
+  use_recreated_vault(me, ip, km, kx, ssk).
 
 (* Expected false: C adopts an identity no honest device introduced. *)
 query d: bitstring, s: bitstring, ip: pkey, r: bitstring, ro: bitstring, k: key, ik: skey;
-  event(Adopt(d, s, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+  event(CommitAdoption(d, s, ip)) ==> event(RotationSigned(s, ip, r, ro, k, ik)).
 (* Expected false: C adopts B's rotation. *)
-query ip: pkey; event(Adopt(devC, devB, ip)).
+query ip: pkey; event(CommitAdoption(devC, devB, ip)).
 (* Expected false: what C writes afterwards reaches the attacker. *)
 query d: bitstring, m: bitstring; event(ItemSealedNew(d, m)) && attacker(m).
 (* Sanity (expected false): C follows A's honest rotation. *)
-query ip: pkey; event(Adopt(devC, devA, ip)).
+query ip: pkey; event(CommitAdoption(devC, devA, ip)).
 
 process
   new dskA: skey; new dkmA: seed; new dkxA: seed;
@@ -48,5 +48,5 @@ process
   insert pinned(devC, h_genesis, devB, pk(dskB));
   let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
                   ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
-  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
-  | !Follow(devC, dkmC, dkxC, h_genesis) )
+  ( rotate(devA, dskA, h_genesis, devB, rosterAC)
+  | !follow_rotation(devC, dkmC, dkxC, h_genesis) )
