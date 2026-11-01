@@ -28,6 +28,25 @@ struct IdentityStoreSyncTests {
         #expect(store.identities.map(\.user) == ["u4"])
     }
 
+    @Test func takePendingTellsWhetherARefreshWaits() async throws {
+        let store = InMemoryIdentityStore()
+        let sync = IdentityStoreSync(client: store, debounce: .seconds(600))
+        #expect(await !sync.takePending())
+        await sync.schedule { [identity()] }
+        #expect(await sync.takePending())
+        // Taken: dropped, and nothing waits any more.
+        #expect(await !sync.takePending())
+        await sync.waitForIdle()
+        #expect(store.replaceCount == 0)
+
+        // Once its identities are read, a refresh no longer waits.
+        let quick = IdentityStoreSync(client: store, debounce: .milliseconds(10))
+        await quick.schedule { [identity(user: "lu")] }
+        await quick.waitForIdle()
+        #expect(store.identities.map(\.user) == ["lu"])
+        #expect(await !quick.takePending())
+    }
+
     @Test func disabledStoreIsLeftAlone() async {
         let store = InMemoryIdentityStore(enabled: false)
         let sync = IdentityStoreSync(client: store, debounce: .milliseconds(10))

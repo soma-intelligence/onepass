@@ -787,17 +787,23 @@ public final class VaultSession {
         // A manual lock of the Mac ends an agents-only window too (spec 6.3).
         endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
+        // Unlocked with suggestions on: a refresh still waiting is published from this session.
+        let flushIdentities = state == .unlocked && settings.quickTypeSuggestions && session != nil
+        let excluded = excludedVaultIDs
         if let session {
             self.session = nil
+            if flushIdentities { publishPendingIdentities(from: session, excluded: excluded) }
             release(session)
         }
         clearMemory()
         clipboard.clear()
         concealRevealed()
-        // A debounced identity refresh would find the session locked: drop it (what was published
-        // stays, suggestions work while locked).
-        let sync = identitySync
-        enqueueIdentity { await sync.dropPending() }
+        // Without an open session, a debounced identity refresh would find it locked: drop it (what
+        // was published stays, suggestions work while locked).
+        if !flushIdentities {
+            let sync = identitySync
+            enqueueIdentity { await sync.dropPending() }
+        }
         if state == .unlocked || state == .unlocking { state = .locked }
         if wasOpen { notifySync { await $0.sessionLocked() } }
     }
@@ -1213,6 +1219,7 @@ public final class VaultSession {
     /// Tests: waits until every identity store request sent so far has run.
     func waitForAutofillIdentities() async {
         await identityChain?.value
+        await releaseChain?.value
         await identitySync.waitForIdle()
     }
 
@@ -1508,6 +1515,24 @@ public final class VaultSession {
     }
 
     /// `Session.lock()` waits for a core call in flight (save, purge...): never on the main actor.
+    /// A lock with a debounced identity refresh still waiting (iOS locks as soon as the app leaves
+    /// the screen, often within the second after an unlock or a sync that brought passkeys from the
+    /// Mac): its identities are read now, before the keys go, and published. Runs after the identity
+    /// requests already sent and before the session's release.
+    private func publishPendingIdentities(from session: Session, excluded: [String]) {
+        let sync = identitySync
+        let requests = identityChain
+        let previous = releaseChain
+        releaseChain = Task {
+            await previous?.value
+            await requests?.value
+            guard await sync.takePending(),
+                let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
+            else { return }
+            await sync.replaceNow(list)
+        }
+    }
+
     private func release(_ session: Session) {
         let previous = releaseChain
         releaseChain = Task {

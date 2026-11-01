@@ -88,6 +88,8 @@ public actor IdentityStoreSync {
     /// Bumped by every `schedule` and `clear`: a request that is no longer the latest drops out.
     private var revision = 0
     private var pending: Task<Void, Never>?
+    /// The revision of the scheduled refresh whose identities were not read yet (`takePending`).
+    private var pendingRevision: Int?
     private var chain: Task<Void, Never>?
 
     public init(client: any IdentityStoreClient, debounce: Duration = .seconds(1)) {
@@ -100,6 +102,7 @@ public actor IdentityStoreSync {
     public func schedule(_ identities: @Sendable @escaping () async throws -> [FfiAutofillIdentity]) {
         revision &+= 1
         let current = revision
+        pendingRevision = current
         pending?.cancel()
         let delay = debounce
         pending = Task {
@@ -118,6 +121,7 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        pendingRevision = nil
         let current = revision
         let client = client
         enqueue {
@@ -133,6 +137,7 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        pendingRevision = nil
         let client = client
         enqueue { try? await client.removeAll() }
         await chain?.value
@@ -144,6 +149,16 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        pendingRevision = nil
+    }
+
+    /// Drops the pending debounced refresh like `dropPending`, and tells whether one was waiting
+    /// with its identities still unread: the caller (a lock) then reads them while it can and
+    /// publishes them with `replaceNow`.
+    public func takePending() -> Bool {
+        let due = pendingRevision != nil
+        dropPending()
+        return due
     }
 
     /// Tests: waits until the pending refresh (if any) and every queued store operation are done.
@@ -160,12 +175,17 @@ public actor IdentityStoreSync {
         enqueue {
             guard await self.isCurrent(expected), await client.isEnabled() else { return }
             guard let list = try? await identities() else { return }
+            await self.read(expected)
             guard await self.isCurrent(expected) else { return }
             try? await client.replaceAll(list)
         }
     }
 
     private func isCurrent(_ expected: Int) -> Bool { expected == revision }
+
+    private func read(_ expected: Int) {
+        if pendingRevision == expected { pendingRevision = nil }
+    }
 
     private func enqueue(_ op: @Sendable @escaping () async -> Void) {
         let previous = chain
