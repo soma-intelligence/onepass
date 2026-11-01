@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COUNTRY_CODES, countryName, resolveCountry } from "../../src/content/geo/countries";
+import { COUNTRY_CODES, countryName, resolveCountry, resolveCountryValue } from "../../src/content/geo/countries";
 import { fold } from "../../src/content/geo/fold";
 import { regionFromPostal } from "../../src/content/geo/postal";
 import { REGIONS, parentRegion, regionText, resolveRegion } from "../../src/content/geo/regions";
@@ -29,6 +29,15 @@ describe("countries", () => {
     expect(resolveCountry("4")).toBe("AF");
     expect(resolveCountry("DEU")).toBe("DE");
     expect(resolveCountry("GBR")).toBe("GB");
+  });
+
+  it("reads an option value as an ISO numeric code only when it has exactly 3 digits", () => {
+    expect(resolveCountryValue("004")).toBe("AF");
+    expect(resolveCountryValue("250")).toBe("FR");
+    for (const id of ["4", "04", "1", "12", "0004", "2500"]) expect(resolveCountryValue(id)).toBeNull();
+    expect(resolveCountryValue("FR")).toBe("FR");
+    expect(resolveCountryValue("FRA")).toBe("FR");
+    expect(resolveCountryValue("France")).toBe("FR");
   });
 
   it("resolves names in the page language, French and English", () => {

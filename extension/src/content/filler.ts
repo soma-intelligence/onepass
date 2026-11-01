@@ -25,7 +25,7 @@ import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
 import { type Geometry, isVisible } from "./detect/visibility";
-import { countryName, nameLangs, resolveCountry } from "./geo/countries";
+import { countryName, nameLangs, resolveCountry, resolveCountryValue } from "./geo/countries";
 import { type OptionLike, pickCountry, pickRegion, postalFallback, regionWanted } from "./geo/options";
 import { parentRegion, REGIONS, regionText } from "./geo/regions";
 import { OBSERVER_DELAY_MS } from "./observer";
@@ -447,7 +447,7 @@ export function createFiller(opts: FillerOptions): Filler {
         const el = f ? refs.get(f.ref) : undefined;
         if (el instanceof HTMLSelectElement) {
           const o = el.selectedOptions[0];
-          return o && o.value !== "" ? (resolveCountry(o.textContent ?? "", langs) ?? resolveCountry(o.value, langs)) : null;
+          return o && o.value !== "" ? (resolveCountry(o.textContent ?? "", langs) ?? resolveCountryValue(o.value, langs)) : null;
         }
         return el instanceof HTMLInputElement ? resolveCountry(nativeValue(el), langs) : null;
       };

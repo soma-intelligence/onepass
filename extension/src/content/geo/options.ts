@@ -1,7 +1,7 @@
 // Picks the option of a country or region list that means the vault's value
 // (spec 2026-10-31, section 3). Each option gets a score; the best wins, and
 // best options with different values are a tie: nothing is picked.
-import { resolveCountry } from "./countries";
+import { resolveCountry, resolveCountryValue } from "./countries";
 import { fold } from "./fold";
 import { regionFromPostal } from "./postal";
 import { parentRegion, resolveRegion } from "./regions";
@@ -43,7 +43,7 @@ export function pickCountry(opts: readonly OptionLike[], want: string, langs: re
     if (same(o.value, want) || same(o.text, want)) return 3;
     if (placeholder(o)) return 0;
     if (cc !== null) {
-      const c = resolveCountry(o.text, langs) ?? resolveCountry(o.value, langs);
+      const c = resolveCountry(o.text, langs) ?? resolveCountryValue(o.value, langs);
       return c === cc ? 2 : 0;
     }
     return folded !== "" && fold(o.text) === folded ? 1 : 0;

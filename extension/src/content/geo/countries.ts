@@ -135,6 +135,17 @@ export function resolveCountry(raw: string, langs: readonly string[] = BASE_LANG
   return bare !== raw ? resolveOnce(bare, ls) : null;
 }
 
+/**
+ * Alpha-2 code of an option's `value`: as `resolveCountry`, except that a
+ * number counts as an ISO numeric code only with exactly 3 digits ("004",
+ * "250"); any other number is the site's own id ("4", "36"), not a country.
+ */
+export function resolveCountryValue(value: string, langs: readonly string[] = BASE_LANGS): string | null {
+  const t = value.trim();
+  if (/^\d+$/.test(t) && !/^\d{3}$/.test(t)) return null;
+  return resolveCountry(t, langs);
+}
+
 /** The name of `code` in `lang` (English when the language has none). */
 export function countryName(code: string, lang: string): string {
   for (const l of [lang, "en"]) {

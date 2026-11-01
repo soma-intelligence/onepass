@@ -16,6 +16,13 @@ describe("country options", () => {
     expect(pickCountry(names("ETATS UNIS", "FRANCE"), "États-Unis", L)).toBe(0);
   });
 
+  it("a database id as the value is not an ISO numeric code", () => {
+    // "4" would be Afghanistan, "36" Australia: ids of the shop's own table.
+    expect(pickCountry(o(["4", "Länd 4"], ["36", "Länd 36"]), "AF", L)).toBe(-1);
+    expect(pickCountry(o(["4", "Länd 4"], ["36", "Länd 36"]), "AU", L)).toBe(-1);
+    expect(pickCountry(o(["004", "Länd 4"], ["036", "Länd 36"]), "AU", L)).toBe(1);
+  });
+
   it("an exact value wins first", () => {
     expect(pickCountry(o(["France", "France"], ["FR", "France métropolitaine"]), "FR", L)).toBe(1);
   });
