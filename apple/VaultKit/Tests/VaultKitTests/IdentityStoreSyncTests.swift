@@ -78,6 +78,24 @@ struct IdentityStoreSyncTests {
         #expect(store.inner.identities.isEmpty)
     }
 
+    /// A request counts as waiting from `noteRequest` until it is read or dropped.
+    @Test func requestWaitsUntilReadOrDropped() async {
+        let store = InMemoryIdentityStore()
+        let sync = IdentityStoreSync(client: store, debounce: .milliseconds(10))
+        #expect(!sync.mayHavePending)
+        let mark = sync.noteRequest()
+        #expect(sync.mayHavePending)
+        await sync.schedule(mark: mark) { [identity()] }
+        await sync.waitForIdle()
+        #expect(!sync.mayHavePending)
+
+        let slow = IdentityStoreSync(client: store, debounce: .seconds(600))
+        await slow.schedule { [identity()] }
+        #expect(slow.mayHavePending)
+        await slow.dropPending()
+        #expect(!slow.mayHavePending)
+    }
+
     /// `dropPending` with nothing waiting leaves a queued replacement alone.
     @Test func dropWithNothingWaitingKeepsAQueuedReplace() async {
         let store = GatedIdentityStore()

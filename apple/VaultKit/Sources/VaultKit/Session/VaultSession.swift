@@ -790,8 +790,10 @@ public final class VaultSession {
         // A manual lock of the Mac ends an agents-only window too (spec 6.3).
         endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
-        // Unlocked with suggestions on: a refresh still waiting is published from this session.
+        // Unlocked with suggestions on and a refresh that may still wait: it is published from this
+        // session (read at once). Nothing waiting: nothing read.
         let flushIdentities = publishPending && state == .unlocked && settings.quickTypeSuggestions && session != nil
+            && identitySync.mayHavePending
         let excluded = excludedVaultIDs
         if let session {
             self.session = nil
@@ -1135,8 +1137,9 @@ public final class VaultSession {
         let excluded = excludedVaultIDs
         let settings = settings
         let sync = identitySync
+        let mark = sync.noteRequest()
         enqueueIdentity {
-            await sync.schedule {
+            await sync.schedule(mark: mark) {
                 // The setting may have been turned off meanwhile; a locked session throws.
                 guard settings.quickTypeSuggestions else { throw CancellationError() }
                 return try await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
@@ -1218,6 +1221,9 @@ public final class VaultSession {
         let sync = identitySync
         enqueueIdentity { await sync.clear() }
     }
+
+    /// Tests: a refresh may still wait (what a lock reads for).
+    var identitySyncMayHavePending: Bool { identitySync.mayHavePending }
 
     /// Tests: waits until every identity store request sent so far has run.
     func waitForAutofillIdentities() async {
@@ -1535,10 +1541,17 @@ public final class VaultSession {
             _ = await reading.value
         }
         enqueueIdentity {
-            guard await sync.takePending(), let list = await reading.value else { return }
+            guard await sync.takePending() else { return }
+            guard let list = await reading.value else {
+                // The next unlock refreshes the identities again (every unlock does).
+                Self.identityLog.error("Lock: AutoFill identities unreadable, published at the next unlock")
+                return
+            }
             await sync.replaceSoon(list)
         }
     }
+
+    private nonisolated static let identityLog = Logger(subsystem: "me.somalabs.onepass", category: "autofill")
 
     private func release(_ session: Session) {
         let previous = releaseChain

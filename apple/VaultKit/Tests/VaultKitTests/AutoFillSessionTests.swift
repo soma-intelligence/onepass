@@ -215,6 +215,24 @@ struct AutoFillSessionTests {
         #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
     }
 
+    /// With no refresh waiting (already published), a lock reads and publishes nothing.
+    @Test func lockWithNothingWaitingPublishesNothing() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = InMemoryIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .milliseconds(20))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        try await Task.sleep(for: .milliseconds(100))
+        await session.waitForAutofillIdentities()
+        #expect(store.identities.map(\.service) == ["atlas.exemple.fr"])
+        #expect(!session.identitySyncMayHavePending)
+        let published = store.replaceCount
+        session.lock()
+        await session.waitForAutofillIdentities()
+        #expect(store.replaceCount == published)
+    }
+
     /// An erase right after a lock (clear) is never overtaken by the lock's publish.
     @Test func clearAfterLockEndsEmpty() async throws {
         let h = try SessionHarness()

@@ -93,18 +93,46 @@ public actor IdentityStoreSync {
     private var chain: Task<Void, Never>?
     /// Tests: runs once a refresh has read its identities, before it replaces the store.
     private var afterRead: (@Sendable () async -> Void)?
+    /// Refresh requests made and settled (read, dropped or superseded), readable without the
+    /// actor: a lock decides at once whether a refresh may still wait (`mayHavePending`).
+    private let marks = Mutex(Marks())
+    /// The request mark of the latest scheduled refresh.
+    private var pendingMark = 0
+
+    private struct Marks {
+        var requested = 0
+        var settled = 0
+    }
 
     public init(client: any IdentityStoreClient, debounce: Duration = .seconds(1)) {
         self.client = client
         self.debounce = debounce
     }
 
+    /// Counts a refresh request before it reaches `schedule` (the caller queues it): until that
+    /// refresh is read or dropped, `mayHavePending` is true. Returns the mark to pass to `schedule`.
+    public nonisolated func noteRequest() -> Int {
+        marks.withLock {
+            $0.requested += 1
+            return $0.requested
+        }
+    }
+
+    /// A refresh was requested and not read or dropped yet (it may still be on its way to
+    /// `schedule`). False means a lock has nothing to publish.
+    public nonisolated var mayHavePending: Bool {
+        marks.withLock { $0.requested > $0.settled }
+    }
+
     /// Replaces the store with `identities()` after the debounce delay, unless a later `schedule` or a
-    /// `clear` comes first.
-    public func schedule(_ identities: @Sendable @escaping () async throws -> [FfiAutofillIdentity]) {
+    /// `clear` comes first. `mark` comes from `noteRequest` (a new one when nil).
+    public func schedule(
+        mark: Int? = nil, _ identities: @Sendable @escaping () async throws -> [FfiAutofillIdentity]
+    ) {
         revision &+= 1
         let current = revision
         pendingRevision = current
+        pendingMark = max(pendingMark, mark ?? noteRequest())
         pending?.cancel()
         let delay = debounce
         pending = Task {
@@ -130,7 +158,7 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
-        pendingRevision = nil
+        settlePending()
         let current = revision
         let client = client
         enqueue {
@@ -145,7 +173,7 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
-        pendingRevision = nil
+        settlePending()
         let client = client
         enqueue { try? await client.removeAll() }
         await chain?.value
@@ -166,7 +194,7 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
-        pendingRevision = nil
+        settlePending()
         return true
     }
 
@@ -202,8 +230,15 @@ public actor IdentityStoreSync {
     /// The refresh `expected` read its identities and is still the latest: no longer pending.
     private func claim(_ expected: Int) -> Bool {
         guard expected == revision else { return false }
-        if pendingRevision == expected { pendingRevision = nil }
+        if pendingRevision == expected { settlePending() }
         return true
+    }
+
+    /// The scheduled refresh is read or dropped: no request up to its mark waits any more.
+    private func settlePending() {
+        pendingRevision = nil
+        let mark = pendingMark
+        marks.withLock { $0.settled = max($0.settled, mark) }
     }
 
     private func enqueue(_ op: @Sendable @escaping () async -> Void) {
