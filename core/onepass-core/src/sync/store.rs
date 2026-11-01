@@ -930,6 +930,14 @@ fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
             if pending {
                 continue;
             }
+            // Review C1 (fix round 1): never while the vault's own writes
+            // wait for their replay (`hold.left`): they may be sealed under
+            // that key generation and replayed from these very rows.
+            let vault = row_data(tx, "base", RecordKind::Item, id)?
+                .and_then(|d| split_item_record(&d).ok().map(|(v, _)| v));
+            if vault.is_none_or(|v| hold.left.contains(&v) || held.contains(&v)) {
+                continue;
+            }
             if let Some(version) = base_version_in(tx, RecordKind::Item, id)? {
                 deletions.push(Change {
                     kind: RecordKind::Item,

@@ -1248,6 +1248,112 @@ fn losers_items_collected_after_its_switch() {
     }
 }
 
+/// Fix round 1 of Task 19, review C1: the loser switches before the
+/// winner's content arrived, so the replay of its own writes (one made
+/// before its rotation, which the rotation re-sealed, one after) waits.
+/// Nothing of its key generation is collected while it waits; once the
+/// replay settled, its writes are under the winner's keys and the server
+/// records of its rotation go.
+#[test]
+fn losers_collection_waits_for_its_replay() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    c.unlock(&f.sk);
+    let v = a.vault().id;
+    let old = server_item_blobs(&server, v);
+    let (a_before, c_before) = (login(v, "a-before", T0 + 40), login(v, "c-before", T0 + 41));
+    a.save(&a_before);
+    c.save(&c_before);
+    let ra = rotate(&mut a, &f, &SecretKey::generate().unwrap());
+    let c_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &c_sk, vec![], RotationReason::Rotate);
+    req.device_keys = &f.others[C].keys;
+    let rc = c.repo.as_mut().unwrap().rotate(req).unwrap();
+    let a_wins = ra.head < rc.head;
+    let wh = if a_wins { ra.head } else { rc.head };
+    let (mut w, mut l, l_keys, mine) = if a_wins {
+        (a, c, &f.others[C].keys, "c-before")
+    } else {
+        (c, a, &f.me.keys, "a-before")
+    };
+    let theirs = if a_wins { "a-before" } else { "c-before" };
+    let mine_id = if a_wins { c_before.id } else { a_before.id };
+    l.save(&login(v, "late", T0 + 60));
+    for phase in [1, 2] {
+        push_outbox(&mut server, &l).unwrap();
+        assert_eq!(
+            l.store().push_rotation_phase(phase).unwrap(),
+            PhaseOutcome::Done
+        );
+    }
+    let loser_records: BTreeSet<Id> = &server_item_blobs(&server, v) - &old;
+    assert!(loser_records.len() >= 5, "{}", loser_records.len());
+    // The winner's phase 1 only: its record, not its content.
+    push_outbox(&mut server, &w).unwrap();
+    assert_eq!(
+        w.store().push_rotation_phase(1).unwrap(),
+        PhaseOutcome::Done
+    );
+    pull(&server, &mut l);
+    l.repo().refresh_pending_rotation().unwrap();
+    let session = l.repo.take().unwrap();
+    let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
+    l.repo = Some(repo);
+    assert!(
+        !l.store()
+            .trust_state()
+            .unwrap()
+            .unwrap()
+            .own_writes
+            .replay
+            .is_empty()
+    );
+    sync(&mut server, &mut l).unwrap();
+    assert!(
+        loser_records.is_subset(&server_item_blobs(&server, v)),
+        "nothing collected while the replay waits"
+    );
+    let t = l.store().trust_state().unwrap().unwrap();
+    assert!(!t.own_writes.replay.is_empty());
+    assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
+
+    // The winner's content arrives: the replay settles, then the loser's
+    // records go.
+    sync(&mut server, &mut w).unwrap();
+    pull(&server, &mut l);
+    l.repo().replay_own_writes().unwrap();
+    let t = l.store().trust_state().unwrap().unwrap();
+    assert!(t.own_writes.replay.is_empty(), "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
+    sync(&mut server, &mut l).unwrap();
+    // Left: only the loser's own write made before its rotation, under the
+    // identity it rotated from (its intent names the re-sealed record):
+    // an old-identity late write, which R21 tolerates and no rotation
+    // collects (a known limit, Task 19 report).
+    let left: BTreeSet<Id> = &server_item_blobs(&server, v) & &loser_records;
+    assert_eq!(left.len(), 1, "{left:?}");
+    let rec = server
+        .get(RecordKind::Item, *left.first().unwrap())
+        .unwrap();
+    let (_, body) = split_item_record(&rec.data).unwrap();
+    let rec = ItemRecord::decode(body).unwrap();
+    assert_eq!((rec.item_id, rec.version), (mine_id, 1));
+    let expected = {
+        let mut u: Vec<String> = ["alice", "bob", "carol", "late", mine, theirs]
+            .map(String::from)
+            .to_vec();
+        u.sort();
+        u
+    };
+    for d in [&mut w, &mut l] {
+        sync(&mut server, d).unwrap();
+        pull(&server, d);
+        assert_eq!(head_of(d), wh);
+        assert_eq!(users(&d.items()), expected);
+    }
+}
+
 /// `zz2_hostile_epoch_inflation` (first design): epochs are per identity.
 /// A restore epoch at `u64::MAX`, validly signed by the identity this
 /// device left, or under another identity's id, changes nothing.
