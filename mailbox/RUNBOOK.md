@@ -147,6 +147,24 @@ hour of its own, so a burst of lookups from one address can delay a creation
 or an enroll from that address by up to a minute, and the other way round.
 A mailbox keeps its two latest locators; several mailboxes may share one.
 
+## Child mailboxes
+
+Shared vaults, families and contact zones live in child mailboxes
+(`POST /v1/mailboxes/{m}/children`, sharing spec 13.3): kind 2 on plan
+`shared`, kind 3 on plan `contact`, `mailboxes.parent_id` naming the account
+mailbox they were created under. Before the first child on an instance,
+the plans must hold the Task 24 rows: run the `insert into
+onepass_mailbox.plans` of `seed.sql` again (step 2 of First setup, same
+maintenance transaction). It updates `free` and `selfhost` with their
+`max_children_shared` and `max_children_contact` (16 and 256, 1 024 and
+4 096) and adds `shared` and `contact`; without them every creation
+answers `403 quota` (cap 0) or `503 retry` (child plan missing). A parent
+creates 20 children a UTC day at most (`429`). An enroll ticket on a child
+is `403 forbidden`: members come in through grants by the owner. The owner
+deletes its child at any time (`DELETE /v1/mailboxes/{m}`, purged an hour
+later like an abandoned mailbox); an account mailbox with a live child is
+never abandoned.
+
 ## Rotating `MAILBOX_IP_HMAC_SECRET`
 
 The secret only keys the per-IP rate windows (no address is stored), so a

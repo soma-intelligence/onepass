@@ -9,7 +9,7 @@ Supabase with the same migrations and functions.
 ```
 supabase/migrations/   schema onepass_mailbox, SQL API, maintenance, pg_cron jobs
 supabase/functions/    mailbox (the only HTTP entry), mailbox-push, mailbox-gc
-supabase/seed.sql      plans free and selfhost
+supabase/seed.sql      plans free, selfhost, shared and contact
 scripts/               local stack helpers, SQL tests, hosted-admin.sh
 ```
 

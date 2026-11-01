@@ -10,8 +10,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::{
-    Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, CredentialRole, ErrorCode,
-    MailboxId, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256, put_kinds_of,
+    Body, COMMIT_OPS_MAX, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialRole,
+    ErrorCode, MailboxCreated, MailboxId, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+    put_kinds_of,
 };
 
 use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
@@ -79,6 +80,8 @@ pub const CASES: &[(&str, Case)] = &[
         "abandon_needs_a_fresh_mailbox",
         abandon_needs_a_fresh_mailbox,
     ),
+    ("child_round_trip", child_round_trip),
+    ("child_grant_and_revoke", child_grant_and_revoke),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -1058,7 +1061,12 @@ fn abandoned_mailbox_is_gone(t: &mut dyn ConformanceTarget) {
     gone(recovery.abandon(), "abandon by the recovery credential");
     gone(a.changes(0, 10, false).map(drop), "changes");
     gone(a.commit(vec![put(2, 1, None, b"b")]).map(drop), "commit");
-    gone(a.record(KIND, id(1)).map(drop), "record");
+    // The record route answers 404 not_found for an absent key too: the
+    // client cannot tell a gone mailbox there and reads it as absent.
+    match a.record(KIND, id(1)) {
+        Ok(None) => {}
+        other => panic!("record on an abandoned mailbox: {other:?}"),
+    }
     gone(a.set_locator(session_id()), "set locator");
     gone(a.abandon(), "abandon again");
     assert!(t.locate(loc).expect("locate").is_empty(), "not located");
@@ -1100,4 +1108,149 @@ fn abandon_needs_a_fresh_mailbox(t: &mut dyn ConformanceTarget) {
         x.info()
             .unwrap_or_else(|e| panic!("{what} still there: {e:?}"));
     }
+}
+
+/// `parent` creates a child of `kind` owned by a fresh key; the owner's
+/// client comes back with the child open.
+fn child(
+    t: &mut dyn ConformanceTarget,
+    parent: &dyn MailboxApi,
+    kind: ChildKind,
+) -> (Box<dyn MailboxApi>, MailboxCreated) {
+    let mut o = t.client();
+    let created = parent
+        .create_child(kind, o.credential_key().to_bytes(), b"child")
+        .unwrap_or_else(|e| panic!("create child {kind:?}: {e:?}"));
+    assert_ne!(
+        Some(created.mailbox_id),
+        parent.mailbox(),
+        "a child is a mailbox of its own"
+    );
+    o.open(created.mailbox_id);
+    (o, created)
+}
+
+/// A manager of an account mailbox creates a child owned by a fresh key.
+/// The owner commits and reads in it, under the child's own plan (shared:
+/// 80 credentials, contact: 4); the child holds no grandchild and takes no
+/// enroll ticket; a reader of the parent creates nothing; the parent is not
+/// abandoned while a child lives, and is once its owners deleted them.
+fn child_round_trip(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let (o, created) = child(t, a.as_ref(), ChildKind::Shared);
+    let info = o.info().expect("the owner signs info in its child");
+    assert_eq!(
+        (info.incarnation, info.wake_topic),
+        (created.incarnation, created.wake_topic)
+    );
+    assert_eq!(info.limits.max_credentials, 80, "plan shared");
+    assert_eq!(info.usage.credentials, 1, "the owner alone");
+    assert_eq!(
+        applied(o.commit(vec![put(1, 1, None, b"shared")]), "owner writes"),
+        vec![Some(1)]
+    );
+    let rec = o
+        .record(KIND, id(1))
+        .expect("owner reads")
+        .expect("its record");
+    assert_eq!(rec.body, Some(Body::Inline(b"shared".to_vec())));
+    assert_eq!(seqs(&page(o.as_ref(), 0, 10, false).records), vec![1]);
+    assert_eq!(
+        usage(a.as_ref()).1,
+        0,
+        "the parent counts none of the child"
+    );
+
+    let (c, _) = child(t, a.as_ref(), ChildKind::Contact);
+    assert_eq!(
+        c.info().expect("contact owner").limits.max_credentials,
+        4,
+        "plan contact"
+    );
+
+    let stranger = t.client();
+    forbidden(
+        o.create_child(
+            ChildKind::Contact,
+            stranger.credential_key().to_bytes(),
+            b"x",
+        ),
+        "a child of a child",
+    );
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(
+        r.create_child(
+            ChildKind::Shared,
+            stranger.credential_key().to_bytes(),
+            b"x",
+        ),
+        "a reader of the parent creates a child",
+    );
+    match a.create_child(ChildKind::Shared, a.credential_key().to_bytes(), b"x") {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("an owner key some mailbox holds: {other:?}"),
+    }
+    let mut n = t.client();
+    let ticket = o
+        .issue_ticket(n.credential_key(), now())
+        .expect("issue_ticket");
+    forbidden(n.enroll(&ticket, b"device"), "an enroll ticket of a child");
+
+    // `a` is no longer fresh (its reader made a request): a new parent
+    // shows the child rule alone.
+    let p = owner(t);
+    let (po, _) = child(t, p.as_ref(), ChildKind::Contact);
+    forbidden(p.abandon(), "a parent with a live child");
+    po.abandon().expect("the owner deletes its child");
+    match po.info() {
+        Err(MailboxError::Server(Code::NotFound)) => {}
+        other => panic!("a deleted child: {other:?}"),
+    }
+    p.abandon().expect("the parent once its child is gone");
+
+    o.abandon()
+        .expect("the owner deletes its child at any time");
+    c.abandon().expect("the contact owner deletes its child");
+    a.info().expect("the parent stays");
+}
+
+/// The owner grants a member's key: it reads and writes at once, revokes
+/// neither the owner nor the child, and once the owner revokes it, gets
+/// nothing more.
+fn child_grant_and_revoke(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let (o, _) = child(t, a.as_ref(), ChildKind::Shared);
+    applied(o.commit(vec![put(1, 1, None, b"owner")]), "owner writes");
+    let m = granted(t, o.as_ref(), CredentialRole::Write, None);
+    let rec = m
+        .record(KIND, id(1))
+        .expect("member reads")
+        .expect("the owner's record");
+    assert_eq!(rec.body, Some(Body::Inline(b"owner".to_vec())));
+    assert_eq!(
+        applied(m.commit(vec![put(2, 1, None, b"member")]), "member writes"),
+        vec![Some(2)]
+    );
+    forbidden(
+        m.revoke(o.credential_key().id()),
+        "a member revokes the owner",
+    );
+    forbidden(m.abandon(), "a member deletes the child");
+    assert_eq!(usage(o.as_ref()).2, 2, "owner and member");
+
+    o.revoke(m.credential_key().id())
+        .expect("the owner revokes the member");
+    for (what, r) in [
+        ("info", m.info().map(drop)),
+        ("record", m.record(KIND, id(1)).map(drop)),
+        ("changes", m.changes(0, 10, false).map(drop)),
+        ("commit", m.commit(vec![put(3, 1, None, b"x")]).map(drop)),
+    ] {
+        match r {
+            Err(MailboxError::Server(ErrorCode::RevokedCredential)) => {}
+            other => panic!("revoked member, {what}: {other:?}"),
+        }
+    }
+    assert_eq!(usage(o.as_ref()).2, 1, "the owner alone");
+    assert_eq!(seqs(&page(o.as_ref(), 0, 10, false).records), vec![1, 2]);
 }

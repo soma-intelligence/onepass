@@ -15,8 +15,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
-    CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, LocateRequest, Located,
-    MailboxCreated, MailboxInfo, Message, ServerConfig, ServerRecord, SetCredentialRole,
+    CreateChild, CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, LocateRequest,
+    Located, MailboxCreated, MailboxInfo, Message, ServerConfig, ServerRecord, SetCredentialRole,
     SetLocator, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
 };
 
@@ -83,6 +83,12 @@ pub fn decode_set_role(bytes: &[u8]) -> Result<JsValue, JsError> {
 #[wasm_bindgen(js_name = decodeSetLocator)]
 pub fn decode_set_locator(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<SetLocator>(bytes)
+}
+
+/// `{ kind: "Shared" | "Contact", owner_public_key, label }`.
+#[wasm_bindgen(js_name = decodeCreateChild)]
+pub fn decode_create_child(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<CreateChild>(bytes)
 }
 
 #[wasm_bindgen(js_name = decodeBlobAnnounce)]

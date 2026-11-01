@@ -4,13 +4,13 @@
 use std::collections::HashMap;
 
 use onepass_mailbox_proto::{
-    COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, CommitOp,
-    CommitRequest, CommitResponse, CreateMailbox, CredentialId, CredentialRole, Enroll,
-    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, LocateRequest, Located, MailboxCreated,
-    MailboxId, MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig,
-    ServerRecord, SetCredentialRole, SetLocator, SetPush, SignatureParams, SignedEnrollTicket,
-    TICKET_VERSION, content_digest, credential_id, decode, encode, hex, signature_base,
-    signature_header, signature_input_header, ticket_signed_bytes,
+    COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, ChildKind, CommitOp,
+    CommitRequest, CommitResponse, CreateChild, CreateMailbox, CredentialId, CredentialRole,
+    Enroll, EnrollTicket, ErrorBody, ErrorCode, GrantCredential, LocateRequest, Located,
+    MailboxCreated, MailboxId, MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind,
+    ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush, SignatureParams,
+    SignedEnrollTicket, TICKET_VERSION, content_digest, credential_id, decode, encode, hex,
+    signature_base, signature_header, signature_input_header, ticket_signed_bytes,
 };
 
 use crate::credential::{Credential, CredentialKey};
@@ -287,10 +287,25 @@ impl MailboxClient {
         expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
     }
 
-    /// `DELETE /v1/mailboxes/{m}`: the creator abandons the mailbox within
-    /// 24 hours of its creation (spec D.5).
+    /// `DELETE /v1/mailboxes/{m}`: the owner deletes its child mailbox, or
+    /// the creator abandons a fresh account mailbox (spec D.5, sharing spec
+    /// 13.8).
     pub fn abandon(&self) -> Result<(), MailboxError> {
         expect_empty(self.signed(Method::Delete, &self.mailbox_path()?, &[])?)
+    }
+
+    /// `POST /v1/mailboxes/{m}/children` (manager of an account mailbox,
+    /// sharing spec 13.3). The open mailbox stays open.
+    pub fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        let target = format!("{}/children", self.mailbox_path()?);
+        let req = child_request(kind, owner_public_key, label)?;
+        let r = self.signed(Method::Post, &target, &encode(&req))?;
+        read(expect(r, &[200])?)
     }
 
     /// `PUT /v1/mailboxes/{m}/push`.
@@ -436,6 +451,20 @@ pub(crate) fn grant_request(
         public_key,
         role,
         put_kinds,
+        label: label.to_vec(),
+    };
+    req.check().map_err(local)?;
+    Ok(req)
+}
+
+pub(crate) fn child_request(
+    kind: ChildKind,
+    owner_public_key: [u8; 32],
+    label: &[u8],
+) -> Result<CreateChild, MailboxError> {
+    let req = CreateChild {
+        kind,
+        owner_public_key,
         label: label.to_vec(),
     };
     req.check().map_err(local)?;

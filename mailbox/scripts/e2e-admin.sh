@@ -43,12 +43,15 @@ case "${1:-}" in
     setup)
         invite="e2e-$(openssl rand -hex 16)"
         sql supabase_admin >/dev/null <<SQL
-insert into onepass_mailbox.plans (plan, max_bytes, max_records, max_credentials, req_per_min, max_commit_ops)
-values ('conformance', 67108864, 3000, 16, 6000, 20000)
+insert into onepass_mailbox.plans (plan, max_bytes, max_records, max_credentials, req_per_min, max_commit_ops,
+                                   max_children_shared, max_children_contact)
+values ('conformance', 67108864, 3000, 16, 6000, 20000, 16, 16)
 on conflict (plan) do update set
     max_bytes = excluded.max_bytes, max_records = excluded.max_records,
     max_credentials = excluded.max_credentials, req_per_min = excluded.req_per_min,
-    max_commit_ops = excluded.max_commit_ops;
+    max_commit_ops = excluded.max_commit_ops,
+    max_children_shared = excluded.max_children_shared,
+    max_children_contact = excluded.max_children_contact;
 insert into onepass_mailbox.invites (token_hash, plan, uses_left, expires_at)
 values (extensions.digest(convert_to('${invite}', 'UTF8'), 'sha256'), 'conformance', 1000, now() + interval '1 day');
 delete from onepass_mailbox.settings where name = 'open_signup';

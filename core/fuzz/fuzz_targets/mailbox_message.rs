@@ -38,4 +38,6 @@ fuzz_target!(|data: &[u8]| {
     run::<SetLocator>(data);
     run::<LocateRequest>(data);
     run::<Located>(data);
+    run::<ChildKind>(data);
+    run::<CreateChild>(data);
 });

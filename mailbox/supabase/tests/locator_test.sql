@@ -10,7 +10,7 @@
 -- without a signature (locate: up to 8 live mailboxes, oldest first),
 -- counted per IP key on the minute bucket and on 30 an hour. The creator
 -- credential, still a manager, abandons its mailbox within 24 hours while it
--- is fresh (api_abandon_mailbox); every api_* on it is then not_found, and
+-- is fresh (api_delete_mailbox, api_abandon_mailbox before Task 24); every api_* on it is then not_found, and
 -- maintenance purges it an hour later, its blob objects queued in
 -- blob_graves.
 --
@@ -79,7 +79,7 @@ create function onepass_test.mbxs(variadic names text[]) returns bytea[] languag
     select array_agg(onepass_test.mbx(n) order by i) from unnest(names) with ordinality u(n, i)
 $$;
 create function onepass_test.abandon(cred text, mbx text) returns text language sql volatile as $$
-    select s.status from onepass_mailbox.api_abandon_mailbox(
+    select s.status from onepass_mailbox.api_delete_mailbox(
         onepass_test.cid(cred), onepass_test.n(), now(), onepass_test.mbx(mbx)) s
 $$;
 create function onepass_test.info(cred text, mbx text) returns text language sql volatile as $$

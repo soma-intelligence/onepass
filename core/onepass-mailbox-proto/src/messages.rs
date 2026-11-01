@@ -784,6 +784,46 @@ impl Message for Located {
     }
 }
 
+// --------------------------------------------------------------- children
+
+/// What a child mailbox holds (sharing spec 13.3). Its plan follows: plan
+/// `shared` or plan `contact` of `seed.sql`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChildKind {
+    /// A shared vault or a family.
+    Shared,
+    /// The zone of a pair of contacts.
+    Contact,
+}
+
+impl Message for ChildKind {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// `POST /v1/mailboxes/{m}/children` (a manager of an account mailbox):
+/// creates a child whose only credential is `owner_public_key`, a fresh
+/// key, as owner and manager. Answered with `MailboxCreated`. Members join
+/// the child through grants by its owner, never by enroll ticket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateChild {
+    pub kind: ChildKind,
+    #[serde(with = "crate::bytes::fixed")]
+    pub owner_public_key: [u8; 32],
+    #[serde(with = "crate::bytes::vec")]
+    pub label: Vec<u8>,
+}
+
+impl Message for CreateChild {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.label.len() > LABEL_MAX {
+            return Err(ProtoError::TooLarge("label"));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1042,6 +1082,44 @@ mod tests {
             decode::<GrantCredential>(&encode(&long)),
             Err(ProtoError::TooLarge("label"))
         );
+    }
+
+    /// A child kind is one varint (Shared 0, Contact 1), then the owner key
+    /// raw and the label with its length; a label over 64 bytes is refused.
+    #[test]
+    fn child_messages() {
+        for kind in [ChildKind::Shared, ChildKind::Contact] {
+            rt(CreateChild {
+                kind,
+                owner_public_key: [6; 32],
+                label: b"vault".to_vec(),
+            });
+        }
+        let mut want = vec![PROTO_VERSION, 1];
+        want.extend([6u8; 32]);
+        want.extend([2, b'h', b'i']);
+        assert_eq!(
+            encode(&CreateChild {
+                kind: ChildKind::Contact,
+                owner_public_key: [6; 32],
+                label: b"hi".to_vec(),
+            }),
+            want
+        );
+        assert_eq!(encode(&ChildKind::Shared), [PROTO_VERSION, 0]);
+        let long = CreateChild {
+            kind: ChildKind::Shared,
+            owner_public_key: [6; 32],
+            label: vec![b'a'; LABEL_MAX + 1],
+        };
+        assert_eq!(
+            decode::<CreateChild>(&encode(&long)),
+            Err(ProtoError::TooLarge("label"))
+        );
+        let mut bad_kind = want.clone();
+        bad_kind[1] = 2;
+        assert!(decode::<CreateChild>(&bad_kind).is_err());
+        assert!(decode::<CreateChild>(&want[..want.len() - 1]).is_err());
     }
 
     /// A locator is 16 raw bytes; a lookup answers 1 to 8 distinct mailbox

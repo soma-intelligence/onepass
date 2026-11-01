@@ -933,13 +933,13 @@ Deno.test("POST locate is unsigned: one locate call with the IP key, 200 Located
   assertEquals(q.calls.length + old.calls.length + get.calls.length, 0);
 });
 
-Deno.test("DELETE mailbox is one api_abandon_mailbox call, 204; refused is 403, deleted is 404", async () => {
+Deno.test("DELETE mailbox is one api_delete_mailbox call, 204; refused is 403, deleted is 404", async () => {
   const k = await newKey();
   const target = `/v1/mailboxes/${MHEX}`;
   const db = new FakeDb(withKey(k));
   const r = await handler(deps(db))(await signed(k, "DELETE", target), IP);
   assertEquals(r.status, 204);
-  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_abandon_mailbox"]);
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_delete_mailbox"]);
   assertEquals(db.calls[2].args.map((x) => x.type), ["bytea", "bytea", "timestamptz", "bytea"]);
   assertEquals(db.calls[2].args[3].value, M);
   const refused = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
@@ -948,6 +948,64 @@ Deno.test("DELETE mailbox is one api_abandon_mailbox call, 204; refused is 403, 
     throw { code: "OP404", message: "not_found" };
   }));
   await assertError(await handler(deps(gone))(await signed(k, "DELETE", target), IP), "not_found");
+});
+
+/** CreateChild: version, kind index (0 Shared, 1 Contact), owner key, label. */
+function childBody(kind: number, pub: Uint8Array, label = new Uint8Array()): Uint8Array {
+  return new Uint8Array([1, kind, ...pub, label.length, ...label]);
+}
+
+Deno.test("POST children is one api_create_child call, 200 MailboxCreated; bad bodies never reach SQL", async () => {
+  const k = await newKey();
+  const owner = await newKey();
+  const child = new Uint8Array(16).fill(0x22);
+  const wake = new Uint8Array(16).fill(0x33);
+  const target = `/v1/mailboxes/${MHEX}/children`;
+  for (const [index, kind] of [[0, 2], [1, 3]]) {
+    const db = new FakeDb(withKey(k, () => [ok({ mailbox_id: child, incarnation: 7n, wake_topic: wake })]));
+    const r = await handler(deps(db))(
+      await signed(k, "POST", target, childBody(index, owner.pub, new Uint8Array([5, 6]))),
+      IP,
+    );
+    assertEquals(r.status, 200);
+    assertEquals(await bytes(r), proto.encodeCreated({ mailbox_id: child, incarnation: 7n, wake_topic: wake }));
+    assertEquals(db.fns(), ["ip_gate", "credential_key", "api_create_child"]);
+    const args = db.calls[2].args;
+    assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+    assertEquals(args.slice(4).map((x) => [x.type, x.value]), [
+      ["smallint", kind],
+      ["bytea", owner.pub],
+      ["bytea", new Uint8Array([5, 6])],
+    ]);
+  }
+
+  // In-band refusals keep their codes.
+  for (const code of ["forbidden", "quota", "malformed"] as Code[]) {
+    const db = new FakeDb(withKey(k, () => [{ status: code, retry_after: null }]));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, childBody(0, owner.pub)), IP), code);
+  }
+  const limited = new FakeDb(withKey(k, () => [{ status: "rate_limited", retry_after: 3600 }]));
+  await assertError(
+    await handler(deps(limited))(await signed(k, "POST", target, childBody(1, owner.pub)), IP),
+    "rate_limited",
+    3600,
+  );
+
+  // An off-curve owner key, an unknown kind, a long label, a short body.
+  const offCurve = new Uint8Array(32);
+  offCurve[0] = 2;
+  for (
+    const body of [
+      childBody(0, offCurve),
+      childBody(2, owner.pub),
+      childBody(0, owner.pub, new Uint8Array(65)),
+      childBody(0, owner.pub).slice(0, 20),
+    ]
+  ) {
+    const db = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, body), IP), "malformed");
+    assert(!db.fns().includes("api_create_child"));
+  }
 });
 
 // ------------------------------------------------------------ client address

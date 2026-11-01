@@ -13,18 +13,21 @@ use onepass_mailbox::{
     Rendezvous, locate, tls_client_config,
 };
 use onepass_mailbox_proto::{
-    BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery, CommitOp,
-    CommitRequest, CommitResponse, ConflictEntry, CreateMailbox, CredentialRole, Enroll, ErrorBody,
-    ErrorCode, GrantCredential, INLINE_MAX, Limits, LocateRequest, Located, MailboxCreated,
-    MailboxInfo, Op, PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole,
-    SetLocator, SetPush, Usage, blob_sha256, check_skew, content_digest, credential_id, decode,
-    encode, hex, parse_signature_headers, signature_base, ticket_signed_bytes,
+    BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery,
+    ChildKind, CommitOp, CommitRequest, CommitResponse, ConflictEntry, CreateChild, CreateMailbox,
+    CredentialRole, Enroll, ErrorBody, ErrorCode, GrantCredential, INLINE_MAX, Limits,
+    LocateRequest, Located, MailboxCreated, MailboxInfo, Op, PushKind, RECORD_MAX, ServerConfig,
+    ServerRecord, SetCredentialRole, SetLocator, SetPush, Usage, blob_sha256, check_skew,
+    content_digest, credential_id, decode, encode, hex, parse_signature_headers, signature_base,
+    ticket_signed_bytes,
 };
 
 const PREFIX: &str = "/functions/v1/mailbox";
 const MAILBOX: [u8; 16] = [9; 16];
 /// The locator the fake server knows.
 const LOCATOR: [u8; 16] = [0x4c; 16];
+/// The child mailbox the fake server creates.
+const CHILD: [u8; 16] = [0xc4; 16];
 
 // ------------------------------------------------------------ fake server
 
@@ -281,6 +284,15 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
             decode::<SetLocator>(&req.body).unwrap();
             Resp::empty(204)
         }
+        ("POST", r) if r == format!("{m}/children") => {
+            let c = decode::<CreateChild>(&req.body).unwrap();
+            assert_eq!(c.kind, ChildKind::Contact);
+            ok(encode(&MailboxCreated {
+                mailbox_id: CHILD,
+                incarnation: 6,
+                wake_topic: [4; 16],
+            }))
+        }
         ("POST", "/v1/locate") => {
             if decode::<LocateRequest>(&req.body).unwrap().locator == LOCATOR {
                 ok(encode(&Located {
@@ -434,6 +446,17 @@ fn every_request_is_signed() {
     );
     a.set_push(PushKind::Fcm, b"token").unwrap();
     a.set_locator(LOCATOR).unwrap();
+    let child_owner = Credential::generate().unwrap().public_key();
+    let child = a
+        .create_child(ChildKind::Contact, child_owner.to_bytes(), b"contact")
+        .unwrap();
+    assert_eq!(child.mailbox_id, CHILD);
+    assert_eq!(a.mailbox(), Some(MAILBOX), "the parent stays open");
+    assert_eq!(
+        a.create_child(ChildKind::Shared, child_owner.to_bytes(), &[0; 65]),
+        Err(MailboxError::TooLarge),
+        "a long label is refused before sending"
+    );
     let big = vec![5u8; INLINE_MAX + 1];
     let body = a.body_for(&big).unwrap();
     a.upload_blobs(&[&big]).unwrap();
@@ -516,6 +539,7 @@ fn every_request_is_signed() {
         ("PUT", format!("{m}/credentials/{}/role", hex(&[8; 16]))),
         ("PUT", format!("{m}/push")),
         ("PUT", format!("{m}/locator")),
+        ("POST", format!("{m}/children")),
         ("DELETE", m.clone()),
         ("POST", format!("{m}/blobs/uploads")),
         ("POST", format!("{m}/blobs/downloads")),

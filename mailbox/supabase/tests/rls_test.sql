@@ -43,7 +43,7 @@ select onepass_test.ok(
     (select bool_and(not has_function_privilege(r, p.oid, 'execute'))
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
           unnest(array['anon', 'authenticated', 'service_role', 'onepass_mailbox_api', 'onepass_mailbox_janitor']) r
-     where n.nspname = 'onepass_mailbox' and p.proname in ('current_mailbox', 'current_rdv', 'current_invite', 'current_locator', 'in_maintenance')),
+     where n.nspname = 'onepass_mailbox' and p.proname in ('current_mailbox', 'current_rdv', 'current_invite', 'current_locator', 'current_parent', 'in_maintenance')),
     'rls_helpers_not_executable_by_others');
 
 -- Policies call their helpers once per statement: every helper call sits in
@@ -55,7 +55,7 @@ select onepass_test.ok(
      from pg_policies where schemaname = 'onepass_mailbox'),
     'policy_helpers_wrapped_in_select');
 select onepass_test.ok(
-    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 16,
+    (select count(*) from pg_policies where schemaname = 'onepass_mailbox' and qual ~ 'SELECT onepass_mailbox\.') = 17,
     'policies_using_helpers_counted');
 
 -- Two mailboxes A and B, written in maintenance by the owner.
@@ -155,7 +155,7 @@ select onepass_test.ok(
     'update_of_a_allowed');
 
 -- Plans read only, invites hidden without the invite setting, rate open to the owner.
-select onepass_test.ok((select count(*) from onepass_mailbox.plans) = 2, 'plans_readable');
+select onepass_test.ok((select count(*) from onepass_mailbox.plans) = 4, 'plans_readable');
 select onepass_test.throws(
     $$insert into onepass_mailbox.plans values ('gold', 1, 1, 1, 1, 1)$$,
     '42501', 'plans_not_writable');

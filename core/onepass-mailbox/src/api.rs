@@ -3,8 +3,9 @@
 //! in-memory model. The sync engine and the conformance suite take either.
 
 use onepass_mailbox_proto::{
-    Body, ChangesPage, CommitOp, CommitResponse, CredentialId, CredentialRole, MailboxCreated,
-    MailboxId, MailboxInfo, PushKind, ServerConfig, ServerRecord, SignedEnrollTicket,
+    Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
+    MailboxCreated, MailboxId, MailboxInfo, PushKind, ServerConfig, ServerRecord,
+    SignedEnrollTicket,
 };
 
 use crate::client::{ChangeFeed, FeedPage, MailboxClient};
@@ -84,15 +85,34 @@ pub trait MailboxApi: Send {
     /// one again changes nothing. Another mailbox may hold it too.
     fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError>;
 
-    /// `DELETE /v1/mailboxes/{m}`: the credential that created the mailbox,
-    /// still a manager, abandons it within 24 hours of its creation while
-    /// it is fresh: no other credential has made a request or enrolled, and
-    /// at most one other exists (the unused recovery credential). The losing
-    /// side of a migration race (spec D.5). Anything else is `Forbidden`.
-    /// Every request on it is then `Server(NotFound)`, and once the server
-    /// purges it (an hour later) `Server(UnknownCredential)`: both mean the
-    /// mailbox is gone.
+    /// `DELETE /v1/mailboxes/{m}`. A child mailbox: its owner deletes it at
+    /// any time (stop sharing, the end of a transfer, sharing spec 13.8).
+    /// An account mailbox: the credential that created it, still a
+    /// manager, abandons it within 24 hours of its creation while it is
+    /// fresh (no other credential has made a request or enrolled, at most
+    /// one other exists: the unused recovery credential) and holds no live
+    /// child. The losing side of a migration race (spec D.5). Anything else
+    /// is `Forbidden`. Every request on it is then `Server(NotFound)`, and
+    /// once the server purges it (an hour later)
+    /// `Server(UnknownCredential)`: both mean the mailbox is gone.
     fn abandon(&self) -> Result<(), MailboxError>;
+
+    /// `POST /v1/mailboxes/{m}/children`: a manager of the open account
+    /// mailbox creates a child (sharing spec 13.3) whose only credential is
+    /// `owner_public_key`, a fresh key, as owner and manager; the child
+    /// takes plan `shared` or `contact`. The open mailbox stays open; open
+    /// the child with the owner's client. Members join it through `grant`
+    /// by the owner, never by enroll ticket (`Forbidden`). A child of a
+    /// child, or a caller below manager, is `Forbidden`; the parent's cap of
+    /// live children of that kind is `Server(Quota)`; 20 a day per parent,
+    /// then `Retry` with the wait; a key some mailbox holds is
+    /// `Server(Malformed)`.
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError>;
 
     /// A ticket for `new_credential_pub`, valid 300 s from `now`. No request.
     fn issue_ticket(
@@ -196,6 +216,15 @@ impl MailboxApi for MailboxClient {
 
     fn abandon(&self) -> Result<(), MailboxError> {
         MailboxClient::abandon(self)
+    }
+
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        MailboxClient::create_child(self, kind, owner_public_key, label)
     }
 
     fn issue_ticket(

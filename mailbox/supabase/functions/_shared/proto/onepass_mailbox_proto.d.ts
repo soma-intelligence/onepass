@@ -20,6 +20,11 @@ export function decodeCommit(bytes: Uint8Array): any;
 
 export function decodeCreate(bytes: Uint8Array): any;
 
+/**
+ * `{ kind: "Shared" | "Contact", owner_public_key, label }`.
+ */
+export function decodeCreateChild(bytes: Uint8Array): any;
+
 export function decodeEnroll(bytes: Uint8Array): any;
 
 /**
@@ -100,6 +105,7 @@ export interface InitOutput {
     readonly decodeBlobLookup: (a: number, b: number) => [number, number, number];
     readonly decodeCommit: (a: number, b: number) => [number, number, number];
     readonly decodeCreate: (a: number, b: number) => [number, number, number];
+    readonly decodeCreateChild: (a: number, b: number) => [number, number, number];
     readonly decodeEnroll: (a: number, b: number) => [number, number, number];
     readonly decodeGrant: (a: number, b: number) => [number, number, number];
     readonly decodeLocateRequest: (a: number, b: number) => [number, number, number];

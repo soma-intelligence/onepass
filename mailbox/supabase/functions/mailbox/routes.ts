@@ -388,15 +388,57 @@ async function locate(c: Ctx): Promise<Response> {
   return postcard(proto.encodeLocated({ mailbox_ids: rows.map((r) => r.mailbox_id) }));
 }
 
-/** DELETE /v1/mailboxes/{m}: the creator abandons a fresh mailbox (spec D.5). */
-async function abandon(c: Ctx): Promise<Response> {
+/**
+ * DELETE /v1/mailboxes/{m}: the owner deletes its child mailbox at any time;
+ * the creator abandons a fresh account mailbox without a live child (spec
+ * D.5, sharing spec 13.8).
+ */
+async function deleteMailbox(c: Ctx): Promise<Response> {
   const m = unhex(c.groups[0]);
   await authenticate(c, m);
   requireEmpty(c);
-  const rows = await call(c.deps.db, "api_abandon_mailbox", signedArgs(c, m));
+  const rows = await call(c.deps.db, "api_delete_mailbox", signedArgs(c, m));
   const refused = inBand(rows[0]);
   if (refused) throw refused;
   return empty(204);
+}
+
+/** ChildKind on the wire, as the SQL mailbox kind. */
+const CHILD_KIND: Record<string, number> = { Shared: 2, Contact: 3 };
+
+/**
+ * POST /v1/mailboxes/{m}/children: a manager of an account mailbox creates a
+ * shared or contact child owned by a fresh key (sharing spec 13.3). The
+ * owner key is imported first (a curve point), as on create and grant.
+ */
+async function createChild(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const b = decode(proto.decodeCreateChild, c.body) as {
+    kind: string;
+    owner_public_key: Uint8Array;
+    label: Uint8Array;
+  };
+  const kind = CHILD_KIND[b.kind];
+  if (kind === undefined) throw new Refusal("malformed");
+  try {
+    await importCredentialKey(b.owner_public_key);
+  } catch (e) {
+    if (e instanceof BadKey) throw new Refusal("malformed");
+    throw e;
+  }
+  const rows = await call(c.deps.db, "api_create_child", [
+    ...signedArgs(c, m),
+    a.smallint(kind),
+    a.bytea(b.owner_public_key),
+    a.bytea(b.label),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  const r = rows[0];
+  return postcard(
+    proto.encodeCreated({ mailbox_id: r.mailbox_id, incarnation: r.incarnation, wake_topic: r.wake_topic }),
+  );
 }
 
 const PUSH_KIND: Record<string, number> = { None: 0, Fcm: 1, Apns: 2, UnifiedPush: 3 };
@@ -693,7 +735,8 @@ const ROUTES: Route[] = [
   { method: "GET", re: /^\/v1\/config$/, auth: "none", query: "none", maxBody: MAX, run: config },
   { method: "POST", re: /^\/v1\/mailboxes$/, auth: "body_key", query: "none", maxBody: MAX, run: create },
   { method: "GET", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: info },
-  { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: abandon },
+  { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: deleteMailbox },
+  { method: "POST", re: new RegExp(`^${MB}/children$`), auth: "signed", query: "none", maxBody: MAX, run: createChild },
   { method: "PUT", re: new RegExp(`^${MB}/locator$`), auth: "signed", query: "none", maxBody: MAX, run: setLocator },
   { method: "POST", re: /^\/v1\/locate$/, auth: "none", query: "none", maxBody: 64, run: locate },
   { method: "POST", re: new RegExp(`^${MB}/credentials$`), auth: "body_key", query: "none", maxBody: MAX, run: enroll },

@@ -9,6 +9,7 @@ export const decodeBlobAnnounce: (a: number, b: number) => [number, number, numb
 export const decodeBlobLookup: (a: number, b: number) => [number, number, number];
 export const decodeCommit: (a: number, b: number) => [number, number, number];
 export const decodeCreate: (a: number, b: number) => [number, number, number];
+export const decodeCreateChild: (a: number, b: number) => [number, number, number];
 export const decodeEnroll: (a: number, b: number) => [number, number, number];
 export const decodeGrant: (a: number, b: number) => [number, number, number];
 export const decodeLocateRequest: (a: number, b: number) => [number, number, number];
