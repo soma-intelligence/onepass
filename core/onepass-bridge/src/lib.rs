@@ -15,6 +15,7 @@ pub mod origin;
 pub mod pairing;
 pub mod policy;
 pub mod provider;
+pub mod quirks;
 pub mod service;
 pub mod session;
 pub mod transcript;
