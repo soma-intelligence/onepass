@@ -78,6 +78,9 @@ const SUPERSEDED_KEY: &str = "password_change_superseded";
 /// The capped log of remote deletions the store refused (outside the `sync.`
 /// namespace of the FFI handle, so only the core writes it).
 const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
+/// Fetched changes dropped because their version exceeds `i64::MAX`
+/// (`stage_remote`), same encoding and cap as the ignored deletions.
+const IGNORED_VERSIONS_KEY: &str = "ignored_versions";
 /// The vaults the Travel Mode keeps off this device (16-byte ids).
 const TRAVEL_HIDDEN_KEY: &str = "travel_hidden";
 const IGNORED_LOG_VERSION: u8 = 1;
@@ -1537,7 +1540,11 @@ impl SyncStore {
     /// column (above `i64::MAX`: no honest writer gets there, every local
     /// write checks it) is dropped here too, write or deletion, and the
     /// rest of the fetch goes on: one forged record never wedges a fetch
-    /// (Task 19 carried item 7). Dropping a deletion only keeps a row.
+    /// (Task 19 carried item 7). Dropping a deletion only keeps a row. Each
+    /// drop is logged (`ignored_versions`). The wedge left is scoped to the
+    /// record: a server that serves an existing id only at such a version
+    /// keeps that one record at the version the device holds, and nothing
+    /// else, until it serves a valid version again.
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
         let hidden = self.travel_hidden()?;
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
@@ -1551,7 +1558,7 @@ impl SyncStore {
             return Ok(());
         }
         let Ok(v) = to_i64(c.version) else {
-            return Ok(());
+            return append_log(&self.conn, IGNORED_VERSIONS_KEY, &[(c.kind, c.id)]);
         };
         self.conn
             .execute(
@@ -2005,6 +2012,13 @@ impl SyncStore {
                 .map_err(store_err)?;
         }
         tx.commit()
+    }
+
+    /// Fetched changes dropped for a version above `i64::MAX`, oldest
+    /// first, one entry per record with the latest time, at most
+    /// `MAX_IGNORED_DELETIONS`.
+    pub fn ignored_versions(&self) -> Result<Vec<IgnoredDeletion>> {
+        self.read(|c| Ok(log_in(c, IGNORED_VERSIONS_KEY).unwrap_or_default()))
     }
 
     /// Remote deletions (or removals by a full fetch) the store refused,
@@ -5016,6 +5030,17 @@ mod tests {
         );
         let n = s.get(RecordKind::VaultMeta, next).unwrap().unwrap();
         assert_eq!((n.version, n.data), (i64::MAX as u64, vec![3]));
+        // Review M6 (fix round 1): each dropped change is logged, once.
+        let logged: Vec<(RecordKind, Id)> = s
+            .ignored_versions()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.id))
+            .collect();
+        assert_eq!(
+            logged,
+            vec![(RecordKind::VaultMeta, bad), (RecordKind::VaultMeta, kept)]
+        );
     }
 
     #[test]
