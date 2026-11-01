@@ -15,9 +15,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
-    CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, MailboxCreated, MailboxInfo,
-    Message, ServerConfig, ServerRecord, SetCredentialRole, SetPush, SignatureParams,
-    SignedEnrollTicket, decode, encode,
+    CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, Located, MailboxCreated,
+    MailboxInfo, Message, ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush,
+    SignatureParams, SignedEnrollTicket, decode, encode,
 };
 
 fn err(e: impl Display) -> JsError {
@@ -79,6 +79,12 @@ pub fn decode_set_role(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<SetCredentialRole>(bytes)
 }
 
+/// `{ locator }`.
+#[wasm_bindgen(js_name = decodeSetLocator)]
+pub fn decode_set_locator(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<SetLocator>(bytes)
+}
+
 #[wasm_bindgen(js_name = decodeBlobAnnounce)]
 pub fn decode_blob_announce(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<BlobAnnounce>(bytes)
@@ -129,6 +135,12 @@ pub fn encode_config(v: JsValue) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen(js_name = encodeBlobUrls)]
 pub fn encode_blob_urls(v: JsValue) -> Result<Vec<u8>, JsError> {
     enc::<BlobUrls>(v)
+}
+
+/// `{ mailbox_id }`.
+#[wasm_bindgen(js_name = encodeLocated)]
+pub fn encode_located(v: JsValue) -> Result<Vec<u8>, JsError> {
+    enc::<Located>(v)
 }
 
 #[wasm_bindgen(js_name = encodeError)]

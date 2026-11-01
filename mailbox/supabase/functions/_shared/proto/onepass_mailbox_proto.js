@@ -144,6 +144,21 @@ export function decodeGrant(bytes) {
 }
 
 /**
+ * `{ locator }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeSetLocator(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeSetLocator(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {any}
  */
@@ -262,6 +277,21 @@ export function encodeError(v) {
  */
 export function encodeInfo(v) {
     const ret = wasm.encodeInfo(v);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
+ * `{ mailbox_id }`.
+ * @param {any} v
+ * @returns {Uint8Array}
+ */
+export function encodeLocated(v) {
+    const ret = wasm.encodeLocated(v);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }

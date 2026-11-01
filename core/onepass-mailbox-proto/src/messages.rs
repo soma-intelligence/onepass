@@ -717,6 +717,38 @@ impl Message for CredentialRole {
     }
 }
 
+// ---------------------------------------------------------------- locator
+
+/// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): the 16 bytes
+/// the client derives from the Secret Key. Replaces the mailbox's locator;
+/// one held by another mailbox is refused (`Forbidden`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetLocator {
+    #[serde(with = "crate::bytes::fixed")]
+    pub locator: [u8; 16],
+}
+
+impl Message for SetLocator {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// `200` of `GET /v1/locate/{locator}` (unsigned): the mailbox the locator
+/// names. A client trusts it only as "where to look": the recovery
+/// credential still has to sign there, and the core checks what it reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Located {
+    #[serde(with = "crate::bytes::fixed")]
+    pub mailbox_id: MailboxId,
+}
+
+impl Message for Located {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -975,6 +1007,26 @@ mod tests {
             decode::<GrantCredential>(&encode(&long)),
             Err(ProtoError::TooLarge("label"))
         );
+    }
+
+    /// A locator and a located mailbox id are 16 raw bytes, nothing else.
+    #[test]
+    fn locator_messages() {
+        rt(SetLocator { locator: [3; 16] });
+        rt(Located {
+            mailbox_id: [4; 16],
+        });
+        let mut want = vec![PROTO_VERSION];
+        want.extend([3u8; 16]);
+        assert_eq!(encode(&SetLocator { locator: [3; 16] }), want);
+        let mut short = vec![PROTO_VERSION];
+        short.extend([4u8; 15]);
+        assert!(decode::<Located>(&short).is_err());
+        let mut long = encode(&Located {
+            mailbox_id: [4; 16],
+        });
+        long.push(0);
+        assert!(decode::<Located>(&long).is_err());
     }
 
     /// Bit k of `put_kinds` is kind k: byte k / 8, bit k % 8 from the least

@@ -38,6 +38,10 @@ impl ConformanceTarget for Fake {
     fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous {
         self.0.rendezvous(session, role)
     }
+
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+        self.0.locate(locator)
+    }
 }
 
 #[test]
@@ -241,4 +245,20 @@ fn rendezvous_retries_a_busy_server() {
     fake.faults().fail_next(MailboxError::Offline);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     assert_eq!(a.recv_frame(8, deadline).unwrap(), b"hi");
+}
+
+/// A day after its creation, not even the creator abandons a mailbox
+/// (`api_abandon_mailbox`: created_at within 24 hours).
+#[test]
+fn abandon_refused_after_day() {
+    let fake = FakeMailbox::new();
+    let mut c = fake.client(Credential::generate().unwrap());
+    let m = c.create(None, b"").unwrap().mailbox_id;
+    fake.age_mailbox(m, 86_400);
+    assert_eq!(c.abandon(), Err(MailboxError::Forbidden));
+    c.info().expect("still there");
+    let mut fresh = fake.client(Credential::generate().unwrap());
+    let f = fresh.create(None, b"").unwrap().mailbox_id;
+    fake.age_mailbox(f, 86_399);
+    fresh.abandon().expect("within the day");
 }

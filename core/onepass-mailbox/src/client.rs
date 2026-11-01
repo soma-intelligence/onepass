@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use onepass_mailbox_proto::{
     COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, CommitOp,
     CommitRequest, CommitResponse, CreateMailbox, CredentialId, CredentialRole, Enroll,
-    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, MailboxCreated, MailboxId, MailboxInfo,
-    Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig, ServerRecord,
-    SetCredentialRole, SetPush, SignatureParams, SignedEnrollTicket, TICKET_VERSION,
+    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, Located, MailboxCreated, MailboxId,
+    MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig, ServerRecord,
+    SetCredentialRole, SetLocator, SetPush, SignatureParams, SignedEnrollTicket, TICKET_VERSION,
     content_digest, credential_id, decode, encode, hex, signature_base, signature_header,
     signature_input_header, ticket_signed_bytes,
 };
@@ -280,6 +280,19 @@ impl MailboxClient {
         expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
     }
 
+    /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4).
+    pub fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+        let target = format!("{}/locator", self.mailbox_path()?);
+        let req = SetLocator { locator };
+        expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
+    }
+
+    /// `DELETE /v1/mailboxes/{m}`: the creator abandons the mailbox within
+    /// 24 hours of its creation (spec D.5).
+    pub fn abandon(&self) -> Result<(), MailboxError> {
+        expect_empty(self.signed(Method::Delete, &self.mailbox_path()?, &[])?)
+    }
+
     /// `PUT /v1/mailboxes/{m}/push`.
     pub fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         let target = format!("{}/push", self.mailbox_path()?);
@@ -477,6 +490,23 @@ pub(crate) fn issue_ticket(
         approver_credential: credential.id(),
         sig,
     })
+}
+
+/// `GET /v1/locate/{locator}` (spec D.4): the mailbox a locator names, or
+/// `None` (`not_found`: unknown, or the mailbox was abandoned). Unsigned:
+/// a device restoring from its Emergency Kit holds no credential yet. The
+/// id is only where to look: the recovery credential signs there next, and
+/// what it reads is checked by the core.
+pub fn locate(endpoint: &Endpoint, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+    let http = Http::new(endpoint)?;
+    let url = format!("{}/v1/locate/{}", http::base_url(endpoint)?, hex(&locator));
+    match http
+        .send(Method::Get, &url, &[], &[], RESPONSE_MAX)
+        .and_then(|r| expect(r, &[200]))
+    {
+        Err(MailboxError::Server(ErrorCode::NotFound)) => Ok(None),
+        r => Ok(Some(read::<Located>(r?)?.mailbox_id)),
+    }
 }
 
 /// A record answer is for the key asked.

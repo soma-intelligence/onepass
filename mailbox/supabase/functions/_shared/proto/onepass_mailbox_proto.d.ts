@@ -27,6 +27,11 @@ export function decodeEnroll(bytes: Uint8Array): any;
  */
 export function decodeGrant(bytes: Uint8Array): any;
 
+/**
+ * `{ locator }`.
+ */
+export function decodeSetLocator(bytes: Uint8Array): any;
+
 export function decodeSetPush(bytes: Uint8Array): any;
 
 /**
@@ -47,6 +52,11 @@ export function encodeCreated(v: any): Uint8Array;
 export function encodeError(v: any): Uint8Array;
 
 export function encodeInfo(v: any): Uint8Array;
+
+/**
+ * `{ mailbox_id }`.
+ */
+export function encodeLocated(v: any): Uint8Array;
 
 export function encodeRecord(v: any): Uint8Array;
 
@@ -90,6 +100,7 @@ export interface InitOutput {
     readonly decodeCreate: (a: number, b: number) => [number, number, number];
     readonly decodeEnroll: (a: number, b: number) => [number, number, number];
     readonly decodeGrant: (a: number, b: number) => [number, number, number];
+    readonly decodeSetLocator: (a: number, b: number) => [number, number, number];
     readonly decodeSetPush: (a: number, b: number) => [number, number, number];
     readonly decodeSetRole: (a: number, b: number) => [number, number, number];
     readonly encodeBlobUrls: (a: any) => [number, number, number, number];
@@ -99,6 +110,7 @@ export interface InitOutput {
     readonly encodeCreated: (a: any) => [number, number, number, number];
     readonly encodeError: (a: any) => [number, number, number, number];
     readonly encodeInfo: (a: any) => [number, number, number, number];
+    readonly encodeLocated: (a: any) => [number, number, number, number];
     readonly encodeRecord: (a: any) => [number, number, number, number];
     readonly parseChangesQuery: (a: number, b: number) => [number, number, number];
     readonly parseSignatureHeaders: (a: number, b: number, c: number, d: number) => [number, number, number];

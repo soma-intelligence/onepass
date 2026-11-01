@@ -32,7 +32,7 @@ use std::fmt;
 pub const RETRY_AFTER_MAX: u32 = 3600;
 
 pub use api::MailboxApi;
-pub use client::{ChangeFeed, FeedPage, MailboxClient};
+pub use client::{ChangeFeed, FeedPage, MailboxClient, locate};
 pub use credential::{Credential, CredentialKey};
 pub use http::{Endpoint, tls_client_config};
 pub use onepass_mailbox_proto::ErrorCode;

@@ -10,19 +10,21 @@ use std::sync::{Arc, Mutex};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox::{
     ChangeFeed, Credential, CredentialKey, Endpoint, MailboxClient, MailboxError, RdvRole,
-    Rendezvous, tls_client_config,
+    Rendezvous, locate, tls_client_config,
 };
 use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery, CommitOp,
     CommitRequest, CommitResponse, ConflictEntry, CreateMailbox, CredentialRole, Enroll, ErrorBody,
-    ErrorCode, GrantCredential, INLINE_MAX, Limits, MailboxCreated, MailboxInfo, Op, PushKind,
-    RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole, SetPush, Usage, blob_sha256,
-    check_skew, content_digest, credential_id, decode, encode, hex, parse_signature_headers,
-    signature_base, ticket_signed_bytes,
+    ErrorCode, GrantCredential, INLINE_MAX, Limits, Located, MailboxCreated, MailboxInfo, Op,
+    PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush,
+    Usage, blob_sha256, check_skew, content_digest, credential_id, decode, encode, hex,
+    parse_signature_headers, signature_base, ticket_signed_bytes,
 };
 
 const PREFIX: &str = "/functions/v1/mailbox";
 const MAILBOX: [u8; 16] = [9; 16];
+/// The locator the fake server knows.
+const LOCATOR: [u8; 16] = [0x4c; 16];
 
 // ------------------------------------------------------------ fake server
 
@@ -274,6 +276,20 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
             Resp::empty(204)
         }
         ("DELETE", r) if r.starts_with(&format!("{m}/credentials/")) => Resp::empty(204),
+        ("DELETE", r) if r == m => Resp::empty(204),
+        ("PUT", r) if r == format!("{m}/locator") => {
+            decode::<SetLocator>(&req.body).unwrap();
+            Resp::empty(204)
+        }
+        ("GET", r) if r.starts_with("/v1/locate/") => {
+            if r == format!("/v1/locate/{}", hex(&LOCATOR)) {
+                ok(encode(&Located {
+                    mailbox_id: MAILBOX,
+                }))
+            } else {
+                Resp::error(ErrorCode::NotFound, 404, None)
+            }
+        }
         ("PUT", r) if r == format!("{m}/push") => {
             decode::<SetPush>(&req.body).unwrap();
             Resp::empty(204)
@@ -417,6 +433,7 @@ fn every_request_is_signed() {
         "put_kinds without the write role is refused before sending"
     );
     a.set_push(PushKind::Fcm, b"token").unwrap();
+    a.set_locator(LOCATOR).unwrap();
     let big = vec![5u8; INLINE_MAX + 1];
     let body = a.body_for(&big).unwrap();
     a.upload_blobs(&[&big]).unwrap();
@@ -428,6 +445,11 @@ fn every_request_is_signed() {
     let mut b = MailboxClient::new(server.endpoint(), second).unwrap();
     b.enroll(&ticket, b"laptop").unwrap();
     assert_eq!(b.mailbox(), Some(MAILBOX));
+    a.abandon().unwrap();
+
+    // The lookup needs no key and sends no signature.
+    assert_eq!(locate(&server.endpoint(), LOCATOR).unwrap(), Some(MAILBOX));
+    assert_eq!(locate(&server.endpoint(), [1; 16]).unwrap(), None);
 
     let keys = HashMap::from([
         (first_key.id(), first_key.to_bytes()),
@@ -443,7 +465,11 @@ fn every_request_is_signed() {
             continue;
         }
         let target = r.target().unwrap();
-        if target == "/v1/config" {
+        if target == "/v1/config" || target.starts_with("/v1/locate/") {
+            assert!(r.header("signature").is_none(), "{target}");
+            assert!(r.header("signature-input").is_none(), "{target}");
+            assert!(r.body.is_empty(), "{target}");
+            assert_eq!(r.method, "GET", "{target}");
             continue;
         }
         let kid = verify(r, &keys).unwrap_or_else(|e| panic!("{} {target}: {e}", r.method));
@@ -475,6 +501,8 @@ fn every_request_is_signed() {
         ("POST", format!("{m}/grants")),
         ("PUT", format!("{m}/credentials/{}/role", hex(&[8; 16]))),
         ("PUT", format!("{m}/push")),
+        ("PUT", format!("{m}/locator")),
+        ("DELETE", m.clone()),
         ("POST", format!("{m}/blobs/uploads")),
         ("POST", format!("{m}/blobs/downloads")),
         ("POST", format!("{m}/credentials")),
@@ -484,11 +512,68 @@ fn every_request_is_signed() {
             "{method} {route}"
         );
     }
+    let lookups: Vec<&str> = reqs
+        .iter()
+        .filter_map(|r| r.target())
+        .filter(|t| t.starts_with("/v1/locate/"))
+        .collect();
+    assert_eq!(
+        lookups,
+        [
+            format!("/v1/locate/{}", hex(&LOCATOR)),
+            format!("/v1/locate/{}", hex(&[1; 16]))
+        ]
+    );
     let changes = reqs.iter().find(|r| r.path.contains("/changes")).unwrap();
     assert_eq!(
         changes.target().unwrap(),
         format!("{m}/changes?after=0&limit=1000&full=1")
     );
+}
+
+/// The unsigned lookup reads only a strict `Located` from a 200, and maps
+/// the error codes as every other route does.
+#[test]
+fn locate_answers_are_checked() {
+    let answer: Arc<Mutex<Resp>> = Arc::new(Mutex::new(Resp::empty(200)));
+    let a = answer.clone();
+    let server = Server::start(move |_, _| {
+        let r = a.lock().unwrap();
+        Resp {
+            status: r.status,
+            headers: r.headers.clone(),
+            body: r.body.clone(),
+        }
+    });
+    let cases = [
+        (
+            Resp::postcard(200, vec![1, 2, 3]),
+            Err(MailboxError::Malformed("response")),
+        ),
+        (Resp::empty(204), Err(MailboxError::Malformed("status"))),
+        (
+            Resp::error(ErrorCode::RateLimited, 429, Some(1200)),
+            Err(MailboxError::Retry { after: Some(1200) }),
+        ),
+        (
+            Resp::error(ErrorCode::NoRoute, 404, None),
+            Err(MailboxError::Server(ErrorCode::NoRoute)),
+        ),
+        (Resp::error(ErrorCode::NotFound, 404, None), Ok(None)),
+        (
+            Resp::postcard(
+                200,
+                encode(&Located {
+                    mailbox_id: [6; 16],
+                }),
+            ),
+            Ok(Some([6; 16])),
+        ),
+    ];
+    for (resp, want) in cases {
+        *answer.lock().unwrap() = resp;
+        assert_eq!(locate(&server.endpoint(), [2; 16]), want);
+    }
 }
 
 #[test]

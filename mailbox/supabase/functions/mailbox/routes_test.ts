@@ -865,6 +865,94 @@ Deno.test("forbidden_maps_to_403: in band and raised, with the Forbidden wire co
   assertEquals(proto.encodeError({ code: "Forbidden", retry_after: null }), new Uint8Array([1, 14, 0]));
 });
 
+// --------------------------------------------------------------- locator
+
+Deno.test("PUT locator is one api_set_locator call, 204; a short body is malformed before SQL", async () => {
+  const k = await newKey();
+  const loc = new Uint8Array(16).fill(0x5a);
+  const target = `/v1/mailboxes/${MHEX}/locator`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP);
+  assertEquals(r.status, 204);
+  assertEquals(await bytes(r), new Uint8Array());
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_set_locator"]);
+  const args = db.calls[2].args;
+  assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+  assertEquals(args.slice(4).map((x) => [x.type, x.value]), [["bytea", loc]]);
+  for (const body of [new Uint8Array([1, ...loc.slice(1)]), new Uint8Array([1, ...loc, 0])]) {
+    const db2 = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db2))(await signed(k, "PUT", target, body), IP), "malformed");
+    assert(!db2.fns().includes("api_set_locator"));
+  }
+  // A locator another mailbox holds: in-band forbidden.
+  const taken = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  await assertError(
+    await handler(deps(taken))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP),
+    "forbidden",
+  );
+});
+
+Deno.test("GET locate is unsigned: one locate call with the IP key, 200 Located or 404 not_found", async () => {
+  const loc = new Uint8Array(16).fill(0x5b);
+  const target = `/v1/locate/${toHex(loc)}`;
+  const db = new FakeDb(() => [ok({ mailbox_id: M })]);
+  const r = await handler(deps(db))(new Request(url(target)), IP);
+  assertEquals(r.status, 200);
+  assertEquals(r.headers.get("content-type"), proto.CONTENT_TYPE);
+  assertEquals(await bytes(r), new Uint8Array([1, ...M]));
+  assertEquals(db.fns(), ["locate"]);
+  assertEquals(db.calls[0].args.map((x) => [x.type, x.value]), [
+    ["bytea", loc],
+    ["bytea", await expectedIpKey(IP, NOW)],
+  ]);
+  assert(!containsIp(db.calls[0].args));
+  assertEquals(db.commits, 1);
+
+  const none = new FakeDb(() => [{ status: "not_found", retry_after: null, mailbox_id: null }]);
+  await assertError(await handler(deps(none))(new Request(url(target)), IP), "not_found");
+  assertEquals(none.commits, 1, "a miss still counts");
+  const limited = new FakeDb(() => [{ status: "rate_limited", retry_after: 1200, mailbox_id: null }]);
+  await assertError(await handler(deps(limited))(new Request(url(target)), IP), "rate_limited", 1200);
+
+  // Upper case, short or long hex, a query or a body: no_route or malformed, no SQL.
+  for (
+    const t2 of [
+      `/v1/locate/${toHex(loc).toUpperCase()}`,
+      `/v1/locate/${toHex(loc).slice(2)}`,
+      `/v1/locate/${toHex(loc)}00`,
+    ]
+  ) {
+    const db2 = new FakeDb();
+    await assertError(await handler(deps(db2))(new Request(url(t2)), IP), "no_route");
+    assertEquals(db2.calls.length, 0);
+  }
+  const q = new FakeDb();
+  await assertError(await handler(deps(q))(new Request(url(`${target}?x=1`)), IP), "malformed");
+  const withBody = new FakeDb();
+  await assertError(
+    await handler(deps(withBody))(new Request(url(target), { method: "POST", body: new Uint8Array([1]) }), IP),
+    "no_route",
+  );
+  assertEquals(q.calls.length + withBody.calls.length, 0);
+});
+
+Deno.test("DELETE mailbox is one api_abandon_mailbox call, 204; refused is 403, deleted is 404", async () => {
+  const k = await newKey();
+  const target = `/v1/mailboxes/${MHEX}`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "DELETE", target), IP);
+  assertEquals(r.status, 204);
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_abandon_mailbox"]);
+  assertEquals(db.calls[2].args.map((x) => x.type), ["bytea", "bytea", "timestamptz", "bytea"]);
+  assertEquals(db.calls[2].args[3].value, M);
+  const refused = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  await assertError(await handler(deps(refused))(await signed(k, "DELETE", target), IP), "forbidden");
+  const gone = new FakeDb(withKey(k, () => {
+    throw { code: "OP404", message: "not_found" };
+  }));
+  await assertError(await handler(deps(gone))(await signed(k, "DELETE", target), IP), "not_found");
+});
+
 // ------------------------------------------------------------ client address
 
 Deno.test("spoofed left X-Forwarded-For entries never change the key; IPv6 counts as its /64", async () => {

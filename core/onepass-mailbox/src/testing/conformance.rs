@@ -33,6 +33,9 @@ pub trait ConformanceTarget {
     /// One side of rendezvous session `session` on the same server.
     fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous;
 
+    /// `GET /v1/locate/{locator}` on the same server, unsigned (spec D.4).
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError>;
+
     /// Runs before each case (the end-to-end target clears the per-IP
     /// creation day window there: every case creates mailboxes).
     fn before_case(&mut self) {}
@@ -68,6 +71,8 @@ pub const CASES: &[(&str, Case)] = &[
     ("reader_commit_forbidden", reader_commit_forbidden),
     ("limited_writer_kinds", limited_writer_kinds),
     ("manager_changes_role", manager_changes_role),
+    ("locate_finds_mailbox", locate_finds_mailbox),
+    ("abandoned_mailbox_is_gone", abandoned_mailbox_is_gone),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -973,4 +978,61 @@ fn manager_changes_role(t: &mut dyn ConformanceTarget) {
     forbidden(b.revoke(b_id), "last manager revokes itself");
     b.revoke(a_id).expect("the manager revokes a");
     b.info().expect("the last manager is still in");
+}
+
+// ------------------------------------------------------------ locator
+
+/// A manager stores the locator, anyone finds the mailbox by it without a
+/// key; a second locator replaces the first, a reader stores none, and a
+/// locator another mailbox holds is refused.
+fn locate_finds_mailbox(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let m = a.mailbox().expect("open");
+    let (first, second) = (session_id(), session_id());
+    assert_eq!(t.locate(first).expect("unknown locator"), None);
+    a.set_locator(first).expect("manager sets the locator");
+    assert_eq!(t.locate(first).expect("locate"), Some(m));
+    a.set_locator(second).expect("replace the locator");
+    assert_eq!(t.locate(first).expect("old locator"), None, "replaced");
+    assert_eq!(t.locate(second).expect("new locator"), Some(m));
+
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(r.set_locator(session_id()), "a reader sets the locator");
+    let other = owner(t);
+    forbidden(other.set_locator(second), "the locator of another mailbox");
+    assert_eq!(t.locate(second).expect("still a's"), Some(m));
+}
+
+/// The creator abandons its fresh mailbox: every request on it is then
+/// not_found, its locator finds nothing and is free for another mailbox.
+/// Nobody else may abandon it.
+fn abandoned_mailbox_is_gone(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    applied(a.commit(vec![put(1, 1, None, b"a")]), "a writes");
+    let loc = session_id();
+    a.set_locator(loc).expect("set locator");
+    let g = granted(t, a.as_ref(), CredentialRole::Manage, None);
+    forbidden(g.abandon(), "a granted manager abandons");
+    let e = enrolled(t, a.as_ref());
+    forbidden(e.abandon(), "an enrolled device abandons");
+    a.info().expect("still there");
+
+    a.abandon().expect("the creator abandons");
+    let gone = |r: Result<(), MailboxError>, what: &str| match r {
+        Err(MailboxError::Server(Code::NotFound)) => {}
+        other => panic!("{what} on an abandoned mailbox: {other:?}"),
+    };
+    gone(a.info().map(drop), "info");
+    gone(g.info().map(drop), "info of another credential");
+    gone(a.changes(0, 10, false).map(drop), "changes");
+    gone(a.commit(vec![put(2, 1, None, b"b")]).map(drop), "commit");
+    gone(a.record(KIND, id(1)).map(drop), "record");
+    gone(a.set_locator(session_id()), "set locator");
+    gone(a.abandon(), "abandon again");
+    assert_eq!(t.locate(loc).expect("locate"), None, "not located");
+
+    let b = owner(t);
+    b.set_locator(loc)
+        .expect("an abandoned mailbox's locator is free again");
+    assert_eq!(t.locate(loc).expect("locate"), b.mailbox());
 }

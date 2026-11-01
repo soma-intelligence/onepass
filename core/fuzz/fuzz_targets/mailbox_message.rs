@@ -35,4 +35,6 @@ fuzz_target!(|data: &[u8]| {
     run::<CredentialRole>(data);
     run::<GrantCredential>(data);
     run::<SetCredentialRole>(data);
+    run::<SetLocator>(data);
+    run::<Located>(data);
 });
