@@ -39,6 +39,7 @@
 		291F8E1E5A64CAF3599FA6B0 /* SavePasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */; };
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		2E2A86CDE42259837AD6756F /* KitShareController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95190D978CCD258D8EDDE9FB /* KitShareController.swift */; };
+		3247164F181A54CAFFD132A5 /* GeneratorProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */; };
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
 		37B4C8CCA1F02D66CB98C113 /* DeveloperPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727D48838217D2195CC3694F /* DeveloperPage.swift */; };
@@ -291,6 +292,7 @@
 		158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSheets.swift; sourceTree = "<group>"; };
 		15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
+		18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorProfileRow.swift; sourceTree = "<group>"; };
 		19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewItemMenu.swift; sourceTree = "<group>"; };
 		1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLinkPicker.swift; sourceTree = "<group>"; };
@@ -837,6 +839,7 @@
 				E6608A2696A8CFEDC8DD3AD5 /* ChangePasswordSheet.swift */,
 				4FAA14239035AEBB97155D9B /* DevicesSettings.swift */,
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
+				18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
@@ -1451,6 +1454,7 @@
 				7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */,
 				A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */,
 				AF4F4FF3F65C0D9A3CDEF5E6 /* GeneratePasswordIntent.swift in Sources */,
+				3247164F181A54CAFFD132A5 /* GeneratorProfileRow.swift in Sources */,
 				0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */,
 				2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */,
 				3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */,

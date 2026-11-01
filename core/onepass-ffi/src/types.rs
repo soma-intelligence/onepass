@@ -472,6 +472,50 @@ pub enum FfiPasswordRecipe {
     },
 }
 
+/// What a signup field says about the password it wants (see
+/// `password_for_context`). On Apple the system's quirk string for the site
+/// arrives inside `rules`, next to the field's and the confirmation's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPasswordContext {
+    /// `passwordrules` strings, most trusted first.
+    pub rules: Vec<String>,
+    /// The field's `minlength` attribute.
+    pub min_length: Option<u32>,
+    /// The field's `maxlength` attribute.
+    pub max_length: Option<u32>,
+    /// Written instructions near the field, read and never executed.
+    pub hint_text: Option<String>,
+}
+
+/// How `password_for_context` builds the password. `Strong` is the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiPasswordProfile {
+    /// Random chars of every allowed class: 24, or the largest allowed up to
+    /// 32 when the site states a maximum.
+    Strong,
+    /// French diceware words joined by `-`, one capital and one digit.
+    Readable,
+    /// The user's length (8 to 64) and classes, tightened by the site.
+    Custom {
+        length: u32,
+        digits: bool,
+        symbols: bool,
+    },
+}
+
+/// A generated password and what the user must be told about it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiGenerated {
+    pub password: String,
+    /// The site's rules forced a password under 60 bits.
+    pub weak_by_site: bool,
+    /// The site's constraints were unreadable or contradictory: the profile
+    /// ran alone.
+    pub fallback: bool,
+    /// `Readable` did not fit the site and `Strong` was used instead.
+    pub readable_fell_back: bool,
+}
+
 /// What a store holds before any unlock (see `store_state`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiStoreState {

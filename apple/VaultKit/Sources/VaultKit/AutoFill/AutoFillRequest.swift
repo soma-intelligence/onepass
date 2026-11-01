@@ -74,7 +74,7 @@ public struct SavePasswordRequest: Sendable, Equatable {
 
 /// What the system asks the AutoFill extension, translated from AuthenticationServices by the
 /// controller. Password generation requests never reach the model (the controller answers them with
-/// `passwordFromRules`, no vault data read).
+/// `passwordForContext`, no vault data read).
 public enum AutoFillRequest: Sendable, Equatable {
     /// Manual choice (key button): passwords of `services`, and passkeys of `passkey.rpID` if asked.
     case credentialList(services: [String], passkey: PasskeyRequest?)

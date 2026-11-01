@@ -43,6 +43,10 @@ struct AutoFillSettings: View {
             } footer: {
                 Text("Pour te suggérer le bon compte, le système reçoit les domaines et les identifiants de tes Logins, jamais tes mots de passe, codes ou clés. Désactivées, plus rien n'est transmis : tu choisis alors le compte avec la touche clé du clavier.")
             }
+            #if os(iOS)
+            // The system asks the extension for a password only on iOS (26.2 and later).
+            GeneratorProfileSection()
+            #endif
             Section {
                 NavigationLink {
                     ForgetSiteChoices()

@@ -148,9 +148,9 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         generatePasswords(generatePasswordsRequest)
     }
 
-    /// Ruling A10: the field, confirmation and quirks rules through the core's
-    /// `passwordFromRules`, else 20 random characters (the app generator's default). One `strong`
-    /// password.
+    /// Ruling A10, spec G5: the field, confirmation and quirks rules through the core's
+    /// `passwordForContext`, built with the profile chosen in the app (`GeneratorProfileStore`, "Fort"
+    /// by default). Unreadable or contradictory rules leave the profile alone. One `strong` password.
     @available(iOS 26.2, *)
     private func generatePasswords(_ request: ASGeneratePasswordsRequest) {
         let rules = [
@@ -159,11 +159,12 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         ]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
-        let fallback = FfiPasswordRecipe.characters(length: 20, digits: true, symbols: true, avoidAmbiguous: false)
+        let context = FfiPasswordContext(rules: rules, minLength: nil, maxLength: nil, hintText: nil)
         do {
-            let value = try passwordFromRules(rules: rules, fallback: fallback)
+            let generated = try passwordForContext(
+                context: context, profile: GeneratorProfileStore.shared().profile.ffi)
             extensionContext.completeGeneratePasswordRequest(
-                results: [ASGeneratedPassword(kind: .strong, value: value)], completionHandler: nil)
+                results: [ASGeneratedPassword(kind: .strong, value: generated.password)], completionHandler: nil)
         } catch {
             extensionContext.cancelRequest(withError: ASExtensionError(.failed))
         }

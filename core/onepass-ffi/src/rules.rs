@@ -7,15 +7,28 @@
 //! rule set unreadable. Unreadable and contradictory rule sets, like an empty
 //! one, are answered with the fallback recipe through `generate_password`.
 
-use onepass_core::site_password::{Constraints, parse_passwordrules};
+use onepass_core::site_password::{
+    Constraints, PasswordContext, Profile, generate_for, parse_passwordrules,
+};
 use zeroize::Zeroizing;
 
-use crate::{FfiPasswordRecipe, OnePassError, generate_password};
+use crate::error::invalid;
+use crate::{
+    FfiGenerated, FfiPasswordContext, FfiPasswordProfile, FfiPasswordRecipe, OnePassError,
+    generate_password,
+};
 
 /// Target length when the rules leave room.
 const TARGET_LENGTH: u32 = 20;
 /// Longest password generated, whatever the rules say.
 const MAX_LENGTH: u32 = 64;
+/// Most rule strings accepted by `password_for_context` (field,
+/// confirmation, quirk, with room to spare), as the bridge does.
+const MAX_RULE_STRINGS: usize = 8;
+/// Longest rule string accepted by `password_for_context`.
+const MAX_RULE_LEN: usize = 1024;
+/// Custom profile length bounds.
+const CUSTOM_LENGTHS: std::ops::RangeInclusive<u32> = 8..=64;
 
 /// Parse every rule string and merge them. The strictest wins. `None` when
 /// one is unreadable.
@@ -64,4 +77,67 @@ pub fn password_from_rules(
         return Ok(password.to_string());
     }
     generate_password(fallback)
+}
+
+fn profile_to_core(p: FfiPasswordProfile) -> Result<Profile, OnePassError> {
+    Ok(match p {
+        FfiPasswordProfile::Strong => Profile::Strong,
+        FfiPasswordProfile::Readable => Profile::Readable,
+        FfiPasswordProfile::Custom {
+            length,
+            digits,
+            symbols,
+        } => {
+            if !CUSTOM_LENGTHS.contains(&length) {
+                return Err(OnePassError::Validation {
+                    field: "length".to_owned(),
+                    reason: "out of range".to_owned(),
+                });
+            }
+            Profile::Custom {
+                length: u8::try_from(length).map_err(|_| invalid("length"))?,
+                digits,
+                symbols,
+            }
+        }
+    })
+}
+
+/// A password for a signup field, built by `profile` within what the field
+/// says (`passwordrules` strings, length attributes, written hints). Same
+/// engine as the browser extension: contradicting or unreadable sources are
+/// dropped, least trusted first, and the profile runs alone when nothing
+/// usable is left (`fallback`).
+///
+/// Errors: `Validation` on field `length` for a `Custom` length outside 8 to
+/// 64; `InvalidInput` (`rules`) for more than 8 rule strings or one over
+/// 1024 bytes; `Crypto` when the system random source fails.
+#[uniffi::export]
+pub fn password_for_context(
+    context: FfiPasswordContext,
+    profile: FfiPasswordProfile,
+) -> Result<FfiGenerated, OnePassError> {
+    let profile = profile_to_core(profile)?;
+    let rules: Vec<String> = context
+        .rules
+        .into_iter()
+        .filter(|r| !r.trim().is_empty())
+        .collect();
+    if rules.len() > MAX_RULE_STRINGS || rules.iter().any(|r| r.len() > MAX_RULE_LEN) {
+        return Err(invalid("rules"));
+    }
+    let ctx = PasswordContext {
+        rules,
+        quirk_rules: None,
+        min_length: context.min_length,
+        max_length: context.max_length,
+        hint_text: context.hint_text,
+    };
+    let (password, report) = generate_for(&ctx, &profile, 0)?;
+    Ok(FfiGenerated {
+        password: password.to_string(),
+        weak_by_site: report.weak_by_site,
+        fallback: report.fallback,
+        readable_fell_back: report.readable_fell_back,
+    })
 }

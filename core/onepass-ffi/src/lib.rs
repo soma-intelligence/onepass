@@ -50,7 +50,7 @@ pub use import::*;
 pub use pairing::*;
 pub use remote::*;
 pub use rotation::*;
-pub use rules::password_from_rules;
+pub use rules::{password_for_context, password_from_rules};
 pub use session::{Session, SyncStoreHandle};
 pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;

@@ -167,3 +167,91 @@ fn lenient_lists_and_printable_sets() {
         assert_eq!(gen_one(&[rules]).chars().count(), 20, "{rules}");
     }
 }
+
+fn context(rules: &[&str]) -> FfiPasswordContext {
+    FfiPasswordContext {
+        rules: rules.iter().map(|s| (*s).to_owned()).collect(),
+        ..FfiPasswordContext::default()
+    }
+}
+
+#[test]
+fn password_for_context_follows_rules() {
+    let rules = "required: lower; required: digit; allowed: [-]; maxlength: 16;";
+    for _ in 0..100 {
+        let g = password_for_context(context(&[rules, ""]), FfiPasswordProfile::Strong).unwrap();
+        // Strong takes the largest allowed length up to 32.
+        assert_eq!(g.password.chars().count(), 16);
+        assert!(g.password.chars().any(|c| c.is_ascii_lowercase()));
+        assert!(g.password.chars().any(|c| c.is_ascii_digit()));
+        assert!(
+            g.password
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        );
+        assert!(!g.fallback);
+        assert!(!g.readable_fell_back);
+    }
+    // No constraint: Strong stops at 24.
+    let g =
+        password_for_context(FfiPasswordContext::default(), FfiPasswordProfile::Strong).unwrap();
+    assert_eq!(g.password.chars().count(), 24);
+    assert!(!g.weak_by_site);
+    // Attributes count too.
+    let ctx = FfiPasswordContext {
+        max_length: Some(12),
+        ..FfiPasswordContext::default()
+    };
+    let g = password_for_context(ctx, FfiPasswordProfile::Strong).unwrap();
+    assert_eq!(g.password.chars().count(), 12);
+}
+
+#[test]
+fn readable_profile_from_ffi() {
+    let g =
+        password_for_context(FfiPasswordContext::default(), FfiPasswordProfile::Readable).unwrap();
+    let words: Vec<&str> = g.password.split('-').collect();
+    assert_eq!(words.len(), 5, "{}", g.password.len());
+    assert!(g.password.chars().any(|c| c.is_ascii_uppercase()));
+    assert!(g.password.chars().any(|c| c.is_ascii_digit()));
+    assert!(!g.readable_fell_back);
+    // Too short for words: Strong instead, and the report says so.
+    let g =
+        password_for_context(context(&["maxlength: 8;"]), FfiPasswordProfile::Readable).unwrap();
+    assert!(g.readable_fell_back);
+    assert_eq!(g.password.chars().count(), 8);
+}
+
+#[test]
+fn custom_profile_from_ffi() {
+    let custom = |length| FfiPasswordProfile::Custom {
+        length,
+        digits: false,
+        symbols: false,
+    };
+    let g = password_for_context(FfiPasswordContext::default(), custom(10)).unwrap();
+    assert_eq!(g.password.chars().count(), 10);
+    assert!(g.password.chars().all(|c| c.is_ascii_alphabetic()));
+    for bad in [0, 7, 65, 300] {
+        assert!(matches!(
+            password_for_context(FfiPasswordContext::default(), custom(bad)),
+            Err(OnePassError::Validation { ref field, .. }) if field == "length"
+        ));
+    }
+}
+
+#[test]
+fn contradictory_context_falls_back_and_too_many_rules_refused() {
+    let g = password_for_context(
+        context(&["minlength: 20; maxlength: 10;"]),
+        FfiPasswordProfile::Strong,
+    )
+    .unwrap();
+    assert!(g.fallback);
+    assert_eq!(g.password.chars().count(), 24);
+    let many = vec!["minlength: 8;"; 9];
+    assert!(matches!(
+        password_for_context(context(&many), FfiPasswordProfile::Strong),
+        Err(OnePassError::InvalidInput { .. })
+    ));
+}

@@ -260,7 +260,7 @@ Ce que livre le jalon 3 :
 - **Déverrouillage par requête** : Face ID d'abord, mot de passe maître en second ; la session de l'extension est verrouillée à la fin de chaque requête et quand le système écarte l'interface.
 - **Codes à usage unique** : le code TOTP du Login du site, proposé sur un champ de code de vérification.
 - **Passkeys** : "Enregistrer dans OnePass" (dans un Login existant ou un nouveau) et connexion par la feuille système ; la clé est créée et utilisée dans le Rust, elle ne traverse jamais vers Swift. Synchronisées comme tout item.
-- **Enregistrer un mot de passe tapé** et **mot de passe fort proposé** (iOS 26.2 et plus), avec les règles du site (`password_from_rules`).
+- **Enregistrer un mot de passe tapé** et **mot de passe fort proposé** (iOS 26.2 et plus), avec les règles du site et le profil choisi dans Remplissage automatique (`password_for_context`).
 - **Insertion de texte** (iOS 18 et plus) : n'importe quel champ d'un item dans n'importe quel champ.
 - **Conteneur partagé** : la base et les réglages passent dans le conteneur App Group (`group.me.somalabs.onepass` sur iOS, `<préfixe d'équipe>me.somalabs.onepass` sur Mac), migrés au lancement sans jamais rien supprimer.
 - **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login, quand OnePass est le fournisseur (iOS 26.2 et plus).
