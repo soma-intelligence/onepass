@@ -460,14 +460,14 @@ Modeled: device signing and KEM keys pinned through a private setup (the SAS cha
 | Property | Query | Result |
 | --- | --- | --- |
 | G1 items written after rotation secret from the revoked device | `ItemSealedNew && attacker` | true |
-| new Secret Key and new identity secret | `Rotated && attacker(k)`, `attacker(ik)` | true, true |
-| G2 adoption only of identities introduced by an honest device | `Adopt ==> Rotated` | true |
-| forged rotation fails on A (which revoked B) and on C (which still pinned B), so the race never ends on B's identity | `not Adopt(devA, devB)`, `not Adopt(devC, devB)` | true, true |
-| substituted vault key never accepted | `VaultAcceptedNew ==> VaultCreatedNew` | true |
-| latest kit pins only an honest roster | `PinRoster(restore_new) ==> Rotated` | true |
-| outdated kit (documented limit) | `PinRoster(restore_old) ==> Rotated` | false, by design |
-| negative control: no user step | `rotation_autofollow.pv`, `Adopt ==> Rotated`, `not Adopt(devC, devB)`, secrecy | false (attack found), by design |
-| negative control: account-key anchor | `rotation_account_anchor.pv`, `Adopt ==> Rotated`, secrecy | false (attack found), by design |
+| new Secret Key and new identity secret | `RotationSigned && attacker(k)`, `attacker(ik)` | true, true |
+| G2 adoption only of identities introduced by an honest device | `CommitAdoption ==> RotationSigned` | true |
+| forged rotation fails on A (which revoked B) and on C (which still pinned B), so the race never ends on B's identity | `not CommitAdoption(devA, devB)`, `not CommitAdoption(devC, devB)` | true, true |
+| substituted vault key never accepted | `RecreatedVaultAccepted ==> RecreatedVaultCreated` | true |
+| latest kit pins only an honest roster | `KitRestored(restore_new) ==> RotationSigned` | true |
+| outdated kit (documented limit) | `KitRestored(restore_old) ==> RotationSigned` | false, by design |
+| negative control: no user step | `rotation_autofollow.pv`, `CommitAdoption ==> RotationSigned`, `not CommitAdoption(devC, devB)`, secrecy | false (attack found), by design |
+| negative control: account-key anchor | `rotation_account_anchor.pv`, `CommitAdoption ==> RotationSigned`, secrecy | false (attack found), by design |
 | sanity: C follows A, A follows C, vault accepted, item written, kit restore | reachability | reached |
 
 `rotation.pv` takes about 130 s on the owner's Mac (limit 300 s per file in `formal/run.sh`); the two controls take about a second. The whole `make formal` run matches `expected.txt`, the earlier models unchanged.
@@ -575,7 +575,7 @@ Tasks:
 1. **Device keys** (`device_keys.rs`): `DeviceKeys`, `DevicePublic`, generation, strict codec, fingerprint, pop sign and verify. Tests: round trip, trailing bytes, wrong domain, pop over another transcript refused.
 2. **Lineage records** (`lineage.rs`): genesis, rotation, intro, legacy intro, delivery ids; strict canonical codec; sign and verify with the six domains; lineage hash and record ids; structural checks of 6.3. Tests: each domain separated (a signature under one domain fails under every other), unsorted or duplicate lists refused, rotator in `revoked` refused, roster without rotator refused, 64-entry cap, golden hex vectors.
 3. **Trust state** (`trust.rs`): `TrustState` codec, persisted with `put_all_if_version_with_chain`-style transactions; monotone `revoked`; bounded `ignored`. Tests: strict decode, monotonicity, transaction atomicity on a cut.
-4. **Lineage resolver** (pure): `resolve(&TrustState, &[LineageRecord], completeness) -> Decision`. Tests: table of 8.2 transitions; 8.3 race in all three orders; exclusion and order of 8.5; proptest over random interleavings, withholding and attacker-signed records asserting (a) no `Adopt` without a user choice, (b) honest devices that saw the same records reach the same head, (c) at most one switch per divergence, (d) no automatic action ever creates a sibling of a decided divergence.
+4. **Lineage resolver** (pure): `resolve(&TrustState, &[LineageRecord], completeness) -> Decision`. Tests: table of 8.2 transitions; 8.3 race in all three orders; exclusion and order of 8.5; proptest over random interleavings, withholding and attacker-signed records asserting (a) no `CommitAdoption` without a user choice, (b) honest devices that saw the same records reach the same head, (c) at most one switch per divergence, (d) no automatic action ever creates a sibling of a decided divergence.
 5. **Store kinds**: `Lineage = 10`, `DeviceIntro = 11`, `KeyDelivery = 12` added at the end; identity-keyed params, keyset, lists, epochs; immutability; `commit_remote` refuses deletions of the three new kinds and of identity records. Tests: put twice refused, server deletion refused and logged, generation 0 ids unchanged.
 6. **Account**: port `Account::rotate`; keyset `OPK3` with `retired_kem`; verified params decoding everywhere (G8). Tests: `OPK2` still opens, `OPK3` round trip, retired keys bounded to 16, unverified server params ignored by the password-change path (hold-out 4).
 7. **Rotator**: `Repository::rotate` building phases 1 and 2 in memory, one local transaction, `TrustState` to `Rotating`. Port the vault pass of `repo/rotation.rs`. Tests: K11, K12, travel refused, `VaultMissing` refuses, revoking self refused, roster and deliveries exact, old items still readable locally until phase 3.

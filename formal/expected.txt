@@ -190,41 +190,41 @@ emergency_kit.pv | not event(AukDerived(restore_no_keyset)) | false
 # secrets de l'identité d'avant (il signe donc librement des rotations de B, dont "B retire A").
 # R1 : ce qui est écrit sous les nouvelles clés, la nouvelle Secret Key et la nouvelle identité restent secrets.
 rotation.pv | not (event(ItemSealedNew(d,m)) && attacker(m)) | true
-rotation.pv | not (event(Rotated(s,ip_4,r,ro,k_13,ik)) && attacker(k_13)) | true
-rotation.pv | not (event(Rotated(s,ip_4,r,ro,k_13,ik)) && attacker(ik)) | true
+rotation.pv | not (event(RotationSigned(s,ip_4,r,ro,k_13,ik)) && attacker(k_13)) | true
+rotation.pv | not (event(RotationSigned(s,ip_4,r,ro,k_13,ik)) && attacker(ik)) | true
 # R2 : un appareil n'adopte qu'une identité introduite par une rotation honnête de l'appareil signataire.
-rotation.pv | event(Adopt(d,s,ip_4)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik)) | true
+rotation.pv | event(CommitAdoption(d,s,ip_4)) ==> event(RotationSigned(s,ip_4,r,ro,k_13,ik)) | true
 # Rotation forgée et course "A retire B" contre "B retire A" : ni A ni C n'adoptent une rotation de B.
-rotation.pv | not event(Adopt(devA,devB,ip_4)) | true
-rotation.pv | not event(Adopt(devC,devB,ip_4)) | true
+rotation.pv | not event(CommitAdoption(devA,devB,ip_4)) | true
+rotation.pv | not event(CommitAdoption(devC,devB,ip_4)) | true
 # Clé de coffre substituée jamais acceptée après la rotation.
-rotation.pv | event(VaultAcceptedNew(d,ip_4,v_42,k_13)) ==> event(VaultCreatedNew(ip_4,v_42,k_13)) | true
+rotation.pv | event(RecreatedVaultAccepted(d,ip_4,v_42,k_13)) ==> event(RecreatedVaultCreated(ip_4,v_42,k_13)) | true
 # R7 : le dernier Emergency Kit n'épingle qu'une liste d'appareils signée par une rotation honnête.
-rotation.pv | event(PinRoster(restore_new,ip_4,ro)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik)) | true
+rotation.pv | event(KitRestored(restore_new,ip_4,ro)) ==> event(RotationSigned(s,ip_4,r,ro,k_13,ik)) | true
 # Limite documentée (F-03, spec section 11) : un kit périmé porte la Secret Key que l'appareil
 # retiré connaît ; un stockage hostile fait épingler l'identité et la liste de l'attaquant.
-rotation.pv | event(PinRoster(restore_old,ip_4,ro)) ==> event(Rotated(s,ip_4,r,ro,k_13,ik)) | false
+rotation.pv | event(KitRestored(restore_old,ip_4,ro)) ==> event(RotationSigned(s,ip_4,r,ro,k_13,ik)) | false
 # Sanité : C suit A, A suit la seconde rotation de C, C accepte le coffre et y écrit, le dernier kit restaure.
-rotation.pv | not event(Adopt(devC,devA,ip_4)) | false
-rotation.pv | not event(Adopt(devA,devC,ip_4)) | false
-rotation.pv | not event(VaultAcceptedNew(devC,ip_4,v_42,k_13)) | false
+rotation.pv | not event(CommitAdoption(devC,devA,ip_4)) | false
+rotation.pv | not event(CommitAdoption(devA,devC,ip_4)) | false
+rotation.pv | not event(RecreatedVaultAccepted(devC,ip_4,v_42,k_13)) | false
 rotation.pv | not event(ItemSealedNew(devC,m)) | false
-rotation.pv | not event(PinRoster(restore_new,ip_4,ro)) | false
+rotation.pv | not event(KitRestored(restore_new,ip_4,ro)) | false
 
 # rotation_autofollow.pv : témoin négatif, le suivi sans confirmation de l'utilisateur (ruling R6
 # retiré). Limite documentée (F-03, spec 8.3) : les clés d'appareil seules ne tranchent pas la
 # course, C adopte en silence la rotation de B ; d'où la confirmation à chaque adoption.
-rotation_autofollow.pv | event(Adopt(d,s,ip_1)) ==> event(Rotated(s,ip_1,r,ro,k_5,ik)) | false
-rotation_autofollow.pv | not event(Adopt(devC,devB,ip_1)) | false
+rotation_autofollow.pv | event(CommitAdoption(d,s,ip_1)) ==> event(RotationSigned(s,ip_1,r,ro,k_5,ik)) | false
+rotation_autofollow.pv | not event(CommitAdoption(devC,devB,ip_1)) | false
 rotation_autofollow.pv | not (event(ItemSealedNew(d,m)) && attacker(m)) | false
 # Sanité.
-rotation_autofollow.pv | not event(Adopt(devC,devA,ip_1)) | false
+rotation_autofollow.pv | not event(CommitAdoption(devC,devA,ip_1)) | false
 
 # rotation_account_anchor.pv : témoin négatif, la rotation authentifiée par une clé du compte
 # d'avant (cause commune des failles de la branche fix/key-rotation). Limite documentée (F-03,
 # spec section 3) : l'appareil retiré détient cette clé, signe "A a retiré B" avec sa propre
 # identité, l'utilisateur confirme et C adopte l'identité de l'attaquant.
-rotation_account_anchor.pv | event(Adopt(d,s,ip_1)) ==> event(Rotated(s,ip_1,r,ro,k_5,ik)) | false
+rotation_account_anchor.pv | event(CommitAdoption(d,s,ip_1)) ==> event(RotationSigned(s,ip_1,r,ro,k_5,ik)) | false
 rotation_account_anchor.pv | not (event(ItemSealedNew(d,m)) && attacker(m)) | false
 # Sanité.
-rotation_account_anchor.pv | not event(Adopt(devC,devA,ip_1)) | false
+rotation_account_anchor.pv | not event(CommitAdoption(devC,devA,ip_1)) | false
