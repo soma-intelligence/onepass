@@ -321,6 +321,42 @@ describe("ARIA comboboxes", () => {
     expect(sel("trap").value).toBe("");
   });
 
+  it("a combobox in a shadow root whose list is portaled into the body is picked as soon as the list shows", async () => {
+    const { fill, filler } = setup(`<x-shop></x-shop>`, 2000);
+    const root = document.querySelector("x-shop")!.attachShadow({ mode: "open" });
+    root.innerHTML = ADDRESS(combobox("c", "Country", [["US", "United States"], ["FR", "France"]]), "");
+    const input = root.getElementById("c") as HTMLInputElement;
+    const picked: string[] = [];
+    input.addEventListener("input", () => {
+      const q = input.value.toLowerCase();
+      later(() => {
+        document.getElementById("c-list")?.remove();
+        const list = document.createElement("div");
+        list.id = "c-list";
+        list.setAttribute("role", "listbox");
+        for (const [v, t] of [["US", "United States"], ["FR", "France"]].filter(([, t]) => t!.toLowerCase().includes(q))) {
+          const o = document.createElement("div");
+          o.setAttribute("role", "option");
+          o.dataset.value = v;
+          o.textContent = t!;
+          o.addEventListener("click", () => {
+            picked.push(v!);
+            input.value = "";
+            list.remove();
+          });
+          list.append(o);
+        }
+        document.body.append(list);
+      }, 15);
+    });
+    const t0 = Date.now();
+    fill({ country: "FR" });
+    await filler.settled();
+    expect(picked).toEqual(["FR"]);
+    // Seen through the document's mutations, not at the end of the bound.
+    expect(Date.now() - t0).toBeLessThan(250);
+  });
+
   it("types another name when the first one filters every option out", async () => {
     const { fill, filler } = setup(ADDRESS(
       combobox("c", "Country", [["DE", "Germany"], ["FR", "France"]]),

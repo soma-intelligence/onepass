@@ -344,7 +344,8 @@ export function createFiller(opts: FillerOptions): Filler {
       last = text;
       let picked: HTMLElement | null = null;
       await settle(
-        root instanceof ShadowRoot ? root : input.ownerDocument,
+        // In a shadow root, its list may be portaled into the document (aria-controls names it there).
+        root instanceof ShadowRoot ? [root, input.ownerDocument] : input.ownerDocument,
         () => {
           const os = optionsOf(input).filter(visible);
           const i = os.length > 0 ? match(os.map(optionLike)) : -1;
