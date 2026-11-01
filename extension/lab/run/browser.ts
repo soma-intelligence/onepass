@@ -17,6 +17,7 @@ import { MOVE_GUARD_MS } from "../../src/content/frames.ts";
 import { CLICK_GUARD_MS } from "../../src/ui/components.ts";
 import type { World } from "../gen/model.ts";
 import { DEFAULT_PROFILE_ID } from "../gen/population.ts";
+import { accountRow, overlayRowSelector } from "./account.ts";
 import type { LabServer } from "../server/server.ts";
 import { EXT_ROOT, type LabState } from "./global-setup.ts";
 
@@ -62,7 +63,7 @@ export interface Lab {
   menuRow(menu: Frame, title: string, timeout?: number): Promise<boolean>;
   /** Clicks a menu row by its exact title once the click guard allows it. */
   pickRow(menu: Frame, title: string): Promise<void>;
-  /** Whether the overlay lists an account with this exact title within `timeout`. */
+  /** Whether the overlay lists an account with this exact title (sso: item title and provider, account.ts) within `timeout`. */
   overlayHas(overlay: Frame, title: string, timeout?: number): Promise<boolean>;
   /** Clicks "Se connecter" on the overlay account `title`. */
   overlayStart(overlay: Frame, title: string): Promise<void>;
@@ -228,6 +229,19 @@ export async function focusField(p: Page, scope: Frame, selector: string, timeou
   }
 }
 
+/** The overlay rows of the account `title` (an sso "<brand> via <Provider>": the brand's row for that provider). */
+function overlayAccount(overlay: Frame, title: string) {
+  const row = accountRow(title);
+  return overlay.locator(overlayRowSelector(row)).filter({ has: overlay.locator(".t1", { hasText: exact(row.title) }) });
+}
+
+/** The in-field menu rows of `title` (an sso "<brand> via <Provider>": the brand's row for that provider, never one of its other accounts). */
+function menuRowOf(menu: Frame, title: string) {
+  const row = accountRow(title);
+  const rows = row.provider ? `button.row:not(.row-sub)[data-provider="${row.provider}"]` : "button.row";
+  return menu.locator(rows).filter({ has: menu.locator(".t1", { hasText: exact(row.title) }) });
+}
+
 /** A fresh browser of the lab for simulated user `profileId` (default: the single default one) with that user's vault. */
 export async function launchLab(state: LabState, world: World, server: LabServer, profileId: string = DEFAULT_PROFILE_ID): Promise<Lab> {
   const staged = state.profiles[profileId];
@@ -319,20 +333,20 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         return waitExtFrame(p, "menu", timeout);
       },
       async menuRow(menu, title, timeout = 5_000) {
-        const row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+        const row = menuRowOf(menu, title);
         return row.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
       },
       async pickRow(menu, title) {
-        const row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+        const row = menuRowOf(menu, title);
         await sleep(GUARD_WAIT_MS);
         await row.first().click();
       },
       async overlayHas(overlay, title, timeout = 5_000) {
-        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        const account = overlayAccount(overlay, title);
         return account.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
       },
       async overlayStart(overlay, title) {
-        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        const account = overlayAccount(overlay, title);
         await sleep(GUARD_WAIT_MS);
         await account.first().getByRole("button", { name: "Se connecter" }).click();
       },
