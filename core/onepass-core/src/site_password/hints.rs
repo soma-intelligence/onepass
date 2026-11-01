@@ -225,8 +225,10 @@ fn read_lengths(toks: &[Tok<'_>], out: &mut Constraints) {
                 (None, Some("maximum" | "max" | "maxi")) => set_max(out, n),
                 _ => {}
             }
-        } else if matches!(toks.get(i + 1), None | Some(Tok::Clause | Tok::Sym(_)))
-            && let Some((is_min, m)) = prefix_kind(toks, i, n).filter(|_| explicit_bound(toks, i))
+        } else if bare_end(toks.get(i + 1))
+            && let Some((is_min, m)) = prefix_kind(toks, i, n)
+                .filter(|_| explicit_bound(toks, i))
+                .filter(|_| password_context(toks) || abbreviated_bound(toks, i))
         {
             // Unit-less bound at the end of a clause: "at least 8", "min 8, max 20".
             if is_min {
@@ -237,6 +239,44 @@ fn read_lengths(toks: &[Tok<'_>], out: &mut Constraints) {
         }
         i += 1;
     }
+}
+
+/// A number followed by nothing, a clause end or a symbol that is not a
+/// money or percent sign.
+fn bare_end(next: Option<&Tok<'_>>) -> bool {
+    match next {
+        None | Some(Tok::Clause) => true,
+        Some(Tok::Sym(c)) => !matches!(c, '%' | '$' | '\u{20ac}'),
+        _ => false,
+    }
+}
+
+/// The text talks about the password or its length, so a bare bound is one.
+fn password_context(toks: &[Tok<'_>]) -> bool {
+    toks.iter().any(|t| {
+        matches!(
+            t,
+            Tok::Word(
+                "password"
+                    | "passwort"
+                    | "passe"
+                    | "mdp"
+                    | "length"
+                    | "longueur"
+                    | "characters"
+                    | "chars"
+                    | "caracteres"
+            )
+        )
+    })
+}
+
+/// "min 8", "max 20": the abbreviation sits right before the number.
+fn abbreviated_bound(toks: &[Tok<'_>], i: usize) -> bool {
+    matches!(
+        i.checked_sub(1).and_then(|j| word(toks, j)),
+        Some("min" | "max" | "minimum" | "maximum" | "mini" | "maxi")
+    )
 }
 
 /// The phrase before the number at `i` names a bound outright ("at least",
@@ -636,11 +676,32 @@ mod tests {
 
     #[test]
     fn unitless_bounds() {
-        assert_eq!(lens("at least 8"), (8, None));
+        // The first and third inputs gained password context ("Password",
+        // "mot de passe"): without it a bare bound is prose.
+        assert_eq!(lens("Password: at least 8"), (8, None));
         assert_eq!(lens("min 8, max 20 characters"), (8, Some(20)));
-        assert_eq!(lens("Au moins 10."), (10, None));
+        assert_eq!(lens("Mot de passe : au moins 10."), (10, None));
         // A class quantity is not a length.
         assert_eq!(lens("at least 1 uppercase"), (0, None));
+    }
+
+    #[test]
+    fn unitless_age_ignored() {
+        let c = parse_hints("You must be at least 18");
+        assert_eq!(lens("You must be at least 18"), (0, None));
+        assert!(!c.recognized());
+        assert_eq!(lens("You must be at least 18."), (0, None));
+    }
+
+    #[test]
+    fn unitless_percent_ignored() {
+        assert_eq!(lens("Save up to 50%"), (0, None));
+        assert_eq!(lens("Password reset: save up to $50"), (0, None));
+    }
+
+    #[test]
+    fn unitless_choose_up_to_ignored() {
+        assert_eq!(lens("Choose up to 5"), (0, None));
     }
 
     #[test]
