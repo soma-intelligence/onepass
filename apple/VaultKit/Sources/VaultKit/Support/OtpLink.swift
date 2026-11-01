@@ -94,20 +94,61 @@ public struct OtpLinkAccount: Identifiable, Sendable, Equatable, CustomStringCon
     public var debugDescription: String { description }
 }
 
+/// A request from outside the app that waits for the unlock (a code to copy, a verification code
+/// link holding its secret) is dropped after 2 minutes, or at once if the clock moved back.
+public enum PendingRequest {
+    public static let lifetime: TimeInterval = 120
+
+    public static func isExpired(queuedAt: Date, now: Date) -> Bool {
+        let age = now.timeIntervalSince(queuedAt)
+        return age < 0 || age > lifetime
+    }
+}
+
+/// What the "Ajouter un code" sheet may do with an existing Login.
+public enum OtpTarget: Equatable, Sendable {
+    /// A `reprompt` Login: confirm the user (biometrics or master password) first.
+    case confirmFirst
+    /// The code can be written; `hasOtp` asks before replacing the current one.
+    case ready(hasOtp: Bool)
+}
+
 extension VaultSession {
     /// The visible Logins, by title, for the "add a code" sheet (search included).
     public func otpCandidateLogins(query: String) -> [FfiItemSummary] {
         items(filter: .all, query: query, sort: .title).filter { $0.itemType == .login }
     }
 
-    /// Puts the code into the `totp` field of an existing Login (the previous code, if any, is
-    /// replaced). Returns the stored item.
+    /// Where a code would go in an existing Login, read before anything of the item is shown. A
+    /// `reprompt` Login says nothing (not even whether it has a code) until the user is confirmed,
+    /// like the item page.
+    public func otpTarget(itemID: String, vaultID: String, confirmed: Bool) async throws -> OtpTarget {
+        let item = try await loadItem(vaultID: vaultID, itemID: itemID)
+        guard item.itemType == .login else { throw VaultError.other(Self.notALogin) }
+        if item.reprompt, !confirmed { return .confirmFirst }
+        return .ready(hasOtp: Self.currentOtp(in: item) != nil)
+    }
+
+    /// Puts the code into the `totp` field of an existing Login. A previous, different code moves to
+    /// a concealed custom field "Ancien code", so it stays recoverable. A `reprompt` Login is written
+    /// only once the user is confirmed (`confirmed`, as for showing it). Returns the stored item.
     @discardableResult
-    public func attachOtp(_ account: OtpLinkAccount, toItemID itemID: String, vaultID: String) async throws
-        -> FfiItem
+    public func attachOtp(_ account: OtpLinkAccount, toItemID itemID: String, vaultID: String, confirmed: Bool)
+        async throws -> FfiItem
     {
         var item = try await loadItem(vaultID: vaultID, itemID: itemID)
         guard item.itemType == .login else { throw VaultError.other(Self.notALogin) }
+        guard !item.reprompt || confirmed else { throw VaultError.other(Self.confirmFirst) }
+        if let previous = Self.currentOtp(in: item), previous != account.uri {
+            var draft = ItemDraft(item: item)
+            draft.addCustomField(kind: .concealed, label: Self.previousCodeLabel)
+            if let s = draft.item.sections.firstIndex(where: { $0.id == ItemDraft.customSectionID }),
+                let f = draft.item.sections[s].fields.indices.last
+            {
+                draft.item.sections[s].fields[f].value = .concealed(value: previous)
+            }
+            item = draft.item
+        }
         Self.setOtp(account.uri, in: &item)
         return try await save(item)
     }
@@ -126,14 +167,18 @@ extension VaultSession {
         return try await save(item)
     }
 
-    /// The Login already has a one-time code (the sheet asks before replacing it).
-    public func hasOtp(itemID: String, vaultID: String) async -> Bool {
-        guard let item = try? await loadItem(vaultID: vaultID, itemID: itemID) else { return false }
-        return item.sections.lazy.flatMap(\.fields).contains { $0.id == "totp" && !$0.value.text.isEmpty }
-    }
-
     private static let notALogin = String(
         localized: "Le code ne peut être ajouté qu'à un élément Login.", bundle: VaultKitStrings.bundle)
+    private static let confirmFirst = String(
+        localized: "Confirme d'abord ton identité pour modifier cet élément.", bundle: VaultKitStrings.bundle)
+    /// The label of the field that keeps a replaced code (stored as written, like any label).
+    static let previousCodeLabel = String(localized: "Ancien code", bundle: VaultKitStrings.bundle)
+
+    /// The Login's current one-time code, if its `totp` field holds one.
+    private static func currentOtp(in item: FfiItem) -> String? {
+        let value = item.sections.lazy.flatMap(\.fields).first { $0.id == "totp" }?.value.text ?? ""
+        return value.isEmpty ? nil : value
+    }
 
     /// Sets the template's `totp` field; a Login without one gets it in its first section.
     private static func setOtp(_ uri: String, in item: inout FfiItem) {

@@ -108,19 +108,62 @@ struct OtpLinkSessionTests {
         login.title = "GitHub"
         fillRequired(&login)
         login = try await session.save(login)
-        #expect(await !session.hasOtp(itemID: login.id, vaultID: vault))
+        #expect(try await session.otpTarget(itemID: login.id, vaultID: vault, confirmed: false) == .ready(hasOtp: false))
 
         let github = try #require(try OtpLink.accounts(in: OtpLinkTests.migration).first)
-        let stored = try await session.attachOtp(github, toItemID: login.id, vaultID: vault)
+        let stored = try await session.attachOtp(github, toItemID: login.id, vaultID: vault, confirmed: false)
         #expect(stored.title == "GitHub")
-        #expect(try totpNow(secretOrUri: try #require(otp(stored)), unixSeconds: 59).code == "287082")
-        #expect(await session.hasOtp(itemID: login.id, vaultID: vault))
+        let first = try #require(otp(stored))
+        #expect(try totpNow(secretOrUri: first, unixSeconds: 59).code == "287082")
+        #expect(previousCodes(stored).isEmpty)
+        #expect(try await session.otpTarget(itemID: login.id, vaultID: vault, confirmed: false) == .ready(hasOtp: true))
 
+        // Replacing keeps the previous code in a concealed "Ancien code" field.
         let other = try #require(try OtpLink.accounts(in: OtpLinkTests.link).first)
-        let replaced = try await session.attachOtp(other, toItemID: login.id, vaultID: vault)
+        let replaced = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
         #expect(try totpNow(secretOrUri: try #require(otp(replaced)), unixSeconds: 59).code
             == totpNow(secretOrUri: "JBSWY3DPEHPK3PXP", unixSeconds: 59).code)
+        #expect(previousCodes(replaced) == [first])
+        let kept = try #require(replaced.sections.first { $0.id == ItemDraft.customSectionID }?.fields.last)
+        #expect(kept.kind == .concealed)
+        #expect(kept.label == "Ancien code")
         #expect(session.summaries.count == 1)
+
+        // The same code again stores nothing new.
+        let again = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
+        #expect(previousCodes(again) == [first])
+    }
+
+    /// A `reprompt` Login says nothing and takes nothing before the user is confirmed.
+    @Test func repromptLoginNeedsConfirmationFirst() async throws {
+        let (h, session) = try await unlocked()
+        defer { h.cleanUp() }
+        let vault = session.allVaults[0].id
+        var login = try session.newItem(type: .login, vaultID: vault)
+        login.title = "Banque"
+        login.reprompt = true
+        fillRequired(&login)
+        login = try await session.save(login)
+        let account = try #require(try OtpLink.accounts(in: OtpLinkTests.link).first)
+
+        #expect(try await session.otpTarget(itemID: login.id, vaultID: vault, confirmed: false) == .confirmFirst)
+        await #expect(throws: VaultError.self) {
+            try await session.attachOtp(account, toItemID: login.id, vaultID: vault, confirmed: false)
+        }
+        #expect((otp(try await session.loadItem(vaultID: vault, itemID: login.id)) ?? "").isEmpty)
+
+        #expect(try await session.otpTarget(itemID: login.id, vaultID: vault, confirmed: true) == .ready(hasOtp: false))
+        let stored = try await session.attachOtp(account, toItemID: login.id, vaultID: vault, confirmed: true)
+        #expect(!(otp(stored) ?? "").isEmpty)
+    }
+
+    /// A link or copy request waiting for the unlock lasts 2 minutes, and never across a clock moved back.
+    @Test func waitingRequestExpires() {
+        let queued = Date(timeIntervalSince1970: 1_000_000)
+        #expect(!PendingRequest.isExpired(queuedAt: queued, now: queued))
+        #expect(!PendingRequest.isExpired(queuedAt: queued, now: queued.addingTimeInterval(120)))
+        #expect(PendingRequest.isExpired(queuedAt: queued, now: queued.addingTimeInterval(121)))
+        #expect(PendingRequest.isExpired(queuedAt: queued, now: queued.addingTimeInterval(-1)))
     }
 
     @Test func refusesAnItemThatIsNotALogin() async throws {
@@ -133,7 +176,13 @@ struct OtpLinkSessionTests {
         note = try await session.save(note)
         let account = try #require(try OtpLink.accounts(in: OtpLinkTests.link).first)
         await #expect(throws: VaultError.self) {
-            try await session.attachOtp(account, toItemID: note.id, vaultID: vault)
+            try await session.attachOtp(account, toItemID: note.id, vaultID: vault, confirmed: true)
         }
+    }
+
+    /// The values of the concealed "Ancien code" fields.
+    private func previousCodes(_ item: FfiItem) -> [String] {
+        item.sections.first { $0.id == ItemDraft.customSectionID }?.fields
+            .filter { $0.label == "Ancien code" }.map(\.value.text) ?? []
     }
 }

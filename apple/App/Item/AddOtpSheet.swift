@@ -5,8 +5,14 @@ import VaultKit
 /// The accounts of one verification code link (`AppModel.otpLinkRequest`). Holds the secrets until
 /// the sheet closes or the app locks.
 struct OtpLinkRequest: Identifiable {
+    /// A link opened by the system (another app, a site) or a QR code scanned in the app.
+    enum Source {
+        case link, scan
+    }
+
     let id = UUID()
     let accounts: [OtpLinkAccount]
+    let source: Source
 }
 
 /// "Ajouter un code": a verification code link opened by the system (OnePass chosen in Réglages >
@@ -24,7 +30,7 @@ struct AddOtpSheet: View {
         NavigationStack {
             Group {
                 if request.accounts.count == 1, let account = request.accounts.first {
-                    OtpAccountTarget(account: account) { title in
+                    OtpAccountTarget(account: account, source: request.source) { title in
                         model.showToast(String(localized: "Code ajouté à \(title)"))
                         dismiss()
                     }
@@ -53,7 +59,7 @@ struct AddOtpSheet: View {
             Section {
                 ForEach(request.accounts) { account in
                     NavigationLink {
-                        OtpAccountTarget(account: account) { title in
+                        OtpAccountTarget(account: account, source: request.source) { title in
                             added[account.id] = title
                         }
                     } label: {
@@ -77,7 +83,10 @@ struct AddOtpSheet: View {
                     .accessibilityIdentifier("addOtp.account.\(account.id)")
                 }
             } footer: {
-                Text("\(request.accounts.count) codes dans cet export. Chacun va dans son propre élément Login.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if request.source == .link { Text("Ce lien vient d'une autre app ou d'un site.") }
+                    Text("\(request.accounts.count) codes dans cet export. Chacun va dans son propre élément Login.")
+                }
             }
         }
         .navigationTitle("Ajouter des codes")
@@ -87,16 +96,23 @@ struct AddOtpSheet: View {
     }
 }
 
-/// One account: its live code, "Nouvel élément Login", then the Logins to attach it to.
+/// One account: its live code, "Nouvel élément Login", then the Logins to attach it to. A
+/// `reprompt` Login asks for biometrics or the master password before anything about it is read
+/// or written, like its item page.
 private struct OtpAccountTarget: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let account: OtpLinkAccount
+    let source: OtpLinkRequest.Source
     /// Called with the Login's title once the code is stored.
     let onAdded: (String) -> Void
     @State private var query = ""
     @State private var busy = false
     @State private var replacing: FfiItemSummary?
+    /// A `reprompt` Login waiting for the master password (no biometrics on this device).
+    @State private var passwordFor: FfiItemSummary?
+    /// `reprompt` Logins the user confirmed in this sheet.
+    @State private var confirmedIDs: Set<String> = []
 
     private var logins: [FfiItemSummary] { model.session.otpCandidateLogins(query: query) }
 
@@ -123,6 +139,8 @@ private struct OtpAccountTarget: View {
                         }
                     }
                 }
+            } footer: {
+                if source == .link { Text("Ce lien vient d'une autre app ou d'un site.") }
             }
             Section {
                 Button {
@@ -164,7 +182,23 @@ private struct OtpAccountTarget: View {
             Button("Remplacer", role: .destructive) { Task { await attach(login) } }
             Button("Annuler", role: .cancel) { replacing = nil }
         } message: { login in
-            Text("\(login.title) a déjà un code à usage unique. Le nouveau le remplace.")
+            Text("\(login.title) a déjà un code à usage unique. Le nouveau le remplace, l'ancien reste dans le champ masqué « Ancien code ».")
+        }
+        .sheet(isPresented: Binding(get: { passwordFor != nil }, set: { if !$0 { passwordFor = nil } })) {
+            if let login = passwordFor {
+                PasswordPromptSheet(
+                    title: "Confirmer ton identité",
+                    footer: "Cet élément demande une confirmation avant d'être modifié."
+                ) { password in
+                    try await model.session.verifyMasterPassword(password)
+                    confirmedIDs.insert(login.id)
+                    // Once the prompt is gone, so the replace question can appear.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        await pick(login)
+                    }
+                }
+            }
         }
     }
 
@@ -192,10 +226,27 @@ private struct OtpAccountTarget: View {
     }
 
     private func pick(_ login: FfiItemSummary) async {
-        if await model.session.hasOtp(itemID: login.id, vaultID: login.vaultId) {
-            replacing = login
-        } else {
-            await attach(login)
+        busy = true
+        defer { busy = false }
+        do {
+            var target = try await model.session.otpTarget(
+                itemID: login.id, vaultID: login.vaultId, confirmed: confirmedIDs.contains(login.id))
+            if target == .confirmFirst {
+                guard await model.session.confirmUserPresence(prompt: String(localized: "Modifier « \(login.title) »"))
+                else {
+                    passwordFor = login
+                    return
+                }
+                confirmedIDs.insert(login.id)
+                target = try await model.session.otpTarget(itemID: login.id, vaultID: login.vaultId, confirmed: true)
+            }
+            if target == .ready(hasOtp: true) {
+                replacing = login
+            } else {
+                await attach(login)
+            }
+        } catch {
+            model.showToast(VaultError(error).localizedMessage, kind: .error)
         }
     }
 
@@ -204,7 +255,8 @@ private struct OtpAccountTarget: View {
         busy = true
         defer { busy = false }
         do {
-            let item = try await model.session.attachOtp(account, toItemID: login.id, vaultID: login.vaultId)
+            let item = try await model.session.attachOtp(
+                account, toItemID: login.id, vaultID: login.vaultId, confirmed: confirmedIDs.contains(login.id))
             done(item.title)
         } catch {
             model.showToast(VaultError(error).localizedMessage, kind: .error)

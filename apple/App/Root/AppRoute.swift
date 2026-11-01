@@ -7,6 +7,7 @@ enum AppRoute: Equatable {
     case link(OnePassLink)
     case copyTotp(ItemRef)
     /// An `otpauth://` or `otpauth-migration://` link (camera, Safari, another app): the "Ajouter
-    /// un code" sheet. Holds the secret: never logged.
+    /// un code" sheet. Holds the secret: never logged; while waiting for the unlock it lasts 2
+    /// minutes and is dropped when the app locks or leaves the screen.
     case otpLink(String)
 }

@@ -14847,16 +14847,6 @@
         }
       }
     },
-    "%@ a déjà un code à usage unique. Le nouveau le remplace." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ already has a one-time code. The new one replaces it."
-          }
-        }
-      }
-    },
     "QR code de vérification" : {
       "localizations" : {
         "en" : {
@@ -14873,6 +14863,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scan a verification code…"
+          }
+        }
+      }
+    },
+    "Lien de code de vérification expiré. Ouvre-le de nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification code link expired. Open it again."
+          }
+        }
+      }
+    },
+    "Ce lien vient d'une autre app ou d'un site." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This link comes from another app or a website."
+          }
+        }
+      }
+    },
+    "%@ a déjà un code à usage unique. Le nouveau le remplace, l'ancien reste dans le champ masqué « Ancien code »." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ already has a one-time code. The new one replaces it, and the old one stays in the hidden “Previous code” field."
+          }
+        }
+      }
+    },
+    "Confirmer ton identité" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm it's you"
+          }
+        }
+      }
+    },
+    "Cet élément demande une confirmation avant d'être modifié." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This item asks for confirmation before it's changed."
+          }
+        }
+      }
+    },
+    "Modifier « %@ »" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit “%@”"
           }
         }
       }

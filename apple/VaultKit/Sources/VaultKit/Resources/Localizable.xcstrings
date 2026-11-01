@@ -3378,6 +3378,38 @@
           }
         }
       }
+    },
+    "Ancien code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ancien code"
+          }
+        }
+      }
+    },
+    "Confirme d'abord ton identité pour modifier cet élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm it's you first to change this item."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirme d'abord ton identité pour modifier cet élément."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

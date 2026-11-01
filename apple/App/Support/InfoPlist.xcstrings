@@ -21,7 +21,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses the camera to read the QR code on your Emergency Kit, the one shown by a new device or a verification code's."
+            "value" : "OnePass uses the camera to read the QR code on your Emergency Kit, the one shown by a new device or one for a verification code."
           }
         },
         "fr" : {

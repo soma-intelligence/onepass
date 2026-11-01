@@ -70,7 +70,7 @@ struct BrowseRoot: View {
             #if os(iOS)
             .sheet(isPresented: $model.showOtpScanner) {
                 SecretKeyScannerSheet(title: "Code de vérification", accept: SecretKeyScanner.acceptOtpLink) { link in
-                    Task { await model.presentOtpLink(link) }
+                    Task { await model.presentOtpLink(link, source: .scan) }
                 }
             }
             #endif

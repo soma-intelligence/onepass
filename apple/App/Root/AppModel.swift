@@ -133,8 +133,10 @@ final class AppModel {
     var showOtpScanner = false
     /// The waiting route was queued while locked, so the coming unlock is made for it (ruling W13).
     @ObservationIgnored private var pendingRouteFresh = false
-    /// When the waiting route was queued (an abandoned copy request expires).
+    /// When the waiting route was queued (an abandoned copy request or code link expires).
     @ObservationIgnored private var pendingRouteAt = Date.distantPast
+    /// Drops a waiting code link once expired, so its secret does not stay in memory while locked.
+    @ObservationIgnored private var pendingRouteExpiry: Task<Void, Never>?
     /// When the session last became unlocked (lock requests from a Control older than this are spent).
     @ObservationIgnored private(set) var lastUnlockAt: Date?
     /// What the browse screens should bring forward (iPhone: the tab to select). Cleared by the
@@ -428,6 +430,7 @@ final class AppModel {
         case .background:
             // A guest session never survives the app leaving the screen (ruling A7).
             publicSession?.end()
+            dropPendingOtpLink()
             session.scenePhaseChanged(.background)
             #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()
@@ -715,6 +718,7 @@ final class AppModel {
     /// Lock now, without asking. Explicit locks go through `perform(.lock)`.
     func lock() {
         resetNavigation()
+        dropPendingOtpLink()
         session.lock()
     }
 
@@ -799,19 +803,47 @@ final class AppModel {
             pendingRouteFresh = IntentAuthentication.isFreshUnlockRequest(
                 state: session.state, onboarding: onboardingInProgress)
             pendingRouteAt = .now
+            pendingRouteExpiry?.cancel()
+            pendingRouteExpiry = nil
+            if case .otpLink = route {
+                pendingRouteExpiry = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(PendingRequest.lifetime + 1))
+                    guard !Task.isCancelled else { return }
+                    self?.dropPendingOtpLink()
+                }
+            }
             return
         }
         run(route, freshUnlock: false)
+    }
+
+    /// A verification code link waiting for the unlock holds its secret: dropped when the app
+    /// locks or leaves the screen, and once expired.
+    private func dropPendingOtpLink() {
+        guard case .otpLink = pendingRoute else { return }
+        pendingRoute = nil
+        pendingRouteExpiry?.cancel()
+        pendingRouteExpiry = nil
     }
 
     /// After an unlock: the waiting route, if any.
     func consumePendingRoute() {
         guard session.state == .unlocked, !onboardingInProgress, let route = pendingRoute else { return }
         pendingRoute = nil
-        // A copy request left waiting more than 2 minutes was abandoned: no code copied later.
-        if case .copyTotp = route, Date.now.timeIntervalSince(pendingRouteAt) > 120 {
-            showToast(String(localized: "Demande de copie expirée"), kind: .error)
-            return
+        pendingRouteExpiry?.cancel()
+        pendingRouteExpiry = nil
+        // A copy request or code link left waiting more than 2 minutes was abandoned.
+        if PendingRequest.isExpired(queuedAt: pendingRouteAt, now: .now) {
+            switch route {
+            case .copyTotp:
+                showToast(String(localized: "Demande de copie expirée"), kind: .error)
+                return
+            case .otpLink:
+                showToast(String(localized: "Lien de code de vérification expiré. Ouvre-le de nouveau."), kind: .error)
+                return
+            case .link:
+                break
+            }
         }
         run(route, freshUnlock: pendingRouteFresh)
     }
@@ -838,14 +870,15 @@ final class AppModel {
         case .copyTotp(let ref):
             Task { await copyTotp(ref, freshUnlock: freshUnlock) }
         case .otpLink(let link):
-            Task { await presentOtpLink(link) }
+            Task { await presentOtpLink(link, source: .link) }
         }
     }
 
     /// The "Ajouter un code" sheet for a verification code link, or a message when the link is not
-    /// one the core reads (HOTP, malformed). The sheets the model owns close first, like the master
-    /// password prompt; a new item being written keeps the link out (a message says so).
-    func presentOtpLink(_ link: String) async {
+    /// one the core reads (HOTP, malformed). The sheets the model owns close first, the master
+    /// password prompt of a code copy included; a new item being written keeps the link out (a
+    /// message says so).
+    func presentOtpLink(_ link: String, source: OtpLinkRequest.Source) async {
         let accounts: [OtpLinkAccount]
         do {
             accounts = try OtpLink.accounts(in: link)
@@ -858,7 +891,8 @@ final class AppModel {
             return
         }
         let covered = showSettings || showGenerator || showNewItemPicker || showImport || showOtpScanner
-            || otpLinkRequest != nil
+            || otpLinkRequest != nil || totpPasswordRequest != nil
+        totpPasswordRequest = nil
         showOtpScanner = false
         showSettings = false
         showGenerator = false
@@ -871,7 +905,7 @@ final class AppModel {
             await Task.yield()
         }
         guard session.state == .unlocked else { return }
-        otpLinkRequest = OtpLinkRequest(accounts: accounts)
+        otpLinkRequest = OtpLinkRequest(accounts: accounts, source: source)
     }
 
     /// "Copier le code à usage unique" (App Intent, ruling W13): an unlock made for this request
@@ -965,7 +999,8 @@ final class AppModel {
         showGenerator = false
         browseReveal = nil
         totpPasswordRequest = nil
-        // The accounts hold their secrets: never kept past a lock.
+        // The accounts hold their secrets: never kept past a lock (a link still waiting for the
+        // unlock is dropped by `dropPendingOtpLink`).
         otpLinkRequest = nil
         showOtpScanner = false
     }
