@@ -369,6 +369,26 @@ impl std::fmt::Debug for FfiTotpCode {
     }
 }
 
+/// One account of an `otpauth://` or `otpauth-migration://` link: names in
+/// clear, `uri` the canonical `otpauth://` URI for a Login's `totp` field.
+/// `uri` holds the secret: never logged.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiOtpLinkAccount {
+    pub issuer: Option<String>,
+    pub account: Option<String>,
+    pub uri: String,
+}
+
+impl std::fmt::Debug for FfiOtpLinkAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiOtpLinkAccount")
+            .field("issuer", &self.issuer)
+            .field("account", &self.account)
+            .field("uri", &"[redacted]")
+            .finish()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiHistoryEntry {
     pub value: String,

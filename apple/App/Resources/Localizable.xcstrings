@@ -14696,6 +14696,186 @@
           }
         }
       }
+    },
+    "Ce lien de code de vérification n'est pas pris en charge." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This verification code link is not supported."
+          }
+        }
+      }
+    },
+    "Termine l'élément en cours pour ajouter le code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish the item you are editing to add the code."
+          }
+        }
+      }
+    },
+    "Code ajouté à %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code added to %@"
+          }
+        }
+      }
+    },
+    "Ajouté à %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added to %@"
+          }
+        }
+      }
+    },
+    "%lld codes dans cet export. Chacun va dans son propre élément Login." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld codes in this export. Each one goes into its own Login item."
+          }
+        }
+      }
+    },
+    "Ajouter des codes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add codes"
+          }
+        }
+      }
+    },
+    "Ajouter un code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a code"
+          }
+        }
+      }
+    },
+    "Nouvel élément Login" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Login item"
+          }
+        }
+      }
+    },
+    "Titre %@, dans le coffre %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title %1$@, in the %2$@ vault."
+          }
+        }
+      }
+    },
+    "Suggestions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggestions"
+          }
+        }
+      }
+    },
+    "Ajouter à un élément existant" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to an existing item"
+          }
+        }
+      }
+    },
+    "Aucun élément Login." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Login items."
+          }
+        }
+      }
+    },
+    "Aucun résultat." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results."
+          }
+        }
+      }
+    },
+    "Rechercher un élément Login" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search for a Login item"
+          }
+        }
+      }
+    },
+    "Remplacer le code existant ?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace the existing code?"
+          }
+        }
+      }
+    },
+    "%@ a déjà un code à usage unique. Le nouveau le remplace." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ already has a one-time code. The new one replaces it."
+          }
+        }
+      }
+    },
+    "QR code de vérification" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification QR code"
+          }
+        }
+      }
+    },
+    "Scanner un code de vérification…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a verification code…"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

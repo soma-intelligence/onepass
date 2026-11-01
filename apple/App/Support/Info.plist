@@ -30,6 +30,15 @@
 				<string>onepass</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>me.somalabs.onepass.otpauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>otpauth</string>
+				<string>otpauth-migration</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -42,7 +51,7 @@
 		<string>_onepass-pair._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit ou celui d'un nouvel appareil.</string>
+	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître.</string>
 	<key>NSLocalNetworkUsageDescription</key>

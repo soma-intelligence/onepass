@@ -3346,6 +3346,38 @@
           }
         }
       }
+    },
+    "Code de vérification" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code de vérification"
+          }
+        }
+      }
+    },
+    "Le code ne peut être ajouté qu'à un élément Login." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code can only be added to a Login item."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le code ne peut être ajouté qu'à un élément Login."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

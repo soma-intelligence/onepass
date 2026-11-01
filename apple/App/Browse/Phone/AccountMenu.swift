@@ -19,6 +19,12 @@ struct AccountMenu: View {
                     .accessibilityIdentifier("account.newVault")
                 Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
                     .accessibilityIdentifier("account.import")
+                if SecretKeyScanner.isSupported {
+                    Button("Scanner un code de vérification…", systemImage: "qrcode.viewfinder") {
+                        model.showOtpScanner = true
+                    }
+                    .accessibilityIdentifier("account.scanOtp")
+                }
             } header: {
                 Text(verbatim: "\(name) · \(device)")
             }

@@ -92,6 +92,7 @@
 		88855E27AFF53DF2C4EA1589 /* AgentsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37A148525A5253544CE1AB8D /* AgentsSettings.swift */; };
 		8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */; };
 		90165B8F84F9DB835D3413F4 /* RunThroughUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */; };
+		9134B8DC3B113088C8113371 /* AddOtpSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */; };
 		914EB56D92941137E477FBE9 /* BrowserBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */; };
 		92506BF8D288BB8AE298D980 /* VisibleVaultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFEBDCF2AC2C6C2D8E999C5 /* VisibleVaultsView.swift */; };
 		928F96C444AB1DC3468E09CA /* VisionGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */; };
@@ -332,6 +333,7 @@
 		530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEditorView.swift; sourceTree = "<group>"; };
 		556B5099E4A3256C41665C0F /* AccountMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenu.swift; sourceTree = "<group>"; };
 		568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettings.swift; sourceTree = "<group>"; };
+		5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddOtpSheet.swift; sourceTree = "<group>"; };
 		5D40167C0D7679C74A6D594D /* LockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockView.swift; sourceTree = "<group>"; };
 		5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunThroughUITests.swift; sourceTree = "<group>"; };
 		600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorModel.swift; sourceTree = "<group>"; };
@@ -881,6 +883,7 @@
 			isa = PBXGroup;
 			children = (
 				62D4DDCD9735058F9697F671 /* FieldEditors */,
+				5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */,
 				F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */,
 				A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */,
 				73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */,
@@ -1415,6 +1418,7 @@
 				06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */,
 				4465F72DEE3CAF7791B626F7 /* AccountChangeViews.swift in Sources */,
 				0C7E3E6364BDD9C145810C95 /* AccountMenu.swift in Sources */,
+				9134B8DC3B113088C8113371 /* AddOtpSheet.swift in Sources */,
 				9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */,
 				AC97612BBB4918DE3AF1B3FE /* AgentRequestView.swift in Sources */,
 				88855E27AFF53DF2C4EA1589 /* AgentsSettings.swift in Sources */,

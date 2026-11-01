@@ -127,6 +127,10 @@ final class AppModel {
     var totpPasswordRequest: ItemRef?
     /// The master password sheet of `totpPasswordRequest` actually appeared.
     @ObservationIgnored var totpPromptShown = false
+    /// The accounts of a verification code link, shown by the "Ajouter un code" sheet.
+    var otpLinkRequest: OtpLinkRequest?
+    /// The camera reading a verification code QR code (iPhone account menu).
+    var showOtpScanner = false
     /// The waiting route was queued while locked, so the coming unlock is made for it (ruling W13).
     @ObservationIgnored private var pendingRouteFresh = false
     /// When the waiting route was queued (an abandoned copy request expires).
@@ -833,7 +837,41 @@ final class AppModel {
             searchFocusRequest &+= 1
         case .copyTotp(let ref):
             Task { await copyTotp(ref, freshUnlock: freshUnlock) }
+        case .otpLink(let link):
+            Task { await presentOtpLink(link) }
         }
+    }
+
+    /// The "Ajouter un code" sheet for a verification code link, or a message when the link is not
+    /// one the core reads (HOTP, malformed). The sheets the model owns close first, like the master
+    /// password prompt; a new item being written keeps the link out (a message says so).
+    func presentOtpLink(_ link: String) async {
+        let accounts: [OtpLinkAccount]
+        do {
+            accounts = try OtpLink.accounts(in: link)
+        } catch {
+            showToast(String(localized: "Ce lien de code de vérification n'est pas pris en charge."), kind: .error)
+            return
+        }
+        guard newItemDraft == nil, !editing else {
+            showToast(String(localized: "Termine l'élément en cours pour ajouter le code."), kind: .error)
+            return
+        }
+        let covered = showSettings || showGenerator || showNewItemPicker || showImport || showOtpScanner
+            || otpLinkRequest != nil
+        showOtpScanner = false
+        showSettings = false
+        showGenerator = false
+        showNewItemPicker = false
+        showImport = false
+        otpLinkRequest = nil
+        if covered {
+            try? await Task.sleep(for: .milliseconds(700))
+        } else {
+            await Task.yield()
+        }
+        guard session.state == .unlocked else { return }
+        otpLinkRequest = OtpLinkRequest(accounts: accounts)
     }
 
     /// "Copier le code à usage unique" (App Intent, ruling W13): an unlock made for this request
@@ -927,6 +965,9 @@ final class AppModel {
         showGenerator = false
         browseReveal = nil
         totpPasswordRequest = nil
+        // The accounts hold their secrets: never kept past a lock.
+        otpLinkRequest = nil
+        showOtpScanner = false
     }
 
     /// Changes a local setting and restarts the auto-lock clock (a new delay applies from now).

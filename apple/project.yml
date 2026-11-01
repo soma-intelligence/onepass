@@ -127,7 +127,7 @@ targets:
         # The app ships its own cryptography; export compliance is settled before submission (README).
         ITSAppUsesNonExemptEncryption: true
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
-        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit ou celui d'un nouvel appareil."
+        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
         NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
         NSBonjourServices: [_onepass-pair._tcp]
@@ -140,10 +140,14 @@ targets:
         # CloudKit pushes: sync rounds, and the agent requests of the Mac (agent-ready spec 5.2).
         # The Push Notifications capability is `aps-environment` in the CloudKit entitlements.
         UIBackgroundModes: [remote-notification]
-        # Deep links from the widgets and Controls (GlanceKit `OnePassLink`).
+        # Deep links from the widgets and Controls (GlanceKit `OnePassLink`), and the verification
+        # code links: declaring `otpauth` lists OnePass in Réglages > Codes de vérification >
+        # "Configurer les codes dans" (`otpauth-migration` is the Google Authenticator export).
         CFBundleURLTypes:
           - CFBundleURLName: me.somalabs.onepass
             CFBundleURLSchemes: [onepass]
+          - CFBundleURLName: me.somalabs.onepass.otpauth
+            CFBundleURLSchemes: [otpauth, otpauth-migration]
         UISupportedInterfaceOrientations~iphone:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:

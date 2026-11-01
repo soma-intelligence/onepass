@@ -355,6 +355,21 @@ pub fn totp_now(secret_or_uri: String, unix_seconds: u64) -> Result<FfiTotpCode,
     })
 }
 
+/// The accounts of an `otpauth://` or `otpauth-migration://` link opened by
+/// the system (camera, Safari, another app). Refuses HOTP and any other link.
+#[uniffi::export]
+pub fn otp_link_accounts(link: String) -> Result<Vec<FfiOtpLinkAccount>, OnePassError> {
+    let link = Zeroizing::new(link);
+    Ok(onepass_core::import::text::otp_link_accounts(&link)?
+        .into_iter()
+        .map(|a| FfiOtpLinkAccount {
+            issuer: a.issuer,
+            account: a.account,
+            uri: a.uri.to_string(),
+        })
+        .collect())
+}
+
 /// The 26 types in the order of the spec.
 #[uniffi::export]
 pub fn item_types() -> Vec<FfiItemTypeInfo> {

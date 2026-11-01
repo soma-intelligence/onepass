@@ -212,7 +212,9 @@ pub(crate) fn parse_wifi_qr_lines(b: &[u8]) -> Result<Import> {
 
 /// Login draft for one TOTP configuration: the URI is rebuilt from its
 /// parts so every source (plain or migration) ends in the same form.
-fn totp_login(cfg: &TotpConfig) -> Draft {
+/// The canonical `otpauth://` URI of a config (base32 secret, explicit
+/// algorithm, digits and period, `encoder=steam` kept).
+fn totp_uri(cfg: &TotpConfig) -> Zeroizing<String> {
     let secret = Zeroizing::new(BASE32_NOPAD.encode(&cfg.secret));
     let algorithm = match cfg.algorithm {
         TotpAlgorithm::Sha1 => "SHA1",
@@ -234,6 +236,65 @@ fn totp_login(cfg: &TotpConfig) -> Draft {
     if cfg.steam {
         uri.push_str(STEAM);
     }
+    uri
+}
+
+/// One account of an `otpauth://` or `otpauth-migration://` link, for the
+/// "add a code" sheet: names in clear, the canonical URI to store in a
+/// Login's `totp` field. The URI holds the secret: never logged.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OtpLinkAccount {
+    pub issuer: Option<String>,
+    pub account: Option<String>,
+    pub uri: Zeroizing<String>,
+}
+
+impl fmt::Debug for OtpLinkAccount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OtpLinkAccount")
+            .field("issuer", &self.issuer)
+            .field("account", &self.account)
+            .field("uri", &"[redacted]")
+            .finish()
+    }
+}
+
+/// The accounts of a link opened by the system (camera, Safari, another
+/// app): one for `otpauth://totp/...`, one or more for a Google
+/// Authenticator export. HOTP and unsupported entries are refused or
+/// skipped like the import.
+pub fn otp_link_accounts(link: &str) -> Result<Vec<OtpLinkAccount>> {
+    /// A Google Authenticator export of a few hundred accounts fits well within this.
+    const MAX_LINK: usize = 64 * 1024;
+    let link = link.trim();
+    if link.len() > MAX_LINK {
+        return Err(Error::InvalidFormat("otp link too long"));
+    }
+    let configs = if starts_with_ci(link, "otpauth-migration://") {
+        parse_migration(link)?
+    } else if starts_with_ci(link, "otpauth://") {
+        vec![parse_otpauth(link)?]
+    } else {
+        return Err(Error::InvalidFormat("otp link"));
+    };
+    fn named(o: &Option<String>) -> Option<String> {
+        o.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    }
+    Ok(configs
+        .iter()
+        .map(|cfg| OtpLinkAccount {
+            issuer: named(&cfg.issuer),
+            account: named(&cfg.account),
+            uri: totp_uri(cfg),
+        })
+        .collect())
+}
+
+fn totp_login(cfg: &TotpConfig) -> Draft {
+    let uri = totp_uri(cfg);
     fn named(o: &Option<String>) -> Option<&str> {
         o.as_deref().map(str::trim).filter(|s| !s.is_empty())
     }
@@ -392,6 +453,44 @@ mod tests {
         assert_eq!(text(gh, "username").as_deref(), Some("quentin"));
         let cfg = parse_otpauth(&text(gh, "totp").unwrap()).unwrap();
         assert_eq!(&cfg.secret[..], b"12345678901234567890");
+    }
+
+    #[test]
+    fn otp_link_single_account() {
+        let link = "otpauth://totp/Test:moi?secret=JBSWY3DPEHPK3PXP&issuer=Test";
+        let accounts = otp_link_accounts(link).unwrap();
+        assert_eq!(accounts.len(), 1);
+        let a = &accounts[0];
+        assert_eq!(a.issuer.as_deref(), Some("Test"));
+        assert_eq!(a.account.as_deref(), Some("moi"));
+        let cfg = parse_otpauth(&a.uri).unwrap();
+        assert_eq!(BASE32_NOPAD.encode(&cfg.secret), "JBSWY3DPEHPK3PXP");
+        assert_eq!((cfg.digits, cfg.period), (6, 30));
+        assert!(!format!("{a:?}").contains("JBSWY3DPEHPK3PXP"));
+    }
+
+    #[test]
+    fn otp_link_migration_lists_every_account() {
+        let text = std::str::from_utf8(OTP).unwrap();
+        let line = text
+            .lines()
+            .find(|l| l.starts_with("otpauth-migration://"))
+            .unwrap();
+        let accounts = otp_link_accounts(line).unwrap();
+        assert!(!accounts.is_empty());
+        assert_eq!(accounts[0].issuer.as_deref(), Some("GitHub"));
+        assert_eq!(accounts[0].account.as_deref(), Some("quentin"));
+        let cfg = parse_otpauth(&accounts[0].uri).unwrap();
+        assert_eq!(&cfg.secret[..], b"12345678901234567890");
+    }
+
+    #[test]
+    fn otp_link_refuses_other_links() {
+        assert!(otp_link_accounts("https://example.com/?secret=JBSWY3DPEHPK3PXP").is_err());
+        assert!(otp_link_accounts("otpauth://hotp/X?secret=JBSWY3DPEHPK3PXP&counter=1").is_err());
+        assert!(otp_link_accounts("otpauth://totp/X").is_err());
+        let long = format!("otpauth://totp/X?secret={}", "A".repeat(70 * 1024));
+        assert!(otp_link_accounts(&long).is_err());
     }
 
     #[test]
