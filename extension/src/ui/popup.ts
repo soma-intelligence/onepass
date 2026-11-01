@@ -7,7 +7,18 @@
 // and "Oublier mes choix sur ce site".
 import { ext } from "../shared/browser";
 import { tr } from "../shared/i18n";
-import type { GeneratorEntry, GeneratorKind, PopupPlanLine, PopupStatus, Summary } from "../shared/ui";
+import {
+  CUSTOM_MAX_LENGTH,
+  CUSTOM_MIN_LENGTH,
+  GENERATOR_PROFILE_KEY,
+  type GeneratorEntry,
+  type GeneratorKind,
+  type GeneratorProfile,
+  type PopupPlanLine,
+  type PopupStatus,
+  type Summary,
+  parseGeneratorProfile,
+} from "../shared/ui";
 import {
   type Send,
   type Timers,
@@ -43,7 +54,19 @@ export interface PopupDeps {
   timers?: Timers;
   /** Clipboard write (navigator.clipboard in the extension). */
   copy?: (text: string) => Promise<void>;
+  /** `storage.local`: the profile the extension generates with on pages (`generator_profile`). */
+  storage?: {
+    get(key: string): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+  };
 }
+
+/** Choices of the profile used on pages (the worker reads it, generate.ts). */
+export const PROFILE_CHOICES: readonly { value: "strong" | "readable" | "custom"; label: string }[] = [
+  { value: "strong", label: tr("Fort", "Strong") },
+  { value: "readable", label: tr("Lisible", "Readable") },
+  { value: "custom", label: tr("Personnalisé", "Custom") },
+];
 
 export interface PopupHandle {
   ready: Promise<void>;
@@ -654,6 +677,37 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   let genPassword = "";
   let genEntropy = 0;
   let historyOpen = false;
+  let profile: GeneratorProfile = "strong";
+
+  async function loadProfile(): Promise<void> {
+    if (!deps.storage) return;
+    try {
+      profile = parseGeneratorProfile((await deps.storage.get(GENERATOR_PROFILE_KEY))[GENERATOR_PROFILE_KEY]);
+    } catch {
+      profile = "strong";
+    }
+  }
+
+  async function saveProfile(p: GeneratorProfile): Promise<void> {
+    profile = p;
+    try {
+      await deps.storage?.set({ [GENERATOR_PROFILE_KEY]: p });
+    } catch {
+      toast(errorText("internal"), "error");
+    }
+    await renderGenerator();
+  }
+
+  /** The length slider (8 to 64), its value shown beside it. */
+  function lengthLine(value: number, onChange: (n: number) => void): HTMLElement {
+    const range = h("input", {
+      attrs: { type: "range", min: String(CUSTOM_MIN_LENGTH), max: String(CUSTOM_MAX_LENGTH), value: String(value), "aria-label": tr("Longueur", "Length") },
+    });
+    const shown = h("span", { class: "field-note" }, String(value));
+    range.addEventListener("input", () => (shown.textContent = range.value));
+    range.addEventListener("change", () => onChange(Number(range.value)));
+    return h("label", { class: "gen-line" }, tr("Longueur", "Length"), range, shown);
+  }
 
   async function generate(): Promise<void> {
     const msg =
@@ -673,6 +727,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     selected = null;
     renderSide();
     container.querySelector(".pp-head .gen-toggle")?.classList.add("on");
+    await loadProfile();
     await generate();
   }
 
@@ -701,14 +756,36 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     });
     const settings = h("div", { class: "card" }, h("label", { class: "gen-line" }, tr("Type", "Type"), select));
     if (genKind === "random") {
-      const range = h("input", { attrs: { type: "range", min: "8", max: "64", value: String(genLength), "aria-label": tr("Longueur", "Length") } });
-      const shown = h("span", { class: "field-note" }, String(genLength));
-      range.addEventListener("input", () => (shown.textContent = range.value));
-      range.addEventListener("change", () => {
-        genLength = Number(range.value);
-        void track(generate());
+      settings.append(
+        lengthLine(genLength, (n) => {
+          genLength = n;
+          void track(generate());
+        }),
+      );
+    }
+    if (genKind === "smart") {
+      // The profile the extension generates with on sites (menu, fill, save prompt).
+      const current = typeof profile === "string" ? profile : "custom";
+      const pick = h("select", { class: "select", attrs: { "aria-label": tr("Profil sur les sites", "Profile on sites") } });
+      for (const c of PROFILE_CHOICES) {
+        const o = h("option", { attrs: { value: c.value } }, c.label);
+        if (c.value === current) o.selected = true;
+        pick.append(o);
+      }
+      pick.addEventListener("change", () => {
+        const v = pick.value;
+        if (v === "strong" || v === "readable") void track(saveProfile(v));
+        else if (v === "custom") void track(saveProfile({ kind: "custom", length: Math.min(CUSTOM_MAX_LENGTH, Math.max(CUSTOM_MIN_LENGTH, genLength)), symbols: true }));
       });
-      settings.append(h("label", { class: "gen-line" }, tr("Longueur", "Length"), range, shown));
+      settings.append(h("label", { class: "gen-line" }, tr("Sur les sites", "On sites"), pick));
+      if (typeof profile === "object") {
+        const custom = profile;
+        settings.append(lengthLine(custom.length, (n) => void track(saveProfile({ ...custom, length: n }))));
+        const symbols = h("input", { attrs: { type: "checkbox", "aria-label": tr("Symboles", "Symbols") } });
+        symbols.checked = custom.symbols;
+        symbols.addEventListener("change", () => void track(saveProfile({ ...custom, symbols: symbols.checked })));
+        settings.append(h("label", { class: "gen-line" }, tr("Symboles", "Symbols"), symbols));
+      }
     }
     let historyList: HTMLElement | null = null;
     if (historyOpen) {
@@ -845,6 +922,6 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 if (typeof document !== "undefined" && ext?.runtime?.id) {
   const root = document.getElementById("root");
-  if (root) mountPopup(root, { send: (m) => ext.runtime.sendMessage(m) });
+  if (root) mountPopup(root, { send: (m) => ext.runtime.sendMessage(m), storage: ext.storage.local });
   if (__LAB_RECORDER__) void import("../dev/recorder-ui").then((m) => m.default(document));
 }

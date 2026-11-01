@@ -359,6 +359,56 @@ describe("popup", () => {
     expect(text(r)).toContain("old-Pass-1");
   });
 
+  it("profile_select_saves", async () => {
+    const stored = new Map<string, unknown>();
+    const storage = {
+      get: async (k: string) => (stored.has(k) ? { [k]: structuredClone(stored.get(k)) } : {}),
+      set: async (items: Record<string, unknown>) => {
+        for (const [k, v] of Object.entries(items)) stored.set(k, structuredClone(v));
+      },
+    };
+    const r = root();
+    const handle = mountPopup(r, { send: worker().send, timers: new ManualTimers(), storage });
+    await handle.ready;
+    r.querySelector<HTMLButtonElement>("button[aria-label='Générateur de mot de passe']")!.click();
+    await handle.settled();
+    const profile = () => r.querySelector<HTMLSelectElement>("select[aria-label='Profil sur les sites']")!;
+    expect([...profile().options].map((o) => [o.value, o.textContent])).toEqual([
+      ["strong", "Fort"],
+      ["readable", "Lisible"],
+      ["custom", "Personnalisé"],
+    ]);
+    expect(profile().value).toBe("strong");
+    expect(r.querySelector("input[type=range]")).toBeNull();
+    profile().value = "readable";
+    profile().dispatchEvent(new Event("change"));
+    await handle.settled();
+    expect(stored.get("generator_profile")).toBe("readable");
+    profile().value = "custom";
+    profile().dispatchEvent(new Event("change"));
+    await handle.settled();
+    expect(stored.get("generator_profile")).toEqual({ kind: "custom", length: 20, symbols: true });
+    // Custom: the length slider and the symbols switch.
+    const range = r.querySelector<HTMLInputElement>("input[type=range]")!;
+    range.value = "40";
+    range.dispatchEvent(new Event("change"));
+    await handle.settled();
+    expect(stored.get("generator_profile")).toEqual({ kind: "custom", length: 40, symbols: true });
+    const symbols = r.querySelector<HTMLInputElement>("input[type=checkbox][aria-label='Symboles']")!;
+    symbols.checked = false;
+    symbols.dispatchEvent(new Event("change"));
+    await handle.settled();
+    expect(stored.get("generator_profile")).toEqual({ kind: "custom", length: 40, symbols: false });
+    // A new popup reads it back.
+    const r2 = root();
+    const h2 = mountPopup(r2, { send: worker().send, timers: new ManualTimers(), storage });
+    await h2.ready;
+    r2.querySelector<HTMLButtonElement>("button[aria-label='Générateur de mot de passe']")!.click();
+    await h2.settled();
+    expect(r2.querySelector<HTMLSelectElement>("select[aria-label='Profil sur les sites']")!.value).toBe("custom");
+    expect(r2.querySelector<HTMLInputElement>("input[type=range]")!.value).toBe("40");
+  });
+
   it("locked during use falls back to the locked view", async () => {
     const { r, handle } = setup(worker((m) => (m.type === "popup_item" ? { err: "locked" } : null)));
     await handle.ready;
