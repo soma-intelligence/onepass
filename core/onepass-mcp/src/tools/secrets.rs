@@ -26,7 +26,9 @@ use onepass_core::model::{
     Field, FieldType, FieldValue, Item, ItemType, ItemUrl, MatchRule, new_item, validate,
 };
 use onepass_core::reference::{SecretRef, otp_field_of};
-use onepass_core::totp::{TotpConfig, parse_otpauth, seconds_remaining, totp_from_secret};
+use onepass_core::totp::{
+    TotpConfig, is_previous_otp_field, parse_otpauth, seconds_remaining, totp_from_secret,
+};
 use onepass_guard::{
     Admit, ApprovalRequest, Decision, GrantCheck, GrantRequest, Kind, MAX_GRANT_TTL,
     OUTCOME_GRANT_EXPIRED, OUTCOME_GRANT_REVOKED, StrongOutcome, Surface, Target, decision_label,
@@ -512,8 +514,19 @@ impl<P: VaultPort> McpTools<P> {
         }
         for l in &located {
             self.require(&l.vault, Scope::Use)?;
+            self.require_seed_scope(l)?;
         }
         Ok(located)
+    }
+
+    /// A replaced one-time password seed (`previous_otp_<n>`, shown as
+    /// "Ancien code") is a seed like the `totp` field: reading it as a
+    /// value also needs the `totp` scope.
+    fn require_seed_scope(&self, l: &Located) -> Result<(), Refusal> {
+        if is_previous_otp_field(&l.field_id) {
+            self.require(&l.vault, Scope::Totp)?;
+        }
+        Ok(())
     }
 
     /// `run_with_secrets {command, env?, files?, cwd?, timeout_secs?}`.
@@ -891,6 +904,7 @@ impl<P: VaultPort> McpTools<P> {
     ) -> CallResult {
         let l = self.locate(str_arg(args, "reference").unwrap_or_default(), call)?;
         self.require(&l.vault, Scope::Reveal)?;
+        self.require_seed_scope(&l)?;
         self.approve(
             client,
             "reveal_secret",
