@@ -53,7 +53,7 @@ describe("rowsFor", () => {
     expect(rows.length).toBeGreaterThan(100);
     expect(marked).toBeGreaterThan(50);
     expect(rows.every((r) => typeof r.target === "string")).toBe(true);
-    expect(rows.every((r) => !("lab" in r) && r.featureVersion >= 1 && r.generator === 2 && r.seed === "ds")).toBe(true);
+    expect(rows.every((r) => !("lab" in r) && r.featureVersion >= 1 && r.generator === 3 && r.seed === "ds")).toBe(true);
     const json = JSON.stringify(rows);
     for (const s of world.sites) {
       for (const secret of [s.account?.password, s.account?.totpSecret]) if (secret && secret.length >= 6) expect(json).not.toContain(secret);
@@ -179,7 +179,7 @@ describe("buildDataset", () => {
     try {
       const m = await buildDataset({ seed: "t9", forms: 120, workers: 2, out, patterns });
       expect(m.forms).toBe(120);
-      const dir = join(out, "t9-g2");
+      const dir = join(out, "t9-g3");
       const { text, rows } = readRows(dir);
       expect(rows.length).toBe(m.rows);
       expect(Object.values(m.byTarget).reduce((a, b) => a + b, 0)).toBe(rows.length);
@@ -217,11 +217,11 @@ describe("buildDataset", () => {
     try {
       const ma = await buildDataset({ seed: "ord", forms: 150, workers: 1, out: a, patterns });
       const mb = await buildDataset({ seed: "ord", forms: 150, workers: 4, out: b, patterns });
-      const ra = readRows(join(a, "ord-g2"));
-      const rb = readRows(join(b, "ord-g2"));
+      const ra = readRows(join(a, "ord-g3"));
+      const rb = readRows(join(b, "ord-g3"));
       expect(ra.files).toEqual(rb.files);
       expect(ra.text).toBe(rb.text);
-      for (const f of ra.files) expect(readFileSync(join(a, "ord-g2", f)).equals(readFileSync(join(b, "ord-g2", f)))).toBe(true);
+      for (const f of ra.files) expect(readFileSync(join(a, "ord-g3", f)).equals(readFileSync(join(b, "ord-g3", f)))).toBe(true);
       expect(ma.byTarget).toEqual(mb.byTarget);
       expect(ma.skippedForms).toBe(mb.skippedForms);
     } finally {
@@ -237,7 +237,7 @@ describe("buildDataset", () => {
       expect(m.failedForms).toBe(1);
       expect(m.forms).toBe(40);
       expect(m.rows).toBeGreaterThan(0);
-      expect(JSON.parse(readFileSync(join(out, "fail-g2", "manifest.json"), "utf8")).failedForms).toBe(1);
+      expect(JSON.parse(readFileSync(join(out, "fail-g3", "manifest.json"), "utf8")).failedForms).toBe(1);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

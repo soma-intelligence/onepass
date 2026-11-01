@@ -55,11 +55,11 @@ describe("driver sets", () => {
     expect(both.scenarios.filter((s) => s.driver !== "smart_fill")).toEqual(world.scenarios);
     const smart = both.scenarios.filter((s) => s.driver === "smart_fill");
     expect(smart.map((s) => s.site)).toEqual(world.sites.map((s) => s.index));
-    // Same capability table: a cross-site frame expects nothing filled, a passkey site is a known gap.
+    // Same capability table: a cross-site frame expects nothing filled, a passkey site a sign-in (Chromium).
     for (const s of smart) {
       const site = world.sites[s.site]!;
       if (site.traits.includes("iframe_cross_site")) expect(s.expect).toBe("nofill");
-      else if (site.flow === "login_passkey") expect(s.expect).toBe("xfail");
+      else if (site.flow === "login_passkey") expect(s.expect).toBe("pass");
     }
     expect(withDrivers(world, ["smart_fill"]).scenarios.every((s) => s.driver === "smart_fill")).toBe(true);
     expect(withDrivers(world, ["current"]).scenarios).toEqual(world.scenarios);

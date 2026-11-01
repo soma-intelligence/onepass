@@ -14,8 +14,8 @@
 // reached only through the Driver interface (driver.ts). Driver steps that
 // the page cannot satisfy are recorded as observations; only bench failures
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
-import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
+import { passkeyPkcs8 } from "../gen/data.ts";
 import type { Expect, FieldSpec, Site, World } from "../gen/model.ts";
 import type { Behaviour } from "../gen/population.ts";
 import { PAGE_PATH, stepPath } from "../gen/render.ts";
@@ -162,6 +162,14 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
   try {
     page = await env.newPage();
     await goto(page, `https://${site.host}/`);
+    if (site.passkeyOnly) {
+      // Nothing to fill: the user presses the site's passkey button and picks her account in OnePass's window.
+      const r = await passkeyStep(env, page, site, o);
+      o.overlayShown = r.asked;
+      o.itemOffered = r.offered;
+      foreign(env, site, o, values);
+      return finish(env, page, o, started);
+    }
     const ui = await env.driver.openOneClick(page, OVERLAY_WAIT_MS);
     o.overlayShown = ui !== undefined;
     if (ui && site.itemTitle) o.itemOffered = await ui.offers(site.itemTitle);
@@ -186,14 +194,44 @@ async function followChain(env: ScenarioEnv, page: Page, site: Site, o: Observat
         await snapshotFilled(page, site, o.filled, values);
         const c = await env.driver.progress(site.host);
         if (c) o.chain = c;
-        if ((c && c.status !== "running") || Date.now() >= end) {
+        // Password then passkey: the site now asks for the passkey, the user presses its button (below).
+        const passkeyAsked = site.flow === "login_passkey" && (await passkeyButton(page, 0)) !== undefined;
+        if ((c && c.status !== "running") || passkeyAsked || Date.now() >= end) {
           if (process.env.LAB_DEBUG) console.log(`[lab debug] progress ${JSON.stringify(c)} at ${page.url()}`);
           break;
         }
         await sleep(500);
       }
+      if (site.flow === "login_passkey" && !signedIn(site)(env.server.events())) {
+        await passkeyStep(env, page, site, o);
+        const c = await env.driver.progress(site.host);
+        if (c) o.chain = c;
+      }
       // The last post can still be in flight when the chain reports done.
       await waitEvents(env.server, signedIn(site), 3_000);
+}
+
+/** How long the site's passkey button gets to open OnePass's window (none opens while the chain signs itself). */
+const PASSKEY_WINDOW_MS = 8_000;
+
+/**
+ * The passkey step of a login_passkey site, as the user plays it: she
+ * presses the site's passkey button, then picks her account if OnePass's
+ * window asks (one more gesture). During her one-click sign-in the
+ * extension signs for the chain's item without a window. Waits for the
+ * site's sign-in or its refusal of the assertion.
+ */
+async function passkeyStep(env: ScenarioEnv, page: Page, site: Site, o: Observation): Promise<{ asked: boolean; offered: boolean }> {
+  const button = await passkeyButton(page, fieldWait(site));
+  if (!button || !site.account) return { asked: false, offered: false };
+  const r = await env.driver.passkey(() => button.click({ timeout: 10_000 }), site.account.username, PASSKEY_WINDOW_MS);
+  if (r.picked) o.clicks = (o.clicks ?? 0) + 1;
+  const end = Date.now() + 15_000;
+  while (Date.now() < end && !signedIn(site)(env.server.events())) {
+    if (env.server.events().some((e) => e.kind === "submit" && e.form === "passkey" && !e.ok)) break;
+    await sleep(200);
+  }
+  return { asked: r.asked, offered: r.offered };
 }
 
 /**
@@ -432,6 +470,12 @@ export async function smartFill(env: ScenarioEnv, site: Site, expectation: Expec
     } else if (outcome === "filled") {
       if (expectation !== "nofill") await userSubmit(env, page, scope, site, o);
     }
+    // A passkey-only page has nothing to fill: the user goes on with the site's passkey button.
+    if (site.passkeyOnly && expectation !== "nofill" && !signedIn(site)(env.server.events())) {
+      const r = await passkeyStep(env, page, site, o);
+      o.overlayShown ||= r.asked;
+      o.itemOffered ||= r.offered;
+    }
   } catch (e) {
     o.error = message(e);
   }
@@ -466,12 +510,6 @@ export async function lookalike(env: ScenarioEnv, site: Site): Promise<Observati
     o.error = message(e);
   }
   return finish(env, page, o, started);
-}
-
-/** PKCS#8 DER (base64) of the site's P-256 passkey, for WebAuthn.addCredential. */
-export function passkeyPkcs8(key: { d: string; x: string; y: string }): string {
-  const jwk = { kty: "EC", crv: "P-256", x: key.x, y: key.y, d: Buffer.from(key.d, "hex").toString("base64url") };
-  return createPrivateKey({ key: jwk, format: "jwk" }).export({ type: "pkcs8", format: "der" }).toString("base64");
 }
 
 const pathOf = (f: Frame): string => {
@@ -564,7 +602,7 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
       authenticatorId,
       credential: {
         credentialId: Buffer.from(key.credentialId, "base64url").toString("base64"),
-        isResidentCredential: false, rpId: site.host, privateKey: passkeyPkcs8(key), signCount: 0,
+        isResidentCredential: false, rpId: site.host, privateKey: passkeyPkcs8(key).toString("base64"), signCount: 0,
       },
     });
     await goto(page, `https://${site.host}/`);

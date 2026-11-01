@@ -5,6 +5,7 @@ import { classifyField } from "../../src/content/detect/fields";
 import { analyzeDocument } from "../../src/content/detect/forms";
 import { RefRegistry } from "../../src/content/detect/refs";
 import type { FieldRole } from "../../src/shared/messages";
+import seed from "../../lab/corpus/seed-lexicon.json";
 import { testGeometry } from "./helpers";
 
 const SITE = "https://sunny-valley-12.test/";
@@ -41,4 +42,31 @@ describe("lexicon gaps (lab)", () => {
     document.body.innerHTML = '<input id="a" name="log_level"><input id="b" name="changelog"><input id="c" placeholder="Search the log">';
     for (const id of ["a", "b", "c"]) expect(classifyField(document.getElementById(id) as HTMLInputElement).role).not.toBe("username");
   });
+});
+
+// The lab's baseline labels for Italian, Portuguese and Dutch (seed-lexicon.json,
+// generator version 3): a field with one of them as its label gets its role.
+const LAB_ROLE: Record<string, FieldRole> = {
+  username: "username", email: "email", password: "current_password", otp: "otp", cc_name: "cc_name", cc_number: "cc_number",
+  cc_exp: "cc_exp", cc_exp_month: "cc_exp_month", cc_exp_year: "cc_exp_year", cc_csc: "cc_csc", given_name: "given_name",
+  family_name: "family_name", tel: "tel", birth_date: "bday", organization: "organization", address_line1: "address_line1",
+  address_line2: "address_line2", postal_code: "postal_code", city: "city", country: "country",
+};
+const CARD = new Set(["cc_name", "cc_exp", "cc_exp_month", "cc_exp_year", "cc_csc"]);
+
+describe("lab baseline labels it, pt, nl", () => {
+  const roles = (seed as { roles: Record<string, { labels: Record<string, string[]> }> }).roles;
+  for (const lang of ["it", "pt", "nl"]) {
+    for (const [labRole, want] of Object.entries(LAB_ROLE)) {
+      for (const label of roles[labRole]!.labels[lang] ?? []) {
+        it(`${lang}: ${label} is ${want}`, () => {
+          // Card fields sit next to a card number, as in the lab's card form.
+          const number = CARD.has(labRole) ? '<label for="n">Card number</label><input id="n" autocomplete="cc-number">' : "";
+          const type = labRole === "password" ? "password" : "text";
+          document.body.innerHTML = `<form>${number}<label for="f">${label}</label><input id="f" name="x1" type="${type}"></form>`;
+          expect(classifyField(document.getElementById("f") as HTMLInputElement).role).toBe(want);
+        });
+      }
+    }
+  }
 });

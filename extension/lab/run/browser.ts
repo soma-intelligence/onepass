@@ -73,6 +73,12 @@ export interface Lab {
    * shows (within `timeout`) and the page analysis had time to attach it.
    */
   clickIcon(page: Page, scope: Frame, selector: string, timeout: number): Promise<void>;
+  /**
+   * Runs `trigger` (the site's own passkey button) and returns the OnePass
+   * passkey window it opened (popup passkey.html#<token>, a page of the
+   * context), or undefined when none opened within `timeout`.
+   */
+  passkeyWindow(trigger: () => Promise<void>, timeout: number): Promise<Page | undefined>;
   /** The toolbar Fill on `page`: the popup's `popup_smart_fill` with `page` as the active tab. */
   toolbarFill(page: Page): Promise<void>;
   /** The latest chain started on `https://<site>`, if any. */
@@ -185,6 +191,9 @@ export async function shadowField(scope: Frame, selector: string): Promise<{ x: 
     return hook ? hook(sel) : null;
   }, selector).catch(() => null);
 }
+
+/** URL of the extension's passkey choice window (background/passkey.ts opens it as a popup). */
+const PASSKEY_WINDOW = /^chrome-extension:\/\/[^/]+\/passkey\.html#[A-Za-z0-9_-]+$/;
 
 /** How long a click in a field gets to open the in-field menu before the driver asks with ArrowDown. */
 const CLICK_MENU_MS = 1_500;
@@ -373,6 +382,12 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         // The layout may have moved while the page settled.
         box = (await fieldBox(p, scope, selector)) ?? box;
         await p.mouse.click(box.x + box.width - ICON_CENTER_FROM_RIGHT, box.y + box.height / 2);
+      },
+      async passkeyWindow(trigger, timeout) {
+        const opened = context.waitForEvent("page", { predicate: (w) => PASSKEY_WINDOW.test(w.url()), timeout })
+          .then((w) => w, () => undefined);
+        await trigger();
+        return opened;
       },
       async toolbarFill(p) {
         const popup = await context.newPage();

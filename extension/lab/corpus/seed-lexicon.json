@@ -17,6 +17,19 @@
         "Continuer",
         "Suivant",
         "Étape suivante"
+      ],
+      "it": [
+        "Avanti",
+        "Continua"
+      ],
+      "nl": [
+        "Doorgaan",
+        "Volgende"
+      ],
+      "pt": [
+        "Continuar",
+        "Próximo",
+        "Seguinte"
       ]
     },
     "passkey": {
@@ -35,6 +48,18 @@
       "fr": [
         "Se connecter avec une clé d'accès",
         "Utiliser une clé d'accès"
+      ],
+      "it": [
+        "Accedi con una passkey",
+        "Usa passkey"
+      ],
+      "nl": [
+        "Inloggen met een toegangssleutel",
+        "Toegangssleutel gebruiken"
+      ],
+      "pt": [
+        "Iniciar sessão com uma chave de acesso",
+        "Usar chave de acesso"
       ]
     },
     "pay": {
@@ -57,6 +82,18 @@
         "Payer",
         "Payer maintenant",
         "Valider le paiement"
+      ],
+      "it": [
+        "Paga",
+        "Paga ora"
+      ],
+      "nl": [
+        "Betalen",
+        "Nu betalen"
+      ],
+      "pt": [
+        "Pagar",
+        "Pagar agora"
       ]
     },
     "save": {
@@ -77,6 +114,18 @@
         "Enregistrer",
         "Sauvegarder",
         "Valider"
+      ],
+      "it": [
+        "Salva",
+        "Salva modifiche"
+      ],
+      "nl": [
+        "Opslaan",
+        "Wijzigingen opslaan"
+      ],
+      "pt": [
+        "Guardar",
+        "Guardar alterações"
       ]
     },
     "signin": {
@@ -98,6 +147,17 @@
         "Connexion",
         "S'identifier",
         "Se connecter"
+      ],
+      "it": [
+        "Accedi"
+      ],
+      "nl": [
+        "Aanmelden",
+        "Inloggen"
+      ],
+      "pt": [
+        "Entrar",
+        "Iniciar sessão"
       ]
     },
     "signup": {
@@ -118,6 +178,17 @@
         "Créer un compte",
         "Inscription",
         "S'inscrire"
+      ],
+      "it": [
+        "Crea account",
+        "Registrati"
+      ],
+      "nl": [
+        "Account aanmaken",
+        "Registreren"
+      ],
+      "pt": [
+        "Criar conta"
       ]
     }
   },
@@ -162,6 +233,19 @@
           "Adresse",
           "Adresse postale",
           "Numéro et nom de rue"
+        ],
+        "it": [
+          "Indirizzo",
+          "Indirizzo riga 1"
+        ],
+        "nl": [
+          "Adres",
+          "Straat en huisnummer"
+        ],
+        "pt": [
+          "Endereço",
+          "Endereço linha 1",
+          "Morada"
         ]
       },
       "tokens": [
@@ -192,6 +276,17 @@
         "fr": [
           "Appartement, bâtiment",
           "Complément d'adresse"
+        ],
+        "it": [
+          "Indirizzo riga 2",
+          "Interno, scala"
+        ],
+        "nl": [
+          "Toevoeging"
+        ],
+        "pt": [
+          "Andar, porta",
+          "Complemento"
         ]
       },
       "tokens": [
@@ -221,6 +316,18 @@
         "fr": [
           "Date de naissance",
           "Né(e) le"
+        ],
+        "it": [
+          "Compleanno",
+          "Data di nascita"
+        ],
+        "nl": [
+          "Geboortedatum",
+          "Verjaardag"
+        ],
+        "pt": [
+          "Aniversário",
+          "Data de nascimento"
         ]
       },
       "tokens": [
@@ -254,6 +361,21 @@
           "Code de sécurité",
           "Cryptogramme visuel",
           "CVV"
+        ],
+        "it": [
+          "CVC",
+          "CVV",
+          "Codice di sicurezza"
+        ],
+        "nl": [
+          "Beveiligingscode",
+          "CVC",
+          "CVV"
+        ],
+        "pt": [
+          "CVC",
+          "CVV",
+          "Código de segurança"
         ]
       },
       "tokens": [
@@ -287,6 +409,21 @@
           "Date d'expiration",
           "Expire le",
           "MM/AA"
+        ],
+        "it": [
+          "Data di scadenza",
+          "MM/AA",
+          "Scadenza"
+        ],
+        "nl": [
+          "Geldig tot",
+          "MM/JJ",
+          "Vervaldatum"
+        ],
+        "pt": [
+          "Data de validade",
+          "MM/AA",
+          "Validade"
         ]
       },
       "tokens": [
@@ -315,6 +452,17 @@
         "fr": [
           "Mois",
           "Mois d'expiration"
+        ],
+        "it": [
+          "Mese",
+          "Mese di scadenza"
+        ],
+        "nl": [
+          "Maand"
+        ],
+        "pt": [
+          "Mês",
+          "Mês de validade"
         ]
       },
       "tokens": [
@@ -343,6 +491,17 @@
         "fr": [
           "Année",
           "Année d'expiration"
+        ],
+        "it": [
+          "Anno",
+          "Anno di scadenza"
+        ],
+        "nl": [
+          "Jaar"
+        ],
+        "pt": [
+          "Ano",
+          "Ano de validade"
         ]
       },
       "tokens": [
@@ -371,6 +530,18 @@
         "fr": [
           "Nom sur la carte",
           "Titulaire de la carte"
+        ],
+        "it": [
+          "Nome sulla carta",
+          "Titolare della carta"
+        ],
+        "nl": [
+          "Kaarthouder",
+          "Naam op de kaart"
+        ],
+        "pt": [
+          "Nome no cartão",
+          "Titular do cartão"
         ]
       },
       "tokens": [
@@ -400,6 +571,18 @@
         "fr": [
           "Numéro de carte",
           "Numéro de carte bancaire"
+        ],
+        "it": [
+          "Numero della carta",
+          "Numero di carta"
+        ],
+        "nl": [
+          "Creditcardnummer",
+          "Kaartnummer"
+        ],
+        "pt": [
+          "Número de cartão",
+          "Número do cartão"
         ]
       },
       "tokens": [
@@ -429,6 +612,18 @@
         "fr": [
           "Commune",
           "Ville"
+        ],
+        "it": [
+          "Città",
+          "Comune"
+        ],
+        "nl": [
+          "Plaats",
+          "Woonplaats"
+        ],
+        "pt": [
+          "Cidade",
+          "Localidade"
         ]
       },
       "tokens": [
@@ -458,6 +653,17 @@
         "fr": [
           "Pays",
           "Pays ou région"
+        ],
+        "it": [
+          "Nazione",
+          "Paese"
+        ],
+        "nl": [
+          "Land"
+        ],
+        "pt": [
+          "País",
+          "País ou região"
         ]
       },
       "tokens": [
@@ -490,6 +696,20 @@
           "Courriel",
           "E-mail",
           "Email"
+        ],
+        "it": [
+          "Email",
+          "Indirizzo email",
+          "Posta elettronica"
+        ],
+        "nl": [
+          "E-mail",
+          "E-mailadres"
+        ],
+        "pt": [
+          "Correio eletrónico",
+          "Email",
+          "Endereço de email"
         ]
       },
       "tokens": [
@@ -520,6 +740,16 @@
         "fr": [
           "Nom",
           "Nom de famille"
+        ],
+        "it": [
+          "Cognome"
+        ],
+        "nl": [
+          "Achternaam"
+        ],
+        "pt": [
+          "Apelido",
+          "Sobrenome"
         ]
       },
       "tokens": [
@@ -547,6 +777,16 @@
         ],
         "fr": [
           "Prénom"
+        ],
+        "it": [
+          "Nome"
+        ],
+        "nl": [
+          "Voornaam"
+        ],
+        "pt": [
+          "Nome",
+          "Primeiro nome"
         ]
       },
       "tokens": [
@@ -581,6 +821,21 @@
           "Choisissez un mot de passe",
           "Confirmer le mot de passe",
           "Nouveau mot de passe"
+        ],
+        "it": [
+          "Conferma password",
+          "Crea una password",
+          "Nuova password"
+        ],
+        "nl": [
+          "Herhaal wachtwoord",
+          "Kies een wachtwoord",
+          "Nieuw wachtwoord"
+        ],
+        "pt": [
+          "Confirmar senha",
+          "Crie uma senha",
+          "Nova palavra-passe"
         ]
       },
       "tokens": [
@@ -613,6 +868,20 @@
           "Entreprise",
           "Nom de l'entreprise",
           "Société"
+        ],
+        "it": [
+          "Azienda",
+          "Organizzazione",
+          "Società"
+        ],
+        "nl": [
+          "Bedrijf",
+          "Bedrijfsnaam",
+          "Organisatie"
+        ],
+        "pt": [
+          "Empresa",
+          "Organização"
         ]
       },
       "tokens": [
@@ -648,6 +917,18 @@
           "Code de vérification",
           "Code reçu par sms",
           "Code à usage unique"
+        ],
+        "it": [
+          "Codice di verifica",
+          "Codice monouso"
+        ],
+        "nl": [
+          "Eenmalige code",
+          "Verificatiecode"
+        ],
+        "pt": [
+          "Código de uso único",
+          "Código de verificação"
         ]
       },
       "tokens": [
@@ -678,6 +959,18 @@
         "fr": [
           "Mot de passe",
           "Votre mot de passe"
+        ],
+        "it": [
+          "La tua password",
+          "Password"
+        ],
+        "nl": [
+          "Je wachtwoord",
+          "Wachtwoord"
+        ],
+        "pt": [
+          "Palavra-passe",
+          "Senha"
         ]
       },
       "tokens": [
@@ -706,6 +999,17 @@
         ],
         "fr": [
           "Code postal"
+        ],
+        "it": [
+          "CAP",
+          "Codice postale"
+        ],
+        "nl": [
+          "Postcode"
+        ],
+        "pt": [
+          "CEP",
+          "Código postal"
         ]
       },
       "tokens": [
@@ -740,6 +1044,20 @@
           "Numéro de téléphone",
           "Téléphone",
           "Téléphone mobile"
+        ],
+        "it": [
+          "Cellulare",
+          "Numero di telefono",
+          "Telefono"
+        ],
+        "nl": [
+          "Mobiel nummer",
+          "Telefoonnummer"
+        ],
+        "pt": [
+          "Número de telefone",
+          "Telefone",
+          "Telemóvel"
         ]
       },
       "tokens": [
@@ -776,6 +1094,19 @@
           "Identifiant de connexion",
           "Nom d'utilisateur",
           "Pseudo"
+        ],
+        "it": [
+          "Nome utente",
+          "Utente"
+        ],
+        "nl": [
+          "Gebruiker",
+          "Gebruikersnaam"
+        ],
+        "pt": [
+          "Nome de utilizador",
+          "Usuário",
+          "Utilizador"
         ]
       },
       "tokens": [

@@ -4,7 +4,7 @@
 // menu) and its chain state; a `system_autofill` implementation (macOS, iOS)
 // can plug in later without touching the scenarios in drive.ts.
 import type { Frame, Page } from "@playwright/test";
-import { type Lab, sleep } from "./browser.ts";
+import { GUARD_WAIT_MS, type Lab, sleep } from "./browser.ts";
 
 /** The one-click sign-in UI shown on a page (the extension's overlay). */
 export interface OneClickUi {
@@ -17,6 +17,9 @@ export interface MenuOutcome {
   shown: boolean;
   offered: boolean;
 }
+
+/** What the passkey ceremony showed the user (Driver.passkey). */
+export interface PasskeyOutcome { asked: boolean; offered: boolean; picked: boolean }
 
 export interface Driver {
   readonly kind: "extension" | "system_autofill";
@@ -47,6 +50,14 @@ export interface Driver {
   menuOffers(menu: Frame, title: string): Promise<boolean>;
   /** Picks the row `title` of `menu`. */
   menuPick(menu: Frame, title: string): Promise<void>;
+  /**
+   * The site's passkey ceremony as the user plays it: `press` (the site's own
+   * passkey button), then, when the autofill asks, the account `user` in its
+   * passkey window (one trusted click). `asked`: a window opened; `offered`:
+   * it listed `user`; `picked`: the user chose it. No window is no gesture:
+   * during the user's one-click sign-in the autofill may sign on its own.
+   */
+  passkey(press: () => Promise<void>, user: string, timeoutMs: number): Promise<PasskeyOutcome>;
   /** Whether the autofill told the user it refused for rate limiting. */
   rateLimited(page: Page): Promise<boolean>;
 }
@@ -110,6 +121,21 @@ export function extensionDriver(lab: Lab): Driver {
     },
     menuPick(menu, title) {
       return lab.pickRow(menu, title);
+    },
+    async passkey(press, user, timeoutMs) {
+      const win = await lab.passkeyWindow(press, timeoutMs);
+      if (!win) return { asked: false, offered: false, picked: false };
+      await win.waitForLoadState("domcontentloaded").catch(() => undefined);
+      const row = win.getByRole("button", { name: `Se connecter en tant que ${user}`, exact: true });
+      const offered = await row.first().waitFor({ state: "visible", timeout: 5_000 }).then(() => true, () => false);
+      if (!offered) {
+        await win.getByRole("button", { name: "Annuler", exact: true }).click({ timeout: 2_000 }).catch(() => undefined);
+        return { asked: true, offered: false, picked: false };
+      }
+      // The window's click guard (ui/passkey.ts) ignores a click right after it shows.
+      await sleep(GUARD_WAIT_MS);
+      const picked = await row.first().click({ timeout: 5_000 }).then(() => true, () => false);
+      return { asked: true, offered: true, picked };
     },
     async rateLimited(page) {
       for (const f of page.frames()) {
