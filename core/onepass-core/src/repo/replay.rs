@@ -112,7 +112,9 @@ fn item_of(r: &Record, vault: Id) -> Option<ItemRecord> {
 }
 
 /// The meta of a re-created vault when this device logged none of its own.
-fn recovered_meta() -> VaultMeta {
+/// A rebase that joins another device's creation tells it from an own meta
+/// by this value (`Repository::rebase_report`, fix round 2 of Task 19).
+pub(crate) fn recovered_meta() -> VaultMeta {
     VaultMeta {
         name: "Coffre récupéré".into(),
         icon: "tray".into(),

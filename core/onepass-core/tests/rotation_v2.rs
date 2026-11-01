@@ -2876,6 +2876,36 @@ fn honest_race_to_recreate_keeps_both_writes() {
     }
 }
 
+/// Fix round 2: the same race in the other order. D, which wrote no meta
+/// of its own, re-creates under the neutral meta and pushes first; C, which
+/// created the vault ("Travail"), joins that creation in its rebase. C's
+/// own meta replaces the neutral one (spec 10.4, G4): every device ends
+/// with "Travail" holding both writes.
+#[test]
+fn honest_race_to_recreate_keeps_the_creators_meta() {
+    let (mut server, mut a, mut c, mut d, f, _old, head, derived) = recreate_setup();
+    pull(&server, &mut c);
+    pull(&server, &mut d);
+    follow_and_check(&mut c, head, &f.others[C].keys);
+    follow_and_check(&mut d, head, &f.others[2].keys);
+    sync(&mut server, &mut d).unwrap();
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut d).unwrap();
+    for dev in [&mut a, &mut c, &mut d] {
+        pull(&server, dev);
+        let vaults = dev.repo().vaults().unwrap();
+        assert_eq!(vaults.len(), 2);
+        let names: Vec<_> = vaults.iter().map(|v| v.meta.name.clone()).collect();
+        assert!(names.contains(&"Travail".to_string()), "{names:?}");
+        let work = dev.vault_named("Travail");
+        assert_eq!(work.id, derived);
+        assert_eq!(
+            users(&dev.repo().items(&work).unwrap()),
+            ["dora", "work"].map(String::from)
+        );
+    }
+}
+
 /// Review I2: a rename made under the old identity is replayed under the
 /// new keys, not dropped.
 #[test]

@@ -78,6 +78,7 @@ use crate::manifest::{
 };
 use crate::model::Item;
 use crate::model::usage::merge_trailers;
+use crate::repo::replay::recovered_meta;
 use crate::repo::{Repository, Use, seen, split_item_record};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent};
 use crate::sync::SyncStore;
@@ -470,12 +471,22 @@ impl Repository<SyncStore> {
         let result = (|| {
             // Review I3 of Task 19: a concurrent creation of a re-created
             // vault, joined in the same batch.
-            let vault = if self.join_concurrent_creation(&vault)? {
-                self.open_vault(v)?
-            } else {
-                vault
-            };
-            self.apply(&vault, plan, epoch)
+            if !self.join_concurrent_creation(&vault)? {
+                return self.apply(&vault, plan, epoch);
+            }
+            let joined = self.open_vault(v)?;
+            self.apply(&joined, plan, epoch)?;
+            // Fix round 2 of Task 19: the join dropped this device's pending
+            // meta. One it wrote itself (the meta its replay logged, or a
+            // rename since) replaces the one there, as in a replay that
+            // joins (spec 10.4, G4); the neutral meta of a device that
+            // logged none never does. Limit: an own meta equal to the
+            // neutral one, field for field, is taken for it.
+            if vault.meta != joined.meta && vault.meta != recovered_meta() {
+                let current = self.open_vault(v)?;
+                self.update_vault_meta(&current, vault.meta.clone())?;
+            }
+            Ok(())
         })()
         .and_then(|()| self.persist_device_state_forcing(&[v]))
         .and_then(|()| self.store.commit_batch());
