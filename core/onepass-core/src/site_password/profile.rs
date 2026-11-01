@@ -37,7 +37,7 @@ pub enum Profile {
 }
 
 /// What was generated, without any char of the password.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GenerationReport {
     pub length: u32,
     pub lower: bool,

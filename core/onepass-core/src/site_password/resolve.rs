@@ -27,7 +27,7 @@ pub struct PasswordContext {
 }
 
 /// Where a constraint came from, most trusted first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     PasswordRules,

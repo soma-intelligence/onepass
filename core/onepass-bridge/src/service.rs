@@ -20,6 +20,7 @@ use onepass_core::model::{
     EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry,
     new_item, validate,
 };
+use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
 use onepass_core::webauthn;
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -27,7 +28,7 @@ use zeroize::Zeroizing;
 
 use crate::api::{
     CredentialStatus, Ctx, ErrorBody, FillField, FillKind, PasskeySummary, Recipe, RecipeKind,
-    Reply, Request, Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
+    RecipeProfile, Reply, Request, Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
@@ -38,6 +39,7 @@ use crate::policy::{
     totp_now,
 };
 use crate::provider::{ProviderId, from_host};
+use crate::quirks::quirk_rules;
 use crate::session::UsernameSalt;
 use crate::webauthn_rp::{
     Ceremony, ES256, MAX_CHALLENGE, MAX_CREDENTIAL_ID, MAX_EXCLUDE, MAX_USER_HANDLE, b64url,
@@ -210,6 +212,52 @@ fn same_secret(a: &str, b: &str) -> bool {
     aws_lc_rs::constant_time::verify_slices_are_equal(a.as_bytes(), b.as_bytes()).is_ok()
 }
 
+/// Rule strings a request may carry, and the longest of them.
+const MAX_RULE_STRINGS: usize = 8;
+const MAX_RULE_LEN: usize = 1024;
+/// Longest `hint_text` kept; a longer one is cut, not refused.
+const MAX_HINT_CHARS: usize = 600;
+
+/// The `smart` kind: constraints from the request and the site's known
+/// rules, then the chosen profile.
+fn smart_password(
+    r: &Recipe,
+    page: Option<&Origin>,
+) -> OpResult<(Zeroizing<String>, GenerationReport)> {
+    let profile = match r.profile.unwrap_or_default() {
+        RecipeProfile::Strong => Profile::Strong,
+        RecipeProfile::Readable => Profile::Readable,
+        RecipeProfile::Custom => {
+            let length = r.length.unwrap_or(24);
+            if !(8..=64).contains(&length) {
+                return Err(AppErrorCode::Invalid);
+            }
+            Profile::Custom {
+                length: length as u8,
+                digits: true,
+                symbols: r.symbols.unwrap_or(true),
+            }
+        }
+    };
+    let mut ctx = PasswordContext {
+        quirk_rules: page.and_then(quirk_rules).map(str::to_owned),
+        ..PasswordContext::default()
+    };
+    if let Some(c) = &r.context {
+        if c.rules.len() > MAX_RULE_STRINGS || c.rules.iter().any(|s| s.len() > MAX_RULE_LEN) {
+            return Err(AppErrorCode::Invalid);
+        }
+        ctx.rules = c.rules.clone();
+        ctx.min_length = c.min_length;
+        ctx.max_length = c.max_length;
+        ctx.hint_text = c
+            .hint_text
+            .as_ref()
+            .map(|h| h.chars().take(MAX_HINT_CHARS).collect());
+    }
+    generate_for(&ctx, &profile, r.narrow.unwrap_or(0)).map_err(|_| AppErrorCode::Invalid)
+}
+
 fn generator_recipe(r: &Recipe) -> OpResult<generator::Recipe> {
     if let Some(len) = r.length
         && !(4..=100).contains(&len)
@@ -229,7 +277,8 @@ fn generator_recipe(r: &Recipe) -> OpResult<generator::Recipe> {
     };
     Ok(match r.kind {
         RecipeKind::Random => charset(length(20), r.symbols.unwrap_or(false)),
-        RecipeKind::Smart => charset(length(20), r.symbols.unwrap_or(true)),
+        // Handled by `smart_password` before this is reached.
+        RecipeKind::Smart => return Err(AppErrorCode::Invalid),
         RecipeKind::Memorable => generator::Recipe::Passphrase(PassphraseOptions {
             words: 5,
             separator: "-".to_owned(),
@@ -493,12 +542,24 @@ impl<V: VaultAccess> Service<V> {
                 password,
                 ..
             } => self.update_password(*ctx, item_id, o, password, now),
-            Request::Generate { recipe, .. } => {
+            Request::Generate {
+                recipe, origin: o, ..
+            } => {
+                let page = o.as_deref().map(origin).transpose()?;
+                if recipe.kind == RecipeKind::Smart {
+                    let (password, report) = smart_password(recipe, page.as_ref())?;
+                    return Ok(Response::Generate {
+                        password: SecretString(password),
+                        entropy_bits: report.entropy_bits,
+                        report: Some(report),
+                    });
+                }
                 let r = generator_recipe(recipe)?;
                 let password = generator::generate(&r).map_err(|_| AppErrorCode::Invalid)?;
                 Ok(Response::Generate {
                     password: SecretString(password),
                     entropy_bits: generator::entropy_bits(&r),
+                    report: None,
                 })
             }
             Request::ProviderAccounts {

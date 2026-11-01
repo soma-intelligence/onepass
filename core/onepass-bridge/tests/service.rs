@@ -631,6 +631,120 @@ fn fill_card_and_identity_values() {
     assert_eq!(ok(&v)["items"][0]["subtitle"], "Alex Martin");
 }
 
+fn smart(h: &mut H, recipe: Value, origin: Option<&str>) -> Value {
+    let mut req = json!({"op":"generate","ctx":"menu","recipe":recipe});
+    if let Some(o) = origin {
+        req["origin"] = json!(o);
+    }
+    h.call(req)
+}
+
+#[test]
+fn smart_with_context_follows_maxlength() {
+    let mut h = H::new();
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","context":{"max_length":14}}),
+        None,
+    );
+    assert_eq!(ok(&v)["password"].as_str().unwrap().chars().count(), 14);
+    assert_eq!(ok(&v)["report"]["length"], 14);
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","context":{"rules":["minlength: 10; maxlength: 12; required: digit;"]}}),
+        None,
+    );
+    let pw = ok(&v)["password"].as_str().unwrap().to_owned();
+    assert!((10..=12).contains(&pw.chars().count()));
+    assert!(pw.chars().any(|c| c.is_ascii_digit()));
+}
+
+#[test]
+fn smart_quirks_applied_from_origin() {
+    // accor.com: minlength 10, maxlength 20, one of each class.
+    let mut h = H::new();
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart"}),
+        Some("https://www.accor.com/login"),
+    );
+    let pw = ok(&v)["password"].as_str().unwrap().to_owned();
+    assert!((10..=20).contains(&pw.chars().count()), "{}", pw.len());
+    assert!(pw.chars().any(|c| c.is_ascii_lowercase()));
+    assert!(pw.chars().any(|c| c.is_ascii_uppercase()));
+    assert!(pw.chars().any(|c| c.is_ascii_digit()));
+    assert_eq!(ok(&v)["report"]["sources"], json!(["quirks"]));
+    let v = smart(&mut h, json!({"kind":"smart"}), Some("not an origin"));
+    assert_eq!(err(&v), "invalid");
+    let v = smart(&mut h, json!({"kind":"smart"}), Some("http://accor.com/"));
+    assert_eq!(err(&v), "insecure_origin");
+}
+
+#[test]
+fn smart_profiles_and_bounds() {
+    let mut h = H::new();
+    let v = smart(&mut h, json!({"kind":"smart","profile":"readable"}), None);
+    assert_eq!(ok(&v)["password"].as_str().unwrap().split('-').count(), 5);
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","profile":"custom","length":12,"symbols":false}),
+        None,
+    );
+    let pw = ok(&v)["password"].as_str().unwrap().to_owned();
+    assert_eq!(pw.chars().count(), 12);
+    assert!(pw.chars().all(|c| c.is_ascii_alphanumeric()));
+    for len in [7, 65] {
+        let v = smart(
+            &mut h,
+            json!({"kind":"smart","profile":"custom","length":len}),
+            None,
+        );
+        assert_eq!(err(&v), "invalid");
+    }
+    let rules: Vec<_> = (0..9).map(|_| "minlength: 8;").collect();
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","context":{"rules":rules}}),
+        None,
+    );
+    assert_eq!(err(&v), "invalid");
+    let long = "a".repeat(1025);
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","context":{"rules":[long]}}),
+        None,
+    );
+    assert_eq!(err(&v), "invalid");
+}
+
+#[test]
+fn narrow_above_2_invalid() {
+    let mut h = H::new();
+    let v = smart(&mut h, json!({"kind":"smart","narrow":3}), None);
+    assert_eq!(err(&v), "invalid");
+    let v = smart(&mut h, json!({"kind":"smart","narrow":2}), None);
+    assert!(
+        ok(&v)["password"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    );
+}
+
+#[test]
+fn context_hint_over_600_truncated_not_rejected() {
+    let mut h = H::new();
+    let hint = format!("{} at most 12 characters", "x".repeat(700));
+    let v = smart(
+        &mut h,
+        json!({"kind":"smart","context":{"hint_text":hint}}),
+        None,
+    );
+    // The limit sits past the cut: the hint is ignored, not an error.
+    assert_eq!(ok(&v)["password"].as_str().unwrap().chars().count(), 24);
+}
+
 #[test]
 fn generate_recipes() {
     let mut h = H::new();
@@ -653,9 +767,12 @@ fn generate_recipes() {
     assert_eq!(ok(&v)["password"].as_str().unwrap().split('-').count(), 5);
     let v = h.call(gen_("smart", json!({})));
     let smart = ok(&v)["password"].as_str().unwrap().to_owned();
-    assert_eq!(smart.chars().count(), 20);
+    assert_eq!(smart.chars().count(), 24);
     assert!(smart.chars().any(|c| !c.is_ascii_alphanumeric()));
     assert!(ok(&v)["entropy_bits"].as_f64().unwrap() > 100.0);
+    assert!(ok(&v)["report"]["length"].as_u64() == Some(24));
+    let v = h.call(gen_("random", json!({})));
+    assert!(ok(&v).get("report").is_none());
     for len in [3, 101] {
         let v = h.call(gen_("random", json!({ "length": len })));
         assert_eq!(err(&v), "invalid");

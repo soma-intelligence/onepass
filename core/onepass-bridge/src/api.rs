@@ -14,6 +14,7 @@ use onepass_core::fill_plan::score::Confidence;
 use onepass_core::fill_plan::{Action, FillPlan, GroupItem, GroupKind, ReasonCode};
 use onepass_core::model::MatchRule;
 use onepass_core::model::usage::StepKind;
+use onepass_core::site_password::GenerationReport;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -144,9 +145,35 @@ pub enum RecipeKind {
     Smart,
 }
 
-/// Generator request. `length` and `symbols` may be left out: each kind
-/// has its default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Generator profile of the `smart` kind.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipeProfile {
+    #[default]
+    Strong,
+    Readable,
+    Custom,
+}
+
+/// What the page says about its password field (`smart` only).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecipeContext {
+    /// `passwordrules` attribute values, at most 8 of at most 1024 chars.
+    #[serde(default)]
+    pub rules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_length: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u32>,
+    /// Written instructions near the field; cut to 600 chars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint_text: Option<String>,
+}
+
+/// Generator request. Every field but `kind` may be left out: each kind
+/// has its defaults. `profile`, `context` and `narrow` apply to `smart`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
     pub kind: RecipeKind,
@@ -154,6 +181,13 @@ pub struct Recipe {
     pub length: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbols: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<RecipeProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<RecipeContext>,
+    /// Retry ladder step, 0..=2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub narrow: Option<u8>,
 }
 
 /// An application request. Every operation carries the request `id`.
@@ -246,6 +280,9 @@ pub enum Request {
         id: u64,
         ctx: Ctx,
         recipe: Recipe,
+        /// Page origin, to look up the site's known rules (`smart` only).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
     },
     ProviderAccounts {
         id: u64,
@@ -606,6 +643,9 @@ pub enum Response {
     Generate {
         password: SecretString,
         entropy_bits: f64,
+        /// Present for `smart`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        report: Option<GenerationReport>,
     },
     ProviderAccounts {
         accounts: Vec<Summary>,
@@ -677,6 +717,7 @@ pub enum Reply {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use onepass_core::site_password::Source;
     use serde_json::{Value, json};
 
     /// Parses the wire string, checks the id and op, and checks that
@@ -830,6 +871,66 @@ mod tests {
             r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z"}"#,
             15,
             "update_password",
+        );
+    }
+
+    #[test]
+    fn report_round_trips() {
+        let report = GenerationReport {
+            length: 14,
+            lower: true,
+            upper: true,
+            digit: true,
+            special: false,
+            sources: vec![Source::PasswordRules, Source::Quirks],
+            dropped: vec![Source::Hints],
+            fallback: false,
+            readable_fell_back: false,
+            weak_by_site: false,
+            entropy_bits: 80.5,
+        };
+        let reply = Reply::Ok {
+            id: 1,
+            ok: Box::new(Response::Generate {
+                password: "pw".into(),
+                entropy_bits: 80.5,
+                report: Some(report.clone()),
+            }),
+        };
+        let v = serde_json::to_value(&reply).unwrap();
+        assert_eq!(
+            v["ok"]["report"]["sources"],
+            json!(["password_rules", "quirks"])
+        );
+        let back: GenerationReport = serde_json::from_value(v["ok"]["report"].clone()).unwrap();
+        assert_eq!(back, report);
+        let none = Response::Generate {
+            password: "pw".into(),
+            entropy_bits: 1.0,
+            report: None,
+        };
+        assert!(serde_json::to_value(&none).unwrap().get("report").is_none());
+    }
+
+    #[test]
+    fn request_json_round_trip_generate_smart() {
+        let r = round_trip(
+            r#"{"id":18,"op":"generate","ctx":"menu","recipe":{"kind":"smart","profile":"custom","length":16,"narrow":1,"context":{"rules":["minlength: 8;"],"max_length":20,"hint_text":"x"}},"origin":"https://a.test"}"#,
+            18,
+            "generate",
+        );
+        let Request::Generate { recipe, origin, .. } = r else {
+            panic!()
+        };
+        assert_eq!(recipe.profile, Some(RecipeProfile::Custom));
+        assert_eq!(recipe.narrow, Some(1));
+        assert_eq!(recipe.context.unwrap().max_length, Some(20));
+        assert_eq!(origin.as_deref(), Some("https://a.test"));
+        assert!(
+            serde_json::from_str::<Request>(
+                r#"{"id":1,"op":"generate","ctx":"menu","recipe":{"kind":"smart","context":{"x":1}}}"#
+            )
+            .is_err()
         );
     }
 
