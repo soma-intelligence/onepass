@@ -567,7 +567,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       ext.webNavigation.onCommitted.addListener((d) => {
         if (d.frameId !== 0) return;
         void notes.onNavigation(d.tabId, d.url).catch(() => undefined);
-        saveFlow.onNavigation(d.tabId);
+        saveFlow.onNavigation(d.tabId, d.url);
         void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
       });
       ext.webNavigation.onCompleted.addListener((d) => {

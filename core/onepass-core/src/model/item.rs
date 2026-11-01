@@ -64,6 +64,13 @@ pub enum LoginMethod {
     },
 }
 
+/// Tag of a Login the extension saved right after filling a generated
+/// password, before the form was sent (spec 7). Dropped on confirmation.
+pub const PENDING_TAG: &str = "onepass:pending";
+/// Tag of a Login whose generated password is weak because the site imposed
+/// it (under 60 bits, spec 8).
+pub const WEAK_BY_SITE_TAG: &str = "onepass:weak-by-site";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub id: Id,
@@ -106,6 +113,11 @@ pub struct Item {
 }
 
 impl Item {
+    /// Carries `PENDING_TAG`: saved before the form was sent, not confirmed yet.
+    pub fn is_pending(&self) -> bool {
+        self.tags.iter().any(|t| t == PENDING_TAG)
+    }
+
     /// First field with this id, searching sections in order.
     pub fn field(&self, id: &str) -> Option<&Field> {
         self.sections

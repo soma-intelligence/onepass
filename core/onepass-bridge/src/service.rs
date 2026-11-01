@@ -17,8 +17,8 @@ use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
 use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
-    EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry,
-    new_item, validate,
+    EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
+    PasswordHistoryEntry, new_item, validate,
 };
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
 use onepass_core::webauthn;
@@ -461,6 +461,7 @@ impl<V: VaultAccess> Service<V> {
                 | Request::Reveal { .. }
                 | Request::CheckCredentials { .. }
                 | Request::UpdatePassword { .. }
+                | Request::ConfirmPending { .. }
                 | Request::LinkProvider { .. }
                 | Request::PasskeyGet { .. }
                 | Request::PasskeyCreate { .. }
@@ -542,6 +543,13 @@ impl<V: VaultAccess> Service<V> {
                 password,
                 ..
             } => self.update_password(*ctx, item_id, o, password, now),
+            Request::ConfirmPending {
+                ctx,
+                item_id,
+                origin: o,
+                username,
+                ..
+            } => self.confirm_pending(*ctx, item_id, o, username, now),
             Request::Generate {
                 recipe, origin: o, ..
             } => {
@@ -937,6 +945,44 @@ impl<V: VaultAccess> Service<V> {
         let (id, vault_id) = (item.id, item.vault_id);
         self.vault.save(vault_id, item).map_err(app_code)?;
         self.record("update_password", id, Some(o), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// The form of a pending Login was sent: drop `PENDING_TAG` (other tags,
+    /// `WEAK_BY_SITE_TAG` among them, stay) and complete the username. A
+    /// blank `username` keeps the stored one. Same origin check as
+    /// `update_password`; an item without the tag is refused.
+    fn confirm_pending(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        username: &str,
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        let (_, mut item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        if item_match(&item, &page).is_none() {
+            return Err(AppErrorCode::OriginMismatch);
+        }
+        if !item.is_pending() {
+            return Err(AppErrorCode::Invalid);
+        }
+        self.reprompt(&item)?;
+        let username = username.trim();
+        if !username.is_empty() {
+            set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
+        }
+        item.tags.retain(|t| t != PENDING_TAG);
+        // Still no username: the item would not be a valid Login.
+        validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+        item.updated_at = unix(now);
+        let (id, vault_id) = (item.id, item.vault_id);
+        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.record("confirm_pending", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
 

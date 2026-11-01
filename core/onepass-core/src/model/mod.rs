@@ -14,7 +14,9 @@ pub use field::{
     Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, PasskeyCredential,
     PasswordHistoryEntry, Section, SshKeyValue,
 };
-pub use item::{Item, ItemUrl, Location, LoginMethod, MatchRule, Provider};
+pub use item::{
+    Item, ItemUrl, Location, LoginMethod, MatchRule, PENDING_TAG, Provider, WEAK_BY_SITE_TAG,
+};
 pub use menus::menu_options;
 pub use templates::{ItemType, new_item, template};
 pub use usage::{Forgotten, SiteUsage, StepKind, UsageTrailer};

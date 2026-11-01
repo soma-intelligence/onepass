@@ -276,6 +276,15 @@ pub enum Request {
         origin: String,
         password: SecretString,
     },
+    /// A pending Login (tag `onepass:pending`) whose form was sent: the tag
+    /// drops, `username` (when not blank) replaces the stored one.
+    ConfirmPending {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        origin: String,
+        username: String,
+    },
     Generate {
         id: u64,
         ctx: Ctx,
@@ -393,6 +402,7 @@ impl Request {
             | Self::CheckCredentials { id, .. }
             | Self::SaveLogin { id, .. }
             | Self::UpdatePassword { id, .. }
+            | Self::ConfirmPending { id, .. }
             | Self::Generate { id, .. }
             | Self::ProviderAccounts { id, .. }
             | Self::FillProvider { id, .. }
@@ -424,6 +434,7 @@ impl Request {
             Self::CheckCredentials { .. } => "check_credentials",
             Self::SaveLogin { .. } => "save_login",
             Self::UpdatePassword { .. } => "update_password",
+            Self::ConfirmPending { .. } => "confirm_pending",
             Self::Generate { .. } => "generate",
             Self::ProviderAccounts { .. } => "provider_accounts",
             Self::FillProvider { .. } => "fill_provider",
@@ -871,6 +882,15 @@ mod tests {
             r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z"}"#,
             15,
             "update_password",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_confirm_pending() {
+        round_trip(
+            r#"{"id":16,"op":"confirm_pending","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","username":"alex@atlas.dev"}"#,
+            16,
+            "confirm_pending",
         );
     }
 

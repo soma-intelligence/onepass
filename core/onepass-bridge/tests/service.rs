@@ -1983,3 +1983,123 @@ mod passkeys {
         assert!(h.vault().passkeys(h.ids.atlas).is_empty());
     }
 }
+
+fn save_pending(h: &mut H, origin: &str, username: &str) -> Id {
+    let perso = h.ids.perso;
+    let v = h.call(
+        json!({"op":"save_login","ctx":"save_prompt","origin":origin,"title":"",
+        "username":username,"password":"Gen-Pass-0042","vault_id":id(perso),
+        "rule":"domain","tags":["onepass:pending","onepass:weak-by-site"]}),
+    );
+    ok(&v)["item_id"].as_str().unwrap().parse().unwrap()
+}
+
+fn username_of(h: &H, item: Id) -> String {
+    match &h.vault().item(item).field("username").unwrap().value {
+        FieldValue::Text(s) => s.clone(),
+        _ => panic!("username field"),
+    }
+}
+
+#[test]
+fn confirm_pending_drops_tag_sets_username() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, "https://signup.atlas-cloud.test/join", "");
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":"https://signup.atlas-cloud.test","username":"  alex@atlas.dev "}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    assert_eq!(h.vault().item(item).tags, ["onepass:weak-by-site"]);
+    assert_eq!(username_of(&h, item), "alex@atlas.dev");
+    match &h.vault().item(item).field("password").unwrap().value {
+        FieldValue::Password(p) => assert_eq!(p.as_str(), "Gen-Pass-0042"),
+        _ => panic!("password field"),
+    }
+    // Confirmed once: a second confirm finds no pending tag.
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":"https://signup.atlas-cloud.test","username":"other@atlas.dev"}),
+    );
+    assert_eq!(err(&v), "invalid");
+    assert_eq!(username_of(&h, item), "alex@atlas.dev");
+
+    // An empty submitted username keeps the one already known.
+    let known = save_pending(&mut h, ATLAS, "known@atlas.dev");
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(known),
+        "origin":ATLAS,"username":""}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    assert_eq!(username_of(&h, known), "known@atlas.dev");
+    assert!(
+        h.vault()
+            .item(known)
+            .tags
+            .iter()
+            .all(|t| t != "onepass:pending")
+    );
+}
+
+#[test]
+fn confirm_pending_refuses_untagged() {
+    let mut h = H::new();
+    let atlas = h.ids.atlas;
+    let before = h.vault().item(atlas).clone();
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"username":"mallory@evil.test"}),
+    );
+    assert_eq!(err(&v), "invalid");
+    let after = h.vault().item(atlas);
+    assert_eq!(after.tags, before.tags);
+    assert_eq!(
+        after.field("username").unwrap().value,
+        before.field("username").unwrap().value
+    );
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(Id::new()),
+        "origin":ATLAS,"username":"x"}),
+    );
+    assert_eq!(err(&v), "not_found");
+}
+
+#[test]
+fn confirm_pending_checks_origin() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "");
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":"https://evil.test","username":"alex@atlas.dev"}),
+    );
+    assert_eq!(err(&v), "origin_mismatch");
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":"http://atlas-cloud.test","username":"alex@atlas.dev"}),
+    );
+    assert_eq!(err(&v), "insecure_origin");
+    assert!(
+        h.vault()
+            .item(item)
+            .tags
+            .iter()
+            .any(|t| t == "onepass:pending")
+    );
+    assert_eq!(
+        h.vault().item(item).field("username").unwrap().value,
+        FieldValue::Empty
+    );
+    // Unknown fields are refused like every request.
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"username":"a","password":"x"}),
+    );
+    assert_eq!(err(&v), "invalid");
+    // No username known nor submitted: confirming would leave a Login without one.
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"username":"  "}),
+    );
+    assert_eq!(err(&v), "invalid");
+    assert!(h.vault().item(item).is_pending());
+}

@@ -16,6 +16,10 @@
 // gets `Medium` instead of `High`, penalty.ts), the gesture's form scoping
 // (an icon click runs only its form's groups), the anchor of the chain's
 // progress, and the report of a fill for the site memory (notes.ts).
+//
+// Site-aware generator, Task 10: a generated password filled on a signup or
+// reset page is saved as a pending Login (save-flow.ts) before the run
+// answers; a locked vault or a refusal never blocks the fill.
 import type { FillField } from "../bridge/client";
 import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut } from "../shared/messages";
 import type { SaveFlow } from "./chain/save-flow";
@@ -108,7 +112,7 @@ export class Planner {
     private readonly session: Pick<Session, "request">,
     private readonly filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated" | "submit">,
     private readonly chain: Pick<ChainDriver, "start">,
-    private readonly saveFlow: Pick<SaveFlow, "rememberGenerated">,
+    private readonly saveFlow: Pick<SaveFlow, "rememberGenerated" | "savePending">,
     private readonly generator: Pick<FormGenerator, "generateForForm">,
     private readonly hooks: PlannerHooks = {},
   ) {}
@@ -184,6 +188,7 @@ export class Planner {
       case "fill_and_submit": {
         if (plan.groups.length === 0) return "nothing";
         let generated: string | undefined;
+        let weak = false;
         // One new password per run, made for the first generated group's form before anything
         // is written: a page that refuses it gets the menu, not a half-filled form.
         const firstGenerated = plan.groups.find((g) => g.kind === "generated_password");
@@ -194,6 +199,7 @@ export class Planner {
             return "menu";
           }
           generated = g.password;
+          weak = g.report?.weak_by_site === true;
         }
         let remembered = false;
         /** Every group wrote at least one value, and the code went in when it is a code. */
@@ -222,6 +228,10 @@ export class Planner {
             }
             if (written === 0) complete = false;
             else wrote = true;
+          }
+          // In the vault before the form is sent (spec 7): a lock or a closed tab loses nothing.
+          if (remembered && generated !== undefined && (plan.intent === "signup" || plan.intent === "reset")) {
+            await this.saveFlow.savePending(t.tabId, t.origin, generated, { weak });
           }
         } finally {
           generated = undefined;

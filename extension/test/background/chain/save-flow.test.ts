@@ -2,13 +2,18 @@
 import { describe, expect, it } from "vitest";
 import {
   CHECK_DELAY_MS,
+  PENDING_TAG,
   SUBMIT_TTL_MS,
   SaveFlow,
+  WEAK_BY_SITE_TAG,
   type Timers,
   autoSubmitFor,
   setAutoSubmit,
 } from "../../../src/background/chain/save-flow";
+import type { FillTarget } from "../../../src/background/fill";
 import type { CsContext } from "../../../src/background/frames";
+import { Planner } from "../../../src/background/planner";
+import type { PlanOut } from "../../../src/shared/messages";
 import type { SavePending } from "../../../src/background/save";
 import { FakeArea } from "../fake-ext";
 
@@ -38,7 +43,9 @@ class FakeTimers implements Timers {
   }
 }
 
-function setup(status: "new" | "same" | "update" = "new", never: string[] = []) {
+type Answer = (r: Record<string, unknown>) => unknown;
+
+function setup(status: "new" | "same" | "update" = "new", never: string[] = [], answer?: Answer) {
   const timers = new FakeTimers();
   const requests: Record<string, unknown>[] = [];
   const opened: SavePending[] = [];
@@ -50,6 +57,11 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = []) 
     session: {
       request: (async (r: Record<string, unknown>) => {
         requests.push(r);
+        const scripted = answer?.(r);
+        if (scripted instanceof Error) throw scripted;
+        if (scripted !== undefined) return scripted;
+        if (r.op === "vaults") return { vaults: [{ id: "v1", name: "Perso", color: null }] };
+        if (r.op === "save_login") return { item_id: "it_new" };
         if (r.op === "check_credentials") {
           onCheck?.();
           return status === "update" ? { status, item_id: "it_01", title: "Atlas Cloud" } : { status };
@@ -315,3 +327,175 @@ describe("generated passwords memory hygiene", () => {
   });
 });
 
+
+describe("pending save of a generated password (spec 7)", () => {
+  const GEN = "Gen-Pass-123";
+  const signup = (): PlanOut => ({
+    intent: "signup",
+    groups: [
+      {
+        form_ref: "f1",
+        kind: "generated_password",
+        item_id: null,
+        fields: [
+          { field_ref: "f1e0", role: "new_password" },
+          { field_ref: "f1e1", role: "confirm_password" },
+        ],
+      },
+    ],
+    action: "fill",
+    confidence: "high",
+    alternatives: [],
+    reasons: [],
+  });
+  const target: FillTarget = { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1", formRef: "f1" };
+
+  /** A planner over the real save flow of `t`: the filler writes, the generator gives `GEN`. */
+  function plannerFor(t: ReturnType<typeof setup>, weak = false, events: string[] = []) {
+    const filler = {
+      fillGenerated: async () => {
+        events.push("filled");
+        return 2;
+      },
+    };
+    const generator = {
+      generateForForm: async () => ({ password: GEN, report: weak ? ({ weak_by_site: true } as never) : null }),
+    };
+    return new Planner({ request: async () => ({}) } as never, filler as never, {} as never, t.flow, generator);
+  }
+
+  const ops = (t: ReturnType<typeof setup>) => t.requests.map((r) => r.op);
+
+  it("pending_saved_before_fill_returns", async () => {
+    const t = setup();
+    const outcome = await plannerFor(t, true).run(target, signup());
+    expect(outcome).toBe("filled");
+    // Already in the vault when the run answers: nothing left to lose.
+    expect(t.requests).toEqual([
+      { op: "vaults" },
+      {
+        op: "save_login",
+        ctx: "save_prompt",
+        origin: SITE,
+        title: "Atlas Cloud",
+        username: "",
+        password: GEN,
+        vault_id: "v1",
+        rule: "domain",
+        tags: [PENDING_TAG, WEAK_BY_SITE_TAG],
+      },
+    ]);
+    // A login page's generated fill (no signup or reset intent) saves nothing.
+    const u = setup();
+    await plannerFor(u).run(target, { ...signup(), intent: "login" });
+    expect(u.requests).toEqual([]);
+  });
+
+  it("regenerate_same_tab_updates_pending", async () => {
+    const t = setup();
+    expect(await t.flow.savePending(7, `${SITE}/signup`, "first-Pass-1")).toBe(true);
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login", tags: [PENDING_TAG] });
+    expect(await t.flow.savePending(7, `${SITE}/signup`, "second-Pass-2")).toBe(true);
+    expect(t.requests.at(-1)).toEqual({
+      op: "update_password",
+      ctx: "save_prompt",
+      item_id: "it_new",
+      origin: `${SITE}/signup`,
+      password: "second-Pass-2",
+    });
+    // Another tab, or another site in this tab: a pending item of its own.
+    await t.flow.savePending(8, SITE, "third-Pass-3");
+    await t.flow.savePending(7, "https://other.test", "fourth-Pass-4");
+    expect(ops(t)).toEqual(["vaults", "save_login", "update_password", "vaults", "save_login", "vaults", "save_login"]);
+  });
+
+  it("lock_after_fill_keeps_item", async () => {
+    // The host answers `same` for the stored pending item once unlocked.
+    const t = setup("new", [], (r) => (r.op === "check_credentials" ? { status: "same", item_id: "it_new", title: "Atlas Cloud" } : undefined));
+    await plannerFor(t).run(target, signup());
+    const before = [...t.requests];
+    expect(ops(t)).toEqual(["vaults", "save_login"]);
+    // The vault locks before the submit: the generated password is forgotten here...
+    t.flow.clearGenerated();
+    // ...but it was saved before the lock, and the lock removes nothing.
+    expect(t.requests).toEqual(before);
+    // Unlocked again, the form goes: the host recognizes the pending item, it is confirmed.
+    await t.submit("alex@atlas.dev", GEN, true);
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials", "confirm_pending"]);
+    expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
+    expect(t.opened).toEqual([]);
+  });
+
+  it("submit_confirms_pending", async () => {
+    const t = setup();
+    await plannerFor(t).run(target, signup());
+    await t.submit("alex@atlas.dev", GEN, true);
+    expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
+    // Confirmed instead of a new save prompt; the pending entry is gone.
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
+    expect(t.opened).toEqual([]);
+    expect(t.flow.size).toBe(0);
+    await t.flow.savePending(7, SITE, "again-Pass-5");
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login" });
+  });
+
+  it("a submitted password other than the generated one gets the usual prompt", async () => {
+    const t = setup();
+    await plannerFor(t).run(target, signup());
+    await t.submit("alex@atlas.dev", "Typed-Instead-9");
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
+    expect(t.opened).toHaveLength(1);
+  });
+
+  it("vault locked at fill time: the fill happens, the old save prompt is the fallback", async () => {
+    const t = setup("new", [], (r) => (r.op === "vaults" ? new Error("locked") : undefined));
+    const events: string[] = [];
+    expect(await plannerFor(t, false, events).run(target, signup())).toBe("filled");
+    expect(events).toEqual(["filled"]);
+    expect(ops(t)).toEqual(["vaults"]);
+    await t.submit("", GEN, true);
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "check_credentials"]);
+    expect(t.opened[0]).toMatchObject({ status: "new", username: "", password: GEN });
+  });
+
+  it("a refused confirmation falls back to the prompt", async () => {
+    const t = setup("new", [], (r) => (r.op === "confirm_pending" ? new Error("invalid") : undefined));
+    await plannerFor(t).run(target, signup());
+    await t.submit("alex@atlas.dev", GEN, true);
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending", "check_credentials"]);
+    expect(t.opened).toHaveLength(1);
+  });
+
+  it("forgotten when the tab closes or goes to another site, kept on a same-site navigation", async () => {
+    const t = setup();
+    await t.flow.savePending(7, SITE, "first-Pass-1");
+    t.flow.onNavigation(7, `${SITE}/welcome`);
+    await t.flow.savePending(7, SITE, "second-Pass-2");
+    expect(t.requests.at(-1)).toMatchObject({ op: "update_password" });
+    t.flow.onNavigation(7, "https://elsewhere.test/");
+    await t.flow.savePending(7, SITE, "third-Pass-3");
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login" });
+    t.flow.onTabRemoved(7);
+    await t.flow.savePending(7, SITE, "fourth-Pass-4");
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login" });
+  });
+
+  it("plain HTTP or an empty password saves nothing", async () => {
+    const t = setup();
+    expect(await t.flow.savePending(7, "http://atlas-cloud.test", "x-Pass-1")).toBe(false);
+    expect(await t.flow.savePending(7, SITE, "")).toBe(false);
+    expect(t.requests).toEqual([]);
+  });
+
+  it("keeps no password: only the item id, site and username", async () => {
+    const t = setup();
+    await t.flow.savePending(7, SITE, "first-Pass-1", { username: "alex@atlas.dev" });
+    const held = (t.flow as unknown as { saved: Map<number, unknown> }).saved.get(7);
+    expect(held).toEqual({ site: "atlas-cloud.test", itemId: "it_new", username: "alex@atlas.dev" });
+  });
+});

@@ -59,13 +59,14 @@ interface Calls {
   filler: unknown[][];
   chain: unknown[][];
   remembered: unknown[][];
+  pending: unknown[][];
   generated: unknown[][];
   refused: unknown[];
 }
 
 /** Fake session, filler, chain, save flow and generator; `answer` scripts the bridge, `refuse` the page's pattern. */
 function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = false, refuse = false) {
-  const calls: Calls = { requests: [], filler: [], chain: [], remembered: [], generated: [], refused: [] };
+  const calls: Calls = { requests: [], filler: [], chain: [], remembered: [], pending: [], generated: [], refused: [] };
   const session = {
     request: async (r: Record<string, unknown>) => {
       calls.requests.push(r);
@@ -94,6 +95,10 @@ function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = fals
   const saveFlow = {
     rememberGenerated: (...a: unknown[]) => {
       calls.remembered.push(a);
+    },
+    savePending: async (...a: unknown[]) => {
+      calls.pending.push(a);
+      return true;
     },
   };
   const generator = {
@@ -274,7 +279,7 @@ describe("planner fix round 1", () => {
     await store.setPairing(record());
     const client = new FakeClient((r) => (r.op === "plan_fill" ? { plan: otpPlan() } : r.op === "fill_login" ? {} : {}));
     const session = new Session({ store, newClient: () => client });
-    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined } as never, new FormGenerator({ tabs: ext.tabs, session, area: ext.local }));
+    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined, savePending: async () => true } as never, new FormGenerator({ tabs: ext.tabs, session, area: ext.local }));
     const outcome = await planner.run(target(), await planner.plan(target(), otpCtx()));
     expect(outcome).toBe("filled");
     expect(ext.sentToTabs).toEqual([]);
@@ -429,7 +434,7 @@ describe("privacy", () => {
       session,
       filler,
       { start: async () => undefined } as never,
-      { rememberGenerated: (_t: number, _o: string, pw: string) => void remembered.push(pw) } as never,
+      { rememberGenerated: (_t: number, _o: string, pw: string) => void remembered.push(pw), savePending: async () => true } as never,
       new FormGenerator({ tabs: ext.tabs, session, area: ext.local }),
     );
     const ctx = context([form("f1", ["username", "current_password", "otp", "new_password", "cc_number"], [{ button_ref: "b1", class: "submit" }])]);

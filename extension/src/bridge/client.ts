@@ -181,6 +181,15 @@ interface Ops {
     req: { ctx: Ctx; item_id: string; origin: string; password: string };
     res: Record<string, never>;
   };
+  /**
+   * A pending Login (tag `onepass:pending`) whose form was sent: the tag drops, a non-blank
+   * `username` replaces the stored one. Same origin check as `update_password`; `invalid` for an
+   * item without the tag, or one left without a username.
+   */
+  confirm_pending: {
+    req: { ctx: Ctx; item_id: string; origin: string; username: string };
+    res: Record<string, never>;
+  };
   generate: {
     req: {
       ctx: Ctx;

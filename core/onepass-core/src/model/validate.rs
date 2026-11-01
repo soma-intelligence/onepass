@@ -35,14 +35,16 @@ fn is_missing(value: &FieldValue) -> bool {
 
 /// A required field the item may leave blank anyway: the username of a
 /// login that signs in through a provider (Google, GitHub...), which has no
-/// username of its own.
+/// username of its own, or of a pending login (saved before the form was
+/// sent, its username completed on confirmation).
 fn requirement_waived(item: &Item, field: &Field) -> bool {
     item.item_type == ItemType::Login
         && field.id == "username"
-        && item
-            .login_methods
-            .iter()
-            .any(|m| matches!(m, LoginMethod::Provider { .. }))
+        && (item.is_pending()
+            || item
+                .login_methods
+                .iter()
+                .any(|m| matches!(m, LoginMethod::Provider { .. })))
 }
 
 /// Format check for the field, applied to non-blank text only. Returns the
@@ -260,6 +262,19 @@ mod tests {
         // The title is still required.
         item.title = " ".into();
         assert_eq!(failing_field(&item), "title");
+    }
+
+    #[test]
+    fn pending_login_needs_no_username_until_confirmed() {
+        let mut item = new_item(ItemType::Login, Id::new(), "Atlas");
+        item.tags = vec![crate::model::PENDING_TAG.to_owned()];
+        validate(&item).unwrap();
+        item.tags.clear();
+        assert_eq!(failing_field(&item), "username");
+        // Only a Login: a pending card still needs its required fields.
+        let mut card = new_item(ItemType::CreditCard, Id::new(), "Visa");
+        card.tags = vec![crate::model::PENDING_TAG.to_owned()];
+        assert_eq!(failing_field(&card), "cardholder");
     }
 
     #[test]
