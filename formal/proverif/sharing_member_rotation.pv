@@ -9,7 +9,7 @@
    Run: Alice's account (rotation_core.pvl's `acct`) has the devices A
    (her phone, honest), B (her lost iPad, the attacker's: device keys,
    password, every secret of the identity before the rotation) and C.
-   Alice revokes B from A (rotation_core.pvl's Rotate, generation 1 of
+   Alice revokes B from A (rotation_core.pvl's rotate, generation 1 of
    her lineage). Bob, a manager of a vault Alice is a member of, pinned
    Alice's genesis roster (devices A and B and their device signing keys)
    when they verified each other face to face (spec 5.5; the private
@@ -96,7 +96,7 @@ query event(AdoptIdentity(bob_side, acct, pk(idk_x))).
 (* Every identity Bob adopts was introduced by an honest rotation. *)
 query d: bitstring, a: bitstring, ip: pkey, s: bitstring, r: bitstring,
       ro: bitstring, k: key, ik: skey;
-  event(AdoptIdentity(d, a, ip)) ==> event(Rotated(s, ip, r, ro, k, ik)).
+  event(AdoptIdentity(d, a, ip)) ==> event(RotationSigned(s, ip, r, ro, k, ik)).
 (* Forged rotation and race: Bob never adopts a record of the revoked device. *)
 query ip: pkey; event(AdoptFrom(bob_side, devB, ip)).
 (* The vault key Bob wraps for the adopted identity stays secret. *)
@@ -121,6 +121,6 @@ process
   insert contactDev(bob_side, acct, h_genesis, devB, pk(dskB));
   let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
                   ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
-  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  ( rotate(devA, dskA, h_genesis, devB, rosterAC)
   | !MemberFollow(bob_side, role_read)
   | !MemberFollow(bob_side, role_write) )

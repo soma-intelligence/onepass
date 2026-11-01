@@ -316,7 +316,7 @@ sharing_auth_keys.pv | not event(EnvelopeAccepted(bob,vlt,g2,k_9)) | false
 # A11 : Bob n'adopte jamais l'identité X de l'attaquant pour Alice.
 sharing_member_rotation.pv | not event(AdoptIdentity(bob_side,acct,pk(idk_x[]))) | true
 # Toute identité adoptée vient d'une rotation honnête.
-sharing_member_rotation.pv | event(AdoptIdentity(d,a_1,ip_2)) ==> event(Rotated(s,ip_2,r,ro,k_11,ik)) | true
+sharing_member_rotation.pv | event(AdoptIdentity(d,a_1,ip_2)) ==> event(RotationSigned(s,ip_2,r,ro,k_11,ik)) | true
 # Rotation forgée et course : Bob n'adopte jamais un enregistrement signé par l'appareil retiré.
 sharing_member_rotation.pv | not event(AdoptFrom(bob_side,devB,ip_2)) | true
 # La clé de coffre enveloppée pour l'identité adoptée reste secrète.

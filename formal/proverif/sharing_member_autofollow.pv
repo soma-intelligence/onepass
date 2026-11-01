@@ -56,5 +56,5 @@ process
   insert contactDev(bob_side, acct, h_genesis, devB, pk(dskB));
   let rosterAC = (ros_entry(devA, pk(dskA), kem_pk_m(dkmA), kem_pk_x(dkxA)),
                   ros_entry(devC, pk(dskC), kem_pk_m(dkmC), kem_pk_x(dkxC))) in
-  ( Rotate(devA, dskA, h_genesis, devB, rosterAC)
+  ( rotate(devA, dskA, h_genesis, devB, rosterAC)
   | !MemberFollow(bob_side) )

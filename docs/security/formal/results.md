@@ -160,7 +160,7 @@
 | sharing_member_autofollow.pv | `not (event(EnvelopeSealed(d,ip_1,k_5)) && attacker(k_5))` | false | false |
 | sharing_member_autofollow.pv | `not event(AdoptFrom(bob_side,devA,ip_1))` | false | false |
 | sharing_member_rotation.pv | `not event(AdoptIdentity(bob_side,acct,pk(idk_x[])))` | true | true |
-| sharing_member_rotation.pv | `event(AdoptIdentity(d,a_1,ip_2)) ==> event(Rotated(s,ip_2,r,ro,k_11,ik))` | true | true |
+| sharing_member_rotation.pv | `event(AdoptIdentity(d,a_1,ip_2)) ==> event(RotationSigned(s,ip_2,r,ro,k_11,ik))` | true | true |
 | sharing_member_rotation.pv | `not event(AdoptFrom(bob_side,devB,ip_2))` | true | true |
 | sharing_member_rotation.pv | `not (event(EnvelopeSealed(d,ip_2,k_11)) && attacker(k_11))` | true | true |
 | sharing_member_rotation.pv | `not event(Confirmed(bob_side,role_read,ip_2))` | false | false |
