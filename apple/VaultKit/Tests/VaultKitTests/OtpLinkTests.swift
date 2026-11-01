@@ -118,7 +118,7 @@ struct OtpLinkSessionTests {
         #expect(previousCodes(stored).isEmpty)
         #expect(try await session.otpTarget(itemID: login.id, vaultID: vault, confirmed: false) == .ready(hasOtp: true))
 
-        // Replacing keeps the previous code in a concealed "Ancien code" field.
+        // Replacing keeps the previous code in a concealed "Ancien code" field, told by its id.
         let other = try #require(try OtpLink.accounts(in: OtpLinkTests.link).first)
         let replaced = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
         #expect(try totpNow(secretOrUri: try #require(otp(replaced)), unixSeconds: 59).code
@@ -126,12 +126,43 @@ struct OtpLinkSessionTests {
         #expect(previousCodes(replaced) == [first])
         let kept = try #require(replaced.sections.first { $0.id == ItemDraft.customSectionID }?.fields.last)
         #expect(kept.kind == .concealed)
-        #expect(kept.label == "Ancien code")
+        #expect(kept.id == "previous_otp_1")
+        #expect(kept.label == OtpLink.previousCodeLabel())
         #expect(session.summaries.count == 1)
 
         // The same code again stores nothing new.
         let again = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
         #expect(previousCodes(again) == [first])
+    }
+
+    /// The label follows the language; the field is found by its id in any language.
+    @Test func previousCodeLabelIsLocalizedAndTheFieldIsFoundInAnyLanguage() async throws {
+        let lproj = { (language: String) in
+            Bundle.module.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:))
+        }
+        #expect(OtpLink.previousCodeLabel(bundle: try #require(lproj("fr"))) == "Ancien code")
+        #expect(OtpLink.previousCodeLabel(bundle: try #require(lproj("en"))) == "Previous code")
+
+        // A code replaced on a French device, replaced again here (whatever this machine's language).
+        let (h, session) = try await unlocked()
+        defer { h.cleanUp() }
+        let vault = session.allVaults[0].id
+        var login = try session.newItem(type: .login, vaultID: vault)
+        login.title = "GitHub"
+        fillRequired(&login)
+        let french = try #require(try OtpLink.accounts(in: OtpLinkTests.migration).first)
+        login.sections.append(FfiSection(id: ItemDraft.customSectionID, label: ItemDraft.customSectionLabel, fields: [
+            FfiField(
+                id: "previous_otp_1", label: "Ancien code", kind: .concealed, value: .concealed(value: "otpauth://totp/Old?secret=GEZDGNBV"),
+                required: false, repeatable: false, autofill: false),
+        ]))
+        login = try await session.save(login)
+        login = try await session.attachOtp(french, toItemID: login.id, vaultID: vault, confirmed: false)
+        let other = try #require(try OtpLink.accounts(in: OtpLinkTests.link).first)
+        let replaced = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
+        #expect(previousCodes(replaced) == ["otpauth://totp/Old?secret=GEZDGNBV", try #require(otp(login))])
+        let ids = replaced.sections.flatMap(\.fields).filter(OtpLink.isPreviousCode).map(\.id)
+        #expect(ids == ["previous_otp_1", "previous_otp_2"])
     }
 
     /// A `reprompt` Login says nothing and takes nothing before the user is confirmed.
@@ -180,9 +211,8 @@ struct OtpLinkSessionTests {
         }
     }
 
-    /// The values of the concealed "Ancien code" fields.
+    /// The values of the fields keeping a replaced code, by id (any label, any language).
     private func previousCodes(_ item: FfiItem) -> [String] {
-        item.sections.first { $0.id == ItemDraft.customSectionID }?.fields
-            .filter { $0.label == "Ancien code" }.map(\.value.text) ?? []
+        item.sections.flatMap(\.fields).filter(OtpLink.isPreviousCode).map(\.value.text)
     }
 }

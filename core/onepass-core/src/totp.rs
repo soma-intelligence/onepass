@@ -57,6 +57,17 @@ impl fmt::Debug for TotpConfig {
     }
 }
 
+/// Id prefix of a field that keeps a replaced one-time password seed
+/// (`previous_otp_<n>`, a concealed custom field shown as "Ancien code").
+/// The label is in the language of the device that wrote it: only this
+/// prefix tells the field apart, and it carries a seed like a `totp` field.
+pub const PREVIOUS_OTP_FIELD_PREFIX: &str = "previous_otp_";
+
+/// The field id is one of a replaced one-time password seed.
+pub fn is_previous_otp_field(id: &str) -> bool {
+    id.starts_with(PREVIOUS_OTP_FIELD_PREFIX)
+}
+
 /// Code for the time step containing `unix_seconds`.
 pub fn code_at(cfg: &TotpConfig, unix_seconds: u64) -> Result<String> {
     if cfg.period == 0 {
@@ -349,6 +360,13 @@ pub fn parse_migration(uri: &str) -> Result<Vec<TotpConfig>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn previous_otp_field_is_told_by_its_id_only() {
+        assert!(super::is_previous_otp_field("previous_otp_1"));
+        assert!(!super::is_previous_otp_field("totp"));
+        assert!(!super::is_previous_otp_field("custom_1"));
+    }
+
     use super::*;
 
     fn cfg(alg: TotpAlgorithm, len: usize) -> TotpConfig {

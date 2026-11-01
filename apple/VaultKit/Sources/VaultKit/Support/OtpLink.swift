@@ -94,6 +94,33 @@ public struct OtpLinkAccount: Identifiable, Sendable, Equatable, CustomStringCon
     public var debugDescription: String { description }
 }
 
+extension OtpLink {
+    /// Id prefix of the concealed fields that keep a replaced code (`previous_otp_<n>`, from the
+    /// core). Such a field is told by its id, never by its label: the label is in the language of
+    /// the device that replaced the code.
+    public static let previousCodePrefix = previousOtpFieldPrefix()
+
+    /// The field keeps a replaced one-time code.
+    public static func isPreviousCode(_ field: FfiField) -> Bool {
+        field.id.hasPrefix(previousCodePrefix)
+    }
+
+    /// The label of a new "Ancien code" field, in the app's language (stored as written, like any
+    /// label; display only).
+    static func previousCodeLabel(bundle: Bundle = VaultKitStrings.bundle) -> String {
+        String(localized: "Ancien code", bundle: bundle)
+    }
+
+    /// `previous_otp_<n>`, never used in `item` yet.
+    static func nextPreviousCodeID(in item: FfiItem) -> String {
+        let used = item.sections.flatMap(\.fields).compactMap { field -> Int? in
+            guard field.id.hasPrefix(previousCodePrefix) else { return nil }
+            return Int(field.id.dropFirst(previousCodePrefix.count))
+        }
+        return previousCodePrefix + String((used.max() ?? 0) + 1)
+    }
+}
+
 /// A request from outside the app that waits for the unlock (a code to copy, a verification code
 /// link holding its secret) is dropped after 2 minutes, or at once if the clock moved back.
 public enum PendingRequest {
@@ -130,7 +157,7 @@ extension VaultSession {
     }
 
     /// Puts the code into the `totp` field of an existing Login. A previous, different code moves to
-    /// a concealed custom field "Ancien code", so it stays recoverable. A `reprompt` Login is written
+    /// a concealed custom field "Ancien code" (id `previous_otp_<n>`), so it stays recoverable. A `reprompt` Login is written
     /// only once the user is confirmed (`confirmed`, as for showing it). Returns the stored item.
     @discardableResult
     public func attachOtp(_ account: OtpLinkAccount, toItemID itemID: String, vaultID: String, confirmed: Bool)
@@ -141,10 +168,11 @@ extension VaultSession {
         guard !item.reprompt || confirmed else { throw VaultError.other(Self.confirmFirst) }
         if let previous = Self.currentOtp(in: item), previous != account.uri {
             var draft = ItemDraft(item: item)
-            draft.addCustomField(kind: .concealed, label: Self.previousCodeLabel)
+            draft.addCustomField(kind: .concealed, label: OtpLink.previousCodeLabel())
             if let s = draft.item.sections.firstIndex(where: { $0.id == ItemDraft.customSectionID }),
                 let f = draft.item.sections[s].fields.indices.last
             {
+                draft.item.sections[s].fields[f].id = OtpLink.nextPreviousCodeID(in: draft.item)
                 draft.item.sections[s].fields[f].value = .concealed(value: previous)
             }
             item = draft.item
@@ -171,8 +199,6 @@ extension VaultSession {
         localized: "Le code ne peut être ajouté qu'à un élément Login.", bundle: VaultKitStrings.bundle)
     private static let confirmFirst = String(
         localized: "Confirme d'abord ton identité pour modifier cet élément.", bundle: VaultKitStrings.bundle)
-    /// The label of the field that keeps a replaced code (stored as written, like any label).
-    static let previousCodeLabel = String(localized: "Ancien code", bundle: VaultKitStrings.bundle)
 
     /// The Login's current one-time code, if its `totp` field holds one.
     private static func currentOtp(in item: FfiItem) -> String? {

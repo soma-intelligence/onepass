@@ -355,6 +355,14 @@ pub fn totp_now(secret_or_uri: String, unix_seconds: u64) -> Result<FfiTotpCode,
     })
 }
 
+/// Id prefix of a field that keeps a replaced one-time password seed
+/// (`previous_otp_<n>`): the apps name such a field with it and tell it by it,
+/// never by its label (in the language of the device that wrote it).
+#[uniffi::export]
+pub fn previous_otp_field_prefix() -> String {
+    onepass_core::totp::PREVIOUS_OTP_FIELD_PREFIX.to_owned()
+}
+
 /// The accounts of an `otpauth://` or `otpauth-migration://` link opened by
 /// the system (camera, Safari, another app). Refuses HOTP and any other link.
 #[uniffi::export]
