@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GenerationReport } from "../../src/bridge/client";
 import type { FillTarget } from "../../src/background/fill";
-import { FormGenerator, parsePasswordContextReply, patternTest } from "../../src/background/generate";
+import { FormGenerator, PATTERN_CHECK_MS, parsePasswordContextReply } from "../../src/background/generate";
+import { patternMatches } from "../../src/content/password-context";
 import { GENERATOR_PROFILE_KEY } from "../../src/shared/ui";
 import { FakeExt } from "./fake-ext";
 
@@ -23,10 +24,18 @@ const report = (over: Partial<GenerationReport> = {}): GenerationReport => ({
   ...over,
 });
 
-/** A content script replying `reply` to `password_context`, and a host answering `passwords` by `narrow`. */
-function setup(reply: unknown, passwords: string[]) {
+/**
+ * A content script replying `reply` to `password_context` and checking candidates against
+ * `pattern` (as the page's tab does), and a host answering `passwords` by `narrow`.
+ */
+function setup(reply: unknown, passwords: string[], pattern: string | null = null) {
   const ext = new FakeExt();
-  ext.tabReply = (_tab, m) => ((m as { type?: string }).type === "password_context" ? reply : undefined);
+  ext.tabReply = (_tab, m) => {
+    const msg = m as { type?: string; candidate?: string };
+    if (msg.type === "password_context") return reply;
+    if (msg.type === "pattern_check") return { ok: true, matches: patternMatches(pattern, msg.candidate ?? "") };
+    return undefined;
+  };
   const requests: Record<string, unknown>[] = [];
   const session = {
     request: async (r: Record<string, unknown>) => {
@@ -41,9 +50,14 @@ function setup(reply: unknown, passwords: string[]) {
 
 const CONTEXT = { rules: ["minlength: 8;"], max_length: 20 };
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
 describe("generateForForm", () => {
   it("asks the pinned document, then the host with the context and origin", async () => {
-    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, pattern: null }, ["Abc-def!12"]);
+    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: false }, ["Abc-def!12"]);
     const r = await gen.generateForForm(target, "menu");
     expect(r?.password).toBe("Abc-def!12");
     expect(r?.report).toEqual(report());
@@ -54,26 +68,67 @@ describe("generateForForm", () => {
   });
 
   it("retries_without_symbols_on_pattern_miss", async () => {
-    const { requests, gen } = setup({ ok: true, context: CONTEXT, pattern: "[A-Za-z0-9]+" }, ["Abc-def!12", "Abcdef1234", "abcdef1234"]);
+    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: true }, ["Abc-def!12", "Abcdef1234", "abcdef1234"], "[A-Za-z0-9]+");
     const r = await gen.generateForForm(target, "menu");
     expect(r?.password).toBe("Abcdef1234");
     expect(requests.map((x) => (x.recipe as { narrow?: number }).narrow)).toEqual([undefined, 1]);
+    // Each candidate went to the pinned document, which answered for its own pattern.
+    expect(ext.sentToTabs.slice(1)).toEqual([
+      { tabId: 7, message: { type: "pattern_check", origin: SITE, formRef: "f1", candidate: "Abc-def!12" }, options: { documentId: "doc-1" } },
+      { tabId: 7, message: { type: "pattern_check", origin: SITE, formRef: "f1", candidate: "Abcdef1234" }, options: { documentId: "doc-1" } },
+    ]);
   });
 
   it("gives_up_after_three", async () => {
-    const { requests, gen } = setup({ ok: true, context: CONTEXT, pattern: "[0-9]{6}" }, ["Abc-def!12", "Abcdef1234", "abcdef1234"]);
+    const { requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: true }, ["Abc-def!12", "Abcdef1234", "abcdef1234"], "[0-9]{6}");
     expect(await gen.generateForForm(target, "menu")).toBeNull();
     expect(requests.map((x) => (x.recipe as { narrow?: number }).narrow)).toEqual([undefined, 1, 2]);
   });
 
   it("invalid_pattern_ignored", async () => {
-    const { requests, gen } = setup({ ok: true, context: CONTEXT, pattern: "(" }, ["Abc-def!12"]);
+    // The tab cannot compile it: it accepts.
+    const { requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: true }, ["Abc-def!12"], "(");
     expect((await gen.generateForForm(target, "menu"))?.password).toBe("Abc-def!12");
     expect(requests).toHaveLength(1);
   });
 
+  it("no pattern: no check sent", async () => {
+    const { ext, gen } = setup({ ok: true, context: CONTEXT, has_pattern: false }, ["Abc-def!12"], "[0-9]{6}");
+    expect((await gen.generateForForm(target, "menu"))?.password).toBe("Abc-def!12");
+    expect(ext.sentToTabs.map((x) => (x.message as { type: string }).type)).toEqual(["password_context"]);
+  });
+
+  it("a tab that never answers the check: the first candidate after the timeout", async () => {
+    vi.useFakeTimers();
+    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: true }, ["Abc-def!12", "Abcdef1234"]);
+    // A page whose pattern hangs its own tab: the worker waits for nothing more.
+    ext.tabReply = (_t, m) =>
+      (m as { type?: string }).type === "password_context" ? { ok: true, context: CONTEXT, has_pattern: true } : new Promise(() => undefined);
+    const ctor = vi.spyOn(globalThis, "RegExp");
+    const p = gen.generateForForm(target, "menu");
+    await vi.advanceTimersByTimeAsync(PATTERN_CHECK_MS - 1);
+    let done = false;
+    void p.then(() => (done = true));
+    await Promise.resolve();
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await p)?.password).toBe("Abc-def!12");
+    expect(requests).toHaveLength(1);
+    // The worker compiled no page pattern.
+    expect(ctor).not.toHaveBeenCalled();
+  });
+
+  it("a tab that is gone or answers nonsense counts as a match", async () => {
+    for (const answer of [() => Promise.reject(new Error("closed")), () => ({ ok: false }), () => undefined, () => ({ ok: true })]) {
+      const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: true }, ["Abc-def!12"]);
+      ext.tabReply = (_t, m) => ((m as { type?: string }).type === "password_context" ? { ok: true, context: CONTEXT, has_pattern: true } : answer());
+      expect((await gen.generateForForm(target, "menu"))?.password).toBe("Abc-def!12");
+      expect(requests).toHaveLength(1);
+    }
+  });
+
   it("profile_from_storage", async () => {
-    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, pattern: null }, ["pw"]);
+    const { ext, requests, gen } = setup({ ok: true, context: CONTEXT, has_pattern: false }, ["pw"]);
     const profileOf = () => {
       const recipe = requests.at(-1)?.recipe as Record<string, unknown>;
       const { context: _c, ...rest } = recipe;
@@ -119,24 +174,16 @@ describe("parsePasswordContextReply", () => {
     const r = parsePasswordContextReply({
       ok: true,
       context: { rules, min_length: 0, max_length: 1.5, hint_text: "h".repeat(700), extra: "x" },
-      pattern: "p".repeat(513),
+      // A pattern the content script would never send: dropped, never kept by the worker.
+      pattern: "(.*)*!",
+      has_pattern: "yes",
     });
-    expect(r).toEqual({ context: { rules: ["r0;", "r1;", "r2;", "r3;", "r4;", "r5;", "r6;", "r7;"], hint_text: "h".repeat(600) }, pattern: null });
+    expect(r).toEqual({ context: { rules: ["r0;", "r1;", "r2;", "r3;", "r4;", "r5;", "r6;", "r7;"], hint_text: "h".repeat(600) }, hasPattern: false });
     expect(parsePasswordContextReply({ ok: false })).toBeNull();
     expect(parsePasswordContextReply("x")).toBeNull();
-    expect(parsePasswordContextReply({ ok: true, context: { rules: [], min_length: 8, max_length: 64 }, pattern: "[a-z]+" })).toEqual({
+    expect(parsePasswordContextReply({ ok: true, context: { rules: [], min_length: 8, max_length: 64 }, has_pattern: true })).toEqual({
       context: { rules: [], min_length: 8, max_length: 64 },
-      pattern: "[a-z]+",
+      hasPattern: true,
     });
-  });
-
-  it("tests a pattern as the browser does, whole value, v flag", () => {
-    expect(patternTest("[a-z]+")?.("abc")).toBe(true);
-    expect(patternTest("[a-z]+")?.("abc1")).toBe(false);
-    // Alternation is anchored as a whole.
-    expect(patternTest("a|b")?.("ab")).toBe(false);
-    // Invalid under the v flag (a lone `-` in a class needs escaping there): no pattern.
-    expect(patternTest("[a-z-]")).toBeNull();
-    expect(patternTest("(")).toBeNull();
   });
 });

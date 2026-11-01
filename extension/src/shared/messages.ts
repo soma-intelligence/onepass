@@ -359,7 +359,13 @@ export type BgToCs =
    * lengths, written hints, `pattern`): replied as `PasswordContextReply`,
    * never a value typed in the page.
    */
-  | { type: "password_context"; origin: string; formRef: string };
+  | { type: "password_context"; origin: string; formRef: string }
+  /**
+   * Does `candidate` pass the `pattern` of the new password fields of
+   * `formRef`? Tested in the page's tab, never in the worker (spec 6.3);
+   * replied `{ ok, matches }`. The candidate is neither kept nor logged.
+   */
+  | { type: "pattern_check"; origin: string; formRef: string; candidate: string };
 
 /**
  * The page's password rules as the bridge's `generate` takes them
@@ -373,11 +379,17 @@ export interface WirePasswordContext {
   hint_text?: string;
 }
 
-/** Reply of the content script to `password_context`; `pattern` at most 512 chars. */
+/** Reply of the content script to `password_context`; `has_pattern`: a candidate must pass `pattern_check`. */
 export interface PasswordContextReply {
   ok: boolean;
   context?: WirePasswordContext;
-  pattern?: string | null;
+  has_pattern?: boolean;
+}
+
+/** Reply of the content script to `pattern_check`. */
+export interface PatternCheckReply {
+  ok: boolean;
+  matches?: boolean;
 }
 
 const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([

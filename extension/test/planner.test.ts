@@ -497,7 +497,10 @@ describe("plan_context through the router", () => {
     b.install();
     ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
     ext.tabReply = (_t, m) =>
-      (m as { type?: string }).type === "password_context" ? { ok: true, context: { rules: [] }, pattern: "[0-9]{6}" } : undefined;
+      (m as { type?: string }).type === "password_context" ? { ok: true, context: { rules: [] }, has_pattern: true }
+        : (m as { type?: string }).type === "pattern_check"
+          ? { ok: true, matches: false }
+          : undefined;
     const page = csSender(`${SITE}/signup`, 7, 0, { documentId: "doc-1" });
     const ctx = { type: "plan_context", formRef: "f1", context: context([form("f1", ["email", "new_password"])]) };
     expect(await ext.send(ctx, page)).toEqual({ ok: { outcome: "menu" } });

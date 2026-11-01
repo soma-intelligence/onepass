@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { collectPasswordContext } from "../../src/content/password-context";
+import { collectPasswordContext, patternMatches } from "../../src/content/password-context";
 import type { PageAnalysis } from "../../src/shared/messages";
 import { EXT_ID, setPage, start, type Started } from "./harness";
 
@@ -98,9 +98,35 @@ describe("collectPasswordContext", () => {
     expect(collectPasswordContext(form, [field("a"), field("b")]).pattern).toBe("a".repeat(512));
   });
 
+  it("never reads editable text", () => {
+    const form = page(`<form><input id="pw" type="password" aria-describedby="h"><div id="h" contenteditable="true">typed-note</div>
+      <p>Real hint.</p><div><span contenteditable>typed-two</span></div></form>`);
+    const { context } = collectPasswordContext(form, [field("pw")]);
+    expect(context.hint_text).toBe("Real hint.");
+  });
+
   it("without a field list, reads the form's password inputs", () => {
     const form = page(`<form><input type="text" maxlength="3"><input type="password" maxlength="24"></form>`);
     expect(collectPasswordContext(form).context).toEqual({ rules: [], max_length: 24 });
+  });
+});
+
+describe("patternMatches (in the page's tab)", () => {
+  it("tests the whole value with the v flag", () => {
+    expect(patternMatches("[a-z]+", "abc")).toBe(true);
+    expect(patternMatches("[a-z]+", "abc1")).toBe(false);
+    // Alternation is anchored as a whole.
+    expect(patternMatches("a|b", "ab")).toBe(false);
+  });
+
+  it("accepts when there is nothing to apply", () => {
+    expect(patternMatches(null, "x")).toBe(true);
+    // Compile errors: a lone `-` in a class under the v flag, an open group.
+    expect(patternMatches("[a-z-]", "!")).toBe(true);
+    expect(patternMatches("(", "!")).toBe(true);
+    // Over 512 chars.
+    expect(patternMatches("a".repeat(513), "b")).toBe(true);
+    expect(patternMatches("a".repeat(512), "b")).toBe(false);
   });
 });
 
@@ -137,9 +163,21 @@ describe("password_context message", () => {
     expect(out).toEqual({
       ok: true,
       context: { rules: [], min_length: 8, max_length: 20, hint_text: "8 to 20 letters or digits." },
-      pattern: "[A-Za-z0-9]+",
+      has_pattern: true,
     });
     expect(JSON.stringify(out)).not.toContain("Typed-Secret-1");
+  });
+
+  it("pattern_check answers for the field's own pattern", () => {
+    setPage(SIGNUP);
+    s = start();
+    const ref = formRef(s);
+    expect(ask(s, { type: "pattern_check", origin: ORIGIN, formRef: ref, candidate: "Abcdef12" })).toEqual({ ok: true, matches: true });
+    expect(ask(s, { type: "pattern_check", origin: ORIGIN, formRef: ref, candidate: "Abc-def!12" })).toEqual({ ok: true, matches: false });
+    // Same gates as the context: pinned origin, our extension, a known form.
+    expect(ask(s, { type: "pattern_check", origin: "https://evil.test", formRef: ref, candidate: "x" })).toEqual({ ok: false });
+    expect(ask(s, { type: "pattern_check", origin: ORIGIN, formRef: ref, candidate: "x" }, { id: "other-extension" })).toBeUndefined();
+    expect(ask(s, { type: "pattern_check", origin: ORIGIN, formRef: "nope", candidate: "x" })).toEqual({ ok: false });
   });
 
   it("only for our extension and the pinned origin", () => {

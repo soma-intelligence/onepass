@@ -1,6 +1,8 @@
 // What a page says about its new password fields (spec 4.1): the
 // `passwordrules` attributes, `minlength` / `maxlength`, the written hints
-// near the field, and its `pattern` (tested in the worker, spec 6.3). Page
+// near the field, and its `pattern` (tested here, in the page's own tab,
+// spec 6.3: a page regex can backtrack for minutes and must never run in the
+// shared service worker). Page
 // text is untrusted: every piece is bounded here, and again in the worker.
 // No value typed in the page is ever read: only attributes and the text of
 // non-control elements.
@@ -56,9 +58,13 @@ function isControl(el: Element): boolean {
 
 const SKIPPED: ReadonlySet<string> = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
 
-/** Visible-ish text of `el` (its text nodes, never a control's value). */
+/** Editable text (what the user typed into a `contenteditable`), on or around `el`. */
+const EDITABLE = '[contenteditable]:not([contenteditable="false" i])';
+
+/** Visible-ish text of `el` (its text nodes, never a control's value nor editable text). */
 function textOf(el: Element): string {
   if (isControl(el) || SKIPPED.has(el.tagName)) return "";
+  if (el.closest(EDITABLE) !== null || el.querySelector(EDITABLE) !== null) return "";
   return el.textContent ?? "";
 }
 
@@ -145,6 +151,8 @@ export function collectPasswordContext(
       const hi = positive(f.maxLength);
       if (hi !== null) max = max === null ? hi : Math.min(max, hi);
     }
+    // An empty `pattern` counts as absent. The browser would compile it to `^(?:)$` and refuse
+    // every value; a broken attribute must not block generation.
     const p = f.getAttribute("pattern");
     if (pattern === undefined && p !== null && p !== "") pattern = p.length > MAX_PATTERN ? null : p;
   }
@@ -154,4 +162,21 @@ export function collectPasswordContext(
   const hint = hintText(list, form);
   if (hint !== undefined) context.hint_text = hint;
   return { context, pattern: pattern ?? null };
+}
+
+/**
+ * `value` passes `pattern` as the browser tests it (whole value, `v` flag).
+ * No pattern, one over 512 chars, or one that does not compile: accepted.
+ * Runs in the page's tab only (a slow pattern hangs that tab, as the page
+ * itself could).
+ */
+export function patternMatches(pattern: string | null, value: string): boolean {
+  if (pattern === null || pattern === "" || pattern.length > MAX_PATTERN) return true;
+  let re: RegExp;
+  try {
+    re = new RegExp(`^(?:${pattern})$`, "v");
+  } catch {
+    return true;
+  }
+  return re.test(value);
 }
