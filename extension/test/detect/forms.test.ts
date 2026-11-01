@@ -428,3 +428,19 @@ describe("analyzeDocument: lab fixes (A2 to A4)", () => {
     ]);
   });
 });
+
+describe("analyzeDocument: lab fixes run (task 9)", () => {
+  it("confirmed_password_without_new_is_new", () => {
+    // Lab site 57 (lab-2026-10-26): "password:" then "Confirm password" on a signup.
+    const { a, refs } = analyzeHtml(
+      '<h1>Create your account</h1><form id="f"><label for="e">Email</label><input type="email" id="e" name="pk237qsk">' +
+        '<label for="p1">password:</label><input type="password" id="p1" name="p28gdyv3">' +
+        '<label for="p2">Confirm password</label><input type="password" id="p2" name="z70ukmxw">' +
+        '<button type="submit">free sign up</button></form>',
+    );
+    expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([
+      ["signup", { e: "email", p1: "new_password", p2: "confirm_password" }],
+    ]);
+  });
+
+});
