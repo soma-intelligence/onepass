@@ -11,7 +11,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 /// Symbols offered by the random generator. Chosen because most sites
 /// accept them: none is a quote, backslash, space, bracket, slash or pipe.
-const SYMBOLS: &str = "-_.!?#@$%&*+=";
+pub(crate) const SYMBOLS: &str = "-_.!?#@$%&*+=";
 const LOWER: &str = "abcdefghijklmnopqrstuvwxyz";
 const UPPER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS: &str = "0123456789";
@@ -83,7 +83,7 @@ pub(crate) fn uniform_below(n: usize) -> Result<usize> {
     }
 }
 
-fn words_of(list: Wordlist) -> &'static [&'static str] {
+pub(crate) fn words_of(list: Wordlist) -> &'static [&'static str] {
     static EFF: OnceLock<Vec<&'static str>> = OnceLock::new();
     static FR: OnceLock<Vec<&'static str>> = OnceLock::new();
     let (cell, text) = match list {
