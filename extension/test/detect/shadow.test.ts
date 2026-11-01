@@ -8,6 +8,8 @@ import {
   composedOrder,
   MAX_SHADOW_DEPTH,
   MAX_SHADOW_ELEMENTS,
+  TreeListeners,
+  WatchedRoots,
 } from "../../src/content/detect/shadow";
 import { isRendered } from "../../src/content/detect/visibility";
 import type { FieldRole } from "../../src/shared/messages";
@@ -189,5 +191,46 @@ describe("shadow roots (D1, D2)", () => {
         [root.getElementById("p"), "current_password"],
       ]);
     });
+  });
+});
+
+describe("tree listeners", () => {
+  function rig(capture: boolean) {
+    page(`<x-host id="h" tabindex="0"></x-host>`);
+    const root = host("#h", "closed", `<button id="in">In</button>`);
+    const watched = new WatchedRoots();
+    const queued: (() => void)[] = [];
+    const tree = new TreeListeners(watched, (fn) => void queued.push(fn));
+    watched.use(tree);
+    watched.add([root]);
+    const got: EventTarget[] = [];
+    const off = tree.listen(document, "click", (e) => got.push(e.target!), { capture });
+    const run = () => queued.splice(0).forEach((f) => f());
+    return { root, got, off, run, h: document.getElementById("h")! };
+  }
+
+  for (const capture of [true, false]) {
+    it(`an event from inside a root is handled once, from its real target (capture ${capture})`, () => {
+      const t = rig(capture);
+      const inner = t.root.getElementById("in")!;
+      inner.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+      t.run();
+      expect(t.got).toEqual([inner]);
+    });
+
+    it(`an event aimed at the host itself is handled once, from the host (capture ${capture})`, () => {
+      const t = rig(capture);
+      t.h.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+      t.run();
+      expect(t.got).toEqual([t.h]);
+    });
+  }
+
+  it("a deferred event is dropped once the listener is removed", () => {
+    const t = rig(true);
+    t.h.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    t.off();
+    t.run();
+    expect(t.got).toEqual([]);
   });
 });

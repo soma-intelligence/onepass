@@ -221,41 +221,74 @@ type Listener = (e: Event) => void;
 interface TreeListener {
   base: EventTarget;
   type: string;
+  /** On `base`. */
   fn: Listener;
+  /** On every watched root. */
+  rootFn: Listener;
   options: AddEventListenerOptions;
 }
+
+/** Runs `fn` once the current dispatch is over (a task, not a microtask: those run between a native event's listeners). */
+export type Defer = (fn: () => void) => void;
+const nextTask: Defer = (fn) => void setTimeout(fn, 0);
 
 /**
  * Event listeners on the document (or window) and on every watched root.
  * An event from inside a root reaches the document retargeted to the root's
- * host, and the root's own listener with its real target: a listener skips
- * events whose target is a watched host (`filter`, the default), so each
- * event is handled once, from its real target. Events that do not cross a
- * shadow boundary (`submit`) reach the root's listener only. Hand it to
- * `WatchedRoots.use` to follow the roots.
+ * host, and the root's own listener with its real target: with `filter` (the
+ * default) each event is handled once, from its real target. The root's
+ * listener marks the events it saw; an event the document sees on a watched
+ * host is handled there only when no root listener saw it (one aimed at the
+ * host itself: Enter on a focused host, a click on its padding), after the
+ * dispatch when the root's listener may still come (capture). Events that
+ * do not cross a shadow boundary (`submit`) reach the root's listener only.
+ * Hand it to `WatchedRoots.use` to follow the roots.
  */
 export class TreeListeners implements RootUser {
   private readonly entries = new Set<TreeListener>();
   /** Held weakly, as by `WatchedRoots`: a removed component is not kept alive. */
   private readonly attached = new WeakSet<ShadowRoot>();
 
-  constructor(private readonly watched: WatchedRoots) {}
+  constructor(
+    private readonly watched: WatchedRoots,
+    private readonly defer: Defer = nextTask,
+  ) {}
 
   /** Listens on `base` and on every watched root; returns the removal. */
   listen(base: EventTarget, type: string, fn: Listener, options: AddEventListenerOptions, filter = true): () => void {
-    const wrapped: Listener = filter
-      ? (e) => {
-          if (!this.watched.isHost(e.target)) fn(e);
+    let wrapped: Listener = fn;
+    let rootFn: Listener = fn;
+    if (filter) {
+      const seen = new WeakSet<Event>();
+      rootFn = (e) => {
+        seen.add(e);
+        fn(e);
+      };
+      wrapped = (e) => {
+        if (seen.has(e)) return;
+        if (!this.watched.isHost(e.target)) {
+          fn(e);
+          return;
         }
-      : fn;
-    const entry: TreeListener = { base, type, fn: wrapped, options };
+        // Retargeted from inside the root, or aimed at the host: the root's
+        // listener has run (bubble) or will (capture) for the first only.
+        if (e.eventPhase === Event.BUBBLING_PHASE) {
+          fn(e);
+          return;
+        }
+        this.defer(() => {
+          if (!seen.has(e) && this.entries.has(entry)) fn(e);
+        });
+      };
+    }
+    const entry: TreeListener = { base, type, fn: wrapped, rootFn, options };
     this.entries.add(entry);
     base.addEventListener(type, wrapped, options);
-    for (const r of this.attachedRoots()) r.addEventListener(type, wrapped, options);
+    for (const r of this.attachedRoots()) r.addEventListener(type, rootFn, options);
     return () => {
       if (!this.entries.delete(entry)) return;
       base.removeEventListener(type, wrapped, options);
-      for (const r of this.attachedRoots()) r.removeEventListener(type, wrapped, options);
+      for (const r of this.attachedRoots()) r.removeEventListener(type, rootFn, options);
     };
   }
 
@@ -266,11 +299,11 @@ export class TreeListeners implements RootUser {
   attach(root: ShadowRoot): void {
     if (this.attached.has(root)) return;
     this.attached.add(root);
-    for (const e of this.entries) root.addEventListener(e.type, e.fn, e.options);
+    for (const e of this.entries) root.addEventListener(e.type, e.rootFn, e.options);
   }
 
   detach(root: ShadowRoot): void {
     if (!this.attached.delete(root)) return;
-    for (const e of this.entries) root.removeEventListener(e.type, e.fn, e.options);
+    for (const e of this.entries) root.removeEventListener(e.type, e.rootFn, e.options);
   }
 }

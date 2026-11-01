@@ -200,6 +200,36 @@ describe("content script in shadow roots (D1, D2)", () => {
     expect(r.ext.ofType("submitted_credentials")).toHaveLength(1);
   });
 
+  it("Enter on a focused button host reaches the submit watcher (its gesture counts)", async () => {
+    setPage(`<form id="login"><input id="u" name="username" autocomplete="username"><input id="p" type="password" autocomplete="current-password"><x-btn id="go" role="button" tabindex="0">Sign in</x-btn></form>`);
+    const host = document.getElementById("go")!;
+    attach(host, "closed", `<span><slot></slot></span>`);
+    const r = begin();
+    (document.getElementById("u") as HTMLInputElement).value = "alex@atlas.dev";
+    (document.getElementById("p") as HTMLInputElement).value = "s3cret";
+    host.focus();
+    userKey(host, "Enter");
+    await new Promise((res) => setTimeout(res, 0));
+    asUser(document.getElementById("login")!, new Event("submit", { bubbles: true, cancelable: true }));
+    expect(r.ext.ofType("submitted_credentials").map((m) => [m.username, m.password])).toEqual([["alex@atlas.dev", "s3cret"]]);
+  });
+
+  it("a click on a provider button host itself (its padding) is reported", async () => {
+    setPage(`${LOGIN}<x-btn id="g" role="button" tabindex="0">Continuer avec Google</x-btn>`);
+    const host = document.getElementById("g")!;
+    const inner = attach(host, "open", `<span id="label"><slot></slot></span>`);
+    const r = begin();
+    const btn = last(r).providerButtons[0]!;
+    expect(btn.provider).toBe("google");
+    userClick(host);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r.ext.ofType("provider_click")).toEqual([{ type: "provider_click", provider: "google", ref: btn.ref }]);
+    // From inside its root: once, not twice.
+    userClick(inner.getElementById("label")!);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r.ext.ofType("provider_click")).toHaveLength(2);
+  });
+
   it("stop removes the listeners and observation of the roots", async () => {
     useTimers();
     setPage(`<lab-shell></lab-shell>`);
