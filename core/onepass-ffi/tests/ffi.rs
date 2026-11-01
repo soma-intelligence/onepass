@@ -945,6 +945,32 @@ fn totp_now_from_uri_and_base32() {
 }
 
 #[test]
+fn otp_link_accounts_reads_one_link_and_a_migration() {
+    let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let link = format!("otpauth://totp/Exemple:camille?secret={secret}&issuer=Exemple&digits=8");
+    let accounts = otp_link_accounts(link).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].issuer.as_deref(), Some("Exemple"));
+    assert_eq!(accounts[0].account.as_deref(), Some("camille"));
+    assert_eq!(
+        totp_now(accounts[0].uri.clone(), 59).unwrap().code,
+        "94287082"
+    );
+    assert!(!format!("{:?}", accounts[0]).contains(secret));
+
+    let migration = "otpauth-migration://offline?data=CjQKFDEyMzQ1Njc4OTAxMjM0NTY3ODkwEg5HaXRIdWI6cXVlbnRpbhoGR2l0SHViIAEoATAC";
+    let accounts = otp_link_accounts(migration.into()).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].issuer.as_deref(), Some("GitHub"));
+    assert_eq!(
+        totp_now(accounts[0].uri.clone(), 59).unwrap().code,
+        "287082"
+    );
+
+    assert!(otp_link_accounts("onepass://item/x".into()).is_err());
+}
+
+#[test]
 fn generator_and_catalog_helpers() {
     let pw = generate_password(FfiPasswordRecipe::Characters {
         length: 24,

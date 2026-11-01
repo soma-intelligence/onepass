@@ -1,11 +1,18 @@
 import Foundation
+import os
 
 public enum EnclaveError: Error, Equatable, Sendable {
     /// Key gone or invalidated (biometry set changed).
     case keyInvalidated
+    /// The user cancelled the system sheet.
     case cancelled
+    /// Cancelled by the app or the system, or the token asked for authentication again (no
+    /// invalidation, but no proof of a usable key either).
+    case interrupted
     /// The user chose the password fallback in the system sheet.
     case userFallback
+    /// The face or finger was not recognized (no invalidation).
+    case authenticationFailed
     case biometryNotEnrolled
     case biometryLockout
     case unavailable
@@ -45,6 +52,9 @@ public final class BiometricUnlock: Sendable {
     private let keychain: any KeychainStore
     private let clock: any BootClock
     private let policy: BiometricPolicy
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "biometrics")
+    /// Two readings of the boot time closer than this are the same boot (a reboot takes longer).
+    static let bootTimeTolerance: TimeInterval = 5
 
     public init(keyring: any EnclaveKeyring, keychain: any KeychainStore, clock: any BootClock, policy: BiometricPolicy = BiometricPolicy()) {
         self.keyring = keyring
@@ -101,7 +111,7 @@ public final class BiometricUnlock: Sendable {
             let now = clock.now
             try save(BiometricEnrollment(
                 accountID: accountID, wrappedAUK: wrapped, enrolledAt: now,
-                lastPasswordAt: now, bootSessionID: clock.bootSessionID))
+                lastPasswordAt: now, bootSessionID: clock.bootSessionID, bootTime: clock.bootTime))
         } catch {
             try? keyring.deleteKey(tag: tag)
             throw error
@@ -113,24 +123,60 @@ public final class BiometricUnlock: Sendable {
         guard var enrollment = try loadEnrollment(accountID) else { return }
         enrollment.lastPasswordAt = clock.now
         enrollment.bootSessionID = clock.bootSessionID
+        enrollment.bootTime = clock.bootTime
         try save(enrollment)
     }
 
+    /// The last biometric unlock failed for a reason that kept the enrollment and may hide a stale key
+    /// (anything but the user's own cancel): the next password unlock wraps the AUK again, silently.
+    public func needsRefresh(accountID: String) -> Bool {
+        ((try? loadEnrollment(accountID)) ?? nil)?.needsRefresh == true
+    }
+
+    /// Reads the record again first: the extension (or the app) may have written a newer one while
+    /// the system sheet was up (a password unlock, a new key).
+    private func markForRefresh(accountID: String) {
+        guard var enrollment = (try? loadEnrollment(accountID)) ?? nil else { return }
+        enrollment.needsRefresh = true
+        try? save(enrollment)
+    }
+
+    enum BootMatch: Equatable { case same, rebooted, unknown }
+
+    /// The boot session id when both readings have one, else the boot time. An empty id (a sandbox
+    /// that refuses the sysctl) is never read as a reboot: without a boot time either, it is unknown.
+    func bootMatch(_ enrollment: BiometricEnrollment) -> BootMatch {
+        let id = clock.bootSessionID
+        if !id.isEmpty, !enrollment.bootSessionID.isEmpty {
+            return id == enrollment.bootSessionID ? .same : .rebooted
+        }
+        if let now = clock.bootTime, let then = enrollment.bootTime {
+            return abs(now.timeIntervalSince(then)) <= Self.bootTimeTolerance ? .same : .rebooted
+        }
+        return .unknown
+    }
+
     /// Returns the AUK (the caller wipes it). Throws `passwordRequired` when the policy, a reboot,
-    /// a biometry change or any decryption failure forbids biometric unlock; the enrollment is
-    /// dropped except when the user merely chose the password or biometry is locked out.
+    /// a biometry change or a decryption failure forbids biometric unlock. The enrollment is dropped
+    /// only on proof: a reboot, the 14 days, a key gone or a biometry no longer enrolled. A cancel, a
+    /// fallback, a lockout, a failed match, an unknown boot or an unknown error keep it (one password).
     public func unlock(accountID: String, prompt: String) async throws -> Data {
         guard let enrollment = try loadEnrollment(accountID) else {
             throw BiometricError.passwordRequired(reason: .notEnrolled)
         }
-        let boot = clock.bootSessionID
-        if boot.isEmpty || boot != enrollment.bootSessionID {
-            disable(accountID: accountID)
+        switch bootMatch(enrollment) {
+        case .same:
+            break
+        case .rebooted:
+            disable(accountID: accountID, reason: "rebooted")
             throw BiometricError.passwordRequired(reason: .rebooted)
+        case .unknown:
+            Self.log.notice("boot unknown (no boot session id, no boot time): password asked, enrollment kept")
+            throw BiometricError.passwordRequired(reason: .unverified)
         }
         let elapsed = clock.now.timeIntervalSince(enrollment.lastPasswordAt)
         if elapsed > policy.passwordEvery || elapsed < -policy.clockSkew {
-            disable(accountID: accountID)
+            disable(accountID: accountID, reason: "expired")
             throw BiometricError.passwordRequired(reason: .expired)
         }
         do {
@@ -138,20 +184,38 @@ public final class BiometricUnlock: Sendable {
         } catch let error as EnclaveError {
             switch error {
             case .cancelled: throw BiometricError.cancelled
-            case .unavailable: throw BiometricError.unavailable
-            case .userFallback: throw BiometricError.passwordRequired(reason: .userChosePassword)
-            case .biometryLockout: throw BiometricError.passwordRequired(reason: .lockedOut)
-            case .biometryNotEnrolled, .keyInvalidated, .failed:
-                disable(accountID: accountID)
+            case .biometryNotEnrolled, .keyInvalidated:
+                disable(accountID: accountID, reason: "invalidated")
                 throw BiometricError.passwordRequired(reason: .invalidated)
+            default:
+                // Kept, but flagged: a stale key may surface under any of these codes, and the next
+                // password unlock replaces it instead of looping on Face ID.
+                markForRefresh(accountID: accountID)
+                switch error {
+                case .interrupted: throw BiometricError.cancelled
+                case .unavailable: throw BiometricError.unavailable
+                case .userFallback: throw BiometricError.passwordRequired(reason: .userChosePassword)
+                case .biometryLockout: throw BiometricError.passwordRequired(reason: .lockedOut)
+                case .failed(let code):
+                    Self.log.error("biometric unlock failed \(code, privacy: .public): password asked, enrollment kept")
+                    throw BiometricError.passwordRequired(reason: .unverified)
+                default:
+                    throw BiometricError.passwordRequired(reason: .unverified)
+                }
             }
         } catch is CancellationError {
             throw BiometricError.cancelled
         } catch {
-            // Any other decryption failure (errSecAuthFailed, CryptoTokenKit...) after a biometry change.
-            disable(accountID: accountID)
-            throw BiometricError.passwordRequired(reason: .invalidated)
+            let ns = error as NSError
+            Self.log.error("biometric unlock failed \(ns.domain, privacy: .public) \(ns.code, privacy: .public): password asked, enrollment kept")
+            markForRefresh(accountID: accountID)
+            throw BiometricError.passwordRequired(reason: .unverified)
         }
+    }
+
+    private func disable(accountID: String, reason: String) {
+        Self.log.notice("biometric enrollment dropped: \(reason, privacy: .public)")
+        disable(accountID: accountID)
     }
 
     public func disable(accountID: String) {

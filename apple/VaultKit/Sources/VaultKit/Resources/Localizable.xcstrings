@@ -925,70 +925,6 @@
         }
       }
     },
-    "Erreur de chiffrement." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Encryption error."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erreur de chiffrement."
-          }
-        }
-      }
-    },
-    "Erreur du trousseau (code %d)." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keychain error (code %d)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erreur du trousseau (code %d)."
-          }
-        }
-      }
-    },
-    "Erreur iCloud (%lld)." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud error (%lld)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erreur iCloud (%lld)."
-          }
-        }
-      }
-    },
-    "Erreur iCloud inattendue." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unexpected iCloud error."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erreur iCloud inattendue."
-          }
-        }
-      }
-    },
     "Espace iCloud insuffisant." : {
       "localizations" : {
         "en" : {
@@ -1541,22 +1477,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur est momentanément indisponible, nouvel essai bientôt."
-          }
-        }
-      }
-    },
-    "Le stockage local est illisible." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local storage can't be read."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le stockage local est illisible."
           }
         }
       }
@@ -2327,22 +2247,6 @@
         }
       }
     },
-    "Une erreur inattendue est survenue." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "An unexpected error occurred."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Une erreur inattendue est survenue."
-          }
-        }
-      }
-    },
     "Une signature est invalide." : {
       "localizations" : {
         "en" : {
@@ -2809,6 +2713,710 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file is damaged: it can't be opened."
+          }
+        }
+      }
+    },
+    "(code %@ : %@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(code %@: %@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(code %@ : %@)"
+          }
+        }
+      }
+    },
+    "(code %@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(code %@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(code %@)"
+          }
+        }
+      }
+    },
+    "Aucun compte iCloud n'est disponible. Connecte-toi à iCloud dans Réglages, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No iCloud account is available. Sign in to iCloud in Settings, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte iCloud n'est disponible. Connecte-toi à iCloud dans Réglages, puis réessaie."
+          }
+        }
+      }
+    },
+    "Ce fichier est abîmé ou n'a pas le format attendu. Choisis un autre fichier." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is damaged or isn't in the expected format. Choose another file."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est abîmé ou n'a pas le format attendu. Choisis un autre fichier."
+          }
+        }
+      }
+    },
+    "Ce fichier est trop gros pour être ouvert. Choisis un fichier plus petit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is too large to open. Choose a smaller file."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est trop gros pour être ouvert. Choisis un fichier plus petit."
+          }
+        }
+      }
+    },
+    "Ce fichier n'a pas pu être enregistré. Réessaie, ou choisis un autre emplacement." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file couldn't be saved. Try again, or pick another location."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n'a pas pu être enregistré. Réessaie, ou choisis un autre emplacement."
+          }
+        }
+      }
+    },
+    "Ce fichier n'a pas pu être lu. Réessaie, ou choisis-en un autre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file couldn't be read. Try again, or choose another one."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n'a pas pu être lu. Réessaie, ou choisis-en un autre."
+          }
+        }
+      }
+    },
+    "Ce nom de fichier n'est pas accepté. Choisis un nom plus court, sans « / » ni « : »." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file name isn't allowed. Pick a shorter name, without \"/\" or \":\"."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce nom de fichier n'est pas accepté. Choisis un nom plus court, sans « / » ni « : »."
+          }
+        }
+      }
+    },
+    "Cet emplacement est en lecture seule. Choisis-en un autre." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This location is read-only. Pick another one."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet emplacement est en lecture seule. Choisis-en un autre."
+          }
+        }
+      }
+    },
+    "Cette donnée existe déjà dans le trousseau. Réessaie. Si l'erreur revient, redémarre l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This entry already exists in the keychain. Try again. If it happens again, restart the device."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette donnée existe déjà dans le trousseau. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        }
+      }
+    },
+    "Cette version de OnePass est trop ancienne pour iCloud. Mets à jour OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version of OnePass is too old for iCloud. Update OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette version de OnePass est trop ancienne pour iCloud. Mets à jour OnePass."
+          }
+        }
+      }
+    },
+    "Cette version de OnePass n'a pas accès au trousseau de l'appareil. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This copy of OnePass can't use the device keychain. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette version de OnePass n'a pas accès au trousseau de l'appareil. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        }
+      }
+    },
+    "Cette version de OnePass n'est pas configurée pour iCloud. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This copy of OnePass isn't set up for iCloud. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette version de OnePass n'est pas configurée pour iCloud. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        }
+      }
+    },
+    "Dossier introuvable. Il a peut-être été déplacé ou supprimé : choisis un autre emplacement." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder not found. It may have been moved or deleted: pick another location."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dossier introuvable. Il a peut-être été déplacé ou supprimé : choisis un autre emplacement."
+          }
+        }
+      }
+    },
+    "Fichier introuvable. Il a peut-être été déplacé ou supprimé : choisis-le à nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File not found. It may have been moved or deleted: choose it again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichier introuvable. Il a peut-être été déplacé ou supprimé : choisis-le à nouveau."
+          }
+        }
+      }
+    },
+    "Impossible de joindre le réseau. Vérifie ta connexion, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't reach the network. Check your connection, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre le réseau. Vérifie ta connexion, puis réessaie."
+          }
+        }
+      }
+    },
+    "L'appareil n'a pas pu lire ou écrire la donnée. Réessaie. Si l'erreur revient, redémarre l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The device couldn't read or write the data. Try again. If it happens again, restart the device."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'appareil n'a pas pu lire ou écrire la donnée. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        }
+      }
+    },
+    "L'appareil n'a plus d'espace libre. Libère de la place, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The device is out of space. Free up some room, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'appareil n'a plus d'espace libre. Libère de la place, puis réessaie."
+          }
+        }
+      }
+    },
+    "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass's local storage can't be read. Quit and reopen OnePass. If it happens again, restore your account with your Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+          }
+        }
+      }
+    },
+    "Le système a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system refused the operation. Try again. If it happens again, restart the device."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le système a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        }
+      }
+    },
+    "Le texte de ce fichier est illisible (encodage inconnu). Enregistre-le en UTF-8, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file's text can't be read (unknown encoding). Save it as UTF-8, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le texte de ce fichier est illisible (encodage inconnu). Enregistre-le en UTF-8, puis réessaie."
+          }
+        }
+      }
+    },
+    "Le trousseau a refusé l'authentification. Vérifie le code de l'appareil ou ta biométrie, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keychain refused the authentication. Check the device passcode or your biometrics, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le trousseau a refusé l'authentification. Vérifie le code de l'appareil ou ta biométrie, puis réessaie."
+          }
+        }
+      }
+    },
+    "Le trousseau a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keychain refused the operation. Try again. If it happens again, restart the device."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le trousseau a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        }
+      }
+    },
+    "Le trousseau de ta session est introuvable ou abîmé. Redémarre l'appareil, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your session's keychain is missing or damaged. Restart the device, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le trousseau de ta session est introuvable ou abîmé. Redémarre l'appareil, puis réessaie."
+          }
+        }
+      }
+    },
+    "Le trousseau n'est pas disponible pour le moment. Redémarre l'appareil, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keychain isn't available right now. Restart the device, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le trousseau n'est pas disponible pour le moment. Redémarre l'appareil, puis réessaie."
+          }
+        }
+      }
+    },
+    "Le trousseau reste fermé tant que l'appareil est verrouillé. Déverrouille l'appareil, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keychain stays closed while the device is locked. Unlock the device, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le trousseau reste fermé tant que l'appareil est verrouillé. Déverrouille l'appareil, puis réessaie."
+          }
+        }
+      }
+    },
+    "OnePass a fait une demande que le système refuse. Mets à jour OnePass. Si l'erreur revient, contacte le support." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass made a request the system refused. Update OnePass. If it happens again, contact support."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass a fait une demande que le système refuse. Mets à jour OnePass. Si l'erreur revient, contacte le support."
+          }
+        }
+      }
+    },
+    "OnePass n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à OnePass dans Réglages." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass isn't allowed to access this location. Pick another one, or give OnePass access in Settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à OnePass dans Réglages."
+          }
+        }
+      }
+    },
+    "OnePass n'a pas le droit de lire cette donnée du trousseau. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass isn't allowed to read this keychain entry. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass n'a pas le droit de lire cette donnée du trousseau. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        }
+      }
+    },
+    "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+          }
+        }
+      }
+    },
+    "Opération annulée. Recommence quand tu veux." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelled. Start again whenever you like."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opération annulée. Recommence quand tu veux."
+          }
+        }
+      }
+    },
+    "Ton stockage iCloud est plein. Libère de l'espace dans iCloud, puis synchronise à nouveau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your iCloud storage is full. Free up space in iCloud, then sync again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton stockage iCloud est plein. Libère de l'espace dans iCloud, puis synchronise à nouveau."
+          }
+        }
+      }
+    },
+    "Un fichier porte déjà ce nom. Choisis un autre nom." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file with this name already exists. Pick another name."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un fichier porte déjà ce nom. Choisis un autre nom."
+          }
+        }
+      }
+    },
+    "Une autre app utilise ce fichier. Ferme-la, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another app is using this file. Close it, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une autre app utilise ce fichier. Ferme-la, puis réessaie."
+          }
+        }
+      }
+    },
+    "Une donnée de OnePass manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé OnePass, restaure ton compte avec ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A OnePass entry is missing from the device keychain. Enter your master password. If you reinstalled OnePass, restore your account with your Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une donnée de OnePass manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé OnePass, restaure ton compte avec ton Emergency Kit."
+          }
+        }
+      }
+    },
+    "Une donnée du trousseau est illisible. Réessaie. Si l'erreur revient, restaure ton compte avec ton Emergency Kit." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A keychain entry can't be read. Try again. If it happens again, restore your account with your Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une donnée du trousseau est illisible. Réessaie. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+          }
+        }
+      }
+    },
+    "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+          }
+        }
+      }
+    },
+    "iCloud a refusé la synchronisation. Réessaie plus tard. Si l'erreur revient, vérifie ton compte iCloud dans Réglages." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud refused to sync. Try again later. If it happens again, check your iCloud account in Settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud a refusé la synchronisation. Réessaie plus tard. Si l'erreur revient, vérifie ton compte iCloud dans Réglages."
+          }
+        }
+      }
+    },
+    "iCloud ne répond pas pour le moment. OnePass réessaiera tout seul." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud isn't responding right now. OnePass will try again on its own."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud ne répond pas pour le moment. OnePass réessaiera tout seul."
+          }
+        }
+      }
+    },
+    "iCloud refuse l'accès à OnePass. Vérifie dans Réglages qu'iCloud est activé pour OnePass, puis réessaie." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud denies OnePass access. Check in Settings that iCloud is on for OnePass, then try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud refuse l'accès à OnePass. Vérifie dans Réglages qu'iCloud est activé pour OnePass, puis réessaie."
+          }
+        }
+      }
+    },
+    "Code de vérification" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code de vérification"
+          }
+        }
+      }
+    },
+    "Le code ne peut être ajouté qu'à un élément Login." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code can only be added to a Login item."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le code ne peut être ajouté qu'à un élément Login."
+          }
+        }
+      }
+    },
+    "Ancien code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ancien code"
+          }
+        }
+      }
+    },
+    "Confirme d'abord ton identité pour modifier cet élément." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm it's you first to change this item."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirme d'abord ton identité pour modifier cet élément."
           }
         }
       }

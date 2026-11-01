@@ -19,13 +19,23 @@ public struct BiometricEnrollment: Codable, Sendable, Equatable {
     public var enrolledAt: Date
     public var lastPasswordAt: Date
     public var bootSessionID: String
+    /// Boot time when the record was written (`kern.boottime`); nil in records of older builds.
+    public var bootTime: Date?
+    /// Set when a biometric unlock failed without proof of invalidation: the next password unlock
+    /// enrolls again. Nil in records of older builds.
+    public var needsRefresh: Bool?
 
-    public init(accountID: String, wrappedAUK: Data, enrolledAt: Date, lastPasswordAt: Date, bootSessionID: String) {
+    public init(
+        accountID: String, wrappedAUK: Data, enrolledAt: Date, lastPasswordAt: Date, bootSessionID: String,
+        bootTime: Date? = nil, needsRefresh: Bool? = nil
+    ) {
         self.accountID = accountID
         self.wrappedAUK = wrappedAUK
         self.enrolledAt = enrolledAt
         self.lastPasswordAt = lastPasswordAt
         self.bootSessionID = bootSessionID
+        self.bootTime = bootTime
+        self.needsRefresh = needsRefresh
     }
 }
 
@@ -35,6 +45,9 @@ public enum PasswordReason: Sendable, Equatable {
     case userChosePassword
     /// Biometry temporarily locked out by the system (enrollment kept).
     case lockedOut
+    /// Biometry could not be verified this time (failed match, unknown boot, unknown error); the
+    /// enrollment is kept.
+    case unverified
 
     /// French message for the unlock screen.
     public var message: String {
@@ -45,6 +58,7 @@ public enum PasswordReason: Sendable, Equatable {
         case .notEnrolled: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
         case .userChosePassword: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
         case .lockedOut: String(localized: "La biométrie est temporairement bloquée : saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .unverified: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
         }
     }
 }

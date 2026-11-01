@@ -65,16 +65,18 @@ struct SecretKeyScanner: UIViewControllerRepresentable {
     }
 }
 
-/// The scanner in a sheet with a cancel button.
+/// The scanner in a sheet with a cancel button. `title` and `accept` default to the Emergency Kit.
 struct SecretKeyScannerSheet: View {
+    var title: LocalizedStringKey = "QR code du kit"
+    var accept: (String) -> String? = EmergencyKit.parsePayload
     let onKey: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            SecretKeyScanner(onKey: onKey)
+            SecretKeyScanner(onKey: onKey, accept: accept)
                 .ignoresSafeArea()
-                .navigationTitle("QR code du kit")
+                .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -82,6 +84,21 @@ struct SecretKeyScannerSheet: View {
                     }
                 }
         }
+    }
+}
+
+extension SecretKeyScanner {
+    /// A verification code QR code (`otpauth://`, `otpauth-migration://`), given as scanned.
+    static func acceptOtpLink(_ payload: String) -> String? {
+        OtpLink.isLink(payload) ? payload : nil
+    }
+
+    /// A QR code with exactly one verification code: its canonical `otpauth://` URI (the item
+    /// editor's field takes one code).
+    static func acceptSingleOtp(_ payload: String) -> String? {
+        guard OtpLink.isLink(payload), let accounts = try? OtpLink.accounts(in: payload), accounts.count == 1
+        else { return nil }
+        return accounts[0].uri
     }
 }
 #endif

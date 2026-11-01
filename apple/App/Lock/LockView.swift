@@ -366,16 +366,19 @@ struct LockView: View {
     /// the password goes into a wipeable buffer at once and crosses the FFI as bytes (the field's own
     /// `String` cannot be wiped, R5). After the first password unlock where biometrics could be on,
     /// the app offers them once (`AppModel`): the offer keeps its own wipeable copy until answered.
+    /// The offer is decided after the unlock: when the session enrolled again on its own (biometrics
+    /// wanted, enrollment dropped by a reboot or the 14 days), nothing is asked.
     private func unlockWithPassword() async {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
         let typed = SecretBytes(utf8: password)
         password = ""
         defer { typed.wipe() }
-        let offer = model.biometricOfferDue
         do {
             try await session.unlock(password: typed)
-            if offer { model.offerBiometrics(password: typed.withUnsafeBytes { SecretBytes(copying: $0) }) }
+            if model.biometricOfferDue {
+                model.offerBiometrics(password: typed.withUnsafeBytes { SecretBytes(copying: $0) })
+            }
         } catch {
             let failure = VaultError(error)
             switch failure {

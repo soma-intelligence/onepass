@@ -410,7 +410,7 @@ struct ExportBackupSheet: View {
             temporaryFile = url
             sharedFile = SharedBackupFile(url: url)
         } catch {
-            errorMessage = String(localized: "La sauvegarde n'a pas pu être préparée.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "La sauvegarde n'a pas pu être préparée."))
         }
         #endif
     }
@@ -422,7 +422,7 @@ struct ExportBackupSheet: View {
             try archive.write(to: url, options: .atomic)
             saved = true
         } catch {
-            errorMessage = String(localized: "La sauvegarde n'a pas pu être enregistrée.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "La sauvegarde n'a pas pu être enregistrée."))
         }
     }
     #else

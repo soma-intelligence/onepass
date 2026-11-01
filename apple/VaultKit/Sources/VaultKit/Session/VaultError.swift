@@ -30,8 +30,10 @@ public enum VaultError: Error, Equatable, Sendable {
             case .Integrity(let kind): self = .integrity(kind: kind)
             case .InvalidInput(let what):
                 self = what == "account exists" ? .accountExists : .other(Self.invalidInputMessage(what))
-            case .Store: self = .other(String(localized: "Le stockage local est illisible.", bundle: VaultKitStrings.bundle))
-            case .Crypto: self = .other(String(localized: "Erreur de chiffrement.", bundle: VaultKitStrings.bundle))
+            case .Store:
+                self = .other(String(localized: "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit.", bundle: VaultKitStrings.bundle))
+            case .Crypto:
+                self = .other(String(localized: "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass.", bundle: VaultKitStrings.bundle))
             case .PasskeyExcluded: self = .other(String(localized: "Ce compte a déjà une passkey OnePass pour ce site.", bundle: VaultKitStrings.bundle))
             // The remote unlock envelope no longer opens the account: unlock here.
             case .RemoteUnlockStale: self = .passwordRequired
@@ -56,9 +58,24 @@ public enum VaultError: Error, Equatable, Sendable {
             }
         case let error as KeychainError:
             self = .other(error.message)
+        case let error as EnclaveError:
+            switch error {
+            case .unavailable, .biometryNotEnrolled: self = .biometricsUnavailable
+            case .userFallback, .authenticationFailed: self = .passwordRequired
+            case .cancelled, .interrupted: self = .other(ErrorText.cancelled(VaultKitStrings.bundle))
+            case .biometryLockout: self = .other(PasswordReason.lockedOut.message)
+            case .keyInvalidated: self = .other(PasswordReason.invalidated.message)
+            case .failed(let code): self = .other(ErrorText.keychain(code).text)
+            }
         default:
-            self = .other(String(localized: "Une erreur inattendue est survenue.", bundle: VaultKitStrings.bundle))
+            // A system error (file, keychain, network...) in words, never its bare code.
+            self = .other(ErrorText.describe(error)?.text ?? Self.unexpectedMessage)
         }
+    }
+
+    /// The message of an error nothing else words.
+    static var unexpectedMessage: String {
+        String(localized: "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass.", bundle: VaultKitStrings.bundle)
     }
 
     /// French message for the UI (core validation reasons translated).

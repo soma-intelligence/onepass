@@ -88,18 +88,51 @@ public actor IdentityStoreSync {
     /// Bumped by every `schedule` and `clear`: a request that is no longer the latest drops out.
     private var revision = 0
     private var pending: Task<Void, Never>?
+    /// The revision of the scheduled refresh whose identities were not read yet (`takePending`).
+    private var pendingRevision: Int?
     private var chain: Task<Void, Never>?
+    /// Tests: runs once a refresh has read its identities, before it replaces the store.
+    private var afterRead: (@Sendable () async -> Void)?
+    /// Refresh requests made and settled (read, dropped or superseded), readable without the
+    /// actor: a lock decides at once whether a refresh may still wait (`mayHavePending`).
+    private let marks = Mutex(Marks())
+    /// The request mark of the latest scheduled refresh.
+    private var pendingMark = 0
+
+    private struct Marks {
+        var requested = 0
+        var settled = 0
+    }
 
     public init(client: any IdentityStoreClient, debounce: Duration = .seconds(1)) {
         self.client = client
         self.debounce = debounce
     }
 
+    /// Counts a refresh request before it reaches `schedule` (the caller queues it): until that
+    /// refresh is read or dropped, `mayHavePending` is true. Returns the mark to pass to `schedule`.
+    public nonisolated func noteRequest() -> Int {
+        marks.withLock {
+            $0.requested += 1
+            return $0.requested
+        }
+    }
+
+    /// A refresh was requested and not read or dropped yet (it may still be on its way to
+    /// `schedule`). False means a lock has nothing to publish.
+    public nonisolated var mayHavePending: Bool {
+        marks.withLock { $0.requested > $0.settled }
+    }
+
     /// Replaces the store with `identities()` after the debounce delay, unless a later `schedule` or a
-    /// `clear` comes first.
-    public func schedule(_ identities: @Sendable @escaping () async throws -> [FfiAutofillIdentity]) {
+    /// `clear` comes first. `mark` comes from `noteRequest` (a new one when nil).
+    public func schedule(
+        mark: Int? = nil, _ identities: @Sendable @escaping () async throws -> [FfiAutofillIdentity]
+    ) {
         revision &+= 1
         let current = revision
+        pendingRevision = current
+        pendingMark = max(pendingMark, mark ?? noteRequest())
         pending?.cancel()
         let delay = debounce
         pending = Task {
@@ -112,19 +145,26 @@ public actor IdentityStoreSync {
         }
     }
 
-    /// Replaces the store with `identities` without waiting (a pending debounced refresh is dropped),
-    /// and returns once done. A disabled store is left alone; errors are ignored.
+    /// Replaces the store with `identities` without the debounce (a pending debounced refresh is
+    /// dropped), and returns once done. A disabled store is left alone; errors are ignored.
     public func replaceNow(_ identities: [FfiAutofillIdentity]) async {
+        replaceSoon(identities)
+        await chain?.value
+    }
+
+    /// `replaceNow` without waiting for the store (an XPC call): queued in order, so a later `clear`
+    /// still runs after it.
+    public func replaceSoon(_ identities: [FfiAutofillIdentity]) {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        settlePending()
         let current = revision
         let client = client
         enqueue {
             guard await self.isCurrent(current), await client.isEnabled() else { return }
             try? await client.replaceAll(identities)
         }
-        await chain?.value
     }
 
     /// Cancels any pending refresh and empties the store (setting turned off, account reset). The store
@@ -133,17 +173,34 @@ public actor IdentityStoreSync {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        settlePending()
         let client = client
         enqueue { try? await client.removeAll() }
         await chain?.value
     }
 
     /// Drops the pending debounced refresh, if any (session locked: it could only fail). Queued
-    /// store operations still run.
+    /// store operations still run, a replacement queued by an earlier lock included: with nothing
+    /// pending, nothing is bumped.
     public func dropPending() {
+        _ = takePending()
+    }
+
+    /// Drops the pending debounced refresh like `dropPending`, and tells whether one was waiting
+    /// with its identities still unread: the caller (a lock) then publishes its own reading. A
+    /// refresh that already read its identities is left alone (nothing bumped): it publishes them.
+    public func takePending() -> Bool {
+        guard pendingRevision != nil else { return false }
         revision &+= 1
         pending?.cancel()
         pending = nil
+        settlePending()
+        return true
+    }
+
+    /// Tests: `hook` runs once a refresh has read its identities, before it replaces the store.
+    func setAfterReadHook(_ hook: (@Sendable () async -> Void)?) {
+        afterRead = hook
     }
 
     /// Tests: waits until the pending refresh (if any) and every queued store operation are done.
@@ -160,12 +217,29 @@ public actor IdentityStoreSync {
         enqueue {
             guard await self.isCurrent(expected), await client.isEnabled() else { return }
             guard let list = try? await identities() else { return }
-            guard await self.isCurrent(expected) else { return }
+            // Still the latest request once read: from here on it publishes (a lock's
+            // `takePending` sees nothing waiting). A later `clear` is queued after it.
+            guard await self.claim(expected) else { return }
+            await self.afterRead?()
             try? await client.replaceAll(list)
         }
     }
 
     private func isCurrent(_ expected: Int) -> Bool { expected == revision }
+
+    /// The refresh `expected` read its identities and is still the latest: no longer pending.
+    private func claim(_ expected: Int) -> Bool {
+        guard expected == revision else { return false }
+        if pendingRevision == expected { settlePending() }
+        return true
+    }
+
+    /// The scheduled refresh is read or dropped: no request up to its mark waits any more.
+    private func settlePending() {
+        pendingRevision = nil
+        let mark = pendingMark
+        marks.withLock { $0.settled = max($0.settled, mark) }
+    }
 
     private func enqueue(_ op: @Sendable @escaping () async -> Void) {
         let previous = chain

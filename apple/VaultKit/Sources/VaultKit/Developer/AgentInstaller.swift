@@ -65,7 +65,7 @@ public struct ProcessHelperRunner: HelperRunner {
             do {
                 try process.run()
             } catch {
-                return HelperResult(status: -1, output: error.localizedDescription)
+                return HelperResult(status: -1, output: ErrorText.describe(error)?.text ?? VaultError(error).localizedMessage)
             }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()

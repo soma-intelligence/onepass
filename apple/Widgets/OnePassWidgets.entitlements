@@ -6,7 +6,7 @@
 	<string>NSFileProtectionComplete</string>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.me.quentincaron.onepass</string>
+		<string>$(ONEPASS_APP_GROUP)</string>
 	</array>
 </dict>
 </plist>

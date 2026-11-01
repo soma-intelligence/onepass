@@ -63,6 +63,17 @@ struct BrowseRoot: View {
                 }
                 .onAppear { model.totpPromptShown = true }
             }
+            // A verification code link (`otpauth://`, `otpauth-migration://`) or a scanned code.
+            .sheet(item: $model.otpLinkRequest) { request in
+                AddOtpSheet(request: request)
+            }
+            #if os(iOS)
+            .sheet(isPresented: $model.showOtpScanner) {
+                SecretKeyScannerSheet(title: "Code de vérification", accept: SecretKeyScanner.acceptOtpLink) { link in
+                    Task { await model.presentOtpLink(link, source: .scan) }
+                }
+            }
+            #endif
             // The split view shows a revealed item through the selection, and searches through
             // `searchFocusRequest`; the iPhone tabs handle the reveal themselves.
             .onChange(of: model.browseReveal, initial: true) { _, reveal in

@@ -19,6 +19,7 @@ struct SecretFieldEditor: View {
     private let captured = false
     #endif
     @State private var generating = false
+    @State private var scanning = false
     /// The value the generator just put in, with its recipe bits (the meter shows those for it).
     @State private var generated: GeneratedValue?
 
@@ -55,6 +56,18 @@ struct SecretFieldEditor: View {
                     .accessibilityLabel(Text("Générer"))
                     .accessibilityIdentifier("editor.generate.\(field.id)")
                 }
+                #if os(iOS)
+                if field.kind == .otp, SecretKeyScanner.isSupported {
+                    Button {
+                        scanning = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(Text("Scanner un QR code"))
+                    .accessibilityIdentifier("editor.scanOtp.\(field.id)")
+                }
+                #endif
             }
             if field.kind == .otp, !value.text.isEmpty {
                 if captured {
@@ -87,6 +100,16 @@ struct SecretFieldEditor: View {
         .sheet(isPresented: $generating) {
             GeneratorSheet(onUse: { _ in }, onUseWithBits: apply)
         }
+        #if os(iOS)
+        // One code per field: a Google Authenticator export of several accounts is ignored here (the
+        // account menu's scanner takes it).
+        .sheet(isPresented: $scanning) {
+            SecretKeyScannerSheet(title: "QR code de vérification", accept: SecretKeyScanner.acceptSingleOtp) { uri in
+                value = .otp(value: uri)
+                scanning = false
+            }
+        }
+        #endif
     }
 
     /// Same measure as the generator: its recipe bits for the value it just generated, the shared

@@ -27,5 +27,7 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).NotificationService</string>
 	</dict>
+	<key>OnePassAppGroup</key>
+	<string>$(ONEPASS_APP_GROUP)</string>
 </dict>
 </plist>

@@ -448,7 +448,7 @@ struct PlaintextExportSheet: View {
             temporaryFile = url
             sharedFile = SharedPlaintextFile(url: url)
         } catch {
-            errorMessage = String(localized: "Le fichier n'a pas pu être préparé.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "Le fichier n'a pas pu être préparé."))
         }
         #endif
     }
@@ -462,7 +462,7 @@ struct PlaintextExportSheet: View {
             try PlaintextExportFile.writeNew(csv, to: url)
             saved = true
         } catch {
-            errorMessage = String(localized: "Le fichier n'a pas pu être enregistré.")
+            errorMessage = ErrorText.appending(error, to: String(localized: "Le fichier n'a pas pu être enregistré."))
         }
     }
     #else

@@ -6,11 +6,12 @@ import Testing
 /// A session whose identity store is in memory, with a short debounce.
 @MainActor
 private func autofillSession(
-    _ h: SessionHarness, store: InMemoryIdentityStore, notifier: StoreChangeNotifier? = nil
+    _ h: SessionHarness, store: any IdentityStoreClient, notifier: StoreChangeNotifier? = nil,
+    debounce: Duration = .milliseconds(20)
 ) -> VaultSession {
     var environment = h.environment
     environment.identityStore = store
-    environment.identityDebounce = .milliseconds(20)
+    environment.identityDebounce = debounce
     if let notifier { environment.storeChanges = notifier }
     return VaultSession(environment: environment)
 }
@@ -154,6 +155,141 @@ struct AutoFillSessionTests {
         session.refreshAutofillIdentities()
         await session.waitForAutofillIdentities()
         #expect(store.replaceCount == published)
+    }
+
+    /// iOS locks as soon as the app leaves the screen: a refresh still inside its debounce is read
+    /// before the keys go and published, not dropped.
+    @Test func quickLockPublishesThePendingRefresh() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = InMemoryIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        #expect(store.identities.isEmpty)
+        session.lock()
+        await session.waitForAutofillIdentities()
+        #expect(store.identities.map(\.service) == ["atlas.exemple.fr"])
+        let published = store.replaceCount
+
+        // The unlock schedules a refresh too: its lock publishes it; a second lock has nothing waiting.
+        try await session.unlock(password: testPassword)
+        session.lock()
+        await session.waitForAutofillIdentities()
+        #expect(store.replaceCount == published + 1)
+        session.lock()
+        await session.waitForAutofillIdentities()
+        #expect(store.replaceCount == published + 1)
+    }
+
+    /// The lock releases the session's keys without waiting for the system store (an XPC call
+    /// that may hang): the read list is published afterwards.
+    @Test func lockReleasesKeysBeforeThePublishEnds() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        await session.waitForReleasedSessions()
+        #expect(store.inner.identities.isEmpty)
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
+    /// A second lock right after the first (nothing open any more) leaves the first one's queued
+    /// publish alone.
+    @Test func secondLockKeepsTheFirstLocksPublish() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        session.lock()
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
+    /// With no refresh waiting (already published), a lock reads and publishes nothing.
+    @Test func lockWithNothingWaitingPublishesNothing() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = InMemoryIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .milliseconds(20))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        try await Task.sleep(for: .milliseconds(100))
+        await session.waitForAutofillIdentities()
+        #expect(store.identities.map(\.service) == ["atlas.exemple.fr"])
+        #expect(!session.identitySyncMayHavePending)
+        let published = store.replaceCount
+        session.lock()
+        await session.waitForAutofillIdentities()
+        #expect(store.replaceCount == published)
+    }
+
+    /// An erase right after a lock (clear) is never overtaken by the lock's publish.
+    @Test func clearAfterLockEndsEmpty() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        session.clearAutofillIdentities()
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.replaceCount == 1)
+        #expect(store.inner.removeCount >= 1)
+        #expect(store.inner.identities.isEmpty)
+    }
+
+    /// A passkey written elsewhere (the Mac, merged by a sync round) reaches the system store at the
+    /// end of the round while unlocked (`reload`, what `remoteChanges` triggers), even when the app
+    /// locks right after; and at the next unlock when it arrived while locked.
+    @Test func syncedPasskeyIsPublishedAfterTheRoundAndAtUnlock() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = InMemoryIdentityStore()
+        let app = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await app.createAccount(password: testPassword, displayName: "", mode: .personal)
+        app.lock()
+        await app.waitForAutofillIdentities()
+        try await app.unlock(password: testPassword)
+        let vaultID = app.allVaults[0].id
+
+        // Another writer on the same store stands for the merged remote records.
+        let mac = autofillSession(h, store: InMemoryIdentityStore())
+        try await mac.unlock(password: testPassword)
+        let first = try await mac.createPasskey(FfiPasskeyCreation(
+            vaultId: vaultID, itemId: nil, rpId: "example.com", userName: "camille",
+            userHandle: Data([1, 2, 3, 4]), clientDataHash: Data(repeating: 9, count: 32),
+            excludedCredentialIds: []))
+        #expect(!store.identities.contains { $0.credentialId == first.credentialId })
+
+        await app.reload()
+        app.lock()
+        await app.waitForAutofillIdentities()
+        #expect(store.identities.contains { $0.kind == .passkey && $0.credentialId == first.credentialId })
+
+        // Locked meanwhile: published by the next unlock.
+        let second = try await mac.createPasskey(FfiPasskeyCreation(
+            vaultId: vaultID, itemId: nil, rpId: "exemple.fr", userName: "camille",
+            userHandle: Data([5, 6, 7, 8]), clientDataHash: Data(repeating: 9, count: 32),
+            excludedCredentialIds: []))
+        await app.reload()
+        #expect(!store.identities.contains { $0.credentialId == second.credentialId })
+        try await app.unlock(password: testPassword)
+        app.lock()
+        await app.waitForAutofillIdentities()
+        #expect(store.identities.contains { $0.kind == .passkey && $0.credentialId == second.credentialId })
+        mac.lock()
     }
 
     /// "Restaurer avec mon Emergency Kit" / "Repartir de zéro": the vanished account's identities go.

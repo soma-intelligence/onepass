@@ -506,6 +506,72 @@ fn totp_code_needs_scope_and_each_call_approval() {
     assert_eq!(a.calls().len(), 2);
 }
 
+/// A code replaced in the app stays as a concealed `previous_otp_<n>`
+/// field ("Ancien code"): a seed, so `use` or `reveal` alone never reads it.
+#[test]
+fn replaced_otp_seed_needs_the_totp_scope() {
+    use onepass_core::model::{Field, FieldType, FieldValue, ItemType, Section, new_item};
+    use zeroize::Zeroizing;
+
+    const OLD_SEED: &str = "otpauth://totp/Old?secret=GEZDGNBVGY3TQOJQ";
+    let with_old_seed = |t: &mut Tools| {
+        let dev = vault_id(t, "Dev");
+        let mut item = new_item(ItemType::Login, dev, "Banque");
+        item.field_mut("username").unwrap().value = FieldValue::Text("moi".into());
+        item.sections.push(Section {
+            id: "custom".into(),
+            label: "Champs perso".into(),
+            fields: vec![Field {
+                id: "previous_otp_1".into(),
+                label: "Previous code".into(),
+                kind: FieldType::Concealed,
+                value: FieldValue::Concealed(Zeroizing::new(OLD_SEED.into())),
+                required: false,
+                repeatable: false,
+                autofill: false,
+            }],
+        });
+        add_item(t, "Dev", item);
+    };
+    let reference = json!({"reference": "onepass://Dev/Banque/previous_otp_1"});
+
+    let a = approver(vec![Decision::AllowOnce]);
+    let (mut t, _) = tools_with_policy(
+        |r| policy_with(r, &[("Dev", &[Scope::Metadata, Scope::Use, Scope::Reveal])]),
+        a.clone(),
+    );
+    with_old_seed(&mut t);
+    let m = refused(call(&mut t, "reveal_secret", reference.clone()));
+    assert_eq!(m, "scope 'totp' not granted for this vault");
+    // By its label too, in whatever language it was written.
+    let m = refused(call(
+        &mut t,
+        "reveal_secret",
+        json!({"reference": "onepass://Dev/Banque/Previous code"}),
+    ));
+    assert_eq!(m, "scope 'totp' not granted for this vault");
+    let m = refused(call(
+        &mut t,
+        "run_with_secrets",
+        json!({"command": sh("true"), "env": {"SEED": "onepass://Dev/Banque/previous_otp_1"}}),
+    ));
+    assert_eq!(m, "scope 'totp' not granted for this vault");
+    assert!(a.calls().is_empty());
+
+    let (mut t, _) = tools_with_policy(
+        |r| {
+            policy_with(
+                r,
+                &[("Dev", &[Scope::Metadata, Scope::Reveal, Scope::Totp])],
+            )
+        },
+        a.clone(),
+    );
+    with_old_seed(&mut t);
+    let v = ok(call(&mut t, "reveal_secret", reference));
+    assert_eq!(v["untrusted_vault_data"]["value"], OLD_SEED);
+}
+
 #[test]
 fn reveal_secret_with_scope_and_approval() {
     let a = approver(vec![

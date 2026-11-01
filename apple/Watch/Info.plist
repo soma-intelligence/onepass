@@ -25,6 +25,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>me.quentincaron.onepass</string>
+	<string>$(ONEPASS_BUNDLE_ID_PREFIX)</string>
 </dict>
 </plist>

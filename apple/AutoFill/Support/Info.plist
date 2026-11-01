@@ -53,5 +53,7 @@
 	<string>OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître.</string>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
+	<key>OnePassKeychainGroup</key>
+	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
 </dict>
 </plist>

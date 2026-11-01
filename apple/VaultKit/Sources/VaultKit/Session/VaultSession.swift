@@ -620,11 +620,12 @@ public final class VaultSession {
     }
 
     /// Spec 4 point 3: restart the 14 day clock, and enroll again when biometrics are wanted but the
-    /// enrollment was dropped (reboot, expiry, biometry change).
+    /// enrollment was dropped (reboot, expiry, biometry change) or kept after a failure that may hide
+    /// a stale key (`needsRefresh`). Silent: creating the key and wrapping the AUK ask nothing.
     private func afterPasswordUnlock(accountID: String, auk: SecretBytes) {
         try? biometrics.notePasswordUnlock(accountID: accountID)
         if settings.biometricsWanted, settings.deviceMode.biometricsAllowed, biometrics.isAvailable,
-            !biometrics.isEnrolled(accountID: accountID)
+            !biometrics.isEnrolled(accountID: accountID) || biometrics.needsRefresh(accountID: accountID)
         {
             let allowWatch = settings.allowWatchUnlock
             try? auk.withData { try biometrics.enroll(auk: $0, accountID: accountID, allowWatch: allowWatch) }
@@ -781,22 +782,33 @@ public final class VaultSession {
     // MARK: - Lock
 
     /// Drops the keys, every summary and recent id, and tells the sync layer.
-    public func lock() {
+    /// `publishPending: false` (the AutoFill extension, whose own writes are published by
+    /// `publishAutofillIdentitiesNow`): a refresh still waiting is dropped, not published, so each
+    /// request does not replace the system store again.
+    public func lock(publishPending: Bool = true) {
         generation &+= 1
         // A manual lock of the Mac ends an agents-only window too (spec 6.3).
         endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
+        // Unlocked with suggestions on and a refresh that may still wait: it is published from this
+        // session (read at once). Nothing waiting: nothing read.
+        let flushIdentities = publishPending && state == .unlocked && settings.quickTypeSuggestions && session != nil
+            && identitySync.mayHavePending
+        let excluded = excludedVaultIDs
         if let session {
             self.session = nil
+            if flushIdentities { publishPendingIdentities(from: session, excluded: excluded) }
             release(session)
         }
         clearMemory()
         clipboard.clear()
         concealRevealed()
-        // A debounced identity refresh would find the session locked: drop it (what was published
-        // stays, suggestions work while locked).
-        let sync = identitySync
-        enqueueIdentity { await sync.dropPending() }
+        // Without an open session, a debounced identity refresh would find it locked: drop it (what
+        // was published stays, suggestions work while locked).
+        if !flushIdentities {
+            let sync = identitySync
+            enqueueIdentity { await sync.dropPending() }
+        }
         if state == .unlocked || state == .unlocking { state = .locked }
         if wasOpen { notifySync { await $0.sessionLocked() } }
     }
@@ -1169,8 +1181,9 @@ public final class VaultSession {
         let excluded = excludedVaultIDs
         let settings = settings
         let sync = identitySync
+        let mark = sync.noteRequest()
         enqueueIdentity {
-            await sync.schedule {
+            await sync.schedule(mark: mark) {
                 // The setting may have been turned off meanwhile; a locked session throws.
                 guard settings.quickTypeSuggestions else { throw CancellationError() }
                 return try await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
@@ -1253,9 +1266,13 @@ public final class VaultSession {
         enqueueIdentity { await sync.clear() }
     }
 
+    /// Tests: a refresh may still wait (what a lock reads for).
+    var identitySyncMayHavePending: Bool { identitySync.mayHavePending }
+
     /// Tests: waits until every identity store request sent so far has run.
     func waitForAutofillIdentities() async {
         await identityChain?.value
+        await releaseChain?.value
         await identitySync.waitForIdle()
     }
 
@@ -1551,6 +1568,35 @@ public final class VaultSession {
     }
 
     /// `Session.lock()` waits for a core call in flight (save, purge...): never on the main actor.
+    /// A lock with a debounced identity refresh still waiting (iOS locks as soon as the app leaves
+    /// the screen, often within the second after an unlock or a sync that brought passkeys from the
+    /// Mac): the identities are read on the core thread at once, and the session's release waits for
+    /// that read only, never for the system store (an XPC call). The list (no secret) is published
+    /// afterwards, in order with the identity requests: after those already sent, before a later
+    /// `clear` (account erased). The store call itself is queued, not awaited.
+    private func publishPendingIdentities(from session: Session, excluded: [String]) {
+        let sync = identitySync
+        let reading = Task {
+            try? await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
+        }
+        let previous = releaseChain
+        releaseChain = Task {
+            await previous?.value
+            _ = await reading.value
+        }
+        enqueueIdentity {
+            guard await sync.takePending() else { return }
+            guard let list = await reading.value else {
+                // The next unlock refreshes the identities again (every unlock does).
+                Self.identityLog.error("Lock: AutoFill identities unreadable, published at the next unlock")
+                return
+            }
+            await sync.replaceSoon(list)
+        }
+    }
+
+    private nonisolated static let identityLog = Logger(subsystem: "me.somalabs.onepass", category: "autofill")
+
     private func release(_ session: Session) {
         let previous = releaseChain
         releaseChain = Task {

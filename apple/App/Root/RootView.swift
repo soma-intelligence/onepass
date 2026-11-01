@@ -62,15 +62,23 @@ struct RootView: View {
                 if !inProgress { model.consumePendingRoute() }
             }
             .onOpenURL { url in
-                // Anything but the three `onepass://` links is ignored.
-                if let link = OnePassLink(url: url) { model.open(link) }
+                // The three `onepass://` links and the verification code links; anything else is
+                // ignored. A code link waits for the unlock like the others.
+                if let link = OnePassLink(url: url) {
+                    model.open(link)
+                } else if OtpLink.handles(url) {
+                    model.handle(.otpLink(url.absoluteString))
+                }
             }
             // After the first password unlock where biometrics could be on (`AppModel.biometricOffer`).
             // Only the buttons answer: the setter must not race "Activer" with a refusal.
             .alert(
                 Text("Utiliser \(OnboardingModel.biometryName) pour déverrouiller ?"),
                 isPresented: Binding(
-                    get: { model.biometricOffer != nil && model.session.state == .unlocked },
+                    get: {
+                        model.biometricOffer != nil && model.session.state == .unlocked
+                            && !model.session.canUseBiometrics
+                    },
                     set: { _ in }),
                 presenting: model.biometricOffer
             ) { _ in

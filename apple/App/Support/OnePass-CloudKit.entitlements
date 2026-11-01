@@ -16,15 +16,11 @@
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.me.somalabs.onepass</string>
+		<string>$(ONEPASS_APP_GROUP)</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)me.somalabs.onepass.shared</string>
-	</array>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.me.somalabs.onepass</string>
+		<string>$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)</string>
 	</array>
 	<key>com.apple.developer.authentication-services.autofill-credential-provider</key>
 	<true/>

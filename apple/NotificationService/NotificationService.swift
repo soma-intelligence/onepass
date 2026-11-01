@@ -7,7 +7,12 @@ import UserNotifications
 /// by the app while the vault was open: the sealed request itself cannot be opened here (no vault,
 /// no keys in this sandbox). Nothing else is ever added: no item, vault or command, and no action.
 final class NotificationService: UNNotificationServiceExtension {
-    static let appGroup = "group.me.somalabs.onepass"
+    /// The `OnePassAppGroup` Info.plist key (`$(ONEPASS_APP_GROUP)`, the group of the entitlements).
+    static var appGroup: String {
+        let value = (Bundle.main.object(forInfoDictionaryKey: "OnePassAppGroup") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return value.isEmpty || value.contains("$(") ? "group.me.somalabs.onepass" : value
+    }
     /// `PhoneAgents.macNamesKey` in VaultKit.
     static let macNamesKey = "onepass.remote.macNames"
 

@@ -508,6 +508,39 @@ struct VaultSessionTests {
         #expect(session.state == .locked)
     }
 
+    /// A cancelled Face ID keeps the enrollment; an unknown error asks the password once, keeps the
+    /// enrollment and that password unlock wraps the key again without any biometric prompt.
+    @Test func unprovenBiometricFailureNeverDropsEnrollment() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await session.enrollBiometrics(password: testPassword)
+        let accountID = try #require(h.settings.accountID)
+
+        session.lock()
+        h.keyring.failNextDecrypt(with: .cancelled)
+        await #expect(throws: VaultError.passwordRequired) { try await session.unlockWithBiometrics() }
+        #expect(session.canUseBiometrics)
+        try await session.unlockWithBiometrics()
+        #expect(session.state == .unlocked)
+
+        session.lock()
+        h.keyring.failNextDecrypt(with: .failed(code: -3))
+        await #expect(throws: VaultError.passwordRequired) { try await session.unlockWithBiometrics() }
+        #expect(session.canUseBiometrics)
+        #expect(h.environment.biometrics.needsRefresh(accountID: accountID))
+        let keys = h.keyring.createdKeys
+        try await session.unlock(password: testPassword)
+        #expect(h.keyring.createdKeys == keys + 1)
+        #expect(!h.environment.biometrics.needsRefresh(accountID: accountID))
+        #expect(h.settings.biometricsWanted)
+
+        session.lock()
+        try await session.unlockWithBiometrics()
+        #expect(session.state == .unlocked)
+    }
+
     @Test func switchingToSharedClearsBiometricsWanted() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
