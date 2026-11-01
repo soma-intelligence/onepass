@@ -3,8 +3,9 @@
 //! in-memory model. The sync engine and the conformance suite take either.
 
 use onepass_mailbox_proto::{
-    Body, ChangesPage, CommitOp, CommitResponse, CredentialId, MailboxCreated, MailboxId,
-    MailboxInfo, PushKind, ServerConfig, ServerRecord, SignedEnrollTicket,
+    Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
+    MailboxCreated, MailboxId, MailboxInfo, PushKind, ServerConfig, ServerRecord,
+    SignedEnrollTicket,
 };
 
 use crate::client::{ChangeFeed, FeedPage, MailboxClient};
@@ -51,9 +52,67 @@ pub trait MailboxApi: Send {
     /// Joins the mailbox a ticket names, then opens it.
     fn enroll(&mut self, ticket: &SignedEnrollTicket, label: &[u8]) -> Result<(), MailboxError>;
 
+    /// Revokes a credential of the open mailbox: any one for a manager,
+    /// only itself otherwise. An owner is revoked only by itself, and the
+    /// last manager not at all (`Forbidden`).
     fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError>;
 
+    /// `POST /v1/mailboxes/{m}/grants` (manager only): lets `public_key` in
+    /// with `role`, no ticket. `put_kinds` (write role only) limits it to
+    /// those kinds and no delete. Returns the new credential's id, computed
+    /// here from the key.
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError>;
+
+    /// `PUT /v1/mailboxes/{m}/credentials/{c}/role` (manager only).
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError>;
+
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError>;
+
+    /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): adds the
+    /// locator derived from the Secret Key. The mailbox keeps its two latest
+    /// (old and new during a rotation), a third drops the oldest, the same
+    /// one again changes nothing. Another mailbox may hold it too.
+    fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError>;
+
+    /// `DELETE /v1/mailboxes/{m}`. A child mailbox: its owner deletes it at
+    /// any time (stop sharing, the end of a transfer, sharing spec 13.8).
+    /// An account mailbox: the credential that created it, still a
+    /// manager, abandons it within 24 hours of its creation while it is
+    /// fresh (no other credential has made a request or enrolled, at most
+    /// one other exists: the unused recovery credential) and holds no live
+    /// child. The losing side of a migration race (spec D.5). Anything else
+    /// is `Forbidden`. Every request on it is then `Server(NotFound)`, and
+    /// once the server purges it (an hour later)
+    /// `Server(UnknownCredential)`: both mean the mailbox is gone.
+    fn abandon(&self) -> Result<(), MailboxError>;
+
+    /// `POST /v1/mailboxes/{m}/children`: a manager of the open account
+    /// mailbox creates a child (sharing spec 13.3) whose only credential is
+    /// `owner_public_key`, a fresh key, as owner and manager; the child
+    /// takes plan `shared` or `contact`. The open mailbox stays open; open
+    /// the child with the owner's client. Members join it through `grant`
+    /// by the owner, never by enroll ticket (`Forbidden`). A child of a
+    /// child, or a caller below manager, is `Forbidden`; the parent's cap of
+    /// live children of that kind is `Server(Quota)`; 20 a day per parent,
+    /// then `Retry` with the wait; a key some mailbox holds is
+    /// `Server(Malformed)`.
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError>;
 
     /// A ticket for `new_credential_pub`, valid 300 s from `now`. No request.
     fn issue_ticket(
@@ -128,8 +187,44 @@ impl MailboxApi for MailboxClient {
         MailboxClient::revoke(self, credential)
     }
 
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        MailboxClient::grant(self, public_key, role, put_kinds, label)
+    }
+
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        MailboxClient::set_role(self, credential, role, put_kinds)
+    }
+
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         MailboxClient::set_push(self, kind, token)
+    }
+
+    fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+        MailboxClient::set_locator(self, locator)
+    }
+
+    fn abandon(&self) -> Result<(), MailboxError> {
+        MailboxClient::abandon(self)
+    }
+
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        MailboxClient::create_child(self, kind, owner_public_key, label)
     }
 
     fn issue_ticket(

@@ -27,3 +27,18 @@ export class LogProvider implements PushProvider {
     return Promise.resolve("sent");
   }
 }
+
+/**
+ * The providers MAILBOX_PUSH_PROVIDERS names. It has no default: a deployment
+ * says what it does with wake-ups, so a hosted instance never runs the log
+ * provider by accident.
+ * - "none": no provider; queued wake-ups are taken and skipped, clients rely
+ *   on Realtime and polling (the hosted instance until plans X1b and X4);
+ * - "log": LogProvider for every kind (local stack and tests).
+ * Anything else, or nothing, throws: the function fails at boot.
+ */
+export function providersFromEnv(mode: string | undefined): PushProvider[] {
+  if (mode === "none") return [];
+  if (mode === "log") return [1, 2, 3].map((k) => new LogProvider(k));
+  throw new Error("mailbox-push: MAILBOX_PUSH_PROVIDERS must be set to none or log");
+}

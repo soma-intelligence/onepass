@@ -4,7 +4,8 @@
 //
 // Secrets: MAILBOX_DB_URL (pooler, transaction mode, as onepass_mailbox_api),
 // MAILBOX_IP_HMAC_SECRET (at least 32 characters), MAILBOX_CLIENT_IP_HEADER
-// and MAILBOX_TRUSTED_HOPS (where the client address is read, ip.ts),
+// (required: sb-forwarded-for on hosted Supabase) and MAILBOX_TRUSTED_HOPS
+// (where the client address is read, ip.ts),
 // MAILBOX_OPEN_SIGNUP
 // ("true" or absent), MAILBOX_PUBLISHABLE_KEY, MAILBOX_REALTIME_URL, and the
 // platform's SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Storage only).

@@ -38,6 +38,10 @@ impl ConformanceTarget for Fake {
     fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous {
         self.0.rendezvous(session, role)
     }
+
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
+        self.0.locate(locator)
+    }
 }
 
 #[test]
@@ -241,4 +245,41 @@ fn rendezvous_retries_a_busy_server() {
     fake.faults().fail_next(MailboxError::Offline);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     assert_eq!(a.recv_frame(8, deadline).unwrap(), b"hi");
+}
+
+/// A day after its creation, not even the creator abandons an account
+/// mailbox (`api_delete_mailbox`: created_at within 24 hours).
+#[test]
+fn abandon_refused_after_day() {
+    let fake = FakeMailbox::new();
+    let mut c = fake.client(Credential::generate().unwrap());
+    let m = c.create(None, b"").unwrap().mailbox_id;
+    fake.age_mailbox(m, 86_400);
+    assert_eq!(c.abandon(), Err(MailboxError::Forbidden));
+    c.info().expect("still there");
+    let mut fresh = fake.client(Credential::generate().unwrap());
+    let f = fresh.create(None, b"").unwrap().mailbox_id;
+    fake.age_mailbox(f, 86_399);
+    fresh.abandon().expect("within the day");
+}
+
+/// Nine mailboxes on one locator: the eight oldest, in order; an abandoned
+/// one drops out and the ninth comes in. (The conformance suite cannot make
+/// nine mailboxes in one case on a real server: five creations a day per IP.)
+#[test]
+fn locate_answers_eight_oldest_first() {
+    let fake = FakeMailbox::new();
+    let loc = [0x42; 16];
+    let clients: Vec<_> = (0..9)
+        .map(|_| {
+            let mut c = fake.client(Credential::generate().unwrap());
+            c.create(None, b"").unwrap();
+            c.set_locator(loc).unwrap();
+            c
+        })
+        .collect();
+    let ids: Vec<_> = clients.iter().map(|c| c.mailbox().unwrap()).collect();
+    assert_eq!(fake.locate(loc).unwrap(), ids[..8]);
+    clients[0].abandon().unwrap();
+    assert_eq!(fake.locate(loc).unwrap(), ids[1..]);
 }

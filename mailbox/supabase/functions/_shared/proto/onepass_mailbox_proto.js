@@ -115,6 +115,21 @@ export function decodeCreate(bytes) {
 }
 
 /**
+ * `{ kind: "Shared" | "Contact", owner_public_key, label }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeCreateChild(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeCreateChild(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {any}
  */
@@ -129,6 +144,51 @@ export function decodeEnroll(bytes) {
 }
 
 /**
+ * `{ public_key, role: "Read" | "Write" | "Manage", put_kinds, label }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeGrant(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeGrant(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * `{ mailbox_id }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeLocateRequest(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeLocateRequest(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * `{ locator }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeSetLocator(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeSetLocator(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {any}
  */
@@ -136,6 +196,21 @@ export function decodeSetPush(bytes) {
     const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.decodeSetPush(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * `{ role, put_kinds }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeSetRole(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeSetRole(ptr0, len0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -232,6 +307,20 @@ export function encodeError(v) {
  */
 export function encodeInfo(v) {
     const ret = wasm.encodeInfo(v);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
+ * @param {any} v
+ * @returns {Uint8Array}
+ */
+export function encodeLocated(v) {
+    const ret = wasm.encodeLocated(v);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }

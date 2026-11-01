@@ -7,7 +7,8 @@
 # is created with initdb in a temporary directory and listens on TCP only, on
 # a free local port: no Unix socket (the socket path of a deep temporary
 # directory is too long on macOS). Order: tests/shims.sql (Supabase stand-ins
-# and test helpers), migrations/*.sql by name, seed.sql, then each test file in
+# and test helpers), migrations/*.sql by name (each between its
+# tests/upgrade files, when any), seed.sql, then each test file in
 # its own transaction, rolled back at the end. Each assertion prints
 # `ok <name>`; the first failure stops the run with a non-zero exit code.
 #
@@ -87,9 +88,15 @@ load() {
 }
 
 load "$supa/tests/shims.sql"
+# tests/upgrade/<migration>.before.sql and .after.sql, when present, load
+# around that migration: the before file sets up the state of a database it
+# upgrades, the after file asserts on the result and cleans up.
 for m in "$supa"/migrations/*.sql; do
     [ -e "$m" ] || continue
+    up="$supa/tests/upgrade/$(basename "$m" .sql)"
+    [ -e "$up.before.sql" ] && load "$up.before.sql"
     load "$m"
+    [ -e "$up.after.sql" ] && load "$up.after.sql"
 done
 if [ -e "$supa/seed.sql" ]; then
     load "$supa/seed.sql"

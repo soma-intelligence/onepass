@@ -1,5 +1,6 @@
-import { assertEquals, assertFalse } from "@std/assert";
+import { assert, assertEquals, assertFalse, assertRejects } from "@std/assert";
 import { type Grave, type GraveStore, handler, type ObjectStore, TAKE_TTL_MS } from "./gc.ts";
+import { BUCKET, objectStore, type Storage } from "./store.ts";
 
 const KEY = "k".repeat(40);
 const mbx = (n: number) => new Uint8Array(16).fill(n);
@@ -12,8 +13,10 @@ const grave = (m: number, h: number, gen = 1): Grave => ({
 function setup(graves: Grave[], opts: {
   remove?: (name: string) => Promise<"deleted" | "missing">;
   done?: (g: Grave) => Promise<void>;
+  ready?: () => Promise<void>;
 } = {}) {
   const events: string[] = [];
+  let readies = 0;
   let clock = 5_000_000;
   const queue = [...graves];
   const takes: number[] = [];
@@ -28,6 +31,10 @@ function setup(graves: Grave[], opts: {
     },
   };
   const objects: ObjectStore = {
+    ready() {
+      readies++;
+      return opts.ready ? opts.ready() : Promise.resolve();
+    },
     remove(name) {
       events.push(`remove ${name}`);
       return opts.remove ? opts.remove(name) : Promise.resolve("deleted");
@@ -41,7 +48,7 @@ function setup(graves: Grave[], opts: {
     now: () => clock,
     log: (m) => logs.push(m),
   });
-  return { h, events, logs, takes, advance: (ms: number) => (clock += ms) };
+  return { h, events, logs, takes, readies: () => readies, advance: (ms: number) => (clock += ms) };
 }
 
 const post = (key: string | null = KEY) =>
@@ -182,11 +189,91 @@ Deno.test("a gc_take failure is 503 with no detail", async () => {
   const h = handler({
     cronKey: KEY,
     graves: { take: () => Promise.reject(new Error("password=hunter2")), done: () => Promise.resolve() },
-    objects: { remove: () => Promise.resolve("deleted") },
+    objects: { ready: () => Promise.resolve(), remove: () => Promise.resolve("deleted") },
     now: Date.now,
     log: () => {},
   });
   const res = await h(post());
   assertEquals(res.status, 503);
   assertFalse((await res.text()).includes("hunter2"));
+});
+
+Deno.test("a missing bucket is 503 before any take: every grave stays", async () => {
+  const g = [grave(1, 0xaa)];
+  const { h, events, takes, logs, readies } = setup(g, { ready: () => Promise.reject(new Error("bucket missing")) });
+  const res = await h(post());
+  assertEquals(res.status, 503);
+  assertEquals(readies(), 1);
+  assertEquals(takes.length, 0);
+  assertEquals(events.length, 0);
+  assert(logs.some((l) => l.includes("bucket")));
+});
+
+Deno.test("the bucket is checked once a run, after the key", async () => {
+  const { h, readies } = setup([grave(1, 0xaa)]);
+  assertEquals((await h(post(null))).status, 401);
+  assertEquals(readies(), 0);
+  assertEquals((await h(post())).status, 200);
+  assertEquals(readies(), 1);
+});
+
+// Storage's answers as hosted Supabase gives them (probed 2026-10-31): a bulk
+// delete answers [] for a missing object and for a missing bucket alike; the
+// bucket lookup says NoSuchBucket.
+function fakeStorage(opts: {
+  bucket: boolean;
+  remove: { data: unknown[] | null; error: Record<string, unknown> | null };
+}): Storage {
+  return {
+    getBucket(id) {
+      assertEquals(id, BUCKET);
+      return Promise.resolve(
+        opts.bucket ? { data: { id }, error: null } : {
+          data: null,
+          error: { status: 400, statusCode: "404", error: "Bucket not found", message: "Bucket not found" },
+        },
+      );
+    },
+    from(id) {
+      assertEquals(id, BUCKET);
+      return { remove: () => Promise.resolve(opts.remove) };
+    },
+  };
+}
+
+Deno.test("objectStore: an existing bucket is ready, a missing one rejects", async () => {
+  await objectStore(fakeStorage({ bucket: true, remove: { data: [], error: null } })).ready();
+  await assertRejects(() => objectStore(fakeStorage({ bucket: false, remove: { data: [], error: null } })).ready());
+});
+
+Deno.test("objectStore: an empty answer or an object 404 is missing, a bucket 404 rejects", async () => {
+  const name = "x";
+  assertEquals(
+    await objectStore(fakeStorage({ bucket: true, remove: { data: [], error: null } })).remove(name),
+    "missing",
+  );
+  assertEquals(
+    await objectStore(fakeStorage({ bucket: true, remove: { data: [{ name }], error: null } })).remove(name),
+    "deleted",
+  );
+  assertEquals(
+    await objectStore(
+      fakeStorage({ bucket: true, remove: { data: null, error: { status: 404, message: "Object not found" } } }),
+    ).remove(name),
+    "missing",
+  );
+  await assertRejects(() =>
+    objectStore(
+      fakeStorage({
+        bucket: true,
+        remove: {
+          data: null,
+          error: { status: 400, statusCode: "404", error: "Bucket not found", code: "NoSuchBucket" },
+        },
+      }),
+    ).remove(name)
+  );
+  await assertRejects(() =>
+    objectStore(fakeStorage({ bucket: true, remove: { data: null, error: { status: 500 } } })).remove(name)
+  );
 });

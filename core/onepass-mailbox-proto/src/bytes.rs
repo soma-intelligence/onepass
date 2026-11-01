@@ -164,6 +164,24 @@ pub(crate) mod opt_vec {
     }
 }
 
+/// `Option<[u8; N]>`.
+pub(crate) mod opt_fixed {
+    use super::*;
+
+    pub fn serialize<S: Serializer, const N: usize>(
+        v: &Option<[u8; N]>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        v.as_ref().map(FixedRef).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+        d: D,
+    ) -> Result<Option<[u8; N]>, D::Error> {
+        Ok(Option::<Fixed<N>>::deserialize(d)?.map(|f| f.0))
+    }
+}
+
 /// `Vec<[u8; N]>`.
 pub(crate) mod fixed_list {
     use super::*;

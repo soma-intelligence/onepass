@@ -307,6 +307,140 @@ async function revoke(c: Ctx): Promise<Response> {
   return empty(204);
 }
 
+/** CredentialRole on the wire, as the SQL role number. */
+const ROLE: Record<string, number> = { Read: 1, Write: 2, Manage: 3 };
+
+function role(wire: string, kinds: Uint8Array | null): number {
+  const r = ROLE[wire];
+  // The proto refuses put_kinds without the write role; checked again here.
+  if (r === undefined || (kinds !== null && r !== 2)) throw new Refusal("malformed");
+  return r;
+}
+
+async function grant(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const g = decode(proto.decodeGrant, c.body) as {
+    public_key: Uint8Array;
+    role: string;
+    put_kinds: Uint8Array | null;
+    label: Uint8Array;
+  };
+  const r = role(g.role, g.put_kinds);
+  // A curve point, as on create (SQL refuses the weak encodings).
+  try {
+    await importCredentialKey(g.public_key);
+  } catch (e) {
+    if (e instanceof BadKey) throw new Refusal("malformed");
+    throw e;
+  }
+  const rows = await call(c.deps.db, "api_grant_credential", [
+    ...signedArgs(c, m),
+    a.bytea(g.public_key),
+    a.smallint(r),
+    a.bytea(g.put_kinds),
+    a.bytea(g.label),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+async function setRole(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const s = decode(proto.decodeSetRole, c.body) as { role: string; put_kinds: Uint8Array | null };
+  const r = role(s.role, s.put_kinds);
+  const rows = await call(c.deps.db, "api_set_credential_role", [
+    ...signedArgs(c, m),
+    a.bytea(unhex(c.groups[1])),
+    a.smallint(r),
+    a.bytea(s.put_kinds),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+/** PUT /v1/mailboxes/{m}/locator (manager, spec D.4). */
+async function setLocator(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const s = decode(proto.decodeSetLocator, c.body) as { locator: Uint8Array };
+  const rows = await call(c.deps.db, "api_set_locator", [...signedArgs(c, m), a.bytea(s.locator)]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+/**
+ * POST /v1/locate: unsigned (a new device holds only its Emergency Kit). The
+ * locator travels in the body, never in a URL a log keeps. SQL counts every
+ * call on the IP key: the minute bucket shared with create, enroll and
+ * rendezvous, and an hour bucket of its own. 200 lists up to 8 mailboxes,
+ * oldest registration first.
+ */
+async function locate(c: Ctx): Promise<Response> {
+  const s = decode(proto.decodeLocateRequest, c.body) as { locator: Uint8Array };
+  const rows = await call(c.deps.db, "locate", [a.bytea(s.locator), a.bytea(await c.ipKey())]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return postcard(proto.encodeLocated({ mailbox_ids: rows.map((r) => r.mailbox_id) }));
+}
+
+/**
+ * DELETE /v1/mailboxes/{m}: the owner deletes its child mailbox at any time;
+ * the creator abandons a fresh account mailbox without a live child (spec
+ * D.5, sharing spec 13.8).
+ */
+async function deleteMailbox(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  requireEmpty(c);
+  const rows = await call(c.deps.db, "api_delete_mailbox", signedArgs(c, m));
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+/** ChildKind on the wire, as the SQL mailbox kind. */
+const CHILD_KIND: Record<string, number> = { Shared: 2, Contact: 3 };
+
+/**
+ * POST /v1/mailboxes/{m}/children: a manager of an account mailbox creates a
+ * shared or contact child owned by a fresh key (sharing spec 13.3). The
+ * owner key is imported first (a curve point), as on create and grant.
+ */
+async function createChild(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const b = decode(proto.decodeCreateChild, c.body) as {
+    kind: string;
+    owner_public_key: Uint8Array;
+    label: Uint8Array;
+  };
+  const kind = CHILD_KIND[b.kind];
+  if (kind === undefined) throw new Refusal("malformed");
+  try {
+    await importCredentialKey(b.owner_public_key);
+  } catch (e) {
+    if (e instanceof BadKey) throw new Refusal("malformed");
+    throw e;
+  }
+  const rows = await call(c.deps.db, "api_create_child", [
+    ...signedArgs(c, m),
+    a.smallint(kind),
+    a.bytea(b.owner_public_key),
+    a.bytea(b.label),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  const r = rows[0];
+  return postcard(
+    proto.encodeCreated({ mailbox_id: r.mailbox_id, incarnation: r.incarnation, wake_topic: r.wake_topic }),
+  );
+}
+
 const PUSH_KIND: Record<string, number> = { None: 0, Fcm: 1, Apns: 2, UnifiedPush: 3 };
 
 async function setPush(c: Ctx): Promise<Response> {
@@ -601,6 +735,10 @@ const ROUTES: Route[] = [
   { method: "GET", re: /^\/v1\/config$/, auth: "none", query: "none", maxBody: MAX, run: config },
   { method: "POST", re: /^\/v1\/mailboxes$/, auth: "body_key", query: "none", maxBody: MAX, run: create },
   { method: "GET", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: info },
+  { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: deleteMailbox },
+  { method: "POST", re: new RegExp(`^${MB}/children$`), auth: "signed", query: "none", maxBody: MAX, run: createChild },
+  { method: "PUT", re: new RegExp(`^${MB}/locator$`), auth: "signed", query: "none", maxBody: MAX, run: setLocator },
+  { method: "POST", re: /^\/v1\/locate$/, auth: "none", query: "none", maxBody: 64, run: locate },
   { method: "POST", re: new RegExp(`^${MB}/credentials$`), auth: "body_key", query: "none", maxBody: MAX, run: enroll },
   {
     method: "DELETE",
@@ -610,6 +748,15 @@ const ROUTES: Route[] = [
     maxBody: MAX,
     run: revoke,
   },
+  {
+    method: "PUT",
+    re: new RegExp(`^${MB}/credentials/${H}/role$`),
+    auth: "signed",
+    query: "none",
+    maxBody: MAX,
+    run: setRole,
+  },
+  { method: "POST", re: new RegExp(`^${MB}/grants$`), auth: "signed", query: "none", maxBody: MAX, run: grant },
   { method: "PUT", re: new RegExp(`^${MB}/push$`), auth: "signed", query: "none", maxBody: MAX, run: setPush },
   { method: "GET", re: new RegExp(`^${MB}/changes$`), auth: "signed", query: "changes", maxBody: MAX, run: changes },
   { method: "POST", re: new RegExp(`^${MB}/commit$`), auth: "signed", query: "none", maxBody: MAX, run: commit },

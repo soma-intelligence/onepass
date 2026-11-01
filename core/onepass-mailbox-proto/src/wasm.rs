@@ -15,8 +15,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
-    CreateMailbox, Enroll, EnrollTicket, ErrorBody, MailboxCreated, MailboxInfo, Message,
-    ServerConfig, ServerRecord, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
+    CreateChild, CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, LocateRequest,
+    Located, MailboxCreated, MailboxInfo, Message, ServerConfig, ServerRecord, SetCredentialRole,
+    SetLocator, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
 };
 
 fn err(e: impl Display) -> JsError {
@@ -64,6 +65,30 @@ pub fn decode_enroll(bytes: &[u8]) -> Result<JsValue, JsError> {
 #[wasm_bindgen(js_name = decodeSetPush)]
 pub fn decode_set_push(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<SetPush>(bytes)
+}
+
+/// `{ public_key, role: "Read" | "Write" | "Manage", put_kinds, label }`.
+#[wasm_bindgen(js_name = decodeGrant)]
+pub fn decode_grant(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<GrantCredential>(bytes)
+}
+
+/// `{ role, put_kinds }`.
+#[wasm_bindgen(js_name = decodeSetRole)]
+pub fn decode_set_role(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<SetCredentialRole>(bytes)
+}
+
+/// `{ locator }`.
+#[wasm_bindgen(js_name = decodeSetLocator)]
+pub fn decode_set_locator(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<SetLocator>(bytes)
+}
+
+/// `{ kind: "Shared" | "Contact", owner_public_key, label }`.
+#[wasm_bindgen(js_name = decodeCreateChild)]
+pub fn decode_create_child(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<CreateChild>(bytes)
 }
 
 #[wasm_bindgen(js_name = decodeBlobAnnounce)]
@@ -116,6 +141,17 @@ pub fn encode_config(v: JsValue) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen(js_name = encodeBlobUrls)]
 pub fn encode_blob_urls(v: JsValue) -> Result<Vec<u8>, JsError> {
     enc::<BlobUrls>(v)
+}
+
+/// `{ mailbox_id }`.
+#[wasm_bindgen(js_name = decodeLocateRequest)]
+pub fn decode_locate_request(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<LocateRequest>(bytes)
+}
+
+#[wasm_bindgen(js_name = encodeLocated)]
+pub fn encode_located(v: JsValue) -> Result<Vec<u8>, JsError> {
+    enc::<Located>(v)
 }
 
 #[wasm_bindgen(js_name = encodeError)]

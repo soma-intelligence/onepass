@@ -250,7 +250,7 @@ select onepass_test.answers(
 -- The nonce of a request refused after authentication is spent too.
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_record(onepass_test.cid('a'), onepass_test.nonce(9000002), now(), onepass_test.mbx('A'), 9::smallint, decode(repeat('77', 16), 'hex'))$$,
-    'not_found', 'failed_read_answers_in_band');
+    'absent', 'failed_read_answers_in_band');
 select onepass_test.raises(
     $$select * from onepass_mailbox.api_mailbox_info(onepass_test.cid('a'), onepass_test.nonce(9000002), now(), onepass_test.mbx('A'))$$,
     'OP401', 'replay', 'nonce_of_a_failed_request_is_refused_on_reuse');
@@ -292,7 +292,7 @@ select onepass_test.ok(
     'request_121_of_the_minute_is_rate_limited');
 -- Failing reads count as much as good ones.
 select onepass_test.ok(
-    (select count(*) filter (where s = 'not_found') = 120 and count(*) filter (where s = 'rate_limited') = 380
+    (select count(*) filter (where s = 'absent') = 120 and count(*) filter (where s = 'rate_limited') = 380
      from (select (select status from onepass_mailbox.api_record(onepass_test.cid('r2'), onepass_test.nonce(8000000 + i), now(),
                                                                  onepass_test.mbx('R2'), 1::smallint, decode(repeat('77', 16), 'hex'))) s
            from generate_series(1, 500) i) x),
@@ -332,7 +332,7 @@ select onepass_test.ok(
     'preset_context_for_b_reads_only_the_authenticated_mailbox');
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_record(onepass_test.cid('o'), onepass_test.n(), now(), onepass_test.mbx('O'), 1::smallint, decode(repeat('b5', 16), 'hex'))$$,
-    'not_found', 'preset_context_record_of_b_through_o_is_not_found');
+    'absent', 'preset_context_record_of_b_through_o_is_absent');
 select onepass_test.ok(
     current_setting('onepass.mailbox') = encode(onepass_test.mbx('O'), 'hex')
     and current_setting('onepass.maintenance') = ''
@@ -490,7 +490,7 @@ select onepass_test.ok(
     'record_reads_a_tombstone');
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_record(onepass_test.cid('a'), onepass_test.n(), now(), onepass_test.mbx('A'), 2::smallint, decode(lpad(to_hex(2), 32, '0'), 'hex'))$$,
-    'not_found', 'record_missing_is_not_found');
+    'absent', 'record_missing_is_absent');
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_record(onepass_test.cid('a'), onepass_test.n(), now(), onepass_test.mbx('A'), 0::smallint, decode(lpad(to_hex(2), 32, '0'), 'hex'))$$,
     'malformed', 'record_kind_0_is_malformed');

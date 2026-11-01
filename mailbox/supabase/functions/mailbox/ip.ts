@@ -9,7 +9,7 @@
 // requests are limited as one address.
 
 export interface IpSource {
-  /** Lowercase header name, MAILBOX_CLIENT_IP_HEADER (default x-forwarded-for). */
+  /** Lowercase header name, MAILBOX_CLIENT_IP_HEADER (required). */
   header: string;
   /** MAILBOX_TRUSTED_HOPS (default 1): proxies that append to X-Forwarded-For. */
   trustedHops: number;
@@ -20,9 +20,17 @@ export const DEFAULT_IP_SOURCE: IpSource = { header: "x-forwarded-for", trustedH
 /** What a missing or malformed address is counted as. Never a valid address. */
 export const FALLBACK_ADDRESS = "-";
 
-/** Reads the source settings; throws on a bad value (the function fails at boot). */
+/**
+ * Reads the source settings; throws on a bad value (the function fails at
+ * boot). The header has no default: which header carries the client address
+ * is a property of the platform in front of the function (hosted Supabase:
+ * sb-forwarded-for; a local stack: x-forwarded-for behind Kong, one hop), so
+ * a deployment that does not say refuses to start rather than rate limit
+ * a proxy's address.
+ */
 export function ipSourceFromEnv(header: string | undefined, hops: string | undefined): IpSource {
-  const h = (header || DEFAULT_IP_SOURCE.header).toLowerCase();
+  if (!header) throw new Error("mailbox: missing secret MAILBOX_CLIENT_IP_HEADER");
+  const h = header.toLowerCase();
   if (!/^[a-z0-9-]{1,64}$/.test(h)) throw new Error("mailbox: bad MAILBOX_CLIENT_IP_HEADER");
   const n = hops === undefined || hops === "" ? DEFAULT_IP_SOURCE.trustedHops : Number(hops);
   if (!Number.isInteger(n) || n < 1 || n > 16) throw new Error("mailbox: MAILBOX_TRUSTED_HOPS must be 1 to 16");

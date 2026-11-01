@@ -10,7 +10,22 @@
 //! and ignores `min_cursor`, `min_cursor` = highest purged seq, growth-only
 //! quotas, enroll tickets checked and used once, blobs announced under an
 //! upload generation and committed only while that generation's object is
-//! in Storage.
+//! in Storage, credential roles (a reader commits and uploads nothing, a
+//! writer limited to `put_kinds` puts only those kinds and deletes nothing,
+//! only a manager grants, changes roles, approves tickets and revokes
+//! another credential, an owner is revoked only by itself and never
+//! demoted, a limited writer announces no blob, the last manager stays),
+//! locators (set by a manager, the two latest kept per mailbox, shared
+//! freely between mailboxes, looked up without a key: up to 8 live
+//! mailboxes, oldest registration first) and abandoning a mailbox (its
+//! creator, still a manager, within 24 hours, while no other credential has
+//! made a request or enrolled, at most one other exists and no child
+//! lives; then every request on it is `not_found`, its locators gone), and
+//! child mailboxes (created by a manager of an account mailbox for a fresh
+//! owner key, the owner a manager and owner, plan `shared` or `contact` of
+//! `seed.sql` whatever the parent's, no grandchild, live children of each
+//! kind capped by the parent's plan, no enroll ticket, deleted by their
+//! owner at any time).
 //!
 //! `FakeMailboxClient` runs the real client's request building and answer
 //! checks (`crate::client`, `crate::blobs`), and every answer goes through
@@ -28,7 +43,7 @@
 //!
 //! Not modelled: signatures, nonces and clock skew of requests (the fake
 //! knows who calls), rate limits (`req_per_min` is reported, never
-//! enforced), per-IP limits (the minute bucket of the rendezvous and its
+//! enforced; the 20 children a day per parent neither), per-IP limits (the minute bucket of the rendezvous and its
 //! 200 MiB an hour included), frozen mailboxes, wake-ups and push.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -37,16 +52,19 @@ use std::time::{Duration, Instant};
 
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox_proto::{
-    BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, CommitOp, CommitResponse, ConflictEntry,
-    CredentialId, ErrorCode, INLINE_MAX, Limits, MailboxCreated, MailboxId, MailboxInfo, Message,
-    Op, PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind, RECORD_MAX, ServerConfig, ServerRecord, Sha256,
-    SignedEnrollTicket, Usage, decode, encode, hex, ticket_hash, ticket_signed_bytes,
+    BlobUrls, Body, COMMIT_BODY_MAX, COMMIT_OPS_MAX, ChangesPage, ChildKind, CommitOp,
+    CommitResponse, ConflictEntry, CredentialId, CredentialRole, ErrorCode, INLINE_MAX,
+    LOCATED_MAX, Limits, Located, MailboxCreated, MailboxId, MailboxInfo, Message, Op,
+    PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetLocator,
+    Sha256, SignedEnrollTicket, Usage, credential_id, decode, encode, hex, put_kinds_allow,
+    ticket_hash, ticket_signed_bytes,
 };
 
 use crate::blobs::{BodyRef, blob_of, blob_set, check_answers, check_blob};
 use crate::client::{
-    check_changes_query, check_commit, check_page, check_record, commit_request, create_refusal,
-    enroll_request, error_of, issue_ticket, local, push_request,
+    check_changes_query, check_commit, check_page, check_record, child_request, commit_request,
+    create_refusal, enroll_request, error_of, grant_request, issue_ticket, local, push_request,
+    role_request,
 };
 use crate::rendezvous::{
     RDV_CHUNK_MAX, RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, RdvTransport, Rendezvous,
@@ -75,6 +93,35 @@ fn selfhost() -> Limits {
         max_commit_ops: 20_000,
     }
 }
+
+/// Plan `shared` of `seed.sql`: a child for a shared vault or a family.
+fn shared() -> Limits {
+    Limits {
+        max_bytes: 128 << 20,
+        max_records: 100_000,
+        max_credentials: 80,
+        req_per_min: 600,
+        max_commit_ops: 20_000,
+    }
+}
+
+/// Plan `contact` of `seed.sql`: the child of a pair of contacts.
+fn contact() -> Limits {
+    Limits {
+        max_bytes: 16 << 20,
+        max_records: 2_000,
+        max_credentials: 4,
+        req_per_min: 120,
+        max_commit_ops: 2_000,
+    }
+}
+
+/// Live children of each kind (shared, contact) an account mailbox holds:
+/// plan `selfhost` of `seed.sql`, whatever limits the fake was given.
+const MAX_CHILDREN: (usize, usize) = (1024, 4096);
+
+/// `mailboxes.kind` of an account mailbox (2 shared, 3 contact).
+const ACCOUNT: u8 = 1;
 
 type Key = (u8, [u8; 16]);
 
@@ -137,11 +184,29 @@ struct Mbx {
     records_count: i64,
     records: BTreeMap<Key, Row>,
     blobs: BTreeMap<Sha256, Blob>,
+    /// The creator credential: the only one that may abandon it.
+    created_by: Option<CredentialId>,
+    /// Unix seconds.
+    created_at: i64,
+    /// Abandoned: every request on it is `not_found`.
+    deleted: bool,
+    /// Its plan.
+    limits: Limits,
+    /// 1 account, 2 shared, 3 contact (`mailboxes.kind`).
+    kind: u8,
+    /// The account mailbox a child was created under.
+    parent: Option<MailboxId>,
 }
 
 impl Mbx {
-    fn new() -> Mbx {
+    fn new(limits: Limits) -> Mbx {
         Mbx {
+            limits,
+            kind: ACCOUNT,
+            parent: None,
+            created_by: None,
+            created_at: unix_now(),
+            deleted: false,
             incarnation: random_incarnation(),
             wake_topic: random16(),
             next_seq: 1,
@@ -166,6 +231,32 @@ struct Cred {
     key: [u8; 32],
     revoked: bool,
     push: Option<(PushKind, Vec<u8>)>,
+    role: CredentialRole,
+    /// Write role only: the kinds it may put; no delete when set.
+    put_kinds: Option<[u8; 32]>,
+    /// Revoked only by itself, never demoted (Task 24 sets it).
+    owner: bool,
+    /// Has authenticated a request (`first_used_at` in SQL).
+    used: bool,
+    /// Came in by an enroll ticket (`enrolled_by` in SQL).
+    enrolled: bool,
+}
+
+impl Cred {
+    /// What a creation, an enroll or a row from before roles holds.
+    fn manager(mailbox: MailboxId, key: [u8; 32]) -> Cred {
+        Cred {
+            mailbox,
+            key,
+            revoked: false,
+            push: None,
+            role: CredentialRole::Manage,
+            put_kinds: None,
+            owner: false,
+            used: false,
+            enrolled: false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -175,6 +266,8 @@ struct State {
     /// Credential ids are unique across mailboxes (primary key in SQL).
     credentials: HashMap<CredentialId, Cred>,
     used_tickets: HashSet<Sha256>,
+    /// (locator, mailbox) in registration order; at most 2 per mailbox.
+    locators: Vec<([u8; 16], MailboxId)>,
     /// Storage: object name to bytes.
     objects: HashMap<String, Vec<u8>>,
     next_gen: u64,
@@ -226,7 +319,125 @@ impl State {
         if c.revoked {
             return refused(ErrorCode::RevokedCredential);
         }
+        if self.mailboxes[m].deleted {
+            return refused(ErrorCode::NotFound);
+        }
         Ok(())
+    }
+
+    /// The authenticated caller's row.
+    fn caller(&self, credential: &CredentialId) -> &Cred {
+        self.credentials
+            .get(credential)
+            .expect("authenticated credential")
+    }
+
+    /// Active managers of `m` other than `except`.
+    fn other_managers(&self, m: &MailboxId, except: &CredentialId) -> usize {
+        self.credentials
+            .iter()
+            .filter(|(id, c)| {
+                c.mailbox == *m && !c.revoked && c.role == CredentialRole::Manage && *id != except
+            })
+            .count()
+    }
+
+    /// `api_revoke_credential`, in its order.
+    fn revoke(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        target: &CredentialId,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage && target != caller {
+            return refused(ErrorCode::Forbidden);
+        }
+        let Some(t) = self.credentials.get(target).filter(|c| c.mailbox == *m) else {
+            return refused(ErrorCode::NotFound);
+        };
+        if t.revoked {
+            return Ok(());
+        }
+        // In a child the owner stays until deletion, even against itself.
+        if (t.owner && (target != caller || self.mailboxes[m].kind != ACCOUNT))
+            || (t.role == CredentialRole::Manage && self.other_managers(m, target) == 0)
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let t = self.credentials.get_mut(target).expect("found");
+        t.revoked = true;
+        t.push = None;
+        Ok(())
+    }
+
+    /// `api_grant_credential` after the shapes (the client checked them).
+    fn grant(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
+        if self.active_credentials(m) >= usize::from(self.mailboxes[m].limits.max_credentials) {
+            return refused(ErrorCode::Quota);
+        }
+        let id = credential_id(&key);
+        if self.credentials.contains_key(&id) {
+            // In some mailbox, this one included, even revoked.
+            return refused(ErrorCode::Malformed);
+        }
+        self.credentials.insert(
+            id,
+            Cred {
+                role,
+                put_kinds,
+                ..Cred::manager(*m, key)
+            },
+        );
+        Ok(())
+    }
+
+    /// `api_set_credential_role` after the shapes.
+    fn set_role(
+        &mut self,
+        caller: &CredentialId,
+        m: &MailboxId,
+        target: &CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        if self.caller(caller).role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
+        let Some(t) = self
+            .credentials
+            .get(target)
+            .filter(|c| c.mailbox == *m && !c.revoked)
+        else {
+            return refused(ErrorCode::NotFound);
+        };
+        let manage = CredentialRole::Manage;
+        if (t.owner && role != manage)
+            || (t.role == manage && role != manage && self.other_managers(m, target) == 0)
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let t = self.credentials.get_mut(target).expect("found");
+        t.role = role;
+        t.put_kinds = put_kinds;
+        Ok(())
+    }
+
+    /// Live children of `parent`, of `kind` (any when `None`).
+    fn live_children(&self, parent: &MailboxId, kind: Option<u8>) -> usize {
+        self.mailboxes
+            .values()
+            .filter(|x| x.parent == Some(*parent) && !x.deleted && kind.is_none_or(|k| x.kind == k))
+            .count()
     }
 
     fn active_credentials(&self, m: &MailboxId) -> usize {
@@ -282,10 +493,18 @@ impl State {
 
     fn commit(
         &mut self,
+        caller: &CredentialId,
         m: &MailboxId,
         ops: &[CommitOp],
     ) -> Result<(CommitResponse, u16), MailboxError> {
-        let limits = self.limits.clone();
+        let (role, put_kinds) = {
+            let c = self.caller(caller);
+            (c.role, c.put_kinds)
+        };
+        if role == CredentialRole::Read {
+            return refused(ErrorCode::Forbidden);
+        }
+        let limits = self.mailboxes[m].limits.clone();
         let objects = &self.objects;
         let mbx = self.mailboxes.get_mut(m).expect("authenticated mailbox");
 
@@ -306,7 +525,17 @@ impl State {
                 }
             })
             .sum();
-        if carried > COMMIT_BODY_MAX || ops.len() > limits.max_commit_ops as usize {
+        if carried > COMMIT_BODY_MAX || ops.len() > COMMIT_OPS_MAX {
+            return refused(ErrorCode::TooLarge);
+        }
+        if let Some(set) = put_kinds
+            && ops
+                .iter()
+                .any(|o| matches!(o.op, Op::Delete) || !put_kinds_allow(&set, o.kind))
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        if ops.len() > limits.max_commit_ops as usize {
             return refused(ErrorCode::TooLarge);
         }
 
@@ -503,11 +732,18 @@ impl State {
         if t.expires_at > now + 900 {
             return refused(ErrorCode::Malformed);
         }
-        if !self.mailboxes.contains_key(&m) {
+        if self.mailboxes.get(&m).is_none_or(|x| x.deleted) {
             return refused(ErrorCode::NotFound);
         }
         if approver.revoked {
             return refused(ErrorCode::RevokedCredential);
+        }
+        if approver.role != CredentialRole::Manage {
+            return refused(ErrorCode::Forbidden);
+        }
+        if self.mailboxes[&m].kind != ACCOUNT {
+            // A child takes members through grants only.
+            return refused(ErrorCode::Forbidden);
         }
         if t.expires_at < now {
             return refused(ErrorCode::StaleRequest);
@@ -516,7 +752,7 @@ impl State {
         if self.credentials.get(&id).is_some_and(|c| c.mailbox == m) {
             return refused(ErrorCode::Replay);
         }
-        if self.active_credentials(&m) >= usize::from(self.limits.max_credentials) {
+        if self.active_credentials(&m) >= usize::from(self.mailboxes[&m].limits.max_credentials) {
             return refused(ErrorCode::Quota);
         }
         let hash = ticket_hash(ticket);
@@ -531,10 +767,8 @@ impl State {
         self.credentials.insert(
             id,
             Cred {
-                mailbox: m,
-                key: new_key.to_bytes(),
-                revoked: false,
-                push: None,
+                enrolled: true,
+                ..Cred::manager(m, new_key.to_bytes())
             },
         );
         Ok(())
@@ -543,10 +777,15 @@ impl State {
     /// `api_blob_announce`: (hash, needs upload, object name), by hash.
     fn announce(
         &mut self,
+        caller: &CredentialId,
         m: &MailboxId,
         blobs: &[(Sha256, u32)],
     ) -> Result<Vec<(Sha256, bool, String)>, MailboxError> {
-        let max_bytes = self.limits.max_bytes as i64;
+        let c = self.caller(caller);
+        if c.role == CredentialRole::Read || c.put_kinds.is_some() {
+            return refused(ErrorCode::Forbidden);
+        }
+        let max_bytes = self.mailboxes[m].limits.max_bytes as i64;
         let objects = &self.objects;
         let next_gen = &mut self.next_gen;
         let mbx = self.mailboxes.get_mut(m).expect("authenticated mailbox");
@@ -818,6 +1057,7 @@ impl FakeMailbox {
                 mailboxes: HashMap::new(),
                 credentials: HashMap::new(),
                 used_tickets: HashSet::new(),
+                locators: Vec::new(),
                 objects: HashMap::new(),
                 next_gen: 0,
                 fail_next: VecDeque::new(),
@@ -869,9 +1109,16 @@ impl FakeMailbox {
     pub fn lose_everything(&self) {
         let mut s = self.lock();
         for mbx in s.mailboxes.values_mut() {
-            let wake_topic = mbx.wake_topic;
-            *mbx = Mbx::new();
-            mbx.wake_topic = wake_topic;
+            let fresh = Mbx {
+                wake_topic: mbx.wake_topic,
+                created_by: mbx.created_by,
+                created_at: mbx.created_at,
+                deleted: mbx.deleted,
+                kind: mbx.kind,
+                parent: mbx.parent,
+                ..Mbx::new(mbx.limits.clone())
+            };
+            *mbx = fresh;
         }
         s.objects.clear();
         s.used_tickets.clear();
@@ -944,6 +1191,31 @@ impl FakeMailbox {
         self.rdv.lock().lose_next_answer = true;
     }
 
+    /// `POST /v1/locate`: the live mailboxes holding `locator`, up to 8,
+    /// oldest registration first (empty for none). No key, nothing counted
+    /// (per-IP limits are not modelled).
+    pub fn locate(&self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
+        let s = self.lock();
+        let ids: Vec<MailboxId> = s
+            .locators
+            .iter()
+            .filter(|(l, m)| *l == locator && s.mailboxes.get(m).is_some_and(|x| !x.deleted))
+            .map(|(_, m)| *m)
+            .take(LOCATED_MAX)
+            .collect();
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(wire(&Located { mailbox_ids: ids })?.mailbox_ids)
+    }
+
+    /// Makes `mailbox` `secs` seconds older (its creation moves back).
+    pub fn age_mailbox(&self, mailbox: MailboxId, secs: i64) {
+        if let Some(m) = self.lock().mailboxes.get_mut(&mailbox) {
+            m.created_at -= secs;
+        }
+    }
+
     pub fn faults(&self) -> FaultHandle {
         FaultHandle {
             state: Arc::clone(&self.state),
@@ -1001,8 +1273,13 @@ impl FakeMailboxClient {
     /// The state with this credential authenticated in the open mailbox.
     fn signed(&self) -> Result<(MutexGuard<'_, State>, MailboxId), MailboxError> {
         let m = self.open_mailbox()?;
-        let s = self.state()?;
+        let mut s = self.state()?;
         s.authenticate(&self.credential.id(), &m)?;
+        // The nonce is recorded: the credential is no longer unused.
+        s.credentials
+            .get_mut(&self.credential.id())
+            .expect("authenticated credential")
+            .used = true;
         Ok((s, m))
     }
 
@@ -1064,22 +1341,17 @@ impl MailboxApi for FakeMailboxClient {
                 return refused(ErrorCode::Malformed);
             }
             let m = random16();
-            let mbx = Mbx::new();
+            let mbx = Mbx {
+                created_by: Some(id),
+                ..Mbx::new(s.limits.clone())
+            };
             let created = MailboxCreated {
                 mailbox_id: m,
                 incarnation: mbx.incarnation,
                 wake_topic: mbx.wake_topic,
             };
             s.mailboxes.insert(m, mbx);
-            s.credentials.insert(
-                id,
-                Cred {
-                    mailbox: m,
-                    key: req.public_key,
-                    revoked: false,
-                    push: None,
-                },
-            );
+            s.credentials.insert(id, Cred::manager(m, req.public_key));
             wire(&created)
         })();
         let created = create_refusal(r, invite.is_none())?;
@@ -1106,7 +1378,7 @@ impl MailboxApi for FakeMailboxClient {
             incarnation: mbx.incarnation,
             wake_topic: mbx.wake_topic,
             min_cursor: mbx.min_cursor,
-            limits: s.limits.clone(),
+            limits: mbx.limits.clone(),
             usage: Usage {
                 bytes: mbx.bytes_used as u64,
                 records: mbx.records_count as u32,
@@ -1132,7 +1404,7 @@ impl MailboxApi for FakeMailboxClient {
         if std::mem::take(&mut s.collect_before_commit) {
             s.collect();
         }
-        let (answer, status) = s.commit(&m, &req.ops)?;
+        let (answer, status) = s.commit(&self.credential.id(), &m, &req.ops)?;
         let answer = wire(&answer)?;
         check_commit(&req.ops, &answer, status)?;
         Ok(answer)
@@ -1161,18 +1433,45 @@ impl MailboxApi for FakeMailboxClient {
 
     fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
         let (mut s, m) = self.signed()?;
-        match s
-            .credentials
-            .get_mut(&credential)
-            .filter(|c| c.mailbox == m)
-        {
-            Some(c) => {
-                c.revoked = true;
-                c.push = None;
-                Ok(())
-            }
-            None => refused(ErrorCode::NotFound),
-        }
+        s.revoke(&self.credential.id(), &m, &credential)
+    }
+
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        self.open_mailbox()?;
+        let req = grant_request(public_key, role, put_kinds, label)?;
+        let (mut s, m) = self.signed()?;
+        s.grant(
+            &self.credential.id(),
+            &m,
+            req.public_key,
+            req.role,
+            req.put_kinds,
+        )?;
+        Ok(credential_id(&public_key))
+    }
+
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        self.open_mailbox()?;
+        let req = role_request(role, put_kinds)?;
+        let (mut s, m) = self.signed()?;
+        s.set_role(
+            &self.credential.id(),
+            &m,
+            &credential,
+            req.role,
+            req.put_kinds,
+        )
     }
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
@@ -1184,6 +1483,110 @@ impl MailboxApi for FakeMailboxClient {
             .expect("authenticated credential");
         c.push = (req.kind != PushKind::None).then_some((req.kind, req.token));
         Ok(())
+    }
+
+    fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+        let req = wire(&SetLocator { locator })?;
+        let (mut s, m) = self.signed()?;
+        // The recovery locator is an account mailbox's only.
+        if s.caller(&self.credential.id()).role != CredentialRole::Manage
+            || s.mailboxes[&m].kind != ACCOUNT
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        if !s.locators.contains(&(req.locator, m)) {
+            s.locators.push((req.locator, m));
+        }
+        // Keep the mailbox's 2 latest.
+        if s.locators.iter().filter(|(_, o)| *o == m).count() > 2 {
+            let oldest = s
+                .locators
+                .iter()
+                .position(|(_, o)| *o == m)
+                .expect("a row of m");
+            s.locators.remove(oldest);
+        }
+        Ok(())
+    }
+
+    fn abandon(&self) -> Result<(), MailboxError> {
+        let (mut s, m) = self.signed()?;
+        let id = self.credential.id();
+        let mbx = &s.mailboxes[&m];
+        let others: Vec<&Cred> = s
+            .credentials
+            .iter()
+            .filter(|(c, x)| x.mailbox == m && **c != id)
+            .map(|(_, x)| x)
+            .collect();
+        let fresh = others.len() <= 1 && others.iter().all(|x| !x.used && !x.enrolled);
+        let caller = s.caller(&id);
+        let allowed = if mbx.kind != ACCOUNT {
+            // A child: its owner, at any time.
+            caller.owner && caller.role == CredentialRole::Manage
+        } else {
+            mbx.created_by == Some(id)
+                && caller.role == CredentialRole::Manage
+                && mbx.created_at > unix_now() - 86_400
+                && fresh
+                && s.live_children(&m, None) == 0
+        };
+        if !allowed {
+            return refused(ErrorCode::Forbidden);
+        }
+        s.mailboxes.get_mut(&m).expect("authenticated").deleted = true;
+        s.locators.retain(|(_, o)| *o != m);
+        Ok(())
+    }
+
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        self.open_mailbox()?;
+        let req = child_request(kind, owner_public_key, label)?;
+        let (mut s, parent) = self.signed()?;
+        // `api_create_child` after the shapes, in its order.
+        if s.caller(&self.credential.id()).role != CredentialRole::Manage
+            || s.mailboxes[&parent].kind != ACCOUNT
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let (kind, cap, limits) = match req.kind {
+            ChildKind::Shared => (2, MAX_CHILDREN.0, shared()),
+            ChildKind::Contact => (3, MAX_CHILDREN.1, contact()),
+        };
+        if s.live_children(&parent, Some(kind)) >= cap {
+            return refused(ErrorCode::Quota);
+        }
+        let id = credential_id(&req.owner_public_key);
+        if s.credentials.contains_key(&id) {
+            // The key is in some mailbox.
+            return refused(ErrorCode::Malformed);
+        }
+        let m = random16();
+        let mbx = Mbx {
+            created_by: Some(id),
+            kind,
+            parent: Some(parent),
+            ..Mbx::new(limits)
+        };
+        let created = MailboxCreated {
+            mailbox_id: m,
+            incarnation: mbx.incarnation,
+            wake_topic: mbx.wake_topic,
+        };
+        s.mailboxes.insert(m, mbx);
+        s.credentials.insert(
+            id,
+            Cred {
+                owner: true,
+                ..Cred::manager(m, req.owner_public_key)
+            },
+        );
+        wire(&created)
     }
 
     fn issue_ticket(
@@ -1207,7 +1610,7 @@ impl MailboxApi for FakeMailboxClient {
             let announced: Vec<(Sha256, u32)> =
                 chunk.iter().map(|(h, d)| (*h, d.len() as u32)).collect();
             let (mut s, m) = self.signed()?;
-            let rows = s.announce(&m, &announced)?;
+            let rows = s.announce(&self.credential.id(), &m, &announced)?;
             let urls = wire(&BlobUrls {
                 urls: rows
                     .iter()

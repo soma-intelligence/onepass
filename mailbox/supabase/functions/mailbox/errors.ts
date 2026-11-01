@@ -15,7 +15,9 @@ export type Code =
   | "quota"
   | "rate_limited"
   | "retry"
-  | "no_route";
+  | "no_route"
+  | "forbidden"
+  | "absent";
 
 export const CODES: Record<Code, { status: number; wire: string }> = {
   malformed: { status: 400, wire: "Malformed" },
@@ -32,9 +34,16 @@ export const CODES: Record<Code, { status: number; wire: string }> = {
   rate_limited: { status: 429, wire: "RateLimited" },
   retry: { status: 503, wire: "Retry" },
   // A method and path this function does not serve: told apart from a
-  // record that is absent (not_found), so a wrong base URL never reads as
+  // record that is absent (absent), so a wrong base URL never reads as
   // "no such record" on the client.
   no_route: { status: 404, wire: "NoRoute" },
+  // The role of the credential does not allow the request (spec D.7),
+  // answered in band by SQL after authentication.
+  forbidden: { status: 403, wire: "Forbidden" },
+  // The record route only: no record under that key. not_found keeps
+  // meaning "mailbox gone" on every route, so a client never reads a
+  // deleted mailbox as an absent record.
+  absent: { status: 404, wire: "Absent" },
 };
 
 export function isCode(s: unknown): s is Code {

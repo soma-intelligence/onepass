@@ -1,7 +1,7 @@
 # OnePass hors Apple : clients Windows, Linux et Android
 
 Date : 2026-10-30
-Statut : brouillon pour la revue du fondateur. Rien n'est implémenté.
+Statut : brouillon pour la revue du fondateur. X1 Tasks 1 à 12 construites sur `feat/xplat-mailbox`. Amendée le 2026-10-31 par la décision "Supabase par défaut" (dernière section).
 Branche : `docs/cross-platform-clients`, depuis le `main` privé (`88468668`).
 Portée : amener OnePass sur Windows, Linux et Android avec la même crypto, le même modèle de menace et le même core Rust. Répond à l'idée "Transfert sans fil vers un appareil hors écosystème Apple" de `docs/backlog.md`, reprend le point "serveur self-host plus tard" de la spec d'architecture (sections 1 et 14) et l'écart R-15 de l'extension (mode autonome Windows et Linux).
 Dépend de : jalon 2b (appairage, listes signées, `2026-10-26-milestone-2b-pairing-design.md`) et rotation v2 (clés d'appareil, `2026-10-28-key-rotation-v2-design.md` sur la branche `docs/key-rotation-v2`, en cours de construction).
@@ -125,7 +125,7 @@ MSIX signé, obligatoire en pratique : les API `KeyCredentialManager` échouent 
 | B. Double attache : les appareils Apple synchronisent CloudKit et la boîte aux lettres | L'utilisateur garde iCloud. | Deux serveurs hostiles à réconcilier, deux `base`, des conflits entre stockages ; les appareils Apple deviennent des ponts et tout s'arrête quand ils dorment. |
 | C. Un appareil Apple fait le pont (CloudKit vers la boîte aux lettres) | Rien ne change pour les autres appareils Apple. | Sync hors Apple seulement quand ce pont tourne ; un point unique de panne. |
 
-**Recommandation : A.** Question 2.
+**Recommandation : A.** Question 2. Amendé le 2026-10-31 : tout compte neuf naît sur la boîte, iCloud en option, et la migration suit D.5 (section "Décision du fondateur 2026-10-31").
 
 Migration d'un compte (sur un appareil Apple déverrouillé) : choix du serveur (hébergé ou URL self-host), création de la boîte, inscription de l'appareil, envoi complet de `base` et `pending` (réinitialisation de zone vers le nouveau transport), écriture d'un nouvel enregistrement signé `SyncHome` (4.13) dans les deux backends, puis chaque autre appareil Apple lit `SyncHome` dans CloudKit, vérifie la signature, et bascule avec confirmation de l'utilisateur ("Ton coffre se synchronise maintenant avec <serveur>"). CloudKit garde la zone en lecture seule 30 jours, puis l'app propose de l'effacer.
 
@@ -200,7 +200,7 @@ Ressources (`v1`, chemins relatifs à l'URL de base de la boîte, par exemple `h
 
 Le lot de `commit` : `[(kind, id, version, op)]` où `op` est `Put { expected, body: Inline(octets) | Blob { sha256, size } }` ou `Delete`. Tout ou rien : la fonction verrouille la ligne de la boîte (`FOR NO KEY UPDATE`, un lot à la fois par boîte ; `FOR UPDATE` attendrait les verrous `KEY SHARE` que l'insertion du nonce d'un autre lot pose sur la même ligne, et deux commits concurrents s'interbloqueraient), compare chaque `expected`, et en cas de conflit n'écrit rien et rend, pour les clés en conflit, la ligne serveur courante (que le client met en attente comme le fait le coordinateur Swift). La liste des conflits est un préfixe, dans l'ordre du lot, plafonné comme une page de changements : 1 000 lignes et 4 Mio de données au plus, jamais vide. Le client met en attente ce qu'il a reçu et renvoie son lot ; les clés laissées de côté sont en conflit au tour suivant, et le tout converge. Sans ce plafond, 20 000 écritures d'un octet sur des clés existantes de 16 Kio feraient répondre environ 320 Mio à une requête de 1 Mio. Sinon chaque opération reçoit le `seq` suivant, les compteurs et quotas sont mis à jour dans la même transaction, puis le réveil part (4.10). Un lot qui dépasse les limites est refusé entier (`413`), le client le coupe comme il coupe aujourd'hui pour CloudKit (items avant manifestes).
 
-Codes d'erreur (corps postcard `ErrorBody { code, retry_after }`) : `400 malformed`, `401 bad_signature`, `401 stale_request` (décalage), `401 replay`, `403 unknown_credential`, `403 revoked_credential`, `403 frozen`, `404 not_found`, `404 no_route` (méthode et chemin que la fonction ne sert pas, posé par le routeur seul et jamais par une fonction SQL : le client distingue ainsi une mauvaise URL de base d'un enregistrement absent), `409 conflict` (rendu dans le corps du commit, pas en erreur), `410 cursor_expired`, `413 too_large`, `422 quota`, `429 rate_limited` avec `retry_after`, `503 retry`.
+Codes d'erreur (corps postcard `ErrorBody { code, retry_after }`) : `400 malformed`, `401 bad_signature`, `401 stale_request` (décalage), `401 replay`, `403 unknown_credential`, `403 revoked_credential`, `403 frozen`, `404 not_found` (boîte disparue, sur toutes les routes), `404 absent` (route d'un enregistrement seulement : la boîte vit mais ne tient pas cette clé ; le client distingue ainsi un enregistrement absent d'une boîte supprimée), `404 no_route` (méthode et chemin que la fonction ne sert pas, posé par le routeur seul et jamais par une fonction SQL : le client distingue ainsi une mauvaise URL de base d'un enregistrement absent), `409 conflict` (rendu dans le corps du commit, pas en erreur), `410 cursor_expired`, `413 too_large`, `422 quota`, `429 rate_limited` avec `retry_after`, `503 retry`.
 
 Réponses de la fonction edge (Task 7) : un corps postcard avec `Content-Type: application/vnd.onepass.mailbox.v1+postcard` pour `config` (`ServerConfig`), la création (`MailboxCreated`), `GET /v1/mailboxes/{m}` (`MailboxInfo`), `changes` (`ChangesPage`), `records` (`ServerRecord`, une pierre tombale sans corps) et les deux routes de blobs (`BlobUrls`, triées par empreinte, une entrée par empreinte demandée, `None` si aucun envoi n'est nécessaire ou si le blob n'est référencé par aucune ligne vivante) ; `204` sans corps pour l'inscription, le retrait, `push`, `rdv_put` et `rdv_close` ; un commit appliqué rend `200 CommitResponse::Applied { seqs }` (un `Option<u64>` par opération, `None` pour une suppression sans effet, que le client ne range pas comme `server_meta`), un conflit rend `409` avec `CommitResponse::Conflict` ; un lot vide est refusé par le décodeur du proto (`400 malformed`). `rdv_get` rend la trame brute (`application/octet-stream`) ou `204` après l'attente ; `rdv_put` sur une trame déjà écrite rend `409` sans corps. Les erreurs portent `ErrorBody`, et l'en-tête `Retry-After` pour `429`. Un corps est lu au plus jusqu'à `COMMIT_BODY_MAX` (4 Mio, 1 Mio pour une trame de rendez-vous) : au-delà, la lecture s'arrête et la réponse est `413` sans aucun appel SQL.
 
@@ -209,7 +209,7 @@ Chaque route qui touche la base appelle une seule fonction SQL `api_*` ou `rdv_*
 Contrat entre la fonction edge et les fonctions SQL :
 
 - **Refus levé** (`SQLSTATE 'OP' || <statut HTTP>`, message égal au nom du code en snake case) : la requête n'est pas authentifiée (`malformed` sur la forme, `stale_request`, `unknown_credential`, `revoked_credential`, `frozen`, `replay` pour une route signée ; clé d'adresse IP malformée pour la création et l'inscription). Rien n'est enregistré, la transaction est annulée. Tout autre `SQLSTATE` est un bogue : `503 retry`.
-- **Réponse dans le résultat** : toute autre issue. Chaque fonction rend des lignes dont les deux premières colonnes sont `status text, retry_after int` : `ok` avec les données, ou une seule ligne portant le code (`not_found`, `rate_limited`, `cursor_expired`, `quota`, `malformed`, ...) et des données NULL ; `retry_after` (secondes) seulement pour `rate_limited`. La fonction edge **valide** la transaction : le nonce, le débit et `last_used_at` d'une requête signée, le débit par adresse IP de la création et de l'inscription, restent comptés même quand la requête échoue (une requête refusée après authentification n'est pas rejouable, et 500 lectures en échec dans la minute sont limitées comme 500 lectures réussies). Une écriture refusée ne laisse que ces compteurs : le travail qui peut encore échouer après sa première écriture tourne dans une sous-transaction annulée avant la réponse.
+- **Réponse dans le résultat** : toute autre issue. Chaque fonction rend des lignes dont les deux premières colonnes sont `status text, retry_after int` : `ok` avec les données, ou une seule ligne portant le code (`not_found`, `absent`, `rate_limited`, `cursor_expired`, `quota`, `malformed`, ...) et des données NULL ; `retry_after` (secondes) seulement pour `rate_limited`. La fonction edge **valide** la transaction : le nonce, le débit et `last_used_at` d'une requête signée, le débit par adresse IP de la création et de l'inscription, restent comptés même quand la requête échoue (une requête refusée après authentification n'est pas rejouable, et 500 lectures en échec dans la minute sont limitées comme 500 lectures réussies). Une écriture refusée ne laisse que ces compteurs : le travail qui peut encore échouer après sa première écriture tourne dans une sous-transaction annulée avant la réponse.
 - Une clé déjà inscrite dans une autre boîte donne `malformed` à la création et à l'inscription (seul le détenteur de la clé, qui a signé, l'apprend) ; une clé déjà inscrite dans la même boîte donne `replay` à l'inscription. `api_set_push` reçoit l'indice de `PushKind` sur le fil (0 aucun, 1 FCM, 2 APNs, 3 UnifiedPush) ; un type sans jeton est `malformed`.
 
 Le décodage strict des corps et la construction de la base de signature viennent du même code Rust que le client : la crate `onepass-mailbox-proto` compilée en WebAssembly (`wasm-bindgen`, cible Deno) et embarquée dans la fonction. Un seul décodeur, fuzzé, et une seule canonicalisation pour les deux côtés.
@@ -594,7 +594,7 @@ Consultées le 2026-10-30.
 Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
 
 1. **Hébergement de la boîte aux lettres : Supabase (fondateur).** L'instance Soma tourne sur Supabase : Postgres pour les enregistrements opaques et les curseurs, Storage pour les gros blobs, Realtime pour le réveil des appareils. Le serveur reste une boîte aux lettres aveugle : aucune clé, aucun contenu en clair, les requêtes sont authentifiées par signature d'appareil (clés de la rotation v2), pas par Supabase Auth comme preuve d'accès aux données ; les règles RLS ne servent que de défense en profondeur. Le self-host reste possible puisque Supabase est auto-hébergeable. La section 4 est à réécrire autour de ce choix (schéma, RLS, quotas, réveil). Section 4 réécrite le 2026-10-31 (4.4 à 4.16) ; une différence avec cette décision y est signalée (4.7, "Écart avec la décision 1") : la clé qui signe les requêtes est une clé d'appareil propre à la boîte, pas la clé d'appareil de la rotation v2.
-2. **Un seul backend par compte (première passe).** Ajouter un appareil hors Apple propose de passer tout le compte sur la boîte aux lettres.
+2. **Un seul backend par compte (fondateur, 2026-10-31).** Tout compte neuf naît sur la boîte aux lettres, iCloud reste une option ; un compte iCloud existant peut migrer (section "Décision du fondateur 2026-10-31", D.5).
 3. **Android d'abord (fondateur).** Ordre des jalons : X0, X1, X4, X5, puis X2, X3, X6.
 4. **Tauri 2 (fondateur).** Slint en repli si la revue de sécurité refuse le moteur web.
 5. **Linux : `.deb` et `.rpm` signés avec dépôts, AppImage en plus (fondateur).** Flatpak plus tard.
@@ -609,3 +609,120 @@ Réponses du fondateur marquées **(fondateur)**. Les autres sont une première 
 14. **Genre des enregistrements visible du serveur en v1, comme CloudKit (première passe).** À revoir après l'audit externe.
 15. **Android sans attestation matérielle : pas bloqué, état affiché (première passe).**
 16. **Rendez-vous d'appairage par l'instance Soma même pour un compte encore sur CloudKit (première passe).** Trames opaques, 2 minutes, mention à l'écran.
+
+## Décision du fondateur 2026-10-31 : Supabase par défaut
+
+Le fondateur, le 2026-10-31 : "use Supabase also for password storage in the cloud and family sharing". Règle qui en découle, **(fondateur)** :
+
+> La boîte aux lettres Supabase est le backend de sync par défaut de tout nouveau compte, sur toutes les plateformes, Apple compris. iCloud (CloudKit) reste une option. Les comptes iCloud existants continuent de marcher et peuvent migrer. Le partage en famille et entre contacts passe par Supabase pour tout le monde.
+
+Cette section prime sur le reste de la spec (règle des décisions). Le partage est traité dans la spec du partage, section 13 réécrite le même jour (`docs/superpowers/specs/2026-10-30-sharing-families-design.md`, branche `feat/sharing-families`) ; ici, seulement ce qu'il demande au serveur (D.7).
+
+### D.1 Ce qui change dans cette spec
+
+| Section | Avant | Maintenant |
+| --- | --- | --- |
+| 2, ligne "Backend de sync" ; 4.3 | La boîte sert d'abord aux comptes qui sortent d'Apple ; un compte Apple y passe quand il ajoute un appareil hors Apple | Tout compte neuf naît sur la boîte (hébergée par Soma par défaut, self-host en option, iCloud en option) ; la règle "un seul backend par compte" (4.3 A, décision 2) devient une décision du fondateur |
+| 4.3, migration | Esquisse | Déroulé complet en D.5, avec revendication de `SyncHome` dans CloudKit avant l'envoi |
+| 4.9, "Hébergé : création sur invitation" | Invitation obligatoire sur l'instance Soma | Création ouverte sur l'hébergé, plan `free`, limites par adresse IP et plafond quotidien (D.6) ; l'invitation reste possible |
+| 4.12 | Inscription par ticket seulement | En plus : attribution d'un identifiant par un identifiant gestionnaire (`grants`, D.7), sans ticket, pour les appareils Apple qui suivent une migration et pour le partage |
+| 5.4 et 5.5 | Le cas "compte encore sur CloudKit" est courant | Il ne concerne plus que les comptes iCloud existants et ceux qui choisissent iCloud ; le comportement ne change pas (proposition de migration, sinon instantané en lecture seule) |
+| 10, jalon X1 | "Apple uniquement : sync self-hostée, sans iCloud, pour qui le veut" | Apple : création de compte sur la boîte par défaut, migration, restauration par l'Emergency Kit. Le plan X1b passe sur le chemin critique : sans lui, aucun compte neuf ne naît sur la boîte |
+| 14, questions 1, 2 et 16 | Ouvertes ou en première passe | Tranchées par cette décision (Soma héberge, self-host en option ; un backend par compte ; rendez-vous par l'instance Soma) |
+
+### D.2 Créer un compte sur Apple
+
+Ce que voit l'utilisateur, dans l'ordre des écrans existants (`OnboardingStep` : `welcome`, `device`, `password`, `secretKey`, `biometrics`, `visibleVaults`, `done`) :
+
+1. **Bienvenue, puis Appareil.** Sous le bouton principal de l'écran Appareil, un lien discret "Où est rangé mon coffre ?" ouvre une feuille à trois choix : **Serveur OnePass** (coché, "hébergé par Soma Labs, chiffré sur ton appareil avant l'envoi"), **iCloud** ("ton coffre chiffré dans ton iCloud, seulement sur tes appareils Apple"), **Mon serveur** (URL de base et, en option, une autorité en PEM ; un bouton "Tester" appelle `GET /v1/config`). Rien d'autre ne change à l'écran : l'utilisateur qui ne touche à rien est sur le serveur OnePass.
+2. **Mot de passe, puis Secret Key.** Inchangés pour le serveur OnePass et iCloud. Pour "Mon serveur", l'Emergency Kit porte une ligne de plus : "Serveur : <URL>" (texte et QR), puisque la restauration doit savoir où chercher (D.4).
+3. **Création, en fond, dès que le compte local existe** (fin de l'étape Mot de passe) : paire d'identifiant de boîte (4.7) générée, graine rangée dans le trousseau (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, la sync tourne écran verrouillé), `POST /v1/mailboxes`, enregistrement de l'identifiant de secours et du localisateur (D.4), `SyncHome` signé (`Mailbox { url, mailbox_id }`, seq 1), premier tour de sync. Tout cela se rejoue au lancement suivant tant que ce n'est pas fini.
+4. **Écran Terminé.** Une ligne d'état sous le titre : "Coffre synchronisé avec le serveur OnePass" ou, sans réseau, "Synchronisation en attente : pas de connexion" (le compte est utilisable tout de suite, en local).
+5. **Réglages > Synchronisation.** Première ligne : "Synchronisé avec Serveur OnePass" (ou iCloud, ou l'hôte du self-host), état, "Synchroniser maintenant". Un compte iCloud y voit en plus "Passer au serveur OnePass" (D.5).
+
+Ce qui n'est **pas** demandé à l'utilisateur : un compte Soma, une adresse email, un mot de passe de plus. La boîte n'a pas de compte au sens d'un service : sa seule preuve d'accès est la signature de l'appareil (4.7).
+
+Sans réseau à la création : le compte est local, `SyncHome` n'est pas écrit, la boîte est créée au premier lancement avec réseau. Un compte qui n'a jamais eu de boîte ne peut pas approuver un appareil hors Apple (rien à inscrire) : l'écran d'ajout d'appareil dit "Connecte-toi à Internet pour finir la mise en place de la synchronisation".
+
+### D.3 iCloud en option
+
+- Choisi à la création (D.2, point 1), le compte se comporte exactement comme aujourd'hui (`SyncCoordinator` et `CloudKitRemote` inchangés, `SyncHome` écrit avec `backend: CloudKit` au premier tour).
+- Un compte iCloud existant, mis à jour vers une app qui connaît la boîte, ne voit rien changer d'autre qu'une ligne "Passer au serveur OnePass" dans Réglages > Synchronisation et une proposition quand il ajoute un appareil hors Apple (5.4). Aucune bannière, aucune migration forcée.
+- Retour de la boîte vers iCloud : hors périmètre de X1b. La boîte reste self-hostable, ce qui couvre "je ne veux pas dépendre de Soma".
+- Le partage en famille et entre contacts passe par la boîte même pour un compte iCloud (spec du partage, 13) : un tel compte crée à son premier partage une **boîte d'ancrage** sur l'instance Soma (ou son self-host), qui ne porte aucun enregistrement privé et sert seulement de parent aux boîtes de partage (D.7). Sa graine d'identifiant est commune aux appareils du compte et voyage dans un enregistrement privé signé (`ZoneAccess`, spec du partage 13.4).
+
+### D.4 Restaurer par l'Emergency Kit
+
+Sur CloudKit, un appareil neuf retrouve le compte par l'Apple ID. Sur la boîte, il n'a ni identifiant inscrit ni adresse de boîte. Sans réponse, un utilisateur qui perd son seul iPhone perd la sync : c'est la conséquence directe de "boîte par défaut".
+
+Réponse : deux valeurs dérivées de la Secret Key, que tout Emergency Kit contient déjà.
+
+- **Localisateur** : `locator = HKDF-SHA256(ikm = Secret Key, info = "onepass/mailbox-locator/v1")[..16]`. Le client l'enregistre sur la boîte (`PUT /v1/mailboxes/{m}/locator`, gestionnaire seul). Une boîte garde ses deux derniers localisateurs (l'ancien et le nouveau coexistent jusqu'à la phase 3 d'une rotation) ; un troisième retire le plus ancien, et le même couple enregistré à nouveau ne change rien. `POST /v1/locate`, le localisateur dans le corps (postcard `LocateRequest`, jamais dans l'URL ni donc dans les journaux d'accès), rend jusqu'à 8 identifiants de boîtes vivantes, du plus ancien enregistrement au plus récent, ou `404 not_found`. Route sans signature, comptée par adresse IP : le compteur de la minute est celui de la création, de l'inscription et du rendez-vous (4.9), plus 30 par heure qui lui sont propres ; 128 bits dérivés d'un secret, donc impossibles à énumérer.
+- **Localisateur non unique (règle de X1b).** Plusieurs boîtes peuvent porter le même localisateur : deux appareils qui ont migré en même temps (D.5), ou quiconque détient la Secret Key. Le serveur ne refuse donc jamais un localisateur déjà pris. Le client essaie chaque identifiant rendu, dans l'ordre, avec son identifiant de secours, et ne garde que la boîte dont le contenu passe la vérification de compte du core ; une boîte qui répond `403 unknown_credential` (purgée après abandon) ou `404 not_found` (abandonnée, pas encore purgée) a disparu, il passe à la suivante.
+- **Identifiant de secours** : une paire Ed25519 de graine `HKDF-SHA256(ikm = Secret Key, info = "onepass/mailbox-recovery-credential/v1" || mailbox_id)`, attribuée à la boîte à sa création (`grants`, rôle gestionnaire). Il sert une fois, pendant la restauration : lire la boîte, puis attribuer l'identifiant propre au nouvel appareil.
+
+Déroulé (écran "J'ai mon Emergency Kit", inchangé pour l'utilisateur : Secret Key et mot de passe) : localisateur sur l'instance Soma, sinon recherche iCloud comme aujourd'hui, sinon champ "Mon serveur" (prérempli par la ligne "Serveur" d'un kit self-host) ; récupération complète signée par l'identifiant de secours ; déverrouillage par le mot de passe (2SKD) ; nouvel identifiant d'appareil attribué ; la suite est celle de la rotation v2 pour un appareil restauré.
+
+Ce que cela change au modèle de menace (8) : qui détient la Secret Key sans le mot de passe obtient l'accès réseau aux blobs chiffrés et peut écrire des enregistrements que le core refuse (déni de service). Sur CloudKit, la même personne a besoin de l'Apple ID en plus. Le mot de passe reste indispensable pour lire quoi que ce soit (2SKD inchangé). Une rotation v2 change la Secret Key : le rotateur attribue le nouvel identifiant de secours, enregistre le nouveau localisateur, puis retire les anciens après la phase 3 ; l'ancien kit ne localise plus rien, ce qui est voulu (la rotation imprime un nouveau kit).
+
+Domaines nouveaux : `onepass/mailbox-locator/v1`, `onepass/mailbox-recovery-credential/v1`.
+
+### D.5 Migrer un compte iCloud existant (zone figée)
+
+Précise 4.3 et l'aperçu du plan X1b. Sur un appareil Apple déverrouillé, Réglages > Synchronisation > "Passer au serveur OnePass".
+
+Préconditions, sinon le bouton explique ce qui manque : session déverrouillée, dernier tour CloudKit terminé sans refus, rotation v2 au repos (`Current`), réseau. L'écran liste les appareils Apple du roster et dit "Mets à jour OnePass sur ces appareils avant de continuer. Un appareil resté sur une ancienne version continuera d'écrire sur iCloud jusqu'à sa mise à jour." puis "Continuer" (présence).
+
+Étapes, chacune rangée dans la méta du store (`migration.state`) pour reprendre au lancement suivant :
+
+1. **Boîte.** Choix du serveur (Soma ou self-host), identifiant de l'appareil, `POST /v1/mailboxes`, identifiant de secours. Pas encore de localisateur : il vient après la revendication (étape 2).
+2. **Revendication.** Le core signe un `SyncHome` de `seq` suivant vers la boîte **sans l'adopter** (`sign_sync_home`) ; l'app l'écrit dans CloudKit par une écriture conditionnelle sur l'étiquette du `SyncHome` CloudKit courant (ou "absent"). Deux appareils qui migrent en même temps : un seul gagne. Le gagnant enregistre alors le localisateur (`PUT /v1/mailboxes/{m}/locator`). Le perdant abandonne sa boîte neuve (`DELETE /v1/mailboxes/{m}`, D.7 : par l'identifiant créateur seul, encore gestionnaire, dans les 24 h après la création, tant que la boîte est neuve, c'est-à-dire qu'aucun autre identifiant n'y a fait de requête ni ne s'y est inscrit et qu'au plus un autre existe, l'identifiant de secours jamais servi) et devient suiveur. Si les deux ont quand même enregistré le localisateur (une coupure entre les étapes, une ancienne version), rien ne casse : `locate` rend les deux boîtes, la boîte abandonnée en sort, et la règle de X1b (D.4) choisit par la vérification de compte. Personne n'a encore adopté de `SyncHome` divergent, donc aucune bifurcation de chaîne.
+3. **Adoption et envoi.** `adopt_sync_home` (enregistrement et `Seen` dans la même transaction), arrêt du coordinateur CloudKit, `begin_zone_reset` sous les clés de méta de la boîte, tours de sync jusqu'à ce que `pending_changes` soit vide (barre "Envoi du coffre chiffré"). Une coupure ici reprend au lancement suivant ; pendant ce temps les autres appareils savent déjà (étape 2) qu'ils doivent attendre.
+4. **Zone figée.** L'appareil n'écrit plus rien dans CloudKit sauf la suppression des demandes d'inscription traitées (point suivant). Pendant 30 jours, à chaque lancement et toutes les 24 h au premier plan, il lit les changements de la zone CloudKit.
+
+Sur chaque autre appareil Apple (suiveur) :
+
+- Le tour CloudKit lit le `SyncHome` (genre 24), le core le vérifie et le chaîne ; le coordinateur passe à l'état "Ton coffre a changé de serveur" et n'envoie plus rien à CloudKit. Les écritures locales restent dans `pending_changes`.
+- Bannière : "Ton coffre se synchronise maintenant avec <serveur>. Continuer sur cet appareil ?" ; "Continuer" (déverrouillé, présence) crée l'identifiant de l'appareil et écrit dans CloudKit une **demande d'inscription** : enregistrement de genre `MailboxEnrollRequest` (25), corps `{ account_id, device_id, credential_pub, mailbox_id, issued_at }` signé par la clé d'appareil de la rotation v2 sous `onepass/mailbox-enroll-request/v1`.
+- Un appareil déjà migré lit la demande dans la zone figée, vérifie la signature contre son roster (appareil présent, non retiré, demande de moins de 7 jours, même boîte), attribue l'identifiant (`grants`), supprime la demande dans CloudKit. Aucun geste de l'utilisateur : la demande est signée par un appareil que le compte a déjà approuvé.
+- Le suiveur interroge la boîte avec son nouvel identifiant (toutes les 10 s pendant que l'écran est ouvert, sinon à chaque lancement) ; dès qu'il est accepté : `begin_zone_reset` vers la boîte, tours de sync, ses écritures en attente partent. Tant qu'aucun appareil migré n'est en ligne : "En attente de ton <appareil migré>".
+
+Appareil resté sur une ancienne version (Review Focus 5 du plan X1b, tranché ici, **(première passe)**) : il ignore le genre 24 et continue d'écrire dans la zone figée. Les appareils migrés voient, dans la zone figée, des enregistrements de genres 1 à 23 modifiés après la date de migration, et affichent "Un appareil avec une ancienne version de OnePass écrit encore sur iCloud. Mets-le à jour : ses changements arriveront sur le serveur à la mise à jour." Pas de rapatriement automatique : à sa mise à jour, l'appareil lit `SyncHome`, suit, et sa réinitialisation de zone renvoie tout ce que la boîte n'a pas (`finish_full_fetch`), donc rien n'est perdu tant que l'appareil existe encore. Un rapatriement par un appareil migré demanderait de faire entrer dans un store les enregistrements d'un autre serveur, ce que 4.3 B refuse.
+
+Après 30 jours sans écriture tardive vue, Réglages propose "Effacer la copie iCloud" (suppression de la zone, confirmation). Jamais automatiquement : une ancienne app qui verrait sa zone disparaître la recréerait et y renverrait tout.
+
+### D.6 Instance hébergée par Soma et self-host
+
+- **Hébergée.** Un projet Supabase opéré par Soma Labs (Task 20 du plan X1), URL de base par défaut compilée dans les apps. Création de boîte ouverte, plan `free` (256 Mio, 100 000 enregistrements, 16 identifiants), limites par adresse IP de 4.9, plus un plafond global de créations par jour (`settings.daily_create_cap`, 2 000 au départ) qui rend `503 retry` au-delà. L'invitation reste acceptée (plans spéciaux). Nouveau réglage `settings.open_signup_plan` : `free` sur l'hébergé, `selfhost` par défaut.
+- **Self-host.** Inchangé (4.16). Le client accepte une URL et une autorité. La ligne "Serveur" de l'Emergency Kit le rend restaurable.
+- **URL par défaut.** Elle est écrite dans chaque `SyncHome` : changer d'hébergeur plus tard voudrait dire faire signer un nouveau `SyncHome` à chaque compte. D'où la recommandation d'un domaine à nous devant Supabase (question F2).
+
+### D.7 Ce qui change côté serveur (plan X1, Tasks 21 à 26)
+
+| Ajout | Pour | Tâche du plan X1 |
+| --- | --- | --- |
+| `settings.open_signup_plan`, `settings.daily_create_cap` | Création ouverte sur l'hébergé (D.6) | 21 |
+| Rôle par identifiant (`read`, `write`, `manage`), drapeau `owner`, liste de genres permis à l'écriture ; route `POST /v1/mailboxes/{m}/grants` (attribution par un gestionnaire) ; route de changement de rôle ; retrait réservé aux gestionnaires ; code d'erreur `403 forbidden` | Suiveurs d'une migration (D.5), identifiant de secours (D.4), partage | 22 |
+| Table `locators` (non unique, deux par boîte), routes `PUT /v1/mailboxes/{m}/locator` et `POST /v1/locate` ; `DELETE /v1/mailboxes/{m}` (abandon d'une boîte neuve) | Restauration (D.4), course de migration (D.5) | 23 |
+| Boîtes filles (`parent_id`, `kind`), plans `shared` et `contact`, plafonds par parent, suppression d'une fille par son propriétaire | Partage (spec du partage 13) | 24 |
+| Dépôts d'invitation de 72 h (`/v1/drops`) | Invitation de contact à distance (spec du partage 5.3.2) | 25 |
+| Cibles de notification par appareil pour un identifiant partagé | Réveil des coffres partagés (spec du partage 13.7) | 26 |
+
+Côté Apple, le plan X1b (réécrit le 2026-10-31) : `docs/superpowers/plans/2026-10-31-xplat-x1b-apple-mailbox.md`.
+
+### D.8 Avant le lancement : ce que le fondateur doit décider ou faire
+
+1. **Dire oui à la Task 20 du plan X1** : création du projet Supabase hébergé, payante (plan Pro de Supabase et options, à chiffrer dans la demande de la Task 20 Step 2), région, secrets, invitations initiales. Sans elle, le défaut "serveur OnePass" n'existe pas et toute création de compte tomberait sur le cas "pas de connexion".
+2. **Choisir le domaine de l'URL par défaut** (question F2).
+3. **Ouvrir la création sur l'hébergé** (question F3) et valider les quotas du plan `free`, partage compris (question F5).
+4. **Créer la clé APNs** (`.p8`) dans le compte Apple Developer et la poser en secret de `mailbox-push` (plan X1b, Task 10).
+5. **Politique de confidentialité et conditions** du service hébergé : Soma Labs opérateur, Supabase sous-traitant (accord de traitement), données vues par le serveur (4.15 : adresses IP dans les journaux, jetons de notification, rythme), durée de conservation.
+6. **Exploitation minimale** (risque 13) : tableau de bord, alerte sur les erreurs `503`, sauvegardes et procédure de restauration (une restauration change `incarnation`), astreinte légère.
+
+### D.9 Questions pour le fondateur
+
+- **F1.** Oui pour la Task 20 maintenant, avec quelle région ? Je prendrais : oui dès que les Tasks 13 à 19 et 21 à 23 sont vertes, région `us-west-1` (Palo Alto, premiers utilisateurs), plan Pro.
+- **F2.** URL par défaut sur un domaine à nous ou sur `<projet>.supabase.co` ? Je prendrais : `mailbox.somalabs.me` (domaine personnalisé Supabase, option payante), pour pouvoir changer d'hébergeur sans re-signer chaque `SyncHome`. **Tranché par le fondateur le 2026-10-31 : `mailbox.somalabs.me`.** URL de base des clients : `https://mailbox.somalabs.me/functions/v1/mailbox`, Realtime `wss://mailbox.somalabs.me/realtime/v1`. Aucun client ne signe l'adresse `*.supabase.co`.
+- **F3.** Création de boîte ouverte sur l'hébergé, ou sur invitation ? Je prendrais : ouverte, plan `free`, 5 créations par jour et par adresse IP, plafond global de 2 000 par jour ; App Attest et Play Integrity plus tard si l'abus apparaît.
+- **F4.** Appareil Apple resté sur une ancienne version pendant une migration : avertissement et rapatriement à sa mise à jour (D.5, première passe), ou migration refusée tant qu'un appareil du roster n'a pas été vu sur la nouvelle version ? Je prendrais : avertissement (un iPad oublié dans un tiroir ne doit pas bloquer la migration).
+- **F5.** Quotas gratuits du partage sur l'hébergé (spec du partage 13.6) : je prendrais 16 boîtes de coffre partagé ou de famille par compte (128 Mio chacune) et 256 contacts, sans offre payante en v1 (valeurs de la X1 Task 24).

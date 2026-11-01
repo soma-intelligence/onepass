@@ -26,7 +26,8 @@ Deno.test({
   async fn() {
     const admin = postgres(ADMIN!, { max: 1, onnotice: () => {} });
     const db = connectJanitor(JANITOR!, "onepass-live-test");
-    const bucket = createClient(STORAGE!, SERVICE!, { auth: { persistSession: false } }).storage.from(BUCKET);
+    const storage = createClient(STORAGE!, SERVICE!, { auth: { persistSession: false } }).storage;
+    const bucket = storage.from(BUCKET);
     const mailbox = rand(16);
     const name = (gen: number) => `${hex(mailbox)}/${hex(rand(32))}.${gen}`;
     const present = name(1), absent = name(2);
@@ -42,7 +43,7 @@ Deno.test({
       const h = handler({
         cronKey: KEY,
         graves: graveStore(db),
-        objects: objectStore(bucket),
+        objects: objectStore(storage),
         now: Date.now,
         log: () => {},
       });

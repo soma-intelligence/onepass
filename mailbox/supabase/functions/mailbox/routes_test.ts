@@ -253,11 +253,18 @@ Deno.test("an unknown SQLSTATE or a mismatched OP code is 503 retry", async () =
   }
 });
 
-Deno.test("an absent record is not_found, never no_route; SQL cannot answer no_route", async () => {
+Deno.test("an absent record is absent (404 Absent), a gone mailbox not_found, never no_route", async () => {
   const k = await newKey();
+  assertEquals(CODES.absent, { status: 404, wire: "Absent" });
   const target = `/v1/mailboxes/${MHEX}/records/5/${MHEX}`;
-  const absent = new FakeDb(withKey(k, () => [{ status: "not_found", retry_after: null }]));
-  await assertError(await handler(deps(absent))(await signed(k, "GET", target), IP), "not_found");
+  const absent = new FakeDb(withKey(k, () => [{ status: "absent", retry_after: null }]));
+  const r = await handler(deps(absent))(await signed(k, "GET", target), IP);
+  assertEquals(r.status, 404);
+  assertEquals(await bytes(r), proto.encodeError({ code: "Absent", retry_after: null }));
+  const gone = new FakeDb(withKey(k, () => {
+    throw { code: "OP404", message: "not_found" };
+  }));
+  await assertError(await handler(deps(gone))(await signed(k, "GET", target), IP), "not_found");
   const lying = new FakeDb(withKey(k, () => [{ status: "no_route", retry_after: null }]));
   await assertError(await handler(deps(lying))(await signed(k, "GET", target), IP), "retry");
 });
@@ -358,6 +365,16 @@ Deno.test("the IP key is HMAC-SHA-256(secret, UTC date || ip) and the address ne
   assertEquals((await handler(deps(db2))(await signed(k, "GET", `/v1/mailboxes/${MHEX}`), IP)).status, 200);
   assertEquals(db2.calls[0].args[0].value, await expectedIpKey(IP, NOW));
   for (const c of db2.calls) assert(!containsIp(c.args));
+});
+
+Deno.test("creation: the daily cap row (in-band retry) is a 503 retry without retry-after", async () => {
+  const k = await newKey();
+  const db = new FakeDb((fn) => (fn === "api_create_mailbox" ? [{ status: "retry", retry_after: null }] : [ok()]));
+  const create = createBody(k.pub, new Uint8Array([1, 2, 3]));
+  const r = await handler(deps(db))(await signed(k, "POST", "/v1/mailboxes", create), IP);
+  assertEquals(r.status, 503);
+  assertEquals(r.headers.get("retry-after"), null);
+  await assertError(r, "retry");
 });
 
 /** CreateMailbox by hand: version, key, Some(invite), label. */
@@ -751,6 +768,253 @@ Deno.test("enroll: request signed by the ticket's new key, ticket signed by the 
   assertEquals(db4.calls.length, 0);
 });
 
+// ---------------------------------------------------------------- roles
+
+/** GrantCredential: version, key, role index, put_kinds option, label. */
+function grantBody(pub: Uint8Array, role: number, kinds: Uint8Array | null, label = new Uint8Array()): Uint8Array {
+  const out = [1, ...pub, role];
+  if (kinds) out.push(1, ...kinds);
+  else out.push(0);
+  out.push(label.length, ...label);
+  return new Uint8Array(out);
+}
+
+/** SetCredentialRole: version, role index, put_kinds option. */
+function roleBody(role: number, kinds: Uint8Array | null): Uint8Array {
+  return new Uint8Array(kinds ? [1, role, 1, ...kinds] : [1, role, 0]);
+}
+
+Deno.test("grant_route_calls_one_function: POST grants is one api_grant_credential call, 204", async () => {
+  const k = await newKey();
+  const fresh = await newKey();
+  const kinds = new Uint8Array(32);
+  kinds[1] = 0xc0;
+  kinds[2] = 0x03;
+  const db = new FakeDb(withKey(k, () => [ok({ credential_id: fresh.id })]));
+  const target = `/v1/mailboxes/${MHEX}/grants`;
+  const r = await handler(deps(db))(
+    await signed(k, "POST", target, grantBody(fresh.pub, 1, kinds, new Uint8Array([9]))),
+    IP,
+  );
+  assertEquals(r.status, 204);
+  assertEquals(await bytes(r), new Uint8Array());
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_grant_credential"]);
+  const args = db.calls[2].args;
+  assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+  assertEquals(args.slice(4).map((x) => [x.type, x.value]), [
+    ["bytea", fresh.pub],
+    ["smallint", 2],
+    ["bytea", kinds],
+    ["bytea", new Uint8Array([9])],
+  ]);
+
+  // Read and Manage, no put_kinds: role 1 and 3, a null put_kinds.
+  for (const [index, role] of [[0, 1], [2, 3]]) {
+    const db2 = new FakeDb(withKey(k, () => [ok({ credential_id: fresh.id })]));
+    const r2 = await handler(deps(db2))(await signed(k, "POST", target, grantBody(fresh.pub, index, null)), IP);
+    assertEquals(r2.status, 204);
+    assertEquals(db2.calls[2].args.slice(5, 7).map((x) => x.value), [role, null]);
+  }
+
+  // An off-curve key is malformed and never reaches SQL; so are put_kinds
+  // with another role than write, and an unknown role.
+  const offCurve = new Uint8Array(32);
+  offCurve[0] = 2;
+  for (const body of [grantBody(offCurve, 0, null), grantBody(fresh.pub, 2, kinds), grantBody(fresh.pub, 3, null)]) {
+    const db3 = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db3))(await signed(k, "POST", target, body), IP), "malformed");
+    assert(!db3.fns().includes("api_grant_credential"));
+  }
+});
+
+Deno.test("PUT credentials/{c}/role is one api_set_credential_role call, 204", async () => {
+  const k = await newKey();
+  const c = new Uint8Array(16).fill(0x33);
+  const kinds = new Uint8Array(32).fill(0xff);
+  const target = `/v1/mailboxes/${MHEX}/credentials/${toHex(c)}/role`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "PUT", target, roleBody(1, kinds)), IP);
+  assertEquals(r.status, 204);
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_set_credential_role"]);
+  assertEquals(db.calls[2].args.slice(3).map((x) => [x.type, x.value]), [
+    ["bytea", M],
+    ["bytea", c],
+    ["smallint", 2],
+    ["bytea", kinds],
+  ]);
+  const db2 = new FakeDb(withKey(k));
+  await assertError(await handler(deps(db2))(await signed(k, "PUT", target, roleBody(0, kinds)), IP), "malformed");
+  assert(!db2.fns().includes("api_set_credential_role"));
+  // Only PUT: another method on the path is no_route.
+  await assertError(
+    await handler(deps(new FakeDb()))(await signed(k, "POST", target, roleBody(2, null)), IP),
+    "no_route",
+  );
+});
+
+Deno.test("forbidden_maps_to_403: in band and raised, with the Forbidden wire code", async () => {
+  const k = await newKey();
+  assertEquals(CODES.forbidden, { status: 403, wire: "Forbidden" });
+  const target = `/v1/mailboxes/${MHEX}/commit`;
+  const body = commitBody([{ kind: 5, id: 1, version: 1, put: { expected: null, data: [7] } }]);
+  const inBand = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  const r = await handler(deps(inBand))(await signed(k, "POST", target, body), IP);
+  assertEquals(r.status, 403);
+  assertEquals(await bytes(r), proto.encodeError({ code: "Forbidden", retry_after: null }));
+  assertEquals(inBand.rollbacks, 0);
+  assertEquals(inBand.commits, 2);
+  const raised = new FakeDb(withKey(k, () => {
+    throw { code: "OP403", message: "forbidden" };
+  }));
+  await assertError(await handler(deps(raised))(await signed(k, "POST", target, body), IP), "forbidden");
+  // The wire bytes of the codes before it did not move: Forbidden is appended.
+  assertEquals(proto.encodeError({ code: "NoRoute", retry_after: null }), new Uint8Array([1, 13, 0]));
+  assertEquals(proto.encodeError({ code: "Forbidden", retry_after: null }), new Uint8Array([1, 14, 0]));
+});
+
+// --------------------------------------------------------------- locator
+
+Deno.test("PUT locator is one api_set_locator call, 204; a short body is malformed before SQL", async () => {
+  const k = await newKey();
+  const loc = new Uint8Array(16).fill(0x5a);
+  const target = `/v1/mailboxes/${MHEX}/locator`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP);
+  assertEquals(r.status, 204);
+  assertEquals(await bytes(r), new Uint8Array());
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_set_locator"]);
+  const args = db.calls[2].args;
+  assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+  assertEquals(args.slice(4).map((x) => [x.type, x.value]), [["bytea", loc]]);
+  for (const body of [new Uint8Array([1, ...loc.slice(1)]), new Uint8Array([1, ...loc, 0])]) {
+    const db2 = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db2))(await signed(k, "PUT", target, body), IP), "malformed");
+    assert(!db2.fns().includes("api_set_locator"));
+  }
+  // Not a manager: in-band forbidden.
+  const reader = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  await assertError(
+    await handler(deps(reader))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP),
+    "forbidden",
+  );
+});
+
+Deno.test("POST locate is unsigned: one locate call with the IP key, 200 Located or 404 not_found", async () => {
+  const loc = new Uint8Array(16).fill(0x5b);
+  const target = "/v1/locate";
+  const post = (body: Uint8Array<ArrayBuffer>, path = target) => new Request(url(path), { method: "POST", body });
+  const M2 = new Uint8Array(16).fill(0x6c);
+  // Every 'ok' row, in the order SQL gave it (oldest first).
+  const db = new FakeDb(() => [ok({ mailbox_id: M2 }), ok({ mailbox_id: M })]);
+  const r = await handler(deps(db))(post(new Uint8Array([1, ...loc])), IP);
+  assertEquals(r.status, 200);
+  assertEquals(r.headers.get("content-type"), proto.CONTENT_TYPE);
+  assertEquals(await bytes(r), new Uint8Array([1, 2, ...M2, ...M]));
+  assertEquals(db.fns(), ["locate"]);
+  assertEquals(db.calls[0].args.map((x) => [x.type, x.value]), [
+    ["bytea", loc],
+    ["bytea", await expectedIpKey(IP, NOW)],
+  ]);
+  assert(!containsIp(db.calls[0].args));
+  assertEquals(db.commits, 1);
+
+  const none = new FakeDb(() => [{ status: "not_found", retry_after: null, mailbox_id: null }]);
+  await assertError(await handler(deps(none))(post(new Uint8Array([1, ...loc])), IP), "not_found");
+  assertEquals(none.commits, 1, "a miss still counts");
+  const limited = new FakeDb(() => [{ status: "rate_limited", retry_after: 1200, mailbox_id: null }]);
+  await assertError(await handler(deps(limited))(post(new Uint8Array([1, ...loc])), IP), "rate_limited", 1200);
+
+  // A short, long or empty body, or a query: malformed, no SQL.
+  for (const body of [new Uint8Array([1, ...loc.slice(1)]), new Uint8Array([1, ...loc, 0]), new Uint8Array()]) {
+    const db2 = new FakeDb();
+    await assertError(await handler(deps(db2))(post(body), IP), "malformed");
+    assertEquals(db2.calls.length, 0);
+  }
+  const q = new FakeDb();
+  await assertError(await handler(deps(q))(post(new Uint8Array([1, ...loc]), `${target}?x=1`), IP), "malformed");
+  // The locator never travels in the URL: the old GET form is gone.
+  const old = new FakeDb();
+  await assertError(await handler(deps(old))(new Request(url(`/v1/locate/${toHex(loc)}`)), IP), "no_route");
+  const get = new FakeDb();
+  await assertError(await handler(deps(get))(new Request(url(target)), IP), "no_route");
+  assertEquals(q.calls.length + old.calls.length + get.calls.length, 0);
+});
+
+Deno.test("DELETE mailbox is one api_delete_mailbox call, 204; refused is 403, deleted is 404", async () => {
+  const k = await newKey();
+  const target = `/v1/mailboxes/${MHEX}`;
+  const db = new FakeDb(withKey(k));
+  const r = await handler(deps(db))(await signed(k, "DELETE", target), IP);
+  assertEquals(r.status, 204);
+  assertEquals(db.fns(), ["ip_gate", "credential_key", "api_delete_mailbox"]);
+  assertEquals(db.calls[2].args.map((x) => x.type), ["bytea", "bytea", "timestamptz", "bytea"]);
+  assertEquals(db.calls[2].args[3].value, M);
+  const refused = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  await assertError(await handler(deps(refused))(await signed(k, "DELETE", target), IP), "forbidden");
+  const gone = new FakeDb(withKey(k, () => {
+    throw { code: "OP404", message: "not_found" };
+  }));
+  await assertError(await handler(deps(gone))(await signed(k, "DELETE", target), IP), "not_found");
+});
+
+/** CreateChild: version, kind index (0 Shared, 1 Contact), owner key, label. */
+function childBody(kind: number, pub: Uint8Array, label = new Uint8Array()): Uint8Array {
+  return new Uint8Array([1, kind, ...pub, label.length, ...label]);
+}
+
+Deno.test("POST children is one api_create_child call, 200 MailboxCreated; bad bodies never reach SQL", async () => {
+  const k = await newKey();
+  const owner = await newKey();
+  const child = new Uint8Array(16).fill(0x22);
+  const wake = new Uint8Array(16).fill(0x33);
+  const target = `/v1/mailboxes/${MHEX}/children`;
+  for (const [index, kind] of [[0, 2], [1, 3]]) {
+    const db = new FakeDb(withKey(k, () => [ok({ mailbox_id: child, incarnation: 7n, wake_topic: wake })]));
+    const r = await handler(deps(db))(
+      await signed(k, "POST", target, childBody(index, owner.pub, new Uint8Array([5, 6]))),
+      IP,
+    );
+    assertEquals(r.status, 200);
+    assertEquals(await bytes(r), proto.encodeCreated({ mailbox_id: child, incarnation: 7n, wake_topic: wake }));
+    assertEquals(db.fns(), ["ip_gate", "credential_key", "api_create_child"]);
+    const args = db.calls[2].args;
+    assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+    assertEquals(args.slice(4).map((x) => [x.type, x.value]), [
+      ["smallint", kind],
+      ["bytea", owner.pub],
+      ["bytea", new Uint8Array([5, 6])],
+    ]);
+  }
+
+  // In-band refusals keep their codes.
+  for (const code of ["forbidden", "quota", "malformed"] as Code[]) {
+    const db = new FakeDb(withKey(k, () => [{ status: code, retry_after: null }]));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, childBody(0, owner.pub)), IP), code);
+  }
+  const limited = new FakeDb(withKey(k, () => [{ status: "rate_limited", retry_after: 3600 }]));
+  await assertError(
+    await handler(deps(limited))(await signed(k, "POST", target, childBody(1, owner.pub)), IP),
+    "rate_limited",
+    3600,
+  );
+
+  // An off-curve owner key, an unknown kind, a long label, a short body.
+  const offCurve = new Uint8Array(32);
+  offCurve[0] = 2;
+  for (
+    const body of [
+      childBody(0, offCurve),
+      childBody(2, owner.pub),
+      childBody(0, owner.pub, new Uint8Array(65)),
+      childBody(0, owner.pub).slice(0, 20),
+    ]
+  ) {
+    const db = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, body), IP), "malformed");
+    assert(!db.fns().includes("api_create_child"));
+  }
+});
+
 // ------------------------------------------------------------ client address
 
 Deno.test("spoofed left X-Forwarded-For entries never change the key; IPv6 counts as its /64", async () => {
@@ -804,7 +1068,7 @@ Deno.test("trusted hops count from the right; other headers are read whole", asy
   const h = (v: string) => ({
     get: (n: string) => (n === "x-forwarded-for" ? v : n === "cf-connecting-ip" ? v : null),
   });
-  const two = ipSourceFromEnv(undefined, "2");
+  const two = ipSourceFromEnv("X-Forwarded-For", "2");
   assertEquals(clientAddress(h("6.6.6.6, 1.1.1.1, 10.0.0.9"), two), "1.1.1.1");
   assertEquals(clientAddress(h("10.0.0.9"), two), FALLBACK_ADDRESS);
   const cf = ipSourceFromEnv("CF-Connecting-IP", undefined);
@@ -813,12 +1077,26 @@ Deno.test("trusted hops count from the right; other headers are read whole", asy
   for (const bad of ["0", "-1", "x", "17"]) {
     let threw = false;
     try {
-      ipSourceFromEnv(undefined, bad);
+      ipSourceFromEnv("x-forwarded-for", bad);
     } catch {
       threw = true;
     }
     assert(threw, bad);
   }
+});
+
+Deno.test("no client address header configured: the function refuses to boot", async () => {
+  const { ipSourceFromEnv } = await import("./ip.ts");
+  for (const header of [undefined, ""]) {
+    let threw = false;
+    try {
+      ipSourceFromEnv(header, "1");
+    } catch {
+      threw = true;
+    }
+    assert(threw, String(header));
+  }
+  assertEquals(ipSourceFromEnv("sb-forwarded-for", undefined), { header: "sb-forwarded-for", trustedHops: 1 });
 });
 
 Deno.test("a row above the page head (a commit between the two reads) is left out, not a 503", async () => {

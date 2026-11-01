@@ -32,3 +32,5 @@ android/**/.gradle/
 android/**/.kotlin/
 android/**/build/
 android/local.properties
+# Hosted mailbox secrets
+mailbox/supabase/.env.hosted

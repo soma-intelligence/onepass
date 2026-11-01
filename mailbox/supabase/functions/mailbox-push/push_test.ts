@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertFalse } from "@std/assert";
 import { cronAuthorized } from "../_shared/cron.ts";
-import { LogProvider, type PushProvider } from "./providers.ts";
+import { LogProvider, providersFromEnv, type PushProvider } from "./providers.ts";
 import { handler, type PushStore, type PushTarget } from "./push.ts";
 
 const KEY = "k".repeat(40);
@@ -253,4 +253,18 @@ Deno.test("LogProvider says it sent and logs no token", async () => {
   assertEquals(await p.send(bytes(0xde, 0xad, 0xbe, 0xef)), "sent");
   assertEquals(lines.length, 1);
   assertFalse(lines[0].toLowerCase().includes("deadbeef"));
+});
+
+Deno.test("MAILBOX_PUSH_PROVIDERS has no default: unset or unknown refuses to boot", () => {
+  for (const mode of [undefined, "", "apns", "LOG"]) {
+    let threw = false;
+    try {
+      providersFromEnv(mode);
+    } catch {
+      threw = true;
+    }
+    assertEquals(threw, true, String(mode));
+  }
+  assertEquals(providersFromEnv("none"), []);
+  assertEquals(providersFromEnv("log").map((p) => p.kind), [1, 2, 3]);
 });

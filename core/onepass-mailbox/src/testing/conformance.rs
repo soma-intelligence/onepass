@@ -10,8 +10,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::{
-    Body, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse, ErrorCode, MailboxId, Op,
-    PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+    Body, COMMIT_OPS_MAX, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialRole,
+    ErrorCode, MailboxCreated, MailboxId, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+    put_kinds_of,
 };
 
 use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
@@ -32,6 +33,11 @@ pub trait ConformanceTarget {
 
     /// One side of rendezvous session `session` on the same server.
     fn rendezvous(&mut self, session: [u8; 16], role: RdvRole) -> Rendezvous;
+
+    /// `POST /v1/locate` on the same server, unsigned (spec D.4): the live
+    /// mailboxes holding `locator`, oldest registration first, empty when
+    /// none.
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError>;
 
     /// Runs before each case (the end-to-end target clears the per-IP
     /// creation day window there: every case creates mailboxes).
@@ -64,6 +70,18 @@ pub const CASES: &[(&str, Case)] = &[
     ("record_quota", record_quota),
     ("rendezvous_round_trip", rendezvous_round_trip),
     ("rendezvous_written_once", rendezvous_written_once),
+    ("grant_then_granted_key_reads", grant_then_granted_key_reads),
+    ("reader_commit_forbidden", reader_commit_forbidden),
+    ("limited_writer_kinds", limited_writer_kinds),
+    ("manager_changes_role", manager_changes_role),
+    ("locate_finds_mailbox", locate_finds_mailbox),
+    ("abandoned_mailbox_is_gone", abandoned_mailbox_is_gone),
+    (
+        "abandon_needs_a_fresh_mailbox",
+        abandon_needs_a_fresh_mailbox,
+    ),
+    ("child_round_trip", child_round_trip),
+    ("child_grant_and_revoke", child_grant_and_revoke),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -792,4 +810,453 @@ fn rendezvous_written_once(t: &mut dyn ConformanceTarget) {
         MailboxError::Server(Code::NotFound),
         "a closed id never starts again"
     );
+}
+
+// -------------------------------------------------------------------- roles
+
+/// A credential `owner` grants with `role`, opened on its mailbox.
+fn granted(
+    t: &mut dyn ConformanceTarget,
+    owner: &dyn MailboxApi,
+    role: CredentialRole,
+    put_kinds: Option<[u8; 32]>,
+) -> Box<dyn MailboxApi> {
+    let mut c = t.client();
+    let key = c.credential_key();
+    let id = owner
+        .grant(key.to_bytes(), role, put_kinds, b"granted")
+        .unwrap_or_else(|e| panic!("grant {role:?}: {e:?}"));
+    assert_eq!(id, key.id(), "grant returns the key's credential id");
+    c.open(owner.mailbox().expect("open"));
+    c
+}
+
+fn forbidden<T: std::fmt::Debug>(r: Result<T, MailboxError>, what: &str) {
+    match r {
+        Err(MailboxError::Forbidden) => {}
+        other => panic!("{what}: expected Forbidden, got {other:?}"),
+    }
+}
+
+/// A key a manager grants signs requests at once, without a ticket; the
+/// same key cannot be granted twice, and a reader grants nothing.
+fn grant_then_granted_key_reads(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    applied(a.commit(vec![put(1, 1, None, b"from a")]), "a writes");
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    r.info().expect("granted key signs info");
+    let rec = r
+        .record(KIND, id(1))
+        .expect("reader reads")
+        .expect("a's record");
+    assert_eq!(rec.body, Some(Body::Inline(b"from a".to_vec())));
+    assert_eq!(seqs(&page(r.as_ref(), 0, 10, false).records), vec![1]);
+    assert_eq!(usage(a.as_ref()).2, 2, "two active credentials");
+
+    match a.grant(
+        r.credential_key().to_bytes(),
+        CredentialRole::Read,
+        None,
+        b"again",
+    ) {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("granting a key already in: {other:?}"),
+    }
+    let stranger = owner(t);
+    match a.grant(
+        stranger.credential_key().to_bytes(),
+        CredentialRole::Read,
+        None,
+        b"x",
+    ) {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("granting a key of another mailbox: {other:?}"),
+    }
+    let other = t.client();
+    forbidden(
+        r.grant(
+            other.credential_key().to_bytes(),
+            CredentialRole::Read,
+            None,
+            b"x",
+        ),
+        "a reader grants",
+    );
+    assert_eq!(usage(a.as_ref()).2, 2, "still two credentials");
+}
+
+/// A reader commits nothing, uploads nothing and revokes no one but itself.
+fn reader_commit_forbidden(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(r.commit(vec![put(1, 1, None, b"x")]), "reader puts");
+    forbidden(r.commit(vec![del(1, 1)]), "reader deletes");
+    let big = vec![9u8; 20 * 1024];
+    forbidden(r.upload_blobs(&[&big]), "reader uploads");
+    forbidden(
+        r.revoke(a.credential_key().id()),
+        "reader revokes the owner",
+    );
+    assert_eq!(page(a.as_ref(), 0, 10, false).head, 0, "nothing written");
+    r.revoke(r.credential_key().id())
+        .expect("a reader revokes itself");
+    match r.info() {
+        Err(MailboxError::Server(ErrorCode::RevokedCredential)) => {}
+        other => panic!("self revoked reader: {other:?}"),
+    }
+    a.info().expect("the owner is untouched");
+}
+
+/// A writer limited to kinds 14 to 17 puts those, nothing else, deletes
+/// nothing and uploads no blob.
+fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let w = granted(
+        t,
+        a.as_ref(),
+        CredentialRole::Write,
+        Some(put_kinds_of(&[14, 15, 16, 17])),
+    );
+    let at = |kind: u8, n: u32| CommitOp {
+        kind,
+        id: id(n),
+        version: 1,
+        op: Op::Put {
+            expected: None,
+            body: Body::Inline(vec![kind]),
+        },
+    };
+    let s = applied(
+        w.commit(vec![at(14, 1), at(15, 2), at(16, 3), at(17, 4)]),
+        "kinds 14 to 17",
+    );
+    assert_eq!(s, vec![Some(1), Some(2), Some(3), Some(4)]);
+    forbidden(w.commit(vec![at(5, 5)]), "kind 5");
+    forbidden(
+        w.commit(vec![at(14, 6), at(5, 7)]),
+        "kind 5 in a batch of 14",
+    );
+    forbidden(w.commit(vec![at(18, 8)]), "kind 18");
+    let gone = CommitOp {
+        kind: 14,
+        id: id(1),
+        version: 2,
+        op: Op::Delete,
+    };
+    forbidden(w.commit(vec![gone]), "a delete of kind 14");
+    let big = vec![3u8; 20 * 1024];
+    forbidden(w.upload_blobs(&[&big]), "a limited writer uploads");
+    assert_eq!(page(a.as_ref(), 0, 10, false).head, 4, "only the four puts");
+    applied(
+        a.commit(vec![put(9, 1, None, b"owner")]),
+        "the owner writes kind 5",
+    );
+}
+
+/// A manager changes roles; a demoted credential loses what it could do, a
+/// promoted one manages, and the last manager stays a manager.
+fn manager_changes_role(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let b = granted(t, a.as_ref(), CredentialRole::Write, None);
+    let b_id = b.credential_key().id();
+    applied(b.commit(vec![put(1, 1, None, b"b")]), "writer writes");
+    a.set_role(b_id, CredentialRole::Read, None)
+        .expect("demote to read");
+    forbidden(b.commit(vec![put(2, 1, None, b"b")]), "demoted writer");
+    forbidden(
+        b.set_role(b_id, CredentialRole::Manage, None),
+        "a reader promotes itself",
+    );
+    a.set_role(b_id, CredentialRole::Manage, None)
+        .expect("promote");
+    let c = granted(t, b.as_ref(), CredentialRole::Read, None);
+    c.info().expect("granted by the promoted manager");
+    match a.set_role([0xee; 16], CredentialRole::Read, None) {
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {}
+        other => panic!("role of an unknown credential: {other:?}"),
+    }
+    // b demotes a; b is then the last manager and keeps its role.
+    let a_id = a.credential_key().id();
+    b.set_role(a_id, CredentialRole::Read, None)
+        .expect("demote a");
+    forbidden(a.revoke(b_id), "a reader revokes a manager");
+    forbidden(
+        b.set_role(b_id, CredentialRole::Write, None),
+        "last manager demotes itself",
+    );
+    forbidden(b.revoke(b_id), "last manager revokes itself");
+    b.revoke(a_id).expect("the manager revokes a");
+    b.info().expect("the last manager is still in");
+}
+
+// ------------------------------------------------------------ locator
+
+/// A manager adds locators, anyone finds the mailbox by them without a key.
+/// A mailbox keeps its two latest (old and new during a rotation), setting
+/// one again changes nothing, a reader sets none. A locator is not unique:
+/// another mailbox may hold it too, both are answered oldest first, and an
+/// abandoned one drops out.
+fn locate_finds_mailbox(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let m = a.mailbox().expect("open");
+    let (first, second, third) = (session_id(), session_id(), session_id());
+    assert!(t.locate(first).expect("unknown locator").is_empty());
+    a.set_locator(first).expect("manager sets the locator");
+    assert_eq!(t.locate(first).expect("locate"), vec![m]);
+    a.set_locator(second).expect("a second locator");
+    assert_eq!(
+        t.locate(first).expect("old locator"),
+        vec![m],
+        "old and new coexist"
+    );
+    assert_eq!(t.locate(second).expect("new locator"), vec![m]);
+    a.set_locator(first).expect("the same pair again");
+    a.set_locator(third).expect("a third locator");
+    assert!(
+        t.locate(first).expect("oldest").is_empty(),
+        "the oldest is dropped"
+    );
+    assert_eq!(t.locate(second).expect("second"), vec![m]);
+    assert_eq!(t.locate(third).expect("third"), vec![m]);
+
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(r.set_locator(session_id()), "a reader sets the locator");
+
+    let other = owner(t);
+    let o = other.mailbox().expect("open");
+    other
+        .set_locator(second)
+        .expect("a locator another mailbox holds");
+    assert_eq!(
+        t.locate(second).expect("shared"),
+        vec![m, o],
+        "both, oldest first"
+    );
+    other.abandon().expect("the other side abandons");
+    assert_eq!(
+        t.locate(second).expect("after abandon"),
+        vec![m],
+        "deleted excluded"
+    );
+}
+
+/// The creator abandons its fresh mailbox, which holds a record, a locator
+/// and the unused recovery credential: every request on it is then
+/// not_found, its locator finds nothing. Nobody else may abandon it.
+fn abandoned_mailbox_is_gone(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    applied(a.commit(vec![put(1, 1, None, b"a")]), "a writes");
+    let loc = session_id();
+    a.set_locator(loc).expect("set locator");
+    // The recovery credential: granted, never used before the abandon.
+    let recovery = granted(t, a.as_ref(), CredentialRole::Manage, None);
+
+    a.abandon().expect("the creator abandons");
+    let gone = |r: Result<(), MailboxError>, what: &str| match r {
+        Err(MailboxError::Server(Code::NotFound)) => {}
+        other => panic!("{what} on an abandoned mailbox: {other:?}"),
+    };
+    gone(a.info().map(drop), "info");
+    gone(recovery.info().map(drop), "info of the recovery credential");
+    gone(recovery.abandon(), "abandon by the recovery credential");
+    gone(a.changes(0, 10, false).map(drop), "changes");
+    gone(a.commit(vec![put(2, 1, None, b"b")]).map(drop), "commit");
+    gone(a.record(KIND, id(1)).map(drop), "record");
+    gone(a.set_locator(session_id()), "set locator");
+    gone(a.abandon(), "abandon again");
+    assert!(t.locate(loc).expect("locate").is_empty(), "not located");
+
+    let b = owner(t);
+    b.set_locator(loc)
+        .expect("another mailbox sets the locator");
+    assert_eq!(
+        t.locate(loc).expect("locate"),
+        vec![b.mailbox().expect("open")]
+    );
+}
+
+/// Abandon needs the creator, still a manager, on a mailbox nobody else has
+/// used: a demoted creator, an enrolled device or another credential's
+/// commit each end it, and only the creator may abandon.
+fn abandon_needs_a_fresh_mailbox(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let g = granted(t, a.as_ref(), CredentialRole::Manage, None);
+    forbidden(g.abandon(), "a granted manager abandons");
+    g.set_role(a.credential_key().id(), CredentialRole::Read, None)
+        .expect("demote the creator");
+    forbidden(a.abandon(), "the creator demoted to read");
+
+    let b = owner(t);
+    let e = enrolled(t, b.as_ref());
+    forbidden(b.abandon(), "another device enrolled");
+    forbidden(e.abandon(), "an enrolled device abandons");
+
+    let c = owner(t);
+    let w = granted(t, c.as_ref(), CredentialRole::Write, None);
+    applied(
+        w.commit(vec![put(1, 1, None, b"w")]),
+        "another credential writes",
+    );
+    forbidden(c.abandon(), "another credential committed");
+
+    for (x, what) in [(&a, "a"), (&b, "b"), (&c, "c")] {
+        x.info()
+            .unwrap_or_else(|e| panic!("{what} still there: {e:?}"));
+    }
+}
+
+/// `parent` creates a child of `kind` owned by a fresh key; the owner's
+/// client comes back with the child open.
+fn child(
+    t: &mut dyn ConformanceTarget,
+    parent: &dyn MailboxApi,
+    kind: ChildKind,
+) -> (Box<dyn MailboxApi>, MailboxCreated) {
+    let mut o = t.client();
+    let created = parent
+        .create_child(kind, o.credential_key().to_bytes(), b"child")
+        .unwrap_or_else(|e| panic!("create child {kind:?}: {e:?}"));
+    assert_ne!(
+        Some(created.mailbox_id),
+        parent.mailbox(),
+        "a child is a mailbox of its own"
+    );
+    o.open(created.mailbox_id);
+    (o, created)
+}
+
+/// A manager of an account mailbox creates a child owned by a fresh key.
+/// The owner commits and reads in it, under the child's own plan (shared:
+/// 80 credentials, contact: 4); the child holds no grandchild and takes no
+/// enroll ticket; a reader of the parent creates nothing; the parent is not
+/// abandoned while a child lives, and is once its owners deleted them.
+fn child_round_trip(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let (o, created) = child(t, a.as_ref(), ChildKind::Shared);
+    let info = o.info().expect("the owner signs info in its child");
+    assert_eq!(
+        (info.incarnation, info.wake_topic),
+        (created.incarnation, created.wake_topic)
+    );
+    assert_eq!(info.limits.max_credentials, 80, "plan shared");
+    assert_eq!(info.usage.credentials, 1, "the owner alone");
+    assert_eq!(
+        applied(o.commit(vec![put(1, 1, None, b"shared")]), "owner writes"),
+        vec![Some(1)]
+    );
+    let rec = o
+        .record(KIND, id(1))
+        .expect("owner reads")
+        .expect("its record");
+    assert_eq!(rec.body, Some(Body::Inline(b"shared".to_vec())));
+    assert_eq!(seqs(&page(o.as_ref(), 0, 10, false).records), vec![1]);
+    assert_eq!(
+        usage(a.as_ref()).1,
+        0,
+        "the parent counts none of the child"
+    );
+
+    let (c, _) = child(t, a.as_ref(), ChildKind::Contact);
+    assert_eq!(
+        c.info().expect("contact owner").limits.max_credentials,
+        4,
+        "plan contact"
+    );
+
+    let stranger = t.client();
+    forbidden(
+        o.create_child(
+            ChildKind::Contact,
+            stranger.credential_key().to_bytes(),
+            b"x",
+        ),
+        "a child of a child",
+    );
+    let r = granted(t, a.as_ref(), CredentialRole::Read, None);
+    forbidden(
+        r.create_child(
+            ChildKind::Shared,
+            stranger.credential_key().to_bytes(),
+            b"x",
+        ),
+        "a reader of the parent creates a child",
+    );
+    match a.create_child(ChildKind::Shared, a.credential_key().to_bytes(), b"x") {
+        Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+        other => panic!("an owner key some mailbox holds: {other:?}"),
+    }
+    let mut n = t.client();
+    let ticket = o
+        .issue_ticket(n.credential_key(), now())
+        .expect("issue_ticket");
+    forbidden(n.enroll(&ticket, b"device"), "an enroll ticket of a child");
+
+    // `a` is no longer fresh (its reader made a request): a new parent
+    // shows the child rule alone.
+    let p = owner(t);
+    let (po, _) = child(t, p.as_ref(), ChildKind::Contact);
+    forbidden(p.abandon(), "a parent with a live child");
+    po.abandon().expect("the owner deletes its child");
+    match po.info() {
+        Err(MailboxError::Server(Code::NotFound)) => {}
+        other => panic!("a deleted child: {other:?}"),
+    }
+    p.abandon().expect("the parent once its child is gone");
+
+    o.abandon()
+        .expect("the owner deletes its child at any time");
+    c.abandon().expect("the contact owner deletes its child");
+    a.info().expect("the parent stays");
+}
+
+/// The owner grants a member's key: it reads and writes at once, revokes
+/// neither the owner nor the child, and once the owner revokes it, gets
+/// nothing more.
+fn child_grant_and_revoke(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let (o, _) = child(t, a.as_ref(), ChildKind::Shared);
+    applied(o.commit(vec![put(1, 1, None, b"owner")]), "owner writes");
+    let m = granted(t, o.as_ref(), CredentialRole::Write, None);
+    let rec = m
+        .record(KIND, id(1))
+        .expect("member reads")
+        .expect("the owner's record");
+    assert_eq!(rec.body, Some(Body::Inline(b"owner".to_vec())));
+    assert_eq!(
+        applied(m.commit(vec![put(2, 1, None, b"member")]), "member writes"),
+        vec![Some(2)]
+    );
+    forbidden(
+        m.revoke(o.credential_key().id()),
+        "a member revokes the owner",
+    );
+    forbidden(m.abandon(), "a member deletes the child");
+    assert_eq!(usage(o.as_ref()).2, 2, "owner and member");
+
+    o.revoke(m.credential_key().id())
+        .expect("the owner revokes the member");
+    for (what, r) in [
+        ("info", m.info().map(drop)),
+        ("record", m.record(KIND, id(1)).map(drop)),
+        ("changes", m.changes(0, 10, false).map(drop)),
+        ("commit", m.commit(vec![put(3, 1, None, b"x")]).map(drop)),
+    ] {
+        match r {
+            Err(MailboxError::Server(ErrorCode::RevokedCredential)) => {}
+            other => panic!("revoked member, {what}: {other:?}"),
+        }
+    }
+    assert_eq!(usage(o.as_ref()).2, 1, "the owner alone");
+    assert_eq!(seqs(&page(o.as_ref(), 0, 10, false).records), vec![1, 2]);
+
+    // With another manager in, the owner still cannot revoke itself: a
+    // child keeps its owner until deleted. No recovery locator on a child.
+    let mg = granted(t, o.as_ref(), CredentialRole::Manage, None);
+    forbidden(
+        o.revoke(o.credential_key().id()),
+        "the owner revokes itself",
+    );
+    forbidden(o.set_locator(session_id()), "the owner sets a locator");
+    forbidden(mg.set_locator(session_id()), "a manager sets a locator");
+    o.info().expect("the owner is still in");
 }

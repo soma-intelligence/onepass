@@ -617,8 +617,19 @@ pub enum ErrorCode {
     RateLimited,
     Retry,
     /// 404 for a method and path the mailbox does not serve, so a client can
-    /// tell a wrong base URL from a record that is absent (`NotFound`).
+    /// tell a wrong base URL from a record that is absent (`Absent`).
     NoRoute,
+    /// 403: the credential's role does not allow the request (a reader
+    /// that commits, a limited writer outside its kinds, a non-manager that
+    /// grants, changes a role or revokes another credential, the last
+    /// manager or an owner that would lose its place). Appended after
+    /// `NoRoute`: the codes before it keep their bytes.
+    Forbidden,
+    /// 404 from the record route for a key the mailbox does not hold, so a
+    /// client can tell an absent record from a gone mailbox (`NotFound`,
+    /// which keeps that one meaning on every route). Appended after
+    /// `Forbidden`: the codes before it keep their bytes.
+    Absent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -629,6 +640,191 @@ pub struct ErrorBody {
 
 impl Message for ErrorBody {
     fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+// ------------------------------------------------------------------ roles
+
+/// What a credential may do in its mailbox (spec D.7). The server enforces
+/// it as defence in depth; a client never reads it to decide a right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CredentialRole {
+    /// Reads only.
+    Read,
+    /// Reads and writes; with `put_kinds`, puts only those kinds and
+    /// deletes nothing.
+    Write,
+    /// Writes, grants, changes roles, revokes other credentials.
+    Manage,
+}
+
+/// The 256 bit kind set of `put_kinds`: bit k (byte k / 8, bit k % 8 from
+/// the least significant, as Postgres `get_bit` numbers them) is kind k.
+pub fn put_kinds_of(kinds: &[u8]) -> [u8; 32] {
+    let mut set = [0u8; 32];
+    for &k in kinds {
+        set[usize::from(k / 8)] |= 1 << (k % 8);
+    }
+    set
+}
+
+/// Kind `kind` is in the set.
+pub fn put_kinds_allow(set: &[u8; 32], kind: u8) -> bool {
+    set[usize::from(kind / 8)] & (1 << (kind % 8)) != 0
+}
+
+fn role_check(role: CredentialRole, put_kinds: &Option<[u8; 32]>) -> Result<(), ProtoError> {
+    if put_kinds.is_some() && role != CredentialRole::Write {
+        return Err(ProtoError::Format("put_kinds without write role"));
+    }
+    Ok(())
+}
+
+/// `POST /v1/mailboxes/{m}/grants`: a manager adds a credential, no ticket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrantCredential {
+    #[serde(with = "crate::bytes::fixed")]
+    pub public_key: [u8; 32],
+    pub role: CredentialRole,
+    #[serde(with = "crate::bytes::opt_fixed")]
+    pub put_kinds: Option<[u8; 32]>,
+    #[serde(with = "crate::bytes::vec")]
+    pub label: Vec<u8>,
+}
+
+impl Message for GrantCredential {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.label.len() > LABEL_MAX {
+            return Err(ProtoError::TooLarge("label"));
+        }
+        role_check(self.role, &self.put_kinds)
+    }
+}
+
+/// `PUT /v1/mailboxes/{m}/credentials/{c}/role`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetCredentialRole {
+    pub role: CredentialRole,
+    #[serde(with = "crate::bytes::opt_fixed")]
+    pub put_kinds: Option<[u8; 32]>,
+}
+
+impl Message for SetCredentialRole {
+    fn check(&self) -> Result<(), ProtoError> {
+        role_check(self.role, &self.put_kinds)
+    }
+}
+
+impl Message for CredentialRole {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------- locator
+
+/// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): the 16 bytes
+/// the client derives from the Secret Key. A mailbox keeps its two latest
+/// locators (old and new until phase 3 of a rotation); a third drops the
+/// oldest. Another mailbox may hold the same locator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetLocator {
+    #[serde(with = "crate::bytes::fixed")]
+    pub locator: [u8; 16],
+}
+
+impl Message for SetLocator {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// Most mailboxes one lookup answers (spec D.4).
+pub const LOCATED_MAX: usize = 8;
+
+/// `POST /v1/locate` (unsigned, spec D.4): the locator goes in the body, so
+/// it never reaches a URL log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocateRequest {
+    #[serde(with = "crate::bytes::fixed")]
+    pub locator: [u8; 16],
+}
+
+impl Message for LocateRequest {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// `200` of `POST /v1/locate`: the live mailboxes that registered the
+/// locator, oldest registration first, 1 to `LOCATED_MAX`, each once (none
+/// is `404 not_found`). Several mailboxes may share a locator (two devices
+/// that raced a migration, D.5; a squatter who holds the Secret Key): the
+/// client tries each with its recovery credential and keeps the one the
+/// core verifies as its account. An id is only where to look.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Located {
+    #[serde(with = "crate::bytes::fixed_list")]
+    pub mailbox_ids: Vec<MailboxId>,
+}
+
+impl Message for Located {
+    fn leading_list_cap() -> Option<(&'static str, usize)> {
+        Some(("mailbox_ids", LOCATED_MAX))
+    }
+
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.mailbox_ids.is_empty() {
+            return Err(ProtoError::Format("no mailbox located"));
+        }
+        if self.mailbox_ids.len() > LOCATED_MAX {
+            return Err(ProtoError::TooLarge("mailbox_ids"));
+        }
+        let unique: BTreeSet<&MailboxId> = self.mailbox_ids.iter().collect();
+        if unique.len() != self.mailbox_ids.len() {
+            return Err(ProtoError::Format("mailbox located twice"));
+        }
+        Ok(())
+    }
+}
+
+// --------------------------------------------------------------- children
+
+/// What a child mailbox holds (sharing spec 13.3). Its plan follows: plan
+/// `shared` or plan `contact` of `seed.sql`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChildKind {
+    /// A shared vault or a family.
+    Shared,
+    /// The zone of a pair of contacts.
+    Contact,
+}
+
+impl Message for ChildKind {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// `POST /v1/mailboxes/{m}/children` (a manager of an account mailbox):
+/// creates a child whose only credential is `owner_public_key`, a fresh
+/// key, as owner and manager. Answered with `MailboxCreated`. Members join
+/// the child through grants by its owner, never by enroll ticket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateChild {
+    pub kind: ChildKind,
+    #[serde(with = "crate::bytes::fixed")]
+    pub owner_public_key: [u8; 32],
+    #[serde(with = "crate::bytes::vec")]
+    pub label: Vec<u8>,
+}
+
+impl Message for CreateChild {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.label.len() > LABEL_MAX {
+            return Err(ProtoError::TooLarge("label"));
+        }
         Ok(())
     }
 }
@@ -803,12 +999,182 @@ mod tests {
             ErrorCode::RateLimited,
             ErrorCode::Retry,
             ErrorCode::NoRoute,
+            ErrorCode::Forbidden,
+            ErrorCode::Absent,
         ] {
             rt(ErrorBody {
                 code,
                 retry_after: Some(30),
             });
         }
+        for role in [
+            CredentialRole::Read,
+            CredentialRole::Write,
+            CredentialRole::Manage,
+        ] {
+            rt(role);
+            rt(SetCredentialRole {
+                role,
+                put_kinds: None,
+            });
+            rt(GrantCredential {
+                public_key: [6; 32],
+                role,
+                put_kinds: None,
+                label: b"follower".to_vec(),
+            });
+        }
+        let mut kinds = [0u8; 32];
+        kinds[1] = 0b1100_0000;
+        kinds[2] = 0b0000_0011;
+        rt(GrantCredential {
+            public_key: [7; 32],
+            role: CredentialRole::Write,
+            put_kinds: Some(kinds),
+            label: vec![],
+        });
+        rt(SetCredentialRole {
+            role: CredentialRole::Write,
+            put_kinds: Some(kinds),
+        });
+    }
+
+    /// The codes before `Forbidden` keep their bytes: it was appended.
+    #[test]
+    fn error_code_forbidden_appended() {
+        let body = |code| {
+            encode(&ErrorBody {
+                code,
+                retry_after: None,
+            })
+        };
+        // Frozen before the change: version, variant index 13, no retry_after.
+        assert_eq!(body(ErrorCode::NoRoute), [PROTO_VERSION, 13, 0]);
+        assert_eq!(body(ErrorCode::Retry), [PROTO_VERSION, 12, 0]);
+        assert_eq!(body(ErrorCode::Malformed), [PROTO_VERSION, 0, 0]);
+        assert_eq!(body(ErrorCode::Forbidden), [PROTO_VERSION, 14, 0]);
+        assert_eq!(body(ErrorCode::Absent), [PROTO_VERSION, 15, 0]);
+    }
+
+    #[test]
+    fn put_kinds_only_with_write_role() {
+        let kinds = Some([0xffu8; 32]);
+        for role in [CredentialRole::Read, CredentialRole::Manage] {
+            let g = GrantCredential {
+                public_key: [1; 32],
+                role,
+                put_kinds: kinds,
+                label: vec![],
+            };
+            assert_eq!(
+                decode::<GrantCredential>(&encode(&g)),
+                Err(ProtoError::Format("put_kinds without write role"))
+            );
+            let s = SetCredentialRole {
+                role,
+                put_kinds: kinds,
+            };
+            assert_eq!(
+                decode::<SetCredentialRole>(&encode(&s)),
+                Err(ProtoError::Format("put_kinds without write role"))
+            );
+        }
+        let long = GrantCredential {
+            public_key: [1; 32],
+            role: CredentialRole::Read,
+            put_kinds: None,
+            label: vec![b'a'; LABEL_MAX + 1],
+        };
+        assert_eq!(
+            decode::<GrantCredential>(&encode(&long)),
+            Err(ProtoError::TooLarge("label"))
+        );
+    }
+
+    /// A child kind is one varint (Shared 0, Contact 1), then the owner key
+    /// raw and the label with its length; a label over 64 bytes is refused.
+    #[test]
+    fn child_messages() {
+        for kind in [ChildKind::Shared, ChildKind::Contact] {
+            rt(CreateChild {
+                kind,
+                owner_public_key: [6; 32],
+                label: b"vault".to_vec(),
+            });
+        }
+        let mut want = vec![PROTO_VERSION, 1];
+        want.extend([6u8; 32]);
+        want.extend([2, b'h', b'i']);
+        assert_eq!(
+            encode(&CreateChild {
+                kind: ChildKind::Contact,
+                owner_public_key: [6; 32],
+                label: b"hi".to_vec(),
+            }),
+            want
+        );
+        assert_eq!(encode(&ChildKind::Shared), [PROTO_VERSION, 0]);
+        let long = CreateChild {
+            kind: ChildKind::Shared,
+            owner_public_key: [6; 32],
+            label: vec![b'a'; LABEL_MAX + 1],
+        };
+        assert_eq!(
+            decode::<CreateChild>(&encode(&long)),
+            Err(ProtoError::TooLarge("label"))
+        );
+        let mut bad_kind = want.clone();
+        bad_kind[1] = 2;
+        assert!(decode::<CreateChild>(&bad_kind).is_err());
+        assert!(decode::<CreateChild>(&want[..want.len() - 1]).is_err());
+    }
+
+    /// A locator is 16 raw bytes; a lookup answers 1 to 8 distinct mailbox
+    /// ids, in the server's order (oldest first), nothing else.
+    #[test]
+    fn locator_messages() {
+        rt(SetLocator { locator: [3; 16] });
+        rt(LocateRequest { locator: [3; 16] });
+        let mut want = vec![PROTO_VERSION];
+        want.extend([3u8; 16]);
+        assert_eq!(encode(&SetLocator { locator: [3; 16] }), want);
+        assert_eq!(encode(&LocateRequest { locator: [3; 16] }), want);
+        let ids: Vec<MailboxId> = (0..LOCATED_MAX as u8).map(|i| [9 - i; 16]).collect();
+        rt(Located {
+            mailbox_ids: ids.clone(),
+        });
+        rt(Located {
+            mailbox_ids: vec![[4; 16]],
+        });
+        let bad = |ids: Vec<MailboxId>| decode::<Located>(&encode(&Located { mailbox_ids: ids }));
+        assert_eq!(bad(vec![]), Err(ProtoError::Format("no mailbox located")));
+        assert_eq!(
+            bad(vec![[1; 16], [2; 16], [1; 16]]),
+            Err(ProtoError::Format("mailbox located twice"))
+        );
+        let mut nine = ids;
+        nine.push([0x77; 16]);
+        assert!(matches!(bad(nine), Err(ProtoError::TooLarge(_))));
+        let mut short = vec![PROTO_VERSION];
+        short.extend([3u8; 15]);
+        assert!(decode::<LocateRequest>(&short).is_err());
+    }
+
+    /// Bit k of `put_kinds` is kind k: byte k / 8, bit k % 8 from the least
+    /// significant (Postgres `get_bit`).
+    #[test]
+    fn put_kinds_bits() {
+        let set = put_kinds_of(&[14, 15, 16, 17]);
+        assert_eq!(set[1], 0b1100_0000);
+        assert_eq!(set[2], 0b0000_0011);
+        assert!(
+            set.iter()
+                .enumerate()
+                .all(|(i, b)| i == 1 || i == 2 || *b == 0)
+        );
+        assert!(put_kinds_allow(&set, 14) && put_kinds_allow(&set, 17));
+        assert!(!put_kinds_allow(&set, 13) && !put_kinds_allow(&set, 18));
+        assert!(put_kinds_allow(&put_kinds_of(&[255]), 255));
     }
 
     #[test]
