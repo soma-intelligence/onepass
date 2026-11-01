@@ -13,7 +13,7 @@ struct RootView: View {
     #endif
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The vault door playing between the lock screen and the vault (iPhone and iPad).
+    /// The split-screen passage playing between the lock screen and the vault (iPhone and iPad).
     @State private var vaultPassage: VaultPassage.Direction?
     #endif
 
@@ -21,7 +21,7 @@ struct RootView: View {
         content
             .animation(.smooth(duration: 0.25), value: route)
             #if os(iOS)
-            // Unlock: the wheel turns once, the door swings open, the vault shows. Lock: the reverse.
+            // Unlock: the mark turns, the screen splits open onto the vault. Lock: the reverse.
             // Reduce Motion keeps the plain fade.
             .overlay {
                 if let direction = vaultPassage {
@@ -166,44 +166,106 @@ struct RootView: View {
 }
 
 #if os(iOS)
-/// The vault illustration as a short passage over the screen change. Opening: one turn of the
-/// wheel, the door swings open, then everything fades into the vault. Closing: the door swings
-/// shut over the lock screen, the wheel turns back, then it fades. About 1.3 s, touches pass.
+/// A short passage over the screen change: the screen splits at its middle with the Lattice mark
+/// on the seam. Opening: the mark gives a quick quarter turn, then the top half slides up and the
+/// bottom half slides down onto the vault while the mark shrinks away. Closing: the halves slide
+/// in and meet over the lock screen, the mark turns back, then the passage fades. About 0.5 s,
+/// touches pass. Reduce Motion: a plain quick crossfade.
 struct VaultPassage: View {
     enum Direction { case opening, closing }
 
     let direction: Direction
     let done: () -> Void
-    @State private var wheel: Double = 0
-    @State private var door: Double = 0
-    @State private var shown = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
+    /// 0: the halves meet at the seam. 1: both are off screen.
+    @State private var parted: CGFloat
+    @State private var turn: Double
+    @State private var markShown: Bool
+    @State private var shown: Bool
+
+    init(direction: Direction, done: @escaping () -> Void) {
+        self.direction = direction
+        self.done = done
+        let opening = direction == .opening
+        _parted = State(initialValue: opening ? 0 : 1)
+        _turn = State(initialValue: opening ? 0 : 90)
+        _markShown = State(initialValue: opening)
+        _shown = State(initialValue: true)
+    }
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .systemBackground).ignoresSafeArea()
-            VaultIllustration(size: 300, tint: Theme.accent, wheelTurn: wheel, doorOpen: door)
+        GeometryReader { proxy in
+            let travel = proxy.size.height / 2 + 24
+            ZStack {
+                VStack(spacing: 0) {
+                    half(seamAtBottom: true).offset(y: -parted * travel)
+                    half(seamAtBottom: false).offset(y: parted * travel)
+                }
+                AppGlyph(size: 88)
+                    .rotationEffect(.degrees(turn))
+                    .scaleEffect(markShown ? 1 : 0.6)
+                    .opacity(markShown ? 1 : 0)
+            }
         }
+        .ignoresSafeArea()
         .opacity(shown ? 1 : 0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .task {
-            if direction == .closing {
-                wheel = 360
-                door = 1
-                withAnimation(.spring(duration: 0.5, bounce: 0.1)) { door = 0 }
-                try? await Task.sleep(for: .milliseconds(450))
-                withAnimation(.easeInOut(duration: 0.55)) { wheel = 0 }
-                try? await Task.sleep(for: .milliseconds(600))
+            if reduceMotion {
+                await crossfade()
+            } else if direction == .opening {
+                await open()
             } else {
-                withAnimation(.easeInOut(duration: 0.6)) { wheel = 360 }
-                try? await Task.sleep(for: .milliseconds(600))
-                withAnimation(.spring(duration: 0.55, bounce: 0.15)) { door = 1 }
-                try? await Task.sleep(for: .milliseconds(450))
+                await close()
             }
-            withAnimation(.easeOut(duration: 0.25)) { shown = false }
-            try? await Task.sleep(for: .milliseconds(260))
             done()
         }
+    }
+
+    /// One half of the screen in the system background, a hairline and a soft shadow on its seam edge.
+    private func half(seamAtBottom: Bool) -> some View {
+        Color(uiColor: .systemBackground)
+            .overlay(alignment: seamAtBottom ? .bottom : .top) {
+                Rectangle()
+                    .fill(Color(uiColor: .separator))
+                    .frame(height: 1 / displayScale)
+            }
+            .shadow(color: .black.opacity(0.14), radius: 10, y: seamAtBottom ? 3 : -3)
+            .zIndex(seamAtBottom ? 1 : 0)
+    }
+
+    private func open() async {
+        withAnimation(.snappy(duration: 0.22)) { turn = 90 }
+        try? await Task.sleep(for: .milliseconds(120))
+        withAnimation(.spring(duration: 0.36, bounce: 0)) { parted = 1 }
+        withAnimation(.easeOut(duration: 0.2)) { markShown = false }
+        try? await Task.sleep(for: .milliseconds(360))
+    }
+
+    private func close() async {
+        withAnimation(.spring(duration: 0.3, bounce: 0)) { parted = 0 }
+        withAnimation(.easeOut(duration: 0.2).delay(0.08)) { markShown = true }
+        try? await Task.sleep(for: .milliseconds(240))
+        withAnimation(.snappy(duration: 0.22)) { turn = 0 }
+        try? await Task.sleep(for: .milliseconds(200))
+        withAnimation(.easeOut(duration: 0.14)) { shown = false }
+        try? await Task.sleep(for: .milliseconds(150))
+    }
+
+    /// Reduce Motion: no slide, no turn. The halves stay closed and the cover fades.
+    private func crossfade() async {
+        parted = 0
+        turn = 0
+        markShown = true
+        if direction == .closing {
+            shown = false
+            withAnimation(.easeOut(duration: 0.12)) { shown = true }
+            try? await Task.sleep(for: .milliseconds(130))
+        }
+        withAnimation(.easeOut(duration: 0.18)) { shown = false }
+        try? await Task.sleep(for: .milliseconds(190))
     }
 }
 #endif
