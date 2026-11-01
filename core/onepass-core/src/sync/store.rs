@@ -5565,7 +5565,7 @@ mod tests {
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, crate::format::STORE_USER_VERSION);
     }
 
     #[test]
