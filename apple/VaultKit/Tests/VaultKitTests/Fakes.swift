@@ -10,6 +10,7 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
         var invalidated = false
         var nextError: EnclaveError?
         var created = 0
+        var duringDecrypt: (@Sendable () -> Void)?
     }
     private let state = Mutex(State())
     let available: Bool
@@ -25,6 +26,8 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
 
     func invalidate() { state.withLock { $0.invalidated = true } }
     func failNextDecrypt(with error: EnclaveError) { state.withLock { $0.nextError = error } }
+    /// Runs while the next decryption "shows the system sheet" (another process writing meanwhile).
+    func duringNextDecrypt(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.duringDecrypt = action } }
     /// Keys created so far (a new enrollment creates one).
     var createdKeys: Int { state.withLock { $0.created } }
     func hasKey(tag: String) -> Bool { state.withLock { $0.keys.contains(tag) } }
@@ -43,6 +46,11 @@ final class FakeEnclaveKeyring: EnclaveKeyring {
     }
 
     func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
+        let during = state.withLock { s -> (@Sendable () -> Void)? in
+            defer { s.duringDecrypt = nil }
+            return s.duringDecrypt
+        }
+        during?()
         let (known, invalidated, next) = state.withLock { s -> (Bool, Bool, EnclaveError?) in
             let e = s.nextError
             s.nextError = nil

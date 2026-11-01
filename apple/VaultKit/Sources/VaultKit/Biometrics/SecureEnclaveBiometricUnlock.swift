@@ -172,7 +172,9 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     /// Security, CryptoTokenKit and LocalAuthentication errors, following `NSUnderlyingErrorKey`
     /// down to the first one that says something. Only a key that is gone (`errSecItemNotFound`,
     /// token object not found, invalidated device key) or a biometry no longer enrolled counts as an
-    /// invalidation; a cancel, a fallback, a lockout or a failed match never does. Anything else is
+    /// invalidation; a cancel, a fallback, a lockout or a failed match never does. Only the user's
+    /// own cancel is `.cancelled`: one by the app or the system, a non-interactive context or a
+    /// token asking for authentication again is `.interrupted`. Anything else is
     /// `.failed`, which `BiometricUnlock` answers with the password while keeping the enrollment.
     static func classify(_ error: NSError) -> EnclaveError {
         var current: NSError? = error
@@ -189,7 +191,8 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
         switch ns.domain {
         case LAError.errorDomain:
             switch LAError.Code(rawValue: ns.code) {
-            case .userCancel, .appCancel, .systemCancel, .notInteractive: return .cancelled
+            case .userCancel: return .cancelled
+            case .appCancel, .systemCancel, .notInteractive: return .interrupted
             case .userFallback: return .userFallback
             case .authenticationFailed: return .authenticationFailed
             case .biometryNotEnrolled: return .biometryNotEnrolled
@@ -199,7 +202,8 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
             }
         case tokenErrorDomain:
             switch ns.code {
-            case -4, -9: return .cancelled  // canceled by user, authentication needed
+            case -4: return .cancelled  // canceled by user
+            case -9: return .interrupted  // authentication needed
             case -5: return .authenticationFailed
             case -6, -10: return .keyInvalidated  // object not found, invalidated device key
             default: return nil

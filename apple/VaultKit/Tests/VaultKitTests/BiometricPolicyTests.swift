@@ -160,6 +160,53 @@ struct BiometricPolicyTests {
         #expect(try await unlock.unlock(accountID: account, prompt: "x") == auk)
     }
 
+    /// Every failure that keeps the enrollment flags it for a refresh, except the user's own cancel.
+    @Test(arguments: [
+        (EnclaveError.interrupted, BiometricError.cancelled),
+        (.userFallback, .passwordRequired(reason: .userChosePassword)),
+        (.biometryLockout, .passwordRequired(reason: .lockedOut)),
+        (.unavailable, .unavailable),
+    ] as [(EnclaveError, BiometricError)])
+    func keptFailureFlagsRefresh(error: EnclaveError, expected: BiometricError) async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: error)
+        await #expect(throws: expected) { _ = try await unlock.unlock(accountID: account, prompt: "x") }
+        #expect(unlock.isEnrolled(accountID: account))
+        #expect(unlock.needsRefresh(accountID: account))
+    }
+
+    @Test func userCancelDoesNotFlagRefresh() async throws {
+        let (unlock, keyring, _, _) = make()
+        try unlock.enroll(auk: auk, accountID: account, allowWatch: false)
+        keyring.failNextDecrypt(with: .cancelled)
+        await #expect(throws: BiometricError.cancelled) { _ = try await unlock.unlock(accountID: account, prompt: "x") }
+        #expect(!unlock.needsRefresh(accountID: account))
+    }
+
+    /// While the Face ID sheet is up, the extension unlocks with the password (newer record): the
+    /// refresh flag goes onto that record, never onto the one read before the sheet.
+    @Test func refreshFlagKeepsANewerRecord() async throws {
+        let keyring = FakeEnclaveKeyring()
+        let keychain = InMemoryKeychain()
+        let clock = FakeClock()
+        let app = BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock, policy: BiometricPolicy())
+        let extensionSide = BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock, policy: BiometricPolicy())
+        try app.enroll(auk: auk, accountID: account, allowWatch: false)
+        let enrolledAt = clock.now
+        let accountID = account
+        keyring.duringNextDecrypt {
+            clock.advance(86400)
+            try? extensionSide.notePasswordUnlock(accountID: accountID)
+        }
+        keyring.failNextDecrypt(with: .failed(code: -3))
+        await #expect(throws: BiometricError.passwordRequired(reason: .unverified)) {
+            _ = try await app.unlock(accountID: account, prompt: "x")
+        }
+        #expect(app.needsRefresh(accountID: account))
+        #expect(app.passwordDueDate(accountID: account) == enrolledAt.addingTimeInterval(15 * 86400))
+    }
+
     @Test func unknownNonEnclaveErrorKeepsEnrollment() async throws {
         let unlock = BiometricUnlock(
             keyring: ThrowingKeyring(error: NSError(domain: "com.apple.unknown", code: 42)),
@@ -313,15 +360,16 @@ struct EnclaveErrorClassificationTests {
 
     @Test(arguments: [
         (token, -4, EnclaveError.cancelled),
-        (token, -9, .cancelled),
+        (token, -9, .interrupted),
         (token, -5, .authenticationFailed),
         (token, -6, .keyInvalidated),
         (token, -10, .keyInvalidated),
         (token, -3, .failed(code: -3)),
         (token, -7, .failed(code: -7)),
         (LAError.errorDomain, LAError.Code.userCancel.rawValue, .cancelled),
-        (LAError.errorDomain, LAError.Code.systemCancel.rawValue, .cancelled),
-        (LAError.errorDomain, LAError.Code.appCancel.rawValue, .cancelled),
+        (LAError.errorDomain, LAError.Code.systemCancel.rawValue, .interrupted),
+        (LAError.errorDomain, LAError.Code.appCancel.rawValue, .interrupted),
+        (LAError.errorDomain, LAError.Code.notInteractive.rawValue, .interrupted),
         (LAError.errorDomain, LAError.Code.userFallback.rawValue, .userFallback),
         (LAError.errorDomain, LAError.Code.authenticationFailed.rawValue, .authenticationFailed),
         (LAError.errorDomain, LAError.Code.biometryLockout.rawValue, .biometryLockout),

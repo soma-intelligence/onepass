@@ -62,7 +62,7 @@ public enum VaultError: Error, Equatable, Sendable {
             switch error {
             case .unavailable, .biometryNotEnrolled: self = .biometricsUnavailable
             case .userFallback, .authenticationFailed: self = .passwordRequired
-            case .cancelled: self = .other(ErrorText.cancelled(VaultKitStrings.bundle))
+            case .cancelled, .interrupted: self = .other(ErrorText.cancelled(VaultKitStrings.bundle))
             case .biometryLockout: self = .other(PasswordReason.lockedOut.message)
             case .keyInvalidated: self = .other(PasswordReason.invalidated.message)
             case .failed(let code): self = .other(ErrorText.keychain(code).text)

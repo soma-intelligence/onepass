@@ -4,7 +4,11 @@ import os
 public enum EnclaveError: Error, Equatable, Sendable {
     /// Key gone or invalidated (biometry set changed).
     case keyInvalidated
+    /// The user cancelled the system sheet.
     case cancelled
+    /// Cancelled by the app or the system, or the token asked for authentication again (no
+    /// invalidation, but no proof of a usable key either).
+    case interrupted
     /// The user chose the password fallback in the system sheet.
     case userFallback
     /// The face or finger was not recognized (no invalidation).
@@ -123,14 +127,16 @@ public final class BiometricUnlock: Sendable {
         try save(enrollment)
     }
 
-    /// The last biometric unlock failed for a reason that kept the enrollment but may hide a stale
-    /// key (unknown error, failed match): the next password unlock wraps the AUK again, silently.
+    /// The last biometric unlock failed for a reason that kept the enrollment and may hide a stale key
+    /// (anything but the user's own cancel): the next password unlock wraps the AUK again, silently.
     public func needsRefresh(accountID: String) -> Bool {
         ((try? loadEnrollment(accountID)) ?? nil)?.needsRefresh == true
     }
 
-    private func markForRefresh(_ enrollment: BiometricEnrollment) {
-        var enrollment = enrollment
+    /// Reads the record again first: the extension (or the app) may have written a newer one while
+    /// the system sheet was up (a password unlock, a new key).
+    private func markForRefresh(accountID: String) {
+        guard var enrollment = (try? loadEnrollment(accountID)) ?? nil else { return }
         enrollment.needsRefresh = true
         try? save(enrollment)
     }
@@ -178,26 +184,31 @@ public final class BiometricUnlock: Sendable {
         } catch let error as EnclaveError {
             switch error {
             case .cancelled: throw BiometricError.cancelled
-            case .unavailable: throw BiometricError.unavailable
-            case .userFallback: throw BiometricError.passwordRequired(reason: .userChosePassword)
-            case .biometryLockout: throw BiometricError.passwordRequired(reason: .lockedOut)
-            case .authenticationFailed:
-                markForRefresh(enrollment)
-                throw BiometricError.passwordRequired(reason: .unverified)
             case .biometryNotEnrolled, .keyInvalidated:
                 disable(accountID: accountID, reason: "invalidated")
                 throw BiometricError.passwordRequired(reason: .invalidated)
-            case .failed(let code):
-                Self.log.error("biometric unlock failed \(code, privacy: .public): password asked, enrollment kept")
-                markForRefresh(enrollment)
-                throw BiometricError.passwordRequired(reason: .unverified)
+            default:
+                // Kept, but flagged: a stale key may surface under any of these codes, and the next
+                // password unlock replaces it instead of looping on Face ID.
+                markForRefresh(accountID: accountID)
+                switch error {
+                case .interrupted: throw BiometricError.cancelled
+                case .unavailable: throw BiometricError.unavailable
+                case .userFallback: throw BiometricError.passwordRequired(reason: .userChosePassword)
+                case .biometryLockout: throw BiometricError.passwordRequired(reason: .lockedOut)
+                case .failed(let code):
+                    Self.log.error("biometric unlock failed \(code, privacy: .public): password asked, enrollment kept")
+                    throw BiometricError.passwordRequired(reason: .unverified)
+                default:
+                    throw BiometricError.passwordRequired(reason: .unverified)
+                }
             }
         } catch is CancellationError {
             throw BiometricError.cancelled
         } catch {
             let ns = error as NSError
             Self.log.error("biometric unlock failed \(ns.domain, privacy: .public) \(ns.code, privacy: .public): password asked, enrollment kept")
-            markForRefresh(enrollment)
+            markForRefresh(accountID: accountID)
             throw BiometricError.passwordRequired(reason: .unverified)
         }
     }
