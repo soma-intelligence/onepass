@@ -241,7 +241,7 @@ fn custom_profile_from_ffi() {
 }
 
 #[test]
-fn contradictory_context_falls_back_and_too_many_rules_refused() {
+fn contradictory_context_falls_back() {
     let g = password_for_context(
         context(&["minlength: 20; maxlength: 10;"]),
         FfiPasswordProfile::Strong,
@@ -249,9 +249,34 @@ fn contradictory_context_falls_back_and_too_many_rules_refused() {
     .unwrap();
     assert!(g.fallback);
     assert_eq!(g.password.chars().count(), 24);
-    let many = vec!["minlength: 8;"; 9];
-    assert!(matches!(
-        password_for_context(context(&many), FfiPasswordProfile::Strong),
-        Err(OnePassError::InvalidInput { .. })
-    ));
+}
+
+#[test]
+fn oversized_rule_string_is_dropped_not_fatal() {
+    let oversized = format!("minlength: 8;{}", " ".repeat(1025 - 13));
+    assert_eq!(oversized.len(), 1025);
+    let g = password_for_context(
+        context(&[oversized.as_str(), "minlength: 30;"]),
+        FfiPasswordProfile::Strong,
+    )
+    .unwrap();
+    assert!(g.password.chars().count() >= 30);
+    // Alone, the oversized string leaves the profile alone.
+    let g =
+        password_for_context(context(&[oversized.as_str()]), FfiPasswordProfile::Strong).unwrap();
+    assert_eq!(g.password.chars().count(), 24);
+}
+
+#[test]
+fn ninth_rule_string_ignored() {
+    let mut rules = vec!["minlength: 8;"; 8];
+    rules.push("maxlength: 10;");
+    let g = password_for_context(context(&rules), FfiPasswordProfile::Strong).unwrap();
+    // The ninth string's maximum is never read: Strong stays at 24.
+    assert_eq!(g.password.chars().count(), 24);
+    // Blank strings do not count toward the 8.
+    let mut rules = vec![" "; 8];
+    rules.push("maxlength: 10;");
+    let g = password_for_context(context(&rules), FfiPasswordProfile::Strong).unwrap();
+    assert_eq!(g.password.chars().count(), 10);
 }

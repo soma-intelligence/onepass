@@ -22,10 +22,10 @@ use crate::{
 const TARGET_LENGTH: u32 = 20;
 /// Longest password generated, whatever the rules say.
 const MAX_LENGTH: u32 = 64;
-/// Most rule strings accepted by `password_for_context` (field,
-/// confirmation, quirk, with room to spare), as the bridge does.
+/// Most rule strings `password_for_context` reads (field, confirmation,
+/// quirk, with room to spare); later ones are ignored.
 const MAX_RULE_STRINGS: usize = 8;
-/// Longest rule string accepted by `password_for_context`.
+/// Longest rule string `password_for_context` reads; longer ones are dropped.
 const MAX_RULE_LEN: usize = 1024;
 /// Custom profile length bounds.
 const CUSTOM_LENGTHS: std::ops::RangeInclusive<u32> = 8..=64;
@@ -109,23 +109,25 @@ fn profile_to_core(p: FfiPasswordProfile) -> Result<Profile, OnePassError> {
 /// dropped, least trusted first, and the profile runs alone when nothing
 /// usable is left (`fallback`).
 ///
+/// Rule strings over 1024 bytes are dropped and only the first 8 left are
+/// read: the page writes them, so they never fail the request.
+///
 /// Errors: `Validation` on field `length` for a `Custom` length outside 8 to
-/// 64; `InvalidInput` (`rules`) for more than 8 rule strings or one over
-/// 1024 bytes; `Crypto` when the system random source fails.
+/// 64; `Crypto` when the system random source fails.
 #[uniffi::export]
 pub fn password_for_context(
     context: FfiPasswordContext,
     profile: FfiPasswordProfile,
 ) -> Result<FfiGenerated, OnePassError> {
     let profile = profile_to_core(profile)?;
+    // The field's and the confirmation's rules come from the page: limits
+    // drop what is over them, never fail the request.
     let rules: Vec<String> = context
         .rules
         .into_iter()
-        .filter(|r| !r.trim().is_empty())
+        .filter(|r| !r.trim().is_empty() && r.len() <= MAX_RULE_LEN)
+        .take(MAX_RULE_STRINGS)
         .collect();
-    if rules.len() > MAX_RULE_STRINGS || rules.iter().any(|r| r.len() > MAX_RULE_LEN) {
-        return Err(invalid("rules"));
-    }
     let ctx = PasswordContext {
         rules,
         quirk_rules: None,
