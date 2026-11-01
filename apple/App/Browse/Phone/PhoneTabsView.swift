@@ -279,36 +279,43 @@ struct PhoneNewItemSheet: View {
     }
 }
 
-/// Content scrolling up under the status bar and the navigation bar fades into a blur: a material
-/// masked by a gradient, strongest at the top edge, gone by the bar's bottom. Over the content,
-/// under the bar's own controls; never takes a touch.
+/// Content scrolling up under the status bar and the navigation bar fades out softly: the system's
+/// soft scroll edge effect blurs it, and a wash of the screen's background, nearly opaque at the
+/// top edge, eases to nothing a little below the bar. One continuous fade, no band, no seam.
+///
+/// No material here: a material under the bar sits inside the scroll edge effect's own backdrop,
+/// and the nested blur renders flat up to the bar's bottom, then drops to the material's real
+/// opacity there (the hard edge). A plain color gradient blurs cleanly. The wash also ends past
+/// the bar's bottom so no edge lines up with it. Over the content, under the bar's own controls
+/// (the large title stays sharp); never takes a touch.
 private struct TopBlurFade: ViewModifier {
     @MainActor static var statusBarHeight: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
         return scene?.keyWindow?.safeAreaInsets.top ?? 59
     }
 
+    /// Opacity along the wash, eased (smoothstep-like) so neither end shows a line.
+    private static let stops: [Gradient.Stop] = [
+        (0.00, 0.90), (0.20, 0.86), (0.38, 0.74), (0.52, 0.56),
+        (0.66, 0.36), (0.78, 0.19), (0.89, 0.07), (1.00, 0.00),
+    ].map { location, opacity in
+        Gradient.Stop(color: Color(uiColor: .systemGroupedBackground).opacity(opacity), location: location)
+    }
+
     func body(content: Content) -> some View {
-        content.overlay(alignment: .top) {
-            GeometryReader { _ in
-                // The status bar plus the compact navigation bar: the large title and the search
-                // field below stay sharp.
-                let height = Self.statusBarHeight + 64
-                Rectangle()
-                    .fill(.regularMaterial)
-                    .mask {
-                        LinearGradient(stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.45),
-                            .init(color: .black.opacity(0), location: 1),
-                        ], startPoint: .top, endPoint: .bottom)
-                    }
-                    .frame(height: height)
-                    .ignoresSafeArea(edges: .top)
+        content
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .overlay(alignment: .top) {
+                GeometryReader { _ in
+                    // The status bar, the compact navigation bar (about 52 pt), then some room to
+                    // fade out below it.
+                    LinearGradient(stops: Self.stops, startPoint: .top, endPoint: .bottom)
+                        .frame(height: Self.statusBarHeight + 100)
+                        .ignoresSafeArea(edges: .top)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
     }
 }
 
