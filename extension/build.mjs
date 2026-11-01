@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BROWSERS = ["chromium", "firefox", "safari"];
-const UI_PAGES = ["popup", "menu", "overlay", "save"];
+const UI_PAGES = ["popup", "menu", "overlay", "save", "passkey"];
 
 const CLASSIFIERS = ["heuristic", "gbm", "encoder"];
 const DEFAULT_CSP = "script-src 'self'; object-src 'none'";
@@ -103,6 +103,22 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false, dist = j
     ...common,
     entryPoints: [join(root, "src/content/index.ts")],
     outfile: join(out, "content.js"),
+    format: "iife",
+  });
+  // Passkeys (spec 3.2): the MAIN-world shim and its isolated relay, each a
+  // bundle of its own (the shim shares nothing with the extension's code).
+  await esbuild({
+    ...common,
+    define: { ...common.define, __PASSKEY_SHIM__: "true" },
+    entryPoints: [join(root, "src/content/passkey-shim.ts")],
+    outfile: join(out, "passkey-shim.js"),
+    format: "iife",
+  });
+  await esbuild({
+    ...common,
+    define: { ...common.define, __PASSKEY_RELAY__: "true" },
+    entryPoints: [join(root, "src/content/passkey.ts")],
+    outfile: join(out, "passkey-relay.js"),
     format: "iife",
   });
   for (const page of UI_PAGES) {

@@ -27,6 +27,7 @@ import { NeverSave } from "./never-save";
 import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
+import { type PasskeyWindows, Passkeys, createPasskeyRouter } from "./passkey";
 import { clearPenalty, hasPenalty, siteOf } from "./penalty";
 import { Planner, type PlanOrigins, framesFromSender, mainRoles } from "./planner";
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
@@ -499,9 +500,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     handlers.cs.classify = async (m, from) => (await handler)(m, from);
   }
 
+  // Passkeys (spec 3.2): their own listener beside the router.
+  const passkeys = new Passkeys({
+    session,
+    frames,
+    chain,
+    runtime: ext.runtime,
+    ...((ext as unknown as { windows?: PasskeyWindows }).windows ? { windows: (ext as unknown as { windows: PasskeyWindows }).windows } : {}),
+  });
+
   return {
     store,
     session,
+    passkeys,
     pairing,
     frames,
     menus,
@@ -550,6 +561,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void providerFlows.drop(tabId).catch(() => undefined);
       });
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
+      passkeys.install(ext);
+      ext.runtime.onMessage.addListener(createPasskeyRouter(ext.runtime, passkeys));
       // Ctrl+Shift+L / Command+Shift+L: smart fill in the active tab (a gesture of the user).
       ext.commands?.onCommand.addListener((command) => {
         if (command !== FILL_SMART_COMMAND) return;
