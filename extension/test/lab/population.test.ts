@@ -82,7 +82,8 @@ describe("fixtureFor", () => {
 
   it("jp_profile_gives_jp_postal_codes_and_phones", () => {
     const f = fixtureFor(profile({ country: "JP", lang: "ja" }), world.sites, world.fixture);
-    const ids = itemsOf(f).filter((i) => i.type === "identity");
+    // The country cases (lab/gen/cases.ts) keep their own values in every vault.
+    const ids = itemsOf(f).filter((i) => i.type === "identity" && !/ \(cas \d+\)$/.test(i.title));
     expect(ids.length).toBeGreaterThan(0);
     for (const i of ids) {
       const a = i.fields.address as { postal_code: string; country: string };

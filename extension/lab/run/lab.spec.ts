@@ -20,7 +20,7 @@ import type { FixtureFile, Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
 import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
 import { groupOf } from "../gen/generate.ts";
-import { lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
+import { type CaseOutcome, countryCase, lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
 import { fixtureFor, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
@@ -216,10 +216,79 @@ batches().forEach((scenarios, k) => {
   });
 });
 
+/** One line of cases.jsonl. */
+interface CaseResult { id: string; name: string; verdict: CaseOutcome["verdict"] | "flaky"; cause?: string; retried: boolean; durationMs: number }
+
+// The country and region fixture cases (lab/gen/cases.ts), in the default
+// profile and the current driver set; not for a single-site repro. A failed
+// case is replayed once in a fresh paired profile: a pass then is `flaky`.
+const playCases = config.only === undefined && (world.cases ?? []).length > 0
+  && world.scenarios.some((s) => groupOf(s.driver) === "current");
+if (playCases) {
+  test("country cases", async ({ server }) => {
+    const cases = world.cases ?? [];
+    test.setTimeout(cases.length * 60_000 + 120_000);
+    const seenViolations = networkViolations().length;
+    const profile = profileOf({});
+    const closeErrors: CloseErrors = [];
+    let shared: Lab | undefined;
+    const play = async (c: (typeof cases)[number], lab: () => Promise<Lab>): Promise<CaseOutcome> => {
+      server.reset();
+      server.useFixture(world.fixture);
+      let l: Lab;
+      try {
+        l = await lab();
+      } catch (e) {
+        return { verdict: "lab_error", cause: (e as Error)?.message?.split("\n")[0] ?? String(e), durationMs: 0 };
+      }
+      return countryCase({ driver: extensionDriver(l), server, world, newPage: () => l.newPage() }, c);
+    };
+    try {
+      for (const c of cases) {
+        let out = await play(c, async () => (shared ??= await pairedLab(server, profile)));
+        let verdict: CaseResult["verdict"] = out.verdict;
+        let duration = out.durationMs;
+        let retried = false;
+        if (out.verdict === "lab_error" && shared) {
+          const broken: Lab = shared;
+          shared = undefined;
+          await broken.close().catch(() => undefined);
+        }
+        if (out.verdict !== "pass") {
+          retried = true;
+          let fresh: Lab | undefined;
+          try {
+            const second = await play(c, async () => (fresh = await pairedLab(server, profile)));
+            duration += second.durationMs;
+            if (second.verdict === "pass") verdict = "flaky";
+            else out = second;
+          } finally {
+            const used: Lab | undefined = fresh;
+            if (used) await closeInto(closeErrors, `${c.id} replay profile`, () => used.close());
+          }
+        }
+        const r: CaseResult = { id: c.id, name: c.name, verdict, ...(verdict !== "flaky" && out.cause ? { cause: out.cause } : {}), retried, durationMs: duration };
+        appendFileSync(state.cases, `${JSON.stringify(r)}\n`);
+        console.log(`${c.id} ${c.name}: ${verdict}${r.cause ? ` (${r.cause})` : ""}`);
+      }
+    } finally {
+      const last: Lab | undefined = shared;
+      shared = undefined;
+      if (last) await closeInto(closeErrors, "cases profile", () => last.close());
+    }
+    expect(networkViolations().slice(seenViolations), "responses from a non-loopback address or requests to an unplanned host").toEqual([]);
+    expect(closeErrors, "a browser of the country cases failed to close").toEqual([]);
+  });
+}
+
 if (isSmoke(config)) {
   test("smoke_matches_expected", () => {
     const lines = readFileSync(state.results, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Result);
-    const actual = Object.fromEntries(lines.map((r) => [`${r.site}:${r.driver}`, r.verdict === "flaky" ? "pass" : r.verdict]));
+    const caseLines = readFileSync(state.cases, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as CaseResult);
+    const actual = Object.fromEntries([
+      ...lines.map((r) => [`${r.site}:${r.driver}`, r.verdict === "flaky" ? "pass" : r.verdict]),
+      ...caseLines.map((r) => [r.id, r.verdict === "flaky" ? "pass" : r.verdict]),
+    ]);
     expect(existsSync(SMOKE_EXPECTED), `missing ${SMOKE_EXPECTED}; verdicts of this run:\n${JSON.stringify(actual, null, 2)}`).toBe(true);
     const expected = JSON.parse(readFileSync(SMOKE_EXPECTED, "utf8")) as Record<string, string>;
     const want = Object.fromEntries(Object.entries(expected).map(([id, v]) => [id, v === "flaky" ? "pass" : v]));

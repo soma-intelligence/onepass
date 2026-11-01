@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Patterns } from "../corpus/types.ts";
 import { expectationFor } from "./capabilities.ts";
+import { countryCases } from "./cases.ts";
 import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, passkeyPkcs8, password, person, totpSecret, userHandle } from "./data.ts";
 import { GENERATOR_VERSION } from "./model.ts";
 import { LAYOUTS } from "./layouts.ts";
@@ -123,9 +124,16 @@ export function generate(seed: string, opts: GenerateOptions): World {
     vaults: [{ name: VAULT, color: "#5856D6" }],
     items,
   };
+  // The country and region fixture cases: the same in every world, outside the seeded draw.
+  const cases = countryCases();
+  items.push(...cases.items);
   const hosts = new Set<string>(PROVIDERS.map((p) => PROVIDER_HOST[p]));
   for (const s of sites) for (const h of [s.host, s.lookalike?.host, s.frameHost]) if (h) hosts.add(h);
-  return { version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort(), ...(profiles ? { profiles } : {}) };
+  for (const h of cases.hosts) hosts.add(h);
+  return {
+    version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort(), cases: cases.cases,
+    ...(profiles ? { profiles } : {}),
+  };
 }
 
 /**

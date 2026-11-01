@@ -15,6 +15,7 @@
 // the page cannot satisfy are recorded as observations; only bench failures
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
 import type { Frame, Page } from "@playwright/test";
+import { CASE_PATH, caseMismatches, type CountryCase } from "../gen/cases.ts";
 import { passkeyPkcs8 } from "../gen/data.ts";
 import type { Expect, FieldSpec, Site, World } from "../gen/model.ts";
 import type { Behaviour } from "../gen/population.ts";
@@ -626,4 +627,51 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
   await sleep(LATE_GRACE_MS);
   o.events = server.events();
   return o;
+}
+
+/** A country case's verdict: pass, fail (with its cause) or lab_error (the bench, not OnePass). */
+export interface CaseOutcome { verdict: "pass" | "fail" | "lab_error"; cause?: string; durationMs: number }
+
+/** The fill reply can come 2.5 s after the pick: the controls are read until they match, up to this long. */
+const CASE_SETTLE_MS = 4_000;
+
+/** What each selector of `selectors` holds: a field's value, else the element's trimmed text (as the jsdom replay reads it). */
+function readControls(page: Page, selectors: string[]): Promise<Record<string, string>> {
+  return page.evaluate((sels) => Object.fromEntries(sels.map((s) => {
+    const el = document.querySelector(s);
+    if (!el) return [s, "\u0000missing"];
+    if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) return [s, el.value];
+    return [s, (el.textContent ?? "").trim()];
+  })), selectors);
+}
+
+/**
+ * One country case (lab/gen/cases.ts): the in-field menu of the case's name
+ * field, its identity item picked, then each control read once the fill
+ * settled. Nothing is submitted.
+ */
+export async function countryCase(env: ScenarioEnv, c: CountryCase): Promise<CaseOutcome> {
+  const started = Date.now();
+  let page: Page | undefined;
+  const done = (verdict: CaseOutcome["verdict"], cause?: string): CaseOutcome =>
+    ({ verdict, ...(cause ? { cause } : {}), durationMs: Date.now() - started });
+  try {
+    page = await env.newPage();
+    await goto(page, `https://${c.host}${CASE_PATH}`);
+    const menu = await env.driver.menuFill(page, page.mainFrame(), [c.field], c.title, true);
+    if (!menu.shown) return done("fail", "no_menu");
+    if (!menu.offered) return done("fail", "no_menu_item");
+    const selectors = Object.keys(c.expect);
+    const until = Date.now() + CASE_SETTLE_MS;
+    let wrong = caseMismatches(c, await readControls(page, selectors));
+    while (wrong.length > 0 && Date.now() < until) {
+      await sleep(250);
+      wrong = caseMismatches(c, await readControls(page, selectors));
+    }
+    return wrong.length === 0 ? done("pass") : done("fail", `wrong_controls:${wrong.join(",")}`);
+  } catch (e) {
+    return done("lab_error", message(e));
+  } finally {
+    await page?.close().catch(() => undefined);
+  }
 }

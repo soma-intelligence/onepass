@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { expectationFor } from "../../lab/gen/capabilities.ts";
+import { countryCases } from "../../lab/gen/cases.ts";
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { PUBLIC_TEST_CARDS, card, passkey, passkeyPkcs8, password, totpSecret, userHandle } from "../../lab/gen/data.ts";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
@@ -19,7 +20,7 @@ import { Rng } from "../../lab/gen/rng.ts";
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-const PINNED_DIGEST_V3 = "6471f505f565913424f0bec805ffc51f14051f5b2e5f8080115a87f351af3323";
+const PINNED_DIGEST_V3 = "3679b235a0f0b4e4f6eb82431a2d3aef4fec775fd4e0bb3031fe13e8c9769556";
 const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
 const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];
@@ -111,7 +112,7 @@ describe("generate", () => {
     const hosts = big.sites.flatMap((s) => [s.host, s.lookalike?.host, s.frameHost].filter((h): h is string => !!h));
     for (const h of hosts) expect(h).toMatch(/^[a-z0-9.-]+\.test$/);
     expect(new Set(hosts).size).toBe(hosts.length);
-    expect(big.hosts).toEqual([...new Set([...hosts, ...PROVIDER_HOSTS])].sort());
+    expect(big.hosts).toEqual([...new Set([...hosts, ...PROVIDER_HOSTS, ...countryCases().hosts])].sort());
     expect(big.sites.some((s) => s.lookalike) && big.sites.some((s) => s.frameHost)).toBe(true);
   });
 

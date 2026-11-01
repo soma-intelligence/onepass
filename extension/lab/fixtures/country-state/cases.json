@@ -1,5 +1,5 @@
 {
-  "_comment": "Country/state fixtures (spec docs/superpowers/specs/2026-10-31-country-state-select-design.md). Each case: a page of this folder, the identity values OnePass sends (fill message, by role), and what each control must hold once the fill settled (value of a field, else text of an element). Replayed in jsdom by test/content/country-state-fixtures.test.ts; the browser run needs a lab route and scenario (not wired yet).",
+  "_comment": "Country/state fixtures (spec docs/superpowers/specs/2026-10-31-country-state-select-design.md). Each case: a page of this folder, the identity values OnePass sends (fill message, by role), and what each control must hold once the fill settled (value of a field, else text of an element). Replayed in jsdom by test/content/country-state-fixtures.test.ts, and in the lab browser run as cs:<n> (lab/gen/cases.ts, lab/run/lab.spec.ts \"country cases\").",
   "cases": [
     {
       "name": "shopify: country change reloads the province list",

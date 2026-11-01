@@ -2,6 +2,7 @@
 // scenarios, identity providers, fixture vault). Types only, plus the
 // generator version stamped into every world.
 
+import type { CountryCase } from "./cases.ts";
 import type { Behaviour, Profile } from "./population.ts";
 
 export const GENERATOR_VERSION = 3;
@@ -61,4 +62,6 @@ export interface World {
   idp: Record<ProviderId, IdpAccount[]>; fixture: FixtureFile; hosts: string[];
   /** Simulated users, only when more than one was asked (absent: the single default profile, vault = `fixture`). */
   profiles?: Profile[];
+  /** Country and region fixture cases (lab/gen/cases.ts), played by the country-cases test. */
+  cases?: CountryCase[];
 }
