@@ -96,6 +96,9 @@ export const SOURCE_WEIGHTS = {
   ariaLabel: 1.2,
   label: 1.5,
   title: 1,
+  /** Text right before the field in its own row (an unlinked label). */
+  sibling: 1.2,
+  /** Text before the field's parent. */
   nearby: 0.6,
 } as const;
 

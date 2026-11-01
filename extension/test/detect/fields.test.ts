@@ -173,6 +173,18 @@ describe("classifyField: weighted scoring", () => {
     expect(role("u")).toBe("username");
   });
 
+  it("sibling_text_reads_as_a_label", () => {
+    // Lab sites 12, 30 (lab-2026-10-26): an unlinked text right before the field, in its own row.
+    document.body.innerHTML =
+      '<div class="field"><span>red hat login</span><input id="u" name="n-input-v-0-2-0" type="text"></div>' +
+      '<div class="field"><span>Nom</span><input id="n" name="subscriberlastname" type="text"></div>';
+    expect(role("u")).toBe("username");
+    expect(role("n")).toBe("family_name");
+    // Text before the field's parent stays weak nearby text.
+    document.body.innerHTML = '<p>Nom</p><div><input id="w" name="x1" type="text"></div>';
+    expect(role("w")).toBe("unknown");
+  });
+
   it("classifies a textarea street address", () => {
     document.body.innerHTML = '<label for="f">Adresse</label><textarea id="f" name="adresse"></textarea>';
     expect(role("f")).toBe("address_line1");

@@ -74,18 +74,24 @@ function containsControl(el: Element): boolean {
   return el.matches("input, select, textarea") || el.querySelector("input, select, textarea") !== null;
 }
 
-/** Short text right before the field: up to two previous siblings, else the parent's previous sibling. */
-function nearbyText(el: Element): string {
+/**
+ * Text of up to two previous siblings of the field (no control in them): in a
+ * row of its own, the unlinked label of the field.
+ */
+function siblingText(el: Element): string {
   let out = "";
   let sib = el.previousElementSibling;
   for (let i = 0; i < 2 && sib && !containsControl(sib); i++, sib = sib.previousElementSibling) {
     out = `${ownText(sib, 100)} ${out}`;
   }
-  if (out.trim() === "" && el.parentElement) {
-    const before = el.parentElement.previousElementSibling;
-    if (before && !containsControl(before)) out = ownText(before, 100);
-  }
   return out.slice(0, MAX_SOURCE_CHARS);
+}
+
+/** Short text before the field's parent, read only when the field has no sibling text. */
+function nearbyText(el: Element, sibling: string): string {
+  if (sibling.trim() !== "" || !el.parentElement) return "";
+  const before = el.parentElement.previousElementSibling;
+  return before && !containsControl(before) ? ownText(before, 100).slice(0, MAX_SOURCE_CHARS) : "";
 }
 
 function labelText(el: FieldElement): string {
@@ -109,6 +115,7 @@ function labelledByText(el: Element): string {
 
 function sources(el: FieldElement): [Source, string][] {
   const attr = (n: string) => (el.getAttribute(n) ?? "").slice(0, MAX_SOURCE_CHARS);
+  const sibling = siblingText(el);
   return [
     ["name", attr("name")],
     ["id", attr("id")],
@@ -116,7 +123,8 @@ function sources(el: FieldElement): [Source, string][] {
     ["ariaLabel", `${attr("aria-label")} ${labelledByText(el)}`],
     ["label", labelText(el)],
     ["title", attr("title")],
-    ["nearby", nearbyText(el)],
+    ["sibling", sibling],
+    ["nearby", nearbyText(el, sibling)],
   ];
 }
 
