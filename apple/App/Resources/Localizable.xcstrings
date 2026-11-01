@@ -12638,6 +12638,26 @@
         }
       }
     },
+    "Mot de passe en attente" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pending password"
+          }
+        }
+      }
+    },
+    "Mot de passe généré mais jamais confirmé depuis plus de 30 jours. L'inscription n'a sans doute pas abouti." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated password never confirmed for over 30 days. The signup probably did not finish."
+          }
+        }
+      }
+    },
     "Ville" : {
       "localizations" : {
         "en" : {

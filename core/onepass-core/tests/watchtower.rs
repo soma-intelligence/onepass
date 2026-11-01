@@ -609,3 +609,50 @@ mod sites {
         );
     }
 }
+
+fn pending_report(item: Item) -> onepass_core::watchtower::Report {
+    analyze(
+        &[item],
+        &opts(),
+        Sources {
+            pwned: None,
+            sites: None,
+            breaches: None,
+        },
+    )
+}
+
+/// A Login last touched `days` before `opts().today`, tagged pending or not.
+fn pending_login(days: i64, pending: bool) -> Item {
+    let mut it = login("Shop", "x7#Qm!vP2$wL9@zR4kT-hN6");
+    it.updated_at = time::macros::datetime!(2026-10-25 12:00 UTC) - time::Duration::days(days);
+    if pending {
+        it.tags.push(onepass_core::model::PENDING_TAG.to_owned());
+    }
+    it
+}
+
+fn pending_count(r: &onepass_core::watchtower::Report) -> usize {
+    r.findings
+        .iter()
+        .filter(|f| f.check == Check::PendingUnused)
+        .count()
+}
+
+#[test]
+fn pending_31_days_flagged() {
+    let r = pending_report(pending_login(31, true));
+    assert_eq!(pending_count(&r), 1);
+}
+
+#[test]
+fn pending_29_days_not_flagged() {
+    assert_eq!(pending_count(&pending_report(pending_login(29, true))), 0);
+    // Exactly 30 days is not "more than 30".
+    assert_eq!(pending_count(&pending_report(pending_login(30, true))), 0);
+}
+
+#[test]
+fn untagged_never_flagged() {
+    assert_eq!(pending_count(&pending_report(pending_login(400, false))), 0);
+}

@@ -372,6 +372,11 @@ struct WatchtowerCard: Identifiable {
             title: String(localized: "Vieux mots de passe"),
             message: String(localized: "Inchangés depuis plus d'un an. Pense à les renouveler."),
             symbol: "clock.arrow.circlepath", color: .gray, source: .local),
+        WatchtowerCard(
+            id: "pending", checks: ["pending_unused"],
+            title: String(localized: "Mot de passe en attente"),
+            message: String(localized: "Mot de passe généré mais jamais confirmé depuis plus de 30 jours. L'inscription n'a sans doute pas abouti."),
+            symbol: "hourglass", color: .gray, source: .local),
     ]
 }
 

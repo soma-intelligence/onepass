@@ -35,10 +35,11 @@ pub enum Check {
     OldPassword,
     Duplicate,
     WalletNoBackup,
+    PendingUnused,
 }
 
 impl Check {
-    pub const ALL: [Check; 15] = [
+    pub const ALL: [Check; 16] = [
         Check::Compromised,
         Check::Reused,
         Check::Weak,
@@ -54,6 +55,7 @@ impl Check {
         Check::OldPassword,
         Check::Duplicate,
         Check::WalletNoBackup,
+        Check::PendingUnused,
     ];
 
     pub fn id(self) -> &'static str {
@@ -73,6 +75,7 @@ impl Check {
             Check::OldPassword => "old_password",
             Check::Duplicate => "duplicate",
             Check::WalletNoBackup => "wallet_no_backup",
+            Check::PendingUnused => "pending_unused",
         }
     }
 
@@ -83,7 +86,10 @@ impl Check {
             Check::InsecureUrl | Check::WifiInsecure | Check::SshWeak | Check::Expiring => {
                 Severity::Medium
             }
-            Check::Missing2fa | Check::OldPassword | Check::WalletNoBackup => Severity::Low,
+            Check::Missing2fa
+            | Check::OldPassword
+            | Check::WalletNoBackup
+            | Check::PendingUnused => Severity::Low,
             Check::PasskeyAvailable | Check::Duplicate => Severity::Info,
         }
     }
@@ -228,6 +234,9 @@ const MAX_ZXCVBN_CHARS: usize = 128;
 /// zxcvbn scores below this are weak.
 const MIN_STRONG_SCORE: u8 = 3;
 
+/// A pending item older than this many days is flagged.
+const PENDING_UNUSED_DAYS: i64 = 30;
+
 const MIN_RSA_BITS: u32 = 3072;
 /// DSA keys are fixed at 1024 bits in OpenSSH.
 const DSA_BITS: u32 = 1024;
@@ -247,6 +256,7 @@ pub(crate) fn local_findings(items: &[&Item], opts: &Options) -> Vec<Finding> {
         expirations(item, opts, &mut out);
         old_password(item, opts, &mut out);
         wallet_no_backup(item, &mut out);
+        pending_unused(item, opts, &mut out);
     }
     out
 }
@@ -574,6 +584,25 @@ fn duplicates(items: &[&Item], out: &mut Vec<Finding>) {
                 e.insert(item.id);
             }
         }
+    }
+}
+
+/// A generated password saved before the form was sent and never confirmed
+/// for strictly more than `PENDING_UNUSED_DAYS` days: the signup likely never
+/// finished. Reported only, never deleted.
+fn pending_unused(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
+    if !item.is_pending() {
+        return;
+    }
+    let updated = item
+        .updated_at
+        .checked_to_offset(UtcOffset::UTC)
+        .unwrap_or(item.updated_at)
+        .date();
+    let days = (opts.today - updated).whole_days();
+    if days > PENDING_UNUSED_DAYS {
+        let days = u32::try_from(days).unwrap_or(u32::MAX);
+        push(out, item, Check::PendingUnused, None, Detail::Age { days });
     }
 }
 
