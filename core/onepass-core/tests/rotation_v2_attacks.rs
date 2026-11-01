@@ -1461,8 +1461,10 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     let vault = a.vault();
     let v = vault.id;
     // Both write before they rotate, unpushed (the rotations re-seal it).
-    a.save(&login(v, "a-before", T0 + 40));
-    c.save(&login(v, "c-before", T0 + 41));
+    let a_before = login(v, "a-before", T0 + 40);
+    let c_before = login(v, "c-before", T0 + 41);
+    a.save(&a_before);
+    c.save(&c_before);
     let (ra, _) = rotate_on(&mut a, &f, &f.a.keys, vec![]);
     let (rc, _) = rotate_on(&mut c, &f, &f.c().keys, vec![]);
     let a_wins = ra.head < rc.head;
@@ -1476,10 +1478,14 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     } else {
         (c, a, &f.a.keys)
     };
-    let mine = if a_wins { "c-before" } else { "a-before" };
-    let winners = if a_wins { "a-before" } else { "c-before" };
+    let (mine, winners) = if a_wins {
+        (&c_before, "a-before")
+    } else {
+        (&a_before, "c-before")
+    };
     // And the loser after its rotation.
-    l.save(&login(v, "late", T0 + 60));
+    let late = login(v, "late", T0 + 60);
+    l.save(&late);
     sync(&mut server, &mut w).unwrap();
     let winner_key = server.get(RecordKind::VaultKey, v).unwrap().data;
     let winner_vault = w.vault();
@@ -1572,12 +1578,17 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     // on the device, no alert raised, and nothing of its key generation is
     // collected meanwhile (review C1).
     let t = trust(&l);
-    assert_eq!(t.own_writes.replay.len(), 2, "{:?}", t.own_writes.replay);
+    let waiting: BTreeSet<Id> = t.own_writes.replay.iter().map(|w| w.item).collect();
+    assert_eq!(
+        waiting,
+        BTreeSet::from([mine.id, late.id]),
+        "the loser's write from before its rotation ({}) and the late one",
+        users(std::slice::from_ref(mine))[0]
+    );
     assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
     for id in &loser_records {
         assert!(server.get(RecordKind::Item, *id).is_some(), "collected");
         assert!(l.store().get(RecordKind::Item, *id).unwrap().is_some());
     }
     assert!(matches!(l.repo().vaults(), Err(Error::Integrity(_))));
-    let _ = mine;
 }
