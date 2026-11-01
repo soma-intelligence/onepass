@@ -190,9 +190,11 @@ CREATE TRIGGER IF NOT EXISTS lineage_stamp_pending_del AFTER DELETE ON pending
     BEGIN UPDATE lineage_stamp SET v = v + 1 WHERE k = 1; END;
 ";
 
-/// Check `PRAGMA user_version`, then create what is missing and stamp the
-/// current version. 0 (a new file, or one from before the check) and the
-/// current version open; nothing is dropped or rewritten. A newer version is
+/// Check `PRAGMA user_version`, then migrate, create what is missing and
+/// stamp the current version. 0 (a new file, or one from before the check),
+/// 1 (a `retained` table from before its copy tag, migrated by
+/// `migrate_retained`, its rows kept) and the current version open; nothing
+/// else is dropped or rewritten. A newer version is
 /// `InvalidFormat("store from a newer version")`, the file left untouched.
 fn init_schema(conn: &Connection) -> Result<()> {
     let version: i64 = conn
