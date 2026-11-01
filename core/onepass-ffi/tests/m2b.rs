@@ -1168,7 +1168,6 @@ fn ffi_incomplete_pairing_is_listed_until_cancelled() {
     assert!(entry.revoked_at.is_some_and(|t| t > 0));
 }
 
-
 /// The rendezvous direction: the approver shows the code, the newcomer
 /// types it. Both sides through the SAS and the newcomer's confirmation.
 fn confirmed_rv(

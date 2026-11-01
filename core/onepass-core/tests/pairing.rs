@@ -1334,7 +1334,6 @@ fn assert_self_pinned(t: &onepass_core::trust::TrustState) {
     );
 }
 
-
 // ---- rendezvous direction (version 2): the approver shows the code ---------
 
 /// A host with one code on screen, and a newcomer that joined it: the
@@ -1509,8 +1508,10 @@ fn rendezvous_man_in_the_middle_gets_different_codes() {
     let mut host = Host::new();
     let shown = host.issue(NOW).unwrap();
     let code = RendezvousCode::parse(&shown.qr_text).unwrap();
-    let (mut victim, _join) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
-    let (mut attacker, forged) = Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    let (mut victim, _join) =
+        Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
+    let (mut attacker, forged) =
+        Newcomer::join_code(ipad(), DeviceMode::Personal, &code, NOW).unwrap();
     let (_a, kx, sas_a, _, _) = host.accept(&forged, NOW + 1).unwrap();
     // The attacker cannot hand the victim a key exchange for the victim's
     // own key: the envelope was wrapped to the attacker's ephemeral key.
