@@ -129,7 +129,7 @@ All bodies are `postcard`, decoded strictly (whole buffer, canonical re-encoding
 | Label | Kind | Key | Over |
 | --- | --- | --- | --- |
 | `onepass/device-pop/v1` | signature domain | new device's key | `(transcript hash or account id, DevicePublic)` |
-| `onepass/device-intro/v1` | signature domain | introducer's device key | `IntroBody` |
+| `onepass/device-intro/v1` | signature domain | introducer's device key; for a kit self-intro also the identity (SLH-DSA, 7.5 step 5) | `IntroBody` |
 | `onepass/genesis/v1` | signature domain | creator's device key | `GenesisBody` |
 | `onepass/genesis/identity/v1` | signature domain | identity (SLH-DSA) | `GenesisBody` |
 | `onepass/rotation/v1` | signature domain | rotator's device key | `RotationBody` |
@@ -147,7 +147,7 @@ All bodies are `postcard`, decoded strictly (whole buffer, canonical re-encoding
 | `onepass/rotation/code/v1` | HKDF info | | 6-digit rotation code |
 | `onepass/device-fpr/v1` | hash prefix | | device fingerprint |
 
-The identity key, which today signs only `account-params` (security README 3.4), also signs the two `.../identity/v1` domains; the domains keep the three uses apart.
+The identity key, which today signs only `account-params` (security README 3.4), also signs the two `.../identity/v1` domains and the kit self-intro (`onepass/device-intro/v1`, 7.5 step 5); the domains keep these uses apart.
 
 ### 6.2 Genesis
 
@@ -189,7 +189,7 @@ Lineage hash `h = SHA-256("onepass/lineage/v1" || 0x01 || postcard(body))`. Reco
 
 ```
 IntroBody { format: 1, account_id, head: [u8; 32], entry: RosterEntry, introducer: Id, pop: HybridSignature }
-SignedIntro { body, sig }   // introducer's device key, onepass/device-intro/v1
+SignedIntro { body, sig, identity_sig: Option<SlhDsaSignature> }   // introducer's device key, onepass/device-intro/v1; identity_sig only for a kit self-intro (7.5 step 5)
 ```
 
 `pop` is the new device's signature over `postcard((bytes(account_id), DevicePublic { entry.device_id, entry.sign_pub, entry.kem_pub }))`, domain `onepass/device-pop/v1`: the single proof-of-possession form of 6.1 (`sign_pop` with the account id as context), shared with pairing, where the context is the transcript hash. Record `RecordKind::DeviceIntro` (11), id = `SHA-256("onepass/intro-id/v1" || postcard(body))[..16]`, immutable. A device accepts an intro if `head` is its current head, the introducer is in its roster, not revoked or excluded, both signatures verify and the id is new (never revoked, never in the roster with another key). The new entry then joins its roster at that head. An intro under an older head is not carried over: the rotator includes in its roster every device it trusts, and after an adoption each device re-introduces the devices it introduced itself that the new roster misses (8.5).
@@ -254,7 +254,7 @@ Then (section 8 for several records) D enters `Candidate` and shows the confirma
 
 1. open the delivery with D's device KEM key (the app reads it from the Keychain after presence), giving the new Secret Key;
 2. verify the params under `identity_pub` (G8), derive the AUK, open the keyset, check its three public keys against the params and its identity against the record;
-3. **one local transaction**: new `TrustState` (head, roster, revoked, `retired` += left identity), `ChainState` pins reset for the new identity (params epoch 1, lists unseen), `last_seen[v] = from_heads[v]` for every vault in `from_heads` (R12), own writes queued for replay (10.4);
+3. **one local transaction**: new `TrustState` (head, roster, revoked, `retired` += left identity; `levels`: a device D already pinned keeps its level, a device new to D takes the rotator's level, which O7 makes `Verified`), `ChainState` pins reset for the new identity (params epoch 1, lists unseen), `last_seen[v] = from_heads[v]` for every vault in `from_heads` (R12), own writes queued for replay (10.4), D's `DeviceAck` for the new head (6.8, O6);
 4. Secret Key promoted in the Keychain, biometric enrollment recreated from the new AUK, session opened on the new identity;
 5. replay of own writes, then normal sync.
 
@@ -314,6 +314,7 @@ Amended 2026-10-31 (Task 15 rulings, `Repository::restore_from_kit`, `repo::kit`
 | `Current` | valid child without me | `Orphaned` | yes |
 | `Current` | user rotates | `Rotating { phase: 1 }` | user |
 | `Candidate` | user confirms child X, password | `Current { head: X }` | user |
+| `Candidate`, signer of X `Tofu` | user verifies the signer ("Vérifier", QR and SAS, 15 step 4) | `Candidate`, signer `Verified`, "C'est moi" enabled (O7) | user |
 | `Candidate` | user: "Ce n'était pas moi" for child X | `Current` if no other child, signer of X added to `excluded`, X added to `ignored` | user |
 | `Candidate` | user: "Retirer <signer> et faire tourner les clés" | `Rotating` (sibling of X, revoking X's signer) | user |
 | `Rotating` | phase 3 confirmed | `Current` | yes |
@@ -491,7 +492,7 @@ Modeled: device signing and KEM keys pinned through a private setup (the SAS cha
 
 `rotation.pv` takes about 130 s on the owner's Mac (limit 300 s per file in `formal/run.sh`); the two controls take about a second. The whole `make formal` run matches `expected.txt`, the earlier models unchanged.
 
-Not modeled: sibling ordering, re-application and convergence (state, covered by a property test, task 4); quarantine; intros and the pairing extension (the pairing channel itself is `bridge.pv`'s construction); legacy migration (TOFU, out of the proof by definition); phase ordering on CloudKit; own-write replay; the 6-digit code (the user's confirmation is modeled as comparing the summary, the code is extra).
+Not modeled: sibling ordering, re-application and convergence (state, covered by a property test, task 4); quarantine; intros and the pairing extension (the pairing channel itself is `bridge.pv`'s construction); legacy migration (TOFU, out of the proof by definition); phase ordering on CloudKit; own-write replay; acknowledgments (display only, 6.8); the 6-digit code (the user's confirmation is modeled as comparing the summary, the code is extra).
 
 ## 14. What the first design keeps and replaces
 
@@ -568,7 +569,7 @@ Format: decision - why - cost if wrong.
 - **R23** Old item records are deleted only after phase 2 is confirmed, and only those listed in the `from_heads` manifests - never delete content a sibling or a follower may still need - old ciphertexts stay on the server a little longer.
 - **R24** The design is checked by a ProVerif model before any code, with two negative controls that are expected to fail - shows what each part buys (F-03) - the model abstracts the state machine, which tests must cover.
 
-## 17. Open questions for the owner
+## 17. Owner questions (all ruled 2026-10-30)
 
 - **O1** Ruled 2026-10-30: automatic erase, 7 days after the device first reads its own revocation (R8, 8.4).
 - **O2** Ruled 2026-10-30: the rotation code is shown on both sides; comparing it is not mandatory (9).
@@ -592,18 +593,18 @@ New branch from `main` (not from `fix/key-rotation`); kept parts are ported. Eac
 Tasks:
 
 1. **Device keys** (`device_keys.rs`): `DeviceKeys`, `DevicePublic`, generation, strict codec, fingerprint, pop sign and verify. Tests: round trip, trailing bytes, wrong domain, pop over another transcript refused.
-2. **Lineage records** (`lineage.rs`): genesis, rotation, intro, legacy intro, delivery ids; strict canonical codec; sign and verify with the six domains; lineage hash and record ids; structural checks of 6.3. Tests: each domain separated (a signature under one domain fails under every other), unsorted or duplicate lists refused, rotator in `revoked` refused, roster without rotator refused, 64-entry cap, golden hex vectors.
+2. **Lineage records** (`lineage.rs`): genesis, rotation, intro, legacy intro, ack, delivery ids; strict canonical codec; sign and verify with the signature domains of 6.1 (eight with `device-pop`, Task 1); lineage hash and record ids; structural checks of 6.3. Tests: each domain separated (a signature under one domain fails under every other), unsorted or duplicate lists refused, rotator in `revoked` refused, roster without rotator refused, 64-entry cap, golden hex vectors.
 3. **Trust state** (`trust.rs`): `TrustState` codec, persisted with `put_all_if_version_with_chain`-style transactions; monotone `revoked`; bounded `ignored`. Tests: strict decode, monotonicity, transaction atomicity on a cut.
 4. **Lineage resolver** (pure): `resolve(&TrustState, &[LineageRecord], completeness) -> Decision`. Tests: table of 8.2 transitions; 8.3 race in all three orders; exclusion and order of 8.5; proptest over random interleavings, withholding and attacker-signed records asserting (a) no `CommitAdoption` without a user choice, (b) honest devices that saw the same records reach the same head, (c) at most one switch per divergence, (d) no automatic action ever creates a sibling of a decided divergence.
 5. **Store kinds**: `Lineage = 10`, `DeviceIntro = 11`, `KeyDelivery = 12` added at the end (the `DeviceAck` kind of 6.8 is not built; code 13 went to the approver lists on `main`, so an ack kind takes the next free code); identity-keyed params, keyset, lists, epochs; immutability; `commit_remote` refuses deletions of the three new kinds and of identity records. Tests: put twice refused, server deletion refused and logged, generation 0 ids unchanged.
 6. **Account**: port `Account::rotate`; keyset `OPK3` with `retired_kem`; verified params decoding everywhere (G8). Tests: `OPK2` still opens, `OPK3` round trip, retired keys bounded to 16, unverified server params ignored by the password-change path (hold-out 4).
 7. **Rotator**: `Repository::rotate` building phases 1 and 2 in memory, one local transaction, `TrustState` to `Rotating`. Port the vault pass of `repo/rotation.rs`. Tests: K11, K12, travel refused, `VaultMissing` refuses, revoking self refused, roster and deliveries exact, old items still readable locally until phase 3.
 8. **Sync phases** (`sync/store.rs`): phase ordering, phase 1 never conflicting, R21 overwrite, leftover item records of foreign key generations ignored, phase 3 deletion scope. Tests: cut between phases resumes; `zz2_hostile_epoch_inflation` and the epoch wedge become no-ops (ported as assertions).
-9. **Follow**: `pending_rotation`, `follow_rotation`, `reject_rotation`; delivery opening; `last_seen` reset; biometric re-enrollment AUK returned. Tests: honest follow; `zz6` biometric device follows with the password only; `zz_biometric_device_has_no_known_keys` cannot be built any more (forged record refused or prompts); follow without completeness waits.
+9. **Follow**: `pending_rotation`, `follow_rotation`, `reject_rotation`; delivery opening; `last_seen` reset; biometric re-enrollment AUK returned. Tests: honest follow; `zz6` biometric device follows with the password only; `zz_biometric_device_has_no_known_keys` cannot be built any more (forged record refused or prompts); follow without completeness waits; a `Tofu` signer is refused until verified (O7); the adoption writes its `DeviceAck` (O6) and the rotator lists "à jour" or "en attente" from them.
 10. **Own-write log and replay**: log on every write, replay after adoption and switch. Tests: C writes during A's rotation (`zz2_epoch_drop...` scenario) and keeps its item; a write by B under the old identity after `from_heads` is not imported; bounds.
-11. **Siblings and re-application**: switch flow, `Reapply` child, password re-application. Tests: `zz3`, `zz5` converge in at most two turns per device; re-application dropped when covered.
+11. **Siblings and re-application**: switch flow, `Reapply` child, password re-application. Tests: `zz3`, `zz5` converge in at most two turns per device; re-application dropped when covered; a switch writes its `DeviceAck` (O6).
 12. **Quarantine and exclusion**: self-revocation lock, erase 7 days later; "not me" exclusion; remove-and-rotate from the prompt; device list `revoked_at` no longer erases. Tests: `zz4` on A, on C in both orders; forged device-list revocation of A by a 2b-revoked device.
-13. **Pairing v2**: `ConfirmedWithKey`, `Grant::FullV2` with trust snapshot, intro written with the grant in one transaction, re-intro after adoption. Tests: pop mismatch refused, intro by a revoked or excluded device refused, old peer falls back to legacy, snapshot lineage imported and pinned.
+13. **Pairing v2**: `ConfirmedWithKey`, `Grant::FullV2` with trust snapshot, intro written with the grant in one transaction, re-intro after adoption. Tests: pop mismatch refused, intro by a revoked or excluded device refused, old peer falls back to legacy, snapshot lineage imported and pinned, `Tofu` levels kept (O7), newcomer writes its `DeviceAck` (O6).
 14. **Genesis and migration**: genesis at creation; legacy genesis and legacy intros; conflicting genesis or keys; verify ceremony; the one-time "rotate now" prompt flag. Tests: two legacy devices migrate in both orders; a 2b-revoked device's legacy intro refused; conflicting keys excluded.
 15. **Emergency Kit restore**: lineage-aware restore, roster pinned through the identity signature, outdated kit refused when children are visible, kit-restored device intro needing a yes. Tests mirror `rotation.pv` (`restore_new`, `restore_old`).
 16. **Travel, archives, backups**: R18, R19, 10.7. Tests: archive made before rotation opens with warning; travel off after following; backup restore never touches lineage.
