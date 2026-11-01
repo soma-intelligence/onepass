@@ -1061,12 +1061,7 @@ fn abandoned_mailbox_is_gone(t: &mut dyn ConformanceTarget) {
     gone(recovery.abandon(), "abandon by the recovery credential");
     gone(a.changes(0, 10, false).map(drop), "changes");
     gone(a.commit(vec![put(2, 1, None, b"b")]).map(drop), "commit");
-    // The record route answers 404 not_found for an absent key too: the
-    // client cannot tell a gone mailbox there and reads it as absent.
-    match a.record(KIND, id(1)) {
-        Ok(None) => {}
-        other => panic!("record on an abandoned mailbox: {other:?}"),
-    }
+    gone(a.record(KIND, id(1)).map(drop), "record");
     gone(a.set_locator(session_id()), "set locator");
     gone(a.abandon(), "abandon again");
     assert!(t.locate(loc).expect("locate").is_empty(), "not located");
@@ -1253,4 +1248,15 @@ fn child_grant_and_revoke(t: &mut dyn ConformanceTarget) {
     }
     assert_eq!(usage(o.as_ref()).2, 1, "the owner alone");
     assert_eq!(seqs(&page(o.as_ref(), 0, 10, false).records), vec![1, 2]);
+
+    // With another manager in, the owner still cannot revoke itself: a
+    // child keeps its owner until deleted. No recovery locator on a child.
+    let mg = granted(t, o.as_ref(), CredentialRole::Manage, None);
+    forbidden(
+        o.revoke(o.credential_key().id()),
+        "the owner revokes itself",
+    );
+    forbidden(o.set_locator(session_id()), "the owner sets a locator");
+    forbidden(mg.set_locator(session_id()), "a manager sets a locator");
+    o.info().expect("the owner is still in");
 }

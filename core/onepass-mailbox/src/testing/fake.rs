@@ -358,7 +358,8 @@ impl State {
         if t.revoked {
             return Ok(());
         }
-        if (t.owner && target != caller)
+        // In a child the owner stays until deletion, even against itself.
+        if (t.owner && (target != caller || self.mailboxes[m].kind != ACCOUNT))
             || (t.role == CredentialRole::Manage && self.other_managers(m, target) == 0)
         {
             return refused(ErrorCode::Forbidden);
@@ -1413,12 +1414,7 @@ impl MailboxApi for FakeMailboxClient {
         if kind == 0 {
             return Err(MailboxError::Malformed("kind zero"));
         }
-        // As the client reads the route's 404: a gone mailbox is an absent
-        // record here.
-        let (s, m) = match self.signed() {
-            Err(MailboxError::Server(ErrorCode::NotFound)) => return Ok(None),
-            r => r?,
-        };
+        let (s, m) = self.signed()?;
         let Some(row) = s.mailboxes[&m].records.get(&(kind, id)) else {
             return Ok(None);
         };
@@ -1492,7 +1488,10 @@ impl MailboxApi for FakeMailboxClient {
     fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
         let req = wire(&SetLocator { locator })?;
         let (mut s, m) = self.signed()?;
-        if s.caller(&self.credential.id()).role != CredentialRole::Manage {
+        // The recovery locator is an account mailbox's only.
+        if s.caller(&self.credential.id()).role != CredentialRole::Manage
+            || s.mailboxes[&m].kind != ACCOUNT
+        {
             return refused(ErrorCode::Forbidden);
         }
         if !s.locators.contains(&(req.locator, m)) {

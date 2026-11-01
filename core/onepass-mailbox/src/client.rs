@@ -223,8 +223,9 @@ impl MailboxClient {
     }
 
     /// `GET /v1/mailboxes/{m}/records/{kind}/{id}`; `None` when absent
-    /// (`not_found`). A path the server does not serve answers `no_route`
-    /// and comes back as `Server(NoRoute)`, never as `None`.
+    /// (`absent`). A gone mailbox answers `not_found` and a path the server
+    /// does not serve answers `no_route`: both come back as errors
+    /// (`Server(NotFound)`, `Server(NoRoute)`), never as `None`.
     pub fn record(&self, kind: u8, id: [u8; 16]) -> Result<Option<ServerRecord>, MailboxError> {
         if kind == 0 {
             return Err(MailboxError::Malformed("kind zero"));
@@ -234,7 +235,7 @@ impl MailboxClient {
             .signed(Method::Get, &target, &[])
             .and_then(|r| expect(r, &[200]))
         {
-            Err(MailboxError::Server(ErrorCode::NotFound)) => return Ok(None),
+            Err(MailboxError::Server(ErrorCode::Absent)) => return Ok(None),
             r => r?,
         };
         let rec: ServerRecord = read(r)?;
@@ -668,7 +669,7 @@ fn status_of(code: ErrorCode) -> u16 {
         | ErrorCode::RevokedCredential
         | ErrorCode::Frozen
         | ErrorCode::Forbidden => 403,
-        ErrorCode::NotFound | ErrorCode::NoRoute => 404,
+        ErrorCode::NotFound | ErrorCode::NoRoute | ErrorCode::Absent => 404,
         ErrorCode::CursorExpired => 410,
         ErrorCode::TooLarge => 413,
         ErrorCode::Quota => 422,

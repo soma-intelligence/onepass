@@ -133,7 +133,8 @@ A client abandons a mailbox it has just created when it loses a migration
 race (`DELETE /v1/mailboxes/{m}`, spec D.5): only the creator credential,
 still a manager, within 24 hours, while no other credential has made a
 request or enrolled. `mailboxes.deleted_at` is then set. Every request on it
-answers `404 not_found`. About an hour later `maintenance` purges it: its
+answers `404 not_found` (a record that a live mailbox does not hold answers
+`404 absent` instead, so the two never mix). About an hour later `maintenance` purges it: its
 credentials, records, locators and blob rows go (the blob objects through
 `blob_graves` and mailbox-gc), the empty `mailboxes` row stays. From then on
 its requests answer `403 unknown_credential`. Both answers mean the same
@@ -152,18 +153,28 @@ A mailbox keeps its two latest locators; several mailboxes may share one.
 Shared vaults, families and contact zones live in child mailboxes
 (`POST /v1/mailboxes/{m}/children`, sharing spec 13.3): kind 2 on plan
 `shared`, kind 3 on plan `contact`, `mailboxes.parent_id` naming the account
-mailbox they were created under. Before the first child on an instance,
-the plans must hold the Task 24 rows: run the `insert into
-onepass_mailbox.plans` of `seed.sql` again (step 2 of First setup, same
-maintenance transaction). It updates `free` and `selfhost` with their
-`max_children_shared` and `max_children_contact` (16 and 256, 1 024 and
-4 096) and adds `shared` and `contact`; without them every creation
-answers `403 quota` (cap 0) or `503 retry` (child plan missing). A parent
+mailbox they were created under. Migration `20261031235000` writes the
+plan rows itself: it adds `shared` and `contact` and gives `free` and
+`selfhost` their `max_children_shared` and `max_children_contact` (16 and
+256, 1 024 and 4 096) while both are still 0, so no seed run is needed and
+caps set by hand are kept. Without those rows every creation answers
+`403 quota` (cap 0) or `503 retry` (child plan missing). A parent
 creates 20 children a UTC day at most (`429`). An enroll ticket on a child
 is `403 forbidden`: members come in through grants by the owner. The owner
 deletes its child at any time (`DELETE /v1/mailboxes/{m}`, purged an hour
 later like an abandoned mailbox); an account mailbox with a live child is
-never abandoned.
+never abandoned. A child also refuses a recovery locator
+(`PUT .../locator`) and the revocation of its owner, the owner included:
+deletion is how an owner leaves.
+
+The same migration renames `api_abandon_mailbox` to `api_delete_mailbox`
+and makes the record route answer `absent`. Apply it and deploy the
+`mailbox` function back to back: between the two, the old function calls a
+dropped SQL function on `DELETE /v1/mailboxes/{m}` (`503 retry`), and the
+new function cannot reach `api_create_child` or `api_delete_mailbox`.
+Deletions and child creations fail in that window; nothing else does, and
+nothing is lost. An old client reads a record route `absent` as an unknown
+error until it updates.
 
 ## Rotating `MAILBOX_IP_HMAC_SECRET`
 

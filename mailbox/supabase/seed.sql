@@ -4,6 +4,8 @@
 -- with high limits. `shared` (vaults and families) and `contact` are the
 -- plans of child mailboxes (api_create_child); max_children_* cap the live
 -- children of each kind a mailbox on the plan holds (children hold none).
+-- Migration 20261031235000 writes the same child rows and caps on a
+-- database it upgrades; this file is for a fresh one.
 -- The batch size stays at the protocol's 20 000 operations on every plan
 -- but contact.
 set onepass.maintenance = 'on';

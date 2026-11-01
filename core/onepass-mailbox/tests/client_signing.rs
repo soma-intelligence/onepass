@@ -710,6 +710,11 @@ fn error_bodies_map() {
             404,
             MailboxError::Server(ErrorCode::NotFound),
         ),
+        (
+            ErrorCode::Absent,
+            404,
+            MailboxError::Server(ErrorCode::Absent),
+        ),
         (ErrorCode::CursorExpired, 410, MailboxError::CursorExpired),
         (ErrorCode::TooLarge, 413, MailboxError::TooLarge),
         (
@@ -1282,7 +1287,7 @@ fn collected_blob_is_announced_and_uploaded_again() {
 fn record_absent_is_none_but_unknown_route_is_an_error() {
     let server = Server::start(|req, _| {
         if req.path.contains("/records/1/") {
-            return Resp::error(ErrorCode::NotFound, 404, None);
+            return Resp::error(ErrorCode::Absent, 404, None);
         }
         Resp::error(ErrorCode::NoRoute, 404, None)
     });
@@ -1302,9 +1307,13 @@ fn record_absent_is_none_but_unknown_route_is_an_error() {
 }
 
 #[test]
-fn record_not_found_is_none() {
+fn record_absent_is_none_but_a_gone_mailbox_is_an_error() {
     let server = Server::start(|req, _| {
         if req.path.contains("/records/1/") {
+            return Resp::error(ErrorCode::Absent, 404, None);
+        }
+        if req.path.contains("/records/3/") {
+            // The mailbox is gone (deleted): never read as "no such record".
             return Resp::error(ErrorCode::NotFound, 404, None);
         }
         // Answers for another key.
@@ -1312,6 +1321,10 @@ fn record_not_found_is_none() {
     });
     let (c, _) = client(&server);
     assert_eq!(c.record(1, [1; 16]).unwrap(), None);
+    assert_eq!(
+        c.record(3, [1; 16]).unwrap_err(),
+        MailboxError::Server(ErrorCode::NotFound)
+    );
     assert!(matches!(
         c.record(2, [1; 16]).unwrap_err(),
         MailboxError::Malformed(_)

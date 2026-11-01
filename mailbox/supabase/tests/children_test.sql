@@ -86,7 +86,35 @@ create function onepass_test.enroll(approver text, mbx text, key text, i integer
         onepass_test.cid(approver), decode(md5('children-ticket/' || i) || md5('children-ticket//' || i), 'hex'),
         now() + interval '300 seconds', '\x', decode(md5('children-enroll') || md5('children-enroll/'), 'hex')) e
 $$;
+create function onepass_test.sha(i integer) returns bytea language sql immutable as $$
+    select decode(md5('onepass-children-sha/' || i) || md5('onepass-children-sha//' || i), 'hex') $$;
+create function onepass_test.announce(cred text, mbx text, sha bytea, size integer) returns text language sql volatile as $$
+    select a.status from onepass_mailbox.api_blob_announce(onepass_test.cid(cred), onepass_test.n(), now(),
+        onepass_test.mbx(mbx), array[sha], array[size]) a limit 1
+$$;
+create function onepass_test.put_blob(cred text, mbx text, i integer, sha bytea, size integer)
+returns text language sql volatile as $$
+    select c.status from onepass_mailbox.api_commit(onepass_test.cid(cred), onepass_test.n(), now(), onepass_test.mbx(mbx),
+        array[5]::smallint[], array[onepass_test.rid(i)], array[1]::bigint[], array[1]::smallint[],
+        array[null]::bigint[], array[null]::bytea[], array[sha], array[size]) c limit 1
+$$;
+create function onepass_test.set_locator(cred text, mbx text, loc bytea) returns text language sql volatile as $$
+    select s.status from onepass_mailbox.api_set_locator(onepass_test.cid(cred), onepass_test.n(), now(),
+        onepass_test.mbx(mbx), loc) s
+$$;
 grant execute on all functions in schema onepass_test to public;
+
+-- Superuser side: a Storage object as the Storage API stores it.
+create function onepass_test.oname(mbx text, sha bytea) returns text language sql stable security definer as $$
+    select encode(onepass_test.mbx(mbx), 'hex') || '/' || encode(sha, 'hex') || '.'
+           || (select gen from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx(mbx) and sha256 = sha)
+$$;
+create function onepass_test.object(mbx text, sha bytea, size integer) returns void language sql volatile as $$
+    insert into storage.objects (bucket_id, name, metadata)
+    values ('onepass-mailbox', onepass_test.oname(mbx, sha),
+            jsonb_build_object('size', size, 'mimetype', 'application/octet-stream'))
+$$;
+revoke all on function onepass_test.object(text, bytea, integer) from public;
 
 create function onepass_test.mb(mbx text) returns onepass_mailbox.mailboxes language sql stable as $$
     select * from onepass_mailbox.mailboxes where id = onepass_test.mbx(mbx) $$;
@@ -175,6 +203,17 @@ select onepass_test.ok(onepass_test.put('o1', 'V', 1) = 'ok', 'child_owner_commi
 select onepass_test.ok(onepass_test.grant('o1', 'V', 'om', 3) = 'ok' and onepass_test.grant('o1', 'V', 'ow', 2) = 'ok',
     'child_owner_grants');
 select onepass_test.ok(onepass_test.revoke('om', 'V', 'o1') = 'forbidden', 'child_owner_not_revoked_by_another_manager');
+-- Nor by itself: a child keeps its owner until it is deleted, and deletion
+-- is how an owner leaves.
+select onepass_test.ok(onepass_test.revoke('o1', 'V', 'o1') = 'forbidden'
+                       and onepass_test.revoke('o2', 'C', 'o2') = 'forbidden',
+    'child_owner_cannot_revoke_itself');
+-- The account recovery locator is for account mailboxes only.
+select onepass_test.ok(onepass_test.set_locator('o1', 'V', decode(md5('children-locator'), 'hex')) = 'forbidden'
+                       and onepass_test.set_locator('om', 'V', decode(md5('children-locator'), 'hex')) = 'forbidden',
+    'child_refuses_locator');
+select onepass_test.ok(onepass_test.set_locator('p', 'P', decode(md5('children-locator'), 'hex')) = 'ok',
+    'account_mailbox_still_sets_locator');
 select onepass_test.raises($$select onepass_test.put('p', 'V', 2)$$, 'OP403', 'unknown_credential',
     'parent_credential_is_not_in_child');
 select onepass_test.raises($$select onepass_test.put('o1', 'P', 2)$$, 'OP403', 'unknown_credential',
@@ -206,6 +245,11 @@ reset role;
 select onepass_test.ok(
     (select count(*) = 2 from onepass_mailbox.mailboxes where parent_id = onepass_test.mbx('P')),
     'refused_creations_leave_no_child');
+select onepass_test.ok(
+    (select bool_and(c.revoked_at is null) from onepass_mailbox.credentials c
+     where c.id in (onepass_test.cid('o1'), onepass_test.cid('o2')))
+    and not exists (select 1 from onepass_mailbox.locators where mailbox_id = onepass_test.mbx('V')),
+    'refused_owner_revoke_and_locator_leave_nothing');
 select onepass_test.ok(
     (select count(*) = 0 from onepass_mailbox.mailboxes where parent_id = onepass_test.mbx('V')),
     'no_grandchild');
@@ -290,6 +334,16 @@ select onepass_test.ok(onepass_test.enroll('e', 'E', 'en', 2) = 'ok', 'account_m
 -- The owner deletes its child at any time, even old and used by others.
 select onepass_test.ok(onepass_test.put('ow', 'V', 9) = 'ok', 'member_writes_in_child');
 reset role;
+-- V also holds a committed blob, for the purge below.
+update onepass_mailbox.mailboxes set bytes_used = 0 where id = onepass_test.mbx('V');
+set local role onepass_mailbox_api;
+select onepass_test.ok(onepass_test.announce('ow', 'V', onepass_test.sha(1), 20000) = 'ok', 'child_blob_announced');
+reset role;
+select onepass_test.object('V', onepass_test.sha(1), 20000);
+create temporary table t_names on commit drop as select onepass_test.oname('V', onepass_test.sha(1)) as n;
+set local role onepass_mailbox_api;
+select onepass_test.ok(onepass_test.put_blob('ow', 'V', 11, onepass_test.sha(1), 20000) = 'ok', 'child_blob_committed');
+reset role;
 update onepass_mailbox.mailboxes set created_at = now() - interval '30 days' where id = onepass_test.mbx('V');
 set local role onepass_mailbox_api;
 select onepass_test.ok(onepass_test.del('om', 'V') = 'forbidden' and onepass_test.del('ow', 'V') = 'forbidden',
@@ -321,7 +375,11 @@ select onepass_mailbox.maintenance(now() + interval '2 hours');
 select onepass_test.ok(
     (select count(*) = 0 from onepass_mailbox.credentials where mailbox_id = onepass_test.mbx('V'))
     and (select count(*) = 0 from onepass_mailbox.records where mailbox_id = onepass_test.mbx('V'))
-    and (select deleted_at is not null from onepass_test.mb('V')),
+    and (select deleted_at is not null from onepass_test.mb('V'))
+    and not exists (select 1 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('V'))
+    and (select array_agg(g.object_name) from onepass_mailbox.blob_graves g
+         where g.mailbox_id = onepass_test.mbx('V') and g.taken_at is null)
+        = (select array_agg(n) from t_names),
     'deleted_child_purged');
 select onepass_test.ok(
     (select count(*) > 0 from onepass_mailbox.credentials where mailbox_id = onepass_test.mbx('P')),

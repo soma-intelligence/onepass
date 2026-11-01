@@ -253,11 +253,18 @@ Deno.test("an unknown SQLSTATE or a mismatched OP code is 503 retry", async () =
   }
 });
 
-Deno.test("an absent record is not_found, never no_route; SQL cannot answer no_route", async () => {
+Deno.test("an absent record is absent (404 Absent), a gone mailbox not_found, never no_route", async () => {
   const k = await newKey();
+  assertEquals(CODES.absent, { status: 404, wire: "Absent" });
   const target = `/v1/mailboxes/${MHEX}/records/5/${MHEX}`;
-  const absent = new FakeDb(withKey(k, () => [{ status: "not_found", retry_after: null }]));
-  await assertError(await handler(deps(absent))(await signed(k, "GET", target), IP), "not_found");
+  const absent = new FakeDb(withKey(k, () => [{ status: "absent", retry_after: null }]));
+  const r = await handler(deps(absent))(await signed(k, "GET", target), IP);
+  assertEquals(r.status, 404);
+  assertEquals(await bytes(r), proto.encodeError({ code: "Absent", retry_after: null }));
+  const gone = new FakeDb(withKey(k, () => {
+    throw { code: "OP404", message: "not_found" };
+  }));
+  await assertError(await handler(deps(gone))(await signed(k, "GET", target), IP), "not_found");
   const lying = new FakeDb(withKey(k, () => [{ status: "no_route", retry_after: null }]));
   await assertError(await handler(deps(lying))(await signed(k, "GET", target), IP), "retry");
 });

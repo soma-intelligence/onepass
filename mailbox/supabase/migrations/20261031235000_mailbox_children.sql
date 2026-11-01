@@ -7,8 +7,11 @@
 -- is a child: parent_id names the account mailbox it was created under
 -- (never a child itself). plans gains max_children_shared and
 -- max_children_contact, the live children of each kind a parent on that
--- plan may hold (0 by default). Plans shared and contact (seed.sql) are the
--- children's own: a child counts against its plan, never its parent's.
+-- plan may hold (0 by default). Plans shared and contact are the children's
+-- own: a child counts against its plan, never its parent's. This migration
+-- writes them (and the caps of free and selfhost) itself, so a database it
+-- upgrades needs no seed run; seed.sql keeps the same values for a fresh
+-- one.
 --
 --   api_create_child    POST /v1/mailboxes/{m}/children, signed in the
 --                       parent. After _authenticate, in this order: a kind
@@ -41,6 +44,14 @@
 --   api_enroll          a child refuses every ticket (forbidden, in band,
 --                       after the approver checks): its members join only
 --                       through grants. Same signature.
+--   api_set_locator     a child refuses (forbidden, in band, under the
+--                       lock): the recovery locator is an account's.
+--   api_revoke_credential
+--                       a child's owner is never revoked, not even by
+--                       itself (forbidden): deleting the child replaces it.
+--   api_record          a key the mailbox does not hold answers absent (404
+--                       Absent at the edge), so not_found keeps meaning
+--                       "mailbox gone" on every route.
 --
 -- Counting a parent's children needs their rows, which the mailboxes policy
 -- hides (each is another mailbox). The setting onepass.parent (helper
@@ -49,7 +60,8 @@
 -- to the authenticated mailbox, for one statement.
 --
 -- Replaced (same signatures and grants): _enter (also clears
--- onepass.parent), api_enroll. Dropped: api_abandon_mailbox.
+-- onepass.parent), api_enroll, api_set_locator, api_revoke_credential,
+-- api_record. Dropped: api_abandon_mailbox.
 
 set role onepass_mailbox_owner;
 
@@ -197,7 +209,8 @@ begin
 
     v_plan := case when p_kind = 2 then 'shared' else 'contact' end;
     if not exists (select 1 from onepass_mailbox.plans p where p.plan = v_plan) then
-        -- seed.sql was not run: an operator bug, 503 retry at the edge.
+        -- The plan rows below were removed by hand: an operator bug, 503
+        -- retry at the edge.
         raise exception 'plan % is missing', v_plan using errcode = 'P0001';
     end if;
 
@@ -212,6 +225,8 @@ begin
         values (v_cid, v_id, p_owner_key, coalesce(p_label, '\x'::bytea), 3, true);
     exception when unique_violation then
         -- The key is in some mailbox: malformed, as on create and grant.
+        -- The same exit catches a collision of the random 128 bit mailbox
+        -- id with an existing one, negligible (and retried by the client).
         v_err := 'malformed';
     end;
     perform onepass_mailbox._enter(null);
@@ -409,7 +424,168 @@ begin
 end
 $$;
 
+-- api_set_locator of 20261031234000: a child refuses, under the lock.
+create or replace function onepass_mailbox.api_set_locator(
+    p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea, p_locator bytea)
+returns table (status text, retry_after integer)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+    v_retry integer;
+    v_role smallint;
+    v_kind smallint;
+begin
+    v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
+    if v_retry is not null then
+        return query select 'rate_limited'::text, v_retry;
+        return;
+    end if;
+    if p_locator is null or length(p_locator) <> 16 then
+        return query select 'malformed'::text, null::integer;
+        return;
+    end if;
+
+    select m.kind into v_kind from onepass_mailbox.mailboxes m where m.id = p_mailbox for no key update;
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
+    if v_role is distinct from 3 or v_kind is distinct from 1 then
+        return query select 'forbidden'::text, null::integer;
+        return;
+    end if;
+    -- Another mailbox holding the same locator is no conflict (D.4).
+    insert into onepass_mailbox.locators (locator, mailbox_id) values (p_locator, p_mailbox)
+    on conflict (locator, mailbox_id) do nothing;
+    -- Keep the mailbox's 2 latest.
+    delete from onepass_mailbox.locators l
+    where l.mailbox_id = p_mailbox
+      and l.seq not in (select k.seq from onepass_mailbox.locators k
+                        where k.mailbox_id = p_mailbox order by k.seq desc limit 2);
+    return query select 'ok'::text, null::integer;
+end
+$$;
+
+-- api_revoke_credential of 20261031233000: in a child, the owner is never
+-- revoked, by itself included.
+create or replace function onepass_mailbox.api_revoke_credential(
+    p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea, p_target bytea)
+returns table (status text, retry_after integer)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+    v_retry integer;
+    v_role smallint;
+    v_kind smallint;
+    v_t_role smallint;
+    v_t_owner boolean;
+    v_t_revoked timestamptz;
+begin
+    v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
+    if v_retry is not null then
+        return query select 'rate_limited'::text, v_retry;
+        return;
+    end if;
+    if p_target is null or length(p_target) <> 16 then
+        return query select 'malformed'::text, null::integer;
+        return;
+    end if;
+
+    -- Mailbox lock, then the target row: see the deadlock note at the top
+    -- of 20261031233000.
+    select m.kind into v_kind from onepass_mailbox.mailboxes m where m.id = p_mailbox for no key update;
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
+    if v_role is distinct from 3 and p_target <> p_credential then
+        return query select 'forbidden'::text, null::integer;
+        return;
+    end if;
+    select c.role, c.owner, c.revoked_at into v_t_role, v_t_owner, v_t_revoked
+    from onepass_mailbox.credentials c
+    where c.id = p_target and c.mailbox_id = p_mailbox;
+    if not found then
+        return query select 'not_found'::text, null::integer;
+        return;
+    end if;
+    if v_t_revoked is null then
+        if (v_t_owner and (p_target <> p_credential or v_kind is distinct from 1))
+           or (v_t_role = 3 and onepass_mailbox._other_managers(p_mailbox, p_target) = 0) then
+            return query select 'forbidden'::text, null::integer;
+            return;
+        end if;
+        update onepass_mailbox.credentials
+        set revoked_at = now(), push_kind = null, push_token = null
+        where id = p_target and mailbox_id = p_mailbox;
+    end if;
+    return query select 'ok'::text, null::integer;
+end
+$$;
+
+-- api_record of 20261031120100: a key the mailbox does not hold is absent.
+-- A gone mailbox is still not_found, raised by _authenticate.
+create or replace function onepass_mailbox.api_record(
+    p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea, p_kind smallint, p_id bytea)
+returns table (
+    status text, retry_after integer,
+    seq bigint, version bigint, deleted boolean, data bytea, blob_sha256 bytea, size integer)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+    v_retry integer;
+begin
+    v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
+    if v_retry is not null then
+        return query select 'rate_limited'::text, v_retry,
+            null::bigint, null::bigint, null::boolean, null::bytea, null::bytea, null::integer;
+        return;
+    end if;
+    if p_kind is null or p_kind not between 1 and 255 or p_id is null or length(p_id) <> 16 then
+        return query select 'malformed'::text, null::integer,
+            null::bigint, null::bigint, null::boolean, null::bytea, null::bytea, null::integer;
+        return;
+    end if;
+    return query
+    select 'ok'::text, null::integer, r.seq, r.version, r.deleted, r.data, r.blob_sha256, r.size
+    from onepass_mailbox.records r
+    where r.mailbox_id = p_mailbox and r.kind = p_kind and r.id = p_id;
+    if not found then
+        return query select 'absent'::text, null::integer,
+            null::bigint, null::bigint, null::boolean, null::bytea, null::bytea, null::integer;
+    end if;
+end
+$$;
+
 reset role;
+
+-- ------------------------------------------------------------- plans
+
+-- The child plans and the parent caps, as in seed.sql, written here so the
+-- hosted database needs no seed run. Idempotent: a plan row already there is
+-- left alone, and the caps of free and selfhost are set only while both are
+-- still 0 (the column default), never over caps set by hand. One statement,
+-- so the transaction local maintenance switch covers it whether or not the
+-- migration runs in a transaction of its own.
+do $$
+begin
+    perform set_config('onepass.maintenance', 'on', true);
+    insert into onepass_mailbox.plans (plan, max_bytes, max_records, max_credentials, req_per_min, max_commit_ops,
+                                       max_children_shared, max_children_contact)
+    values
+        ('shared', 134217728, 100000, 80, 600, 20000, 0, 0),
+        ('contact', 16777216, 2000, 4, 120, 2000, 0, 0)
+    on conflict (plan) do nothing;
+    update onepass_mailbox.plans set max_children_shared = 16, max_children_contact = 256
+    where plan = 'free' and max_children_shared = 0 and max_children_contact = 0;
+    update onepass_mailbox.plans set max_children_shared = 1024, max_children_contact = 4096
+    where plan = 'selfhost' and max_children_shared = 0 and max_children_contact = 0;
+    perform set_config('onepass.maintenance', '', true);
+end
+$$;
 
 -- ------------------------------------------------------------- grants
 

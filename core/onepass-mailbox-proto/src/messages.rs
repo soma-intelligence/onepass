@@ -617,7 +617,7 @@ pub enum ErrorCode {
     RateLimited,
     Retry,
     /// 404 for a method and path the mailbox does not serve, so a client can
-    /// tell a wrong base URL from a record that is absent (`NotFound`).
+    /// tell a wrong base URL from a record that is absent (`Absent`).
     NoRoute,
     /// 403: the credential's role does not allow the request (a reader
     /// that commits, a limited writer outside its kinds, a non-manager that
@@ -625,6 +625,11 @@ pub enum ErrorCode {
     /// manager or an owner that would lose its place). Appended after
     /// `NoRoute`: the codes before it keep their bytes.
     Forbidden,
+    /// 404 from the record route for a key the mailbox does not hold, so a
+    /// client can tell an absent record from a gone mailbox (`NotFound`,
+    /// which keeps that one meaning on every route). Appended after
+    /// `Forbidden`: the codes before it keep their bytes.
+    Absent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -995,6 +1000,7 @@ mod tests {
             ErrorCode::Retry,
             ErrorCode::NoRoute,
             ErrorCode::Forbidden,
+            ErrorCode::Absent,
         ] {
             rt(ErrorBody {
                 code,
@@ -1047,6 +1053,7 @@ mod tests {
         assert_eq!(body(ErrorCode::Retry), [PROTO_VERSION, 12, 0]);
         assert_eq!(body(ErrorCode::Malformed), [PROTO_VERSION, 0, 0]);
         assert_eq!(body(ErrorCode::Forbidden), [PROTO_VERSION, 14, 0]);
+        assert_eq!(body(ErrorCode::Absent), [PROTO_VERSION, 15, 0]);
     }
 
     #[test]

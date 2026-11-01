@@ -247,8 +247,8 @@ fn rendezvous_retries_a_busy_server() {
     assert_eq!(a.recv_frame(8, deadline).unwrap(), b"hi");
 }
 
-/// A day after its creation, not even the creator abandons a mailbox
-/// (`api_abandon_mailbox`: created_at within 24 hours).
+/// A day after its creation, not even the creator abandons an account
+/// mailbox (`api_delete_mailbox`: created_at within 24 hours).
 #[test]
 fn abandon_refused_after_day() {
     let fake = FakeMailbox::new();
