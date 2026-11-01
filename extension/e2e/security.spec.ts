@@ -452,9 +452,17 @@ paired("S17_fixed_extension_url_not_reachable", async ({ ext }) => {
 
 paired("S18_passkey_needs_user_click", async ({ ext }) => {
   const { page } = ext;
-  const opened = nextPasskeyWindow(ext);
-  // The page asks on load, without any gesture.
+  const windows = countPasskeyWindows(ext);
+  // The page asks on load, without any gesture: no user activation, so no
+  // window and nothing listed; the browser's own API answers (and refuses).
   await page.goto(`${ATLAS}/passkey?auto=1`);
+  await expect(page.locator("#result")).toHaveAttribute("data-status", /^error:/, { timeout: 15_000 });
+  await ext.settle(1000);
+  expect(windows.count()).toBe(0);
+  expect(ext.audit()).not.toContain("passkey_list");
+  // The user's click on the page gives the activation: the window opens.
+  const opened = nextPasskeyWindow(ext);
+  await page.locator("#signin").click();
   const win = await opened;
   const row = win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` });
   await expect(row).toBeVisible();
@@ -514,11 +522,12 @@ paired("S21_passkey_client_data_origin_from_browser", async ({ ext }) => {
   expect(r.crossOrigin).toBe(false);
 
   // A compromised content script of this page puts another origin in its message: ignored.
+  // (It can claim the activation; the window and the trusted click there still stand.)
   opened = nextPasskeyWindow(ext);
   const forged = inContentScript(
     ext,
     page,
-    `chrome.runtime.sendMessage({ type: "passkey_request", reqId: "forged1", origin: "https://bank.test", request: { kind: "get", challenge: "AAECAwQFBgcICQoLDA0ODw", allow: [], origin: "https://bank.test" } })`,
+    `chrome.runtime.sendMessage({ type: "passkey_request", reqId: "forged1", activated: true, origin: "https://bank.test", request: { kind: "get", challenge: "AAECAwQFBgcICQoLDA0ODw", allow: [], origin: "https://bank.test" } })`,
   );
   win = await opened;
   await ext.settle();

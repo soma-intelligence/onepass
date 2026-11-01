@@ -139,4 +139,36 @@ describe("passkey choice window", () => {
     expect(r.querySelector("img")).toBeNull();
     expect(text(r)).toContain("<img src=x");
   });
+
+  it("shows the exact origin asking, beside the rpId", async () => {
+    const { r, handle } = setup({ ...GET_INIT, origin: "https://login.atlas-cloud.test:8443" });
+    await handle.ready;
+    expect(text(r)).toContain("https://login.atlas-cloud.test:8443");
+    expect(text(r)).toContain("atlas-cloud.test");
+    const c = setup({ ...CREATE_INIT, origin: "https://signup.atlas-cloud.test" });
+    await c.handle.ready;
+    expect(text(c.r)).toContain("https://signup.atlas-cloud.test");
+  });
+
+  it("a site's userName loses control, format and bidi characters, and is cut", async () => {
+    const tricky = "admin\u202E\u200Bgpj.exe\u0007\u2066x";
+    const { r, handle } = setup({ ...CREATE_INIT, userName: tricky });
+    await handle.ready;
+    expect(text(r)).toContain("admingpj.exex");
+    expect(text(r)).not.toMatch(/[\u202E\u200B\u0007\u2066]/);
+    const long = setup({ ...CREATE_INIT, userName: "a".repeat(200) });
+    await long.handle.ready;
+    expect(text(long.r)).toContain(`${"a".repeat(63)}…`);
+    expect(text(long.r)).not.toContain("a".repeat(64));
+    const g = setup({ ...GET_INIT, accounts: [{ ...GET_INIT.accounts[0]!, userName: "ops\u202Eexe" }] });
+    await g.handle.ready;
+    expect(text(g.r)).toContain("opsexe");
+    expect(g.r.querySelector("button.pk-row")?.getAttribute("aria-label")).not.toMatch(/\u202E/);
+  });
+
+  it("create: the first focus is on Annuler, not Enregistrer", async () => {
+    const { r, handle } = setup(CREATE_INIT);
+    await handle.ready;
+    expect(document.activeElement).toBe(button(r, "Annuler"));
+  });
 });

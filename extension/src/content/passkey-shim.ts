@@ -8,7 +8,8 @@
 //
 // Falls back to the browser's own API when the relay is not there, on a
 // non-HTTPS page, for conditional mediation (autofill UI), for a request
-// asking for a cross-platform authenticator, and when the worker says so (no
+// asking for a cross-platform authenticator or userVerification "required"
+// (the bridge signs with UV=0), and when the worker says so (no
 // OnePass passkey, frame of another site, "Autre appareil").
 
 declare const __PASSKEY_SHIM__: boolean | undefined;
@@ -68,6 +69,9 @@ export function encodeRequest(kind: "get" | "create", options: unknown): Obj | n
   if (!isObj(options) || !isObj(options.publicKey)) return null;
   if (options.mediation === "conditional") return null;
   const pk = options.publicKey;
+  // The bridge never verifies the user (UV=0): a site that requires it gets the browser.
+  if (kind === "get" && pk.userVerification === "required") return null;
+  if (kind === "create" && isObj(pk.authenticatorSelection) && pk.authenticatorSelection.userVerification === "required") return null;
   const out: Obj = { kind, challenge: b64(pk.challenge) };
   if (typeof pk.timeout === "number") out.timeout = Math.max(0, Math.min(600_000, Math.floor(pk.timeout)));
   const ids = (list: unknown): string[] => {

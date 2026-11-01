@@ -82,6 +82,16 @@ describe("passkey shim (MAIN world)", () => {
     expect(relay.got).toHaveLength(0);
   });
 
+  it("leaves userVerification \"required\" to the browser (the bridge signs with UV=0)", async () => {
+    const { creds, calls, relay } = shim();
+    await creds.get({ publicKey: { ...getOptions().publicKey, userVerification: "required" } });
+    await creds.create({ publicKey: { ...createOptions().publicKey, authenticatorSelection: { userVerification: "required" } } });
+    expect(calls.map((c) => c.kind)).toEqual(["get", "create"]);
+    expect(relay.got).toHaveLength(0);
+    void creds.get({ publicKey: { ...getOptions().publicKey, userVerification: "preferred" } });
+    expect(relay.got).toHaveLength(1);
+  });
+
   it("uses the browser's API without the relay or off HTTPS", async () => {
     for (const o of [{ port: false }, { secure: false }]) {
       const { creds, calls } = shim(o);
@@ -196,14 +206,18 @@ class ShimEnd implements RelayPort {
   }
 }
 
-function relay(answer: (m: PasskeyCsToBg) => unknown = () => ({ ok: { kind: "fallback" } })) {
+function relay(answer: (m: PasskeyCsToBg) => unknown = () => ({ ok: { kind: "fallback" } }), active = { now: false }) {
   const sent: PasskeyCsToBg[] = [];
   const port = new ShimEnd();
-  attachRelay(port, async (m) => {
-    sent.push(structuredClone(m));
-    return answer(m);
-  });
-  return { port, sent };
+  attachRelay(
+    port,
+    async (m) => {
+      sent.push(structuredClone(m));
+      return answer(m);
+    },
+    () => active.now,
+  );
+  return { port, sent, active };
 }
 
 const GET = { kind: "get", challenge: "AQIDBA", allow: [] };
@@ -236,7 +250,24 @@ describe("passkey relay (isolated world)", () => {
     const { port, sent } = relay();
     port.send({ type: "request", id: "p1", request: { ...GET, origin: "https://bank.test", top_origin: "https://bank.test" } });
     await flush();
-    expect(sent).toEqual([{ type: "passkey_request", reqId: "p1", request: GET }]);
+    expect(sent).toEqual([{ type: "passkey_request", reqId: "p1", request: GET, activated: false }]);
+  });
+
+  it("tells the worker whether the page's call came with a user activation", async () => {
+    const { port, sent, active } = relay();
+    active.now = true;
+    port.send({ type: "request", id: "p1", request: GET });
+    active.now = false;
+    port.send({ type: "request", id: "p2", request: GET });
+    await flush();
+    expect(sent.map((m) => (m.type === "passkey_request" ? m.activated : null))).toEqual([true, false]);
+  });
+
+  it("a page cannot claim the activation itself", async () => {
+    const { port, sent } = relay();
+    port.send({ type: "request", id: "p1", request: GET, activated: true });
+    await flush();
+    expect(sent[0]).toMatchObject({ activated: false });
   });
 
   it("passes a checked result back, a malformed one as fallback", async () => {

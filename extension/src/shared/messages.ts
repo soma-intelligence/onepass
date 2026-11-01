@@ -429,7 +429,7 @@ export type PasskeyRequest = PasskeyGetRequest | PasskeyCreateRequest;
 
 /** Isolated relay to background (untrusted: sizes and types checked again there). */
 export type PasskeyCsToBg =
-  | { type: "passkey_request"; reqId: string; request: PasskeyRequest }
+  | { type: "passkey_request"; reqId: string; request: PasskeyRequest; activated: boolean }
   | { type: "passkey_abort"; reqId: string };
 
 export type PasskeyErrorName = "NotAllowedError" | "InvalidStateError" | "AbortError";

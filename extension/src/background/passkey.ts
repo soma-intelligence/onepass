@@ -10,9 +10,15 @@
 //   other frame, http, no matching passkey: the browser's own API (`fallback`);
 // - a passkey is used without a window only while a chain "Connexion en un clic"
 //   the user started runs in this tab for the item holding it (its click is the
-//   consent); otherwise the choice window `passkey.html#<token>` opens, bound to
-//   the requesting tab, frame and document, and nothing is signed before a
-//   trusted click there (the page's click guard). A creation always asks;
+//   consent), in the top frame of the chain's site, once per chain; otherwise
+//   the choice window `passkey.html#<token>` opens, bound to the requesting tab,
+//   frame and document, and nothing is signed before a trusted click there (the
+//   page's click guard). A creation always asks;
+// - the window opens only on a page call made under a user activation (read by
+//   the isolated relay), in the active tab, at most PASSKEY_WINDOWS_PER_MIN per
+//   tab, never within PASSKEY_COOLDOWN_MS of a refusal for the same tab and site;
+//   the host's list is asked at most PASSKEY_PROBES_PER_MIN per tab. Past any of
+//   these, the browser's API (a page cannot pop windows or probe the vault);
 // - one window per document: a second request while one is open is refused;
 // - the page (MAIN world) only ever gets the final assertion or registration.
 import type { RequestFor } from "../bridge/client";
@@ -43,6 +49,12 @@ export const PASSKEY_MIN_WAIT_MS = 30 * 1000;
 /** Size of the choice window. */
 export const PASSKEY_WINDOW = { width: 380, height: 460 } as const;
 export const PASSKEY_PAGE = "passkey.html";
+/** After a cancel (or a closed window), the browser's API for that tab and site this long. */
+export const PASSKEY_COOLDOWN_MS = 10 * 1000;
+/** Per tab and minute: choice windows opened, host lists asked. */
+export const PASSKEY_WINDOWS_PER_MIN = 3;
+export const PASSKEY_PROBES_PER_MIN = 6;
+const MINUTE = 60 * 1000;
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
 const REQ_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
@@ -67,6 +79,9 @@ export interface PasskeyDeps {
   chain: Pick<ChainDriver, "state">;
   windows?: PasskeyWindows;
   runtime: Pick<BgExt["runtime"], "getURL">;
+  /** The requesting tab must be the active one of its window. */
+  tabs: { get(tabId: number): Promise<{ active?: boolean } | undefined> };
+  now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
 
@@ -93,6 +108,11 @@ interface Pending extends Ctx {
   resolve: (r: PasskeyResult) => void;
 }
 
+/** A request between its arrival and its window: an abort lands here (no window then). */
+interface Early {
+  aborted: boolean;
+}
+
 const FALLBACK: PasskeyResult = { kind: "fallback" };
 const fail = (name: PasskeyErrorName): PasskeyResult => ({ kind: "error", name });
 
@@ -108,9 +128,19 @@ export class Passkeys {
   private readonly byToken = new Map<string, Pending>();
   private readonly byKey = new Map<string, Pending>();
   private readonly byDoc = new Map<string, Pending>();
+  private readonly early = new Map<string, Early>();
+  /** `tabId:site` -> end of the cooldown. */
+  private readonly cooldown = new Map<string, number>();
+  /** Per tab: times of the windows opened, of the lists asked (last minute). */
+  private readonly opened = new Map<number, number[]>();
+  private readonly probes = new Map<number, number[]>();
+  /** Tabs whose running chain already signed once without a window. */
+  private readonly chainSigned = new Set<number>();
   private readonly timers: NonNullable<PasskeyDeps["timers"]>;
+  private readonly now: () => number;
 
   constructor(private readonly deps: PasskeyDeps) {
+    this.now = deps.now ?? (() => Date.now());
     this.timers = deps.timers ?? {
       setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
       clearTimeout: (id) => globalThis.clearTimeout(id as ReturnType<typeof setTimeout>),
@@ -125,14 +155,83 @@ export class Passkeys {
     });
     ext.tabs.onRemoved.addListener((tabId) => {
       for (const p of [...this.byToken.values()]) if (p.cs.tabId === tabId) this.finish(p, fail("NotAllowedError"));
+      this.opened.delete(tabId);
+      this.probes.delete(tabId);
+      this.chainSigned.delete(tabId);
+      for (const k of [...this.cooldown.keys()]) if (k.startsWith(`${tabId}:`)) this.cooldown.delete(k);
     });
     this.deps.windows?.onRemoved.addListener((windowId) => {
-      for (const p of [...this.byToken.values()]) if (p.windowId === windowId) this.finish(p, fail("NotAllowedError"), false);
+      for (const p of [...this.byToken.values()]) {
+        if (p.windowId === windowId) {
+          this.coolDown(p);
+          this.finish(p, fail("NotAllowedError"), false);
+        }
+      }
     });
   }
 
-  /** A page asked for a passkey; resolves when it has its answer. */
-  async request(cs: CsContext, reqId: string, req: PasskeyRequest): Promise<PasskeyResult> {
+  /** Times of `map[tabId]` within the last minute (pruned). */
+  private recent(map: Map<number, number[]>, tabId: number): number[] {
+    const since = this.now() - MINUTE;
+    const list = (map.get(tabId) ?? []).filter((t) => t > since);
+    map.set(tabId, list);
+    return list;
+  }
+
+  private siteKey(cs: CsContext): string {
+    return `${cs.tabId}:${parseOrigin(cs.origin)?.site ?? cs.origin}`;
+  }
+
+  private coolDown(p: Pending): void {
+    this.cooldown.set(this.siteKey(p.cs), this.now() + PASSKEY_COOLDOWN_MS);
+  }
+
+  /** May a choice window open for this request (before any list is asked)? */
+  private async mayOpen(cs: CsContext, activated: boolean): Promise<boolean> {
+    if (!activated || !this.deps.windows) return false;
+    const until = this.cooldown.get(this.siteKey(cs));
+    if (until !== undefined && this.now() < until) return false;
+    if (this.recent(this.opened, cs.tabId).length >= PASSKEY_WINDOWS_PER_MIN) return false;
+    const tab = await Promise.resolve()
+      .then(() => this.deps.tabs.get(cs.tabId))
+      .catch(() => undefined);
+    return tab?.active === true;
+  }
+
+  /**
+   * The running chain of this tab, when it may sign without a window here:
+   * the top frame, on the chain's site (for a provider chain, once back on it),
+   * and no silent assertion yet in this chain.
+   */
+  private async silentChain(cs: CsContext, site: string): Promise<{ itemId: string } | null> {
+    const chain = await this.deps.chain.state(cs.tabId).catch(() => null);
+    if (chain?.status !== "running") {
+      this.chainSigned.delete(cs.tabId);
+      return null;
+    }
+    if (cs.frameId !== 0 || this.chainSigned.has(cs.tabId)) return null;
+    if (chain.site === undefined || chain.site !== site) return null;
+    if (chain.provider !== undefined && !(chain.phase === "back" || chain.phase === "signin" || chain.phase === "code")) return null;
+    return { itemId: chain.itemId };
+  }
+
+  /**
+   * A page asked for a passkey; resolves when it has its answer. `activated`:
+   * the page's call came with a transient user activation (the relay read it).
+   */
+  async request(cs: CsContext, reqId: string, req: PasskeyRequest, activated: boolean): Promise<PasskeyResult> {
+    const key = `${cs.tabId}:${cs.frameId}:${reqId}`;
+    if (this.early.has(key) || this.byKey.has(key)) return fail("NotAllowedError");
+    const e: Early = { aborted: false };
+    this.early.set(key, e);
+    try {
+      return await this.route(cs, reqId, req, activated, e);
+    } finally {
+      if (this.early.get(key) === e) this.early.delete(key);
+    }
+  }
+
+  private async route(cs: CsContext, reqId: string, req: PasskeyRequest, activated: boolean, e: Early): Promise<PasskeyResult> {
     const origin = parseOrigin(cs.origin);
     if (!origin?.https) return FALLBACK;
     if (cs.frameId !== 0 && !(await this.deps.frames.ancestorsOfOrigin(cs.tabId, cs.frameId, origin.origin))) return FALLBACK;
@@ -141,6 +240,14 @@ export class Passkeys {
     if (topOrigin === null) return FALLBACK;
     const rpId = req.rpId ?? hostOf(origin.origin);
     if (rpId === "") return FALLBACK;
+    const c: Ctx = { cs: { ...cs, origin: origin.origin }, topOrigin, rpId };
+    // A creation never goes through a chain; a get may, else it needs the window.
+    const chain = req.kind === "get" ? await this.silentChain(c.cs, origin.site) : null;
+    const canOpen = await this.mayOpen(c.cs, activated);
+    if (!chain && !canOpen) return FALLBACK;
+    const probes = this.recent(this.probes, cs.tabId);
+    if (probes.length >= PASSKEY_PROBES_PER_MIN) return FALLBACK;
+    probes.push(this.now());
     let listed: PasskeyAccount[];
     try {
       const r = await this.deps.session.request({ op: "passkey_list", ctx: "passkey", origin: origin.origin, rp_id: rpId });
@@ -155,31 +262,38 @@ export class Passkeys {
       // Locked, unpaired, an rpId the host refuses: the browser decides.
       return FALLBACK;
     }
-    const c: Ctx = { cs: { ...cs, origin: origin.origin }, topOrigin, rpId };
-    if (req.kind === "get") return this.get(c, reqId, req, listed);
-    return this.create(c, reqId, req, listed);
+    // The page aborted while the host listed: no window.
+    if (e.aborted) return fail("AbortError");
+    if (req.kind === "get") return this.get(c, reqId, req, listed, chain, canOpen);
+    return this.create(c, reqId, req, listed, canOpen);
   }
 
-  private async get(c: Ctx, reqId: string, req: PasskeyGetRequest, listed: PasskeyAccount[]): Promise<PasskeyResult> {
+  private async get(
+    c: Ctx,
+    reqId: string,
+    req: PasskeyGetRequest,
+    listed: PasskeyAccount[],
+    chain: { itemId: string } | null,
+    canOpen: boolean,
+  ): Promise<PasskeyResult> {
     const offered = req.allow.length === 0 ? listed : listed.filter((p) => req.allow.includes(p.credentialId));
     if (offered.length === 0) return FALLBACK;
     // Spec 3.2: the click that started this tab's chain for this very item is the consent.
-    const chain = await this.deps.chain.state(c.cs.tabId).catch(() => null);
-    if (chain?.status === "running") {
-      const own = offered.find((p) => p.itemId === chain.itemId);
-      if (own) {
-        try {
-          return await this.assert(c, req, own, "chain");
-        } catch {
-          return fail("NotAllowedError");
-        }
+    const own = chain ? offered.find((p) => p.itemId === chain.itemId) : undefined;
+    if (own) {
+      this.chainSigned.add(c.cs.tabId);
+      try {
+        return await this.assert(c, req, own, "chain");
+      } catch {
+        return fail("NotAllowedError");
       }
     }
+    if (!canOpen) return FALLBACK;
     return this.open(c, reqId, req, offered);
   }
 
-  private async create(c: Ctx, reqId: string, req: PasskeyCreateRequest, listed: PasskeyAccount[]): Promise<PasskeyResult> {
-    if (!req.algs.includes(ES256)) return FALLBACK;
+  private async create(c: Ctx, reqId: string, req: PasskeyCreateRequest, listed: PasskeyAccount[], canOpen: boolean): Promise<PasskeyResult> {
+    if (!req.algs.includes(ES256) || !canOpen) return FALLBACK;
     return this.open(c, reqId, req, listed);
   }
 
@@ -218,6 +332,8 @@ export class Passkeys {
       p.timer = this.timers.setTimeout(() => this.finish(p, fail("NotAllowedError")), wait);
       this.byToken.set(token, p);
       this.byKey.set(key, p);
+      this.early.delete(key);
+      this.recent(this.opened, c.cs.tabId).push(this.now());
       this.byDoc.set(doc, p);
       p.opened = windows
         .create({ url: `${this.deps.runtime.getURL(PASSKEY_PAGE)}#${token}`, type: "popup", ...PASSKEY_WINDOW, focused: true })
@@ -245,7 +361,10 @@ export class Passkeys {
 
   /** The page's AbortSignal fired. */
   async abort(cs: CsContext, reqId: string): Promise<object> {
-    const p = this.byKey.get(`${cs.tabId}:${cs.frameId}:${reqId}`);
+    const key = `${cs.tabId}:${cs.frameId}:${reqId}`;
+    const e = this.early.get(key);
+    if (e) e.aborted = true;
+    const p = this.byKey.get(key);
     if (p) this.finish(p, fail("AbortError"));
     return {};
   }
@@ -362,7 +481,9 @@ export class Passkeys {
   }
 
   async cancel(token: string, ui: UiContext): Promise<object> {
-    this.finish(await this.pending(token, ui), fail("NotAllowedError"));
+    const p = await this.pending(token, ui);
+    this.coolDown(p);
+    this.finish(p, fail("NotAllowedError"));
     return {};
   }
 }
@@ -424,15 +545,26 @@ export function createPasskeyRouter(runtime: Pick<BgExt["runtime"], "id" | "getU
           return undefined;
       }
     }
-    const cs = contentSender(runtime, sender);
-    if (!cs) return undefined;
+    if (sender.id !== runtime.id) return undefined;
     if (typeof m.reqId !== "string" || !REQ_ID_RE.test(m.reqId)) return undefined;
     const reqId = m.reqId;
+    if (m.type === "passkey_request") {
+      // Passkeys trust only the origin the browser stamps on the sender, never
+      // one derived from `sender.url` (absent on Firefox, "null" when opaque):
+      // without it, the browser's own API.
+      const so = (sender as { origin?: unknown }).origin;
+      if (typeof so !== "string" || so === "null") {
+        sendResponse({ ok: FALLBACK });
+        return undefined;
+      }
+    }
+    const cs = contentSender(runtime, sender);
+    if (!cs) return undefined;
     if (m.type === "passkey_request") {
       // Rebuilt from checked fields only: an `origin` of the page never gets through.
       const req = parsePasskeyRequest(m.request);
       if (!req) return undefined;
-      return run(passkeys.request(cs, reqId, req), sendResponse);
+      return run(passkeys.request(cs, reqId, req, m.activated === true), sendResponse);
     }
     if (m.type === "passkey_abort") return run(passkeys.abort(cs, reqId), sendResponse);
     return undefined;

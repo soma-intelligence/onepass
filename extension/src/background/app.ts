@@ -27,7 +27,7 @@ import { NeverSave } from "./never-save";
 import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
 import { PairingFlow } from "./pairing";
-import { type PasskeyWindows, Passkeys, createPasskeyRouter } from "./passkey";
+import { type PasskeyDeps, type PasskeyWindows, Passkeys, createPasskeyRouter } from "./passkey";
 import { clearPenalty, hasPenalty, siteOf } from "./penalty";
 import { Planner, type PlanOrigins, framesFromSender, mainRoles } from "./planner";
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
@@ -506,6 +506,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     frames,
     chain,
     runtime: ext.runtime,
+    tabs: ext.tabs as unknown as PasskeyDeps["tabs"],
     ...((ext as unknown as { windows?: PasskeyWindows }).windows ? { windows: (ext as unknown as { windows: PasskeyWindows }).windows } : {}),
   });
 

@@ -72,6 +72,19 @@ export function parsePasskeyInit(v: unknown): PasskeyInit | null {
 
 const parseEmpty = (v: unknown): object | null => (typeof v === "object" && v !== null ? v : null);
 
+/** Shown length of a site's userName (characters, the ellipsis included). */
+export const MAX_SHOWN_NAME = 64;
+
+/**
+ * A userName as the window shows it: no control or format characters (bidi
+ * overrides and isolates, zero widths), cut to MAX_SHOWN_NAME with an ellipsis.
+ * A site picks this string: it must not pass for another account or file name.
+ */
+export function displayName(v: string): string {
+  const chars = Array.from(v.replace(/[\p{Cc}\p{Cf}]/gu, ""));
+  return chars.length <= MAX_SHOWN_NAME ? chars.join("") : `${chars.slice(0, MAX_SHOWN_NAME - 1).join("")}…`;
+}
+
 const initial = (s: string) => (s.trim().charAt(0) || "O").toUpperCase();
 
 export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle {
@@ -116,12 +129,19 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
   const other = () => btn(tr("Autre appareil", "Other device"), "btn", () => void act({ type: "passkey_other", token: token ?? "" }));
   const cancel = () => btn(tr("Annuler", "Cancel"), "btn", () => void act({ type: "passkey_cancel", token: token ?? "" }));
 
-  const header = (title: string, site: string) =>
+  // The rpId the passkey is for, and the exact origin asking (the browser's, from the worker).
+  const header = (title: string, i: PasskeyInit) =>
     h(
       "header",
       { class: "pk-head" },
       mark("m"),
-      h("span", { class: "stack" }, h("h1", null, title), h("span", { class: "pk-site" }, icon("lock", 11), h("span", null, site))),
+      h(
+        "span",
+        { class: "stack" },
+        h("h1", null, title),
+        h("span", { class: "pk-site" }, icon("lock", 11), h("span", null, i.rpId)),
+        h("span", { class: "pk-origin", attrs: { title: i.origin } }, tr(`Demandé par ${i.origin}`, `Asked by ${i.origin}`)),
+      ),
     );
 
   const show = (...children: (HTMLElement | null)[]) => {
@@ -131,15 +151,16 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
 
   function renderGet(i: PasskeyInit): void {
     const rows = i.accounts.map((a) => {
+      const name = displayName(a.userName);
       const b = h(
         "button",
         {
           class: "row pk-row",
-          attrs: { type: "button", "aria-label": tr(`Se connecter en tant que ${a.userName}`, `Sign in as ${a.userName}`) },
+          attrs: { type: "button", "aria-label": tr(`Se connecter en tant que ${name}`, `Sign in as ${name}`) },
           on: { click: guard.wrap(() => void act({ type: "passkey_pick", token: token ?? "", itemId: a.itemId, credentialId: a.credentialId })) },
         },
         tile(initial(a.title), TILE, "m"),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, a.userName), h("span", { class: "t2" }, `${a.title} · ${a.vaultName}`)),
+        h("span", { class: "stack" }, h("span", { class: "t1" }, name), h("span", { class: "t2" }, `${a.title} · ${a.vaultName}`)),
         h("span", { class: "pk-key" }, icon("key", 14)),
       );
       buttons.push(b);
@@ -149,7 +170,7 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
       h(
         "div",
         { class: "pk-body", attrs: { role: "dialog", "aria-label": tr("Passkey", "Passkey") } },
-        header(tr("Se connecter avec une passkey", "Sign in with a passkey"), i.rpId),
+        header(tr("Se connecter avec une passkey", "Sign in with a passkey"), i),
         h("p", { class: "pk-lead" }, tr("Choisis le compte. OnePass signe pour ce site, sans mot de passe.", "Choose the account. OnePass signs for this site, no password.")),
         h("div", { class: "pk-list", attrs: { role: "list" } }, ...rows),
         errLine,
@@ -171,12 +192,13 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
       if (vaultId !== undefined) msg.vaultId = vaultId;
       void act(msg);
     });
-    const userName = i.userName ?? "";
+    const userName = displayName(i.userName ?? "");
+    const cancelButton = cancel();
     show(
       h(
         "div",
         { class: "pk-body", attrs: { role: "dialog", "aria-label": tr("Passkey", "Passkey") } },
-        header(tr("Enregistrer une passkey", "Save a passkey"), i.rpId),
+        header(tr("Enregistrer une passkey", "Save a passkey"), i),
         h(
           "div",
           { class: "pk-card" },
@@ -190,9 +212,11 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
         ),
         vaults.length > 1 ? h("label", { class: "pk-field" }, h("span", { class: "t2" }, tr("Coffre", "Vault")), sel) : null,
         errLine,
-        h("footer", { class: "pk-actions" }, other(), h("span", { class: "pk-gap" }), cancel(), save),
+        h("footer", { class: "pk-actions" }, other(), h("span", { class: "pk-gap" }), cancelButton, save),
       ),
     );
+    // A creation starts on "Annuler": Enter alone never saves a passkey.
+    cancelButton.focus({ preventScroll: true });
   }
 
   const keydown = (e: KeyboardEvent) => {
@@ -212,9 +236,10 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
       show(messageBlock(errorText(r.code)));
       return;
     }
-    if (r.value.kind === "get") renderGet(r.value);
-    else renderCreate(r.value);
-    (container.querySelector("button.pk-row, button.btn-primary") as HTMLButtonElement | null)?.focus({ preventScroll: true });
+    if (r.value.kind === "get") {
+      renderGet(r.value);
+      (container.querySelector("button.pk-row") as HTMLButtonElement | null)?.focus({ preventScroll: true });
+    } else renderCreate(r.value);
   })();
   return { ready };
 }

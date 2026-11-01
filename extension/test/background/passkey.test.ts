@@ -70,6 +70,8 @@ class FakeWindows implements PasskeyWindows {
 }
 
 interface Setup {
+  /** The requesting tab is the active one (default true). */
+  tabActive?: boolean;
   passkeys?: ReturnType<typeof summary>[];
   chain?: ChainView | null;
   sameOriginAncestors?: boolean;
@@ -78,12 +80,16 @@ interface Setup {
 
 function setup(o: Setup = {}) {
   const requests: Record<string, unknown>[] = [];
+  const clock = { t: 1_000_000 };
+  /** Resolves the pending `passkey_list` when set (F3: an abort while the host answers). */
+  const gate: { hold?: Promise<void> } = {};
   const session = {
     request: async (req: Record<string, unknown>) => {
       requests.push(structuredClone(req));
       const x = o.answer?.(req);
       if (x instanceof Error) throw x;
       if (x !== undefined) return x;
+      if (req.op === "passkey_list" && gate.hold) await gate.hold;
       switch (req.op) {
         case "passkey_list":
           return { passkeys: o.passkeys ?? [summary(ITEM, CRED)] };
@@ -112,6 +118,8 @@ function setup(o: Setup = {}) {
     chain,
     windows,
     runtime: { getURL: (p: string) => EXT_ORIGIN + p },
+    tabs: { get: async () => ({ active: o.tabActive ?? true }) },
+    now: () => clock.t,
   });
   pk.install({
     webNavigation: { onCommitted: { addListener: (cb) => void nav.push(cb) } },
@@ -120,7 +128,7 @@ function setup(o: Setup = {}) {
   const tokenOf = (n = 0) => (windows.created[n]?.url.split("#")[1] ?? "") as string;
   const ui = (n = 0): UiContext => ({ page: "passkey.html", tabId: 100 + n + 1000 });
   const ops = () => requests.map((r) => r.op);
-  return { pk, windows, requests, ops, tokenOf, ui, nav, removedTabs };
+  return { pk, windows, requests, ops, tokenOf, ui, nav, removedTabs, clock, gate };
 }
 
 const cs = (extra: Partial<CsContext> = {}): CsContext => ({ tabId: 7, frameId: 0, origin: ORIGIN, documentId: "doc-1", ...extra });
@@ -129,55 +137,55 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 describe("passkey request routing", () => {
   it("falls back when no passkey of OnePass matches", async () => {
     const t = setup({ passkeys: [] });
-    expect(await t.pk.request(cs(), "r1", GET)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs(), "r1", GET, true)).toEqual({ kind: "fallback" });
     expect(t.windows.created).toHaveLength(0);
     expect(t.requests[0]).toMatchObject({ op: "passkey_list", ctx: "passkey", origin: ORIGIN, rp_id: "login.atlas-cloud.test" });
   });
 
   it("falls back when allowCredentials names none of ours", async () => {
     const t = setup();
-    expect(await t.pk.request(cs(), "r1", { ...GET, allow: [CRED2] })).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs(), "r1", { ...GET, allow: [CRED2] }, true)).toEqual({ kind: "fallback" });
     expect(t.windows.created).toHaveLength(0);
   });
 
   it("takes the origin from the sender, the rpId the page gives only as rp_id", async () => {
     const t = setup();
-    void t.pk.request(cs(), "r1", { ...GET, rpId: "atlas-cloud.test" });
+    void t.pk.request(cs(), "r1", { ...GET, rpId: "atlas-cloud.test" }, true);
     await flush();
     expect(t.requests[0]).toMatchObject({ origin: ORIGIN, rp_id: "atlas-cloud.test" });
   });
 
   it("falls back in a frame of another site (nothing listed, nothing signed)", async () => {
     const t = setup({ sameOriginAncestors: false });
-    expect(await t.pk.request(cs({ frameId: 3, origin: "https://ads.evil.test" }), "r1", GET)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs({ frameId: 3, origin: "https://ads.evil.test" }), "r1", GET, true)).toEqual({ kind: "fallback" });
     expect(t.requests).toHaveLength(0);
     expect(t.windows.created).toHaveLength(0);
   });
 
   it("falls back on http", async () => {
     const t = setup();
-    expect(await t.pk.request(cs({ origin: "http://atlas-cloud.test" }), "r1", GET)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs({ origin: "http://atlas-cloud.test" }), "r1", GET, true)).toEqual({ kind: "fallback" });
     expect(t.requests).toHaveLength(0);
   });
 
   it("falls back when the host refuses the list (rp_id of another site)", async () => {
     const t = setup({ answer: (r) => (r.op === "passkey_list" ? new BgError("origin_mismatch") : undefined) });
-    expect(await t.pk.request(cs(), "r1", { ...GET, rpId: "evil.test" })).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs(), "r1", { ...GET, rpId: "evil.test" }, true)).toEqual({ kind: "fallback" });
     expect(t.windows.created).toHaveLength(0);
   });
 
   it("falls back on create without ES256", async () => {
     const t = setup();
-    expect(await t.pk.request(cs(), "r1", { ...CREATE, algs: [-257] })).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs(), "r1", { ...CREATE, algs: [-257] }, true)).toEqual({ kind: "fallback" });
     expect(t.windows.created).toHaveLength(0);
   });
 
   it("opens one choice window per document; a second request is refused", async () => {
     const t = setup();
-    const first = t.pk.request(cs(), "r1", GET);
+    const first = t.pk.request(cs(), "r1", GET, true);
     await flush();
     expect(t.windows.created).toHaveLength(1);
-    expect(await t.pk.request(cs(), "r2", GET)).toEqual({ kind: "error", name: "NotAllowedError" });
+    expect(await t.pk.request(cs(), "r2", GET, true)).toEqual({ kind: "error", name: "NotAllowedError" });
     expect(t.windows.created).toHaveLength(1);
     await t.pk.cancel(t.tokenOf(), t.ui());
     expect(await first).toEqual({ kind: "error", name: "NotAllowedError" });
@@ -187,7 +195,7 @@ describe("passkey request routing", () => {
 describe("passkey choice window", () => {
   it("signs nothing before a pick, then returns the host's assertion", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     expect(t.ops()).toEqual(["passkey_list"]);
     const init = await t.pk.init(t.tokenOf(), t.ui());
@@ -224,7 +232,7 @@ describe("passkey choice window", () => {
 
   it("refuses a pick of a passkey it did not offer", async () => {
     const t = setup();
-    void t.pk.request(cs(), "r1", GET);
+    void t.pk.request(cs(), "r1", GET, true);
     await flush();
     await t.pk.init(t.tokenOf(), t.ui());
     await expect(t.pk.pick(t.tokenOf(), t.ui(), OTHER_ITEM, CRED)).rejects.toMatchObject({ code: "invalid" });
@@ -233,14 +241,14 @@ describe("passkey choice window", () => {
 
   it("refuses a token from another window tab", async () => {
     const t = setup();
-    void t.pk.request(cs(), "r1", GET);
+    void t.pk.request(cs(), "r1", GET, true);
     await flush();
     await expect(t.pk.init(t.tokenOf(), { page: "passkey.html", tabId: 7 })).rejects.toMatchObject({ code: "invalid" });
   });
 
   it("cancel gives NotAllowedError", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     await t.pk.cancel(t.tokenOf(), t.ui());
     expect(await p).toEqual({ kind: "error", name: "NotAllowedError" });
@@ -249,7 +257,7 @@ describe("passkey choice window", () => {
 
   it("closing the window gives NotAllowedError", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     t.windows.close(100);
     expect(await p).toEqual({ kind: "error", name: "NotAllowedError" });
@@ -257,7 +265,7 @@ describe("passkey choice window", () => {
 
   it("a navigation of the requesting frame cancels", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     for (const l of t.nav) l({ tabId: 7, frameId: 0, url: "https://elsewhere.test/" });
     expect(await p).toEqual({ kind: "error", name: "NotAllowedError" });
@@ -266,7 +274,7 @@ describe("passkey choice window", () => {
 
   it("the page's abort gives AbortError and closes the window", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     await t.pk.abort(cs(), "r1");
     expect(await p).toEqual({ kind: "error", name: "AbortError" });
@@ -275,7 +283,7 @@ describe("passkey choice window", () => {
 
   it("Autre appareil hands over to the browser", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", GET);
+    const p = t.pk.request(cs(), "r1", GET, true);
     await flush();
     await t.pk.other(t.tokenOf(), t.ui());
     expect(await p).toEqual({ kind: "fallback" });
@@ -283,7 +291,7 @@ describe("passkey choice window", () => {
 
   it("a failed assertion keeps the window open with the error", async () => {
     const t = setup({ answer: (r) => (r.op === "passkey_get" ? new BgError("reprompt_required") : undefined) });
-    void t.pk.request(cs(), "r1", GET);
+    void t.pk.request(cs(), "r1", GET, true);
     await flush();
     await t.pk.init(t.tokenOf(), t.ui());
     await expect(t.pk.pick(t.tokenOf(), t.ui(), ITEM, CRED)).rejects.toMatchObject({ code: "reprompt_required" });
@@ -292,11 +300,11 @@ describe("passkey choice window", () => {
 });
 
 describe("passkey in a sign-in chain", () => {
-  const running = (itemId: string, status: ChainView["status"] = "running"): ChainView => ({ itemId, status, steps: [] });
+  const running = (itemId: string, status: ChainView["status"] = "running", site = "atlas-cloud.test"): ChainView => ({ itemId, status, steps: [], site });
 
   it("signs without a window only while a chain the user started runs for the item holding it", async () => {
     const t = setup({ chain: running(ITEM) });
-    const r = await t.pk.request(cs(), "r1", GET);
+    const r = await t.pk.request(cs(), "r1", GET, true);
     expect(r.kind).toBe("assertion");
     expect(t.windows.created).toHaveLength(0);
     expect(t.requests.find((x) => x.op === "passkey_get")).toMatchObject({ ctx: "chain", item_id: ITEM, credential_id: CRED });
@@ -304,7 +312,7 @@ describe("passkey in a sign-in chain", () => {
 
   it("a chain for another item opens the window", async () => {
     const t = setup({ chain: running(OTHER_ITEM) });
-    void t.pk.request(cs(), "r1", GET);
+    void t.pk.request(cs(), "r1", GET, true);
     await flush();
     expect(t.windows.created).toHaveLength(1);
     expect(t.ops()).not.toContain("passkey_get");
@@ -312,7 +320,7 @@ describe("passkey in a sign-in chain", () => {
 
   it("no chain (no click that started one) opens the window", async () => {
     const t = setup({ chain: null });
-    void t.pk.request(cs(), "r1", GET);
+    void t.pk.request(cs(), "r1", GET, true);
     await flush();
     expect(t.windows.created).toHaveLength(1);
     expect(t.ops()).not.toContain("passkey_get");
@@ -321,7 +329,7 @@ describe("passkey in a sign-in chain", () => {
   it("an ended chain opens the window", async () => {
     for (const status of ["done", "stopped", "handoff"] as const) {
       const t = setup({ chain: running(ITEM, status) });
-      void t.pk.request(cs(), "r1", GET);
+      void t.pk.request(cs(), "r1", GET, true);
       await flush();
       expect(t.windows.created).toHaveLength(1);
       expect(t.ops()).not.toContain("passkey_get");
@@ -330,7 +338,7 @@ describe("passkey in a sign-in chain", () => {
 
   it("never creates a passkey from a chain", async () => {
     const t = setup({ chain: running(ITEM) });
-    void t.pk.request(cs(), "r1", CREATE);
+    void t.pk.request(cs(), "r1", CREATE, true);
     await flush();
     expect(t.windows.created).toHaveLength(1);
     expect(t.ops()).not.toContain("passkey_create");
@@ -340,7 +348,7 @@ describe("passkey in a sign-in chain", () => {
 describe("passkey creation", () => {
   it("creates after Enregistrer, in the vault offered", async () => {
     const t = setup({ passkeys: [] });
-    const p = t.pk.request(cs(), "r1", { ...CREATE, rpId: "atlas-cloud.test" });
+    const p = t.pk.request(cs(), "r1", { ...CREATE, rpId: "atlas-cloud.test" }, true);
     await flush();
     const init = await t.pk.init(t.tokenOf(), t.ui());
     expect(init).toMatchObject({ kind: "create", userName: "alex@atlas.dev", rpId: "atlas-cloud.test", vaults: [{ id: "v1", name: "Personnel" }, { id: "v2", name: "Travail" }] });
@@ -371,7 +379,7 @@ describe("passkey creation", () => {
 
   it("an excluded credential already in OnePass gives InvalidStateError after consent", async () => {
     const t = setup();
-    const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] });
+    const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] }, true);
     await flush();
     await t.pk.init(t.tokenOf(), t.ui());
     await t.pk.save(t.tokenOf(), t.ui());
@@ -386,7 +394,7 @@ describe("passkey creation refused by the host", () => {
       passkeys: [],
       answer: (r) => (r.op === "passkey_create" ? toBgError(new BridgeAppError("excluded", "a credential of the exclude list is stored")) : undefined),
     });
-    const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] });
+    const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] }, true);
     await flush();
     await t.pk.init(t.tokenOf(), t.ui());
     await t.pk.save(t.tokenOf(), t.ui());
@@ -397,7 +405,14 @@ describe("passkey creation refused by the host", () => {
 });
 
 describe("passkey router", () => {
-  const sender = (url: string, extra: Record<string, unknown> = {}) => ({ id: EXT_ID, url, tab: { id: 7 }, frameId: 0, ...extra });
+  const sender = (url: string, extra: Record<string, unknown> = {}) => ({
+    id: EXT_ID,
+    url,
+    tab: { id: 7 },
+    frameId: 0,
+    ...(url.startsWith("https://") ? { origin: new URL(url).origin } : {}),
+    ...extra,
+  });
 
   function routed(t: ReturnType<typeof setup>) {
     const router = createPasskeyRouter({ id: EXT_ID, getURL: (p) => EXT_ORIGIN + p }, t.pk);
@@ -429,7 +444,10 @@ describe("passkey router", () => {
   it("ignores an origin the page puts in the request", async () => {
     const t = setup({ passkeys: [] });
     const send = routed(t);
-    const r = await send({ type: "passkey_request", reqId: "r1", request: { ...GET, origin: "https://bank.test" }, origin: "https://bank.test" }, sender(`${ORIGIN}/`, { origin: ORIGIN }));
+    const r = await send(
+      { type: "passkey_request", reqId: "r1", activated: true, request: { ...GET, origin: "https://bank.test" }, origin: "https://bank.test" },
+      sender(`${ORIGIN}/`, { origin: ORIGIN }),
+    );
     expect(t.requests[0]).toMatchObject({ origin: ORIGIN });
     expect(r).toEqual({ ok: expect.anything() });
   });
@@ -445,7 +463,125 @@ describe("passkey router", () => {
   it("answers a content request with a result", async () => {
     const t = setup({ passkeys: [] });
     const send = routed(t);
-    const r = (await send({ type: "passkey_request", reqId: "r1", request: GET }, sender(`${ORIGIN}/`))) as { ok: PasskeyResult };
+    const r = (await send({ type: "passkey_request", reqId: "r1", request: GET, activated: true }, sender(`${ORIGIN}/`))) as { ok: PasskeyResult };
     expect(r.ok).toEqual({ kind: "fallback" });
+  });
+});
+
+describe("passkey hardening (review)", () => {
+  it("M1: no user activation, no list and no window: the browser's API", async () => {
+    const t = setup();
+    expect(await t.pk.request(cs(), "r1", GET, false)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs(), "r2", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(t.requests).toHaveLength(0);
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("M1: a tab that is not the active one gets the browser's API", async () => {
+    const t = setup({ tabActive: false });
+    expect(await t.pk.request(cs(), "r1", GET, true)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("M1: after a cancel, 10 s of the browser's API for that tab and site", async () => {
+    const t = setup();
+    const p = t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    await t.pk.cancel(t.tokenOf(), t.ui());
+    await p;
+    expect(await t.pk.request(cs(), "r2", GET, true)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(1);
+    t.clock.t += 10_001;
+    void t.pk.request(cs(), "r3", GET, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(2);
+  });
+
+  it("M1: at most 3 windows per tab and minute", async () => {
+    const t = setup();
+    for (let i = 0; i < 3; i++) {
+      const p = t.pk.request(cs(), `r${i}`, GET, true);
+      await flush();
+      await t.pk.other(t.tokenOf(i), t.ui(i));
+      await p;
+    }
+    expect(t.windows.created).toHaveLength(3);
+    expect(await t.pk.request(cs(), "r9", GET, true)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(3);
+    t.clock.t += 60_001;
+    void t.pk.request(cs(), "r10", GET, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(4);
+  });
+
+  it("F1: a probe budget per tab: past it, no list at all", async () => {
+    const t = setup({ passkeys: [] });
+    for (let i = 0; i < 20; i++) await t.pk.request(cs(), `r${i}`, GET, true);
+    const lists = t.ops().filter((x) => x === "passkey_list").length;
+    expect(lists).toBeLessThanOrEqual(6);
+    expect(lists).toBeGreaterThan(0);
+    t.clock.t += 60_001;
+    await t.pk.request(cs(), "rz", GET, true);
+    expect(t.ops().filter((x) => x === "passkey_list").length).toBe(lists + 1);
+  });
+
+  it("F2: silent chain signing only in the top frame of the chain's site", async () => {
+    const chain: ChainView = { itemId: ITEM, status: "running", steps: [], site: "other-site.test" };
+    const t = setup({ chain });
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    expect(t.windows.created).toHaveLength(1);
+    const t2 = setup({ chain: { ...chain, site: "atlas-cloud.test" } });
+    void t2.pk.request(cs({ frameId: 2 }), "r1", GET, true);
+    await flush();
+    expect(t2.ops()).not.toContain("passkey_get");
+    expect(t2.windows.created).toHaveLength(1);
+  });
+
+  it("F2: one silent assertion per chain, then the window", async () => {
+    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test" } });
+    expect((await t.pk.request(cs(), "r1", GET, false)).kind).toBe("assertion");
+    void t.pk.request(cs(), "r2", GET, true);
+    await flush();
+    expect(t.ops().filter((x) => x === "passkey_get")).toHaveLength(1);
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("F3: an abort while the host lists cancels: AbortError, no window", async () => {
+    const t = setup();
+    let release = () => undefined as void;
+    t.gate.hold = new Promise<void>((r) => (release = r));
+    const p = t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    await t.pk.abort(cs(), "r1");
+    release();
+    expect(await p).toEqual({ kind: "error", name: "AbortError" });
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("M2: a content sender without a browser origin gets the browser's API", async () => {
+    const t = setup();
+    const router = createPasskeyRouter({ id: EXT_ID, getURL: (p) => EXT_ORIGIN + p }, t.pk);
+    const send = (s: Record<string, unknown>) =>
+      new Promise<unknown>((resolve) => {
+        if (router({ type: "passkey_request", reqId: "r1", activated: true, request: GET }, s as never, resolve) !== true) resolve("no-reply");
+      });
+    for (const origin of [undefined, "null"]) {
+      const s: Record<string, unknown> = { id: EXT_ID, url: `${ORIGIN}/`, tab: { id: 7 }, frameId: 0 };
+      if (origin !== undefined) s.origin = origin;
+      expect(await send(s)).toEqual({ ok: { kind: "fallback" } });
+    }
+    expect(t.requests).toHaveLength(0);
+  });
+
+  it("M1: the relay's activation flag must be a boolean true to open anything", async () => {
+    const t = setup();
+    const router = createPasskeyRouter({ id: EXT_ID, getURL: (p) => EXT_ORIGIN + p }, t.pk);
+    const r = await new Promise<unknown>((resolve) => {
+      router({ type: "passkey_request", reqId: "r1", activated: "yes", request: GET }, { id: EXT_ID, url: `${ORIGIN}/`, origin: ORIGIN, tab: { id: 7 }, frameId: 0 } as never, resolve);
+    });
+    expect(r).toEqual({ ok: { kind: "fallback" } });
+    expect(t.windows.created).toHaveLength(0);
   });
 });

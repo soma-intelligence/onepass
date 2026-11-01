@@ -2,7 +2,9 @@
 // in every HTTPS frame beside the MAIN-world shim (passkey-shim.ts). It takes
 // the one MessagePort the shim offers, checks each request's shape and sizes
 // (shared/messages.ts) and sends `passkey_request` to the worker, which takes
-// the origin from the browser. It never holds a secret: the worker answers
+// the origin from the browser, with `activated`: whether the page's call came
+// under a transient user activation (`navigator.userActivation`, read here in
+// the isolated world, never a value of the page). It never holds a secret: the worker answers
 // with the final credential, the browser's API, or an error name. Anything
 // malformed goes back as "use the browser's API" without reaching the worker.
 import { ext as browserExt } from "../shared/browser";
@@ -25,8 +27,14 @@ export const RELAY_MAX_IN_FLIGHT = 4;
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Transient user activation of this document (shared by both worlds, not writable by the page). */
+export function userActivated(): boolean {
+  const ua = (globalThis.navigator as { userActivation?: { isActive?: unknown } } | undefined)?.userActivation;
+  return ua?.isActive === true;
+}
+
 /** Serves the shim's requests on `port`. */
-export function attachRelay(port: RelayPort, send: RelaySend): void {
+export function attachRelay(port: RelayPort, send: RelaySend, activated: () => boolean = userActivated): void {
   let inFlight = 0;
   const reply = (id: string, result: PasskeyResult) => port.postMessage({ type: "result", id, result });
   port.onmessage = (e) => {
@@ -44,7 +52,7 @@ export function attachRelay(port: RelayPort, send: RelaySend): void {
       return;
     }
     inFlight++;
-    send({ type: "passkey_request", reqId: id, request })
+    send({ type: "passkey_request", reqId: id, request, activated: activated() })
       .then((r) => {
         const result = isObj(r) && "ok" in r ? parsePasskeyResult(r.ok) : null;
         reply(id, result ?? FALLBACK);
