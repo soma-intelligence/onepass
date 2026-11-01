@@ -16,6 +16,8 @@ enum Tok<'a> {
     Word(&'a str),
     Num(u32),
     Sym(char),
+    /// End of a clause: `,` `;` or `.` followed by a space or the end.
+    Clause,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -90,6 +92,10 @@ fn tokenize(s: &str) -> Vec<Tok<'_>> {
                 chars.next();
             }
             toks.push(Tok::Num(n));
+        } else if matches!(c, ',' | ';' | '.')
+            && chars.peek().is_none_or(|&(_, n)| n.is_whitespace())
+        {
+            toks.push(Tok::Clause);
         } else if !is_separator(c) {
             toks.push(Tok::Sym(c));
         }
@@ -138,16 +144,30 @@ fn set_max(out: &mut Constraints, n: u32) {
 }
 
 /// `n` is at `i`: does a minimum or maximum phrase come right before it?
-fn prefix_kind(toks: &[Tok<'_>], i: usize) -> Option<bool> {
+/// Returns `(is_min, bound)`. Bare "more than N" / "plus de N" is a minimum
+/// of N + 1, "less than N" / "moins de N" a maximum of N - 1; the negated
+/// forms ("no more than", "pas plus de", "pas moins de") keep N.
+fn prefix_kind(toks: &[Tok<'_>], i: usize, n: u32) -> Option<(bool, u32)> {
     let prev = |k: usize| i.checked_sub(k).and_then(|j| word(toks, j));
+    let negated = matches!(prev(3), Some("no" | "not" | "pas"));
     match (prev(2), prev(1)) {
-        (Some("au"), Some("moins")) | (_, Some("least" | "minimum" | "min" | "mini")) => Some(true),
+        (Some("au"), Some("moins")) | (_, Some("least" | "minimum" | "min" | "mini")) => {
+            Some((true, n))
+        }
         (Some("au"), Some("plus"))
         | (Some("up"), Some("to"))
         | (Some("jusqu"), Some("a"))
-        | (Some("plus"), Some("de"))
-        | (Some("more"), Some("than"))
-        | (_, Some("most" | "maximum" | "max" | "maxi")) => Some(false),
+        | (_, Some("most" | "maximum" | "max" | "maxi")) => Some((false, n)),
+        (Some("more"), Some("than")) | (Some("plus"), Some("de")) => {
+            Some(if negated { (false, n) } else { (true, n + 1) })
+        }
+        (Some("less" | "fewer"), Some("than")) | (Some("moins"), Some("de")) => {
+            if negated {
+                Some((true, n))
+            } else {
+                Some((false, n - 1)).filter(|&(_, m)| m > 0)
+            }
+        }
         _ => None,
     }
 }
@@ -186,9 +206,11 @@ fn read_lengths(toks: &[Tok<'_>], out: &mut Constraints) {
             set_min(out, n);
         } else if is_unit(toks, i + 1) {
             // "au moins 12 caracteres", "20 caracteres maximum".
-            match (prefix_kind(toks, i), word(toks, i + 2)) {
-                (Some(true), _) | (None, Some("minimum" | "min" | "mini")) => set_min(out, n),
-                (Some(false), _) | (None, Some("maximum" | "max" | "maxi")) => set_max(out, n),
+            match (prefix_kind(toks, i, n), word(toks, i + 2)) {
+                (Some((true, m)), _) => set_min(out, m),
+                (Some((false, m)), _) => set_max(out, m),
+                (None, Some("minimum" | "min" | "mini")) => set_min(out, n),
+                (None, Some("maximum" | "max" | "maxi")) => set_max(out, n),
                 _ => {}
             }
         }
@@ -219,16 +241,21 @@ fn is_negation(w: &str) -> bool {
     )
 }
 
-/// A negation sits up to 3 tokens before `i`, or "interdit"/"not allowed"
-/// follows it.
+/// A negation sits up to 3 tokens before `i` (not across a clause end or a
+/// quantity word), or "interdit"/"not allowed" follows it.
 fn negated(toks: &[Tok<'_>], i: usize) -> bool {
-    let before = (1..=3)
-        .filter_map(|k| i.checked_sub(k))
-        .map_while(|j| match toks[j] {
-            Tok::Word(w) => Some(w),
-            _ => None,
-        })
-        .any(is_negation);
+    let mut before = false;
+    for k in 1..=3 {
+        let Some(j) = i.checked_sub(k) else { break };
+        match toks[j] {
+            Tok::Word(w) if is_negation(w) => {
+                before = true;
+                break;
+            }
+            Tok::Word("un" | "une" | "one" | "an" | "moins" | "least") | Tok::Clause => break,
+            _ => {}
+        }
+    }
     #[allow(clippy::match_like_matches_macro)]
     let after = match (word(toks, i + 1), word(toks, i + 2)) {
         (
@@ -252,6 +279,7 @@ fn quantified(toks: &[Tok<'_>], i: usize) -> bool {
         };
         match toks[j] {
             Tok::Word(w) if is_negation(w) => return false,
+            Tok::Clause => return false,
             Tok::Word("a") => {
                 // "a" is also the French "à" of a range ("8 à 20").
                 if !matches!(toks.get(j.wrapping_sub(1)), Some(Tok::Num(_))) {
@@ -293,6 +321,19 @@ fn read_classes(toks: &[Tok<'_>], out: &mut Constraints) {
             };
             alnum_only |= near(i + 1) || near(i + 2) || i.checked_sub(1).is_some_and(near);
             continue;
+        }
+        if matches!(*w, "lettres" | "letters")
+            && matches!(word(toks, i + 1), Some("et" | "and"))
+            && matches!(
+                word(toks, i + 2),
+                Some("chiffres" | "nombres" | "numbers" | "digits")
+            )
+        {
+            let only = |k: Option<usize>| {
+                k.and_then(|k| word(toks, k))
+                    .is_some_and(|x| matches!(x, "only" | "uniquement" | "seulement"))
+            };
+            alnum_only |= only(Some(i + 3)) || only(i.checked_sub(1)) || only(i.checked_sub(2));
         }
         let Some(class) = class_of(w) else { continue };
         if matches!(class, Class::Digit) && matches!(word(toks, i + 1), Some("of" | "de")) {
@@ -449,6 +490,61 @@ mod tests {
         let c = parse_hints("au moins 500 caractères");
         assert_eq!(c.min_length, 0);
         assert!(!c.recognized());
+    }
+
+    #[test]
+    fn fr_letters_digits_only() {
+        let c = parse_hints("lettres et chiffres uniquement");
+        assert_eq!(c.allowed, Some(set(&["lower", "upper", "digit"])));
+        assert!(c.required.is_empty());
+    }
+
+    #[test]
+    fn en_letters_numbers_only() {
+        for t in [
+            "letters and numbers only",
+            "letters and digits only",
+            "only letters and numbers",
+        ] {
+            assert_eq!(
+                parse_hints(t).allowed,
+                Some(set(&["lower", "upper", "digit"])),
+                "{t}"
+            );
+        }
+    }
+
+    #[test]
+    fn en_more_than_is_min() {
+        assert_eq!(lens("more than 12 characters"), (13, None));
+        assert_eq!(lens("less than 20 characters"), (0, Some(19)));
+    }
+
+    #[test]
+    fn fr_plus_de_is_min() {
+        assert_eq!(lens("plus de 12 caractères"), (13, None));
+        assert_eq!(lens("moins de 20 caractères"), (0, Some(19)));
+    }
+
+    #[test]
+    fn en_no_more_than_is_max() {
+        assert_eq!(lens("no more than 12 characters"), (0, Some(12)));
+        assert_eq!(lens("pas plus de 12 caractères"), (0, Some(12)));
+    }
+
+    #[test]
+    fn no_spaces_then_special() {
+        let c = parse_hints("no spaces, a special character");
+        assert!(c.forbidden.contains(' '));
+        assert_eq!(c.required, vec![set(&["special"])]);
+        assert_eq!(c.allowed, None);
+    }
+
+    #[test]
+    fn sans_espace_puis_chiffre() {
+        let c = parse_hints("sans espace, un chiffre");
+        assert!(c.forbidden.contains(' '));
+        assert_eq!(c.required, vec![set(&["digit"])]);
     }
 
     #[test]
