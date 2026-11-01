@@ -2,7 +2,8 @@
 //! `narrow` ladder, the report, and a property test over random rules.
 
 use onepass_core::site_password::{
-    CharSet, GenerationReport, PasswordContext, Profile, Source, generate_for,
+    CharSet, Constraints, GenerationReport, PasswordContext, Profile, Source, generate_for,
+    parse_hints,
 };
 use proptest::prelude::*;
 
@@ -495,4 +496,88 @@ proptest! {
             prop_assert!(r.fallback && r.sources.is_empty());
         }
     }
+}
+
+/// Real-world check of the hint reader. `password_hints.jsonl` holds the
+/// distinct texts found next to password fields in the passive top 1000 corpus
+/// (`extension/lab/corpus/hints.ts`), each labelled by hand with what the text
+/// means. One JSON object per line:
+/// - `min`, `max`: length bounds, `null` when absent;
+/// - `required`: class names (`upper`, `lower`, `digit`, `special`), any order;
+/// - `allowed`: `null` (no restriction), `"alnum"` (letters and digits),
+///   `"alnum+<chars>"` (letters, digits and those chars) or an explicit char set;
+/// - `forbidden`: the chars never allowed (a string, empty when none).
+///
+/// A line passes when `parse_hints` gives exactly those constraints.
+#[test]
+fn hints_corpus_accuracy() {
+    let raw = include_str!("fixtures/password_hints.jsonl");
+    let class = |n: &str| CharSet::ascii_class(n).unwrap();
+    let alnum = class("lower").union(&class("upper")).union(&class("digit"));
+    let (mut total, mut misses) = (0usize, 0usize);
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let v: serde_json::Value = serde_json::from_str(line).expect("fixture line");
+        let text = v["text"].as_str().unwrap();
+        let num = |k: &str| v[k].as_u64().map(|n| n as u32);
+        let names = |c: &Constraints| -> Vec<String> {
+            let mut names: Vec<String> = c
+                .required
+                .iter()
+                .map(|s| {
+                    ["upper", "lower", "digit", "special"]
+                        .into_iter()
+                        .find(|n| class(n) == *s)
+                        .map_or_else(
+                            || format!("set:{}", s.iter().collect::<String>()),
+                            String::from,
+                        )
+                })
+                .collect();
+            names.sort();
+            names
+        };
+        let chars = |s: &str| -> CharSet { s.chars().collect() };
+        let expected_allowed = match v["allowed"].as_str() {
+            None => None,
+            Some("alnum") => Some(alnum.clone()),
+            Some(s) => Some(match s.strip_prefix("alnum+") {
+                Some(extra) => alnum.union(&chars(extra)),
+                None => chars(s),
+            }),
+        };
+        let mut expected_required: Vec<String> = v["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap().to_string())
+            .collect();
+        expected_required.sort();
+        let want_forbidden = chars(v["forbidden"].as_str().unwrap());
+
+        let got = parse_hints(text);
+        total += 1;
+        let ok = got.min_length == num("min").unwrap_or(0)
+            && got.max_length == num("max")
+            && names(&got) == expected_required
+            && got.allowed == expected_allowed
+            && got.forbidden == want_forbidden;
+        if !ok {
+            misses += 1;
+            println!(
+                "MISS {text:?}\n  expected {line}\n  got min={} max={:?} required={:?} allowed={:?} forbidden={:?}",
+                got.min_length,
+                got.max_length,
+                names(&got),
+                got.allowed.as_ref().map(|s| s.iter().collect::<String>()),
+                got.forbidden.iter().collect::<String>(),
+            );
+        }
+    }
+    println!("hints corpus: {}/{total} exact", total - misses);
+    assert!(total >= 100, "fixture too small: {total}");
+    assert!(
+        (total - misses) * 100 >= total * 95,
+        "hint accuracy {}/{total} is below 95 %",
+        total - misses
+    );
 }

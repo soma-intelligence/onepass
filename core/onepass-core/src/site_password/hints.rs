@@ -149,8 +149,18 @@ fn set_max(out: &mut Constraints, n: u32) {
 /// forms ("no more than", "pas plus de", "pas moins de") keep N.
 fn prefix_kind(toks: &[Tok<'_>], i: usize, n: u32) -> Option<(bool, u32)> {
     let prev = |k: usize| i.checked_sub(k).and_then(|j| word(toks, j));
-    let negated = matches!(prev(3), Some("no" | "not" | "pas"));
-    match (prev(2), prev(1)) {
+    // "no more than", "pas plus de", "must not be more than", "cannot be more than".
+    let is_not = |w: Option<&str>| matches!(w, Some("no" | "not" | "pas" | "cannot"));
+    let negated = is_not(prev(3))
+        || (matches!(prev(3), Some("be" | "etre" | "exceed" | "contain" | "have"))
+            && is_not(prev(4)));
+    // "minimum length 7": a noun sits between the phrase and the number.
+    let (p2, p1) = if matches!(prev(1), Some("length" | "longueur" | "size" | "taille")) {
+        (None, prev(2))
+    } else {
+        (prev(2), prev(1))
+    };
+    match (p2, p1) {
         (Some("au"), Some("moins")) | (_, Some("least" | "minimum" | "min" | "mini")) => {
             Some((true, n))
         }
@@ -159,7 +169,9 @@ fn prefix_kind(toks: &[Tok<'_>], i: usize, n: u32) -> Option<(bool, u32)> {
         | (Some("jusqu"), Some("a"))
         | (_, Some("most" | "maximum" | "max" | "maxi")) => Some((false, n)),
         (Some("more"), Some("than")) | (Some("plus"), Some("de")) => {
+            // "more than 128" would need 129: out of range, ignored.
             Some(if negated { (false, n) } else { (true, n + 1) })
+                .filter(|&(_, m)| negated || LENGTHS.contains(&m))
         }
         (Some("less" | "fewer"), Some("than")) | (Some("moins"), Some("de")) => {
             if negated {
@@ -213,9 +225,35 @@ fn read_lengths(toks: &[Tok<'_>], out: &mut Constraints) {
                 (None, Some("maximum" | "max" | "maxi")) => set_max(out, n),
                 _ => {}
             }
+        } else if matches!(toks.get(i + 1), None | Some(Tok::Clause | Tok::Sym(_)))
+            && let Some((is_min, m)) = prefix_kind(toks, i, n).filter(|_| explicit_bound(toks, i))
+        {
+            // Unit-less bound at the end of a clause: "at least 8", "min 8, max 20".
+            if is_min {
+                set_min(out, m);
+            } else {
+                set_max(out, m);
+            }
         }
         i += 1;
     }
+}
+
+/// The phrase before the number at `i` names a bound outright ("at least",
+/// "minimum", "max", "up to"...), not a comparison like "more than" that a
+/// bare number could belong to something else.
+fn explicit_bound(toks: &[Tok<'_>], i: usize) -> bool {
+    matches!(
+        (
+            i.checked_sub(1).and_then(|j| word(toks, j)),
+            i.checked_sub(2).and_then(|j| word(toks, j))
+        ),
+        (
+            Some("least" | "minimum" | "min" | "mini" | "most" | "maximum" | "max" | "maxi"),
+            _
+        ) | (Some("moins" | "plus"), Some("au"))
+            | (Some("to"), Some("up"))
+    )
 }
 
 fn class_of(w: &str) -> Option<Class> {
@@ -237,7 +275,7 @@ fn class_of(w: &str) -> Option<Class> {
 fn is_negation(w: &str) -> bool {
     matches!(
         w,
-        "sans" | "no" | "without" | "pas" | "aucun" | "aucune" | "non" | "not" | "ni"
+        "sans" | "no" | "without" | "pas" | "aucun" | "aucune" | "non" | "not" | "ni" | "cannot"
     )
 }
 
@@ -256,17 +294,20 @@ fn negated(toks: &[Tok<'_>], i: usize) -> bool {
             _ => {}
         }
     }
-    #[allow(clippy::match_like_matches_macro)]
-    let after = match (word(toks, i + 1), word(toks, i + 2)) {
+    // "spaces are not allowed", "les espaces sont interdits".
+    let skip = usize::from(matches!(
+        word(toks, i + 1),
+        Some("are" | "is" | "sont" | "est")
+    ));
+    let after = matches!(
+        (word(toks, i + 1 + skip), word(toks, i + 2 + skip)),
         (
             Some(
-                "interdit" | "interdits" | "interdite" | "interdites" | "forbidden" | "prohibited",
+                "interdit" | "interdits" | "interdite" | "interdites" | "forbidden" | "prohibited"
             ),
-            _,
-        ) => true,
-        (Some("not"), Some("allowed" | "permitted" | "accepted")) => true,
-        _ => false,
-    };
+            _
+        ) | (Some("not"), Some("allowed" | "permitted" | "accepted"))
+    );
     before || after
 }
 
@@ -298,10 +339,18 @@ fn listed_symbols(toks: &[Tok<'_>]) -> CharSet {
     let mut set = CharSet::default();
     for (i, t) in toks.iter().enumerate() {
         if matches!(t, Tok::Word("parmi" | "among" | "from" | "comme" | "like")) {
-            set.extend(toks[i + 1..].iter().map_while(|t| match t {
-                Tok::Sym(c) => Some(*c),
-                _ => None,
-            }));
+            // Symbols may be comma separated: "like !, @, #".
+            let rest = &toks[i + 1..];
+            set.extend(
+                rest.iter()
+                    .enumerate()
+                    .map_while(|(k, t)| match t {
+                        Tok::Sym(c) => Some(Some(*c)),
+                        Tok::Clause if matches!(rest.get(k + 1), Some(Tok::Sym(_))) => Some(None),
+                        _ => None,
+                    })
+                    .flatten(),
+            );
         }
     }
     set
@@ -545,6 +594,53 @@ mod tests {
         let c = parse_hints("sans espace, un chiffre");
         assert!(c.forbidden.contains(' '));
         assert_eq!(c.required, vec![set(&["digit"])]);
+    }
+
+    #[test]
+    fn minimum_length_noun() {
+        assert_eq!(lens("minimum length 7 characters must contain"), (7, None));
+        assert_eq!(lens("maximum length 20 characters"), (0, Some(20)));
+    }
+
+    #[test]
+    fn must_not_be_more_than_is_max() {
+        assert_eq!(lens("must not be more than 12 characters"), (0, Some(12)));
+        assert_eq!(lens("cannot be more than 12 characters"), (0, Some(12)));
+        assert_eq!(lens("must not be less than 8 characters"), (8, None));
+    }
+
+    #[test]
+    fn more_than_128_is_ignored() {
+        let c = parse_hints("more than 128 characters");
+        assert_eq!(c.min_length, 0);
+        assert!(!c.recognized());
+    }
+
+    #[test]
+    fn comma_separated_symbols() {
+        let c = parse_hints("a symbol like !, @, #");
+        let listed: CharSet = "!@#".chars().collect();
+        assert_eq!(c.required, vec![listed]);
+    }
+
+    #[test]
+    fn spaces_not_allowed_forms() {
+        for t in [
+            "spaces are not allowed",
+            "cannot contain spaces",
+            "les espaces sont interdits",
+        ] {
+            assert!(parse_hints(t).forbidden.contains(' '), "{t}");
+        }
+    }
+
+    #[test]
+    fn unitless_bounds() {
+        assert_eq!(lens("at least 8"), (8, None));
+        assert_eq!(lens("min 8, max 20 characters"), (8, Some(20)));
+        assert_eq!(lens("Au moins 10."), (10, None));
+        // A class quantity is not a length.
+        assert_eq!(lens("at least 1 uppercase"), (0, None));
     }
 
     #[test]
