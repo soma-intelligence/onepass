@@ -10,6 +10,7 @@ apple/build/
 apple/VaultKit/Sources/OnePassCore/
 apple/**/.build/
 apple/DerivedData/
+apple/DerivedData-*/
 
 # Autofill lab run output
 extension/lab/out/
