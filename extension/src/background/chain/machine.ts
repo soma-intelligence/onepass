@@ -53,6 +53,8 @@ export interface ChainStep {
   nav: number;
   /** Child frame the step acted in (spec C1); absent for the top frame. */
   frameId?: number;
+  /** Exact origin of the site page the step acted on; absent on the provider. */
+  origin?: string;
   at: number;
   /** Set when the step submitted its form. */
   submittedAt?: number;
@@ -379,6 +381,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const actions: ChainAction[] = [];
   const st: ChainStep = { kind: d.kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
   if (frameId !== 0) st.frameId = frameId;
+  if (!onProvider) st.origin = w.origin;
   switch (d.kind) {
     case "provider_click":
       st.label = tr(`Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`, `Clicked "Continue with ${providerName(n.provider ?? "google")}"`);
@@ -459,6 +462,7 @@ export function planStep(s: ChainState, p: PlannedStep, url: string, pageOrigin:
   const kind: StepKind = otp && fields.length === 1 ? "otp" : "fill";
   const st: ChainStep = { kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
   if (frameId !== 0) st.frameId = frameId;
+  if (!w.onProvider) st.origin = w.origin;
   if (kind === "otp") st.label = tr("Code à usage unique rempli", "One-time code filled");
   else {
     st.label = fillLabel(fields, null);
@@ -487,10 +491,10 @@ export function noteShape(s: ChainState): { roles: FieldRole[]; intent: FillInte
 }
 
 /** The allowed list (R-11): the site's registrable domain, the provider's exact hosts, HTTPS only. */
-function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; host: string } {
+function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; host: string; origin: string } {
   const p = parseOrigin(url);
   const onProvider = p !== null && providerHosts(s.provider).includes(p.host);
-  return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256) };
+  return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256), origin: p?.origin ?? "" };
 }
 
 /**
@@ -638,6 +642,8 @@ export function chainView(s: ChainState): ChainView {
     steps: s.steps.map((x) => stepView(s, x)),
     title: s.title,
     site: s.site,
+    origin: [...s.steps].reverse().find((x) => x.origin !== undefined)?.origin ?? s.siteOrigin,
+    startedAt: s.startedAt,
     email: s.account?.email ?? s.username,
   };
   if (s.provider !== undefined) v.provider = s.provider;
@@ -708,6 +714,7 @@ function parseStep(v: unknown): ChainStep {
   if (o.retried !== undefined) st.retried = bool(o.retried);
   const frameId = optInt(o.frameId);
   if (frameId !== undefined && frameId > 0) st.frameId = frameId;
+  if (o.origin !== undefined) st.origin = str(o.origin, 2048);
   if (o.detail !== undefined) st.detail = str(o.detail, 256);
   return st;
 }

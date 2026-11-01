@@ -512,3 +512,32 @@ describe("timers", () => {
     expect(nextDue(stopChain(s, "user", T0 + 300))).toBeNull();
   });
 });
+
+describe("chain view origin (passkey F2)", () => {
+  it("is the start origin before any step, then the origin of the latest step on the site", () => {
+    let s = start();
+    expect(chainView(s)).toMatchObject({ origin: SITE, startedAt: T0 });
+    const login = "https://login.atlas-cloud.test";
+    s = step(s, page([userOnly()], {}, `${login}/u`), login, T0 + 100).state;
+    expect(chainView(s).origin).toBe(login);
+  });
+
+  it("a step on the provider keeps the latest site origin", () => {
+    const site = summary("it_02", { has_password: false, methods: [{ provider: "google", account_email: "alex.pro@example.com" }] });
+    let s = start(site, { provider: "google", providerAccount: summary("g_pro", { title: "Google", subtitle: "alex.pro@example.com" }) });
+    const login = "https://login.atlas-cloud.test";
+    const btns = { providerButtons: [{ provider: "google" as const, ref: "g1" }] };
+    s = step(s, page([loginForm()], btns, `${login}/in`), login, T0 + 100).state;
+    s = navigated(s, `${GOOGLE}/o/oauth2/auth`, T0 + 400);
+    const chooser = { accountChooser: [{ email: "alex.pro@example.com", ref: "a2" }] };
+    s = step(s, page([], chooser, `${GOOGLE}/o/oauth2/auth`), GOOGLE, T0 + 600).state;
+    expect(s.steps).toHaveLength(2);
+    expect(chainView(s).origin).toBe(login);
+  });
+
+  it("the step origin survives storage", () => {
+    const login = "https://login.atlas-cloud.test";
+    const s = step(start(), page([userOnly()], {}, `${login}/u`), login, T0 + 100).state;
+    expect(chainView(parseChainState(structuredClone(s))!).origin).toBe(login);
+  });
+});

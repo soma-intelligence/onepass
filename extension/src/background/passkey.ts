@@ -10,7 +10,8 @@
 //   other frame, http, no matching passkey: the browser's own API (`fallback`);
 // - a passkey is used without a window only while a chain "Connexion en un clic"
 //   the user started runs in this tab for the item holding it (its click is the
-//   consent), in the top frame of the chain's site, once per chain; otherwise
+//   consent), in the top frame at exactly the origin of the chain's current
+//   step, for an rpId that is its host or a parent, once per chain; otherwise
 //   the choice window `passkey.html#<token>` opens, bound to the requesting tab,
 //   frame and document, and nothing is signed before a trusted click there (the
 //   page's click guard). A creation always asks;
@@ -201,17 +202,22 @@ export class Passkeys {
 
   /**
    * The running chain of this tab, when it may sign without a window here:
-   * the top frame, on the chain's site (for a provider chain, once back on it),
-   * and no silent assertion yet in this chain.
+   * the top frame, at exactly the origin of the chain's current step on its
+   * site (for a provider chain, once back on it), an rpId that is that
+   * origin's host or one of its parents, and no silent assertion yet in this
+   * chain. Anything else: the window.
    */
-  private async silentChain(cs: CsContext, site: string): Promise<{ itemId: string } | null> {
+  private async silentChain(c: Ctx): Promise<{ itemId: string } | null> {
+    const { cs, rpId } = c;
     const chain = await this.deps.chain.state(cs.tabId).catch(() => null);
     if (chain?.status !== "running") {
       this.chainSigned.delete(cs.tabId);
       return null;
     }
     if (cs.frameId !== 0 || this.chainSigned.has(cs.tabId)) return null;
-    if (chain.site === undefined || chain.site !== site) return null;
+    if (chain.origin === undefined || chain.origin !== cs.origin) return null;
+    const host = hostOf(cs.origin);
+    if (host === "" || !(rpId === host || host.endsWith(`.${rpId}`))) return null;
     if (chain.provider !== undefined && !(chain.phase === "back" || chain.phase === "signin" || chain.phase === "code")) return null;
     return { itemId: chain.itemId };
   }
@@ -243,7 +249,7 @@ export class Passkeys {
     if (rpId === "") return FALLBACK;
     const c: Ctx = { cs: { ...cs, origin: origin.origin }, topOrigin, rpId };
     // A creation never goes through a chain; a get may, else it needs the window.
-    const chain = req.kind === "get" ? await this.silentChain(c.cs, origin.site) : null;
+    const chain = req.kind === "get" ? await this.silentChain(c) : null;
     const canOpen = await this.mayOpen(c.cs, req.kind, activated);
     if (!chain && !canOpen) return FALLBACK;
     const probes = this.recent(this.probes, cs.tabId);

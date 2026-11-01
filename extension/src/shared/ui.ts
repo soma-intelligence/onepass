@@ -54,6 +54,10 @@ export interface ChainView {
   title?: string;
   /** Registrable domain of the site the chain signs in to. */
   site?: string;
+  /** Exact origin of the chain's current step on the site (the start origin before any). */
+  origin?: string;
+  /** When the chain started: with `itemId`, which chain this is. */
+  startedAt?: number;
   /** Provider the chain signs in with, if any. */
   provider?: ProviderId;
   /** The account used: the provider account's email, or the item's username. */

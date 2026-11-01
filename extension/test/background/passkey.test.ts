@@ -300,7 +300,14 @@ describe("passkey choice window", () => {
 });
 
 describe("passkey in a sign-in chain", () => {
-  const running = (itemId: string, status: ChainView["status"] = "running", site = "atlas-cloud.test"): ChainView => ({ itemId, status, steps: [], site });
+  const running = (itemId: string, status: ChainView["status"] = "running", site = "atlas-cloud.test"): ChainView => ({
+    itemId,
+    status,
+    steps: [],
+    site,
+    origin: ORIGIN,
+    startedAt: 1,
+  });
 
   it("signs without a window only while a chain the user started runs for the item holding it", async () => {
     const t = setup({ chain: running(ITEM) });
@@ -550,13 +557,13 @@ describe("passkey hardening (review)", () => {
   });
 
   it("F2: silent chain signing only in the top frame of the chain's site", async () => {
-    const chain: ChainView = { itemId: ITEM, status: "running", steps: [], site: "other-site.test" };
+    const chain: ChainView = { itemId: ITEM, status: "running", steps: [], site: "other-site.test", origin: "https://other-site.test", startedAt: 1 };
     const t = setup({ chain });
     void t.pk.request(cs(), "r1", GET, true);
     await flush();
     expect(t.ops()).not.toContain("passkey_get");
     expect(t.windows.created).toHaveLength(1);
-    const t2 = setup({ chain: { ...chain, site: "atlas-cloud.test" } });
+    const t2 = setup({ chain: { ...chain, site: "atlas-cloud.test", origin: ORIGIN } });
     void t2.pk.request(cs({ frameId: 2 }), "r1", GET, true);
     await flush();
     expect(t2.ops()).not.toContain("passkey_get");
@@ -564,12 +571,44 @@ describe("passkey hardening (review)", () => {
   });
 
   it("F2: one silent assertion per chain, then the window", async () => {
-    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test" } });
+    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN, startedAt: 1 } });
     expect((await t.pk.request(cs(), "r1", GET, false)).kind).toBe("assertion");
     void t.pk.request(cs(), "r2", GET, true);
     await flush();
     expect(t.ops().filter((x) => x === "passkey_get")).toHaveLength(1);
     expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("F2: a same-site subdomain during a running chain opens the picker", async () => {
+    const chain: ChainView = { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: "https://www.atlas-cloud.test", startedAt: 1 };
+    const t = setup({ chain });
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("F2: a chain view without its step origin opens the picker", async () => {
+    const t = setup({ chain: { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", startedAt: 1 } });
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("F2: silent only for an rpId equal to the origin's host or one of its parents", async () => {
+    const chain: ChainView = { itemId: ITEM, status: "running", steps: [], site: "atlas-cloud.test", origin: ORIGIN, startedAt: 1 };
+    for (const rpId of ["login.atlas-cloud.test", "atlas-cloud.test"]) {
+      const t = setup({ chain });
+      expect((await t.pk.request(cs(), "r1", { ...GET, rpId }, false)).kind).toBe("assertion");
+    }
+    for (const rpId of ["other.atlas-cloud.test", "gin.atlas-cloud.test", "evil.test"]) {
+      const t = setup({ chain });
+      void t.pk.request(cs(), "r1", { ...GET, rpId }, true);
+      await flush();
+      expect(t.ops()).not.toContain("passkey_get");
+      expect(t.windows.created).toHaveLength(1);
+    }
   });
 
   it("F3: an abort while the host lists cancels: AbortError, no window", async () => {
