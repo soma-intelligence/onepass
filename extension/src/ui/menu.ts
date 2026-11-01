@@ -235,6 +235,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
 
   function render(init: MenuInit): void {
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    // A plan opened this menu because the page refused every generated password.
+    if (init.notice) errLine.textContent = errorText(init.notice);
     const list = h("div", { class: "menu-list" });
     const pick = (itemId: string) => async () => {
       if (!token) return;

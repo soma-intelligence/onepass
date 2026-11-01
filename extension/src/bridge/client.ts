@@ -8,7 +8,7 @@
 // reused, even after a timeout. Any protocol failure (bad frame, bad MAC,
 // replayed or skipped counter, host error frame, transport closed) fails
 // every pending request and closes the transport.
-import type { NoteFillRequest, NoteFillResponse, PlanFillRequest, PlanFillResponse, ProviderId } from "../shared/messages";
+import type { NoteFillRequest, NoteFillResponse, PlanFillRequest, PlanFillResponse, ProviderId, WirePasswordContext } from "../shared/messages";
 import { BridgeError, utf8, wipe } from "./bytes";
 import type { Channel } from "./channel";
 import { ExtPairing, PAIRING_TIMEOUT_MS, type PairingOptions, type PairingRecord } from "./pairing";
@@ -44,6 +44,42 @@ export interface Summary {
   has_totp: boolean;
   methods: { provider: ProviderId; account_email: string }[];
   match: "exact_host" | "domain" | null;
+}
+
+/** `smart` profile: Strong (default), Readable (words) or Custom (`length` and `symbols`). */
+export type RecipeProfile = "strong" | "readable" | "custom";
+
+/**
+ * Generator recipe (`deny_unknown_fields` on the host: nothing else).
+ * `profile`, `context` and `narrow` apply to `smart`; `length` is 8..=64
+ * and, for `smart`, only read with the custom profile.
+ */
+export interface Recipe {
+  kind: "random" | "memorable" | "pin" | "smart";
+  length?: number;
+  symbols?: boolean;
+  profile?: RecipeProfile;
+  context?: WirePasswordContext;
+  /** Retry step after a `pattern` miss: 1 without symbols, 2 lowercase and digits. */
+  narrow?: 0 | 1 | 2;
+}
+
+/** Where a constraint came from (onepass_core::site_password::Source). */
+export type ReportSource = "password_rules" | "attributes" | "quirks" | "hints";
+
+/** What `smart` generated, without any character of the password. */
+export interface GenerationReport {
+  length: number;
+  lower: boolean;
+  upper: boolean;
+  digit: boolean;
+  special: boolean;
+  sources: ReportSource[];
+  dropped: ReportSource[];
+  fallback: boolean;
+  readable_fell_back: boolean;
+  weak_by_site: boolean;
+  entropy_bits: number;
 }
 
 export interface LoginFill {
@@ -148,9 +184,11 @@ interface Ops {
   generate: {
     req: {
       ctx: Ctx;
-      recipe: { kind: "random" | "memorable" | "pin" | "smart"; length?: number; symbols?: boolean };
+      recipe: Recipe;
+      /** Page origin, for the site's known rules (`smart` only). */
+      origin?: string;
     };
-    res: { password: string; entropy_bits: number };
+    res: { password: string; entropy_bits: number; report?: GenerationReport };
   };
   provider_accounts: {
     req: { ctx: Ctx; provider: ProviderId; origin: string };

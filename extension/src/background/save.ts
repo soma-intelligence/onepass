@@ -9,6 +9,7 @@ import type { BgToCs, ProviderId, SaveDecision, SaveEdits } from "../shared/mess
 import { parseOrigin } from "../shared/domain";
 import type { SaveInit } from "../shared/ui";
 import type { BgExt } from "./ext";
+import type { FormGenerator } from "./generate";
 import type { UiContext } from "./frames";
 import type { NeverSave } from "./never-save";
 import { removeFrame, resizeFrame } from "./overlay";
@@ -55,6 +56,8 @@ export function titleFromSite(site: string): string {
 export interface SaveDeps {
   ext: Pick<BgExt, "tabs" | "runtime">;
   session: Pick<Session, "request">;
+  /** The popup's profile; no form here, so no page context. */
+  generator: Pick<FormGenerator, "generate">;
   neverSave: NeverSave;
   now?: () => number;
   /** A login was saved or updated from the prompt of `tabId` (the site memory notes it, notes.ts). */
@@ -151,7 +154,7 @@ export class SavePrompts {
 
   async generate(token: string, ui: UiContext): Promise<{ password: string }> {
     const rec = await this.record(token, ui);
-    const g = await this.deps.session.request({ op: "generate", ctx: "save_prompt", recipe: { kind: "smart" } });
+    const g = await this.deps.generator.generate("save_prompt", rec.origin);
     rec.password = g.password;
     await this.tokens.update(token, rec);
     return { password: g.password };

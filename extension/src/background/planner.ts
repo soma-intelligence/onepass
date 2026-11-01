@@ -21,6 +21,7 @@ import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, P
 import type { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { FillTarget, Filler } from "./fill";
+import type { FormGenerator } from "./generate";
 import type { CsContext } from "./frames";
 import type { FilledNote } from "./notes";
 import { penalized } from "./penalty";
@@ -75,6 +76,8 @@ export interface PlannerHooks {
   penalized?: (origin: string) => Promise<boolean>;
   /** A run wrote values without a chain and without a submit (for the site memory, notes.ts). */
   onFilled?: (t: FillTarget, note: FilledNote) => void | Promise<void>;
+  /** The page's `pattern` refused every generated password: the run answers "menu" (spec 6.3). */
+  onGenerateRefused?: (t: FillTarget) => void;
 }
 
 export interface RunOptions {
@@ -106,6 +109,7 @@ export class Planner {
     private readonly filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated" | "submit">,
     private readonly chain: Pick<ChainDriver, "start">,
     private readonly saveFlow: Pick<SaveFlow, "rememberGenerated">,
+    private readonly generator: Pick<FormGenerator, "generateForForm">,
     private readonly hooks: PlannerHooks = {},
   ) {}
 
@@ -180,6 +184,17 @@ export class Planner {
       case "fill_and_submit": {
         if (plan.groups.length === 0) return "nothing";
         let generated: string | undefined;
+        // One new password per run, made for the first generated group's form before anything
+        // is written: a page that refuses it gets the menu, not a half-filled form.
+        const firstGenerated = plan.groups.find((g) => g.kind === "generated_password");
+        if (firstGenerated) {
+          const g = await this.generator.generateForForm({ ...t, formRef: firstGenerated.form_ref }, "menu");
+          if (g === null) {
+            this.hooks.onGenerateRefused?.(t);
+            return "menu";
+          }
+          generated = g.password;
+        }
         let remembered = false;
         /** Every group wrote at least one value, and the code went in when it is a code. */
         let complete = true;
@@ -191,9 +206,8 @@ export class Planner {
             const gt: FillTarget = { ...t, formRef: g.form_ref };
             const roles = g.fields.map((f) => f.role);
             let written = 0;
-            if (g.kind === "generated_password") {
-              // One new password per run: every generated group gets the same.
-              generated ??= (await this.session.request({ op: "generate", ctx: "menu", recipe: { kind: "smart" } })).password;
+            if (g.kind === "generated_password" && generated !== undefined) {
+              // Every generated group gets the same password.
               written = await this.filler.fillGenerated(gt, generated, roles);
               // In the page now: the save prompt must know it, whatever happens next.
               if (written > 0 && !remembered) {

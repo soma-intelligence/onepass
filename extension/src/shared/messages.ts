@@ -353,7 +353,32 @@ export type BgToCs =
   | { type: "remove_frame"; kind: FrameKind }
   | { type: "chain_highlight"; ref: string | null }
   /** Height the extension page asked for (validated by token in the worker, clamped here). */
-  | { type: "resize_frame"; kind: FrameKind; height: number };
+  | { type: "resize_frame"; kind: FrameKind; height: number }
+  /**
+   * What the page says about the new password fields of `formRef` (rules,
+   * lengths, written hints, `pattern`): replied as `PasswordContextReply`,
+   * never a value typed in the page.
+   */
+  | { type: "password_context"; origin: string; formRef: string };
+
+/**
+ * The page's password rules as the bridge's `generate` takes them
+ * (`RecipeContext` of onepass-bridge): at most 8 `passwordrules` strings of
+ * at most 1024 UTF-8 bytes each, `hint_text` at most 600 chars.
+ */
+export interface WirePasswordContext {
+  rules: string[];
+  min_length?: number;
+  max_length?: number;
+  hint_text?: string;
+}
+
+/** Reply of the content script to `password_context`; `pattern` at most 512 chars. */
+export interface PasswordContextReply {
+  ok: boolean;
+  context?: WirePasswordContext;
+  pattern?: string | null;
+}
 
 const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "page_analysis",

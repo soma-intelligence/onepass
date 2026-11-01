@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackground } from "../src/background/app";
 import { type FillTarget, Filler } from "../src/background/fill";
 import { Frames } from "../src/background/frames";
+import { FormGenerator } from "../src/background/generate";
 import { Planner, framesFromSender, loginFieldsFor } from "../src/background/planner";
 import { parseCsToBg } from "../src/background/router";
 import { Session } from "../src/background/session";
 import { MemoryPairingStore, Store } from "../src/background/store";
 import type { FieldRole, FormContext, PageContext, PlanOut } from "../src/shared/messages";
 import { type Answer, FakeClient, record } from "./background/fake-client";
-import { FakeExt, csSender } from "./background/fake-ext";
+import { FakeExt, csSender, uiSender } from "./background/fake-ext";
 
 const SITE = "https://atlas-cloud.test";
 const ITEM = "0b6f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4";
@@ -58,11 +59,13 @@ interface Calls {
   filler: unknown[][];
   chain: unknown[][];
   remembered: unknown[][];
+  generated: unknown[][];
+  refused: unknown[];
 }
 
-/** Fake session, filler, chain and save flow; `answer` scripts the bridge. */
-function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = false) {
-  const calls: Calls = { requests: [], filler: [], chain: [], remembered: [] };
+/** Fake session, filler, chain, save flow and generator; `answer` scripts the bridge, `refuse` the page's pattern. */
+function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = false, refuse = false) {
+  const calls: Calls = { requests: [], filler: [], chain: [], remembered: [], generated: [], refused: [] };
   const session = {
     request: async (r: Record<string, unknown>) => {
       calls.requests.push(r);
@@ -93,7 +96,15 @@ function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = fals
       calls.remembered.push(a);
     },
   };
-  const planner = new Planner(session as never, filler as never, chain as never, saveFlow as never);
+  const generator = {
+    generateForForm: async (...a: unknown[]) => {
+      calls.generated.push(a);
+      return refuse ? null : { password: "Gen-Secret-42!", report: null };
+    },
+  };
+  const planner = new Planner(session as never, filler as never, chain as never, saveFlow as never, generator, {
+    onGenerateRefused: (t) => void calls.refused.push(t),
+  });
   return { planner, calls };
 }
 
@@ -210,8 +221,26 @@ describe("planner", () => {
       context([form("f1", ["email", "new_password", "confirm_password"])]),
     );
     expect(outcome).toBe("filled");
-    expect(calls.requests.filter((r) => r.op === "generate")).toEqual([{ op: "generate", ctx: "menu", recipe: { kind: "smart" } }]);
+    // Made for the generated group's form, through the page's rules (generate.ts).
+    expect(calls.generated).toEqual([[target({ formRef: "f1" }), "menu"]]);
     expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+  });
+
+  it("a page that refuses every generated password gets the menu, nothing written", async () => {
+    const p = plan({
+      intent: "signup",
+      groups: [
+        { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e0", role: "email" }] },
+        { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+      ],
+    });
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: p } : {}), false, true);
+    const t = target();
+    const outcome = await f.planner.run(t, await f.planner.plan(t, context([form("f1", ["email", "new_password"])])));
+    expect(outcome).toBe("menu");
+    expect(f.calls.filler).toEqual([]);
+    expect(f.calls.remembered).toEqual([]);
+    expect(f.calls.refused).toEqual([t]);
   });
 
   it("a plan the planner did not make never submits", async () => {
@@ -245,7 +274,7 @@ describe("planner fix round 1", () => {
     await store.setPairing(record());
     const client = new FakeClient((r) => (r.op === "plan_fill" ? { plan: otpPlan() } : r.op === "fill_login" ? {} : {}));
     const session = new Session({ store, newClient: () => client });
-    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined } as never);
+    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined } as never, new FormGenerator({ tabs: ext.tabs, session, area: ext.local }));
     const outcome = await planner.run(target(), await planner.plan(target(), otpCtx()));
     expect(outcome).toBe("filled");
     expect(ext.sentToTabs).toEqual([]);
@@ -396,9 +425,13 @@ describe("privacy", () => {
     const session = new Session({ store, newClient: () => client });
     const filler = new Filler(ext.tabs, new Frames(ext.webNavigation), session);
     const remembered: string[] = [];
-    const planner = new Planner(session, filler, { start: async () => undefined } as never, {
-      rememberGenerated: (_t: number, _o: string, pw: string) => void remembered.push(pw),
-    } as never);
+    const planner = new Planner(
+      session,
+      filler,
+      { start: async () => undefined } as never,
+      { rememberGenerated: (_t: number, _o: string, pw: string) => void remembered.push(pw) } as never,
+      new FormGenerator({ tabs: ext.tabs, session, area: ext.local }),
+    );
     const ctx = context([form("f1", ["username", "current_password", "otp", "new_password", "cc_number"], [{ button_ref: "b1", class: "submit" }])]);
     const plans: PlanOut[] = [
       plan({ action: "fill_and_submit", groups: [{ ...loginGroup(), fields: [...loginGroup().fields, { field_ref: "f1e2", role: "otp" }] }] }),
@@ -445,6 +478,37 @@ describe("plan_context through the router", () => {
     return { ext, client };
   }
   const body = { type: "plan_context", formRef: "f1", context: context([form("f1", ["username"])]) };
+
+  it("a page refusing every generated password: the menu, which says so", async () => {
+    const ext = new FakeExt();
+    const pairings = new MemoryPairingStore();
+    await new Store(ext, pairings).setPairing(record());
+    const signup = plan({
+      intent: "signup",
+      groups: [{ form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] }],
+    });
+    const client = new FakeClient((r) => {
+      if (r.op === "plan_fill") return { plan: signup };
+      if (r.op === "generate") return { password: "Gen-Secret-42!", entropy_bits: 90 };
+      if (r.op === "list_for_origin") return { items: [] };
+      return {};
+    });
+    const b = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined });
+    b.install();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    ext.tabReply = (_t, m) =>
+      (m as { type?: string }).type === "password_context" ? { ok: true, context: { rules: [] }, pattern: "[0-9]{6}" } : undefined;
+    const page = csSender(`${SITE}/signup`, 7, 0, { documentId: "doc-1" });
+    const ctx = { type: "plan_context", formRef: "f1", context: context([form("f1", ["email", "new_password"])]) };
+    expect(await ext.send(ctx, page)).toEqual({ ok: { outcome: "menu" } });
+    // Three tries, nothing written.
+    expect(client.requests.filter((r) => r.op === "generate")).toHaveLength(3);
+    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "fill")).toBe(false);
+    const opened = (await ext.send({ type: "open_menu", fieldRef: "f1e1", formRef: "f1", formKind: "signup" }, page)) as { ok: { url: string } };
+    const token = opened.ok.url.slice(opened.ok.url.indexOf("#") + 1);
+    const init = (await ext.send({ type: "menu_init", token }, uiSender(`menu.html#${token}`, 7))) as { ok: { notice?: string } };
+    expect(init.ok.notice).toBe("site_refused");
+  });
 
   it("plans with the sender's origins and answers the outcome", async () => {
     const { ext, client } = await bg();

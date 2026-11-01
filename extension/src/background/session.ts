@@ -49,7 +49,9 @@ export type BgErrorCode =
   | "refused"
   | "expired"
   /** No form of the needed kind in the active tab (popup fill). */
-  | "no_form";
+  | "no_form"
+  /** The page's `pattern` refused every generated password (spec 6.3). */
+  | "site_refused";
 
 const APP_CODE_SET: ReadonlySet<string> = new Set(APP_CODES);
 

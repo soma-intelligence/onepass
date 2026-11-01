@@ -11,6 +11,7 @@
 import type { Summary } from "../bridge/client";
 import type { FieldRole, FillIntent, FormKind, MenuKey, ProviderId } from "../shared/messages";
 import { newToken } from "../shared/tokens";
+import type { MenuNotice } from "../shared/ui";
 import type { BgExt, StorageArea } from "./ext";
 import type { CsContext, UiContext } from "./frames";
 
@@ -27,6 +28,8 @@ export interface MenuField {
   first?: string[];
   /** That plan's main form roles and intent: a pick is noted for the site memory (notes.ts). */
   planned?: { roles: FieldRole[]; intent: FillIntent };
+  /** That plan could not fill: the page refused every generated password. */
+  notice?: MenuNotice;
 }
 
 export interface MenuRecord extends MenuField {
@@ -75,6 +78,7 @@ export class MenuTokens {
     };
     if (field.first) rec.first = [...field.first];
     if (field.planned) rec.planned = { roles: [...field.planned.roles], intent: field.planned.intent };
+    if (field.notice) rec.notice = field.notice;
     if (cs.documentId !== undefined) rec.documentId = cs.documentId;
     this.mem.set(token, rec);
     await this.area.set({ [PREFIX + token]: rec });
@@ -192,6 +196,7 @@ function parseRecord(raw: unknown): MenuRecord | null {
     const p = r.planned as Record<string, unknown> | null;
     if (typeof p !== "object" || p === null || typeof p.intent !== "string" || !Array.isArray(p.roles) || !p.roles.every((x) => typeof x === "string")) return null;
   }
+  if (r.notice !== undefined && r.notice !== "site_refused") return null;
   return r as unknown as MenuRecord;
 }
 

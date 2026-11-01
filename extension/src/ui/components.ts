@@ -334,6 +334,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set([
   "refused",
   "expired",
   "no_form",
+  "site_refused",
 ]);
 
 /** One request; the reply is validated by `parse` (null: malformed). */
@@ -396,6 +397,8 @@ export function errorText(code: string): string {
       return tr("Le code a expiré. Recommence l'appairage.", "The code expired. Start pairing again.");
     case "no_form":
       return tr("Aucun formulaire à remplir sur cette page.", "No form to fill on this page.");
+    case "site_refused":
+      return tr("Ce site refuse le mot de passe généré", "This site refuses the generated password");
     default:
       return tr("Erreur interne de OnePass.", "OnePass internal error.");
   }

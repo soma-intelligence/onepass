@@ -170,10 +170,26 @@ describe("router", () => {
     const { ext } = await setup();
     const token = await openMenu(ext, { formKind: "signup" });
     expect(await ext.send({ type: "menu_generate", token }, uiSender(`menu.html#${token}`, 7))).toEqual({ ok: {} });
-    expect((ext.sentToTabs[0]?.message as { values: unknown }).values).toEqual({
+    // The page's rules first, from the menu's very document, then the fill.
+    expect(ext.sentToTabs[0]).toEqual({
+      tabId: 7,
+      message: { type: "password_context", origin: SITE, formRef: "f1" },
+      options: { documentId: "doc-1" },
+    });
+    expect((ext.sentToTabs[1]?.message as { values: unknown }).values).toEqual({
       new_password: "Gen-Pass-123",
       confirm_password: "Gen-Pass-123",
     });
+  });
+
+  it("generate fills nothing when the page's pattern refuses every password", async () => {
+    const { ext, client } = await setup();
+    ext.tabReply = (_t, m) =>
+      (m as { type?: string }).type === "password_context" ? { ok: true, context: { rules: [] }, pattern: "[0-9]{6}" } : undefined;
+    const token = await openMenu(ext, { formKind: "signup" });
+    expect(await ext.send({ type: "menu_generate", token }, uiSender(`menu.html#${token}`, 7))).toEqual({ err: "site_refused" });
+    expect(client.requests.filter((r) => r.op === "generate").map((r) => (r.recipe as { narrow?: number }).narrow)).toEqual([undefined, 1, 2]);
+    expect(ext.sentToTabs.map((x) => (x.message as { type: string }).type)).toEqual(["password_context"]);
   });
 
   it("locked surfaces as a stable code to the menu", async () => {

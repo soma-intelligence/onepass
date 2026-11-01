@@ -62,6 +62,18 @@ describe("inline menu", () => {
     expect(opts).toHaveLength(3);
   });
 
+  it("says the site refused the generated password, and on a refused Générer", async () => {
+    const init = { origin: SITE, formKind: "signup", items: [], notice: "site_refused" };
+    const { r, handle, clock } = setup((m) => (m.type === "menu_init" ? ok(init) : m.type === "menu_generate" ? { err: "site_refused" } : ok()), "signup");
+    await handle.ready;
+    expect(r.querySelector(".error-line")!.textContent).toBe("Ce site refuse le mot de passe généré");
+    r.querySelector(".error-line")!.textContent = "";
+    clock.advance(300);
+    button(r, "Générer un mot de passe").click();
+    await new Promise((x) => setTimeout(x, 0));
+    expect(r.querySelector(".error-line")!.textContent).toBe("Ce site refuse le mot de passe généré");
+  });
+
   it("Enregistrer un nouveau login opens the save prompt (menu_new_login)", async () => {
     const { r, handle, worker, clock } = setup(def);
     await handle.ready;

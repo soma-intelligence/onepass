@@ -11,7 +11,7 @@
 import { BridgeClient, type Summary } from "../bridge/client";
 import { parseOrigin, sameSite } from "../shared/domain";
 import type { BgToCs, FieldRole, FillIntent, PageContext, PlanContextBody, PlanOut, ProviderId } from "../shared/messages";
-import type { MenuInit } from "../shared/ui";
+import type { MenuInit, MenuNotice } from "../shared/ui";
 import { signInChoices } from "./chain/choices";
 import { PageAnalyses } from "./analyses";
 import { ChainRunner } from "./chain/driver";
@@ -20,6 +20,7 @@ import { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
+import { FormGenerator } from "./generate";
 import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
 import { openTransport } from "./native";
@@ -70,6 +71,8 @@ interface PlanForMenu {
   planned: { roles: FieldRole[]; intent: FillIntent };
   documentId: string | undefined;
   at: number;
+  /** The run refused: the page's `pattern` took no generated password. */
+  notice?: MenuNotice;
 }
 
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
@@ -82,6 +85,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const keys = new KeyRelay();
   const filler = new Filler(ext.tabs, frames, session);
+  const generator = new FormGenerator({ tabs: ext.tabs, session, area: ext.storage.local });
   const neverSave = new NeverSave(ext.storage.local);
   const analyses = new PageAnalyses(store.session);
   // The overlay starts and stops the chain; the chain shows the overlay.
@@ -130,6 +134,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const savePrompts = new SavePrompts({
     ext,
     session,
+    generator,
     neverSave,
     onSaved: (tabId, origin, itemId) => notes.onSaved(tabId, origin, itemId),
     ...(opts.now ? { now: opts.now } : {}),
@@ -158,8 +163,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   session.onLocked(() => saveFlow.clearGenerated());
-  const planner = new Planner(session, filler, chain, saveFlow, {
+  /** Frames (`tab:frame`) whose last run found every generated password refused by the page. */
+  const refusedRuns = new Set<string>();
+  const planner = new Planner(session, filler, chain, saveFlow, generator, {
     penalized: (origin) => hasPenalty(store.session, origin),
+    onGenerateRefused: (t) => void refusedRuns.add(`${t.tabId}:${t.frameId}`),
     onFilled: async (t, note) => notes.filled(t.tabId, t.origin, note, (await frames.details(t.tabId, 0))?.url ?? null),
   });
   plannerRef.current = planner;
@@ -299,6 +307,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (left && now() - left.at <= PLAN_MENU_MS && left.documentId === from.documentId) {
           field.first = left.alternatives;
           field.planned = left.planned;
+          if (left.notice) field.notice = left.notice;
         }
         const token = await menus.register(from, field);
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
@@ -334,15 +343,20 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // An icon click: its form only (the popup and the command run the whole plan).
         if (m.formRef !== undefined) run.form = m.formRef;
         if (m.fieldRef !== undefined) run.anchorRef = m.fieldRef;
+        const key = `${from.tabId}:${from.frameId}`;
+        refusedRuns.delete(key);
         const outcome = await planner.run(t, plan, run);
+        const refused = refusedRuns.delete(key);
         if (outcome === "menu") {
           const ctx = planner.contextOf(plan);
-          planMenus.set(`${from.tabId}:${from.frameId}`, {
+          const left: PlanForMenu = {
             alternatives: rankedIds(plan).slice(0, 8),
             planned: { roles: ctx ? mainRoles(ctx, plan.groups) : [], intent: plan.intent },
             documentId: from.documentId,
             at: now(),
-          });
+          };
+          if (refused) left.notice = "site_refused";
+          planMenus.set(key, left);
         }
         return { outcome };
       },
@@ -368,6 +382,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const out: MenuInit = { origin: rec.origin, formKind: rec.formKind, items };
         const best = rec.first?.[0];
         if (best !== undefined && items[0]?.item_id === best) out.best = best;
+        if (rec.notice) out.notice = rec.notice;
         // On a provider's pages during a sign-in to a site: the account linked to it.
         const flow = rec.frameId === 0 ? await providerFlows.signingInto(rec.tabId, rec.origin) : null;
         if (flow) {
@@ -416,8 +431,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_generate: async (m, from) => {
         const rec = await menuRecord(m.token, from);
-        const g = await session.request({ op: "generate", ctx: "menu", recipe: { kind: "smart" } });
-        await filler.fillGenerated(targetOf(rec), g.password);
+        const t = targetOf(rec);
+        // The page's rules for the menu's form; a page that refuses all three: nothing filled.
+        const g = await generator.generateForForm(t, "menu");
+        if (g === null) throw new BgError("site_refused");
+        await filler.fillGenerated(t, g.password);
         saveFlow.rememberGenerated(rec.tabId, rec.origin, g.password);
         return {};
       },

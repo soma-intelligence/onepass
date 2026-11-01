@@ -45,6 +45,7 @@ import {
 } from "./detect/shadow";
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
+import { collectPasswordContext } from "./password-context";
 import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
@@ -320,6 +321,23 @@ export function createContentScript(o: ContentOptions): ContentScript {
         if (origin === null) break;
         const ctx = buildPageContext(doc, refs, parts.observer.refresh(), { origin, topOrigin: origin, frame: "top" }, geometry);
         sendResponse({ ok: true, context: { forms: ctx.forms, typed_username_hash: null } });
+        return undefined;
+      }
+      case "password_context": {
+        // The page's rules for its new password fields: attributes and nearby text, never a value.
+        if (!pinned(m.origin) || typeof m.formRef !== "string") break;
+        const form = lineage.resolve(m.formRef, parts.observer.refresh());
+        const container = form ? refs.get(form.ref) : undefined;
+        if (!form || !container) break;
+        const fields: Element[] = [];
+        for (const f of form.fields) {
+          if (f.role !== "new_password" && f.role !== "confirm_password") continue;
+          const el = refs.get(f.ref);
+          if (el) fields.push(el);
+        }
+        if (fields.length === 0) break;
+        const { context, pattern } = collectPasswordContext(container, fields);
+        sendResponse({ ok: true, context, pattern });
         return undefined;
       }
       case "show_frame": {

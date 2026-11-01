@@ -11,6 +11,7 @@ import {
   type GeneratorEntry,
   type GeneratorKind,
   type MenuInit,
+  type MenuNotice,
   type OverlayAccount,
   type OverlayInit,
   type PopupItem,
@@ -103,6 +104,7 @@ export const parseMenuInit = (v: unknown): MenuInit | null =>
     }
     if (o.choices !== undefined) m.choices = list(o.choices, signInChoice, 64);
     if (o.best !== undefined) m.best = str(o.best, 128);
+    if (o.notice !== undefined) m.notice = oneOf<MenuNotice>(o.notice, ["site_refused"]);
     return m;
   });
 

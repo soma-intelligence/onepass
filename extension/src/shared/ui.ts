@@ -105,7 +105,12 @@ export interface MenuInit {
   choices?: SignInChoice[];
   /** Opened by a fill plan that could not choose: its best item, listed first. */
   best?: string;
+  /** Opened because the page refused every generated password: said at the top of the menu. */
+  notice?: MenuNotice;
 }
+
+/** Why a plan opened the menu instead of filling. */
+export type MenuNotice = "site_refused";
 
 /** One way to sign in offered by the overlay. */
 export interface OverlayAccount {
@@ -184,4 +189,33 @@ export interface GeneratorEntry {
   password: string;
   kind: GeneratorKind;
   at: number;
+}
+
+/** `storage.local` key of the profile the extension generates with on pages. */
+export const GENERATOR_PROFILE_KEY = "generator_profile";
+
+/** Custom profile bounds (the host's `length` range for `smart`). */
+export const CUSTOM_MIN_LENGTH = 8;
+export const CUSTOM_MAX_LENGTH = 64;
+
+/** The profile set in the popup: Strong (default), Readable, or a custom length and symbols choice. */
+export type GeneratorProfile = "strong" | "readable" | { kind: "custom"; length: number; symbols: boolean };
+
+/** A stored profile, checked; anything else is Strong. */
+export function parseGeneratorProfile(v: unknown): GeneratorProfile {
+  if (v === "strong" || v === "readable") return v;
+  if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>;
+    if (
+      o.kind === "custom" &&
+      typeof o.length === "number" &&
+      Number.isInteger(o.length) &&
+      o.length >= CUSTOM_MIN_LENGTH &&
+      o.length <= CUSTOM_MAX_LENGTH &&
+      typeof o.symbols === "boolean"
+    ) {
+      return { kind: "custom", length: o.length, symbols: o.symbols };
+    }
+  }
+  return "strong";
 }
