@@ -337,8 +337,8 @@ export class Passkeys {
       try {
         r = await this.deps.session.request(body as unknown as RequestFor<"passkey_create">);
       } catch (e) {
-        // The host's `excluded`, where the session maps it (a credential outside the listed logins).
-        if ((e as { code?: unknown }).code === "excluded") {
+        // The host's `excluded` (a credential outside the listed logins, archived or hidden).
+        if (toBgError(e).code === "excluded") {
           this.finish(p, fail("InvalidStateError"));
           return;
         }

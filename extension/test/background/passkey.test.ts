@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BgError } from "../../src/background/session";
+import { BridgeAppError } from "../../src/bridge/client";
+import { BgError, toBgError } from "../../src/background/session";
 import { type PasskeyWindows, Passkeys, createPasskeyRouter } from "../../src/background/passkey";
 import type { CsContext, UiContext } from "../../src/background/frames";
 import type { ChainView } from "../../src/shared/ui";
@@ -376,6 +377,22 @@ describe("passkey creation", () => {
     await t.pk.save(t.tokenOf(), t.ui());
     expect(await p).toEqual({ kind: "error", name: "InvalidStateError" });
     expect(t.ops()).not.toContain("passkey_create");
+  });
+});
+
+describe("passkey creation refused by the host", () => {
+  it("the host's excluded (a credential OnePass did not list) gives InvalidStateError", async () => {
+    const t = setup({
+      passkeys: [],
+      answer: (r) => (r.op === "passkey_create" ? toBgError(new BridgeAppError("excluded", "a credential of the exclude list is stored")) : undefined),
+    });
+    const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] });
+    await flush();
+    await t.pk.init(t.tokenOf(), t.ui());
+    await t.pk.save(t.tokenOf(), t.ui());
+    expect(t.ops()).toContain("passkey_create");
+    expect(await p).toEqual({ kind: "error", name: "InvalidStateError" });
+    expect(t.windows.removed).toEqual([100]);
   });
 });
 
