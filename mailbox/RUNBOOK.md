@@ -127,6 +127,26 @@ spoofed values) before changing the setting.
 wake-ups stop. Write down who froze which mailbox, when and why in the
 operations log.
 
+## Abandoned mailboxes and locators
+
+A client abandons a mailbox it has just created when it loses a migration
+race (`DELETE /v1/mailboxes/{m}`, spec D.5): only the creator credential,
+still a manager, within 24 hours, while no other credential has made a
+request or enrolled. `mailboxes.deleted_at` is then set. Every request on it
+answers `404 not_found`. About an hour later `maintenance` purges it: its
+credentials, records, locators and blob rows go (the blob objects through
+`blob_graves` and mailbox-gc), the empty `mailboxes` row stays. From then on
+its requests answer `403 unknown_credential`. Both answers mean the same
+thing, the mailbox is gone; clients treat them alike and support should too.
+Nothing restores an abandoned mailbox.
+
+`POST /v1/locate` (unsigned, the locator in the body) answers up to 8 live
+mailboxes for a locator. It counts on the same per-IP minute window as
+mailbox creation, enroll and rendezvous (60 a minute together), plus 30 an
+hour of its own, so a burst of lookups from one address can delay a creation
+or an enroll from that address by up to a minute, and the other way round.
+A mailbox keeps its two latest locators; several mailboxes may share one.
+
 ## Rotating `MAILBOX_IP_HMAC_SECRET`
 
 The secret only keys the per-IP rate windows (no address is stored), so a

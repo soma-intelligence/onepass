@@ -11,6 +11,7 @@ export const decodeCommit: (a: number, b: number) => [number, number, number];
 export const decodeCreate: (a: number, b: number) => [number, number, number];
 export const decodeEnroll: (a: number, b: number) => [number, number, number];
 export const decodeGrant: (a: number, b: number) => [number, number, number];
+export const decodeLocateRequest: (a: number, b: number) => [number, number, number];
 export const decodeSetLocator: (a: number, b: number) => [number, number, number];
 export const decodeSetPush: (a: number, b: number) => [number, number, number];
 export const decodeSetRole: (a: number, b: number) => [number, number, number];

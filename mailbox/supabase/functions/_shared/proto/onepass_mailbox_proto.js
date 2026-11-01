@@ -144,6 +144,21 @@ export function decodeGrant(bytes) {
 }
 
 /**
+ * `{ mailbox_id }`.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeLocateRequest(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeLocateRequest(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * `{ locator }`.
  * @param {Uint8Array} bytes
  * @returns {any}
@@ -286,7 +301,6 @@ export function encodeInfo(v) {
 }
 
 /**
- * `{ mailbox_id }`.
  * @param {any} v
  * @returns {Uint8Array}
  */

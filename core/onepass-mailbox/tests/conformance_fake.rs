@@ -39,7 +39,7 @@ impl ConformanceTarget for Fake {
         self.0.rendezvous(session, role)
     }
 
-    fn locate(&mut self, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
         self.0.locate(locator)
     }
 }
@@ -261,4 +261,25 @@ fn abandon_refused_after_day() {
     let f = fresh.create(None, b"").unwrap().mailbox_id;
     fake.age_mailbox(f, 86_399);
     fresh.abandon().expect("within the day");
+}
+
+/// Nine mailboxes on one locator: the eight oldest, in order; an abandoned
+/// one drops out and the ninth comes in. (The conformance suite cannot make
+/// nine mailboxes in one case on a real server: five creations a day per IP.)
+#[test]
+fn locate_answers_eight_oldest_first() {
+    let fake = FakeMailbox::new();
+    let loc = [0x42; 16];
+    let clients: Vec<_> = (0..9)
+        .map(|_| {
+            let mut c = fake.client(Credential::generate().unwrap());
+            c.create(None, b"").unwrap();
+            c.set_locator(loc).unwrap();
+            c
+        })
+        .collect();
+    let ids: Vec<_> = clients.iter().map(|c| c.mailbox().unwrap()).collect();
+    assert_eq!(fake.locate(loc).unwrap(), ids[..8]);
+    clients[0].abandon().unwrap();
+    assert_eq!(fake.locate(loc).unwrap(), ids[1..]);
 }

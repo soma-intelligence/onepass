@@ -884,22 +884,25 @@ Deno.test("PUT locator is one api_set_locator call, 204; a short body is malform
     await assertError(await handler(deps(db2))(await signed(k, "PUT", target, body), IP), "malformed");
     assert(!db2.fns().includes("api_set_locator"));
   }
-  // A locator another mailbox holds: in-band forbidden.
-  const taken = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
+  // Not a manager: in-band forbidden.
+  const reader = new FakeDb(withKey(k, () => [{ status: "forbidden", retry_after: null }]));
   await assertError(
-    await handler(deps(taken))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP),
+    await handler(deps(reader))(await signed(k, "PUT", target, new Uint8Array([1, ...loc])), IP),
     "forbidden",
   );
 });
 
-Deno.test("GET locate is unsigned: one locate call with the IP key, 200 Located or 404 not_found", async () => {
+Deno.test("POST locate is unsigned: one locate call with the IP key, 200 Located or 404 not_found", async () => {
   const loc = new Uint8Array(16).fill(0x5b);
-  const target = `/v1/locate/${toHex(loc)}`;
-  const db = new FakeDb(() => [ok({ mailbox_id: M })]);
-  const r = await handler(deps(db))(new Request(url(target)), IP);
+  const target = "/v1/locate";
+  const post = (body: Uint8Array<ArrayBuffer>, path = target) => new Request(url(path), { method: "POST", body });
+  const M2 = new Uint8Array(16).fill(0x6c);
+  // Every 'ok' row, in the order SQL gave it (oldest first).
+  const db = new FakeDb(() => [ok({ mailbox_id: M2 }), ok({ mailbox_id: M })]);
+  const r = await handler(deps(db))(post(new Uint8Array([1, ...loc])), IP);
   assertEquals(r.status, 200);
   assertEquals(r.headers.get("content-type"), proto.CONTENT_TYPE);
-  assertEquals(await bytes(r), new Uint8Array([1, ...M]));
+  assertEquals(await bytes(r), new Uint8Array([1, 2, ...M2, ...M]));
   assertEquals(db.fns(), ["locate"]);
   assertEquals(db.calls[0].args.map((x) => [x.type, x.value]), [
     ["bytea", loc],
@@ -909,31 +912,25 @@ Deno.test("GET locate is unsigned: one locate call with the IP key, 200 Located 
   assertEquals(db.commits, 1);
 
   const none = new FakeDb(() => [{ status: "not_found", retry_after: null, mailbox_id: null }]);
-  await assertError(await handler(deps(none))(new Request(url(target)), IP), "not_found");
+  await assertError(await handler(deps(none))(post(new Uint8Array([1, ...loc])), IP), "not_found");
   assertEquals(none.commits, 1, "a miss still counts");
   const limited = new FakeDb(() => [{ status: "rate_limited", retry_after: 1200, mailbox_id: null }]);
-  await assertError(await handler(deps(limited))(new Request(url(target)), IP), "rate_limited", 1200);
+  await assertError(await handler(deps(limited))(post(new Uint8Array([1, ...loc])), IP), "rate_limited", 1200);
 
-  // Upper case, short or long hex, a query or a body: no_route or malformed, no SQL.
-  for (
-    const t2 of [
-      `/v1/locate/${toHex(loc).toUpperCase()}`,
-      `/v1/locate/${toHex(loc).slice(2)}`,
-      `/v1/locate/${toHex(loc)}00`,
-    ]
-  ) {
+  // A short, long or empty body, or a query: malformed, no SQL.
+  for (const body of [new Uint8Array([1, ...loc.slice(1)]), new Uint8Array([1, ...loc, 0]), new Uint8Array()]) {
     const db2 = new FakeDb();
-    await assertError(await handler(deps(db2))(new Request(url(t2)), IP), "no_route");
+    await assertError(await handler(deps(db2))(post(body), IP), "malformed");
     assertEquals(db2.calls.length, 0);
   }
   const q = new FakeDb();
-  await assertError(await handler(deps(q))(new Request(url(`${target}?x=1`)), IP), "malformed");
-  const withBody = new FakeDb();
-  await assertError(
-    await handler(deps(withBody))(new Request(url(target), { method: "POST", body: new Uint8Array([1]) }), IP),
-    "no_route",
-  );
-  assertEquals(q.calls.length + withBody.calls.length, 0);
+  await assertError(await handler(deps(q))(post(new Uint8Array([1, ...loc]), `${target}?x=1`), IP), "malformed");
+  // The locator never travels in the URL: the old GET form is gone.
+  const old = new FakeDb();
+  await assertError(await handler(deps(old))(new Request(url(`/v1/locate/${toHex(loc)}`)), IP), "no_route");
+  const get = new FakeDb();
+  await assertError(await handler(deps(get))(new Request(url(target)), IP), "no_route");
+  assertEquals(q.calls.length + old.calls.length + get.calls.length, 0);
 });
 
 Deno.test("DELETE mailbox is one api_abandon_mailbox call, 204; refused is 403, deleted is 404", async () => {

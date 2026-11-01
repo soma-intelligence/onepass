@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use onepass_mailbox_proto::{
     COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, CommitOp,
     CommitRequest, CommitResponse, CreateMailbox, CredentialId, CredentialRole, Enroll,
-    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, Located, MailboxCreated, MailboxId,
-    MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig, ServerRecord,
-    SetCredentialRole, SetLocator, SetPush, SignatureParams, SignedEnrollTicket, TICKET_VERSION,
-    content_digest, credential_id, decode, encode, hex, signature_base, signature_header,
-    signature_input_header, ticket_signed_bytes,
+    EnrollTicket, ErrorBody, ErrorCode, GrantCredential, LocateRequest, Located, MailboxCreated,
+    MailboxId, MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig,
+    ServerRecord, SetCredentialRole, SetLocator, SetPush, SignatureParams, SignedEnrollTicket,
+    TICKET_VERSION, content_digest, credential_id, decode, encode, hex, signature_base,
+    signature_header, signature_input_header, ticket_signed_bytes,
 };
 
 use crate::credential::{Credential, CredentialKey};
@@ -492,20 +492,28 @@ pub(crate) fn issue_ticket(
     })
 }
 
-/// `GET /v1/locate/{locator}` (spec D.4): the mailbox a locator names, or
-/// `None` (`not_found`: unknown, or the mailbox was abandoned). Unsigned:
-/// a device restoring from its Emergency Kit holds no credential yet. The
-/// id is only where to look: the recovery credential signs there next, and
-/// what it reads is checked by the core.
-pub fn locate(endpoint: &Endpoint, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+/// `POST /v1/locate` (spec D.4): the live mailboxes holding `locator`, up
+/// to 8, oldest registration first; empty on `not_found` (unknown, or every
+/// holder abandoned). Unsigned: a device restoring from its Emergency Kit
+/// holds no credential yet. The locator goes in the body, never in a URL.
+///
+/// Several mailboxes may hold one locator (two devices raced a migration,
+/// D.5, or a holder of the Secret Key set it elsewhere). An id is only where
+/// to look: the caller tries each with its recovery credential, and the core
+/// verifies what it reads there is its account. A mailbox that answers
+/// `Server(UnknownCredential)` (purged after an abandon) or
+/// `Server(NotFound)` (abandoned, not yet purged) is gone: try the next.
+pub fn locate(endpoint: &Endpoint, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
     let http = Http::new(endpoint)?;
-    let url = format!("{}/v1/locate/{}", http::base_url(endpoint)?, hex(&locator));
+    let url = format!("{}/v1/locate", http::base_url(endpoint)?);
+    let headers = [("content-type", CONTENT_TYPE.to_string())];
+    let body = encode(&LocateRequest { locator });
     match http
-        .send(Method::Get, &url, &[], &[], RESPONSE_MAX)
+        .send(Method::Post, &url, &headers, &body, RESPONSE_MAX)
         .and_then(|r| expect(r, &[200]))
     {
-        Err(MailboxError::Server(ErrorCode::NotFound)) => Ok(None),
-        r => Ok(Some(read::<Located>(r?)?.mailbox_id)),
+        Err(MailboxError::Server(ErrorCode::NotFound)) => Ok(vec![]),
+        r => Ok(read::<Located>(r?)?.mailbox_ids),
     }
 }
 

@@ -374,15 +374,18 @@ async function setLocator(c: Ctx): Promise<Response> {
 }
 
 /**
- * GET /v1/locate/{locator}: unsigned (a new device holds only its Emergency
- * Kit). SQL counts every call on the IP key, a minute and an hour bucket.
+ * POST /v1/locate: unsigned (a new device holds only its Emergency Kit). The
+ * locator travels in the body, never in a URL a log keeps. SQL counts every
+ * call on the IP key: the minute bucket shared with create, enroll and
+ * rendezvous, and an hour bucket of its own. 200 lists up to 8 mailboxes,
+ * oldest registration first.
  */
 async function locate(c: Ctx): Promise<Response> {
-  requireEmpty(c);
-  const rows = await call(c.deps.db, "locate", [a.bytea(unhex(c.groups[0])), a.bytea(await c.ipKey())]);
+  const s = decode(proto.decodeLocateRequest, c.body) as { locator: Uint8Array };
+  const rows = await call(c.deps.db, "locate", [a.bytea(s.locator), a.bytea(await c.ipKey())]);
   const refused = inBand(rows[0]);
   if (refused) throw refused;
-  return postcard(proto.encodeLocated({ mailbox_id: rows[0].mailbox_id }));
+  return postcard(proto.encodeLocated({ mailbox_ids: rows.map((r) => r.mailbox_id) }));
 }
 
 /** DELETE /v1/mailboxes/{m}: the creator abandons a fresh mailbox (spec D.5). */
@@ -692,7 +695,7 @@ const ROUTES: Route[] = [
   { method: "GET", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: info },
   { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: abandon },
   { method: "PUT", re: new RegExp(`^${MB}/locator$`), auth: "signed", query: "none", maxBody: MAX, run: setLocator },
-  { method: "GET", re: new RegExp(`^/v1/locate/${H}$`), auth: "none", query: "none", maxBody: MAX, run: locate },
+  { method: "POST", re: /^\/v1\/locate$/, auth: "none", query: "none", maxBody: 64, run: locate },
   { method: "POST", re: new RegExp(`^${MB}/credentials$`), auth: "body_key", query: "none", maxBody: MAX, run: enroll },
   {
     method: "DELETE",

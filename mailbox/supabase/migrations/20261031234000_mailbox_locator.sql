@@ -3,20 +3,23 @@
 --
 -- Locator (D.4). 16 bytes the client derives from the Secret Key
 -- (HKDF-SHA256, info "onepass/mailbox-locator/v1"), so a new device holding
--- only the Emergency Kit finds its mailbox. One row per mailbox in
--- `locators`, at most:
+-- only the Emergency Kit finds its mailbox. A locator is not unique: two
+-- devices that raced a migration (D.5), or a holder of the Secret Key, may
+-- register it on several mailboxes, and the client tells its own by trying
+-- each with its recovery credential and the core's account verification.
 --   api_set_locator     a manager (role 3, read again under the mailbox lock)
---                       stores the mailbox's locator; a second call replaces
---                       the row, never adds one. A locator another mailbox
---                       holds is refused (forbidden) and never taken over:
---                       two devices migrating with the same Secret Key (D.5)
---                       cannot steal it from each other, and the loser's
---                       abandon frees it (below).
---   locate              no signature, no credential: 'ok' with the mailbox
---                       id, or 'not_found' (unknown locator, or a deleted
---                       mailbox). Every call counts on the per-IP minute
---                       bucket of the credential-less routes (60, raw IP
---                       key) and on 30 an hour keyed
+--                       adds a locator to the mailbox. Never refused for a
+--                       locator another mailbox holds. A mailbox keeps at
+--                       most 2 (old and new coexist until phase 3 of a
+--                       rotation, D.4): a third drops that mailbox's oldest.
+--                       Setting a pair the table already holds changes
+--                       nothing (its age included).
+--   locate              no signature, no credential: 'ok' rows with up to 8
+--                       live mailbox ids, oldest registration first, or one
+--                       'not_found' row (unknown locator, or only deleted
+--                       mailboxes). Every call counts on the per-IP minute
+--                       bucket shared with create, enroll and rendezvous
+--                       (60, raw IP key) and on 30 an hour keyed
 --                       SHA-256('onepass/locate' || IP key), distinct from
 --                       every other window key. A locator is 128 bits
 --                       derived from a secret: not enumerable at that rate,
@@ -27,10 +30,16 @@
 --   api_abandon_mailbox  the creator credential only (mailboxes.created_by,
 --                       written by api_create_mailbox from now on; a mailbox
 --                       created before this migration has none and cannot be
---                       abandoned), within 24 hours of created_at, and only
---                       a mailbox without children (Task 24 adds that
---                       check). Otherwise forbidden, in band after
---                       authentication. Sets deleted_at, drops the locator
+--                       abandoned), still a manager (role 3 under the lock),
+--                       within 24 hours of created_at, and only while the
+--                       mailbox is fresh: no credential but the creator has
+--                       ever authenticated (credentials.first_used_at, set
+--                       by _authenticate from now on, so a nonce, a commit or
+--                       a grant by it all count), none was enrolled, and at
+--                       most one other exists (the unused recovery
+--                       credential the creator granted). Task 24 adds: no
+--                       children. Otherwise forbidden, in band after
+--                       authentication. Sets deleted_at, drops the locators
 --                       and the push queue entry.
 -- From deleted_at on, every api_* entry point on the mailbox raises
 -- not_found (_authenticate, _locked_caller under the lock, api_enroll in
@@ -54,14 +63,23 @@ set role onepass_mailbox_owner;
 alter table onepass_mailbox.mailboxes
     add column created_by bytea check (length(created_by) = 16),
     add column deleted_at timestamptz;
+alter table onepass_mailbox.credentials
+    add column first_used_at timestamptz;
+comment on column onepass_mailbox.credentials.first_used_at is
+    'first authenticated request (nonce recorded); NULL = never used, which keeps a mailbox abandonable';
 comment on column onepass_mailbox.mailboxes.created_by is
     'credential id of the creator: the only one that may abandon the mailbox (24 h)';
 create index mailboxes_deleted_idx on onepass_mailbox.mailboxes (deleted_at) where deleted_at is not null;
 
 create table onepass_mailbox.locators (
-    locator bytea primary key check (length(locator) = 16),
-    mailbox_id bytea not null unique references onepass_mailbox.mailboxes (id) check (length(mailbox_id) = 16)
+    locator bytea not null check (length(locator) = 16),
+    mailbox_id bytea not null references onepass_mailbox.mailboxes (id) check (length(mailbox_id) = 16),
+    -- Registration order: oldest first in locate, oldest dropped past 2.
+    seq bigint generated always as identity,
+    primary key (locator, mailbox_id)
 );
+create index locators_locator_seq_idx on onepass_mailbox.locators (locator, seq);
+create index locators_mailbox_seq_idx on onepass_mailbox.locators (mailbox_id, seq);
 
 -- The locator a locate call looks up (NULL when absent or malformed).
 create function onepass_mailbox.current_locator()
@@ -102,7 +120,8 @@ begin
 end
 $$;
 
--- _hit of 20261031120100, with the hour window (locate).
+-- _hit of 20261031120100, with the hour window (locate), and retry_after
+-- measured to the window end in UTC.
 create or replace function onepass_mailbox._hit(p_key bytea, p_window interval, p_limit integer)
 returns integer
 language plpgsql
@@ -125,14 +144,17 @@ begin
     on conflict (key, window_start) do update set count = r.count + 1
     returning r.count into v_count;
     if v_count > p_limit then
-        return greatest(1, ceil(extract(epoch from (v_start + p_window - now()))))::integer;
+        -- The window end in UTC: timestamptz + interval follows the session
+        -- time zone, where a day can last 23 or 25 hours (DST).
+        return greatest(1, ceil(extract(epoch from
+            (((v_start at time zone 'UTC') + p_window) at time zone 'UTC') - now())))::integer;
     end if;
     return null;
 end
 $$;
 
 -- _authenticate of 20261031120100: a deleted mailbox raises not_found,
--- before anything is recorded.
+-- before anything is recorded; once the nonce is recorded, first_used_at.
 create or replace function onepass_mailbox._authenticate(p_credential bytea, p_nonce bytea, p_created timestamptz, p_mailbox bytea)
 returns integer
 language plpgsql
@@ -141,6 +163,7 @@ as $$
 declare
     v_revoked timestamptz;
     v_last timestamptz;
+    v_first timestamptz;
     v_frozen boolean;
     v_deleted timestamptz;
     v_rate integer;
@@ -159,7 +182,7 @@ begin
     end if;
     perform onepass_mailbox._enter(p_mailbox);
 
-    select c.revoked_at, c.last_used_at into v_revoked, v_last
+    select c.revoked_at, c.last_used_at, c.first_used_at into v_revoked, v_last, v_first
     from onepass_mailbox.credentials c
     where c.id = p_credential and c.mailbox_id = p_mailbox;
     if not found then
@@ -194,8 +217,11 @@ begin
     -- 32 byte HMAC; a collision is negligible).
     v_retry := onepass_mailbox._hit(p_credential || '\x00000000000000000000000000000000'::bytea, interval '1 minute', v_rate);
 
-    if v_last < now() - interval '1 minute' then
-        update onepass_mailbox.credentials set last_used_at = now()
+    -- first_used_at: this credential is no longer unused, so its mailbox
+    -- is no longer fresh for api_abandon_mailbox.
+    if v_last < now() - interval '1 minute' or v_first is null then
+        update onepass_mailbox.credentials
+        set last_used_at = now(), first_used_at = coalesce(first_used_at, now())
         where id = p_credential and mailbox_id = p_mailbox;
     end if;
     return v_retry;
@@ -646,7 +672,6 @@ as $$
 declare
     v_retry integer;
     v_role smallint;
-    v_err text;
 begin
     v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
     if v_retry is not null then
@@ -664,23 +689,20 @@ begin
         return query select 'forbidden'::text, null::integer;
         return;
     end if;
-    begin
-        delete from onepass_mailbox.locators l where l.mailbox_id = p_mailbox;
-        insert into onepass_mailbox.locators (locator, mailbox_id) values (p_locator, p_mailbox);
-    exception when unique_violation then
-        -- Another mailbox holds it (the only unique key left after the
-        -- delete): refused, the block rolled back, this mailbox's row kept.
-        v_err := 'forbidden';
-    end;
-    if v_err is not null then
-        return query select v_err, null::integer;
-        return;
-    end if;
+    -- Another mailbox holding the same locator is no conflict (D.4).
+    insert into onepass_mailbox.locators (locator, mailbox_id) values (p_locator, p_mailbox)
+    on conflict (locator, mailbox_id) do nothing;
+    -- Keep the mailbox's 2 latest.
+    delete from onepass_mailbox.locators l
+    where l.mailbox_id = p_mailbox
+      and l.seq not in (select k.seq from onepass_mailbox.locators k
+                        where k.mailbox_id = p_mailbox order by k.seq desc limit 2);
     return query select 'ok'::text, null::integer;
 end
 $$;
 
--- GET /v1/locate/{locator}, unsigned.
+-- POST /v1/locate, unsigned. Up to 8 'ok' rows, oldest registration
+-- first, or a single row for any other status.
 create function onepass_mailbox.locate(p_locator bytea, p_ip_key bytea)
 returns table (status text, retry_after integer, mailbox_id bytea)
 language plpgsql
@@ -690,13 +712,16 @@ as $$
 #variable_conflict use_column
 declare
     v_retry integer;
+    v_candidates bytea[];
     v_mailbox bytea;
-    v_live boolean;
+    v_live bytea[] := '{}';
+    v_ok boolean;
 begin
     perform onepass_mailbox._enter(null);
     if p_ip_key is null or length(p_ip_key) <> 32 then
         perform onepass_mailbox._fail('malformed');
     end if;
+    -- Minute bucket shared with create, enroll and rendezvous.
     v_retry := onepass_mailbox._hit(p_ip_key, interval '1 minute', 60);
     if v_retry is null then
         v_retry := onepass_mailbox._hit(
@@ -711,18 +736,28 @@ begin
         return;
     end if;
 
+    -- Read the candidates first: _enter, which the liveness check needs,
+    -- clears onepass.locator. Abandon drops a mailbox's rows, so a deleted
+    -- one here is rare; 16 leaves room for it.
     perform set_config('onepass.locator', encode(p_locator, 'hex'), true);
-    select l.mailbox_id into v_mailbox from onepass_mailbox.locators l where l.locator = p_locator;
-    if found then
+    select array_agg(x.mailbox_id order by x.seq) into v_candidates
+    from (select l.mailbox_id, l.seq from onepass_mailbox.locators l
+          where l.locator = p_locator order by l.seq limit 16) x;
+    foreach v_mailbox in array coalesce(v_candidates, '{}') loop
+        exit when cardinality(v_live) >= 8;
         perform onepass_mailbox._enter(v_mailbox);
-        select m.deleted_at is null into v_live from onepass_mailbox.mailboxes m where m.id = v_mailbox;
-    end if;
+        select m.deleted_at is null into v_ok from onepass_mailbox.mailboxes m where m.id = v_mailbox;
+        if v_ok then
+            v_live := v_live || v_mailbox;
+        end if;
+    end loop;
     perform onepass_mailbox._enter(null);
-    if v_live is not true then
+    if cardinality(v_live) = 0 then
         return query select 'not_found'::text, null::integer, null::bytea;
         return;
     end if;
-    return query select 'ok'::text, null::integer, v_mailbox;
+    return query select 'ok'::text, null::integer, u.id
+    from unnest(v_live) with ordinality u(id, n) order by u.n;
 end
 $$;
 
@@ -739,6 +774,7 @@ declare
     v_retry integer;
     v_created_by bytea;
     v_created_at timestamptz;
+    v_role smallint;
 begin
     v_retry := onepass_mailbox._authenticate(p_credential, p_nonce, p_created, p_mailbox);
     if v_retry is not null then
@@ -750,9 +786,18 @@ begin
     from onepass_mailbox.mailboxes m where m.id = p_mailbox
     for no key update;
     -- Revoked or abandoned while waiting for the lock: raised.
-    perform onepass_mailbox._locked_caller(p_credential, p_mailbox);
+    select l.o_role into v_role from onepass_mailbox._locked_caller(p_credential, p_mailbox) l;
     -- Task 24 adds: and the mailbox has no child.
-    if v_created_by is distinct from p_credential or v_created_at <= now() - interval '24 hours' then
+    if v_created_by is distinct from p_credential
+       or v_role is distinct from 3
+       or v_created_at <= now() - interval '24 hours'
+       -- Fresh: no other credential ever used or enrolled, at most one
+       -- other at all (the unused recovery credential).
+       or exists (select 1 from onepass_mailbox.credentials c
+                  where c.mailbox_id = p_mailbox and c.id <> p_credential
+                    and (c.first_used_at is not null or c.enrolled_by is not null))
+       or (select count(*) from onepass_mailbox.credentials c
+           where c.mailbox_id = p_mailbox and c.id <> p_credential) > 1 then
         return query select 'forbidden'::text, null::integer;
         return;
     end if;

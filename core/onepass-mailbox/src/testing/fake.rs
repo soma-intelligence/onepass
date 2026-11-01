@@ -15,10 +15,12 @@
 //! only a manager grants, changes roles, approves tickets and revokes
 //! another credential, an owner is revoked only by itself and never
 //! demoted, a limited writer announces no blob, the last manager stays),
-//! locators (one per mailbox, set by a manager, never taken from another
-//! mailbox, looked up without a key) and abandoning a mailbox (its creator,
-//! within 24 hours; then every request on it is `not_found`, its locator
-//! gone and free again).
+//! locators (set by a manager, the two latest kept per mailbox, shared
+//! freely between mailboxes, looked up without a key: up to 8 live
+//! mailboxes, oldest registration first) and abandoning a mailbox (its
+//! creator, still a manager, within 24 hours, while no other credential has
+//! made a request or enrolled and at most one other exists; then every
+//! request on it is `not_found`, its locators gone).
 //!
 //! `FakeMailboxClient` runs the real client's request building and answer
 //! checks (`crate::client`, `crate::blobs`), and every answer goes through
@@ -46,8 +48,8 @@ use std::time::{Duration, Instant};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox_proto::{
     BlobUrls, Body, COMMIT_BODY_MAX, COMMIT_OPS_MAX, ChangesPage, CommitOp, CommitResponse,
-    ConflictEntry, CredentialId, CredentialRole, ErrorCode, INLINE_MAX, Limits, Located,
-    MailboxCreated, MailboxId, MailboxInfo, Message, Op, PAGE_MAX_BYTES, PAGE_MAX_RECORDS,
+    ConflictEntry, CredentialId, CredentialRole, ErrorCode, INLINE_MAX, LOCATED_MAX, Limits,
+    Located, MailboxCreated, MailboxId, MailboxInfo, Message, Op, PAGE_MAX_BYTES, PAGE_MAX_RECORDS,
     PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetLocator, Sha256, SignedEnrollTicket,
     Usage, credential_id, decode, encode, hex, put_kinds_allow, ticket_hash, ticket_signed_bytes,
 };
@@ -189,6 +191,10 @@ struct Cred {
     put_kinds: Option<[u8; 32]>,
     /// Revoked only by itself, never demoted (Task 24 sets it).
     owner: bool,
+    /// Has authenticated a request (`first_used_at` in SQL).
+    used: bool,
+    /// Came in by an enroll ticket (`enrolled_by` in SQL).
+    enrolled: bool,
 }
 
 impl Cred {
@@ -202,6 +208,8 @@ impl Cred {
             role: CredentialRole::Manage,
             put_kinds: None,
             owner: false,
+            used: false,
+            enrolled: false,
         }
     }
 }
@@ -213,8 +221,8 @@ struct State {
     /// Credential ids are unique across mailboxes (primary key in SQL).
     credentials: HashMap<CredentialId, Cred>,
     used_tickets: HashSet<Sha256>,
-    /// Locator to mailbox; at most one per mailbox.
-    locators: HashMap<[u8; 16], MailboxId>,
+    /// (locator, mailbox) in registration order; at most 2 per mailbox.
+    locators: Vec<([u8; 16], MailboxId)>,
     /// Storage: object name to bytes.
     objects: HashMap<String, Vec<u8>>,
     next_gen: u64,
@@ -698,8 +706,13 @@ impl State {
             return refused(ErrorCode::Malformed);
         }
         self.used_tickets.insert(hash);
-        self.credentials
-            .insert(id, Cred::manager(m, new_key.to_bytes()));
+        self.credentials.insert(
+            id,
+            Cred {
+                enrolled: true,
+                ..Cred::manager(m, new_key.to_bytes())
+            },
+        );
         Ok(())
     }
 
@@ -986,7 +999,7 @@ impl FakeMailbox {
                 mailboxes: HashMap::new(),
                 credentials: HashMap::new(),
                 used_tickets: HashSet::new(),
-                locators: HashMap::new(),
+                locators: Vec::new(),
                 objects: HashMap::new(),
                 next_gen: 0,
                 fail_next: VecDeque::new(),
@@ -1118,18 +1131,22 @@ impl FakeMailbox {
         self.rdv.lock().lose_next_answer = true;
     }
 
-    /// `GET /v1/locate/{locator}`: the mailbox, `None` when unknown or
-    /// abandoned. No key, nothing counted (per-IP limits are not modelled).
-    pub fn locate(&self, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+    /// `POST /v1/locate`: the live mailboxes holding `locator`, up to 8,
+    /// oldest registration first (empty for none). No key, nothing counted
+    /// (per-IP limits are not modelled).
+    pub fn locate(&self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
         let s = self.lock();
-        let Some(m) = s
+        let ids: Vec<MailboxId> = s
             .locators
-            .get(&locator)
-            .filter(|m| s.mailboxes.get(*m).is_some_and(|x| !x.deleted))
-        else {
-            return Ok(None);
-        };
-        Ok(Some(wire(&Located { mailbox_id: *m })?.mailbox_id))
+            .iter()
+            .filter(|(l, m)| *l == locator && s.mailboxes.get(m).is_some_and(|x| !x.deleted))
+            .map(|(_, m)| *m)
+            .take(LOCATED_MAX)
+            .collect();
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(wire(&Located { mailbox_ids: ids })?.mailbox_ids)
     }
 
     /// Makes `mailbox` `secs` seconds older (its creation moves back).
@@ -1196,8 +1213,13 @@ impl FakeMailboxClient {
     /// The state with this credential authenticated in the open mailbox.
     fn signed(&self) -> Result<(MutexGuard<'_, State>, MailboxId), MailboxError> {
         let m = self.open_mailbox()?;
-        let s = self.state()?;
+        let mut s = self.state()?;
         s.authenticate(&self.credential.id(), &m)?;
+        // The nonce is recorded: the credential is no longer unused.
+        s.credentials
+            .get_mut(&self.credential.id())
+            .expect("authenticated credential")
+            .used = true;
         Ok((s, m))
     }
 
@@ -1409,12 +1431,18 @@ impl MailboxApi for FakeMailboxClient {
         if s.caller(&self.credential.id()).role != CredentialRole::Manage {
             return refused(ErrorCode::Forbidden);
         }
-        if s.locators.get(&req.locator).is_some_and(|o| *o != m) {
-            // Another mailbox holds it: never taken over.
-            return refused(ErrorCode::Forbidden);
+        if !s.locators.contains(&(req.locator, m)) {
+            s.locators.push((req.locator, m));
         }
-        s.locators.retain(|_, o| *o != m);
-        s.locators.insert(req.locator, m);
+        // Keep the mailbox's 2 latest.
+        if s.locators.iter().filter(|(_, o)| *o == m).count() > 2 {
+            let oldest = s
+                .locators
+                .iter()
+                .position(|(_, o)| *o == m)
+                .expect("a row of m");
+            s.locators.remove(oldest);
+        }
         Ok(())
     }
 
@@ -1422,11 +1450,22 @@ impl MailboxApi for FakeMailboxClient {
         let (mut s, m) = self.signed()?;
         let id = self.credential.id();
         let mbx = &s.mailboxes[&m];
-        if mbx.created_by != Some(id) || mbx.created_at <= unix_now() - 86_400 {
+        let others: Vec<&Cred> = s
+            .credentials
+            .iter()
+            .filter(|(c, x)| x.mailbox == m && **c != id)
+            .map(|(_, x)| x)
+            .collect();
+        let fresh = others.len() <= 1 && others.iter().all(|x| !x.used && !x.enrolled);
+        if mbx.created_by != Some(id)
+            || s.caller(&id).role != CredentialRole::Manage
+            || mbx.created_at <= unix_now() - 86_400
+            || !fresh
+        {
             return refused(ErrorCode::Forbidden);
         }
         s.mailboxes.get_mut(&m).expect("authenticated").deleted = true;
-        s.locators.retain(|_, o| *o != m);
+        s.locators.retain(|(_, o)| *o != m);
         Ok(())
     }
 

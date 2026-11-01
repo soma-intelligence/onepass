@@ -720,8 +720,9 @@ impl Message for CredentialRole {
 // ---------------------------------------------------------------- locator
 
 /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): the 16 bytes
-/// the client derives from the Secret Key. Replaces the mailbox's locator;
-/// one held by another mailbox is refused (`Forbidden`).
+/// the client derives from the Secret Key. A mailbox keeps its two latest
+/// locators (old and new until phase 3 of a rotation); a third drops the
+/// oldest. Another mailbox may hold the same locator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetLocator {
     #[serde(with = "crate::bytes::fixed")]
@@ -734,17 +735,51 @@ impl Message for SetLocator {
     }
 }
 
-/// `200` of `GET /v1/locate/{locator}` (unsigned): the mailbox the locator
-/// names. A client trusts it only as "where to look": the recovery
-/// credential still has to sign there, and the core checks what it reads.
+/// Most mailboxes one lookup answers (spec D.4).
+pub const LOCATED_MAX: usize = 8;
+
+/// `POST /v1/locate` (unsigned, spec D.4): the locator goes in the body, so
+/// it never reaches a URL log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocateRequest {
+    #[serde(with = "crate::bytes::fixed")]
+    pub locator: [u8; 16],
+}
+
+impl Message for LocateRequest {
+    fn check(&self) -> Result<(), ProtoError> {
+        Ok(())
+    }
+}
+
+/// `200` of `POST /v1/locate`: the live mailboxes that registered the
+/// locator, oldest registration first, 1 to `LOCATED_MAX`, each once (none
+/// is `404 not_found`). Several mailboxes may share a locator (two devices
+/// that raced a migration, D.5; a squatter who holds the Secret Key): the
+/// client tries each with its recovery credential and keeps the one the
+/// core verifies as its account. An id is only where to look.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Located {
-    #[serde(with = "crate::bytes::fixed")]
-    pub mailbox_id: MailboxId,
+    #[serde(with = "crate::bytes::fixed_list")]
+    pub mailbox_ids: Vec<MailboxId>,
 }
 
 impl Message for Located {
+    fn leading_list_cap() -> Option<(&'static str, usize)> {
+        Some(("mailbox_ids", LOCATED_MAX))
+    }
+
     fn check(&self) -> Result<(), ProtoError> {
+        if self.mailbox_ids.is_empty() {
+            return Err(ProtoError::Format("no mailbox located"));
+        }
+        if self.mailbox_ids.len() > LOCATED_MAX {
+            return Err(ProtoError::TooLarge("mailbox_ids"));
+        }
+        let unique: BTreeSet<&MailboxId> = self.mailbox_ids.iter().collect();
+        if unique.len() != self.mailbox_ids.len() {
+            return Err(ProtoError::Format("mailbox located twice"));
+        }
         Ok(())
     }
 }
@@ -1009,24 +1044,35 @@ mod tests {
         );
     }
 
-    /// A locator and a located mailbox id are 16 raw bytes, nothing else.
+    /// A locator is 16 raw bytes; a lookup answers 1 to 8 distinct mailbox
+    /// ids, in the server's order (oldest first), nothing else.
     #[test]
     fn locator_messages() {
         rt(SetLocator { locator: [3; 16] });
-        rt(Located {
-            mailbox_id: [4; 16],
-        });
+        rt(LocateRequest { locator: [3; 16] });
         let mut want = vec![PROTO_VERSION];
         want.extend([3u8; 16]);
         assert_eq!(encode(&SetLocator { locator: [3; 16] }), want);
-        let mut short = vec![PROTO_VERSION];
-        short.extend([4u8; 15]);
-        assert!(decode::<Located>(&short).is_err());
-        let mut long = encode(&Located {
-            mailbox_id: [4; 16],
+        assert_eq!(encode(&LocateRequest { locator: [3; 16] }), want);
+        let ids: Vec<MailboxId> = (0..LOCATED_MAX as u8).map(|i| [9 - i; 16]).collect();
+        rt(Located {
+            mailbox_ids: ids.clone(),
         });
-        long.push(0);
-        assert!(decode::<Located>(&long).is_err());
+        rt(Located {
+            mailbox_ids: vec![[4; 16]],
+        });
+        let bad = |ids: Vec<MailboxId>| decode::<Located>(&encode(&Located { mailbox_ids: ids }));
+        assert_eq!(bad(vec![]), Err(ProtoError::Format("no mailbox located")));
+        assert_eq!(
+            bad(vec![[1; 16], [2; 16], [1; 16]]),
+            Err(ProtoError::Format("mailbox located twice"))
+        );
+        let mut nine = ids;
+        nine.push([0x77; 16]);
+        assert!(matches!(bad(nine), Err(ProtoError::TooLarge(_))));
+        let mut short = vec![PROTO_VERSION];
+        short.extend([3u8; 15]);
+        assert!(decode::<LocateRequest>(&short).is_err());
     }
 
     /// Bit k of `put_kinds` is kind k: byte k / 8, bit k % 8 from the least

@@ -70,7 +70,7 @@ impl ConformanceTarget for E2e {
         Rendezvous::new(self.endpoint.clone(), session, role).expect("rendezvous")
     }
 
-    fn locate(&mut self, locator: [u8; 16]) -> Result<Option<MailboxId>, MailboxError> {
+    fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
         onepass_mailbox::locate(&self.endpoint, locator)
     }
 

@@ -15,10 +15,10 @@ use onepass_mailbox::{
 use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery, CommitOp,
     CommitRequest, CommitResponse, ConflictEntry, CreateMailbox, CredentialRole, Enroll, ErrorBody,
-    ErrorCode, GrantCredential, INLINE_MAX, Limits, Located, MailboxCreated, MailboxInfo, Op,
-    PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush,
-    Usage, blob_sha256, check_skew, content_digest, credential_id, decode, encode, hex,
-    parse_signature_headers, signature_base, ticket_signed_bytes,
+    ErrorCode, GrantCredential, INLINE_MAX, Limits, LocateRequest, Located, MailboxCreated,
+    MailboxInfo, Op, PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole,
+    SetLocator, SetPush, Usage, blob_sha256, check_skew, content_digest, credential_id, decode,
+    encode, hex, parse_signature_headers, signature_base, ticket_signed_bytes,
 };
 
 const PREFIX: &str = "/functions/v1/mailbox";
@@ -281,10 +281,10 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
             decode::<SetLocator>(&req.body).unwrap();
             Resp::empty(204)
         }
-        ("GET", r) if r.starts_with("/v1/locate/") => {
-            if r == format!("/v1/locate/{}", hex(&LOCATOR)) {
+        ("POST", "/v1/locate") => {
+            if decode::<LocateRequest>(&req.body).unwrap().locator == LOCATOR {
                 ok(encode(&Located {
-                    mailbox_id: MAILBOX,
+                    mailbox_ids: vec![MAILBOX, [3; 16]],
                 }))
             } else {
                 Resp::error(ErrorCode::NotFound, 404, None)
@@ -448,8 +448,11 @@ fn every_request_is_signed() {
     a.abandon().unwrap();
 
     // The lookup needs no key and sends no signature.
-    assert_eq!(locate(&server.endpoint(), LOCATOR).unwrap(), Some(MAILBOX));
-    assert_eq!(locate(&server.endpoint(), [1; 16]).unwrap(), None);
+    assert_eq!(
+        locate(&server.endpoint(), LOCATOR).unwrap(),
+        vec![MAILBOX, [3; 16]]
+    );
+    assert!(locate(&server.endpoint(), [1; 16]).unwrap().is_empty());
 
     let keys = HashMap::from([
         (first_key.id(), first_key.to_bytes()),
@@ -465,11 +468,22 @@ fn every_request_is_signed() {
             continue;
         }
         let target = r.target().unwrap();
-        if target == "/v1/config" || target.starts_with("/v1/locate/") {
+        if target == "/v1/config" {
             assert!(r.header("signature").is_none(), "{target}");
             assert!(r.header("signature-input").is_none(), "{target}");
             assert!(r.body.is_empty(), "{target}");
             assert_eq!(r.method, "GET", "{target}");
+            continue;
+        }
+        if target == "/v1/locate" {
+            // Unsigned; the locator in the body, never in the URL.
+            assert!(r.header("signature").is_none(), "{target}");
+            assert!(r.header("signature-input").is_none(), "{target}");
+            assert_eq!(r.method, "POST", "{target}");
+            assert_eq!(
+                r.header("content-type"),
+                Some(onepass_mailbox_proto::CONTENT_TYPE)
+            );
             continue;
         }
         let kid = verify(r, &keys).unwrap_or_else(|e| panic!("{} {target}: {e}", r.method));
@@ -512,18 +526,12 @@ fn every_request_is_signed() {
             "{method} {route}"
         );
     }
-    let lookups: Vec<&str> = reqs
+    let lookups: Vec<[u8; 16]> = reqs
         .iter()
-        .filter_map(|r| r.target())
-        .filter(|t| t.starts_with("/v1/locate/"))
+        .filter(|r| r.target() == Some("/v1/locate"))
+        .map(|r| decode::<LocateRequest>(&r.body).unwrap().locator)
         .collect();
-    assert_eq!(
-        lookups,
-        [
-            format!("/v1/locate/{}", hex(&LOCATOR)),
-            format!("/v1/locate/{}", hex(&[1; 16]))
-        ]
-    );
+    assert_eq!(lookups, [LOCATOR, [1; 16]]);
     let changes = reqs.iter().find(|r| r.path.contains("/changes")).unwrap();
     assert_eq!(
         changes.target().unwrap(),
@@ -559,15 +567,27 @@ fn locate_answers_are_checked() {
             Resp::error(ErrorCode::NoRoute, 404, None),
             Err(MailboxError::Server(ErrorCode::NoRoute)),
         ),
-        (Resp::error(ErrorCode::NotFound, 404, None), Ok(None)),
+        (Resp::error(ErrorCode::NotFound, 404, None), Ok(vec![])),
         (
             Resp::postcard(
                 200,
                 encode(&Located {
-                    mailbox_id: [6; 16],
+                    mailbox_ids: vec![[6; 16], [4; 16]],
                 }),
             ),
-            Ok(Some([6; 16])),
+            Ok(vec![[6; 16], [4; 16]]),
+        ),
+        // An empty or repeated list breaks the proto: refused.
+        (
+            Resp::postcard(200, vec![1, 0]),
+            Err(MailboxError::Malformed("response")),
+        ),
+        (
+            Resp::postcard(
+                200,
+                [vec![1, 2], [6; 16].to_vec(), [6; 16].to_vec()].concat(),
+            ),
+            Err(MailboxError::Malformed("response")),
         ),
     ];
     for (resp, want) in cases {

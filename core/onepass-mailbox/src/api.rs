@@ -78,15 +78,20 @@ pub trait MailboxApi: Send {
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError>;
 
-    /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): stores the
-    /// locator derived from the Secret Key, replacing the mailbox's former
-    /// one. A locator another mailbox holds is `Forbidden`.
+    /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): adds the
+    /// locator derived from the Secret Key. The mailbox keeps its two latest
+    /// (old and new during a rotation), a third drops the oldest, the same
+    /// one again changes nothing. Another mailbox may hold it too.
     fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError>;
 
-    /// `DELETE /v1/mailboxes/{m}`: the credential that created the mailbox
-    /// abandons it within 24 hours of its creation (the losing side of a
-    /// migration race, spec D.5); anyone else, or later, is `Forbidden`.
-    /// Every request on it is then `Server(NotFound)`.
+    /// `DELETE /v1/mailboxes/{m}`: the credential that created the mailbox,
+    /// still a manager, abandons it within 24 hours of its creation while
+    /// it is fresh: no other credential has made a request or enrolled, and
+    /// at most one other exists (the unused recovery credential). The losing
+    /// side of a migration race (spec D.5). Anything else is `Forbidden`.
+    /// Every request on it is then `Server(NotFound)`, and once the server
+    /// purges it (an hour later) `Server(UnknownCredential)`: both mean the
+    /// mailbox is gone.
     fn abandon(&self) -> Result<(), MailboxError>;
 
     /// A ticket for `new_credential_pub`, valid 300 s from `now`. No request.
