@@ -1,0 +1,54 @@
+(* formal-lib: sharing_core.pvl *)
+(* OnePass formal model: signed membership and committed envelopes of
+   the shared vault (spec 2026-10-30-sharing-families-design.md, sections
+   6.2, 7.2 and 17). Same run as sharing.pv and sharing_auth.pv (the
+   process below is a copy of their main process, keep the three equal),
+   split for the time budget.
+
+   Attacker: the server throughout, Dave's signing key (a reader) from
+   phase 0, Carol's whole state (a removed writer) in phase 1. *)
+
+(* Membership: an accepted body n = (seq, body_ref, member list) was
+   signed by a manager. *)
+query d: bitstring, v: bitstring, n: bitstring, mgr: bitstring;
+  event(MembershipAccepted(d, v, n)) ==> (event(MembershipSigned(v, n, mgr)) && event(Manager(v, mgr))).
+(* Envelope: an accepted vault key is the one created for that generation
+   (the envelope is not authenticated, the signed key_commit is). *)
+query d: bitstring, v: bitstring, g: bitstring, k: key;
+  event(EnvelopeAccepted(d, v, g, k)) ==> event(GenerationCreated(v, g, k)).
+(* Sanity (expected false): Bob accepts the removal body and its key. *)
+query k: key; event(EnvelopeAccepted(bob, vlt, g2, k)).
+
+process
+  new skA: skey; new kmA: seed; new kxA: seed;
+  new skB: skey; new kmB: seed; new kxB: seed;
+  new skC: skey; new kmC: seed; new kxC: seed;
+  new skD: skey; new kmD: seed; new kxD: seed;
+  (* Public keys are public. *)
+  out(c, (pk(skA), kem_pk_m(kmA), kem_pk_x(kxA),
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)));
+  (* Dave, a reader, is malicious: his signing key is the attacker's. *)
+  out(c, skD);
+  (* Contact verification over the authenticated channels: Bob and Carol
+     face to face (SAS, Verified), Dave by the invite link (Link). Each
+     side keeps the other's honest keys (sharing_core.pvl, "Contacts"). *)
+  new k1: key; new k2: key;
+  let eA = entry_alice(skA, kmA, kxA) in
+  ( Owner(skA, eA,
+          pk(skB), kem_pk_m(kmB), kem_pk_x(kxB), lvl_verified,
+          pk(skC), kem_pk_m(kmC), kem_pk_x(kxC), lvl_verified,
+          pk(skD), kem_pk_m(kmD), kem_pk_x(kxD), lvl_link, k1, k2, true)
+  | MemberJoin(true, bob, skB, kmB, kxB, true, alice, pk(skA))
+  | MemberJoin(true, carol, skC, kmC, kxC, true, alice, pk(skA))
+    (* Bob from the state his join reaches (sharing_core.pvl). *)
+  | MemberUpdate(bob, i2, skB, kmB, kxB, seq1, body_ref(seq1, g1, key_commit(k1, g1)), g1,
+                 members_g1(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                            pk(skC), kem_pk_m(kmC), kem_pk_x(kxC),
+                            pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k1)
+  | MemberReadAfter(true, bob, nxt(seq1), body_ref(nxt(seq1), g2, key_commit(k2, g2)), g2,
+                    members_g2(eA, pk(skB), kem_pk_m(kmB), kem_pk_x(kxB),
+                               pk(skD), kem_pk_m(kmD), kem_pk_x(kxD)), k2)
+    (* Phase 1: Carol is removed, the attacker holds her whole state. *)
+  | (phase 1; out(c, (skC, kmC, kxC))) )

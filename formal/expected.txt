@@ -270,24 +270,15 @@ remote_unlock_lookup_broken.pv | not event(AgentOnly(m_29,p,r,dec_once)) | false
 # liste des membres signée, enveloppes vers les clés du carnet, manifestes partagés avec signataire
 # et pointeur de liste ; Alice retire Carol à la génération g2 (option C de 9) ; l'attaquant tient
 # le serveur et, en phase 1, tout l'état de Carol. Les étapes de Bob sont prouvées une à une depuis
-# l'état honnête de l'étape d'avant, justifié par les requêtes de liste et d'enveloppe.
+# l'état honnête de l'étape d'avant, justifié par les requêtes de liste et d'enveloppe
+# (sharing_auth_keys.pv). Les requêtes d'authentification sont dans sharing_auth.pv et
+# sharing_auth_keys.pv, sur le même processus, pour tenir le budget de temps.
 # Après le retrait, ce qu'écrivent Alice et Bob reste secret face à Carol et au serveur (A4).
 sharing.pv | not (event(ItemSealedAfterRemoval(m_16)) && attacker_p1(m_16)) | true
 # Clé de chaque génération : g1 secrète face au serveur (et à la clé de signature de Dave),
 # g2 face au serveur et à Carol.
 sharing.pv | not (event(GenerationCreated(v_18,g1,k_9)) && attacker(k_9)) | true
 sharing.pv | not (event(GenerationCreated(v_18,g2,k_9)) && attacker_p1(k_9)) | true
-# Un manifeste accepté vient d'un membre qui a le droit d'écrire à cette génération, alors que
-# l'attaquant signe comme le lecteur Dave (A6) et, en phase 1, comme Carol retirée (A5). Indexé par
-# génération : valable parce que tout retrait change de génération ; sans le contrôle du rôle, la
-# requête tombe (sharing_no_role_check.pv).
-sharing.pv | event(ManifestAccepted(d,v_18,w_8,g_21)) ==> event(MemberRole(v_18,w_8,role_write,g_21)) | true
-# Un corps de membres accepté (seq, référence et liste des membres) a été signé par un
-# gestionnaire (A2 ; A3 côté membre seulement, par le chaînage).
-sharing.pv | event(MembershipAccepted(d,v_18,n)) ==> event(MembershipSigned(v_18,n,mgr_2)) && event(Manager(v_18,mgr_2)) | true
-# Une clé de coffre acceptée est celle créée pour sa génération : key_commit signé (A15, et la
-# partie génération d'A16 ; un seul coffre, le rejeu entre coffres n'est pas modélisé).
-sharing.pv | event(EnvelopeAccepted(d,v_18,g_21,k_9)) ==> event(GenerationCreated(v_18,g_21,k_9)) | true
 # Décision 1 : un contact au niveau Lien n'est ajouté qu'en lecteur. Garde du script du
 # propriétaire, pas une propriété face à l'attaquant (le niveau n'est pas dans la liste).
 sharing.pv | event(MemberAdded(v_18,m_16,r_3,lvl_link)) ==> r_3 = role_read | true
@@ -297,6 +288,25 @@ sharing.pv | event(MemberAdded(v_18,m_16,r_3,lvl_link)) ==> r_3 = role_read | tr
 # le retrait ; et la fuite de l'état de Carol porte bien (g1 connue en phase 1).
 sharing.pv | not (event(EnvelopeAccepted(bob,vlt,g1,k_9)) && event(ManifestAccepted(carol,v1,bob,g1)) && event(ManifestAccepted(bob,v2,carol,g1)) && event(EnvelopeAccepted(bob,vlt,g2,k2_3)) && event(ItemRead(bob,vlt,g2,m_16)) && event(ItemSealed(bob,g2,m2))) | false
 sharing.pv | not (event(GenerationCreated(v_18,g1,k_9)) && attacker_p1(k_9)) | false
+
+# sharing_auth.pv : même déroulé que sharing.pv (processus recopié), droit d'écrire.
+# Un manifeste accepté vient d'un membre qui a le droit d'écrire à cette génération, alors que
+# l'attaquant signe comme le lecteur Dave (A6) et, en phase 1, comme Carol retirée (A5). Indexé par
+# génération : valable parce que tout retrait change de génération ; sans le contrôle du rôle, la
+# requête tombe (sharing_no_role_check.pv).
+sharing_auth.pv | event(ManifestAccepted(d,v_18,w_8,g_21)) ==> event(MemberRole(v_18,w_8,role_write,g_21)) | true
+# Sanité : Bob accepte un manifeste écrit par Carol à g1.
+sharing_auth.pv | not event(ManifestAccepted(bob,v_18,carol,g1)) | false
+
+# sharing_auth_keys.pv : même déroulé que sharing.pv (processus recopié), liste signée et enveloppes.
+# Un corps de membres accepté (seq, référence et liste des membres) a été signé par un
+# gestionnaire (A2 ; A3 côté membre seulement, par le chaînage).
+sharing_auth_keys.pv | event(MembershipAccepted(d,v_18,n)) ==> event(MembershipSigned(v_18,n,mgr_2)) && event(Manager(v_18,mgr_2)) | true
+# Une clé de coffre acceptée est celle créée pour sa génération : key_commit signé (A15, et la
+# partie génération d'A16 ; un seul coffre, le rejeu entre coffres n'est pas modélisé).
+sharing_auth_keys.pv | event(EnvelopeAccepted(d,v_18,g_21,k_9)) ==> event(GenerationCreated(v_18,g_21,k_9)) | true
+# Sanité : Bob accepte le corps du retrait et sa clé.
+sharing_auth_keys.pv | not event(EnvelopeAccepted(bob,vlt,g2,k_9)) | false
 
 # sharing_member_rotation.pv : Alice, membre d'un coffre partagé, retire son iPad (B, à
 # l'attaquant) par la rotation v2 ; B forge des rotations de la lignée d'Alice vers une identité X.

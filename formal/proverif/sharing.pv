@@ -1,7 +1,11 @@
 (* formal-lib: sharing_core.pvl *)
-(* OnePass formal model: a shared vault between three accounts (spec
+(* OnePass formal model: a shared vault between four accounts (spec
    2026-10-30-sharing-families-design.md, sections 5 to 10 and 17).
-   Declarations and processes: sharing_core.pvl.
+   Declarations and processes: sharing_core.pvl. This file holds the
+   secrecy queries and the sanity of the run; the three authentication
+   queries (write right, signed membership, envelope) run on the same
+   process in sharing_auth.pv, to keep each file well within the time
+   budget.
 
    Run: Alice verified Bob and Carol face to face (SAS, level Verified)
    and Dave by an invite link (level Link). Alice creates the vault at
@@ -15,16 +19,16 @@
    body, opens his envelope, reads and writes. The server is the
    attacker throughout.
 
-   Properties (spec 17):
+   Properties (spec 17; the three marked [auth] are in sharing_auth.pv):
    - nothing written after the removal reaches Carol or the server;
    - the key of generation 1 is secret from the server, the key of
      generation 2 from the server and Carol;
-   - a manifest is accepted only from a member with the right to write
+   - [auth] a manifest is accepted only from a member with the right to write
      at that generation, although a reader (Dave, from phase 0) and a
      removed writer (Carol, phase 1) sign manifests;
-   - a membership body, member list included, is accepted only if a
+   - [auth] a membership body, member list included, is accepted only if a
      manager signed it;
-   - a vault key is accepted only if the owner created it for that
+   - [auth] a vault key is accepted only if the owner created it for that
      generation (key_commit in the signed body);
    - a Link contact only ever gets the role Read (decision 1; a guard on
      the owner's script, see sharing_core.pvl). *)
@@ -39,22 +43,6 @@ query m: bitstring; event(ItemSealedAfterRemoval(m)) && attacker(m) phase 1.
 query v: bitstring, k: key; event(GenerationCreated(v, g1, k)) && attacker(k) phase 0.
 query v: bitstring, k: key; event(GenerationCreated(v, g2, k)) && attacker(k) phase 1.
 
-(* Write right (A6, A5): an accepted manifest was written by a member a
-   signed body gives the right Write (or Manage) at that generation. The
-   attacker signs as the reader Dave throughout and as the removed writer
-   Carol in phase 1. Indexed by generation, not by seq: sound because
-   every removal moves to a new generation (spec 9 C, 7.2 rule 5); a role
-   change without rekey is not modeled. *)
-query d: bitstring, v: bitstring, w: bitstring, g: bitstring;
-  event(ManifestAccepted(d, v, w, g)) ==> event(MemberRole(v, w, role_write, g)).
-(* Membership: an accepted body n = (seq, body_ref, member list) was
-   signed by a manager. *)
-query d: bitstring, v: bitstring, n: bitstring, mgr: bitstring;
-  event(MembershipAccepted(d, v, n)) ==> (event(MembershipSigned(v, n, mgr)) && event(Manager(v, mgr))).
-(* Envelope: an accepted vault key is the one created for that generation
-   (the envelope is not authenticated, the signed key_commit is). *)
-query d: bitstring, v: bitstring, g: bitstring, k: key;
-  event(EnvelopeAccepted(d, v, g, k)) ==> event(GenerationCreated(v, g, k)).
 (* Decision 1: a Link contact is only ever added as a reader (guard on
    the owner's script). *)
 query v: bitstring, m: bitstring, r: bitstring;

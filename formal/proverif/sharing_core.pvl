@@ -1,8 +1,10 @@
 (* OnePass formal model: shared vaults between accounts (spec
    docs/superpowers/specs/2026-10-30-sharing-families-design.md, sections
    5 to 10 and 17, founder decisions 1 and 6). Shared declarations and
-   processes of sharing.pv and its negative controls
-   (sharing_server_directory.pv, sharing_no_rekey.pv). The member identity
+   processes of sharing.pv, sharing_auth.pv, sharing_auth_keys.pv (same
+   run, queries split for time) and their negative controls
+   (sharing_server_directory.pv, sharing_no_rekey.pv,
+   sharing_no_role_check.pv). The member identity
    rotation models (sharing_member_rotation.pv,
    sharing_member_autofollow.pv) load rotation_core.pvl first, then this
    file, and only use its labels, envelope context and the contact table
@@ -381,7 +383,7 @@ let MemberJoin(rc: bool, me: bitstring, sk: skey, km: seed, kx: seed, writes: bo
        out(c, shared_write(me, sk, seq, hb, g, k, m))) ).
 
 (* Compositional start of the update. The join above proves (queries
-   MembershipAccepted and EnvelopeAccepted of sharing.pv) that a member
+   MembershipAccepted and EnvelopeAccepted of sharing_auth_keys.pv) that a member
    pins only a (seq, body_ref, member list) the manager signed and accepts
    only the key the owner created for its generation. MemberUpdate therefore starts from the
    honest state the join reaches (body seq 1, its members, k1), passed by
