@@ -782,13 +782,16 @@ public final class VaultSession {
     // MARK: - Lock
 
     /// Drops the keys, every summary and recent id, and tells the sync layer.
-    public func lock() {
+    /// `publishPending: false` (the AutoFill extension, whose own writes are published by
+    /// `publishAutofillIdentitiesNow`): a refresh still waiting is dropped, not published, so each
+    /// request does not replace the system store again.
+    public func lock(publishPending: Bool = true) {
         generation &+= 1
         // A manual lock of the Mac ends an agents-only window too (spec 6.3).
         endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
         // Unlocked with suggestions on: a refresh still waiting is published from this session.
-        let flushIdentities = state == .unlocked && settings.quickTypeSuggestions && session != nil
+        let flushIdentities = publishPending && state == .unlocked && settings.quickTypeSuggestions && session != nil
         let excluded = excludedVaultIDs
         if let session {
             self.session = nil
@@ -1517,19 +1520,23 @@ public final class VaultSession {
     /// `Session.lock()` waits for a core call in flight (save, purge...): never on the main actor.
     /// A lock with a debounced identity refresh still waiting (iOS locks as soon as the app leaves
     /// the screen, often within the second after an unlock or a sync that brought passkeys from the
-    /// Mac): its identities are read now, before the keys go, and published. Runs after the identity
-    /// requests already sent and before the session's release.
+    /// Mac): the identities are read on the core thread at once, and the session's release waits for
+    /// that read only, never for the system store (an XPC call). The list (no secret) is published
+    /// afterwards, in order with the identity requests: after those already sent, before a later
+    /// `clear` (account erased). The store call itself is queued, not awaited.
     private func publishPendingIdentities(from session: Session, excluded: [String]) {
         let sync = identitySync
-        let requests = identityChain
+        let reading = Task {
+            try? await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
+        }
         let previous = releaseChain
         releaseChain = Task {
             await previous?.value
-            await requests?.value
-            guard await sync.takePending(),
-                let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
-            else { return }
-            await sync.replaceNow(list)
+            _ = await reading.value
+        }
+        enqueueIdentity {
+            guard await sync.takePending(), let list = await reading.value else { return }
+            await sync.replaceSoon(list)
         }
     }
 

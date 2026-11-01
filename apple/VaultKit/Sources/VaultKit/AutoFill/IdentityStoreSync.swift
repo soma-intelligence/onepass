@@ -91,6 +91,8 @@ public actor IdentityStoreSync {
     /// The revision of the scheduled refresh whose identities were not read yet (`takePending`).
     private var pendingRevision: Int?
     private var chain: Task<Void, Never>?
+    /// Tests: runs once a refresh has read its identities, before it replaces the store.
+    private var afterRead: (@Sendable () async -> Void)?
 
     public init(client: any IdentityStoreClient, debounce: Duration = .seconds(1)) {
         self.client = client
@@ -115,9 +117,16 @@ public actor IdentityStoreSync {
         }
     }
 
-    /// Replaces the store with `identities` without waiting (a pending debounced refresh is dropped),
-    /// and returns once done. A disabled store is left alone; errors are ignored.
+    /// Replaces the store with `identities` without the debounce (a pending debounced refresh is
+    /// dropped), and returns once done. A disabled store is left alone; errors are ignored.
     public func replaceNow(_ identities: [FfiAutofillIdentity]) async {
+        replaceSoon(identities)
+        await chain?.value
+    }
+
+    /// `replaceNow` without waiting for the store (an XPC call): queued in order, so a later `clear`
+    /// still runs after it.
+    public func replaceSoon(_ identities: [FfiAutofillIdentity]) {
         revision &+= 1
         pending?.cancel()
         pending = nil
@@ -128,7 +137,6 @@ public actor IdentityStoreSync {
             guard await self.isCurrent(current), await client.isEnabled() else { return }
             try? await client.replaceAll(identities)
         }
-        await chain?.value
     }
 
     /// Cancels any pending refresh and empties the store (setting turned off, account reset). The store
@@ -153,12 +161,17 @@ public actor IdentityStoreSync {
     }
 
     /// Drops the pending debounced refresh like `dropPending`, and tells whether one was waiting
-    /// with its identities still unread: the caller (a lock) then reads them while it can and
-    /// publishes them with `replaceNow`.
+    /// with its identities still unread: the caller (a lock) then publishes its own reading. A
+    /// refresh that already read its identities is left alone (nothing bumped): it publishes them.
     public func takePending() -> Bool {
-        let due = pendingRevision != nil
+        guard pendingRevision != nil else { return false }
         dropPending()
-        return due
+        return true
+    }
+
+    /// Tests: `hook` runs once a refresh has read its identities, before it replaces the store.
+    func setAfterReadHook(_ hook: (@Sendable () async -> Void)?) {
+        afterRead = hook
     }
 
     /// Tests: waits until the pending refresh (if any) and every queued store operation are done.
@@ -175,16 +188,21 @@ public actor IdentityStoreSync {
         enqueue {
             guard await self.isCurrent(expected), await client.isEnabled() else { return }
             guard let list = try? await identities() else { return }
-            await self.read(expected)
-            guard await self.isCurrent(expected) else { return }
+            // Still the latest request once read: from here on it publishes (a lock's
+            // `takePending` sees nothing waiting). A later `clear` is queued after it.
+            guard await self.claim(expected) else { return }
+            await self.afterRead?()
             try? await client.replaceAll(list)
         }
     }
 
     private func isCurrent(_ expected: Int) -> Bool { expected == revision }
 
-    private func read(_ expected: Int) {
+    /// The refresh `expected` read its identities and is still the latest: no longer pending.
+    private func claim(_ expected: Int) -> Bool {
+        guard expected == revision else { return false }
         if pendingRevision == expected { pendingRevision = nil }
+        return true
     }
 
     private func enqueue(_ op: @Sendable @escaping () async -> Void) {

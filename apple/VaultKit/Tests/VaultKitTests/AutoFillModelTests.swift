@@ -831,7 +831,7 @@ struct AutoFillModelTests {
         let (seed, login) = try await f.seed()
         seed.lock()
         await seed.waitForAutofillIdentities()
-        #expect(store.identities.isEmpty)
+        #expect(!store.identities.contains { $0.kind == .passkey })
 
         let (registration, registrationSession, registrationDone) = f.model(.passkeyRegistration(
             PasskeyRegistrationRequest(

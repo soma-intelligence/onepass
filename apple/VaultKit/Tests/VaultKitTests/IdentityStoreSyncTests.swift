@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import Synchronization
 import Testing
 
 @testable import VaultKit
@@ -45,6 +46,36 @@ struct IdentityStoreSyncTests {
         await quick.waitForIdle()
         #expect(store.identities.map(\.user) == ["lu"])
         #expect(await !quick.takePending())
+    }
+
+    /// A lock landing after a refresh read its identities but before it replaced the store: the
+    /// refresh still publishes (the lock found nothing waiting, so it publishes nothing itself).
+    @Test func refreshAlreadyReadStillPublishesAcrossTakePending() async {
+        let store = InMemoryIdentityStore()
+        let sync = IdentityStoreSync(client: store, debounce: .milliseconds(10))
+        let taken = Mutex<Bool?>(nil)
+        await sync.setAfterReadHook {
+            let due = await sync.takePending()
+            taken.withLock { $0 = due }
+        }
+        await sync.schedule { [identity(user: "lu")] }
+        await sync.waitForIdle()
+        #expect(taken.withLock { $0 } == false)
+        #expect(store.identities.map(\.user) == ["lu"])
+    }
+
+    /// `replaceSoon` returns before the store call ends, and a `clear` sent after it runs after it.
+    @Test func replaceSoonKeepsItsPlaceBeforeAClear() async {
+        let store = GatedIdentityStore()
+        let sync = IdentityStoreSync(client: store, debounce: .seconds(600))
+        await sync.replaceSoon([identity()])
+        #expect(store.inner.identities.isEmpty)
+        let cleared = Task { await sync.clear() }
+        store.open()
+        await cleared.value
+        #expect(store.inner.replaceCount == 1)
+        #expect(store.inner.removeCount == 1)
+        #expect(store.inner.identities.isEmpty)
     }
 
     @Test func disabledStoreIsLeftAlone() async {
@@ -148,3 +179,24 @@ func withTimeout<T: Sendable>(
 }
 
 struct TimeoutError: Error {}
+
+/// An in-memory store whose replacements wait until `open()` (a slow `ASCredentialIdentityStore` XPC call).
+final class GatedIdentityStore: IdentityStoreClient {
+    let inner = InMemoryIdentityStore()
+    private let gate = Mutex(false)
+    /// A replacement started (it may still be waiting for the gate).
+    private let started = Mutex(0)
+
+    var replacementsStarted: Int { started.withLock { $0 } }
+    func open() { gate.withLock { $0 = true } }
+
+    func isEnabled() async -> Bool { true }
+
+    func replaceAll(_ identities: [FfiAutofillIdentity]) async throws {
+        started.withLock { $0 += 1 }
+        while !gate.withLock({ $0 }) { try? await Task.sleep(for: .milliseconds(5)) }
+        try await inner.replaceAll(identities)
+    }
+
+    func removeAll() async throws { try await inner.removeAll() }
+}

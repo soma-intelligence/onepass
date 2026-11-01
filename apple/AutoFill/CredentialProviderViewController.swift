@@ -211,7 +211,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         requestEnded = true
         model?.abandon()
         model = nil
-        session?.lock()
+        session?.lock(publishPending: false)
         session = nil
         guard let hosting else { return }
         #if os(iOS)

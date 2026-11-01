@@ -622,7 +622,7 @@ public final class AutoFillModel {
         guard !isFinished else { return }
         isFinished = true
         screen = .finished
-        session.lock()
+        session.lock(publishPending: false)
         if wrote { session.environment.storeChanges.post() }
     }
 
@@ -630,7 +630,7 @@ public final class AutoFillModel {
         guard !isFinished else { return }
         isFinished = true
         screen = .finished
-        session.lock()
+        session.lock(publishPending: false)
         // The environment's notifier is `store-changed` in production (tests use their own name).
         if wrote { session.environment.storeChanges.post() }
         onComplete(result)

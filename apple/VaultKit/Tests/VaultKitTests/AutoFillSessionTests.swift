@@ -6,7 +6,7 @@ import Testing
 /// A session whose identity store is in memory, with a short debounce.
 @MainActor
 private func autofillSession(
-    _ h: SessionHarness, store: InMemoryIdentityStore, notifier: StoreChangeNotifier? = nil,
+    _ h: SessionHarness, store: any IdentityStoreClient, notifier: StoreChangeNotifier? = nil,
     debounce: Duration = .milliseconds(20)
 ) -> VaultSession {
     var environment = h.environment
@@ -180,6 +180,40 @@ struct AutoFillSessionTests {
         session.lock()
         await session.waitForAutofillIdentities()
         #expect(store.replaceCount == published + 1)
+    }
+
+    /// The lock releases the session's keys without waiting for the system store (an XPC call
+    /// that may hang): the read list is published afterwards.
+    @Test func lockReleasesKeysBeforeThePublishEnds() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        await session.waitForReleasedSessions()
+        #expect(store.inner.identities.isEmpty)
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
+    /// An erase right after a lock (clear) is never overtaken by the lock's publish.
+    @Test func clearAfterLockEndsEmpty() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        session.clearAutofillIdentities()
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.replaceCount == 1)
+        #expect(store.inner.removeCount >= 1)
+        #expect(store.inner.identities.isEmpty)
     }
 
     /// A passkey written elsewhere (the Mac, merged by a sync round) reaches the system store at the
