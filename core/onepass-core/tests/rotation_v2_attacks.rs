@@ -19,8 +19,8 @@ use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use onepass_core::lineage::resolve::PromptKind;
 use onepass_core::lineage::{
-    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationBody, RotationReason,
-    delivery_id, identity_id, sign_genesis, sign_rotation,
+    GenesisBody, IntroBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationBody,
+    RotationReason, delivery_id, identity_id, intro_id, sign_genesis, sign_intro, sign_rotation,
 };
 use onepass_core::repo::follow::{
     QuarantineChoice, QuarantineTick, RotationPrompt, follow_rotation, follow_switch,
@@ -1298,6 +1298,312 @@ fn verified_signer_still_erases_and_tofu_lock_erases_by_hand() {
             .is_none()
     );
     assert!(a.store().trust_state().unwrap().is_none());
+}
+
+// ------------------------------- round 2: levels a Tofu device hands down
+
+/// As `phantom_tofu_removes` up to A accepting X's legacy intro (X `Tofu`
+/// on A), nothing rotated. A is unlocked.
+#[allow(clippy::type_complexity)]
+fn phantom_joined() -> (
+    Server,
+    Device,
+    DeviceKeys,
+    Device,
+    DeviceKeys,
+    SecretKey,
+    Id,
+) {
+    let mut server = Server::default();
+    let (mut a, _b, sk, _) = setup(&mut server, &[("alice", T0), ("bob", T0 + 1)]);
+    sync(&mut server, &mut a).unwrap();
+    let r = legacy_device(&mut server, &sk, "Vieux Mac");
+    let r_id = r.repo.as_ref().unwrap().this_device_id().unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo().revoke_device(r_id).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut x = legacy_device(&mut server, &sk, "Mac caché");
+    sync(&mut server, &mut a).unwrap();
+    let ka = DeviceKeys::generate_software().unwrap();
+    let Migration::Genesis(g) = a.repo().migrate_to_v2(&ka).unwrap() else {
+        panic!("A writes the genesis");
+    };
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut x).unwrap();
+    let kx = DeviceKeys::generate_software().unwrap();
+    assert_eq!(x.repo().migrate_to_v2(&kx).unwrap(), Migration::Joined(g));
+    sync(&mut server, &mut x).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    a.repo().refresh_pending_rotation().unwrap();
+    let a_id = device_id_of(&mut a, &ka);
+    let x_id = device_id_of(&mut x, &kx);
+    assert_eq!(trust(&a).levels.get(&x_id), Some(&TrustLevel::Tofu));
+    sync(&mut server, &mut x).unwrap();
+    x.repo().refresh_pending_rotation().unwrap();
+    (server, a, ka, x, kx, sk, a_id)
+}
+
+/// X (unlocked, keys `kx`) introduces Y under its head (spec 6.4), pushed;
+/// X takes it into its roster. Returns the intro's record id.
+fn introduce(server: &mut Server, x: &mut Device, kx: &DeviceKeys, y: &Peer) -> Id {
+    let t = trust(x);
+    let x_id = t.me.device_id;
+    let mut entry = y.entry("Mac du fantôme");
+    entry.introduced_by = Some(x_id);
+    let body = IntroBody {
+        format: LINEAGE_FORMAT,
+        account_id: t.account_id,
+        head: t.head.hash,
+        entry,
+        introducer: x_id,
+        pop: sign_pop(&y.keys, &t.account_id.0, &y.public).unwrap(),
+    };
+    let signed = sign_intro(body, kx, None).unwrap();
+    let id = intro_id(&signed.body);
+    let record = Record {
+        id,
+        kind: RecordKind::DeviceIntro,
+        version: t.head.generation,
+        data: signed.encode(),
+    };
+    x.repo().store_mut().put_if_version(record, None).unwrap();
+    sync(server, x).unwrap();
+    x.repo().refresh_pending_rotation().unwrap();
+    assert!(trust(x).roster.iter().any(|e| e.device_id == y.id()));
+    id
+}
+
+/// A device holding `peer`'s keys whose trust state is `from` seen from
+/// it, unlocked with `sk` (as `device`).
+fn copy_of(server: &mut Server, from: &TrustState, peer: &Peer, sk: &SecretKey) -> Device {
+    let mut d = Device::empty();
+    pull(server, &mut d);
+    let mut t = from.clone();
+    t.me = peer.public.clone();
+    d.store()
+        .put_all_if_version_with_trust(vec![], vec![], None, &t)
+        .unwrap();
+    d.unlock(sk);
+    d
+}
+
+/// `rotate_local`, then pushed.
+fn rotate_pushed(
+    server: &mut Server,
+    dev: &mut Device,
+    keys: &DeviceKeys,
+    sk: &SecretKey,
+    revoke: Vec<Id>,
+    keep: &[Id],
+) -> ([u8; 32], SecretKey) {
+    let out = rotate_local(dev, keys, sk, revoke, keep);
+    sync(server, dev).unwrap();
+    out
+}
+
+/// `dev` rotates with `keys`, revoking `revoke`, keeping the `Tofu`
+/// devices among `keep` (the others are kept anyway). Nothing is pushed.
+/// Returns the head and the new Secret Key.
+fn rotate_local(
+    dev: &mut Device,
+    keys: &DeviceKeys,
+    sk: &SecretKey,
+    revoke: Vec<Id>,
+    keep: &[Id],
+) -> ([u8; 32], SecretKey) {
+    let new_sk = SecretKey::generate().unwrap();
+    let t = trust(dev);
+    let keep: Vec<Id> = keep
+        .iter()
+        .copied()
+        .filter(|id| t.levels.get(id) == Some(&TrustLevel::Tofu))
+        .collect();
+    let out = dev
+        .repo()
+        .rotate(RotateRequest {
+            reason: reason(&revoke),
+            revoke,
+            new_password: None,
+            password: PASSWORD,
+            secret_key: sk,
+            new_secret_key: &new_sk,
+            device_keys: keys,
+            keep_tofu: &keep,
+        })
+        .unwrap();
+    (out.head, new_sk)
+}
+
+/// Fix round 2, N1: an intro by a `Tofu` device makes a `Tofu` device. X
+/// introduces Y; on A, Y joins the roster at X's level, so Y's removal of
+/// A only locks it.
+#[test]
+fn intro_by_a_tofu_device_is_tofu() {
+    let (mut server, mut a, _ka, mut x, kx, sk, a_id) = phantom_joined();
+    let y = Peer::new(Id::new());
+    introduce(&mut server, &mut x, &kx, &y);
+    sync(&mut server, &mut a).unwrap();
+    a.repo().refresh_pending_rotation().unwrap();
+    let t = trust(&a);
+    assert!(t.roster.iter().any(|e| e.device_id == y.id()));
+    assert_eq!(t.levels.get(&y.id()), Some(&TrustLevel::Tofu));
+
+    let mut yd = copy_of(&mut server, &trust(&x), &y, &sk);
+    rotate_pushed(&mut server, &mut yd, &y.keys, &sk, vec![a_id], &[]);
+    a.lock();
+    pull(&server, &mut a);
+    assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+    assert_eq!(tick(&a, NOW + YEAR), QuarantineTick::Locked);
+    assert_eq!(quarantine_erase_at(&a.store()).unwrap(), None);
+}
+
+/// A device V that A introduces itself (`Verified` on A), known to X too.
+fn verified_by_a(server: &mut Server, a: &mut Device, ka: &DeviceKeys, x: &mut Device) -> Peer {
+    let v = Peer::new(Id::new());
+    introduce(server, a, ka, &v);
+    assert_eq!(trust(a).levels.get(&v.id()), Some(&TrustLevel::Verified));
+    sync(server, x).unwrap();
+    x.repo().refresh_pending_rotation().unwrap();
+    assert!(trust(x).roster.iter().any(|e| e.device_id == v.id()));
+    v
+}
+
+/// Fix round 2, N2: a follow over several records takes each new
+/// device's level from the record that added it, and a rotator this device
+/// holds no level for counts as `Tofu`. A rotates on its own (R0); X
+/// (`Tofu`) makes a sibling R1 that wins the order and adds W (W's intro
+/// stays under the genesis, which A left); V (`Verified` on A) makes R2
+/// under R1. A switches to R2 over the path R1, R2: W is `Tofu` (X added
+/// it), not V's level. W's later removal of A only locks it. The order
+/// is the lineage hash, so the setup is drawn again until R1 wins.
+#[test]
+fn multi_hop_follow_keeps_tofu() {
+    for _ in 0..24 {
+        let (mut server, mut a, ka, mut x, kx, sk, a_id) = phantom_joined();
+        let x_id = trust(&x).me.device_id;
+        let v = verified_by_a(&mut server, &mut a, &ka, &mut x);
+        let w = Peer::new(Id::new());
+        introduce(&mut server, &mut x, &kx, &w);
+        let (r0, _) = rotate_local(&mut a, &ka, &sk, vec![], &[x_id]);
+        let (r1, sk1) = rotate_pushed(&mut server, &mut x, &kx, &sk, vec![], &[a_id, v.id()]);
+        if r1 > r0 {
+            continue;
+        }
+        let mut vd = copy_of(&mut server, &trust(&x), &v, &sk1);
+        let (r2, sk2) = rotate_pushed(&mut server, &mut vd, &v.keys, &sk1, vec![], &[a_id, w.id()]);
+        assert!(
+            body_of(&vd.store(), &r2)
+                .roster
+                .iter()
+                .any(|e| e.device_id == w.id())
+        );
+
+        pull(&server, &mut a);
+        a.repo().refresh_pending_rotation().unwrap();
+        let p = a.repo().pending_prompt().cloned().expect("a switch prompt");
+        assert_eq!(choice_hashes(&p), vec![r2]);
+        let session = a.repo.take().unwrap();
+        let (repo, _, _) = follow_switch(session, r2, PASSWORD, &ka).unwrap();
+        a.repo = Some(repo);
+        let t = trust(&a);
+        assert_eq!(t.head.hash, r2);
+        assert_eq!(t.levels.get(&v.id()), Some(&TrustLevel::Verified));
+        assert_eq!(t.levels.get(&w.id()), Some(&TrustLevel::Tofu));
+
+        let mut wd = copy_of(&mut server, &trust(&vd), &w, &sk2);
+        rotate_pushed(&mut server, &mut wd, &w.keys, &sk2, vec![a_id], &[]);
+        a.lock();
+        pull(&server, &mut a);
+        assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+        assert_eq!(tick(&a, NOW + YEAR), QuarantineTick::Locked);
+        return;
+    }
+    panic!("R1 never won the order");
+}
+
+/// Fix round 2, concern 3: the erase clock fails closed. A rotates on its
+/// own (R0); X (`Tofu`) makes a sibling R1 that wins the order; V
+/// (`Verified` on A) makes R2 under R1, removing A. A is quarantined by R2
+/// through R1: locked, X is on the path. The server then deletes R1: a
+/// lineage row is never deleted by a fetch, so the path stays checkable
+/// and A stays locked with no date (it never flips to the clock). Drawn
+/// again until R1 wins.
+#[test]
+fn deleted_path_never_starts_the_clock() {
+    for _ in 0..24 {
+        let (mut server, mut a, ka, mut x, kx, sk, a_id) = phantom_joined();
+        let x_id = trust(&x).me.device_id;
+        let v = verified_by_a(&mut server, &mut a, &ka, &mut x);
+        let (r0, _) = rotate_local(&mut a, &ka, &sk, vec![], &[x_id]);
+        let (r1, sk1) = rotate_pushed(&mut server, &mut x, &kx, &sk, vec![], &[a_id, v.id()]);
+        if r1 > r0 {
+            continue;
+        }
+        let mut vd = copy_of(&mut server, &trust(&x), &v, &sk1);
+        let (r2, _) = rotate_pushed(&mut server, &mut vd, &v.keys, &sk1, vec![a_id], &[]);
+
+        a.lock();
+        pull(&server, &mut a);
+        assert_eq!(tick(&a, NOW), QuarantineTick::Locked);
+        assert!(matches!(
+            state(&a),
+            DeviceLineageState::Quarantined { by, rotator, .. } if by == r2 && rotator == v.id()
+        ));
+        server.forge_deletion(RecordKind::Lineage, lineage_id(&r1));
+        full_fetch(&server, &mut a);
+        assert!(
+            a.store()
+                .get(RecordKind::Lineage, lineage_id(&r1))
+                .unwrap()
+                .is_some(),
+            "a lineage row is immutable"
+        );
+        assert_eq!(tick(&a, NOW + 1), QuarantineTick::Locked);
+        assert_eq!(tick(&a, NOW + YEAR), QuarantineTick::Locked);
+        assert_eq!(quarantine_erase_at(&a.store()).unwrap(), None);
+        return;
+    }
+    panic!("R1 never won the order");
+}
+
+/// Fix round 2, concern 3 (fail closed): V, introduced by A itself, is
+/// `Verified` on A and its removal of A runs the clock. The same removal
+/// with no level recorded for V on A (a signer this device cannot vouch
+/// for) only locks: unknown counts as `Tofu`.
+#[test]
+fn unknown_signer_never_starts_the_clock() {
+    for known in [true, false] {
+        let (mut server, mut a, ka, mut x, _kx, sk, a_id) = phantom_joined();
+        let v = verified_by_a(&mut server, &mut a, &ka, &mut x);
+        let mut vd = copy_of(&mut server, &trust(&a), &v, &sk);
+        let (r, _) = rotate_pushed(&mut server, &mut vd, &v.keys, &sk, vec![a_id], &[]);
+        if !known {
+            let before = trust(&a);
+            let mut t = before.clone();
+            t.levels.remove(&v.id());
+            a.store()
+                .put_with_trust_cas(vec![], vec![], None, &before, &t)
+                .unwrap();
+        }
+        a.lock();
+        pull(&server, &mut a);
+        let first = tick(&a, NOW);
+        assert!(matches!(
+            state(&a),
+            DeviceLineageState::Quarantined { by, rotator, .. } if by == r && rotator == v.id()
+        ));
+        if known {
+            assert_eq!(
+                first,
+                QuarantineTick::Waiting {
+                    erase_at: NOW + 7 * 86_400
+                }
+            );
+        } else {
+            assert_eq!(first, QuarantineTick::Locked);
+            assert_eq!(tick(&a, NOW + YEAR), QuarantineTick::Locked);
+        }
+    }
 }
 
 // ------------------------------------------------------- spec 8.3 race

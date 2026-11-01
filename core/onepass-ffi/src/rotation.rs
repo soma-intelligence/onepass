@@ -150,8 +150,8 @@ pub enum FfiLineageState {
     },
     /// Locked, erased at `erase_at` (device time, Unix seconds) unless the
     /// user answers "Ce n'était pas moi". `erase_at` is `None` when the
-    /// removal was signed by a device trusted on first use only (final
-    /// review I1): no erase date, the device stays locked until the user
+    /// removal, or a record on its path, was not signed by a device this
+    /// one verified (final review I1): no erase date, the device stays locked until the user
     /// answers ("Ce n'était pas moi" or "Effacer cet appareil").
     Quarantined {
         since: u64,
@@ -978,8 +978,8 @@ pub enum FfiQuarantineTick {
     Waiting {
         erase_at: u64,
     },
-    /// Locked with no erase clock: a device trusted on first use only
-    /// signed the removal (final review I1). The quarantine screen offers
+    /// Locked with no erase clock: the removal, or a record on its path,
+    /// was not signed by a device this one verified (final review I1). The quarantine screen offers
     /// "Ce n'était pas moi" and "Effacer cet appareil", with no date.
     Locked,
     /// The store was erased: the app deletes what it keeps for the account
@@ -999,8 +999,8 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 /// The quarantine clock (spec 8.4, R8, O1) with the app's clock `now`
 /// (Unix seconds): at launch and on the quarantine screen. Erases only
 /// 7 days after a valid lineage record revoking this device was first
-/// read, and only when devices this device verified signed it (`Locked`
-/// otherwise); a clock moved back only delays it.
+/// read, and only when every signer on its path is verified here
+/// (`Locked` otherwise); a clock moved back only delays it.
 #[uniffi::export]
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;

@@ -1321,10 +1321,10 @@ fn quarantine_message(erase_at: u64) -> String {
     )
 }
 
-/// The refusal of a command on a device locked by a removal a device
-/// trusted on first use signed (final review I1): no erase date.
+/// The refusal of a command on a device locked by a removal whose path is
+/// not verified here (final review I1): no erase date.
 const QUARANTINE_LOCKED: &str = "this device was removed from the account by a key rotation \
-     made on another device that was never verified. Its data is locked, and it is not \
+     made by, or through, a device this one never verified. Its data is locked, and it is not \
      erased on its own: answer that it was not you with `onepass account not-me` (master \
      password; the Secret Key is read from this device's secret store), or erase it";
 

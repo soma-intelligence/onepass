@@ -284,6 +284,40 @@ fn path_to<'a>(
     path
 }
 
+/// The levels along `path` (fix round 2, N2): from this device's levels,
+/// each record's new roster devices take the level of that record's
+/// rotator, and a rotator this device holds no level for counts as
+/// `Tofu` (fail closed). A device already known keeps its level.
+fn levels_along(trust: &TrustState, path: &[&RotationBody]) -> BTreeMap<Id, TrustLevel> {
+    let mut levels = trust.levels.clone();
+    for b in path {
+        let level = levels.get(&b.rotator).copied().unwrap_or(TrustLevel::Tofu);
+        for e in &b.roster {
+            levels.entry(e.device_id).or_insert(level);
+        }
+    }
+    levels
+}
+
+/// `path_to(target)` when every record from this device's own chain to
+/// `target` is known (the first record's parent is on the own chain), else
+/// `None`.
+fn whole_path_to<'a>(
+    trust: &TrustState,
+    bodies: &BTreeMap<[u8; 32], &'a RotationBody>,
+    target: [u8; 32],
+) -> Option<Vec<&'a RotationBody>> {
+    let path = path_to(trust, bodies, target);
+    let first = path.first()?;
+    let mut own = BTreeSet::from([trust.head.hash]);
+    let mut h = trust.head.hash;
+    while let Some(b) = bodies.get(&h) {
+        own.insert(b.parent);
+        h = b.parent;
+    }
+    (bodies.contains_key(&target) && own.contains(&first.parent)).then_some(path)
+}
+
 /// The resolver's prompt and what the screen shows for it, or `None` for
 /// any other decision.
 ///
@@ -341,8 +375,14 @@ fn look_in<S: RecordStore + ?Sized>(
         let path = path_to(trust, &bodies, *h);
         let first = path.first().copied().unwrap_or(target);
         let mut revoked = Vec::new();
+        let mut levels = trust.levels.clone();
         for b in &path {
-            tofu_signer |= trust.levels.get(&b.rotator) == Some(&TrustLevel::Tofu);
+            // Fix round 2: the levels the path hands down; unknown = `Tofu`.
+            let level = levels.get(&b.rotator).copied().unwrap_or(TrustLevel::Tofu);
+            tofu_signer |= level != TrustLevel::Verified;
+            for e in &b.roster {
+                levels.entry(e.device_id).or_insert(level);
+            }
             for id in &b.revoked {
                 if !revoked.contains(id) {
                     revoked.push(*id);
@@ -645,17 +685,15 @@ fn follow_with<S: RecordStore>(
         hash: choice,
     };
     next.identity_pub = body.identity_pub.clone();
-    let rotator_level = trust
-        .levels
-        .get(&body.rotator)
-        .copied()
-        .unwrap_or(TrustLevel::Verified);
+    // Fix round 2 (N2): each device the path adds takes the level of the
+    // rotator that added it; an unknown rotator counts as `Tofu`.
+    let along = levels_along(&trust, &path_to(&trust, &bodies, choice));
     next.levels = body
         .roster
         .iter()
         .map(|e| {
-            let level = trust.levels.get(&e.device_id).copied();
-            (e.device_id, level.unwrap_or(rotator_level))
+            let level = along.get(&e.device_id).copied();
+            (e.device_id, level.unwrap_or(TrustLevel::Tofu))
         })
         .collect();
     next.roster = body.roster.clone();
@@ -1069,8 +1107,8 @@ pub const QUARANTINE_ERASE_AFTER_SECS: u64 = 7 * 86_400;
 pub enum LineageLock {
     /// A valid record (`by`, its lineage hash) revokes this device: locked,
     /// erased 7 days after `since` unless the user answers "Ce n'était pas
-    /// moi" (`quarantine_resolve`); never erased by the clock when a `Tofu`
-    /// device signed the removal (`QuarantineTick::Locked`).
+    /// moi" (`quarantine_resolve`); never erased by the clock unless the
+    /// whole path of the removal is `Verified` here (`QuarantineTick::Locked`).
     Quarantine { by: [u8; 32] },
     /// A valid record (`child`) does not list this device: it reads, writes
     /// nothing, pushes nothing, never erases.
@@ -1176,10 +1214,11 @@ pub enum QuarantineTick {
     /// Locked; erased at device time `erase_at` (Unix seconds) unless the
     /// user answers first.
     Waiting { erase_at: u64 },
-    /// Locked, with no erase clock (final review I1): the removal was
-    /// signed by a device this device trusts on first use only (`Tofu`),
-    /// here or along the records that lead to it. Nothing erases it until
-    /// the user answers ("Effacer cet appareil" or "Ce n'était pas moi").
+    /// Locked, with no erase clock (final review I1, fix round 2): a signer
+    /// of the removal or of the records that lead to it is not `Verified`
+    /// on this device (`Tofu`, or no level), or one of those records is
+    /// missing. Nothing erases it until the user answers ("Effacer cet
+    /// appareil" or "Ce n'était pas moi").
     Locked,
     /// The store was erased now (`RecordStore::erase_device`). The app
     /// deletes what it keeps for the account outside the store (Keychain
@@ -1203,11 +1242,10 @@ pub enum QuarantineTick {
 /// - Once quarantined, the state stays whatever the server holds since:
 ///   only `quarantine_resolve` or the erase ends it. `since` is never
 ///   moved.
-/// - The erase clock runs only for a removal by devices this device
-///   verified (final review I1): when the stored signer, or a signer of
-///   the records between this device's chain and the removal, is `Tofu`
-///   here, the tick is `Locked` (never erased, no date) until the user
-///   answers with `quarantine_resolve`.
+/// - The erase clock runs only when the whole path of the removal is
+///   known and `Verified` here (`erase_clock_runs`, final review I1, fix
+///   round 2); otherwise the tick is `Locked` (never erased, no date)
+///   until the user answers with `quarantine_resolve`.
 /// - Otherwise the store is erased (`RecordStore::erase_device`,
 ///   conditional on the trust state read) once `now - since` reaches
 ///   `QUARANTINE_ERASE_AFTER_SECS`; a clock moved back only delays it
@@ -1252,25 +1290,33 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
 }
 
 /// Whether the quarantine `trust` records runs the erase clock (final
-/// review I1, controller ruling 2026-10-31): only a removal by devices
-/// this device verified does. `false` when the stored signer (`rotator`)
-/// is `Tofu` on this device, or when any signer of the records known
-/// between this device's own chain and the removal (`by`) is: a `Tofu`
-/// device cannot launder its removal through a device it introduced. A
-/// record the server withholds after the lock only hides the path, so the
-/// stored signer still counts. Any other state: `false`.
+/// review I1 and fix round 2, controller rulings 2026-10-31), failing
+/// closed: only when every record from this device's own chain to the
+/// removal (`by`) is known, each of their rotators is `Verified` on this
+/// device (with the levels those records hand down, `levels_along`), and
+/// the stored signer (`rotator`) is the removal's rotator and `Verified`.
+/// A `Tofu` or unknown signer anywhere, or a missing record, means no
+/// clock: a `Tofu` device cannot launder its removal through a device it
+/// introduced. Any other state: `false`.
 fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
     let DeviceLineageState::Quarantined { by, rotator, .. } = &trust.state else {
         return false;
     };
-    let tofu = |id: &Id| trust.levels.get(id) == Some(&TrustLevel::Tofu);
-    if tofu(rotator) {
-        return false;
-    }
     let bodies = rotations(records);
-    !path_to(trust, &bodies, *by)
-        .iter()
-        .any(|b| tofu(&b.rotator))
+    let Some(path) = whole_path_to(trust, &bodies, *by) else {
+        return false;
+    };
+    let mut levels = trust.levels.clone();
+    for b in &path {
+        if levels.get(&b.rotator) != Some(&TrustLevel::Verified) {
+            return false;
+        }
+        for e in &b.roster {
+            levels.entry(e.device_id).or_insert(TrustLevel::Verified);
+        }
+    }
+    path.last().is_some_and(|b| b.rotator == *rotator)
+        && levels.get(rotator) == Some(&TrustLevel::Verified)
 }
 
 /// The device time (Unix seconds) at which the quarantine erases this
