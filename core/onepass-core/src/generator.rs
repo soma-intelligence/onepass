@@ -69,7 +69,7 @@ fn out_of_range(field: &str) -> Error {
 /// Uniform integer in `0..n`, by rejection on 32 random bits: draws at or
 /// above the largest multiple of `n` that fits in 2^32 are discarded, so
 /// there is no modulo bias. `n` must be in `1..=2^32`.
-fn uniform_below(n: usize) -> Result<usize> {
+pub(crate) fn uniform_below(n: usize) -> Result<usize> {
     debug_assert!(n >= 1 && n as u64 <= 1 << 32);
     let n = n as u64;
     let limit = (1u64 << 32) - ((1u64 << 32) % n);
