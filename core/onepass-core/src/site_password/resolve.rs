@@ -90,22 +90,49 @@ pub(crate) fn usable(c: &Constraints) -> bool {
     c.satisfiable() && c.min_length <= MAX_LENGTH && c.required.len() <= MAX_LENGTH as usize
 }
 
-/// A less trusted `other` contradicts `base` when adding it leaves nothing
-/// satisfiable, or when a length bound it states is one `base` rules out
-/// ("8 to 20" written next to a `maxlength` of 12: the text is wrong).
-fn contradicts(base: &Constraints, other: &Constraints) -> bool {
+/// The length claim of a less trusted `other` is wrong when one of its
+/// stated bounds falls outside the range `base` allows ("8 to 20" written
+/// next to a `maxlength` of 12). Its other constraints may still be right.
+fn length_conflict(base: &Constraints, other: &Constraints) -> bool {
+    let outside = |n: u32| n < base.min_length || base.max_length.is_some_and(|m| n > m);
+    other.max_length.is_some_and(outside) || (other.min_length > 0 && outside(other.min_length))
+}
+
+/// True when `c` says nothing beyond the defaults.
+fn is_empty(c: &Constraints) -> bool {
+    c.min_length == 0
+        && c.max_length.is_none()
+        && c.allowed.is_none()
+        && c.required.is_empty()
+        && c.forbidden.is_empty()
+        && c.max_consecutive.is_none()
+}
+
+/// What is kept of a less trusted `other` next to `base`: `None` when it
+/// must be dropped. A wrong length claim is stripped as a whole (both
+/// bounds: the stated range is one statement) and the rest is kept; the
+/// source is dropped when nothing is left, or when what is left leaves
+/// nothing satisfiable.
+fn keep(base: &Constraints, other: &Constraints) -> Option<Constraints> {
+    let mut kept = other.clone();
+    if length_conflict(base, other) {
+        kept.min_length = 0;
+        kept.max_length = None;
+        if is_empty(&kept) {
+            return None;
+        }
+    }
     let mut merged = base.clone();
-    merged.merge(other);
-    let max_wider = matches!((other.max_length, base.max_length), (Some(o), Some(b)) if o > b);
-    let min_lower = other.min_length > 0 && other.min_length < base.min_length;
-    !usable(&merged) || max_wider || min_lower
+    merged.merge(&kept);
+    usable(&merged).then_some(kept)
 }
 
 /// Merge the sources in trust order. `PasswordRules` and `Attributes` are
 /// never dropped against each other: if they alone contradict, nothing is
-/// kept and `fallback` is set. `Quirks` then `Hints` are added one by one
-/// and each is dropped when it contradicts what is kept so far, so a sound
-/// hint survives a dropped quirk.
+/// kept and `fallback` is set. `Quirks` then `Hints` are added one by one,
+/// each stripped of a wrong length claim and dropped when it still
+/// contradicts what is kept so far, so a sound hint survives a dropped
+/// quirk.
 pub(crate) fn resolve(ctx: &PasswordContext) -> Resolved {
     let present = read(ctx);
     let mut out = Resolved::default();
@@ -124,11 +151,12 @@ pub(crate) fn resolve(ctx: &PasswordContext) -> Resolved {
         };
     }
     for (source, c) in lesser {
-        if contradicts(&out.constraints, c) {
-            out.dropped.push(*source);
-        } else {
-            out.constraints.merge(c);
-            out.sources.push(*source);
+        match keep(&out.constraints, c) {
+            Some(kept) => {
+                out.constraints.merge(&kept);
+                out.sources.push(*source);
+            }
+            None => out.dropped.push(*source),
         }
     }
     out
@@ -174,6 +202,21 @@ mod tests {
         let r = resolve(&ctx);
         assert_eq!(r.sources, vec![Source::Attributes, Source::Hints]);
         assert_eq!(r.dropped, vec![Source::Quirks]);
+    }
+
+    #[test]
+    fn quirk_length_stripped_classes_kept() {
+        let ctx = PasswordContext {
+            max_length: Some(12),
+            quirk_rules: Some("minlength: 14; required: digit; allowed: lower, digit;".to_owned()),
+            ..PasswordContext::default()
+        };
+        let r = resolve(&ctx);
+        assert_eq!(r.sources, vec![Source::Attributes, Source::Quirks]);
+        assert!(r.dropped.is_empty());
+        assert_eq!(r.constraints.min_length, 0);
+        assert_eq!(r.constraints.max_length, Some(12));
+        assert_eq!(r.constraints.required.len(), 1);
     }
 
     #[test]

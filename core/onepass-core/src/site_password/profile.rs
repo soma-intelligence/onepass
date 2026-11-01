@@ -48,9 +48,10 @@ pub struct GenerationReport {
     pub sources: Vec<Source>,
     /// Sources removed because they contradicted a more trusted one.
     pub dropped: Vec<Source>,
-    /// The site constraints could not be met (the profile ran alone), or
-    /// Readable did not fit and Strong was used.
+    /// The site constraints could not be met: the profile ran alone.
     pub fallback: bool,
+    /// Readable did not fit the site and Strong was used instead.
+    pub readable_fell_back: bool,
     /// `entropy_bits` is below 60.
     pub weak_by_site: bool,
     pub entropy_bits: f64,
@@ -238,9 +239,10 @@ fn too_long_run(p: &[char], max: Option<u32>) -> bool {
 }
 
 /// A French passphrase that fits the site, or `None` (the caller falls back
-/// to Strong). The word count is chosen on the shortest and longest lengths
-/// the list can give (words of 4 to 8 letters), so the bounds hold whatever
-/// words come out.
+/// to Strong). Word counts are tried in `WORD_COUNTS` order when their
+/// expected length (average word of the list, separators, digit) is inside
+/// the bounds; draws whose actual length is outside are rejected, so the
+/// bounds always hold.
 fn readable(c: &Constraints, classes: Classes) -> Option<(Zeroizing<String>, f64)> {
     let a = alphabet(c, classes);
     if !holds_all(&a.all, LOWER) {
@@ -254,71 +256,97 @@ fn readable(c: &Constraints, classes: Classes) -> Option<(Zeroizing<String>, f64
         a.specials.first().copied()
     };
     let list = words_of(Wordlist::FrenchDiceware);
-    let (shortest, longest) = list.iter().fold((usize::MAX, 0), |(lo, hi), w| {
-        (lo.min(w.len()), hi.max(w.len()))
-    });
+    let longest = list.iter().map(|w| w.len()).max().unwrap_or(0);
+    let average = list.iter().map(|w| w.len()).sum::<usize>() as f64 / list.len().max(1) as f64;
     let seps = |n: usize| if separator.is_some() { n - 1 } else { 0 };
-    let base = |n: usize, word: usize| n * word + seps(n) + usize::from(digit);
     let (min, max) = bounds(c);
     let (min, max) = (min as usize, max as usize);
-    let words = WORD_COUNTS
+    let expected = |n: usize| n as f64 * average + (seps(n) + usize::from(digit)) as f64;
+    WORD_COUNTS
         .into_iter()
-        .find(|&n| base(n, shortest) >= min && base(n, longest) + c.required.len() <= max)?;
+        .filter(|&n| (min as f64..=max as f64).contains(&expected(n)))
+        .find_map(|n| {
+            let parts = Parts {
+                words: n,
+                separator,
+                capital,
+                digit,
+                capacity: n * longest + seps(n) + 1 + c.required.len(),
+            };
+            (0..READABLE_ATTEMPTS).find_map(|_| passphrase(c, &a, list, &parts, min..=max))
+        })
+}
 
-    for _ in 0..READABLE_ATTEMPTS {
-        let mut out: Zeroizing<Vec<char>> = Zeroizing::new(Vec::with_capacity(max));
-        let cap_at = uniform_below(words).ok()?;
-        for i in 0..words {
-            if i > 0
-                && let Some(s) = separator
-            {
-                out.push(s);
-            }
-            let word = list[uniform_below(list.len()).ok()?];
-            for (j, ch) in word.chars().enumerate() {
-                out.push(if capital && i == cap_at && j == 0 {
-                    ch.to_ascii_uppercase()
-                } else {
-                    ch
-                });
-            }
-        }
-        if digit {
-            out.push(char::from(b'0' + uniform_below(10).ok()? as u8));
-        }
-        let mut bits = words as f64 * (list.len() as f64).log2();
-        if capital {
-            bits += (words as f64).log2();
-        }
-        if digit {
-            bits += 10f64.log2();
-        }
-        // Required classes the words did not give: one char of each, added
-        // at the end.
-        for set in &c.required {
-            if out.iter().any(|ch| set.contains(*ch)) {
-                continue;
-            }
-            let pool: Vec<char> = set.intersection(&a.all).iter().collect();
-            if pool.is_empty() {
-                return None;
-            }
-            out.push(pool[uniform_below(pool.len()).ok()?]);
-            bits += (pool.len() as f64).log2();
-        }
-        let edge_space = out.first() == Some(&' ') || out.last() == Some(&' ');
-        if edge_space
-            || too_long_run(&out, c.max_consecutive)
-            || !out.iter().all(|ch| a.all.contains(*ch))
-            || !(min..=max).contains(&out.len())
+/// Shape of a passphrase draw.
+struct Parts {
+    words: usize,
+    separator: Option<char>,
+    capital: bool,
+    digit: bool,
+    /// Longest the draw can get, so the buffer never reallocates.
+    capacity: usize,
+}
+
+/// One passphrase draw, `None` when it misses a constraint.
+fn passphrase(
+    c: &Constraints,
+    a: &Alphabet,
+    list: &[&str],
+    p: &Parts,
+    lengths: std::ops::RangeInclusive<usize>,
+) -> Option<(Zeroizing<String>, f64)> {
+    let (words, separator, capital, digit) = (p.words, p.separator, p.capital, p.digit);
+    let mut out: Zeroizing<Vec<char>> = Zeroizing::new(Vec::with_capacity(p.capacity));
+    let cap_at = uniform_below(words).ok()?;
+    for i in 0..words {
+        if i > 0
+            && let Some(s) = separator
         {
+            out.push(s);
+        }
+        let word = list[uniform_below(list.len()).ok()?];
+        for (j, ch) in word.chars().enumerate() {
+            out.push(if capital && i == cap_at && j == 0 {
+                ch.to_ascii_uppercase()
+            } else {
+                ch
+            });
+        }
+    }
+    if digit {
+        out.push(char::from(b'0' + uniform_below(10).ok()? as u8));
+    }
+    let mut bits = words as f64 * (list.len() as f64).log2();
+    if capital {
+        bits += (words as f64).log2();
+    }
+    if digit {
+        bits += 10f64.log2();
+    }
+    // Required classes the words did not give: one char of each, added
+    // at the end.
+    for set in &c.required {
+        if out.iter().any(|ch| set.contains(*ch)) {
             continue;
         }
-        let mut password = Zeroizing::new(String::with_capacity(out.len() * 4));
-        password.extend(out.iter());
-        return Some((password, bits));
+        let pool: Vec<char> = set.intersection(&a.all).iter().collect();
+        if pool.is_empty() {
+            return None;
+        }
+        out.push(pool[uniform_below(pool.len()).ok()?]);
+        bits += (pool.len() as f64).log2();
     }
-    None
+    let edge_space = out.first() == Some(&' ') || out.last() == Some(&' ');
+    if edge_space
+        || too_long_run(&out, c.max_consecutive)
+        || !out.iter().all(|ch| a.all.contains(*ch))
+        || !lengths.contains(&out.len())
+    {
+        return None;
+    }
+    let mut password = Zeroizing::new(String::with_capacity(out.len() * 4));
+    password.extend(out.iter());
+    Some((password, bits))
 }
 
 /// The password of `profile` under `c`, and whether Readable gave way to
@@ -380,7 +408,8 @@ pub fn generate_for(
         special: has(|ch| !ch.is_ascii_alphanumeric()),
         sources: resolved.sources,
         dropped: resolved.dropped,
-        fallback: fallback || gave_way,
+        fallback,
+        readable_fell_back: gave_way,
         weak_by_site: entropy_bits < WEAK_BITS,
         entropy_bits,
     };

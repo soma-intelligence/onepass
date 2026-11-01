@@ -159,7 +159,8 @@ fn readable_with_max_16_falls_back() {
     };
     for _ in 0..50 {
         let (p, r) = run(&ctx, &Profile::Readable, 0);
-        assert!(r.fallback);
+        assert!(r.readable_fell_back);
+        assert!(!r.fallback);
         assert_eq!(p.chars().count(), 16);
         assert_eq!(r.length, 16);
         // Strong instead: every class, not words.
@@ -186,13 +187,76 @@ fn readable_default_has_capital_and_digit() {
 }
 
 #[test]
-fn readable_grows_for_a_long_minimum() {
+fn readable_meets_a_minimum_of_30() {
     let ctx = rules(&["minlength: 30;"]);
     for _ in 0..50 {
         let (p, r) = run(&ctx, &Profile::Readable, 0);
-        assert!(!r.fallback);
+        assert!(!r.fallback && !r.readable_fell_back);
         assert!(p.chars().count() >= 30 && p.chars().count() <= 64);
+    }
+}
+
+#[test]
+fn readable_max_40_gets_5_words() {
+    let ctx = PasswordContext {
+        max_length: Some(40),
+        ..PasswordContext::default()
+    };
+    for _ in 0..100 {
+        let (p, r) = run(&ctx, &Profile::Readable, 0);
+        assert!(!r.readable_fell_back && !r.fallback);
+        assert_eq!(p.split('-').count(), 5);
+        assert!(p.chars().count() <= 40);
+    }
+}
+
+#[test]
+fn readable_high_min_uses_more_words() {
+    let ctx = rules(&["minlength: 45;"]);
+    for _ in 0..100 {
+        let (p, r) = run(&ctx, &Profile::Readable, 0);
+        assert!(!r.readable_fell_back && !r.fallback);
         assert!(p.split('-').count() >= 6);
+        assert!(p.chars().count() >= 45 && p.chars().count() <= 64);
+    }
+}
+
+#[test]
+fn hint_class_ban_survives_length_conflict() {
+    let ctx = PasswordContext {
+        max_length: Some(12),
+        hint_text: Some("8 à 20 caractères, sans caractère spécial".to_owned()),
+        ..PasswordContext::default()
+    };
+    for _ in 0..20 {
+        let (p, r) = run(&ctx, &Profile::Strong, 0);
+        assert_eq!(p.chars().count(), 12);
+        assert!(p.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert_eq!(r.sources, vec![Source::Attributes, Source::Hints]);
+        assert!(r.dropped.is_empty());
+    }
+}
+
+#[test]
+fn quirk_classes_survive_length_conflict() {
+    let ctx = PasswordContext {
+        max_length: Some(12),
+        quirk_rules: Some(
+            "minlength: 8; maxlength: 30; required: lower; required: digit; allowed: lower, digit;"
+                .to_owned(),
+        ),
+        ..PasswordContext::default()
+    };
+    for _ in 0..20 {
+        let (p, r) = run(&ctx, &Profile::Strong, 0);
+        assert_eq!(p.chars().count(), 12);
+        assert!(
+            p.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
+        assert!(has(&p, char::is_ascii_lowercase) && has(&p, char::is_ascii_digit));
+        assert_eq!(r.sources, vec![Source::Attributes, Source::Quirks]);
+        assert!(r.dropped.is_empty());
     }
 }
 
@@ -315,6 +379,7 @@ fn report_has_no_password_char() {
         let json = serde_json::to_string(&r).unwrap();
         assert!(!json.contains(&p));
         assert!(json.contains("\"weak_by_site\""));
+        assert!(json.contains("\"readable_fell_back\":false"));
     }
     let ctx = PasswordContext {
         max_length: Some(12),
@@ -425,7 +490,7 @@ proptest! {
         let satisfiable = max.is_none_or(|m| required.len() as u32 <= m);
         if satisfiable {
             prop_assert!(meets(&p, min, max, &required, &allowed), "{:?} {:?} {:?}", ctx, profile, r);
-            prop_assert!(!(r.fallback && r.sources.is_empty()));
+            prop_assert!(!r.fallback);
         } else {
             prop_assert!(r.fallback && r.sources.is_empty());
         }
