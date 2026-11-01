@@ -23,8 +23,11 @@ pub const DEVICE_STATE_VERSION: u8 = 2;
 /// their AAD.
 pub const ITEM_SCHEMA: u16 = 1;
 
-/// `PRAGMA user_version` of the sync SQLite store.
-pub const STORE_USER_VERSION: i64 = 1;
+/// `PRAGMA user_version` of the sync SQLite store. 2: the `retained` table
+/// keys its rows by copy (key rotation v2, Task 19); a version 1 file is
+/// migrated in place, and a build that knows only 1 refuses a version 2
+/// file instead of misreading it.
+pub const STORE_USER_VERSION: i64 = 2;
 
 /// Decode an item written under `schema` into the current `Item`.
 ///

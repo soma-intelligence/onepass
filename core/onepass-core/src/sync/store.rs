@@ -4419,7 +4419,8 @@ mod tests {
                     version INTEGER NOT NULL,
                     data BLOB NOT NULL,
                     PRIMARY KEY (kind, id)
-                );",
+                );
+                PRAGMA user_version = 1;",
             )
             .unwrap();
             c.execute(
@@ -4433,6 +4434,14 @@ mod tests {
             s.retained_rows(v).unwrap(),
             vec![rec(v, RecordKind::VaultKey, 1, &[7])]
         );
+        // Review M5 (fix round 1): stamped with the version of the copy
+        // tag, which a build from before refuses.
+        let version: i64 = s
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        assert_eq!(crate::format::STORE_USER_VERSION, 2);
         drop(s);
         // Opens again as a current file.
         let s = SyncStore::open(&path).unwrap();
@@ -5490,7 +5499,11 @@ mod tests {
         // A newer one is refused, and left as it is.
         {
             let conn = Connection::open(&path).unwrap();
-            conn.execute_batch("PRAGMA user_version = 2;").unwrap();
+            conn.execute_batch(&format!(
+                "PRAGMA user_version = {};",
+                crate::format::STORE_USER_VERSION + 1
+            ))
+            .unwrap();
         }
         assert!(matches!(
             SyncStore::open(&path),
@@ -5500,7 +5513,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, crate::format::STORE_USER_VERSION + 1);
     }
 
     #[test]
