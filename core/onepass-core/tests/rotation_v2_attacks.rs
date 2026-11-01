@@ -1458,7 +1458,11 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     let mut c = device(&mut server, &a, &f, C);
     let mut d = device(&mut server, &a, &f, 2);
     c.unlock(&f.sk);
-    let v = a.vault().id;
+    let vault = a.vault();
+    let v = vault.id;
+    // Both write before they rotate, unpushed (the rotations re-seal it).
+    a.save(&login(v, "a-before", T0 + 40));
+    c.save(&login(v, "c-before", T0 + 41));
     let (ra, _) = rotate_on(&mut a, &f, &f.a.keys, vec![]);
     let (rc, _) = rotate_on(&mut c, &f, &f.c().keys, vec![]);
     let a_wins = ra.head < rc.head;
@@ -1472,12 +1476,19 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     } else {
         (c, a, &f.a.keys)
     };
+    let mine = if a_wins { "c-before" } else { "a-before" };
+    let winners = if a_wins { "a-before" } else { "c-before" };
+    // And the loser after its rotation.
+    l.save(&login(v, "late", T0 + 60));
     sync(&mut server, &mut w).unwrap();
     let winner_key = server.get(RecordKind::VaultKey, v).unwrap().data;
+    let winner_vault = w.vault();
     pull(&server, &mut d);
     let (repo, _, _) = follow_rotation(d.store(), wh, PASSWORD, &f.others[2].keys).unwrap();
     d.repo = Some(repo);
-    assert_eq!(users(&d.items()), names(&["alice", "bob", "carol"]));
+    let mut expected = names(&["alice", "bob", "carol", winners]);
+    expected.sort();
+    assert_eq!(users(&d.items()), expected);
 
     // The loser never sees the winner's record and pushes everything.
     let mut pushed = false;
@@ -1515,7 +1526,30 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
                 .any(|r| r.kind == RecordKind::VaultKey && r.data == winner_key),
             "the winner's key stays on the device"
         );
+        // A write into the vault stays on the device: the vault is held
+        // for a rebase that cannot verify the loser's manifest, so nothing
+        // goes out under any key.
+        let before = outbox(dev).len();
+        let _ = dev.repo().save_item(&winner_vault, login(v, "x", T0 + 90));
+        assert!(dev.store().vaults_needing_rebase().unwrap().contains(&v));
+        assert_eq!(outbox(dev).len(), before);
+        assert!(outbox(dev).iter().all(|(ch, _)| !matches!(
+            ch.kind,
+            RecordKind::Item | RecordKind::Manifest | RecordKind::VaultKey | RecordKind::VaultMeta
+        )));
+        sync(&mut server, dev).unwrap();
+        assert_ne!(
+            server.get(RecordKind::VaultKey, v).unwrap().data,
+            winner_key
+        );
     }
+    let loser_records: BTreeSet<Id> = server
+        .records
+        .iter()
+        .filter(|((k, _), e)| *k == RecordKind::Item && e.record.is_some())
+        .map(|((_, id), _)| *id)
+        .filter(|id| l.store().get(RecordKind::Item, *id).unwrap().is_some())
+        .collect();
 
     // The winner's record reaches the loser: it switches, and its item
     // records go from the server.
@@ -1530,7 +1564,20 @@ fn hidden_winner_lets_the_loser_overwrite_bounded() {
     let session = l.repo.take().unwrap();
     let (repo, _, _) = follow_switch(session, wh, PASSWORD, l_keys).unwrap();
     l.repo = Some(repo);
-    let _ = sync(&mut server, &mut l);
+    sync(&mut server, &mut l).unwrap();
     assert_eq!(head_of(&l), wh);
     assert!(server.get(RecordKind::Lineage, lineage_id(&lh)).is_some());
+    // The winner's vault records are gone from the server: the loser's
+    // replay of its own writes (before and after its rotation) waits, kept
+    // on the device, no alert raised, and nothing of its key generation is
+    // collected meanwhile (review C1).
+    let t = trust(&l);
+    assert_eq!(t.own_writes.replay.len(), 2, "{:?}", t.own_writes.replay);
+    assert!(!t.own_writes.alert && t.own_writes.lost.is_empty());
+    for id in &loser_records {
+        assert!(server.get(RecordKind::Item, *id).is_some(), "collected");
+        assert!(l.store().get(RecordKind::Item, *id).unwrap().is_some());
+    }
+    assert!(matches!(l.repo().vaults(), Err(Error::Integrity(_))));
+    let _ = mine;
 }
