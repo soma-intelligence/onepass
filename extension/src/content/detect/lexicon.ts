@@ -250,6 +250,9 @@ export const TERMS: readonly Term[] = [
   // A field named or labelled just "user". Whole text only: Rails and Django
   // attribute names such as user[first_name] or user[email] are not identifiers.
   { re: /^user$/, w: { username: 3, given_name: -3, family_name: -3, full_name: -3 } },
+  // WordPress names its identifier "log" (wp-login.php: log, pwd). Whole text
+  // only: "log level", "change log" or "search the log" are not identifiers.
+  { re: /^log$/, w: { username: 3, given_name: -3, family_name: -3, full_name: -3 } },
   // "Email, phone or Skype": one field that takes any account identifier. Only
   // an email first: "phone or email" stays a phone, "mobile phone" too.
   {

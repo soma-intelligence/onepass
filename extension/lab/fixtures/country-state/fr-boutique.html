@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Synthetic French shop checkout: country list with ISO numeric values and
+     French names, a department list ("75 - Paris") loaded for France only,
+     after the country (250 ms). Fictional, local only. -->
+<html lang="fr"><head><meta charset="utf-8"><title>Maison Ardoise - Livraison</title></head>
+<body>
+<main>
+  <h1>Maison Ardoise</h1>
+  <form id="livraison" action="/commande/livraison" method="post">
+    <h2>Adresse de livraison</h2>
+    <label for="civ">Civilité</label><select id="civ" name="civilite"><option value="">--</option><option>Mme</option><option>M.</option></select>
+    <label for="prenom">Prénom</label><input id="prenom" name="prenom" autocomplete="given-name">
+    <label for="nom">Nom</label><input id="nom" name="nom" autocomplete="family-name">
+    <label for="adresse">Adresse</label><input id="adresse" name="adresse" autocomplete="address-line1">
+    <label for="cp">Code postal</label><input id="cp" name="code_postal" autocomplete="postal-code">
+    <label for="ville">Ville</label><input id="ville" name="ville" autocomplete="address-level2">
+    <label for="pays">Pays</label>
+    <select id="pays" name="pays" autocomplete="country">
+      <option value="">Choisissez un pays</option>
+      <option value="056">Belgique</option>
+      <option value="276">Allemagne</option>
+      <option value="250">France métropolitaine</option>
+      <option value="492">Monaco</option>
+      <option value="756">Suisse</option>
+    </select>
+    <div id="dept-slot"></div>
+    <button type="submit">Valider ma livraison</button>
+  </form>
+</main>
+<script>
+(function () {
+  var DEPTS = [["01", "Ain"], ["13", "Bouches-du-Rhône"], ["29", "Finistère"], ["2A", "Corse-du-Sud"], ["2B", "Haute-Corse"],
+    ["33", "Gironde"], ["69", "Rhône"], ["75", "Paris"], ["92", "Hauts-de-Seine"], ["974", "La Réunion"]];
+  var pays = document.getElementById("pays");
+  var slot = document.getElementById("dept-slot");
+  pays.addEventListener("change", function () {
+    slot.innerHTML = "";
+    if (pays.value !== "250") return;
+    setTimeout(function () {
+      var html = '<label for="dept">Département</label><select id="dept" name="departement" autocomplete="address-level1"><option value="">--</option>';
+      for (var i = 0; i < DEPTS.length; i++) html += '<option value="' + DEPTS[i][0] + '">' + DEPTS[i][0] + " - " + DEPTS[i][1] + "</option>";
+      slot.innerHTML = html + "</select>";
+    }, 250);
+  });
+})();
+</script>
+</body></html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Synthetic payment page modelled on a hosted payment checkout: billing
+     country preset from the visitor's location (France), a state list shown
+     at once for the United States and Canada only. Fictional, local only. -->
+<html lang="en"><head><meta charset="utf-8"><title>Pay Lumen Studio</title></head>
+<body>
+<main>
+  <h1>Lumen Studio</h1>
+  <form id="pay" action="/pay" method="post">
+    <label for="email">Email</label><input id="email" type="email" name="email" autocomplete="email">
+    <fieldset>
+      <legend>Billing address</legend>
+      <label for="billingName">Full name</label><input id="billingName" name="billingName" autocomplete="billing name">
+      <label for="billingCountry">Country or region</label>
+      <select id="billingCountry" name="billingCountry" autocomplete="billing country">
+        <option value="BE">Belgium</option>
+        <option value="CA">Canada</option>
+        <option value="FR" selected>France</option>
+        <option value="DE">Germany</option>
+        <option value="GE">Georgia</option>
+        <option value="US">United States</option>
+      </select>
+      <label for="billingAddressLine1">Address line 1</label><input id="billingAddressLine1" name="billingAddressLine1" autocomplete="billing address-line1">
+      <label for="billingLocality">City</label><input id="billingLocality" name="billingLocality" autocomplete="billing address-level2">
+      <div id="stateRow" style="display:none">
+        <label for="billingAdministrativeArea">State</label>
+        <select id="billingAdministrativeArea" name="billingAdministrativeArea" autocomplete="billing address-level1"><option value="">Select</option></select>
+      </div>
+      <label for="billingPostalCode" id="postalLabel">Postal code</label><input id="billingPostalCode" name="billingPostalCode" autocomplete="billing postal-code">
+    </fieldset>
+    <button type="submit">Pay</button>
+  </form>
+</main>
+<script>
+(function () {
+  var AREAS = {
+    US: [["AK", "Alaska"], ["CA", "California"], ["GA", "Georgia"], ["NY", "New York"], ["OR", "Oregon"], ["PR", "Puerto Rico"], ["WA", "Washington"]],
+    CA: [["BC", "British Columbia"], ["ON", "Ontario"], ["QC", "Québec"]]
+  };
+  var country = document.getElementById("billingCountry");
+  var row = document.getElementById("stateRow");
+  var area = document.getElementById("billingAdministrativeArea");
+  var postal = document.getElementById("postalLabel");
+  function update() {
+    var list = AREAS[country.value];
+    area.innerHTML = '<option value="">Select</option>';
+    row.style.display = list ? "" : "none";
+    postal.textContent = country.value === "US" ? "ZIP" : "Postal code";
+    if (!list) return;
+    for (var i = 0; i < list.length; i++) {
+      var o = document.createElement("option");
+      o.value = list[i][0];
+      o.textContent = list[i][1];
+      area.appendChild(o);
+    }
+  }
+  update();
+  country.addEventListener("change", update);
+})();
+</script>
+</body></html>

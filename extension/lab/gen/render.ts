@@ -42,7 +42,7 @@ export const PASSKEY_REFUSED = "Clé d'accès refusée";
 
 type Text = "signin" | "password" | "otp" | "passkey" | "signup" | "checkout" | "address" | "identity" | "home"
   | "verify" | "passkeyButton" | "newPassword" | "confirmPassword";
-const TEXT: Record<"en" | "fr" | "de" | "es", Record<Text, string>> = {
+const TEXT: Record<"en" | "fr" | "de" | "es" | "it" | "pt" | "nl", Record<Text, string>> = {
   en: {
     signin: "Sign in", password: "Enter your password", otp: "Two-step verification", passkey: "Use your passkey",
     signup: "Create your account", checkout: "Payment", address: "Shipping address", identity: "Your profile",
@@ -67,11 +67,29 @@ const TEXT: Record<"en" | "fr" | "de" | "es", Record<Text, string>> = {
     identity: "Tu perfil", home: "Bienvenido", verify: "Verificar", passkeyButton: "Usar llave de acceso",
     newPassword: "Nueva contraseña", confirmPassword: "Confirmar contraseña",
   },
+  it: {
+    signin: "Accedi", password: "Inserisci la password", otp: "Verifica in due passaggi", passkey: "Usa la tua passkey",
+    signup: "Crea il tuo account", checkout: "Pagamento", address: "Indirizzo di spedizione", identity: "Il tuo profilo",
+    home: "Benvenuto", verify: "Verifica", passkeyButton: "Usa passkey", newPassword: "Nuova password",
+    confirmPassword: "Conferma password",
+  },
+  pt: {
+    signin: "Iniciar sessão", password: "Introduza a sua palavra-passe", otp: "Verificação em dois passos",
+    passkey: "Use a sua chave de acesso", signup: "Crie a sua conta", checkout: "Pagamento", address: "Morada de entrega",
+    identity: "O seu perfil", home: "Bem-vindo", verify: "Verificar", passkeyButton: "Usar chave de acesso",
+    newPassword: "Nova palavra-passe", confirmPassword: "Confirmar palavra-passe",
+  },
+  nl: {
+    signin: "Inloggen", password: "Voer je wachtwoord in", otp: "Verificatie in twee stappen", passkey: "Gebruik je toegangssleutel",
+    signup: "Maak je account aan", checkout: "Betaling", address: "Bezorgadres", identity: "Je profiel", home: "Welkom",
+    verify: "Verifiëren", passkeyButton: "Toegangssleutel gebruiken", newPassword: "Nieuw wachtwoord",
+    confirmPassword: "Herhaal wachtwoord",
+  },
 };
 const t = (lang: Lang, key: Text) => (TEXT[lang as keyof typeof TEXT] ?? TEXT.en)[key];
 
 // A label that asks to type the new password again, in the corpus languages.
-const CONFIRM_LABEL = /confirm|bestätig|wiederhol|repeat|retype|again|répét|repet|vérif/i;
+const CONFIRM_LABEL = /confirm|bestätig|wiederhol|repeat|retype|again|répét|repet|vérif|conferm|ripet|herhaal|bevestig/i;
 
 export function styleOf(site: Site): LoginStyle {
   if (site.flow === "login_username_first") return "username_first";

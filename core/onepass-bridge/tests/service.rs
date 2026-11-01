@@ -1365,3 +1365,504 @@ fn note_fill_a_b_a_across_vaults_prefers_a() {
     assert_eq!(plan["groups"][0]["item_id"], id(a), "{plan}");
     assert_eq!(plan["confidence"], "high", "{plan}");
 }
+
+// ---- Passkeys (spec 3.1 of the extension lab fixes) ----
+
+mod passkeys {
+    use super::*;
+    use aws_lc_rs::digest::{SHA256, digest};
+    use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1, UnparsedPublicKey};
+    use data_encoding::BASE64URL_NOPAD as B64U;
+    use onepass_core::model::PasskeyCredential;
+
+    const RP: &str = "atlas-cloud.test";
+    const LOGIN: &str = "https://login.atlas-cloud.test";
+    const HANDLE: &[u8] = &[0x75, 0x73, 0x65, 0x72, 0x2d, 0x31];
+    const CHALLENGE: &[u8] = &[0xfb, 0xff, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+
+    fn b64(b: &[u8]) -> String {
+        B64U.encode(b)
+    }
+
+    fn unb64(v: &Value) -> Vec<u8> {
+        B64U.decode(v.as_str().expect("string").as_bytes())
+            .expect("b64url")
+    }
+
+    /// The Atlas Cloud login with one passkey for `atlas-cloud.test`.
+    fn with_passkey() -> (H, PasskeyCredential) {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let cred = h
+            .svc
+            .vault_mut()
+            .add_passkey(atlas, RP, "alex@atlas.dev", HANDLE);
+        (h, cred)
+    }
+
+    fn list_req(ctx: &str, origin: &str, rp_id: &str) -> Value {
+        json!({"op":"passkey_list","ctx":ctx,"origin":origin,"rp_id":rp_id})
+    }
+
+    fn get_req(ctx: &str, origin: &str, rp_id: &str, item: Id, cred: &[u8]) -> Value {
+        json!({"op":"passkey_get","ctx":ctx,"origin":origin,"top_origin":origin,"rp_id":rp_id,
+               "item_id":id(item),"credential_id":b64(cred),"challenge":b64(CHALLENGE)})
+    }
+
+    fn create_req(origin: &str, user: &str, exclude: &[&[u8]]) -> Value {
+        json!({"op":"passkey_create","ctx":"passkey","origin":origin,"top_origin":origin,"rp_id":RP,
+               "user_name":user,"user_handle":b64(HANDLE),"challenge":b64(CHALLENGE),
+               "exclude":exclude.iter().map(|c| b64(c)).collect::<Vec<_>>()})
+    }
+
+    /// Checks an assertion reply against a public key point.
+    fn verify(reply: &Value, point: &[u8], rp_id: &str) {
+        let auth = unb64(&reply["authenticator_data"]);
+        assert_eq!(auth[..32], *digest(&SHA256, rp_id.as_bytes()).as_ref());
+        let cdj = unb64(&reply["client_data_json"]);
+        let mut msg = auth.clone();
+        msg.extend_from_slice(digest(&SHA256, &cdj).as_ref());
+        UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, point)
+            .verify(&msg, &unb64(&reply["signature"]))
+            .expect("signature verifies");
+    }
+
+    /// Uncompressed point of a credential's public key, from its COSE key.
+    fn point_of(cred: &PasskeyCredential) -> Vec<u8> {
+        let cose = onepass_core::webauthn::public_key_cose(cred).unwrap();
+        let mut p = vec![0x04];
+        p.extend_from_slice(&cose[10..42]);
+        p.extend_from_slice(&cose[45..77]);
+        p
+    }
+
+    #[test]
+    fn passkey_list_has_no_secret() {
+        let (mut h, cred) = with_passkey();
+        let (hidden, archived) = (h.ids.hidden, h.ids.archived);
+        h.svc.vault_mut().add_passkey(hidden, RP, "hidden", &[1]);
+        h.svc
+            .vault_mut()
+            .add_passkey(archived, RP, "archived", &[2]);
+        h.svc
+            .vault_mut()
+            .add_passkey(h.ids.admin, "other.test", "admin", &[3]);
+        let v = h.call(list_req("passkey", LOGIN, RP));
+        assert_eq!(
+            ok(&v),
+            &json!({"passkeys":[{
+                "item_id": id(h.ids.atlas),
+                "vault_id": id(h.ids.perso),
+                "vault_name": "Personnel",
+                "title": "Atlas Cloud",
+                "user_name": "alex@atlas.dev",
+                "credential_id": b64(&cred.credential_id),
+            }]})
+        );
+        let dump = v.to_string();
+        assert!(!dump.contains(&b64(&cred.private_key)));
+        assert!(!dump.contains(&b64(HANDLE)));
+        for s in SECRETS {
+            assert!(!dump.contains(s), "leaked {s}");
+        }
+        // Chain context too; same rp id in upper case; nothing for another
+        // rp id of the site; no audit and no rate limit slot.
+        let v = h.call(list_req("chain", ATLAS, "ATLAS-cloud.test"));
+        assert_eq!(ok(&v)["passkeys"].as_array().unwrap().len(), 1);
+        h.svc
+            .vault_mut()
+            .add_passkey(h.ids.atlas, "login.atlas-cloud.test", "x", &[4]);
+        let v = h.call(list_req("passkey", ATLAS, RP));
+        assert_eq!(ok(&v)["passkeys"].as_array().unwrap().len(), 1);
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_list_checks_rp_id_and_origin() {
+        let (mut h, _) = with_passkey();
+        assert_eq!(
+            err(&h.call(list_req("passkey", ATLAS, "evil.test"))),
+            "origin_mismatch"
+        );
+        assert_eq!(
+            err(&h.call(list_req("passkey", ATLAS, "test"))),
+            "origin_mismatch"
+        );
+        assert_eq!(
+            err(&h.call(list_req("passkey", "http://atlas-cloud.test", RP))),
+            "insecure_origin"
+        );
+        assert_eq!(err(&h.call(list_req("menu", ATLAS, RP))), "not_allowed");
+        h.svc.vault_mut().locked = true;
+        assert_eq!(err(&h.call(list_req("passkey", ATLAS, RP))), "locked");
+    }
+
+    #[test]
+    fn passkey_get_builds_client_data_from_origin() {
+        let (mut h, cred) = with_passkey();
+        let v = h.call(get_req(
+            "passkey",
+            LOGIN,
+            RP,
+            h.ids.atlas,
+            &cred.credential_id,
+        ));
+        let r = ok(&v);
+        assert_eq!(
+            String::from_utf8(unb64(&r["client_data_json"])).unwrap(),
+            format!(
+                r#"{{"type":"webauthn.get","challenge":"{}","origin":"{LOGIN}","crossOrigin":false}}"#,
+                b64(CHALLENGE)
+            )
+        );
+        assert_eq!(unb64(&r["credential_id"]), cred.credential_id);
+        assert_eq!(unb64(&r["user_handle"]), HANDLE);
+        // The page cannot hand its own client data, nor a hash of it.
+        for extra in [
+            json!({"client_data_json": b64(b"{}")}),
+            json!({"client_data_hash": b64(&[0u8; 32])}),
+            json!({"cross_origin": true}),
+        ] {
+            let mut req = get_req("passkey", LOGIN, RP, h.ids.atlas, &cred.credential_id);
+            for (k, x) in extra.as_object().unwrap() {
+                req[k] = x.clone();
+            }
+            assert_eq!(err(&h.call(req)), "invalid");
+        }
+    }
+
+    #[test]
+    fn passkey_get_signature_verifies() {
+        let (mut h, cred) = with_passkey();
+        let v = h.call(get_req(
+            "chain",
+            ATLAS,
+            RP,
+            h.ids.atlas,
+            &cred.credential_id,
+        ));
+        let r = ok(&v);
+        verify(r, &point_of(&cred), RP);
+        let auth = unb64(&r["authenticator_data"]);
+        assert_eq!(auth.len(), 37);
+        assert_eq!(auth[32] & 0x01, 0x01, "user present");
+        assert_eq!(
+            auth[32] & 0x04,
+            0,
+            "the bridge never claims user verification"
+        );
+        assert_eq!(r.as_object().unwrap().len(), 5);
+        assert!(!v.to_string().contains(&b64(&cred.private_key)));
+    }
+
+    #[test]
+    fn passkey_get_refused_outside_passkey_or_chain_ctx() {
+        let (mut h, cred) = with_passkey();
+        for ctx in ["popup", "menu", "overlay", "save_prompt"] {
+            let v = h.call(get_req(ctx, ATLAS, RP, h.ids.atlas, &cred.credential_id));
+            assert_eq!(err(&v), "not_allowed", "{ctx}");
+        }
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_get_http_refused() {
+        let (mut h, cred) = with_passkey();
+        for o in [
+            "http://atlas-cloud.test",
+            "http://login.atlas-cloud.test:8080",
+        ] {
+            let v = h.call(get_req("passkey", o, RP, h.ids.atlas, &cred.credential_id));
+            assert_eq!(err(&v), "insecure_origin", "{o}");
+        }
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_get_refuses_other_site_and_unknown_credential() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        let evil = h
+            .svc
+            .vault_mut()
+            .add_login("Evil", "e", "https://evil.test", MatchRule::Domain);
+        let evil_cred = h.svc.vault_mut().add_passkey(evil, "evil.test", "e", &[9]);
+        // The rp id of another site, even with a credential that exists.
+        let v = h.call(get_req(
+            "passkey",
+            ATLAS,
+            "evil.test",
+            evil,
+            &evil_cred.credential_id,
+        ));
+        assert_eq!(err(&v), "origin_mismatch");
+        // A credential of another rp id under this site's rp id.
+        let v = h.call(get_req(
+            "passkey",
+            ATLAS,
+            RP,
+            evil,
+            &evil_cred.credential_id,
+        ));
+        assert_eq!(err(&v), "not_found");
+        // Another item's id with this credential.
+        let v = h.call(get_req(
+            "passkey",
+            ATLAS,
+            RP,
+            h.ids.admin,
+            &cred.credential_id,
+        ));
+        assert_eq!(err(&v), "not_found");
+        let v = h.call(get_req("passkey", ATLAS, RP, atlas, &[1, 2, 3]));
+        assert_eq!(err(&v), "not_found");
+        // Bad shapes.
+        let mut bad = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        bad["challenge"] = json!("");
+        assert_eq!(err(&h.call(bad.clone())), "invalid");
+        bad["challenge"] = json!(b64(&[0u8; 1025]));
+        assert_eq!(err(&h.call(bad)), "invalid");
+        let mut bad = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        bad["credential_id"] = json!("not base64url!");
+        assert_eq!(err(&h.call(bad)), "invalid");
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_get_follows_reprompt() {
+        let mut h = H::new();
+        let r = h.ids.reprompt;
+        let cred = h.svc.vault_mut().add_passkey(r, RP, "alex", HANDLE);
+        let v = h.call(get_req("passkey", ATLAS, RP, r, &cred.credential_id));
+        assert_eq!(err(&v), "reprompt_required");
+        h.svc.vault_mut().approve_reprompt = true;
+        ok(&h.call(get_req("passkey", ATLAS, RP, r, &cred.credential_id)));
+    }
+
+    #[test]
+    fn passkey_create_then_get() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        // Stored in the site's login with this user name.
+        let v = h.call(create_req(LOGIN, "Alex@Atlas.dev", &[]));
+        let r = ok(&v).clone();
+        assert_eq!(r["item_id"], id(atlas));
+        assert_eq!(r["public_key_algorithm"], -7);
+        let cdj: Value = serde_json::from_slice(&unb64(&r["client_data_json"])).unwrap();
+        assert_eq!(
+            cdj,
+            json!({"type":"webauthn.create","challenge":b64(CHALLENGE),"origin":LOGIN,"crossOrigin":false})
+        );
+        let stored = h.vault().passkeys(atlas);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].rp_id, RP);
+        assert_eq!(stored[0].user_name, "Alex@Atlas.dev");
+        assert_eq!(stored[0].user_handle, HANDLE);
+        let cred_id = unb64(&r["credential_id"]);
+        assert_eq!(stored[0].credential_id, cred_id);
+        let auth = unb64(&r["authenticator_data"]);
+        assert_eq!(auth[..32], *digest(&SHA256, RP.as_bytes()).as_ref());
+        assert_eq!(auth[32] & 0x05, 0x01, "UP=1, UV=0");
+        assert!(
+            unb64(&r["attestation_object"])
+                .windows(auth.len())
+                .any(|w| w == auth.as_slice())
+        );
+        // SPKI DER of the new key: header then the point of the COSE key.
+        let spki = unb64(&r["public_key"]);
+        assert_eq!(spki.len(), 91);
+        assert_eq!(spki[26..], point_of(&stored[0])[..]);
+        assert!(
+            h.vault()
+                .item(atlas)
+                .login_methods
+                .contains(&LoginMethod::Passkey)
+        );
+        assert!(!v.to_string().contains(&b64(&stored[0].private_key)));
+
+        // Then it signs, verified with the public key the creation gave.
+        let v = h.call(get_req("passkey", ATLAS, RP, atlas, &cred_id));
+        verify(ok(&v), &spki[26..], RP);
+        let v = h.call(list_req("passkey", ATLAS, RP));
+        assert_eq!(ok(&v)["passkeys"][0]["credential_id"], b64(&cred_id));
+
+        // Another user name: a new login of the site in the first vault.
+        let v = h.call(create_req(ATLAS, "new.user@atlas.dev", &[]));
+        let new_id = ok(&v)["item_id"].as_str().unwrap().to_owned();
+        assert_ne!(new_id, id(atlas));
+        let item = h
+            .vault()
+            .items
+            .iter()
+            .find(|i| i.id.to_string() == new_id)
+            .unwrap()
+            .clone();
+        assert_eq!(item.vault_id, h.ids.perso);
+        assert_eq!(item.title, RP);
+        assert_eq!(item.subtitle(), "new.user@atlas.dev");
+        assert_eq!(item.urls[0].url, format!("https://{RP}"));
+        let v = h.call(list_req("passkey", LOGIN, RP));
+        assert_eq!(ok(&v)["passkeys"].as_array().unwrap().len(), 2);
+        let ops: Vec<&str> = h.audit.events().iter().map(|e| e.op).collect();
+        assert_eq!(ops, ["passkey_create", "passkey_get", "passkey_create"]);
+    }
+
+    #[test]
+    fn passkey_create_checks_context_and_shapes() {
+        let mut h = H::new();
+        let mut req = create_req(ATLAS, "alex@atlas.dev", &[]);
+        for ctx in ["chain", "menu", "popup", "overlay", "save_prompt"] {
+            req["ctx"] = json!(ctx);
+            assert_eq!(err(&h.call(req.clone())), "not_allowed", "{ctx}");
+        }
+        let mut req = create_req("http://atlas-cloud.test", "alex@atlas.dev", &[]);
+        assert_eq!(err(&h.call(req.clone())), "insecure_origin");
+        req["origin"] = json!(ATLAS);
+        req["top_origin"] = json!(ATLAS);
+        req["rp_id"] = json!("evil.test");
+        assert_eq!(err(&h.call(req.clone())), "origin_mismatch");
+        req["rp_id"] = json!(RP);
+        req["user_handle"] = json!(b64(&[0u8; 65]));
+        assert_eq!(err(&h.call(req.clone())), "invalid");
+        req["user_handle"] = json!(b64(HANDLE));
+        req["vault_id"] = json!(id(Id::new()));
+        assert_eq!(err(&h.call(req.clone())), "not_found");
+        req["vault_id"] = json!(id(h.ids.pro));
+        let v = h.call(req);
+        // The site's login of that user name wins over the vault asked for.
+        assert_eq!(ok(&v)["item_id"], id(h.ids.atlas));
+        assert_eq!(err(&h.call(create_req(ATLAS, " ", &[]))), "invalid");
+        assert!(h.vault().passkeys(h.ids.admin).is_empty());
+    }
+
+    #[test]
+    fn passkey_create_excluded() {
+        let (mut h, cred) = with_passkey();
+        let before = h.vault().items.len();
+        let v = h.call(create_req(
+            ATLAS,
+            "someone@atlas.dev",
+            &[&[7, 7], &cred.credential_id],
+        ));
+        assert_eq!(err(&v), "excluded");
+        assert_eq!(h.vault().items.len(), before);
+        assert_eq!(h.vault().passkeys(h.ids.atlas).len(), 1);
+        // An excluded id of another rp id does not block.
+        let other = h
+            .svc
+            .vault_mut()
+            .add_passkey(h.ids.admin, "other.test", "a", &[1]);
+        ok(&h.call(create_req(
+            ATLAS,
+            "someone@atlas.dev",
+            &[&other.credential_id],
+        )));
+        assert!(h.audit.events().iter().all(|e| e.op == "passkey_create"));
+        assert_eq!(h.audit.events().len(), 1);
+    }
+
+    #[test]
+    fn passkey_ops_are_audited_and_rate_limited() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        ok(&h.call(get_req("passkey", LOGIN, RP, atlas, &cred.credential_id)));
+        ok(&h.call(create_req(ATLAS, "other@atlas.dev", &[])));
+        let events = h.audit.events();
+        assert_eq!(events[0].op, "passkey_get");
+        assert_eq!(events[0].item_id, Some(id(atlas)));
+        assert_eq!(events[0].origin.as_deref(), Some(LOGIN));
+        assert_eq!(events[0].at, NOW);
+        assert_eq!(events[1].op, "passkey_create");
+        assert_eq!(events[1].origin.as_deref(), Some(ATLAS));
+        let dump = format!("{events:?}");
+        assert!(!dump.contains(&b64(&cred.private_key)));
+        assert!(!dump.contains(&b64(CHALLENGE)));
+        for _ in 2..60 {
+            ok(&h.call(get_req("chain", ATLAS, RP, atlas, &cred.credential_id)));
+        }
+        let v = h.call(get_req("passkey", ATLAS, RP, atlas, &cred.credential_id));
+        assert_eq!(err(&v), "rate_limited");
+        assert_eq!(
+            err(&h.call(create_req(ATLAS, "x@atlas.dev", &[]))),
+            "rate_limited"
+        );
+        // The list has no secret: never limited.
+        ok(&h.call(list_req("passkey", ATLAS, RP)));
+        // Other secret requests share the window.
+        assert_eq!(err(&h.call(fill(atlas, ATLAS))), "rate_limited");
+        ok(&h.call_at(
+            get_req("passkey", ATLAS, RP, atlas, &cred.credential_id),
+            NOW + 60,
+        ));
+    }
+
+    #[test]
+    fn passkey_top_origin_must_be_the_frame_origin() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        // A same-origin frame (top equals frame, path and port normalized).
+        let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        req["top_origin"] = json!("https://atlas-cloud.test:443/home");
+        ok(&h.call(req));
+        for top in [
+            "https://evil.test",
+            "https://login.atlas-cloud.test",
+            "https://atlas-cloud.test:8443",
+            "http://atlas-cloud.test",
+            "not an origin",
+        ] {
+            let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+            req["top_origin"] = json!(top);
+            assert_eq!(err(&h.call(req)), "not_allowed", "get {top}");
+            let mut req = create_req(ATLAS, "alex@atlas.dev", &[]);
+            req["top_origin"] = json!(top);
+            assert_eq!(err(&h.call(req)), "not_allowed", "create {top}");
+        }
+        // Required.
+        let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        req.as_object_mut().unwrap().remove("top_origin");
+        assert_eq!(err(&h.call(req)), "invalid");
+        let mut req = create_req(ATLAS, "alex@atlas.dev", &[]);
+        req.as_object_mut().unwrap().remove("top_origin");
+        assert_eq!(err(&h.call(req)), "invalid");
+        // Still crossOrigin false on the accepted call.
+        let v = h.call(get_req("passkey", ATLAS, RP, atlas, &cred.credential_id));
+        let cd: Value = serde_json::from_slice(&unb64(&ok(&v)["client_data_json"])).unwrap();
+        assert_eq!(cd["crossOrigin"], false);
+        assert_eq!(h.audit.events().len(), 2);
+    }
+
+    #[test]
+    fn passkey_origin_with_trailing_dot_refused() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        let dotted = "https://atlas-cloud.test.";
+        let v = h.call(get_req("passkey", dotted, RP, atlas, &cred.credential_id));
+        assert_eq!(err(&v), "invalid");
+        assert_eq!(
+            err(&h.call(create_req(dotted, "alex@atlas.dev", &[]))),
+            "invalid"
+        );
+        assert_eq!(err(&h.call(list_req("passkey", dotted, RP))), "invalid");
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_create_refuses_control_characters_in_user_name() {
+        let mut h = H::new();
+        for user in [
+            "alex\u{202e}gro.live",
+            "alex\u{200b}",
+            "alex\nroot",
+            "alex\u{2066}",
+        ] {
+            assert_eq!(
+                err(&h.call(create_req(ATLAS, user, &[]))),
+                "invalid",
+                "{user:?}"
+            );
+        }
+        assert!(h.audit.events().is_empty());
+        assert!(h.vault().passkeys(h.ids.atlas).is_empty());
+    }
+}

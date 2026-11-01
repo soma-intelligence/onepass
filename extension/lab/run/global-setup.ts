@@ -68,6 +68,8 @@ export interface LabState {
   world: string;
   fixture: string;
   results: string;
+  /** Verdicts of the country cases (one JSON line per case). */
+  cases: string;
   certDir: string;
   cache: string;
   host: StagedHost;
@@ -90,10 +92,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const worldPath = join(config.out, "world.json");
   const fixture = join(config.out, "fixture.json");
   const results = join(config.out, "results.jsonl");
+  const cases = join(config.out, "cases.jsonl");
   writeFileSync(join(config.out, "build-marker.json"), JSON.stringify(built.marker, null, 2));
   writeFileSync(worldPath, JSON.stringify(world, null, 2));
   writeFileSync(fixture, JSON.stringify(world.fixture, null, 2));
   writeFileSync(results, "");
+  writeFileSync(cases, "");
   // Outside ~/Desktop and the like: the browser must not exec the host from a privacy-protected folder (host.ts).
   const root = mkdtempSync(join(tmpdir(), "onepass-lab-"));
   const certDir = join(root, "cert");
@@ -108,7 +112,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const staged = stageHost(join(root, `host-${p.id}`), file);
     profiles[p.id] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${p.id}`), staged) };
   }));
-  const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, certDir, cache, host, profiles };
+  const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, cases, certDir, cache, host, profiles };
   const statePath = join(root, "state.json");
   writeFileSync(statePath, JSON.stringify(state));
   process.env.LAB_STATE = statePath;

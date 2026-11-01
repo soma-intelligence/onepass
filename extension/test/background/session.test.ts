@@ -251,6 +251,9 @@ describe("toBgError", () => {
     expect(toBgError(new BridgeError("host", "x", "weird")).code).toBe("internal");
     expect(toBgError(new BridgeAppError("not_allowed", "")).code).toBe("not_allowed");
     expect(toBgError(new BridgeAppError("made_up", "")).code).toBe("internal");
+    // passkey_create: a stored credential of the exclude list (the page gets InvalidStateError).
+    expect(toBgError(new BridgeAppError("excluded", "a credential of the exclude list is stored")).code).toBe("excluded");
+    expect(toBgError(new BridgeError("host", "x", "excluded")).code).toBe("excluded");
     expect(toBgError(new Error("boom")).code).toBe("internal");
   });
 });

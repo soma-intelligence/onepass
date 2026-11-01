@@ -25,3 +25,6 @@ time = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"
+# Verifies the passkey signatures of the host tests (already a workspace
+# dependency, through onepass-core and onepass-bridge).
+aws-lc-rs.workspace = true

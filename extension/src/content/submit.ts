@@ -18,10 +18,15 @@
 // submit a credential form filled with values of its choosing. Otherwise a
 // page could make OnePass report credentials of its choosing at will (save
 // prompt spoofing, probing for stored credentials).
+//
+// Forms in shadow roots (spec D1, D2): the caller's `listen` also listens on
+// every watched root, so a gesture is read from its real target (a `submit`
+// never leaves its root); a button's own shadow root is crossed to its host.
 import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
 import { buttonClass } from "./context";
 import { BUTTON_SELECTOR } from "./detect/forms";
 import type { RefRegistry } from "./detect/refs";
+import { composedClosest, composedContains } from "./detect/shadow";
 import { type Geometry, isRendered } from "./detect/visibility";
 import { nativeValue } from "./filler";
 
@@ -56,6 +61,12 @@ export interface SubmitOptions {
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
   /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
   onStep?: (container: Element) => void;
+  /**
+   * Adds a listener (and returns its removal); defaults to `target` alone.
+   * The content script passes its tree listeners: the document and every
+   * watched shadow root.
+   */
+  listen?: (target: EventTarget, type: string, fn: (e: Event) => void, options: AddEventListenerOptions) => () => void;
 }
 
 export interface SubmitWatcher {
@@ -103,7 +114,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   const ownerForm = (el: Element): HTMLFormElement | null =>
     el instanceof HTMLInputElement || el instanceof HTMLButtonElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement
       ? el.form
-      : el.closest("form");
+      : (composedClosest(el, "form") as HTMLFormElement | null);
 
   /** The credential form that `el` belongs to (field, button, or the form itself). */
   const formOf = (el: Element): FormInfo | null => {
@@ -116,7 +127,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       if (el === container) return f;
       if (f.fields.some((x) => refs.get(x.ref) === el)) return f;
       const owner = ownerForm(el);
-      if (container instanceof HTMLFormElement ? owner === container : owner === null && container.contains(el)) return f;
+      if (container instanceof HTMLFormElement ? owner === container : owner === null && composedContains(container, el)) return f;
     }
     return null;
   };
@@ -201,7 +212,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   };
 
   /** The form a gesture belongs to, or the document element for a page without forms. */
-  const stepContainer = (el: Element): Element => ownerForm(el) ?? el.closest("form") ?? doc.documentElement;
+  const stepContainer = (el: Element): Element => ownerForm(el) ?? composedClosest(el, "form") ?? doc.documentElement;
 
   const onSubmit = (e: Event) => {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
@@ -213,7 +224,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   const onClick = (e: Event) => {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
     noteGesture(e.target);
-    const button = e.target.closest(BUTTONS);
+    const button = composedClosest(e.target, BUTTONS);
     if (!button) return;
     if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
     const f = formOf(button);
@@ -235,17 +246,25 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
   };
 
   const target: EventTarget = view ?? doc;
+  const listen =
+    opts.listen ??
+    ((t: EventTarget, type: string, fn: (e: Event) => void, o: AddEventListenerOptions) => {
+      t.addEventListener(type, fn, o);
+      return () => t.removeEventListener(type, fn, o);
+    });
+  const removals: (() => void)[] = [];
 
   return {
     start() {
-      target.addEventListener("submit", onSubmit, true);
-      target.addEventListener("click", onClick, true);
-      target.addEventListener("keydown", onKey, true);
+      if (removals.length > 0) return;
+      removals.push(
+        listen(target, "submit", onSubmit, { capture: true }),
+        listen(target, "click", onClick, { capture: true }),
+        listen(target, "keydown", onKey, { capture: true }),
+      );
     },
     stop() {
-      target.removeEventListener("submit", onSubmit, true);
-      target.removeEventListener("click", onClick, true);
-      target.removeEventListener("keydown", onKey, true);
+      for (const r of removals.splice(0)) r();
       for (const t of timers) clearTimeout(t);
       timers.clear();
       last = null;

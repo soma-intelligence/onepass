@@ -124,7 +124,7 @@ describe("renderSitePage", () => {
   it("signup_new_password_labels_in_order", () => {
     const signups = [...world.sites, ...big.sites].filter((s) => s.flow === "signup");
     expect(signups.length).toBeGreaterThan(3);
-    const confirm = /confirm|bestätig|wiederhol|repeat|retype|again/i;
+    const confirm = /confirm|bestätig|wiederhol|repeat|retype|again|conferm|ripet|herhaal|bevestig/i;
     for (const drawn of signups) {
       // Labels are read from <label for>: the stacked layout (other layouts: generate.test.ts).
       const site = { ...drawn, layout: "stacked" as const };

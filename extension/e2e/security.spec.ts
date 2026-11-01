@@ -12,6 +12,7 @@
 // real sender, or a forged sender): they run on the `--e2e` build, whose
 // worker exposes its router, session and filler (src/background/e2e-entry.ts).
 // Everything else runs on the regular build.
+import { generateKeyPairSync } from "node:crypto";
 import type { Frame, Page, Worker } from "@playwright/test";
 import { type Ext, expect, paired } from "./fixtures";
 import { FX } from "./server";
@@ -133,6 +134,29 @@ async function inContentScript(ext: Ext, page: Page, expression: string): Promis
   const r = await cdp.send("Runtime.evaluate", { expression, contextId: world?.id, awaitPromise: true, returnByValue: true });
   await cdp.detach();
   return r.result.value;
+}
+
+
+// ---- passkeys (spec 3.3) ----
+
+/** The OnePass passkey choice window opened next (a popup window of the extension). */
+function nextPasskeyWindow(ext: Ext): Promise<Page> {
+  return ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 15_000 });
+}
+
+/** Counts the passkey windows opened from now on. */
+function countPasskeyWindows(ext: Ext): { count: () => number } {
+  let n = 0;
+  ext.context.on("page", (p) => {
+    if (p.url().includes("/passkey.html")) n++;
+    else p.once("framenavigated", () => p.url().includes("/passkey.html") && n++);
+  });
+  return { count: () => n };
+}
+
+/** The `clientDataJSON` of a base64url string, decoded. */
+function clientData(b64: string): { type: string; origin: string; crossOrigin: boolean; challenge: string } {
+  return JSON.parse(Buffer.from(b64, "base64url").toString("utf8")) as { type: string; origin: string; crossOrigin: boolean; challenge: string };
 }
 
 // ---- tests ----
@@ -426,6 +450,119 @@ paired("S17_fixed_extension_url_not_reachable", async ({ ext }) => {
   expect(page.frames().filter((f) => new URL(f.url()).pathname === "/menu.html")).toHaveLength(0);
 });
 
+
+paired("S18_passkey_needs_user_click", async ({ ext }) => {
+  const { page } = ext;
+  const windows = countPasskeyWindows(ext);
+  // The browser's own authenticator (Chromium's virtual one, with a key of its
+  // own for this site): what answers a call OnePass leaves to the browser.
+  const cdp = await ext.context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable", { enableUI: false });
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  const nativeKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "der" });
+  await cdp.send("WebAuthn.addCredential", {
+    authenticatorId,
+    credential: {
+      credentialId: Buffer.from("native-only-1").toString("base64"), isResidentCredential: true, rpId: FX.passkey.rpId,
+      userHandle: Buffer.from("native-1").toString("base64"), privateKey: nativeKey.toString("base64"), signCount: 0,
+    },
+  });
+  let nativeAsserted = 0;
+  cdp.on("WebAuthn.credentialAsserted", () => nativeAsserted++);
+  // The page asks on load, without any gesture: no user activation, so no
+  // OnePass window and nothing signed by OnePass; the browser's own API answers.
+  await page.goto(`${ATLAS}/passkey?auto=1`);
+  await expect.poll(() => nativeAsserted, { timeout: 15_000, message: "the browser's own authenticator never answered" }).toBe(1);
+  // Its assertion is the browser's (a key the site does not know): refused by the site, never signed in.
+  await expect(page.locator("#result")).toHaveAttribute("data-status", /.+/, { timeout: 15_000 });
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", "Connecté");
+  await ext.settle(1000);
+  expect(windows.count()).toBe(0);
+  expect(ext.audit()).not.toContain("passkey_get");
+  await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  // A fresh page (the refused answer above stays in #result otherwise).
+  await page.goto(`${ATLAS}/passkey`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
+  // The user's click on the page gives the activation: the window opens.
+  const opened = nextPasskeyWindow(ext);
+  await page.locator("#signin").click();
+  const win = await opened;
+  const row = win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` });
+  await expect(row).toBeVisible();
+  await ext.settle(1500);
+  // Nothing signed, nothing asked of the host while the user has not clicked.
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", /.+/);
+  expect(ext.audit()).not.toContain("passkey_get");
+  // A synthetic click (untrusted) in the window does nothing either.
+  await win.evaluate(() => (document.querySelector("button.pk-row") as HTMLButtonElement | null)?.click());
+  await ext.settle(1000);
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", /.+/);
+  expect(ext.audit()).not.toContain("passkey_get");
+  // The user's click signs.
+  await row.click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "Connecté");
+  expect(ext.audit()).toContain("passkey_get");
+  await expect.poll(() => win.isClosed()).toBe(true);
+});
+
+paired("S19_passkey_rp_id_of_other_site_refused", async ({ ext }) => {
+  const { page } = ext;
+  const windows = countPasskeyWindows(ext);
+  await page.goto(`${ATLAS}/passkey?rp=evil.test`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
+  await page.locator("#signin").click();
+  // The host refuses the list for evil.test: the browser's own API answers (and refuses too).
+  await expect(page.locator("#result")).toHaveAttribute("data-status", /^error:/);
+  expect(windows.count()).toBe(0);
+  expect(ext.audit()).not.toContain("passkey_get");
+});
+
+paired("S20_passkey_in_cross_site_frame_falls_back", async ({ ext }) => {
+  const { page } = ext;
+  const windows = countPasskeyWindows(ext);
+  await page.goto("https://evil.test/passkey-frame");
+  const frame = page.frameLocator("#victim");
+  // The atlas-cloud.test frame inside evil.test asks on load: nothing of OnePass, the browser refuses.
+  await expect(frame.locator("#result")).toHaveAttribute("data-status", /^error:/, { timeout: 15_000 });
+  await ext.settle(1000);
+  expect(windows.count()).toBe(0);
+  expect(ext.audit()).not.toContain("passkey_get");
+});
+
+paired("S21_passkey_client_data_origin_from_browser", async ({ ext }) => {
+  const { page } = ext;
+  // The page tells a lie in its options (`origin: https://bank.test`): the host builds
+  // clientDataJSON from the origin the browser gave the worker.
+  await page.goto(`${ATLAS}/passkey`);
+  let opened = nextPasskeyWindow(ext);
+  await page.locator("#signin").click();
+  let win = await opened;
+  await ext.settle();
+  await win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` }).click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "Connecté");
+  const r = (await page.evaluate(() => (window as unknown as { __passkeyResult: unknown }).__passkeyResult)) as { origin: string; crossOrigin: unknown };
+  expect(r.origin).toBe(ATLAS);
+  expect(r.crossOrigin).toBe(false);
+
+  // A compromised content script of this page puts another origin in its message: ignored.
+  // (It can claim the activation; the window and the trusted click there still stand.)
+  opened = nextPasskeyWindow(ext);
+  const forged = inContentScript(
+    ext,
+    page,
+    `chrome.runtime.sendMessage({ type: "passkey_request", reqId: "forged1", activated: true, origin: "https://bank.test", request: { kind: "get", challenge: "AAECAwQFBgcICQoLDA0ODw", allow: [], origin: "https://bank.test" } })`,
+  );
+  win = await opened;
+  await ext.settle();
+  await win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` }).click();
+  const reply = (await forged) as { ok: { kind: string; clientDataJSON: string } };
+  expect(reply.ok.kind).toBe("assertion");
+  const cd = clientData(reply.ok.clientDataJSON);
+  expect(cd).toMatchObject({ type: "webauthn.get", origin: ATLAS, crossOrigin: false, challenge: "AAECAwQFBgcICQoLDA0ODw" });
+});
+
 paired.describe("with the worker handle (e2e build)", () => {
   paired.use({ build: "e2e" });
 
@@ -581,5 +718,33 @@ paired.describe("with the worker handle (e2e build)", () => {
     // The host refuses both outside the popup context.
     expect(await hostRequest(w, { op: "reveal", ctx: "menu", item_id: id, field: "password" })).toEqual({ err: "not_allowed" });
     expect(await hostRequest(w, { op: "search", ctx: "menu", query: "Atlas" })).toEqual({ err: "not_allowed" });
+  });
+  paired("S19_passkey_rp_id_of_other_site_refused_by_host", async ({ ext }) => {
+    const w = await ext.worker();
+    const admin = "https://admin.atlas-cloud.test";
+    const listed = await hostRequest(w, { op: "passkey_list", ctx: "passkey", origin: admin, rp_id: "atlas-cloud.test" });
+    const pk = (listed.ok as { passkeys: { item_id: string; credential_id: string }[] }).passkeys.find((p) => p.credential_id === FX.passkey.credentialId);
+    expect(pk).toBeDefined();
+    const get = (origin: string, rp_id: string) =>
+      hostRequest(w, {
+        op: "passkey_get",
+        ctx: "passkey",
+        origin,
+        top_origin: origin,
+        rp_id,
+        item_id: pk?.item_id,
+        credential_id: FX.passkey.credentialId,
+        challenge: "AAECAwQFBgcICQoLDA0ODw",
+      });
+    // Another site's rp_id, a public suffix, a lookalike origin: refused by the host, nothing signed.
+    expect(await hostRequest(w, { op: "passkey_list", ctx: "passkey", origin: ATLAS, rp_id: "evil.test" })).toEqual({ err: "origin_mismatch" });
+    expect(await get(ATLAS, "evil.test")).toEqual({ err: "origin_mismatch" });
+    expect(await get(ATLAS, "test")).toEqual({ err: "origin_mismatch" });
+    expect(await get("https://atlass-cloud.test", "atlas-cloud.test")).toEqual({ err: "origin_mismatch" });
+    // Outside the passkey and chain contexts: refused.
+    expect(
+      await hostRequest(w, { op: "passkey_get", ctx: "menu", origin: ATLAS, top_origin: ATLAS, rp_id: "atlas-cloud.test", item_id: pk?.item_id, credential_id: FX.passkey.credentialId, challenge: "AAAA" }),
+    ).toEqual({ err: "not_allowed" });
+    expect(ext.audit()).not.toContain("passkey_get");
   });
 });

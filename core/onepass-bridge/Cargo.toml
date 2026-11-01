@@ -14,6 +14,9 @@ serde_json.workspace = true
 zeroize.workspace = true
 psl.workspace = true
 url.workspace = true
+# General category and bidi control data for passkey user names. Already
+# in the lock through `url` (idna): no new crate.
+icu_properties = "2"
 onepass-core = { path = "../onepass-core" }
 time = { version = "0.3", default-features = false, features = ["std"] }
 # Seeded ML-KEM for the test-vector helpers only. The production path uses

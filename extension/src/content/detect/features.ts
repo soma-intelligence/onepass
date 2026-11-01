@@ -49,6 +49,13 @@ export interface ExtractOptions {
   labField?: boolean;
   /** Called once per emitted field with its element, after the field's features are complete. Never serialized. */
   onField?: (el: Element, f: FieldFeatures) => void;
+  /**
+   * Shadow roots of the page read after the document (the extension's analysis, spec D1, D2):
+   * their forms and fields are emitted as the document's are, labels and neighbour text read
+   * inside each root, depth and visibility through its host. Never serialized: the corpus and
+   * the dataset builder read the document alone.
+   */
+  roots?: readonly ShadowRoot[];
 }
 
 export interface PageFeatures {
@@ -68,6 +75,7 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
   const maxFields = opts?.maxFields ?? 300;
   const labField = opts?.labField === true;
   const onField = opts?.onField;
+  const roots = opts?.roots ?? [];
   const TEXT_CAP = 120;
   const NEIGHBOUR_CAP = 40;
   const FIELD_SEL = "input, select, textarea";
@@ -84,6 +92,12 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
     return t ? t.slice(0, cap) : undefined;
   };
   const textOf = (el: Element | null): string | undefined => (el ? text(el.textContent) : undefined);
+  // Parent across a shadow boundary: the host of the root (a document's root element has none).
+  const up = (n: Element): Element | null => {
+    if (n.parentElement) return n.parentElement;
+    const p = n.parentNode as (Node & { host?: Element }) | null;
+    return p && p.nodeType === 11 && p.host ? p.host : null;
+  };
 
   function eligible(el: Element): boolean {
     const type = el instanceof win.HTMLInputElement ? el.type : undefined;
@@ -98,7 +112,7 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
       const own = win.getComputedStyle(el);
       if (own.visibility === "hidden" || own.visibility === "collapse") return { v: "display_none", w, h };
       let opaque = true;
-      for (let n: Element | null = el; n; n = n.parentElement) {
+      for (let n: Element | null = el; n; n = up(n)) {
         const cs = n === el ? own : win.getComputedStyle(n);
         if (cs.display === "none") return { v: "display_none", w, h };
         if (parseFloat(cs.opacity) === 0) opaque = false;
@@ -114,7 +128,10 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
   function labelOf(el: HTMLInputElement): string | undefined {
     const by = el.getAttribute("aria-labelledby");
     if (by) {
-      const t = by.split(/\s+/).map((i) => textOf(doc.getElementById(i)) ?? "").join(" ").trim();
+      // Ids are scoped to the field's own tree (the document or its shadow root).
+      const scope = el.getRootNode() as Document | ShadowRoot;
+      const byId = (i: string) => (typeof scope.getElementById === "function" ? scope.getElementById(i) : doc.getElementById(i));
+      const t = by.split(/\s+/).map((i) => textOf(byId(i)) ?? "").join(" ").trim();
       if (t) return text(t);
     }
     const labels = el.labels ? Array.from(el.labels) : [];
@@ -136,8 +153,8 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
   const toks: Tok[] = [];
   const tokOf = new Map<Element, number>();
   const root = doc.body ?? doc.documentElement;
-  if (root) {
-    const walker = doc.createTreeWalker(root, 1 | 4, {
+  const walk = (scope: Node) => {
+    const walker = doc.createTreeWalker(scope, 1 | 4, {
       acceptNode(n: Node): number {
         if (n.nodeType === 1) return SKIP_SUBTREE.has((n as Element).tagName) ? 2 : 1;
         return SKIP_PARENT.has(n.parentElement?.tagName ?? "") ? 2 : 1;
@@ -152,6 +169,12 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
         toks.push({ f: n as Element });
       }
     }
+  };
+  if (root) walk(root);
+  for (const r of roots) {
+    // A break between trees: neighbour text never runs from one into the next.
+    toks.push({ f: r.host });
+    walk(r);
   }
   function neighbour(el: Element, dir: -1 | 1): string | undefined {
     const at = tokOf.get(el);
@@ -210,7 +233,7 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
       const vis = visibilityOf(el);
       const parent = el.parentElement;
       let depth = 0;
-      for (let n = parent; n; n = n.parentElement) depth++;
+      for (let n = up(el); n; n = up(n)) depth++;
       const f: FieldFeatures = {
         index: 0, tag: el.tagName.toLowerCase(), type: el instanceof win.HTMLInputElement ? el.type : undefined,
         name: el.getAttribute("name") ?? undefined, id: el.id || undefined,
@@ -238,16 +261,18 @@ export function extractFeatures(doc: Document, opts?: ExtractOptions): PageFeatu
 
   const forms: PageFeatures["forms"] = [];
   const inForm = new Set<Element>();
-  for (const f of Array.from(doc.querySelectorAll("form"))) {
-    const els = Array.from(f.querySelectorAll(FIELD_SEL));
-    els.forEach((e) => inForm.add(e));
-    const built = build(els, buttonsIn(f));
-    if (built) forms.push(built);
-  }
-  const orphans = Array.from(doc.querySelectorAll(FIELD_SEL)).filter((e) => !inForm.has(e));
-  if (orphans.length) {
-    const built = build(orphans, buttonsIn(doc));
-    if (built) forms.push(built);
+  for (const scope of [doc, ...roots] as (Document | ShadowRoot)[]) {
+    for (const f of Array.from(scope.querySelectorAll("form"))) {
+      const els = Array.from(f.querySelectorAll(FIELD_SEL));
+      els.forEach((e) => inForm.add(e));
+      const built = build(els, buttonsIn(f));
+      if (built) forms.push(built);
+    }
+    const orphans = Array.from(scope.querySelectorAll(FIELD_SEL)).filter((e) => !inForm.has(e));
+    if (orphans.length) {
+      const built = build(orphans, buttonsIn(scope));
+      if (built) forms.push(built);
+    }
   }
 
   const hostSite = (a: string, b: string): boolean => {

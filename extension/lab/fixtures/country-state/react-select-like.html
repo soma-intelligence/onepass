@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- Synthetic single-page shop with React-select style comboboxes: text input
+     role=combobox, a menu rendered after each keystroke (60 ms), values kept
+     in hidden inputs; the state choices follow the chosen country. Fictional,
+     local only. -->
+<html lang="en"><head><meta charset="utf-8"><title>Northwind Bikes - Delivery</title></head>
+<body>
+<main>
+  <h1>Northwind Bikes</h1>
+  <form id="delivery" action="/api/delivery" method="post">
+    <label for="name">Name</label><input id="name" name="name" autocomplete="name">
+    <label for="street">Street</label><input id="street" name="street" autocomplete="address-line1">
+    <label for="town">Town</label><input id="town" name="town" autocomplete="address-level2">
+    <label for="postcode">Postcode</label><input id="postcode" name="postcode" autocomplete="postal-code">
+    <div class="select" id="country-select">
+      <label for="react-select-2-input">Country</label>
+      <div class="select__control"><div class="select__single-value" id="country-shown"></div>
+        <input id="react-select-2-input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="true" autocomplete="off" spellcheck="false" tabindex="0"></div>
+      <input type="hidden" name="country" id="country-value">
+    </div>
+    <div class="select" id="state-select">
+      <label for="react-select-3-input">State / Region</label>
+      <div class="select__control"><div class="select__single-value" id="state-shown"></div>
+        <input id="react-select-3-input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="true" autocomplete="off" spellcheck="false" tabindex="0"></div>
+      <input type="hidden" name="state" id="state-value">
+    </div>
+    <button type="submit">Continue</button>
+  </form>
+</main>
+<script>
+(function () {
+  var COUNTRIES = [["AT", "Austria"], ["DE", "Germany"], ["FR", "France"], ["US", "United States"]];
+  var STATES = {
+    DE: [["BW", "Baden-Württemberg"], ["BY", "Bavaria"], ["BE", "Berlin"], ["HH", "Hamburg"], ["NW", "North Rhine-Westphalia"]],
+    US: [["CA", "California"], ["NY", "New York"], ["OR", "Oregon"]],
+    FR: [["ARA", "Auvergne-Rhône-Alpes"], ["BRE", "Brittany"], ["IDF", "Île-de-France"], ["PAC", "Provence-Alpes-Côte d'Azur"]]
+  };
+  function widget(inputId, menuId, shownId, valueId, choices) {
+    var input = document.getElementById(inputId);
+    var shown = document.getElementById(shownId);
+    var value = document.getElementById(valueId);
+    function close() {
+      var m = document.getElementById(menuId);
+      if (m) m.parentNode.removeChild(m);
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-controls");
+    }
+    input.addEventListener("input", function () {
+      var q = input.value.toLowerCase();
+      setTimeout(function () {
+        close();
+        var menu = document.createElement("div");
+        menu.id = menuId;
+        menu.setAttribute("role", "listbox");
+        choices().forEach(function (c, i) {
+          if (c[1].toLowerCase().indexOf(q) < 0) return;
+          var o = document.createElement("div");
+          o.id = menuId + "-option-" + i;
+          o.setAttribute("role", "option");
+          o.textContent = c[1];
+          o.addEventListener("mousedown", function (e) { e.preventDefault(); });
+          o.addEventListener("click", function () {
+            shown.textContent = c[1];
+            value.value = c[0];
+            input.value = "";
+            close();
+            value.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+          menu.appendChild(o);
+        });
+        document.body.appendChild(menu);
+        input.setAttribute("aria-expanded", "true");
+        input.setAttribute("aria-controls", menuId);
+      }, 60);
+    });
+  }
+  var countryValue = document.getElementById("country-value");
+  widget("react-select-2-input", "react-select-2-listbox", "country-shown", "country-value", function () { return COUNTRIES; });
+  widget("react-select-3-input", "react-select-3-listbox", "state-shown", "state-value", function () { return STATES[countryValue.value] || []; });
+  countryValue.addEventListener("change", function () {
+    document.getElementById("state-shown").textContent = "";
+    document.getElementById("state-value").value = "";
+  });
+})();
+</script>
+</body></html>

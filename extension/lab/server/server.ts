@@ -6,6 +6,8 @@
 //   leads to), every POST to it recorded;
 // - a lookalike host: the trap copy of its site, every POST recorded;
 // - the three provider hosts: the mock identity providers (idp.ts);
+// - a country case host: its fixture checkout page at CASE_PATH (cases.ts),
+//   a POST answered with a plain page (the ledger already holds it);
 // - any host: CANARY_PATH answers the server's nonce.
 // Every POST goes through the leak ledger first. State is in memory and
 // cleared by reset() between scenarios.
@@ -16,6 +18,7 @@ import * as net from "node:net";
 import type { TestCert } from "../../e2e/cert.ts";
 import { CANARY_PATH } from "../../e2e/server.ts";
 import type { Account, FixtureFile, ProviderId, Site, World } from "../gen/model.ts";
+import { CASE_PATH, casePage } from "../gen/cases.ts";
 import { IDP_HOST, renderSitePage } from "../gen/render.ts";
 import { handleIdp } from "./idp.ts";
 import { fixtureFor } from "../gen/population.ts";
@@ -125,6 +128,8 @@ export async function startLabServer(world: World, cert: TestCert, opts: LabServ
     if (s.lookalike) traps.set(s.lookalike.host, s);
     if (s.frameHost) frames.set(s.frameHost, s);
   }
+  const cases = new Map<string, string>();
+  for (const h of new Set((world.cases ?? []).map((c) => c.host))) cases.set(h, casePage(h)!);
   const providers = new Map<string, ProviderId>(
     (Object.entries(IDP_HOST) as [ProviderId, string][]).map(([p, h]) => [h, p]),
   );
@@ -188,6 +193,11 @@ export async function startLabServer(world: World, cert: TestCert, opts: LabServ
       }
       return x.html(renderSitePage(trapped, "trap", { asHost: host, ...(post ? { error: "Identifiant ou mot de passe incorrect" } : {}) },
         { labelMarks: st.labelMarks }));
+    }
+    const checkout = cases.get(host);
+    if (checkout !== undefined) {
+      if (post) return x.html("<!doctype html><meta charset=\"utf-8\"><title>Commande</title><p>Adresse enregistr\u00e9e</p>");
+      if (x.path === CASE_PATH) return x.html(checkout);
     }
     x.notFound();
   };

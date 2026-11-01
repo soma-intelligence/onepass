@@ -37,6 +37,8 @@ export const APP_CODES = [
   "rate_limited",
   "invalid",
   "internal",
+  /** passkey_create: a stored credential is in `exclude` (the page gets InvalidStateError). */
+  "excluded",
 ] as const;
 
 export type BgErrorCode =

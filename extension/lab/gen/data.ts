@@ -1,6 +1,7 @@
 // Synthetic data of the autofill lab: fictional people, addresses, public
 // test cards, passwords, TOTP secrets, P-256 passkeys and .test host names.
 // Every value is drawn from the seeded Rng; nothing here is real.
+import { createHash, createPrivateKey } from "node:crypto";
 import { domainToASCII } from "node:url";
 import { p256 } from "@noble/curves/p256";
 import type { Lang, Passkey } from "./model.ts";
@@ -36,7 +37,15 @@ const LOCALES: Record<string, Locale> = {
     postal: (r) => `8${digits(r, 4)}`, phone: (r) => `+49 151 0000 ${digits(r, 3)}` },
   es: { country: "ES", region: "Valencia", streets: ["Calle Mayor", "Avenida del Puerto", "Calle de los Olivos", "Plaza del Sol"],
     cities: ["Valencia", "Alicante", "Castellon"], postal: (r) => `46${digits(r, 3)}`, phone: (r) => `+34 600 00 ${digits(r, 2)} ${digits(r, 2)}` },
+  it: { country: "IT", region: "Lombardia", streets: ["Via Roma", "Corso Italia", "Via Garibaldi", "Piazza del Duomo"], cities: ["Bergamo", "Brescia", "Como"],
+    postal: (r) => `24${digits(r, 3)}`, phone: (r) => `+39 333 000 ${digits(r, 4)}` },
+  pt: { country: "PT", region: "Lisboa", streets: ["Rua Augusta", "Avenida da Liberdade", "Rua do Carmo", "Praca do Comercio"], cities: ["Lisboa", "Sintra", "Cascais"],
+    postal: (r) => `1${digits(r, 3)}-${digits(r, 3)}`, phone: (r) => `+351 912 000 ${digits(r, 3)}` },
+  nl: { country: "NL", region: "Noord-Holland", streets: ["Kerkstraat", "Dorpsstraat", "Molenweg", "Stationsplein"], cities: ["Haarlem", "Alkmaar", "Zaandam"],
+    postal: (r) => `${r.int(1000, 1999)} ${r.pick(["AB", "CD", "EF", "GH", "KL"])}`, phone: (r) => `+31 6 0000 ${digits(r, 4)}` },
 };
+/** Languages that write the street before the house number. */
+const STREET_FIRST = new Set(["de", "es", "it", "pt", "nl"]);
 
 export interface Person { given: string; family: string; email: string; phone: string; birthDate: string; company: string }
 export interface Address { line1: string; line2: string; city: string; postalCode: string; region: string; country: string }
@@ -64,7 +73,7 @@ export function address(rng: Rng, lang: Lang): Address {
   const street = rng.pick(loc.streets);
   const no = rng.int(1, 120);
   return {
-    line1: lang === "de" || lang === "es" ? `${street} ${no}` : `${no} ${street}`,
+    line1: STREET_FIRST.has(lang) ? `${street} ${no}` : `${no} ${street}`,
     line2: rng.chance(0.3) ? `${rng.int(1, 9)}${rng.pick(["A", "B", "C"])}` : "",
     city: rng.pick(loc.cities), postalCode: loc.postal(rng), region: loc.region, country: loc.country,
   };
@@ -110,6 +119,17 @@ export function passkey(rng: Rng): Passkey {
   const hex = d.toString(16).padStart(64, "0");
   const pub = p256.getPublicKey(new Uint8Array(Buffer.from(hex, "hex")), false);
   return { credentialId: b64url(rng.bytes(16)), d: hex, x: b64url(pub.slice(1, 33)), y: b64url(pub.slice(33, 65)) };
+}
+
+/** PKCS#8 DER of a passkey's P-256 private key: the vault's format (native host fixture) and WebAuthn.addCredential's. */
+export function passkeyPkcs8(key: { d: string; x: string; y: string }): Buffer {
+  const jwk = { kty: "EC", crv: "P-256", x: key.x, y: key.y, d: Buffer.from(key.d, "hex").toString("base64url") };
+  return createPrivateKey({ key: jwk, format: "jwk" }).export({ type: "pkcs8", format: "der" });
+}
+
+/** The WebAuthn user handle of a site's account (unpadded base64url): 16 opaque bytes, derived, so no extra draw. */
+export function userHandle(host: string, username: string): string {
+  return createHash("sha256").update(`${host}\n${username}`).digest().subarray(0, 16).toString("base64url");
 }
 
 /**

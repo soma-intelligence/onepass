@@ -17,26 +17,33 @@ use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
 use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
-    FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry, new_item,
-    validate,
+    EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasswordHistoryEntry,
+    new_item, validate,
 };
+use onepass_core::webauthn;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::api::{
-    CredentialStatus, Ctx, ErrorBody, FillField, FillKind, Recipe, RecipeKind, Reply, Request,
-    Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
+    CredentialStatus, Ctx, ErrorBody, FillField, FillKind, PasskeySummary, Recipe, RecipeKind,
+    Reply, Request, Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
-    card_values, eligible, identity_values, is_provider_account, item_match, login_identifier,
-    login_secrets, otp_field, plan_candidates, plan_quality, provider_url_matches, reveal_value,
-    stored_password, summarize, summary_kind, to_candidate, totp_now,
+    add_passkey, card_values, eligible, identity_values, is_provider_account, item_match,
+    login_identifier, login_secrets, otp_field, passkeys, plan_candidates, plan_quality,
+    provider_url_matches, reveal_value, stored_password, summarize, summary_kind, to_candidate,
+    totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::session::UsernameSalt;
+use crate::webauthn_rp::{
+    Ceremony, ES256, MAX_CHALLENGE, MAX_CREDENTIAL_ID, MAX_EXCLUDE, MAX_USER_HANDLE, b64url,
+    check_user_name, client_data_hash, client_data_json, from_b64url, p256_spki, passkey_origin,
+    rp_id_for,
+};
 use crate::{AppErrorCode, BridgeError, Result};
 
 /// Secret requests allowed per sliding window (spec 7.5).
@@ -115,6 +122,7 @@ fn message(code: AppErrorCode) -> &'static str {
         AppErrorCode::RepromptRequired => "item needs confirmation",
         AppErrorCode::RateLimited => "too many secret requests",
         AppErrorCode::Invalid => "invalid request",
+        AppErrorCode::Excluded => "a credential of the exclude list is stored",
         _ => "internal error",
     }
 }
@@ -405,6 +413,8 @@ impl<V: VaultAccess> Service<V> {
                 | Request::CheckCredentials { .. }
                 | Request::UpdatePassword { .. }
                 | Request::LinkProvider { .. }
+                | Request::PasskeyGet { .. }
+                | Request::PasskeyCreate { .. }
         ) {
             self.take_secret_slot(now)?;
         }
@@ -543,6 +553,54 @@ impl<V: VaultAccess> Service<V> {
                 self.note_fill(*ctx, item_id, o, fill, now)
             }
             Request::ForgetSite { ctx, site, .. } => self.forget_site(*ctx, site, now),
+            Request::PasskeyList {
+                ctx,
+                origin: o,
+                rp_id,
+                ..
+            } => self.passkey_list(*ctx, o, rp_id),
+            Request::PasskeyGet {
+                ctx,
+                origin: o,
+                top_origin,
+                rp_id,
+                item_id,
+                credential_id,
+                challenge,
+                ..
+            } => {
+                let get = PasskeyAsk {
+                    top_origin,
+                    rp_id,
+                    item_id,
+                    credential_id,
+                    challenge,
+                };
+                self.passkey_get(*ctx, o, get, now)
+            }
+            Request::PasskeyCreate {
+                ctx,
+                origin: o,
+                top_origin,
+                rp_id,
+                user_name,
+                user_handle,
+                challenge,
+                exclude,
+                vault_id,
+                ..
+            } => {
+                let new = NewPasskey {
+                    top_origin,
+                    rp_id,
+                    user_name,
+                    user_handle,
+                    challenge,
+                    exclude,
+                    vault_id: vault_id.as_deref(),
+                };
+                self.passkey_create(*ctx, o, new, now)
+            }
         }
     }
 
@@ -1084,6 +1142,247 @@ impl<V: VaultAccess> Service<V> {
         });
         Ok(Response::Forgotten { items })
     }
+}
+
+/// The passkey operations run from the passkey choice window, and from a
+/// sign-in chain the user started (`passkey_create` from the window only).
+fn passkey_ctx(ctx: Ctx, create: bool) -> OpResult<()> {
+    match ctx {
+        Ctx::Passkey => Ok(()),
+        Ctx::Chain if !create => Ok(()),
+        _ => Err(AppErrorCode::NotAllowed),
+    }
+}
+
+/// The frame origin of a passkey request whose top frame, as the browser
+/// gave it, is `top`: `not_allowed` unless both are the same origin (no
+/// passkey in a cross-origin frame, so `crossOrigin` is always false).
+fn framed_origin(o: &str, top: &str) -> OpResult<Origin> {
+    let page = passkey_origin(o)?;
+    let same = passkey_origin(top)
+        .ok()
+        .is_some_and(|t| t.origin_string() == page.origin_string());
+    if !same {
+        return Err(AppErrorCode::NotAllowed);
+    }
+    Ok(page)
+}
+
+impl<V: VaultAccess> Service<V> {
+    /// Passkeys of `rp_id` in the eligible logins, once the `rp_id` is
+    /// checked against the browser's origin. No secret, no user handle.
+    fn passkey_list(&mut self, ctx: Ctx, o: &str, rp_id: &str) -> OpResult<Response> {
+        passkey_ctx(ctx, false)?;
+        let page = passkey_origin(o)?;
+        let rp = rp_id_for(&page, rp_id)?;
+        let all = self.items()?;
+        let mut out: Vec<PasskeySummary> = all
+            .iter()
+            .filter(|(_, i)| eligible(i) && i.item_type == ItemType::Login)
+            .flat_map(|(v, i)| {
+                passkeys(i)
+                    .filter(|p| p.rp_id.eq_ignore_ascii_case(&rp))
+                    .map(move |p| PasskeySummary {
+                        item_id: i.id.to_string(),
+                        vault_id: v.id.to_string(),
+                        vault_name: v.name.clone(),
+                        title: i.title.clone(),
+                        user_name: p.user_name.clone(),
+                        credential_id: b64url(&p.credential_id),
+                    })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            (a.title.to_lowercase(), &a.user_name).cmp(&(b.title.to_lowercase(), &b.user_name))
+        });
+        Ok(Response::Passkeys { passkeys: out })
+    }
+
+    /// An assertion by the passkey `credential_id` of the login `item_id`.
+    /// The host builds `clientDataJSON` from the browser's origin; the
+    /// private key never leaves.
+    fn passkey_get(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        get: PasskeyAsk<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        passkey_ctx(ctx, false)?;
+        let page = framed_origin(o, get.top_origin)?;
+        let rp = rp_id_for(&page, get.rp_id)?;
+        let cred_id = from_b64url(get.credential_id, MAX_CREDENTIAL_ID)?;
+        let challenge = from_b64url(get.challenge, MAX_CHALLENGE)?;
+        let (_, item) = self.eligible_item(get.item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        let Some(cred) = passkeys(&item)
+            .find(|p| p.credential_id == cred_id && p.rp_id.eq_ignore_ascii_case(&rp))
+            .cloned()
+        else {
+            return Err(AppErrorCode::NotFound);
+        };
+        self.reprompt(&item)?;
+        // Signed over the checked rp id, in lower case, as the relying
+        // party hashes it.
+        let signer = onepass_core::model::PasskeyCredential { rp_id: rp, ..cred };
+        let client_data = client_data_json(Ceremony::Get, &challenge, &page)?;
+        // The bridge never verified the user itself: UV stays 0.
+        let a = webauthn::assertion_with_uv(&signer, &client_data_hash(&client_data), false)
+            .map_err(|_| AppErrorCode::Internal)?;
+        self.record("passkey_get", item.id, Some(o), ctx, now);
+        Ok(Response::PasskeyAssertion {
+            credential_id: b64url(&signer.credential_id),
+            client_data_json: b64url(&client_data),
+            authenticator_data: b64url(&a.authenticator_data),
+            signature: b64url(&a.signature),
+            user_handle: b64url(&signer.user_handle),
+        })
+    }
+
+    /// A new ES256 passkey, stored in the site's login of `user_name`, else
+    /// in a new login. `excluded` when a live item already holds one of
+    /// `exclude` for this `rp_id`.
+    fn passkey_create(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        new: NewPasskey<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        passkey_ctx(ctx, true)?;
+        let page = framed_origin(o, new.top_origin)?;
+        let rp = rp_id_for(&page, new.rp_id)?;
+        let user_handle = from_b64url(new.user_handle, MAX_USER_HANDLE)?;
+        let challenge = from_b64url(new.challenge, MAX_CHALLENGE)?;
+        let user_name = check_user_name(new.user_name)?;
+        if new.exclude.len() > MAX_EXCLUDE {
+            return Err(AppErrorCode::Invalid);
+        }
+        let exclude = new
+            .exclude
+            .iter()
+            .map(|c| from_b64url(c, MAX_CREDENTIAL_ID))
+            .collect::<OpResult<Vec<_>>>()?;
+        let vaults = self.vault.vaults().map_err(app_code)?;
+        let asked_vault = match new.vault_id {
+            Some(v) => {
+                let id = parse_id(v)?;
+                if !vaults.iter().any(|x| x.id == id) {
+                    return Err(AppErrorCode::NotFound);
+                }
+                Some(id)
+            }
+            None => None,
+        };
+        let all = self.items()?;
+        // Any item not in the trash counts, eligible or not: the relying
+        // party asked not to register twice on this authenticator.
+        let excluded = all
+            .iter()
+            .filter(|(_, i)| i.trashed_at.is_none())
+            .flat_map(|(_, i)| passkeys(i))
+            .any(|p| p.rp_id.eq_ignore_ascii_case(&rp) && exclude.contains(&p.credential_id));
+        if excluded {
+            return Err(AppErrorCode::Excluded);
+        }
+        let mut owners: Vec<(MatchQuality, Item)> = all
+            .into_iter()
+            .map(|(_, i)| i)
+            .filter(|i| eligible(i) && i.item_type == ItemType::Login)
+            .filter(|i| {
+                login_identifier(i).is_some_and(|u| u.trim().eq_ignore_ascii_case(user_name))
+            })
+            .filter_map(|i| item_match(&i, &page).map(|q| (q, i)))
+            .collect();
+        owners.sort_by_key(|(q, _)| rank(Some(*q)));
+        let at = unix(now);
+        let (mut item, created) = match owners.into_iter().next() {
+            Some((_, item)) => {
+                self.reprompt(&item)?;
+                (item, false)
+            }
+            None => {
+                let vault_id = asked_vault
+                    .or_else(|| vaults.first().map(|v| v.id))
+                    .ok_or(AppErrorCode::NotFound)?;
+                (new_passkey_login(vault_id, &rp, user_name), true)
+            }
+        };
+        let cred = webauthn::new_credential(&rp, user_name, &user_handle, at)
+            .map_err(|_| AppErrorCode::Invalid)?;
+        let client_data = client_data_json(Ceremony::Create, &challenge, &page)?;
+        let reg = webauthn::registration_with_uv(&cred, &client_data_hash(&client_data), false)
+            .map_err(|_| AppErrorCode::Internal)?;
+        let public_key = p256_spki(&public_point(&cred)?)?;
+        if created {
+            item.record(at, EventKind::Created);
+        }
+        item.record(at, EventKind::PasskeyAdded { rp_id: rp.clone() });
+        add_passkey(&mut item, cred);
+        if !item.login_methods.contains(&LoginMethod::Passkey) {
+            item.login_methods.push(LoginMethod::Passkey);
+        }
+        item.updated_at = at;
+        validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+        let (id, vault_id) = (item.id, item.vault_id);
+        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.record("passkey_create", id, Some(o), ctx, now);
+        Ok(Response::PasskeyRegistration {
+            item_id: id.to_string(),
+            credential_id: b64url(&reg.credential_id),
+            client_data_json: b64url(&client_data),
+            attestation_object: b64url(&reg.attestation_object),
+            authenticator_data: b64url(&reg.authenticator_data),
+            public_key: b64url(&public_key),
+            public_key_algorithm: ES256,
+        })
+    }
+}
+
+/// Uncompressed public point of a passkey's P-256 key.
+fn public_point(cred: &onepass_core::model::PasskeyCredential) -> OpResult<Vec<u8>> {
+    use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
+    let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &cred.private_key)
+        .map_err(|_| AppErrorCode::Internal)?;
+    Ok(pair.public_key().as_ref().to_vec())
+}
+
+/// A new login for a passkey: titled by the relying party, its URL (rule
+/// `domain`), the user name as identifier. As the macOS AutoFill does.
+fn new_passkey_login(vault_id: Id, rp_id: &str, user_name: &str) -> Item {
+    let mut item = new_item(ItemType::Login, vault_id, rp_id);
+    item.urls.push(ItemUrl {
+        label: SAVED_URL_LABEL.to_owned(),
+        url: format!("https://{rp_id}"),
+        rule: MatchRule::Domain,
+        primary: true,
+    });
+    if let Some(f) = item.field_mut("username") {
+        f.value = FieldValue::Text(user_name.to_owned());
+    }
+    item
+}
+
+/// Input of `passkey_get`.
+struct PasskeyAsk<'a> {
+    top_origin: &'a str,
+    rp_id: &'a str,
+    item_id: &'a str,
+    credential_id: &'a str,
+    challenge: &'a str,
+}
+
+/// Input of `passkey_create`.
+struct NewPasskey<'a> {
+    top_origin: &'a str,
+    rp_id: &'a str,
+    user_name: &'a str,
+    user_handle: &'a str,
+    challenge: &'a str,
+    exclude: &'a [String],
+    vault_id: Option<&'a str>,
 }
 
 /// Input of `note_fill`.

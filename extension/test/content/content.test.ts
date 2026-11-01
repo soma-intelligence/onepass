@@ -291,7 +291,7 @@ describe("filler", () => {
     setPage(LOGIN);
     s = start();
     input("u").focus();
-    expect(fill(s, formById(s, "login").ref, { username: "alex@atlas.dev", current_password: "pw" })).toEqual({ ok: true });
+    expect(fill(s, formById(s, "login").ref, { username: "alex@atlas.dev", current_password: "pw" })).toMatchObject({ ok: true });
     expect(input("p").value).toBe("pw");
     expect(document.activeElement).toBe(input("u"));
   });
@@ -429,7 +429,7 @@ describe("re-rendered forms (B2)", () => {
     const f = formById(s, "login");
     rerenderOnInput({ copy: true, times: 1 });
     const first = input("u");
-    expect(fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" })).toEqual({ ok: true });
+    expect(fill(s, f.ref, { username: "alex@atlas.dev", current_password: "pw-1" })).toMatchObject({ ok: true });
     expect(input("u")).not.toBe(first);
     expect(input("u").value).toBe("alex@atlas.dev");
     expect(input("p").value).toBe("pw-1");
@@ -462,7 +462,7 @@ describe("re-rendered forms (B2)", () => {
     s = start();
     const f = formById(s, "login");
     document.getElementById("login")!.remove();
-    expect(fill(s, f.ref, { username: "alex", current_password: "pw" })).toEqual({ ok: false });
+    expect(fill(s, f.ref, { username: "alex", current_password: "pw" })).toMatchObject({ ok: false });
     expect(input("ou").value).toBe("");
   });
 

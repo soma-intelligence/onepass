@@ -1,0 +1,71 @@
+{
+  "_comment": "Country/state fixtures (spec docs/superpowers/specs/2026-10-31-country-state-select-design.md). Each case: a page of this folder, the identity values OnePass sends (fill message, by role), and what each control must hold once the fill settled (value of a field, else text of an element). Replayed in jsdom by test/content/country-state-fixtures.test.ts, and in the lab browser run as cs:<n> (lab/gen/cases.ts, lab/run/lab.spec.ts \"country cases\").",
+  "cases": [
+    {
+      "name": "shopify: country change reloads the province list",
+      "page": "shopify-like.html",
+      "values": { "given_name": "Ada", "family_name": "Lovelace", "address_line1": "12 rue Saint-Paul", "city": "Montréal", "postal_code": "H2Y 1G6", "region": "CA-QC", "country": "CA" },
+      "expect": { "#country": "CA", "#zone": "QC", "#zip": "H2Y 1G6" }
+    },
+    {
+      "name": "shopify: state from the ZIP code, country unchanged",
+      "page": "shopify-like.html",
+      "values": { "address_line1": "1 Harbor Road", "city": "Portland", "postal_code": "97201", "country": "US" },
+      "expect": { "#country": "US", "#zone": "OR" }
+    },
+    {
+      "name": "shopify: a country without zones",
+      "page": "shopify-like.html",
+      "values": { "address_line1": "4 rue des Tilleuls", "city": "Lyon", "postal_code": "69002", "region": "Rhone", "country": "FR" },
+      "expect": { "#country": "FR", "#zone-slot": "" }
+    },
+    {
+      "name": "stripe: billing country preset to France, United States chosen, state by name",
+      "page": "stripe-like.html",
+      "values": { "full_name": "Grace Hopper", "address_line1": "1 Cedar Court", "city": "Sacramento", "postal_code": "95814", "region": "California", "country": "US" },
+      "expect": { "#billingCountry": "US", "#billingAdministrativeArea": "CA", "#billingPostalCode": "95814" }
+    },
+    {
+      "name": "stripe: Georgia the state is not Georgia the country",
+      "page": "stripe-like.html",
+      "values": { "postal_code": "30301", "region": "US-GA", "country": "USA" },
+      "expect": { "#billingCountry": "US", "#billingAdministrativeArea": "GA" }
+    },
+    {
+      "name": "amazon: custom country dropdown and its hidden native select, state abbreviation",
+      "page": "amazon-like.html",
+      "values": { "full_name": "Alan Turing", "tel": "+1 212 555 0100", "address_line1": "5 Maple Lane", "city": "New York", "postal_code": "10001", "region": "N.Y.", "country": "CA" },
+      "expect": { "#country-input": "Canada", "#countryCode": "CA", "#state": "" }
+    },
+    {
+      "name": "amazon: state deduced from the ZIP code",
+      "page": "amazon-like.html",
+      "values": { "address_line1": "5 Maple Lane", "city": "Sacramento", "postal_code": "94103", "country": "US" },
+      "expect": { "#countryCode": "US", "#state": "California" }
+    },
+    {
+      "name": "boutique fr: numeric country values, department list after the country, Corsica from the postal code",
+      "page": "fr-boutique.html",
+      "values": { "given_name": "Marie", "family_name": "Curie", "address_line1": "2 place de la Fontaine", "postal_code": "20200", "city": "Bastia", "country": "FR" },
+      "expect": { "#pays": "250", "#dept": "2B", "#civ": "" }
+    },
+    {
+      "name": "boutique fr: department name without accent",
+      "page": "fr-boutique.html",
+      "values": { "address_line1": "4 rue des Tilleuls", "postal_code": "69002", "city": "Lyon", "region": "Rhone", "country": "France" },
+      "expect": { "#pays": "250", "#dept": "69" }
+    },
+    {
+      "name": "react-select: German Land by its English exonym in the second combobox",
+      "page": "react-select-like.html",
+      "values": { "full_name": "Emmy Noether", "address_line1": "Ahornweg 3", "city": "Augsburg", "postal_code": "86150", "region": "Bayern", "country": "DE" },
+      "expect": { "#country-value": "DE", "#country-shown": "Germany", "#state-value": "BY", "#state-shown": "Bavaria" }
+    },
+    {
+      "name": "react-select: French department picks its region",
+      "page": "react-select-like.html",
+      "values": { "address_line1": "4 rue des Tilleuls", "postal_code": "69002", "city": "Lyon", "region": "FR-69", "country": "FR" },
+      "expect": { "#country-value": "FR", "#state-value": "ARA" }
+    }
+  ]
+}

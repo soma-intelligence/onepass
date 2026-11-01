@@ -1,5 +1,5 @@
 {
-  "_comment": "Fictional data for tests only. Passwords the E2E pages check: Atlas Cloud alex@atlas.dev = Atl4s-Pass-0001 (TOTP secret JBSWY3DPEHPK3PXP), Atlas Cloud (multi) alex.ops@atlas.dev = Atl4s-Ops-0010, Atlas admin admin@atlas.dev = Adm1n-Pass-0002, Google perso alex.perso@example.com = G-Perso-0005, Google pro alex.pro@example.com = G-Pro-0006, Atlas coffre (reprompt) = Repr-Pass-0007. Never shown: Atlas ancien (archived) = Old-Pass-0003, Atlas cache (hidden) = Hidden-Pass-0004. Test card 4242 4242 4242 4242, 04/2029, CVV 123.",
+  "_comment": "Fictional data for tests only. Passwords the E2E pages check: Atlas Cloud alex@atlas.dev = Atl4s-Pass-0001 (TOTP secret JBSWY3DPEHPK3PXP), Atlas Cloud (multi) alex.ops@atlas.dev = Atl4s-Ops-0010, Atlas admin admin@atlas.dev = Adm1n-Pass-0002 (passkey of rp_id atlas-cloud.test, credential b25lcGFzcy1lMmUtMQ, its public key in extension/e2e/server.ts), Google perso alex.perso@example.com = G-Perso-0005, Google pro alex.pro@example.com = G-Pro-0006, Atlas coffre (reprompt) = Repr-Pass-0007. Never shown: Atlas ancien (archived) = Old-Pass-0003, Atlas cache (hidden) = Hidden-Pass-0004. Test card 4242 4242 4242 4242, 04/2029, CVV 123.",
   "account": "alex@atlas.dev",
   "vaults": [
     { "name": "Personnel", "color": "#5856D6" },
@@ -26,7 +26,16 @@
       "title": "Atlas admin",
       "vault": "Atlas",
       "urls": [{ "url": "https://admin.atlas-cloud.test", "rule": "exact_host" }],
-      "fields": { "username": "admin@atlas.dev", "password": "Adm1n-Pass-0002" }
+      "fields": { "username": "admin@atlas.dev", "password": "Adm1n-Pass-0002" },
+      "passkeys": [
+        {
+          "rp_id": "atlas-cloud.test",
+          "user_name": "admin@atlas.dev",
+          "user_handle": "YWRtaW4tMQ",
+          "credential_id": "b25lcGFzcy1lMmUtMQ",
+          "private_key": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQghJS6rWbxN-eoWlqrrwdlz8GU_gpuPgsK1cBdq5FICyGhRANCAAQzeozfCYucwgX7e4kzs0_Ca0PIc49pVPUKn7CFLVi5Ud343Db5kwDXWmUmBgtd4gD7O6kNWpNuK5TeYNmP4BsX"
+        }
+      ]
     },
     {
       "type": "login",

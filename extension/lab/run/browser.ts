@@ -17,6 +17,7 @@ import { MOVE_GUARD_MS } from "../../src/content/frames.ts";
 import { CLICK_GUARD_MS } from "../../src/ui/components.ts";
 import type { World } from "../gen/model.ts";
 import { DEFAULT_PROFILE_ID } from "../gen/population.ts";
+import { accountRow, overlayRowSelector } from "./account.ts";
 import type { LabServer } from "../server/server.ts";
 import { EXT_ROOT, type LabState } from "./global-setup.ts";
 
@@ -62,7 +63,7 @@ export interface Lab {
   menuRow(menu: Frame, title: string, timeout?: number): Promise<boolean>;
   /** Clicks a menu row by its exact title once the click guard allows it. */
   pickRow(menu: Frame, title: string): Promise<void>;
-  /** Whether the overlay lists an account with this exact title within `timeout`. */
+  /** Whether the overlay lists an account with this exact title (sso: item title and provider, account.ts) within `timeout`. */
   overlayHas(overlay: Frame, title: string, timeout?: number): Promise<boolean>;
   /** Clicks "Se connecter" on the overlay account `title`. */
   overlayStart(overlay: Frame, title: string): Promise<void>;
@@ -72,6 +73,12 @@ export interface Lab {
    * shows (within `timeout`) and the page analysis had time to attach it.
    */
   clickIcon(page: Page, scope: Frame, selector: string, timeout: number): Promise<void>;
+  /**
+   * Runs `trigger` (the site's own passkey button) and returns the OnePass
+   * passkey window it opened (popup passkey.html#<token>, a page of the
+   * context), or undefined when none opened within `timeout`.
+   */
+  passkeyWindow(trigger: () => Promise<void>, timeout: number): Promise<Page | undefined>;
   /** The toolbar Fill on `page`: the popup's `popup_smart_fill` with `page` as the active tab. */
   toolbarFill(page: Page): Promise<void>;
   /** The latest chain started on `https://<site>`, if any. */
@@ -185,6 +192,12 @@ export async function shadowField(scope: Frame, selector: string): Promise<{ x: 
   }, selector).catch(() => null);
 }
 
+/** URL of the extension's passkey choice window (background/passkey.ts opens it as a popup). */
+const PASSKEY_WINDOW = /^chrome-extension:\/\/[^/]+\/passkey\.html#[A-Za-z0-9_-]+$/;
+
+/** How long a click in a field gets to open the in-field menu before the driver asks with ArrowDown. */
+const CLICK_MENU_MS = 1_500;
+
 /** content/icon.ts: a 20 px icon, 6 px inside the field's right edge (see e2e/smart-fill.spec.ts). */
 const ICON_CENTER_FROM_RIGHT = 6 + 10;
 /** After the field shows: the content script analyses 150 ms after a mutation burst, then attaches its icon. */
@@ -206,26 +219,40 @@ async function fieldBox(p: Page, scope: Frame, selector: string): Promise<{ x: n
 /**
  * Focuses `selector` in `scope` as a user would: by locator when it can reach
  * the field, else (closed shadow root) with a mouse click in the middle of
- * the box the page hook reports. Throws after `timeout` ms.
+ * the box the page hook reports. Throws after `timeout` ms. Says how: a click
+ * in an empty field may already open the in-field menu, a focus never does.
  */
-export async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<void> {
+export async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<"focus" | "click"> {
   const end = Date.now() + timeout;
   const field = scope.locator(selector).first();
   for (;;) {
     if ((await field.count().catch(() => 0)) > 0) {
       await field.focus({ timeout: Math.max(1, end - Date.now()) });
-      return;
+      return "focus";
     }
     const box = await shadowField(scope, selector);
     if (box && box.width > 0 && box.height > 0) {
       // The hook's box is relative to the frame's viewport: add the frame's own offset.
       const frameBox = scope === p.mainFrame() ? { x: 0, y: 0 } : await (await scope.frameElement()).boundingBox();
       await p.mouse.click((frameBox?.x ?? 0) + box.x + box.width / 2, (frameBox?.y ?? 0) + box.y + box.height / 2);
-      return;
+      return "click";
     }
     if (Date.now() >= end) throw new Error(`no field ${selector} within ${timeout} ms`);
     await sleep(200);
   }
+}
+
+/** The overlay rows of the account `title` (an sso "<brand> via <Provider>": the brand's row for that provider). */
+function overlayAccount(overlay: Frame, title: string) {
+  const row = accountRow(title);
+  return overlay.locator(overlayRowSelector(row)).filter({ has: overlay.locator(".t1", { hasText: exact(row.title) }) });
+}
+
+/** The in-field menu rows of `title` (an sso "<brand> via <Provider>": the brand's row for that provider, never one of its other accounts). */
+function menuRowOf(menu: Frame, title: string) {
+  const row = accountRow(title);
+  const rows = row.provider ? `button.row:not(.row-sub)[data-provider="${row.provider}"]` : "button.row";
+  return menu.locator(rows).filter({ has: menu.locator(".t1", { hasText: exact(row.title) }) });
 }
 
 /** A fresh browser of the lab for simulated user `profileId` (default: the single default one) with that user's vault. */
@@ -314,25 +341,32 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       findExtFrame,
       waitExtFrame,
       async openMenu(p, scope, selector, timeout = 10_000) {
-        await focusField(p, scope, selector, timeout);
+        const how = await focusField(p, scope, selector, timeout);
+        // A click in an empty field (closed shadow root) opens the menu itself: an
+        // ArrowDown on top of it would open a second one and leave the driver
+        // holding the first, already replaced frame (lab-2026-10-26 site 27).
+        if (how === "click") {
+          const opened = await waitExtFrame(p, "menu", CLICK_MENU_MS);
+          if (opened) return opened;
+        }
         await p.keyboard.press("ArrowDown");
         return waitExtFrame(p, "menu", timeout);
       },
       async menuRow(menu, title, timeout = 5_000) {
-        const row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+        const row = menuRowOf(menu, title);
         return row.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
       },
       async pickRow(menu, title) {
-        const row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
+        const row = menuRowOf(menu, title);
         await sleep(GUARD_WAIT_MS);
         await row.first().click();
       },
       async overlayHas(overlay, title, timeout = 5_000) {
-        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        const account = overlayAccount(overlay, title);
         return account.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
       },
       async overlayStart(overlay, title) {
-        const account = overlay.locator(".ov-account").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        const account = overlayAccount(overlay, title);
         await sleep(GUARD_WAIT_MS);
         await account.first().getByRole("button", { name: "Se connecter" }).click();
       },
@@ -348,6 +382,12 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         // The layout may have moved while the page settled.
         box = (await fieldBox(p, scope, selector)) ?? box;
         await p.mouse.click(box.x + box.width - ICON_CENTER_FROM_RIGHT, box.y + box.height / 2);
+      },
+      async passkeyWindow(trigger, timeout) {
+        const opened = context.waitForEvent("page", { predicate: (w) => PASSKEY_WINDOW.test(w.url()), timeout })
+          .then((w) => w, () => undefined);
+        await trigger();
+        return opened;
       },
       async toolbarFill(p) {
         const popup = await context.newPage();

@@ -316,7 +316,16 @@ export type UiToBg =
   /** The plan line's Fill: smart fill in the active tab (a trusted gesture). */
   | { type: "popup_smart_fill" }
   /** "Oublier mes choix sur ce site": the site memory of the active tab's site. */
-  | { type: "popup_forget_site" };
+  | { type: "popup_forget_site" }
+  // ---- passkey choice window (passkey.html, background/passkey.ts) ----
+  | { type: "passkey_init"; token: string }
+  /** Sign in with this passkey (one `passkey_init` offered). */
+  | { type: "passkey_pick"; token: string; itemId: string; credentialId: string }
+  /** Create the passkey in OnePass; `vaultId`: one `passkey_init` offered, else the host's default. */
+  | { type: "passkey_save"; token: string; vaultId?: string }
+  /** "Autre appareil": the browser's own passkey dialog takes over. */
+  | { type: "passkey_other"; token: string }
+  | { type: "passkey_cancel"; token: string };
 
 /**
  * Background to content script. `origin` on `fill`, `click` and `submit` is a
@@ -367,4 +376,204 @@ export function isCsToBg(m: unknown): m is CsToBg {
     typeof (m as { type?: unknown }).type === "string" &&
     CS_TO_BG_TYPES.has((m as { type: string }).type)
   );
+}
+
+// ---- Passkeys (spec 3.2) ----
+// The MAIN-world shim (content/passkey-shim.ts) wraps navigator.credentials and
+// talks to the isolated relay (content/passkey.ts) over a MessageChannel; the
+// relay sends `passkey_request` here. Byte strings are unpadded base64url.
+// Nothing the page sends is an origin: the worker takes it from `sender`.
+
+/** Marker of the handshake messages between the MAIN-world shim and the relay (the shim repeats it). */
+export const PASSKEY_CHANNEL = "onepass-passkey";
+
+/** Largest base64url string of a challenge (1024 bytes, the host's bound). */
+export const PASSKEY_MAX_CHALLENGE = 1366;
+/** Largest base64url credential id (1023 bytes, WebAuthn). */
+export const PASSKEY_MAX_CREDENTIAL_ID = 1364;
+/** Largest base64url user handle (64 bytes, WebAuthn). */
+export const PASSKEY_MAX_USER_ID = 86;
+/** Most entries of `allowCredentials` / `excludeCredentials` (the host's bound for `exclude`). */
+export const PASSKEY_MAX_CREDENTIALS = 64;
+export const PASSKEY_MAX_USER_NAME = 1024;
+export const PASSKEY_MAX_RP_ID = 253;
+export const PASSKEY_MAX_ALGS = 32;
+/** Largest `timeout` the page may ask for, in ms (the worker clamps it again). */
+export const PASSKEY_MAX_TIMEOUT = 600_000;
+
+export interface PasskeyGetRequest {
+  kind: "get";
+  /** `publicKey.rpId`; absent: the host of the frame's origin. */
+  rpId?: string;
+  challenge: string;
+  /** `allowCredentials` ids; empty: any passkey of the site. */
+  allow: string[];
+  timeout?: number;
+}
+
+export interface PasskeyCreateRequest {
+  kind: "create";
+  /** `publicKey.rp.id`; absent: the host of the frame's origin. */
+  rpId?: string;
+  challenge: string;
+  userId: string;
+  userName: string;
+  /** `excludeCredentials` ids. */
+  exclude: string[];
+  /** `pubKeyCredParams` algorithms (COSE); OnePass signs ES256 (-7) only. */
+  algs: number[];
+  timeout?: number;
+}
+
+export type PasskeyRequest = PasskeyGetRequest | PasskeyCreateRequest;
+
+/** Isolated relay to background (untrusted: sizes and types checked again there). */
+export type PasskeyCsToBg =
+  | { type: "passkey_request"; reqId: string; request: PasskeyRequest; activated: boolean }
+  | { type: "passkey_abort"; reqId: string };
+
+export type PasskeyErrorName = "NotAllowedError" | "InvalidStateError" | "AbortError";
+
+/** What the page gets back: the browser's own API, a DOMException, or the final credential. */
+export type PasskeyResult =
+  | { kind: "fallback" }
+  | { kind: "error"; name: PasskeyErrorName }
+  | {
+      kind: "assertion";
+      credentialId: string;
+      clientDataJSON: string;
+      authenticatorData: string;
+      signature: string;
+      userHandle: string;
+    }
+  | {
+      kind: "registration";
+      credentialId: string;
+      clientDataJSON: string;
+      attestationObject: string;
+      authenticatorData: string;
+      publicKey: string;
+      publicKeyAlgorithm: number;
+    };
+
+/** One account of the choice window. */
+export interface PasskeyAccount {
+  itemId: string;
+  credentialId: string;
+  title: string;
+  userName: string;
+  vaultName: string;
+}
+
+/** `passkey_init` reply. */
+export interface PasskeyInit {
+  kind: "get" | "create";
+  origin: string;
+  /** Relying party id the passkey is for (shown as the site). */
+  rpId: string;
+  /** get: the passkeys offered. */
+  accounts: PasskeyAccount[];
+  /** create: the account name the site asked for. */
+  userName?: string;
+  /** create: the vaults a new Login may go to. */
+  vaults?: { id: string; name: string }[];
+}
+
+const B64URL_RE = /^[A-Za-z0-9_-]*$/;
+
+/** Unpadded base64url of `min`..`max` characters (no bit left over). */
+export function isB64url(v: unknown, max: number, min = 1): v is string {
+  return typeof v === "string" && v.length >= min && v.length <= max && B64URL_RE.test(v) && v.length % 4 !== 1;
+}
+
+const ERROR_NAMES: ReadonlySet<string> = new Set<PasskeyErrorName>(["NotAllowedError", "InvalidStateError", "AbortError"]);
+
+/** A `PasskeyResult` rebuilt from untrusted input (the relay checks the worker's reply), or null. */
+export function parsePasskeyResult(v: unknown): PasskeyResult | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const b = (k: string, max = 1 << 16, min = 1): string => {
+    const x = o[k];
+    if (!isB64url(x, max, min)) throw new Error(k);
+    return x;
+  };
+  try {
+    switch (o.kind) {
+      case "fallback":
+        return { kind: "fallback" };
+      case "error":
+        return typeof o.name === "string" && ERROR_NAMES.has(o.name) ? { kind: "error", name: o.name as PasskeyErrorName } : null;
+      case "assertion":
+        return {
+          kind: "assertion",
+          credentialId: b("credentialId", PASSKEY_MAX_CREDENTIAL_ID),
+          clientDataJSON: b("clientDataJSON"),
+          authenticatorData: b("authenticatorData"),
+          signature: b("signature"),
+          userHandle: b("userHandle", PASSKEY_MAX_USER_ID, 0),
+        };
+      case "registration": {
+        const alg = o.publicKeyAlgorithm;
+        if (typeof alg !== "number" || !Number.isSafeInteger(alg)) return null;
+        return {
+          kind: "registration",
+          credentialId: b("credentialId", PASSKEY_MAX_CREDENTIAL_ID),
+          clientDataJSON: b("clientDataJSON"),
+          attestationObject: b("attestationObject"),
+          authenticatorData: b("authenticatorData"),
+          publicKey: b("publicKey"),
+          publicKeyAlgorithm: alg,
+        };
+      }
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** A `PasskeyRequest` rebuilt from untrusted input, sizes and types checked, or null. */
+export function parsePasskeyRequest(v: unknown): PasskeyRequest | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const ids = (x: unknown): string[] | null => {
+    if (!Array.isArray(x) || x.length > PASSKEY_MAX_CREDENTIALS) return null;
+    return x.every((id) => isB64url(id, PASSKEY_MAX_CREDENTIAL_ID)) ? (x as string[]) : null;
+  };
+  if (!isB64url(o.challenge, PASSKEY_MAX_CHALLENGE)) return null;
+  let rpId: string | undefined;
+  if (o.rpId !== undefined) {
+    if (typeof o.rpId !== "string" || o.rpId.length < 1 || o.rpId.length > PASSKEY_MAX_RP_ID) return null;
+    rpId = o.rpId.toLowerCase();
+  }
+  let timeout: number | undefined;
+  if (o.timeout !== undefined) {
+    if (typeof o.timeout !== "number" || !Number.isSafeInteger(o.timeout) || o.timeout < 0 || o.timeout > PASSKEY_MAX_TIMEOUT) return null;
+    timeout = o.timeout;
+  }
+  const opt = { ...(rpId !== undefined ? { rpId } : {}), ...(timeout !== undefined ? { timeout } : {}) };
+  if (o.kind === "get") {
+    const allow = ids(o.allow);
+    if (!allow) return null;
+    return { kind: "get", challenge: o.challenge, allow: [...allow], ...opt };
+  }
+  if (o.kind === "create") {
+    const exclude = ids(o.exclude);
+    if (!exclude) return null;
+    if (!isB64url(o.userId, PASSKEY_MAX_USER_ID)) return null;
+    if (typeof o.userName !== "string" || o.userName.length < 1 || o.userName.length > PASSKEY_MAX_USER_NAME) return null;
+    const algs = o.algs;
+    if (!Array.isArray(algs) || algs.length > PASSKEY_MAX_ALGS || !algs.every((a) => typeof a === "number" && Number.isSafeInteger(a))) return null;
+    return {
+      kind: "create",
+      challenge: o.challenge,
+      userId: o.userId,
+      userName: o.userName,
+      exclude: [...exclude],
+      algs: [...(algs as number[])],
+      ...opt,
+    };
+  }
+  return null;
 }

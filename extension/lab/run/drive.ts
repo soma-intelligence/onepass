@@ -14,8 +14,9 @@
 // reached only through the Driver interface (driver.ts). Driver steps that
 // the page cannot satisfy are recorded as observations; only bench failures
 // (navigation to a lab host, browser launch, host rate limit) carry `lab:`.
-import { createPrivateKey } from "node:crypto";
 import type { Frame, Page } from "@playwright/test";
+import { CASE_PATH, caseMismatches, type CountryCase } from "../gen/cases.ts";
+import { passkeyPkcs8 } from "../gen/data.ts";
 import type { Expect, FieldSpec, Site, World } from "../gen/model.ts";
 import type { Behaviour } from "../gen/population.ts";
 import { PAGE_PATH, stepPath } from "../gen/render.ts";
@@ -162,6 +163,14 @@ export async function oneClick(env: ScenarioEnv, site: Site): Promise<Observatio
   try {
     page = await env.newPage();
     await goto(page, `https://${site.host}/`);
+    if (site.passkeyOnly) {
+      // Nothing to fill: the user presses the site's passkey button and picks her account in OnePass's window.
+      const r = await passkeyStep(env, page, site, o);
+      o.overlayShown = r.asked;
+      o.itemOffered = r.offered;
+      foreign(env, site, o, values);
+      return finish(env, page, o, started);
+    }
     const ui = await env.driver.openOneClick(page, OVERLAY_WAIT_MS);
     o.overlayShown = ui !== undefined;
     if (ui && site.itemTitle) o.itemOffered = await ui.offers(site.itemTitle);
@@ -186,14 +195,44 @@ async function followChain(env: ScenarioEnv, page: Page, site: Site, o: Observat
         await snapshotFilled(page, site, o.filled, values);
         const c = await env.driver.progress(site.host);
         if (c) o.chain = c;
-        if ((c && c.status !== "running") || Date.now() >= end) {
+        // Password then passkey: the site now asks for the passkey, the user presses its button (below).
+        const passkeyAsked = site.flow === "login_passkey" && (await passkeyButton(page, 0)) !== undefined;
+        if ((c && c.status !== "running") || passkeyAsked || Date.now() >= end) {
           if (process.env.LAB_DEBUG) console.log(`[lab debug] progress ${JSON.stringify(c)} at ${page.url()}`);
           break;
         }
         await sleep(500);
       }
+      if (site.flow === "login_passkey" && !signedIn(site)(env.server.events())) {
+        await passkeyStep(env, page, site, o);
+        const c = await env.driver.progress(site.host);
+        if (c) o.chain = c;
+      }
       // The last post can still be in flight when the chain reports done.
       await waitEvents(env.server, signedIn(site), 3_000);
+}
+
+/** How long the site's passkey button gets to open OnePass's window (none opens while the chain signs itself). */
+const PASSKEY_WINDOW_MS = 8_000;
+
+/**
+ * The passkey step of a login_passkey site, as the user plays it: she
+ * presses the site's passkey button, then picks her account if OnePass's
+ * window asks (one more gesture). During her one-click sign-in the
+ * extension signs for the chain's item without a window. Waits for the
+ * site's sign-in or its refusal of the assertion.
+ */
+async function passkeyStep(env: ScenarioEnv, page: Page, site: Site, o: Observation): Promise<{ asked: boolean; offered: boolean }> {
+  const button = await passkeyButton(page, fieldWait(site));
+  if (!button || !site.account) return { asked: false, offered: false };
+  const r = await env.driver.passkey(() => button.click({ timeout: 10_000 }), site.account.username, PASSKEY_WINDOW_MS);
+  if (r.picked) o.clicks = (o.clicks ?? 0) + 1;
+  const end = Date.now() + 15_000;
+  while (Date.now() < end && !signedIn(site)(env.server.events())) {
+    if (env.server.events().some((e) => e.kind === "submit" && e.form === "passkey" && !e.ok)) break;
+    await sleep(200);
+  }
+  return { asked: r.asked, offered: r.offered };
 }
 
 /**
@@ -290,6 +329,10 @@ async function menuFillSteps(env: ScenarioEnv, page: Page, scope: Frame, site: S
     if (!menu.offered) return;
     if (behaviour === "abandons_step") return;
     if (k === steps.length - 1) await userEdits(page, scope, step, behaviour);
+    // The user sends the step: stamped at the first one (anything the site
+    // got before is OnePass's). Later steps follow the user's own post, so
+    // one stamp cannot tell an extension post of a later step from hers.
+    o.userSubmitAt ??= Date.now();
     await submitForm(scope).catch(() => undefined);
   }
   await waitEvents(env.server, signedIn(site), 10_000);
@@ -428,6 +471,12 @@ export async function smartFill(env: ScenarioEnv, site: Site, expectation: Expec
     } else if (outcome === "filled") {
       if (expectation !== "nofill") await userSubmit(env, page, scope, site, o);
     }
+    // A passkey-only page has nothing to fill: the user goes on with the site's passkey button.
+    if (site.passkeyOnly && expectation !== "nofill" && !signedIn(site)(env.server.events())) {
+      const r = await passkeyStep(env, page, site, o);
+      o.overlayShown ||= r.asked;
+      o.itemOffered ||= r.offered;
+    }
   } catch (e) {
     o.error = message(e);
   }
@@ -462,12 +511,6 @@ export async function lookalike(env: ScenarioEnv, site: Site): Promise<Observati
     o.error = message(e);
   }
   return finish(env, page, o, started);
-}
-
-/** PKCS#8 DER (base64) of the site's P-256 passkey, for WebAuthn.addCredential. */
-export function passkeyPkcs8(key: { d: string; x: string; y: string }): string {
-  const jwk = { kty: "EC", crv: "P-256", x: key.x, y: key.y, d: Buffer.from(key.d, "hex").toString("base64url") };
-  return createPrivateKey({ key: jwk, format: "jwk" }).export({ type: "pkcs8", format: "der" }).toString("base64");
 }
 
 const pathOf = (f: Frame): string => {
@@ -560,7 +603,7 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
       authenticatorId,
       credential: {
         credentialId: Buffer.from(key.credentialId, "base64url").toString("base64"),
-        isResidentCredential: false, rpId: site.host, privateKey: passkeyPkcs8(key), signCount: 0,
+        isResidentCredential: false, rpId: site.host, privateKey: passkeyPkcs8(key).toString("base64"), signCount: 0,
       },
     });
     await goto(page, `https://${site.host}/`);
@@ -584,4 +627,51 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
   await sleep(LATE_GRACE_MS);
   o.events = server.events();
   return o;
+}
+
+/** A country case's verdict: pass, fail (with its cause) or lab_error (the bench, not OnePass). */
+export interface CaseOutcome { verdict: "pass" | "fail" | "lab_error"; cause?: string; durationMs: number }
+
+/** The fill reply can come 2.5 s after the pick: the controls are read until they match, up to this long. */
+const CASE_SETTLE_MS = 4_000;
+
+/** What each selector of `selectors` holds: a field's value, else the element's trimmed text (as the jsdom replay reads it). */
+function readControls(page: Page, selectors: string[]): Promise<Record<string, string>> {
+  return page.evaluate((sels) => Object.fromEntries(sels.map((s) => {
+    const el = document.querySelector(s);
+    if (!el) return [s, "\u0000missing"];
+    if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) return [s, el.value];
+    return [s, (el.textContent ?? "").trim()];
+  })), selectors);
+}
+
+/**
+ * One country case (lab/gen/cases.ts): the in-field menu of the case's name
+ * field, its identity item picked, then each control read once the fill
+ * settled. Nothing is submitted.
+ */
+export async function countryCase(env: ScenarioEnv, c: CountryCase): Promise<CaseOutcome> {
+  const started = Date.now();
+  let page: Page | undefined;
+  const done = (verdict: CaseOutcome["verdict"], cause?: string): CaseOutcome =>
+    ({ verdict, ...(cause ? { cause } : {}), durationMs: Date.now() - started });
+  try {
+    page = await env.newPage();
+    await goto(page, `https://${c.host}${CASE_PATH}`);
+    const menu = await env.driver.menuFill(page, page.mainFrame(), [c.field], c.title, true);
+    if (!menu.shown) return done("fail", "no_menu");
+    if (!menu.offered) return done("fail", "no_menu_item");
+    const selectors = Object.keys(c.expect);
+    const until = Date.now() + CASE_SETTLE_MS;
+    let wrong = caseMismatches(c, await readControls(page, selectors));
+    while (wrong.length > 0 && Date.now() < until) {
+      await sleep(250);
+      wrong = caseMismatches(c, await readControls(page, selectors));
+    }
+    return wrong.length === 0 ? done("pass") : done("fail", `wrong_controls:${wrong.join(",")}`);
+  } catch (e) {
+    return done("lab_error", message(e));
+  } finally {
+    await page?.close().catch(() => undefined);
+  }
 }

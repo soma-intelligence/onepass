@@ -1,7 +1,9 @@
 // Page observer (spec 8.2): pages that build their forms after load are
 // analysed again 150 ms after a mutation burst starts; the analysis is
 // reported only when its signature changes. Runs in every frame: routing by
-// `frameId` is the service worker's job.
+// `frameId` is the service worker's job. Shadow roots the analysis found
+// (spec D1, D2) are observed too (`attach`): mutations inside a root do not
+// reach an observer of the document.
 import type { PageAnalysis } from "../shared/messages";
 
 export const OBSERVER_DELAY_MS = 150;
@@ -22,6 +24,10 @@ export interface ObserverOptions {
 
 export interface PageObserver {
   start(): void;
+  /** Observes a shadow root as the document (until stop). */
+  attach(root: ShadowRoot): void;
+  /** No-op: a MutationObserver cannot drop one target; stop disconnects them all. */
+  detach(root: ShadowRoot): void;
   stop(): void;
   /** Analyses now (no delay); reports if changed. Returns the analysis. */
   refresh(): PageAnalysis;
@@ -49,6 +55,7 @@ export function createObserver(opts: ObserverOptions): PageObserver {
   let current: PageAnalysis | null = null;
   let sig = "";
   let mo: MutationObserver | null = null;
+  const OPTIONS: MutationObserverInit = { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES };
 
   const refresh = (): PageAnalysis => {
     const a = opts.analyze();
@@ -83,8 +90,12 @@ export function createObserver(opts: ObserverOptions): PageObserver {
           refresh();
         }, OBSERVER_DELAY_MS);
       });
-      mo.observe(doc, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
+      mo.observe(doc, OPTIONS);
     },
+    attach(root) {
+      mo?.observe(root, OPTIONS);
+    },
+    detach() {},
     stop() {
       mo?.disconnect();
       mo = null;

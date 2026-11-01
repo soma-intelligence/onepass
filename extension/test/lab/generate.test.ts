@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { expectationFor } from "../../lab/gen/capabilities.ts";
-import { PUBLIC_TEST_CARDS, card, passkey, password, totpSecret } from "../../lab/gen/data.ts";
+import { countryCases } from "../../lab/gen/cases.ts";
+import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import { PUBLIC_TEST_CARDS, card, passkey, passkeyPkcs8, password, totpSecret, userHandle } from "../../lab/gen/data.ts";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
 import { LAYOUTS } from "../../lab/gen/layouts.ts";
 import type { FieldSpec, FlowId, Site } from "../../lab/gen/model.ts";
@@ -18,7 +20,7 @@ import { Rng } from "../../lab/gen/rng.ts";
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-const PINNED_DIGEST_V2 = "bf1ca5374c32d06d4cd71b082d0b6a33bc1f1306c48ef53a945651f34a9e352a";
+const PINNED_DIGEST_V3 = "3679b235a0f0b4e4f6eb82431a2d3aef4fec775fd4e0bb3031fe13e8c9769556";
 const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
 const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];
@@ -29,6 +31,7 @@ const big = generate("props", { sites: 200, patterns: FIXED });
 interface FixtureItem {
   type: string; title: string; vault: string; urls?: { url: string; rule: string }[];
   fields: Record<string, unknown>; totp_uri?: string; login_methods?: { provider: string; account_title: string }[];
+  passkeys?: { rp_id: string; user_name: string; user_handle: string; credential_id: string; private_key: string }[];
 }
 const items = (w: typeof big) => w.fixture.items as FixtureItem[];
 
@@ -47,10 +50,10 @@ describe("generate", () => {
     expect(JSON.stringify(generate("y", { sites: 40, patterns: FIXED }))).not.toBe(JSON.stringify(a));
   });
 
-  it("same seed, same world, version 2", () => {
+  it("same seed, same world, version 3", () => {
     const w = generate("g2", { sites: 50, patterns: FIXED });
-    expect(w.version).toBe(2);
-    expect(digest(w)).toBe(PINNED_DIGEST_V2);
+    expect(w.version).toBe(3);
+    expect(digest(w)).toBe(PINNED_DIGEST_V3);
   });
 
   it("multi_step sites have at least 2 steps drawn from patterns", () => {
@@ -109,7 +112,7 @@ describe("generate", () => {
     const hosts = big.sites.flatMap((s) => [s.host, s.lookalike?.host, s.frameHost].filter((h): h is string => !!h));
     for (const h of hosts) expect(h).toMatch(/^[a-z0-9.-]+\.test$/);
     expect(new Set(hosts).size).toBe(hosts.length);
-    expect(big.hosts).toEqual([...new Set([...hosts, ...PROVIDER_HOSTS])].sort());
+    expect(big.hosts).toEqual([...new Set([...hosts, ...PROVIDER_HOSTS, ...countryCases().hosts])].sort());
     expect(big.sites.some((s) => s.lookalike) && big.sites.some((s) => s.frameHost)).toBe(true);
   });
 
@@ -167,6 +170,23 @@ describe("generate", () => {
     expect(w.sites.some((s) => s.lang === "de" || s.lang === "es")).toBe(true);
   });
 
+  it("languages_include_it_pt_nl", () => {
+    const w = generate("langs", { sites: 1000, patterns: FIXED });
+    const others = w.sites.filter((s) => s.lang !== "fr" && s.lang !== "en");
+    // The 0.2 left by French and English goes to de, es, it, pt and nl only, in equal parts.
+    expect(new Set(others.map((s) => s.lang))).toEqual(new Set(["de", "es", "it", "pt", "nl"]));
+    expect(others.length / 1000).toBeGreaterThan(0.15);
+    expect(others.length / 1000).toBeLessThan(0.25);
+    for (const l of ["it", "pt", "nl"]) {
+      const sites = w.sites.filter((s) => s.lang === l);
+      expect(sites.length / 1000).toBeGreaterThan(0.02);
+      // Their own labels and buttons (seed-lexicon.json), never the English fallback.
+      for (const s of sites.filter((x) => !x.traits.includes("mixed_language"))) {
+        for (const f of s.fields) expect(FIXED.roles[f.role === "new_password" ? "new_password" : f.role]?.labels[l]).toContain(f.label);
+      }
+    }
+  });
+
   it("fixture_has_item_per_login_site", () => {
     const w = big;
     const vaults = new Set(w.fixture.vaults.map((v) => v.name));
@@ -188,6 +208,15 @@ describe("generate", () => {
       } else {
         expect(item.fields).toEqual({ username: s.account!.username, password: s.account!.password });
         expect(s.itemTitle).toBe(s.brand);
+        const pk = s.account!.passkey;
+        if (pk) {
+          expect(item.passkeys).toEqual([{
+            rp_id: s.host, user_name: s.account!.username, user_handle: userHandle(s.host, s.account!.username),
+            credential_id: pk.credentialId, private_key: passkeyPkcs8(pk).toString("base64url"),
+          }]);
+        } else {
+          expect(item.passkeys).toBeUndefined();
+        }
       }
       if (s.flow === "login_totp") {
         expect(item.totp_uri).toBe(`otpauth://totp/${encodeURIComponent(s.brand)}:${encodeURIComponent(s.account!.username)}`
@@ -211,7 +240,7 @@ describe("generate", () => {
       const it = items(w).find((i) => i.type === "identity" && i.title === s.identityTitle)!;
       expect(s.identityTitle).toBe(`${it.fields.first_name} ${it.fields.last_name} (${s.brand})`);
     }
-    const allowed = new Set(["type", "title", "vault", "urls", "fields", "totp_uri", "archived", "hide_from_autofill", "reprompt", "login_methods"]);
+    const allowed = new Set(["type", "title", "vault", "urls", "fields", "totp_uri", "archived", "hide_from_autofill", "reprompt", "login_methods", "passkeys"]);
     for (const it of items(w)) for (const k of Object.keys(it)) expect(allowed.has(k)).toBe(true);
     const emails = items(w).flatMap((i) => [i.fields.username, i.fields.email]).filter((v) => String(v ?? "").includes("@"));
     emails.push(...Object.values(w.idp).flat().map((a) => a.email), ...w.sites.flatMap((s) => s.sso ? [s.sso.email] : []));
@@ -249,6 +278,26 @@ describe("generate", () => {
     for (const s of big.sites.filter((x) => x.flow === "login_passkey")) expect(s.account!.passkey).toBeDefined();
   });
 
+  it("fixture_passkey_pkcs8_matches_public_key", () => {
+    const pk = passkey(new Rng("pk8"));
+    const der = passkeyPkcs8(pk);
+    const priv = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+    // The PKCS#8 key is the site's key: its public half is (x, y), and what it signs (x, y) verifies.
+    const jwk = createPublicKey(priv).export({ format: "jwk" });
+    expect(jwk).toMatchObject({ kty: "EC", crv: "P-256", x: pk.x, y: pk.y });
+    const msg = Buffer.from("lab passkey");
+    expect(verify("sha256", msg, { key: { kty: "EC", crv: "P-256", x: pk.x, y: pk.y }, format: "jwk" }, sign("sha256", msg, priv))).toBe(true);
+    // Every vault passkey of a world opens the same way, and its user handle fits the host's 64-byte cap.
+    for (const it of items(big).filter((i) => i.passkeys)) {
+      for (const p of it.passkeys!) {
+        expect(() => createPrivateKey({ key: Buffer.from(p.private_key, "base64url"), format: "der", type: "pkcs8" })).not.toThrow();
+        expect(Buffer.from(p.user_handle, "base64url")).toHaveLength(16);
+        expect(p.private_key).toMatch(/^[A-Za-z0-9_-]+$/);
+      }
+    }
+    expect(items(big).filter((i) => i.passkeys).length).toBe(big.sites.filter((s) => s.flow === "login_passkey").length);
+  });
+
   it("cards_are_public_test_numbers", () => {
     const r = new Rng("cards");
     for (let i = 0; i < 50; i++) {
@@ -276,9 +325,11 @@ describe("generate", () => {
   });
 
   it("expectations_table", () => {
-    expect(expectationFor(site({ flow: "login_passkey" }), "one_click")).toEqual({ expect: "xfail", reason: "R-16 passkeys" });
-    expect(expectationFor(site({ traits: ["shadow_open"] }), "one_click")).toEqual({ expect: "xfail", reason: "shadow DOM (content/index.ts)" });
-    expect(expectationFor(site({ traits: ["shadow_closed"] }), "menu_fill")).toEqual({ expect: "xfail", reason: "shadow DOM (content/index.ts)" });
+    // Chromium: passkeys (window and chain) and shadow roots, open and closed, are expected to work.
+    expect(expectationFor(site({ flow: "login_passkey" }), "one_click")).toEqual({ expect: "pass" });
+    expect(expectationFor(site({ flow: "login_passkey", passkeyOnly: true }), "smart_fill")).toEqual({ expect: "pass" });
+    expect(expectationFor(site({ traits: ["shadow_open"] }), "one_click")).toEqual({ expect: "pass" });
+    expect(expectationFor(site({ traits: ["shadow_closed"] }), "menu_fill")).toEqual({ expect: "pass" });
     expect(expectationFor(site({ traits: ["iframe_cross_site"] }), "one_click")).toEqual({ expect: "nofill", reason: "R-10" });
     expect(expectationFor(site({ flow: "login_passkey", traits: ["iframe_cross_site"] }), "one_click")).toEqual({ expect: "nofill", reason: "R-10" });
     expect(expectationFor(site({}), "lookalike").expect).toBe("nofill");
@@ -287,6 +338,7 @@ describe("generate", () => {
     // Provider buttons are read in French and English only (src/shared/providers.ts).
     expect(expectationFor(site({ flow: "sso", labelLang: "es" }), "one_click")).toEqual({ expect: "xfail", reason: "provider button fr/en only (shared/providers.ts)" });
     expect(expectationFor(site({ flow: "sso", labelLang: "de" }), "one_click").expect).toBe("xfail");
+    for (const l of ["it", "pt", "nl"]) expect(expectationFor(site({ flow: "sso", labelLang: l }), "one_click").expect).toBe("xfail");
     expect(expectationFor(site({ flow: "sso", labelLang: "zh" }), "one_click")).toEqual({ expect: "pass" });
   });
 

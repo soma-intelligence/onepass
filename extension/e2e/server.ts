@@ -12,7 +12,7 @@
 // - lookalikes and evil.test: trap pages that record anything posted to them.
 // Credentials checked here are the fictional ones of
 // core/onepass-native-host/fixtures/e2e.json.
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, createPublicKey, randomBytes, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
@@ -30,6 +30,14 @@ export const FX = {
   googlePerso: { email: "alex.perso@example.com", password: "G-Perso-0005" },
   googlePro: { email: "alex.pro@example.com", password: "G-Pro-0006" },
   card: { holder: "Alex Martin", number: "4242 4242 4242 4242", month: "04", year: "2029", cvv: "123" },
+  /** Passkey of "Atlas admin" (fixtures/e2e.json): its public key checks the assertions. */
+  passkey: {
+    rpId: "atlas-cloud.test",
+    user: "admin@atlas.dev",
+    userHandle: "YWRtaW4tMQ",
+    credentialId: "b25lcGFzcy1lMmUtMQ",
+    publicKey: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEM3qM3wmLnMIF-3uJM7NPwmtDyHOPaVT1Cp-whS1YuVHd-Nw2-ZMA11plJgYLXeIA-zupDVqTbiuU3mDZj-AbFw",
+  },
   identity: {
     given: "Alex",
     family: "Martin",
@@ -145,6 +153,58 @@ const GOOGLE_PASSWORDS = new Map<string, string>([
   [FX.googlePro.email, FX.googlePro.password],
 ]);
 
+// ---- passkeys (WebAuthn, ES256) ----
+
+export interface PasskeyCheck {
+  status: string;
+  origin?: string;
+  crossOrigin?: unknown;
+  type?: string;
+  user?: string;
+  rawIdMatches?: boolean;
+  proto?: string;
+  ext?: string;
+  flags?: number;
+}
+
+/** Checks an assertion posted by /passkey against the fixture's public key and an issued challenge. */
+function checkAssertion(body: Record<string, string>, expectedOrigin: string, challenges: Set<string>): PasskeyCheck {
+  const cdj = Buffer.from(body.clientDataJSON ?? "", "base64url");
+  let cd: { type?: string; challenge?: string; origin?: string; crossOrigin?: unknown };
+  try {
+    cd = JSON.parse(cdj.toString("utf8")) as typeof cd;
+  } catch {
+    return { status: "Refusé" };
+  }
+  const auth = Buffer.from(body.authenticatorData ?? "", "base64url");
+  const sig = Buffer.from(body.signature ?? "", "base64url");
+  const rpHash = createHash("sha256").update(FX.passkey.rpId).digest();
+  const key = createPublicKey({ key: Buffer.from(FX.passkey.publicKey, "base64url"), format: "der", type: "spki" });
+  const signed = Buffer.concat([auth, createHash("sha256").update(cdj).digest()]);
+  const fresh = typeof cd.challenge === "string" && challenges.delete(cd.challenge);
+  const ok =
+    cd.type === "webauthn.get" &&
+    fresh &&
+    cd.origin === expectedOrigin &&
+    cd.crossOrigin === false &&
+    auth.length >= 37 &&
+    auth.subarray(0, 32).equals(rpHash) &&
+    ((auth[32] ?? 0) & 1) === 1 &&
+    body.id === FX.passkey.credentialId &&
+    verify("sha256", signed, key, sig);
+  return {
+    status: ok ? "Connecté" : "Refusé",
+    ...(cd.origin !== undefined ? { origin: cd.origin } : {}),
+    crossOrigin: cd.crossOrigin,
+    ...(cd.type !== undefined ? { type: cd.type } : {}),
+    user: body.userHandle ?? "",
+    rawIdMatches: body.rawId === body.id,
+    proto: body.proto ?? "",
+    ext: body.ext ?? "",
+    flags: auth[32] ?? 0,
+  };
+}
+
 async function readBody(req: http.IncomingMessage): Promise<Record<string, string>> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -160,6 +220,8 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
   const nonce = randomBytes(16).toString("hex");
   const sessions = new Map<string, Session>();
   const codes = new Map<string, string>();
+  /** WebAuthn challenges issued by /passkey, each good for one check. */
+  const passkeyChallenges = new Set<string>();
   const state: Omit<TestServer, "port" | "close" | "nonce"> = {
     captured: [],
     providerSignIns: [],
@@ -167,6 +229,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
     reset() {
       sessions.clear();
       codes.clear();
+      passkeyChallenges.clear();
       this.captured.length = 0;
       this.providerSignIns.length = 0;
       this.users = initialUsers();
@@ -225,6 +288,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
         return;
       }
       if (host === "evil.test" && path === "/frame") return send(page("Autre site", "evil/frame.html"));
+      if (host === "evil.test" && path === "/passkey-frame") return send(page("Autre site", "evil/passkey-frame.html"));
       if (host === "accounts.google.com.evil.test") {
         if (path === "/signin/identifier") {
           return send(page("Connexion", "google/identifier.html", { chosen: "", error: "", action: path }));
@@ -403,6 +467,41 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           return send(page("Atlas Cloud - Paiement", "atlas/checkout-full.html"));
         case "/profile":
           return send(page("Atlas Cloud - Profil", "atlas/profile.html"));
+        case "/passkey": {
+          // `rp`: the rpId the page asks for (S19: another site's); `auto=1`: asks on load, no click (S18, S20).
+          const challenge = randomBytes(32).toString("base64url");
+          passkeyChallenges.add(challenge);
+          return send(
+            page("Atlas Cloud - Passkey", "atlas/passkey.html", {
+              brand,
+              challenge,
+              rp: url.searchParams.get("rp") ?? "",
+              auto: url.searchParams.get("auto") === "1" ? "1" : "",
+            }),
+          );
+        }
+        case "/passkey/verify": {
+          if (!post) return send("Introuvable", 404);
+          const r = checkAssertion(body, `https://${host}`, passkeyChallenges);
+          if (r.status === "Connecté") session().email = FX.passkey.user;
+          res.writeHead(200, { ...headers, "content-type": "application/json" });
+          res.end(JSON.stringify(r));
+          return;
+        }
+        case "/passkey/register": {
+          if (!post) return send("Introuvable", 404);
+          let cd: { type?: string; origin?: string; challenge?: string; crossOrigin?: unknown } = {};
+          try {
+            cd = JSON.parse(Buffer.from(body.clientDataJSON ?? "", "base64url").toString("utf8")) as typeof cd;
+          } catch {
+            // Refused below.
+          }
+          const fresh = typeof cd.challenge === "string" && passkeyChallenges.delete(cd.challenge);
+          const ok = cd.type === "webauthn.create" && fresh && cd.origin === `https://${host}` && (body.attestationObject ?? "") !== "" && body.alg === "-7";
+          res.writeHead(200, { ...headers, "content-type": "application/json" });
+          res.end(JSON.stringify({ status: ok ? "Créée" : "Refusé", origin: cd.origin, id: body.id ?? "", publicKey: body.publicKey ?? "" }));
+          return;
+        }
         case "/oauth/callback": {
           const email = codes.get(url.searchParams.get("code") ?? "");
           if (!email) return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Échec", detail: "" }));

@@ -90,15 +90,26 @@ pub fn public_key_cose(cred: &PasskeyCredential) -> Result<Vec<u8>> {
 }
 
 /// Registration data: authenticator data with the attested credential and a
-/// `none` attestation object.
+/// `none` attestation object. Claims user verification (UV): the system
+/// AutoFill verified the user before asking.
 pub fn registration(cred: &PasskeyCredential, client_data_hash: &[u8]) -> Result<Registration> {
+    registration_with_uv(cred, client_data_hash, true)
+}
+
+/// `registration`, with the UV flag set only when `uv`: a caller that did
+/// not verify the user (the browser extension bridge) passes `false`.
+pub fn registration_with_uv(
+    cred: &PasskeyCredential,
+    client_data_hash: &[u8],
+    uv: bool,
+) -> Result<Registration> {
     check_hash(client_data_hash)?;
     check_rp_id(&cred.rp_id)?;
     if cred.credential_id.is_empty() || cred.credential_id.len() > u16::MAX as usize {
         return Err(Error::InvalidFormat("passkey credential id"));
     }
     let cose = public_key_cose(cred)?;
-    let mut auth = auth_data_header(&cred.rp_id, FLAG_UP | FLAG_UV | FLAG_BE | FLAG_BS | FLAG_AT);
+    let mut auth = auth_data_header(&cred.rp_id, flags(uv) | FLAG_AT);
     auth.extend_from_slice(&AAGUID);
     auth.extend_from_slice(&(cred.credential_id.len() as u16).to_be_bytes());
     auth.extend_from_slice(&cred.credential_id);
@@ -120,12 +131,22 @@ pub fn registration(cred: &PasskeyCredential, client_data_hash: &[u8]) -> Result
 }
 
 /// Assertion data: authenticator data and the signature over
-/// `authenticator_data || client_data_hash`.
+/// `authenticator_data || client_data_hash`. Claims user verification
+/// (UV), as `registration`.
 pub fn assertion(cred: &PasskeyCredential, client_data_hash: &[u8]) -> Result<Assertion> {
+    assertion_with_uv(cred, client_data_hash, true)
+}
+
+/// `assertion`, with the UV flag set only when `uv`.
+pub fn assertion_with_uv(
+    cred: &PasskeyCredential,
+    client_data_hash: &[u8],
+    uv: bool,
+) -> Result<Assertion> {
     check_hash(client_data_hash)?;
     check_rp_id(&cred.rp_id)?;
     let pair = key_pair(cred)?;
-    let auth = auth_data_header(&cred.rp_id, FLAG_UP | FLAG_UV | FLAG_BE | FLAG_BS);
+    let auth = auth_data_header(&cred.rp_id, flags(uv));
     let mut msg = auth.clone();
     msg.extend_from_slice(client_data_hash);
     let sig = pair
@@ -135,6 +156,12 @@ pub fn assertion(cred: &PasskeyCredential, client_data_hash: &[u8]) -> Result<As
         authenticator_data: auth,
         signature: sig.as_ref().to_vec(),
     })
+}
+
+/// UP, BE and BS always; UV when the user was verified.
+fn flags(uv: bool) -> u8 {
+    let base = FLAG_UP | FLAG_BE | FLAG_BS;
+    if uv { base | FLAG_UV } else { base }
 }
 
 fn check_rp_id(rp_id: &str) -> Result<()> {
@@ -279,6 +306,24 @@ mod tests {
         UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, point)
             .verify(&msg, &a.signature)
             .unwrap();
+    }
+
+    #[test]
+    fn without_uv_flags_user_present_only() {
+        let c = cred();
+        let a = assertion_with_uv(&c, &[9u8; 32], false).unwrap();
+        assert_eq!(a.authenticator_data[32], 0x19);
+        let r = registration_with_uv(&c, &[7u8; 32], false).unwrap();
+        assert_eq!(r.authenticator_data[32], 0x59);
+        // The defaults keep UV for the system AutoFill.
+        assert_eq!(
+            assertion(&c, &[9u8; 32]).unwrap().authenticator_data[32],
+            0x1D
+        );
+        assert_eq!(
+            registration(&c, &[7u8; 32]).unwrap().authenticator_data[32],
+            0x5D
+        );
     }
 
     #[test]

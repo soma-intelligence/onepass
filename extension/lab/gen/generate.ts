@@ -9,7 +9,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Patterns } from "../corpus/types.ts";
 import { expectationFor } from "./capabilities.ts";
-import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, password, person, totpSecret } from "./data.ts";
+import { countryCases } from "./cases.ts";
+import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, passkeyPkcs8, password, person, totpSecret, userHandle } from "./data.ts";
 import { GENERATOR_VERSION } from "./model.ts";
 import { LAYOUTS } from "./layouts.ts";
 import { DEFAULT_PROFILE_ID, drawProfiles, type Profile } from "./population.ts";
@@ -56,7 +57,10 @@ const PROVIDER_HOST: Record<ProviderId, string> = {
 };
 const SSO_LABEL: Record<string, (p: string) => string> = {
   en: (p) => `Continue with ${p}`, fr: (p) => `Continuer avec ${p}`, de: (p) => `Weiter mit ${p}`, es: (p) => `Continuar con ${p}`,
+  it: (p) => `Continua con ${p}`, pt: (p) => `Continuar com ${p}`, nl: (p) => `Doorgaan met ${p}`,
 };
+/** The languages sharing the 0.2 left by French and English (spec 4.2, plan Task 8), in equal parts. */
+export const OTHER_LANGS: readonly Lang[] = ["de", "es", "it", "pt", "nl"];
 
 const AUTOCOMPLETE: Record<Role, string> = {
   username: "username", email: "email", password: "current-password", new_password: "new-password", otp: "one-time-code",
@@ -79,7 +83,7 @@ export interface GenerateOptions { sites: number; patterns: Patterns; profiles?:
 export function generate(seed: string, opts: GenerateOptions): World {
   const root = new Rng(seed);
   const { patterns } = opts;
-  const langs = selectableLangs(patterns);
+  const langs = selectableLangs();
   const used = new Set<string>();
   const brands = new Set<string>();
   const idp = makeIdp(root.fork("idp"));
@@ -120,9 +124,16 @@ export function generate(seed: string, opts: GenerateOptions): World {
     vaults: [{ name: VAULT, color: "#5856D6" }],
     items,
   };
+  // The country and region fixture cases: the same in every world, outside the seeded draw.
+  const cases = countryCases();
+  items.push(...cases.items);
   const hosts = new Set<string>(PROVIDERS.map((p) => PROVIDER_HOST[p]));
   for (const s of sites) for (const h of [s.host, s.lookalike?.host, s.frameHost]) if (h) hosts.add(h);
-  return { version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort(), ...(profiles ? { profiles } : {}) };
+  for (const h of cases.hosts) hosts.add(h);
+  return {
+    version: GENERATOR_VERSION, seed, sites, scenarios, idp, fixture, hosts: [...hosts].sort(), cases: cases.cases,
+    ...(profiles ? { profiles } : {}),
+  };
 }
 
 /**
@@ -172,14 +183,13 @@ export function parseDriverGroups(raw: string): DriverGroup[] {
 
 /**
  * Site languages (spec 4.2, fr and en in the majority): fr 0.4, en 0.4, and
- * 0.2 shared by the other corpus languages in proportion to their corpus
- * weight ("und" is never a site language).
+ * 0.2 shared in equal parts by de, es, it, pt and nl, the languages the
+ * extension's lexicon and the baseline lexicon (seed-lexicon.json) cover.
+ * Since generator version 3; before, the 0.2 followed the corpus languages
+ * (zh, ru, pl... without labels of their own, so English labels).
  */
-function selectableLangs(patterns: Patterns): [Lang, number][] {
-  const others = patterns.langs.filter(([l, w]) => l !== "und" && l !== "en" && l !== "fr" && w > 0);
-  const total = others.reduce((s, [, w]) => s + w, 0);
-  if (total === 0) return [["fr", 0.5], ["en", 0.5]];
-  return [["fr", 0.4], ["en", 0.4], ...others.map(([l, w]) => [l, (0.2 * w) / total] as [Lang, number])];
+function selectableLangs(): [Lang, number][] {
+  return [["fr", 0.4], ["en", 0.4], ...OTHER_LANGS.map((l) => [l, 0.2 / OTHER_LANGS.length] as [Lang, number])];
 }
 
 function makeIdp(rng: Rng): Record<ProviderId, IdpAccount[]> {
@@ -368,6 +378,13 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
     if (flow === "login_passkey") {
       account.passkey = passkey(ra);
       site.passkeyOnly = passkeyOnly;
+    }
+    if (account.passkey) {
+      // The site's passkey in the vault, as the native host fixture reads it (fixture.rs PasskeyDef).
+      extra.passkeys = [{
+        rp_id: base.host, user_name: account.username, user_handle: userHandle(base.host, account.username),
+        credential_id: account.passkey.credentialId, private_key: passkeyPkcs8(account.passkey).toString("base64url"),
+      }];
     }
     site.account = account;
     site.itemTitle = base.brand;
