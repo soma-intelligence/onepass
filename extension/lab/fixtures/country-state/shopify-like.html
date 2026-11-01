@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Synthetic checkout modelled on a hosted e-commerce checkout: country first,
+     then a zone list fetched for that country (300 ms), absent for countries
+     without zones. Fictional shop, local only. -->
+<html lang="en"><head><meta charset="utf-8"><title>Cascade Goods - Checkout</title></head>
+<body>
+<main>
+  <h1>Cascade Goods</h1>
+  <form id="checkout" action="/checkout/shipping" method="post">
+    <h2>Shipping address</h2>
+    <label for="country">Country/region</label>
+    <select id="country" name="countryCode" autocomplete="shipping country">
+      <option value="US" selected>United States</option>
+      <option value="CA">Canada</option>
+      <option value="FR">France</option>
+      <option value="DE">Germany</option>
+      <option value="GB">United Kingdom</option>
+    </select>
+    <label for="first">First name</label><input id="first" name="firstName" autocomplete="shipping given-name">
+    <label for="last">Last name</label><input id="last" name="lastName" autocomplete="shipping family-name">
+    <label for="address1">Address</label><input id="address1" name="address1" autocomplete="shipping address-line1">
+    <label for="city">City</label><input id="city" name="city" autocomplete="shipping address-level2">
+    <div id="zone-slot"></div>
+    <label for="zip">ZIP code</label><input id="zip" name="postalCode" autocomplete="shipping postal-code">
+    <button type="submit">Continue to shipping</button>
+  </form>
+</main>
+<script>
+(function () {
+  var ZONES = {
+    US: { label: "State", list: [["AL", "Alabama"], ["AZ", "Arizona"], ["CA", "California"], ["CO", "Colorado"], ["DC", "District of Columbia"], ["FL", "Florida"], ["GA", "Georgia"], ["NY", "New York"], ["OR", "Oregon"], ["TX", "Texas"], ["WA", "Washington"]] },
+    CA: { label: "Province", list: [["AB", "Alberta"], ["BC", "British Columbia"], ["MB", "Manitoba"], ["NS", "Nova Scotia"], ["ON", "Ontario"], ["QC", "Quebec"], ["SK", "Saskatchewan"]] }
+  };
+  var country = document.getElementById("country");
+  var slot = document.getElementById("zone-slot");
+  function render(code) {
+    var z = ZONES[code];
+    if (!z) { slot.innerHTML = ""; return; }
+    var html = '<label for="zone">' + z.label + '</label><select id="zone" name="zone" autocomplete="shipping address-level1">'
+      + '<option value="" disabled selected>' + z.label + '</option>';
+    for (var i = 0; i < z.list.length; i++) html += '<option value="' + z.list[i][0] + '">' + z.list[i][1] + '</option>';
+    slot.innerHTML = html + "</select>";
+  }
+  render(country.value);
+  country.addEventListener("change", function () {
+    slot.innerHTML = "";
+    var code = country.value;
+    // The zones come from the server.
+    setTimeout(function () { if (country.value === code) render(code); }, 300);
+  });
+})();
+</script>
+</body></html>

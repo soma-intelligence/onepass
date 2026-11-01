@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- Synthetic address book form modelled on a large marketplace: a custom
+     country dropdown (ARIA combobox, menu rendered at the end of the body)
+     backed by a hidden native select that the form submits; favourite
+     countries repeated on top of the full list; a state list by full name.
+     Fictional, local only. -->
+<html lang="en"><head><meta charset="utf-8"><title>Riverbend Market - Add an address</title>
+<style>.native{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}</style></head>
+<body>
+<main>
+  <h1>Add a new address</h1>
+  <form id="address" action="/a/addresses/add" method="post">
+    <div class="dropdown" id="country-widget">
+      <label for="country-input">Country/Region</label>
+      <input id="country-input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="country-menu" autocomplete="off" placeholder="United States">
+      <select id="countryCode" name="countryCode" class="native" tabindex="-1" aria-hidden="true">
+        <option value="US" selected>United States</option>
+        <option value="CA">Canada</option>
+        <option value="">----------</option>
+        <option value="CA">Canada</option>
+        <option value="FR">France</option>
+        <option value="DE">Germany</option>
+        <option value="US">United States</option>
+      </select>
+    </div>
+    <label for="fullName">Full name (First and Last name)</label><input id="fullName" name="fullName" autocomplete="name">
+    <label for="phone">Phone number</label><input id="phone" type="tel" name="phone" autocomplete="tel">
+    <label for="line1">Address</label><input id="line1" name="addressLine1" autocomplete="address-line1" placeholder="Street address or P.O. Box">
+    <label for="city">City</label><input id="city" name="city" autocomplete="address-level2">
+    <label for="state">State</label>
+    <select id="state" name="stateOrRegion" autocomplete="address-level1">
+      <option value="">Select</option>
+      <option value="California">California</option>
+      <option value="New Jersey">New Jersey</option>
+      <option value="New York">New York</option>
+      <option value="Oregon">Oregon</option>
+      <option value="Texas">Texas</option>
+      <option value="Washington">Washington</option>
+    </select>
+    <label for="zip">ZIP Code</label><input id="zip" name="postalCode" autocomplete="postal-code">
+    <button type="submit">Add address</button>
+  </form>
+</main>
+<script>
+(function () {
+  var CHOICES = [["US", "United States"], ["CA", "Canada"], ["FR", "France"], ["DE", "Germany"], ["GB", "United Kingdom"]];
+  var input = document.getElementById("country-input");
+  function close() {
+    var m = document.getElementById("country-menu");
+    if (m) m.remove();
+    input.setAttribute("aria-expanded", "false");
+  }
+  input.addEventListener("input", function () {
+    var q = input.value.toLowerCase();
+    setTimeout(function () {
+      close();
+      var menu = document.createElement("ul");
+      menu.id = "country-menu";
+      menu.setAttribute("role", "listbox");
+      CHOICES.forEach(function (c) {
+        if (c[1].toLowerCase().indexOf(q) < 0) return;
+        var li = document.createElement("li");
+        li.setAttribute("role", "option");
+        li.setAttribute("data-value", c[0]);
+        li.textContent = c[1];
+        li.addEventListener("click", function () {
+          // The widget shows the name; the form posts the hidden select,
+          // which this widget forgets to update.
+          input.value = c[1];
+          input.setAttribute("data-selected", c[0]);
+          close();
+        });
+        menu.appendChild(li);
+      });
+      document.body.appendChild(menu);
+      input.setAttribute("aria-expanded", "true");
+    }, 80);
+  });
+})();
+</script>
+</body></html>

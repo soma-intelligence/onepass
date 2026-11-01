@@ -400,6 +400,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         resolve: (ref, a) => lineage.resolve(ref, a),
         onFill: (el, role) => recorder?.noteFilled(el, role),
         activeElement: () => deepActiveElement(doc, shadowRootOf, isOwnHost),
+        lang: () => doc.documentElement?.lang ?? null,
       });
       const submit = createSubmitWatcher({
         doc,
