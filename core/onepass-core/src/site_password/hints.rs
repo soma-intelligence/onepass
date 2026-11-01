@@ -228,7 +228,7 @@ fn read_lengths(toks: &[Tok<'_>], out: &mut Constraints) {
         } else if bare_end(toks.get(i + 1))
             && let Some((is_min, m)) = prefix_kind(toks, i, n)
                 .filter(|_| explicit_bound(toks, i))
-                .filter(|_| password_context(toks) || abbreviated_bound(toks, i))
+                .filter(|_| password_context(toks, i) || abbreviated_bound(toks, i))
         {
             // Unit-less bound at the end of a clause: "at least 8", "min 8, max 20".
             if is_min {
@@ -251,9 +251,18 @@ fn bare_end(next: Option<&Tok<'_>>) -> bool {
     }
 }
 
-/// The text talks about the password or its length, so a bare bound is one.
-fn password_context(toks: &[Tok<'_>]) -> bool {
-    toks.iter().any(|t| {
+/// The clause around the number at `i` talks about the password or its
+/// length, so a bare bound is one. Other sentences do not count.
+fn password_context(toks: &[Tok<'_>], i: usize) -> bool {
+    let start = toks[..i]
+        .iter()
+        .rposition(|t| *t == Tok::Clause)
+        .map_or(0, |p| p + 1);
+    let end = toks[i..]
+        .iter()
+        .position(|t| *t == Tok::Clause)
+        .map_or(toks.len(), |p| i + p);
+    toks[start..end].iter().any(|t| {
         matches!(
             t,
             Tok::Word(
@@ -702,6 +711,19 @@ mod tests {
     #[test]
     fn unitless_choose_up_to_ignored() {
         assert_eq!(lens("Choose up to 5"), (0, None));
+    }
+
+    #[test]
+    fn mixed_text_age_ignored() {
+        assert_eq!(
+            lens("Password must be 8+ characters. You must be at least 18."),
+            (8, None)
+        );
+    }
+
+    #[test]
+    fn mixed_text_choose_up_to_ignored() {
+        assert_eq!(lens("Password: 8+ characters. Choose up to 5."), (8, None));
     }
 
     #[test]
