@@ -443,4 +443,21 @@ describe("analyzeDocument: lab fixes run (task 9)", () => {
     ]);
   });
 
+  it("name_before_family_name_is_given_name", () => {
+    // Lab site 160 (lab-2026-10-26): "name" then "Family name" on an address form.
+    const { a, refs } = analyzeHtml(
+      '<form id="f"><label for="g">name</label><input id="g" name="imm-wifi-nome">' +
+        '<label for="l">Family name</label><input id="l" name="subscriberlastname">' +
+        '<label for="s">Street address</label><input id="s" name="address">' +
+        '<label for="c">City</label><input id="c" name="ville"><button type="submit">Save</button></form>',
+    );
+    expect(roles(a.forms[0]!, refs)).toMatchObject({ g: "given_name", l: "family_name" });
+    // A full name alone stays a full name.
+    const alone = analyzeHtml(
+      '<form id="f"><label for="g">Full name</label><input id="g" name="n1">' +
+        '<label for="s">Street address</label><input id="s" name="address">' +
+        '<label for="c">City</label><input id="c" name="ville"><button type="submit">Save</button></form>',
+    );
+    expect(roles(alone.a.forms[0]!, alone.refs)).toMatchObject({ g: "full_name" });
+  });
 });

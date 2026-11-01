@@ -313,6 +313,18 @@ function resolvePasswords(fields: Classified[]): void {
   });
 }
 
+/**
+ * A guessed full name followed by a family name, with no given name in the
+ * group, is the given name ("Name" then "Family name").
+ */
+function resolveNames(fields: Classified[]): void {
+  if (fields.some((f) => f.role === "given_name")) return;
+  const family = fields.findIndex((f) => f.role === "family_name");
+  if (family < 0) return;
+  const full = fields.findIndex((f) => f.role === "full_name" && !f.direct);
+  if (full >= 0 && full < family) (fields[full] as Classified).role = "given_name";
+}
+
 function count(roles: FieldRole[], set: ReadonlySet<FieldRole>): number {
   return roles.filter((r) => set.has(r)).length;
 }
@@ -443,6 +455,7 @@ export function detectForms(
     group.fields.sort((a, b) => documentOrder(a.el, b.el));
     resolveSecurityCodes(group.fields);
     resolvePasswords(group.fields);
+    resolveNames(group.fields);
     const submit = findSubmit(group, buttons, isForm);
     const kind = formKind(
       group.fields.map((f) => f.role),
