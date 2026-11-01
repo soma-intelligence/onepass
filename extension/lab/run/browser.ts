@@ -186,6 +186,9 @@ export async function shadowField(scope: Frame, selector: string): Promise<{ x: 
   }, selector).catch(() => null);
 }
 
+/** How long a click in a field gets to open the in-field menu before the driver asks with ArrowDown. */
+const CLICK_MENU_MS = 1_500;
+
 /** content/icon.ts: a 20 px icon, 6 px inside the field's right edge (see e2e/smart-fill.spec.ts). */
 const ICON_CENTER_FROM_RIGHT = 6 + 10;
 /** After the field shows: the content script analyses 150 ms after a mutation burst, then attaches its icon. */
@@ -207,22 +210,23 @@ async function fieldBox(p: Page, scope: Frame, selector: string): Promise<{ x: n
 /**
  * Focuses `selector` in `scope` as a user would: by locator when it can reach
  * the field, else (closed shadow root) with a mouse click in the middle of
- * the box the page hook reports. Throws after `timeout` ms.
+ * the box the page hook reports. Throws after `timeout` ms. Says how: a click
+ * in an empty field may already open the in-field menu, a focus never does.
  */
-export async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<void> {
+export async function focusField(p: Page, scope: Frame, selector: string, timeout: number): Promise<"focus" | "click"> {
   const end = Date.now() + timeout;
   const field = scope.locator(selector).first();
   for (;;) {
     if ((await field.count().catch(() => 0)) > 0) {
       await field.focus({ timeout: Math.max(1, end - Date.now()) });
-      return;
+      return "focus";
     }
     const box = await shadowField(scope, selector);
     if (box && box.width > 0 && box.height > 0) {
       // The hook's box is relative to the frame's viewport: add the frame's own offset.
       const frameBox = scope === p.mainFrame() ? { x: 0, y: 0 } : await (await scope.frameElement()).boundingBox();
       await p.mouse.click((frameBox?.x ?? 0) + box.x + box.width / 2, (frameBox?.y ?? 0) + box.y + box.height / 2);
-      return;
+      return "click";
     }
     if (Date.now() >= end) throw new Error(`no field ${selector} within ${timeout} ms`);
     await sleep(200);
@@ -328,7 +332,14 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       findExtFrame,
       waitExtFrame,
       async openMenu(p, scope, selector, timeout = 10_000) {
-        await focusField(p, scope, selector, timeout);
+        const how = await focusField(p, scope, selector, timeout);
+        // A click in an empty field (closed shadow root) opens the menu itself: an
+        // ArrowDown on top of it would open a second one and leave the driver
+        // holding the first, already replaced frame (lab-2026-10-26 site 27).
+        if (how === "click") {
+          const opened = await waitExtFrame(p, "menu", CLICK_MENU_MS);
+          if (opened) return opened;
+        }
         await p.keyboard.press("ArrowDown");
         return waitExtFrame(p, "menu", timeout);
       },
