@@ -497,6 +497,30 @@ describe("passkey hardening (review)", () => {
     expect(t.windows.created).toHaveLength(2);
   });
 
+  it("M1: the cooldown is per call kind: a cancelled get does not block a create", async () => {
+    const t = setup();
+    const p = t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    await t.pk.cancel(t.tokenOf(), t.ui());
+    await p;
+    expect(await t.pk.request(cs(), "r2", GET, true)).toEqual({ kind: "fallback" });
+    void t.pk.request(cs({ documentId: "doc-2" }), "r3", CREATE, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(2);
+  });
+
+  it("M1: a cancelled create blocks a create, not a get", async () => {
+    const t = setup();
+    const p = t.pk.request(cs(), "r1", CREATE, true);
+    await flush();
+    await t.pk.cancel(t.tokenOf(), t.ui());
+    await p;
+    expect(await t.pk.request(cs(), "r2", CREATE, true)).toEqual({ kind: "fallback" });
+    void t.pk.request(cs({ documentId: "doc-2" }), "r3", GET, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(2);
+  });
+
   it("M1: at most 3 windows per tab and minute", async () => {
     const t = setup();
     for (let i = 0; i < 3; i++) {

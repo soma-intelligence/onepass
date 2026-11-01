@@ -16,7 +16,8 @@
 //   page's click guard). A creation always asks;
 // - the window opens only on a page call made under a user activation (read by
 //   the isolated relay), in the active tab, at most PASSKEY_WINDOWS_PER_MIN per
-//   tab, never within PASSKEY_COOLDOWN_MS of a refusal for the same tab and site;
+//   tab, never within PASSKEY_COOLDOWN_MS of a refusal for the same tab, site
+//   and kind of call (get or create);
 //   the host's list is asked at most PASSKEY_PROBES_PER_MIN per tab. Past any of
 //   these, the browser's API (a page cannot pop windows or probe the vault);
 // - one window per document: a second request while one is open is refused;
@@ -49,7 +50,7 @@ export const PASSKEY_MIN_WAIT_MS = 30 * 1000;
 /** Size of the choice window. */
 export const PASSKEY_WINDOW = { width: 380, height: 460 } as const;
 export const PASSKEY_PAGE = "passkey.html";
-/** After a cancel (or a closed window), the browser's API for that tab and site this long. */
+/** After a cancel (or a closed window), the browser's API for that tab, site and kind of call this long. */
 export const PASSKEY_COOLDOWN_MS = 10 * 1000;
 /** Per tab and minute: choice windows opened, host lists asked. */
 export const PASSKEY_WINDOWS_PER_MIN = 3;
@@ -129,7 +130,7 @@ export class Passkeys {
   private readonly byKey = new Map<string, Pending>();
   private readonly byDoc = new Map<string, Pending>();
   private readonly early = new Map<string, Early>();
-  /** `tabId:site` -> end of the cooldown. */
+  /** `tabId:site:kind` -> end of the cooldown. */
   private readonly cooldown = new Map<string, number>();
   /** Per tab: times of the windows opened, of the lists asked (last minute). */
   private readonly opened = new Map<number, number[]>();
@@ -178,18 +179,18 @@ export class Passkeys {
     return list;
   }
 
-  private siteKey(cs: CsContext): string {
-    return `${cs.tabId}:${parseOrigin(cs.origin)?.site ?? cs.origin}`;
+  private cooldownKey(cs: CsContext, kind: PasskeyRequest["kind"]): string {
+    return `${cs.tabId}:${parseOrigin(cs.origin)?.site ?? cs.origin}:${kind}`;
   }
 
   private coolDown(p: Pending): void {
-    this.cooldown.set(this.siteKey(p.cs), this.now() + PASSKEY_COOLDOWN_MS);
+    this.cooldown.set(this.cooldownKey(p.cs, p.req.kind), this.now() + PASSKEY_COOLDOWN_MS);
   }
 
   /** May a choice window open for this request (before any list is asked)? */
-  private async mayOpen(cs: CsContext, activated: boolean): Promise<boolean> {
+  private async mayOpen(cs: CsContext, kind: PasskeyRequest["kind"], activated: boolean): Promise<boolean> {
     if (!activated || !this.deps.windows) return false;
-    const until = this.cooldown.get(this.siteKey(cs));
+    const until = this.cooldown.get(this.cooldownKey(cs, kind));
     if (until !== undefined && this.now() < until) return false;
     if (this.recent(this.opened, cs.tabId).length >= PASSKEY_WINDOWS_PER_MIN) return false;
     const tab = await Promise.resolve()
@@ -243,7 +244,7 @@ export class Passkeys {
     const c: Ctx = { cs: { ...cs, origin: origin.origin }, topOrigin, rpId };
     // A creation never goes through a chain; a get may, else it needs the window.
     const chain = req.kind === "get" ? await this.silentChain(c.cs, origin.site) : null;
-    const canOpen = await this.mayOpen(c.cs, activated);
+    const canOpen = await this.mayOpen(c.cs, req.kind, activated);
     if (!chain && !canOpen) return FALLBACK;
     const probes = this.recent(this.probes, cs.tabId);
     if (probes.length >= PASSKEY_PROBES_PER_MIN) return FALLBACK;

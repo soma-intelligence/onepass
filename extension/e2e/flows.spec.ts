@@ -368,9 +368,13 @@ paired("passkey_sign_in", async ({ ext }) => {
   await win.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.locator("#result")).toHaveAttribute("data-status", "Créée");
   expect(ext.audit()).toContain("passkey_create");
-  await page.goto(`${ATLAS}/passkey`);
+  // Next sign-in in a fresh tab: this tab is in its get cooldown (Annuler above)
+  // and has opened its 3 windows of the minute (security README 12.11).
+  const next = await ext.context.newPage();
+  await next.goto(`${ATLAS}/passkey`);
+  await expect(next.locator("onepass-root")).toHaveCount(1);
   opened = passkeyWindow();
-  await page.locator("#signin").click();
+  await next.locator("#signin").click();
   win = await opened;
   await expect(win.getByRole("button", { name: "Se connecter en tant que alex.new@atlas.dev" })).toBeVisible();
   await expect(win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` })).toBeVisible();
