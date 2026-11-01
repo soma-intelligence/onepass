@@ -176,6 +176,17 @@ impl Vault {
         Ok((Vault { id, meta, key }, envelope, meta_blob))
     }
 
+    /// A vault with a fresh key and no account, for unit tests of the
+    /// modules that only seal under the vault key.
+    #[cfg(test)]
+    pub(crate) fn create_for_tests(meta: VaultMeta) -> Vault {
+        Vault {
+            id: Id::new(),
+            meta,
+            key: SymmetricKey::generate().unwrap(),
+        }
+    }
+
     /// Open a vault from its stored envelope and meta blob.
     pub fn open(account: &Account, id: Id, key_envelope: &[u8], meta_blob: &[u8]) -> Result<Vault> {
         Vault::open_with_kem(&account.keyset().kem, id, key_envelope, meta_blob)

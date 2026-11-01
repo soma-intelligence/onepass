@@ -596,9 +596,13 @@ public actor SyncCoordinator: SyncTrigger {
         try await CoreThread.run { try store.beginZoneReset(tokenKey: Self.tokenKey) }
     }
 
-    /// A record the core can stage: known kind (1 to 10), canonical id, version that fits SQLite.
+    /// Attachment chunks (`RecordKind::Attachment` in the core).
+    static let attachmentKind: UInt8 = 25
+
+    /// A record the core can stage: known kind (1 to 10, or an attachment chunk), canonical id,
+    /// version that fits SQLite.
     static func isValid(_ record: RemoteRecord) -> Bool {
-        (1...10).contains(record.name.kind)
+        ((1...10).contains(record.name.kind) || record.name.kind == attachmentKind)
             && RecordName(string: record.name.string) == record.name
             && record.version <= UInt64(Int64.max)
     }
@@ -771,12 +775,14 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     /// Pending order regrouped per vault: records outside vaults (account, keysets, vault keys and
-    /// metas), then for each vault with a pending manifest its items followed by its manifest, then
-    /// items without a pending manifest, then deletions in core order (after every manifest).
+    /// metas), then attachment chunks (before the items that list them), then for each vault with a
+    /// pending manifest its items followed by its manifest, then items without a pending manifest,
+    /// then deletions in core order (after every manifest).
     private static func ordered(_ outgoing: [Outgoing]) -> [Outgoing] {
         let writes = outgoing.filter { $0.change.data != nil }
         let deletions = outgoing.filter { $0.change.data == nil }
         var result = writes.filter { $0.change.kind < 5 }
+        result += writes.filter { $0.change.kind == attachmentKind }
         var items: [String: [Outgoing]] = [:]
         var itemOrder: [String] = []
         for item in writes where item.change.kind == 5 {
@@ -789,7 +795,7 @@ public actor SyncCoordinator: SyncTrigger {
             result.append(manifest)
         }
         for vault in itemOrder { result += items[vault] ?? [] }
-        result += writes.filter { $0.change.kind > 6 }
+        result += writes.filter { $0.change.kind > 6 && $0.change.kind != attachmentKind }
         return result + deletions
     }
 

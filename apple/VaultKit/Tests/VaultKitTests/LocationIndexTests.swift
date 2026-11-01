@@ -98,7 +98,7 @@ struct LocationIndexTests {
             ],
             expires: nil, rotateEveryDays: nil, reprompt: false, hideFromAutofill: false, watchtowerExclusions: [],
             onWatch: false, archived: false, trashedAt: nil, createdAt: 0, updatedAt: 0, passwordHistoryCount: 0,
-            attachmentCount: 0)
+            attachmentCount: 0, attachments: [])
         #expect(LocationIndex.points(of: item) == [hotelDeVille, laDefense])
         item.locations = []
         #expect(LocationIndex.points(of: item) == [hotelDeVille])

@@ -2802,6 +2802,16 @@
           }
         }
       }
+    },
+    "Ce fichier est endommagé : il ne s'ouvre pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is damaged: it can't be opened."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

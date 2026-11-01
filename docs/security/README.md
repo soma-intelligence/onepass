@@ -33,7 +33,7 @@ Le stockage voit en clair exactement ceci :
 - la CLI lancée avec `--insecure-file-secret-key`, qui garde alors la Secret Key en clair dans `device.bin` par choix explicite (machine sans magasin de secrets, voir `core/README.md`) ; sans cette option, la Secret Key de la CLI est dans le trousseau de session macOS ou le Secret Service sous Linux, que lit tout processus du même utilisateur ;
 - l'analyse de trafic : la taille des blobs est arrondie par paliers, pas masquée ;
 - la liste des vaults du compte n'est pas signée (limite connue du jalon 1) : un stockage peut masquer un vault entier à un appareil qui ne l'a jamais lu. Un appareil qui l'a déjà lu le détecte (`VaultMissing`), et un vault planté est refusé faute de manifeste signé. Une liste de vaults signée est prévue au jalon 2 ;
-- l'appairage d'appareils, le partage entre membres, la révocation, les pièces jointes (le type de blob `Attachment` est réservé, sans flux associé). Le modèle formel ProVerif, ajouté après le jalon 1, est décrit dans [`formal/README.md`](formal/README.md).
+- l'appairage d'appareils, le partage entre membres, la révocation (les pièces jointes, ajoutées le 2026-10-31, sont décrites dans `docs/superpowers/specs/2026-10-31-attachments-design.md`). Le modèle formel ProVerif, ajouté après le jalon 1, est décrit dans [`formal/README.md`](formal/README.md).
 
 **Dépendances de confiance :** `aws-lc-rs` (AES-256-GCM-SIV, HMAC, HKDF, SHA-2, SHA-3, ML-KEM-1024, X25519, ML-DSA-87, Ed25519, générateur aléatoire du système), `argon2` (Argon2id), `slh-dsa` (SLH-DSA-SHA2-256s, version `=0.1.0`), `postcard` (encodage). `libcrux` sert uniquement de référence indépendante dans les tests différentiels.
 
@@ -71,7 +71,7 @@ Chaque blob est scellé par AES-256-GCM-SIV avec un engagement de clé HMAC-SHA2
 | 50 à fin moins 16 | texte chiffré (plaintext paddé) |
 | 16 derniers | tag GCM-SIV |
 
-Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8. `Attachment` et `DeviceState` sont réservés : rien ne les produit au jalon 1 (`device.bin` de la CLI est du postcard en clair, sans la Secret Key sauf `--insecure-file-secret-key`), mais leurs numéros restent pris.
+Types de blob : `Keyset` 1, `VaultKey` 2, `VaultMeta` 3, `ItemKey` 4, `Item` 5, `Manifest` 6, `Attachment` 7, `DeviceState` 8. `DeviceState` est réservé : rien ne le produit au jalon 1 (`device.bin` de la CLI est du postcard en clair, sans la Secret Key sauf `--insecure-file-secret-key`), mais son numéro reste pris. `Attachment` scelle les pièces jointes depuis le 2026-10-31 (clé de pièce jointe sous la clé du vault, tranches sous la clé de pièce jointe).
 
 **Données associées.** `AAD_base = en-tête[0..18] || blob_id (16) || vault_id (16, ou 16 octets nuls s'il n'y en a pas) || schéma (u16 big-endian)`, soit 52 octets. L'engagement vaut `HMAC-SHA256(K_com, AAD_base)`. Les données associées passées à GCM-SIV sont `AAD_base || engagement` (84 octets). Elles lient donc le format, l'algorithme, le type, le nonce, l'id du blob, l'id du vault et la version de schéma.
 
@@ -222,7 +222,7 @@ Un fichier d'import est une entrée hostile : un export altéré ou piégé ne d
 
 1. **Secret Key** : la spec et les contraintes du jalon parlent de 52 caractères. Le code affiche 52 caractères de base32 plus un caractère de contrôle (53 au total, en 14 groupes de 4, le dernier de 1). Les 256 bits de clé sont inchangés.
 2. **`mlock`** : la section 4.7 de la spec prévoit le verrouillage des pages sensibles en mémoire. Le code efface les secrets à la libération (`zeroize`) mais n'appelle pas `mlock`.
-3. **Pièces jointes** : la section 4.2 prévoit une clé par pièce jointe enveloppée par la clé d'item. Le jalon 1 réserve le type de blob `Attachment` sans implémenter ce flux.
+3. **Pièces jointes** : la section 4.2 prévoit une clé par pièce jointe enveloppée par la clé d'item. L'implémentation du 2026-10-31 l'enveloppe sous la clé du vault (la clé d'item change à chaque enregistrement), voir `docs/superpowers/specs/2026-10-31-attachments-design.md`.
 4. **Dernier manifeste vu** : la spec mentionne le dernier numéro de séquence. Le code retient le `seq` et le hash du manifeste, ce qui détecte en plus une bifurcation au même `seq`.
 5. **Plafond Argon2id** : le code borne les paramètres venant du stockage à 2 GiB, 16 passes, 16 voies avant de calculer, pour qu'un serveur hostile ne puisse pas épuiser l'appareil. La spec ne le mentionne pas.
 6. **Modèle formel** : la spec prévoit un modèle Tamarin ou ProVerif vérifié en CI. Il existe désormais : modèles ProVerif 2.05 dans `formal/`, lancés par `make formal`, documentation (modèle d'attaquant, abstractions, propriétés P1 à P18, écarts et décisions, ce qui n'est pas prouvé) dans [`docs/security/formal/README.md`](formal/README.md) et résultats dans [`docs/security/formal/results.md`](formal/results.md). Le CI (`.github/workflows/formal.yml`) est optionnel : il se lance à la main et sur les changements de `formal/**`, pas sur chaque commit du code.

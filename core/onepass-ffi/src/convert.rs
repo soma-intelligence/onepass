@@ -590,6 +590,7 @@ pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
         updated_at: ts(i.updated_at),
         password_history_count: count(i.password_history.len()),
         attachment_count: count(i.attachments.len()),
+        attachments: i.attachments.iter().map(attachment_to_ffi).collect(),
     }
 }
 

@@ -71,6 +71,7 @@ use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
+mod attachments;
 pub mod follow;
 pub mod kit;
 mod local;
@@ -1313,9 +1314,11 @@ impl<S: RecordStore> Repository<S> {
         .into_iter()
         .map(|kind| (kind, vault.id))
         .collect();
-        for r in self.store.list(RecordKind::Item)? {
-            if split_item_record(&r.data).is_ok_and(|(prefix, _)| prefix == vault.id) {
-                deletes.push((RecordKind::Item, r.id));
+        for kind in [RecordKind::Item, RecordKind::Attachment] {
+            for r in self.store.list(kind)? {
+                if split_item_record(&r.data).is_ok_and(|(prefix, _)| prefix == vault.id) {
+                    deletes.push((kind, r.id));
+                }
             }
         }
         self.store
@@ -1532,16 +1535,23 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Remove an item for good: manifest without it first, then its record
-    /// and its ignored leftovers.
+    /// and its ignored leftovers, then its attachments' chunks.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
-        let (blob, _) = *loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let (blob, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let blob = *blob;
+        let attachments = vault
+            .open_item(rec)
+            .map(|item| item.attachments)
+            .unwrap_or_default();
         self.log_own_write(vault.id, item_id, &loaded.manifest, None)?;
         let entries = loaded.entries_without(item_id);
         self.commit_manifest(vault, &loaded.manifest, entries, None)?;
         self.delete_ignored(&loaded, item_id)?;
-        self.store.delete(RecordKind::Item, blob)
+        self.store.delete(RecordKind::Item, blob)?;
+        self.delete_attachment_chunks(&attachments);
+        Ok(())
     }
 
     /// Put the item in the trash: a new version with `trashed_at` set.
@@ -1592,6 +1602,10 @@ impl<S: RecordStore> Repository<S> {
         self.store.delete(RecordKind::Item, blob)?;
         if let Some(b) = replaced {
             self.store.delete(RecordKind::Item, b)?;
+        }
+        // The attachments follow, once the item is listed in `to` only.
+        if let Ok(item) = to.open_item(&moved) {
+            self.move_attachment_chunks(from, to, &item.attachments);
         }
         Ok(())
     }
@@ -3457,5 +3471,99 @@ mod tests {
         let (repo, _) = Repository::create_account(MemoryStore::new(), "pw", kdf()).unwrap();
         assert_eq!(repo.account().params.epoch, 1);
         assert_eq!(repo.chain().params_epoch, 1);
+    }
+
+    fn chunk_count_in<S: RecordStore>(repo: &Repository<S>) -> usize {
+        repo.store.list(RecordKind::Attachment).unwrap().len()
+    }
+
+    #[test]
+    fn attachment_add_read_remove() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "alice");
+        repo.save_item(&v, item.clone()).unwrap();
+        let pdf: Vec<u8> = (0..(crate::attachment::CHUNK + 10))
+            .map(|i| i as u8)
+            .collect();
+        let r = repo
+            .add_attachment(&v, item.id, "contrat.pdf", "application/pdf", &pdf)
+            .unwrap();
+        assert_eq!(chunk_count_in(&repo), 2);
+        let listed = &repo.items(&v).unwrap()[0];
+        assert_eq!(listed.attachments, vec![r.clone()]);
+        assert_eq!(
+            &repo.read_attachment(&v, item.id, r.id).unwrap()[..],
+            &pdf[..]
+        );
+        // Another item does not reach it.
+        let other = login(&v, "bob");
+        repo.save_item(&v, other.clone()).unwrap();
+        assert_eq!(
+            repo.read_attachment(&v, other.id, r.id).unwrap_err(),
+            Error::NotFound
+        );
+        repo.remove_attachment(&v, item.id, r.id).unwrap();
+        assert_eq!(chunk_count_in(&repo), 0);
+        assert!(
+            repo.items(&v)
+                .unwrap()
+                .iter()
+                .all(|i| i.attachments.is_empty())
+        );
+        assert_eq!(
+            repo.remove_attachment(&v, item.id, r.id).unwrap_err(),
+            Error::NotFound
+        );
+    }
+
+    #[test]
+    fn attachment_follows_the_item() {
+        let (mut repo, a) = fresh(MemoryStore::new());
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&a, "alice");
+        repo.save_item(&a, item.clone()).unwrap();
+        let r = repo
+            .add_attachment(&a, item.id, "f.pdf", "application/pdf", b"%PDF-1.7")
+            .unwrap();
+        // Edits and the trash keep it.
+        repo.trash_item(&a, item.id).unwrap();
+        assert_eq!(chunk_count_in(&repo), 1);
+        // A move re-wraps it for the target vault.
+        repo.move_item(item.id, &a, &b).unwrap();
+        assert_eq!(
+            &repo.read_attachment(&b, item.id, r.id).unwrap()[..],
+            b"%PDF-1.7"
+        );
+        // Deleting the item for good deletes its chunks.
+        repo.delete_item(&b, item.id).unwrap();
+        assert_eq!(chunk_count_in(&repo), 0);
+    }
+
+    #[test]
+    fn attachment_chunks_go_with_a_deleted_vault() {
+        let (mut repo, a) = fresh(MemoryStore::new());
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&b, "alice");
+        repo.save_item(&b, item.clone()).unwrap();
+        repo.add_attachment(&b, item.id, "f", "", b"x").unwrap();
+        repo.trash_item(&b, item.id).unwrap();
+        repo.delete_vault(&b).unwrap();
+        assert_eq!(chunk_count_in(&repo), 0);
+        drop(a);
+    }
+
+    #[test]
+    fn attachment_limits() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let item = login(&v, "alice");
+        repo.save_item(&v, item.clone()).unwrap();
+        let big = vec![0u8; crate::attachment::MAX_ATTACHMENT + 1];
+        assert!(repo.add_attachment(&v, item.id, "big", "", &big).is_err());
+        assert_eq!(chunk_count_in(&repo), 0);
+        assert_eq!(
+            repo.add_attachment(&v, Id::new(), "f", "", b"x")
+                .unwrap_err(),
+            Error::NotFound
+        );
     }
 }

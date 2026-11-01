@@ -2001,3 +2001,51 @@ fn import_into_unknown_vault_writes_nothing() {
     );
     assert!(fx.session.item_summaries().unwrap().is_empty());
 }
+
+#[test]
+fn attachment_add_read_remove_through_the_session() {
+    let fx = fixture();
+    let item = saved_login(&fx, "Mot-de-passe-Atlas-7");
+    let pdf = b"%PDF-1.7 facture fictive".to_vec();
+    let with = fx
+        .session
+        .add_attachment(
+            fx.vault_id.clone(),
+            item.id.clone(),
+            "facture.pdf".into(),
+            "application/pdf".into(),
+            pdf.clone(),
+        )
+        .unwrap();
+    assert_eq!(with.attachment_count, 1);
+    let a = &with.attachments[0];
+    assert_eq!(
+        (a.name.as_str(), a.size, a.mime.as_str()),
+        ("facture.pdf", pdf.len() as u64, "application/pdf")
+    );
+    assert_eq!(
+        fx.session
+            .attachment_data(fx.vault_id.clone(), item.id.clone(), a.id.clone())
+            .unwrap(),
+        pdf
+    );
+    // An edit from the editor keeps the attachment (the UI never sends it).
+    let mut edited = fx
+        .session
+        .item(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    edited.title = "Atlas renommé".into();
+    edited.attachments.clear();
+    let saved = fx.session.save_item(edited).unwrap();
+    assert_eq!(saved.attachments.len(), 1);
+    let without = fx
+        .session
+        .remove_attachment(fx.vault_id.clone(), item.id.clone(), a.id.clone())
+        .unwrap();
+    assert!(without.attachments.is_empty());
+    assert!(
+        fx.session
+            .attachment_data(fx.vault_id.clone(), item.id.clone(), a.id.clone())
+            .is_err()
+    );
+}

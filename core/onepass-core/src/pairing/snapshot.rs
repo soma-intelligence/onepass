@@ -42,11 +42,13 @@ impl SnapshotRecord {
 }
 
 /// The snapshot of `store`: its `base` rows, refused above
-/// `MAX_SNAPSHOT_BYTES`.
+/// `MAX_SNAPSHOT_BYTES`. Attachment chunks are left out: they can be large,
+/// and the newcomer fetches them from the server like any other device.
 pub fn snapshot_from_store(store: &SyncStore) -> Result<Vec<SnapshotRecord>> {
     let snapshot: Vec<SnapshotRecord> = store
         .export_records()?
         .iter()
+        .filter(|r| r.kind != RecordKind::Attachment)
         .map(SnapshotRecord::from_record)
         .collect();
     check_snapshot_size(&snapshot)?;

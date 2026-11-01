@@ -30,8 +30,8 @@
 //! silently accepts their absence.
 //!
 //! Records of a vault: `VaultKey`, `VaultMeta` and `Manifest` with id = the
-//! vault id, and the `Item` records whose prefix (`split_item_record`) is the
-//! vault id.
+//! vault id, and the `Item` and `Attachment` records whose prefix
+//! (`split_item_record`) is the vault id.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,6 +140,7 @@ impl<S: RecordStore> Repository<S> {
         // R10: no write while a rotation waits for the user.
         self.writable()?;
         let local_items = self.store.list(RecordKind::Item)?;
+        let local_chunks = self.store.list(RecordKind::Attachment)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
         for vault in self.vaults()? {
             if vault.meta.travel_safe {
@@ -170,6 +171,7 @@ impl<S: RecordStore> Repository<S> {
             // Every local record of the vault goes, ignored leftovers too.
             let mut records: Vec<Record> = required.into_iter().take(VAULT_KINDS.len()).collect();
             records.extend(items_of(&local_items, vault.id).cloned());
+            records.extend(items_of(&local_chunks, vault.id).cloned());
             plan.push((vault.id, seen(&loaded.manifest), records));
         }
 
@@ -295,8 +297,10 @@ impl<S: RecordStore> Repository<S> {
         }
         // Items first and the key last, so a vault cut halfway is not listed.
         let upstream_items = upstream.list(RecordKind::Item)?;
+        let upstream_chunks = upstream.list(RecordKind::Attachment)?;
         let mut copy = Vec::new();
         for v in vaults.iter().filter(|v| v.copy) {
+            copy.extend(items_of(&upstream_chunks, v.id).cloned());
             let listed = self.upstream_listed(upstream, v.id)?;
             copy.extend(
                 items_of(&upstream_items, v.id)

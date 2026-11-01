@@ -61,6 +61,10 @@ pub enum RecordKind {
     ItemSend,
     /// A share invitation (spec 19.1).
     ShareInvite,
+    /// One chunk of an encrypted attachment (`crate::attachment`), id =
+    /// `attachment::chunk_id`, data = `vault_id (16 bytes) ||
+    /// postcard(AttachmentChunk)`, like an item record.
+    Attachment,
 }
 
 impl RecordKind {
@@ -90,6 +94,7 @@ impl RecordKind {
             Self::RecoveryMessage => 22,
             Self::ItemSend => 23,
             Self::ShareInvite => 24,
+            Self::Attachment => 25,
         }
     }
 
@@ -119,12 +124,19 @@ impl RecordKind {
             22 => Self::RecoveryMessage,
             23 => Self::ItemSend,
             24 => Self::ShareInvite,
+            25 => Self::Attachment,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
 }
 
 impl RecordKind {
+    /// The kinds whose data starts with the id of their vault (16 bytes):
+    /// item records and attachment chunks.
+    pub fn is_vault_prefixed(self) -> bool {
+        matches!(self, Self::Item | Self::Attachment)
+    }
+
     /// The kinds written once and never replaced or deleted (spec 6.3 to
     /// 6.5): a second write under the same key is a conflict, and a
     /// deletion coming from the server is refused.
@@ -846,8 +858,10 @@ mod tests {
         assert_eq!(RecordKind::DeviceList.code(), 8);
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(RecordKind::ApproverList.code(), 13);
+        assert_eq!(RecordKind::Attachment.code(), 25);
+        assert!(RecordKind::Attachment.is_vault_prefixed());
         assert_eq!(
-            RecordKind::from_code(25).unwrap_err(),
+            RecordKind::from_code(26).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

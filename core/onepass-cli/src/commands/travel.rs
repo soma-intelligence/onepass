@@ -151,6 +151,7 @@ fn push(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
             RecordKind::Keyset,
             RecordKind::VaultKey,
             RecordKind::VaultMeta,
+            RecordKind::Attachment,
             RecordKind::Item,
             RecordKind::Manifest,
             RecordKind::RestoreEpoch,

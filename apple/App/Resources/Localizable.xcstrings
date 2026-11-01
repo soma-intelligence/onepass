@@ -14674,6 +14674,126 @@
           }
         }
       }
+    },
+    "Pièces jointes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attachments"
+          }
+        }
+      }
+    },
+    "Supprimer le fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete File"
+          }
+        }
+      }
+    },
+    "Le fichier est effacé de l'élément sur tous tes appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file is removed from the item on all your devices."
+          }
+        }
+      }
+    },
+    "Exporter…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export…"
+          }
+        }
+      }
+    },
+    "Supprimer…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete…"
+          }
+        }
+      }
+    },
+    "Actions sur le fichier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File actions"
+          }
+        }
+      }
+    },
+    "Ajouter un fichier…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a File…"
+          }
+        }
+      }
+    },
+    "Ce fichier n'est pas encore arrivé sur cet appareil. Réessaie après la synchronisation." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file hasn't reached this device yet. Try again after syncing."
+          }
+        }
+      }
+    },
+    "Fichier ajouté : %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File added: %@"
+          }
+        }
+      }
+    },
+    "Ce fichier dépasse 20 Mo, la taille maximale d'une pièce jointe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is over 20 MB, the largest attachment allowed."
+          }
+        }
+      }
+    },
+    "Pas d'aperçu pour ce type de fichier. Exporte-le pour l'ouvrir dans une autre app." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No preview for this kind of file. Export it to open it in another app."
+          }
+        }
+      }
+    },
+    "Page %lld sur %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %lld of %lld"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

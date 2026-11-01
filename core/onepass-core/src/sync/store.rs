@@ -632,7 +632,7 @@ fn pending_rows(conn: &Connection) -> Result<Vec<PendingRow>> {
         let id = decode_id(id)?;
         let vault = match kind {
             RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => Some(id),
-            RecordKind::Item => match data.as_deref() {
+            k if k.is_vault_prefixed() => match data.as_deref() {
                 Some(d) => Some(split_item_record(d)?.0),
                 None => tomb.map(decode_id).transpose()?,
             },
@@ -668,6 +668,7 @@ fn phase_left(
                     RecordKind::VaultKey
                         | RecordKind::VaultMeta
                         | RecordKind::Item
+                        | RecordKind::Attachment
                         | RecordKind::Manifest
                 )
                 && vault.is_some_and(|v| push.is_none_or(|p| p.vaults.contains(&v)))
@@ -762,7 +763,7 @@ fn pending_changes_in(tx: &Connection, hold: &Hold) -> Result<Vec<Change>> {
         let version = u64::try_from(version).map_err(|_| Error::InvalidFormat("record version"))?;
         let vault = match kind {
             RecordKind::Manifest => Some(id),
-            RecordKind::Item => match data.as_deref() {
+            k if k.is_vault_prefixed() => match data.as_deref() {
                 Some(d) => Some(split_item_record(d)?.0),
                 None => tomb_vault.map(decode_id).transpose()?,
             },
@@ -1274,14 +1275,15 @@ impl SyncStore {
                     &format!(
                         "DELETE FROM base AS b WHERE {missing} AND (
                              (b.kind IN (?1, ?2, ?3) AND b.id = ?5)
-                             OR (b.kind = ?4 AND substr(b.data, 1, 16) = ?5))"
+                             OR (b.kind IN (?4, ?6) AND substr(b.data, 1, 16) = ?5))"
                     ),
                     params![
                         RecordKind::VaultKey.code(),
                         RecordKind::VaultMeta.code(),
                         RecordKind::Manifest.code(),
                         RecordKind::Item.code(),
-                        &v.0[..]
+                        &v.0[..],
+                        RecordKind::Attachment.code()
                     ],
                 )
                 .map_err(store_err)?;
@@ -1883,13 +1885,14 @@ impl SyncStore {
             .execute(
                 "DELETE FROM pending WHERE data IS NOT NULL AND (
                      (kind IN (?1, ?2, ?3) AND id = ?5)
-                     OR (kind = ?4 AND substr(data, 1, 16) = ?5))",
+                     OR (kind IN (?4, ?6) AND substr(data, 1, 16) = ?5))",
                 params![
                     RecordKind::VaultKey.code(),
                     RecordKind::VaultMeta.code(),
                     RecordKind::Manifest.code(),
                     RecordKind::Item.code(),
-                    &vault.0[..]
+                    &vault.0[..],
+                    RecordKind::Attachment.code()
                 ],
             )
             .map_err(store_err)?;
@@ -2049,11 +2052,12 @@ impl SyncStore {
     pub(crate) fn discard_local_changes(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
         tx.execute(
-            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "DELETE FROM pending WHERE kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 RecordKind::VaultKey.code(),
                 RecordKind::VaultMeta.code(),
                 RecordKind::Item.code(),
+                RecordKind::Attachment.code(),
                 RecordKind::Manifest.code(),
                 RecordKind::RestoreEpoch.code(),
                 RecordKind::DeviceList.code(),
@@ -2856,8 +2860,10 @@ fn has_pending_manifest(conn: &Connection, vault: Id) -> Result<bool> {
 fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(
         kind,
-        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
-        | RecordKind::ContactBook
+        RecordKind::DeviceList
+            | RecordKind::VaultList
+            | RecordKind::ApproverList
+            | RecordKind::ContactBook
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -2875,8 +2881,9 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     match base_row {
         // Known to the server: a tombstone carrying the deleted version.
         Some((version, prefix)) => {
-            // An item tombstone keeps its vault, for holding and dropping.
-            let vault = if kind == RecordKind::Item {
+            // An item or attachment tombstone keeps its vault, for holding
+            // and dropping.
+            let vault = if kind.is_vault_prefixed() {
                 prefix
             } else {
                 None
@@ -3124,11 +3131,11 @@ fn forget_seen(conn: &Connection, deleted: &BTreeSet<Id>) -> Result<()> {
 }
 
 /// The pending rows of one vault, `?3`: its manifest (kind `?1`), its item
-/// records by vault prefix and its item tombstones by their vault (kind
-/// `?2`).
+/// records (kind `?2`) and attachment chunks (kind `?4`) by vault prefix,
+/// and their tombstones by their vault.
 const VAULT_ROWS: &str = "(kind = ?1 AND id = ?3)
-    OR (kind = ?2 AND data IS NOT NULL AND substr(data, 1, 16) = ?3)
-    OR (kind = ?2 AND data IS NULL AND vault = ?3)";
+    OR (kind IN (?2, ?4) AND data IS NOT NULL AND substr(data, 1, 16) = ?3)
+    OR (kind IN (?2, ?4) AND data IS NULL AND vault = ?3)";
 
 /// A write transaction of `SyncStore::write_tx`.
 enum WriteTx<'a> {
@@ -3162,8 +3169,10 @@ impl WriteTx<'_> {
 fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
     if matches!(
         kind,
-        RecordKind::DeviceList | RecordKind::VaultList | RecordKind::ApproverList
-        | RecordKind::ContactBook
+        RecordKind::DeviceList
+            | RecordKind::VaultList
+            | RecordKind::ApproverList
+            | RecordKind::ContactBook
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -3187,7 +3196,7 @@ fn belongs_to_hidden(hidden: &BTreeSet<Id>, c: &RemoteChange) -> bool {
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             hidden.contains(&c.id)
         }
-        RecordKind::Item => c
+        k if k.is_vault_prefixed() => c
             .data
             .as_deref()
             .and_then(|d| d.get(..16))
@@ -3201,7 +3210,12 @@ fn delete_vault_rows(tx: &Connection, vault: Id) -> Result<()> {
     let codes = (RecordKind::Manifest.code(), RecordKind::Item.code());
     tx.execute(
         &format!("DELETE FROM pending WHERE {VAULT_ROWS}"),
-        params![codes.0, codes.1, &vault.0[..]],
+        params![
+            codes.0,
+            codes.1,
+            &vault.0[..],
+            RecordKind::Attachment.code()
+        ],
     )
     .map_err(store_err)?;
     tx.execute(

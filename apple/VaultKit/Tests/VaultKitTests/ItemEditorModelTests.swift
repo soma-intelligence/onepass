@@ -11,7 +11,7 @@ func draftItem(_ type: FfiItemType, title: String = "Projet Atlas") -> FfiItem {
         apps: [], locations: [], loginMethods: [], sections: template(itemType: type), expires: nil,
         rotateEveryDays: nil, reprompt: false, hideFromAutofill: false, watchtowerExclusions: [],
         onWatch: false, archived: false, trashedAt: nil, createdAt: 1_790_000_000,
-        updatedAt: 1_790_000_000, passwordHistoryCount: 0, attachmentCount: 0)
+        updatedAt: 1_790_000_000, passwordHistoryCount: 0, attachmentCount: 0, attachments: [])
 }
 
 private func index(_ draft: ItemDraft, _ fieldID: String, section: String = "main") -> Int {

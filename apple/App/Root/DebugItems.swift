@@ -13,6 +13,8 @@ import VaultKit
 ///   shows the validation error under the first required field.
 /// - `-OnePassDebugAutoSave YES`: the editor presses Enregistrer once it is shown.
 /// - `-OnePassDebugGenerator YES`: the first password field opens the generator.
+/// - `-OnePassDebugAttach <path>` with `-OnePassDebugItem`: attaches that file (as a PDF) to the
+///   item once, before opening it; `-OnePassDebugAttachmentPreview YES` opens its preview.
 /// - `-OnePassDebugImport <path>`: unlocks the fictional account and opens the import sheet on that
 ///   file (its preview); `-OnePassDebugImportConfirm YES` also imports it into the first vault.
 extension AppModel {
@@ -47,6 +49,14 @@ extension AppModel {
                 } else if let wanted, let title = titles[wanted],
                     let summary = session.summaries.first(where: { $0.title == title })
                 {
+                    if let path = defaults.string(forKey: "OnePassDebugAttach"),
+                        let data = FileManager.default.contents(atPath: path),
+                        try await session.loadItem(vaultID: summary.vaultId, itemID: summary.id).attachments.isEmpty
+                    {
+                        _ = try await session.addAttachment(
+                            itemID: summary.id, vaultID: summary.vaultId,
+                            name: (path as NSString).lastPathComponent, mime: "application/pdf", data: data)
+                    }
                     selectedItem = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
                     editing = defaults.bool(forKey: "OnePassDebugEdit")
                 }

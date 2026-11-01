@@ -474,6 +474,18 @@ impl<S: RecordStore> Repository<S> {
                 resealed.insert((vault.id, item.id), record_hash(&sealed));
                 entries.push(entry(&sealed));
                 writes.push((item_record(vault.id, &sealed)?, None));
+                // Its attachments: the key re-wrapped under the new vault
+                // key, the chunks unchanged. A chunk not synced yet is
+                // left as it is.
+                for r in &item.attachments {
+                    for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
+                        if let Some(chunk) = self.store.get(RecordKind::Attachment, id)?
+                            && let Ok(moved) = crate::attachment::rewrap(vault, &fresh, &chunk)
+                        {
+                            writes.push((moved, Some(chunk.version)));
+                        }
+                    }
+                }
             }
             // Spec 6.7: prev_hash and seq follow the manifest loaded.
             let m = Manifest::next(Some(&l.manifest), vault.id, entries)?.with_meta(&fresh.meta);

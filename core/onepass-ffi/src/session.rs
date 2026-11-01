@@ -294,6 +294,60 @@ impl Session {
         })
     }
 
+    /// Encrypt `bytes` (at most 20 MiB) and attach them to the item, as a
+    /// new item version. Returns the item as stored.
+    pub fn add_attachment(
+        &self,
+        vault_id: String,
+        item_id: String,
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let bytes = zeroize::Zeroizing::new(bytes);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.add_attachment(&vault, item_id, &name, &mime, &bytes)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// Detach a file from the item and delete its encrypted chunks.
+    /// Returns the item as stored.
+    pub fn remove_attachment(
+        &self,
+        vault_id: String,
+        item_id: String,
+        attachment_id: String,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let attachment_id = parse_id(&attachment_id)?;
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.remove_attachment(&vault, item_id, attachment_id)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// The decrypted bytes of a file the item lists. `NotFound` while a
+    /// chunk is not synced to this device yet.
+    pub fn attachment_data(
+        &self,
+        vault_id: String,
+        item_id: String,
+        attachment_id: String,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let attachment_id = parse_id(&attachment_id)?;
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            Ok(repo
+                .read_attachment(&vault, item_id, attachment_id)?
+                .to_vec())
+        })
+    }
+
     pub fn trash_item(&self, vault_id: String, item_id: String) -> Result<(), OnePassError> {
         let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
         self.with(|repo| {

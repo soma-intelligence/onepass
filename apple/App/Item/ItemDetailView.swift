@@ -152,6 +152,9 @@ struct ItemDetailView: View {
                         SignInWithCard(provider: link.provider, accountItemID: link.accountItemID)
                     }
                     content(item)
+                    ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
+                        self.item = $0
+                    }
                     if item.trashedAt == nil, !item.archived {
                         ItemWatchtowerSection(item: item, report: model.watchtower.report) { check, excluded in
                             setWatchtowerExclusion(check, excluded: excluded, item)

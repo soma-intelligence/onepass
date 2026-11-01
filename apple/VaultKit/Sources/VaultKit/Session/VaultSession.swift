@@ -963,6 +963,50 @@ public final class VaultSession {
         try await write { try $0.moveItem(itemId: itemID, fromVault: source, toVault: destination) }
     }
 
+    // MARK: - Attachments
+
+    /// Largest file the core attaches (20 MiB, `attachment::MAX_ATTACHMENT`).
+    nonisolated public static let attachmentMaxBytes = 20 << 20
+
+    /// Encrypts `data` and attaches it to the item, as a new version. Returns the item as stored.
+    public func addAttachment(
+        itemID: String, vaultID: String, name: String, mime: String, data: Data
+    ) async throws -> FfiItem {
+        try await write {
+            try $0.addAttachment(vaultId: vaultID, itemId: itemID, name: name, mime: mime, bytes: data)
+        }
+    }
+
+    /// Detaches a file from the item and deletes its encrypted chunks. Returns the item as stored.
+    public func removeAttachment(itemID: String, vaultID: String, attachmentID: String) async throws -> FfiItem {
+        try await write {
+            try $0.removeAttachment(vaultId: vaultID, itemId: itemID, attachmentId: attachmentID)
+        }
+    }
+
+    /// The decrypted bytes of a file the item lists, kept in memory only. A chunk not synced yet is
+    /// `.notFound`; a damaged file is an error of its own, never "Données refusées" for the vault.
+    public func attachmentData(itemID: String, vaultID: String, attachmentID: String) async throws -> Data {
+        guard let session else { throw fail(.passwordRequired) }
+        let gen = generation
+        noteActivity()
+        let bytes: Data
+        do {
+            bytes = try await background {
+                try session.attachmentData(vaultId: vaultID, itemId: itemID, attachmentId: attachmentID)
+            }
+        } catch {
+            let failure = VaultError(error)
+            if case .integrity = failure {
+                throw VaultError.other(String(
+                    localized: "Ce fichier est endommagé : il ne s'ouvre pas.", bundle: VaultKitStrings.bundle))
+            }
+            throw failure
+        }
+        guard gen == generation else { throw fail(.passwordRequired) }
+        return bytes
+    }
+
     public func setFavorite(_ favorite: Bool, itemID: String, vaultID: String) async throws {
         try await write { try $0.setFavorite(vaultId: vaultID, itemId: itemID, favorite: favorite) }
     }

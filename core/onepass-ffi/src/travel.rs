@@ -62,7 +62,7 @@ pub(crate) fn open_state(repo: &Repo) -> Result<Option<TravelState>, OnePassErro
 fn in_vaults(vaults: &BTreeSet<Id>, kind: RecordKind, id: Id, data: Option<&[u8]>) -> bool {
     match kind {
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => vaults.contains(&id),
-        RecordKind::Item => match data {
+        k if k.is_vault_prefixed() => match data {
             Some(d) => d
                 .get(..16)
                 .and_then(|p| <[u8; 16]>::try_from(p).ok())
@@ -77,6 +77,7 @@ fn in_vaults(vaults: &BTreeSet<Id>, kind: RecordKind, id: Id, data: Option<&[u8]
 fn records_of(store: &SyncStore, vaults: &BTreeSet<Id>) -> Result<Vec<Record>, OnePassError> {
     let mut out = Vec::new();
     for kind in [
+        RecordKind::Attachment,
         RecordKind::Item,
         RecordKind::Manifest,
         RecordKind::VaultMeta,

@@ -303,6 +303,9 @@ pub struct FfiItem {
     pub updated_at: i64,
     pub password_history_count: u32,
     pub attachment_count: u32,
+    /// The files attached to the item (read only here: `Session::add_attachment`
+    /// and `remove_attachment` change them).
+    pub attachments: Vec<FfiAttachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
