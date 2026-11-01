@@ -1033,7 +1033,8 @@ fn passkey_list_get_create_round_trip() {
         &mut host,
         &mut ch,
         json!({"id": 2, "op": "passkey_get", "ctx": "passkey",
-               "origin": "https://login.atlas-cloud.test", "rp_id": "atlas-cloud.test",
+               "origin": "https://login.atlas-cloud.test",
+               "top_origin": "https://login.atlas-cloud.test", "rp_id": "atlas-cloud.test",
                "item_id": pk["item_id"], "credential_id": pk["credential_id"],
                "challenge": b64(&challenge)}),
     );
@@ -1048,6 +1049,7 @@ fn passkey_list_get_create_round_trip() {
     point.extend_from_slice(&cose[10..42]);
     point.extend_from_slice(&cose[45..77]);
     let mut msg = unb64(&ok["authenticator_data"]);
+    assert_eq!(msg[32] & 0x05, 0x01, "UP=1, UV=0");
     msg.extend_from_slice(digest(&SHA256, &cdj).as_ref());
     UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, &point)
         .verify(&msg, &unb64(&ok["signature"]))
@@ -1057,7 +1059,7 @@ fn passkey_list_get_create_round_trip() {
     let evil = request(
         &mut host,
         &mut ch,
-        json!({"id": 3, "op": "passkey_get", "ctx": "passkey", "origin": ATLAS,
+        json!({"id": 3, "op": "passkey_get", "ctx": "passkey", "origin": ATLAS, "top_origin": ATLAS,
                "rp_id": "evil.test", "item_id": pk["item_id"],
                "credential_id": pk["credential_id"], "challenge": b64(&challenge)}),
     );
@@ -1066,7 +1068,7 @@ fn passkey_list_get_create_round_trip() {
     let create = request(
         &mut host,
         &mut ch,
-        json!({"id": 4, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS,
+        json!({"id": 4, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS, "top_origin": ATLAS,
                "rp_id": "atlas-cloud.test", "user_name": "new@atlas.dev",
                "user_handle": b64(&[9, 9]), "challenge": b64(&challenge),
                "exclude": [pk["credential_id"].as_str().unwrap()]}),
@@ -1075,7 +1077,7 @@ fn passkey_list_get_create_round_trip() {
     let create = request(
         &mut host,
         &mut ch,
-        json!({"id": 5, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS,
+        json!({"id": 5, "op": "passkey_create", "ctx": "passkey", "origin": ATLAS, "top_origin": ATLAS,
                "rp_id": "atlas-cloud.test", "user_name": "new@atlas.dev",
                "user_handle": b64(&[9, 9]), "challenge": b64(&challenge), "exclude": []}),
     );
@@ -1084,7 +1086,7 @@ fn passkey_list_get_create_round_trip() {
     let get = request(
         &mut host,
         &mut ch,
-        json!({"id": 6, "op": "passkey_get", "ctx": "chain", "origin": ATLAS,
+        json!({"id": 6, "op": "passkey_get", "ctx": "chain", "origin": ATLAS, "top_origin": ATLAS,
                "rp_id": "atlas-cloud.test", "item_id": made["item_id"],
                "credential_id": made["credential_id"], "challenge": b64(&challenge)}),
     );

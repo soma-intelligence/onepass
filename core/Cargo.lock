@@ -1706,6 +1706,7 @@ version = "0.2.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
+ "icu_properties",
  "libcrux-ml-kem",
  "onepass-core",
  "psl",

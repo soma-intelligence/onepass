@@ -8,13 +8,18 @@
 
 use aws_lc_rs::digest::{SHA256, digest};
 use data_encoding::BASE64URL_NOPAD;
-use url::Host;
+use icu_properties::props::{BidiControl, GeneralCategory};
+use icu_properties::{CodePointMapData, CodePointSetData};
+use serde::Serialize;
+use url::{Host, Url};
 
 use crate::AppErrorCode;
 use crate::origin::Origin;
 
 /// Longest DNS name.
 const MAX_RP_ID: usize = 253;
+/// Longest passkey user name (as `onepass_core::webauthn`).
+const MAX_USER_NAME: usize = 1024;
 /// Longest challenge accepted, in bytes.
 pub const MAX_CHALLENGE: usize = 1024;
 /// Longest user handle (WebAuthn: 1 to 64 bytes).
@@ -61,6 +66,10 @@ pub fn rp_id_for(page: &Origin, rp_id: &str) -> OpResult<String> {
         return Err(AppErrorCode::OriginMismatch);
     }
     let host = page.host();
+    // The page host goes into clientDataJSON: DNS labels only.
+    if !dns_name(host) {
+        return Err(AppErrorCode::Invalid);
+    }
     // A public suffix (or a bare TLD) is never a relying party, even for
     // a page served on it.
     let Some(rp_site) = psl::domain_str(&rp) else {
@@ -86,29 +95,85 @@ fn normalize(rp_id: &str) -> OpResult<String> {
         Ok(Host::Domain(d)) => d.to_ascii_lowercase(),
         _ => return Err(AppErrorCode::Invalid),
     };
-    let label_ok = |l: &str| {
-        !l.is_empty() && l.len() <= 63 && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-    };
-    if rp.len() > MAX_RP_ID || !rp.split('.').all(label_ok) {
+    if !dns_name(&rp) {
         return Err(AppErrorCode::Invalid);
     }
     Ok(rp)
+}
+
+/// A lower-case ASCII DNS name: labels of 1 to 63 letters, digits and
+/// hyphens, 253 bytes at most.
+fn dns_name(name: &str) -> bool {
+    let label_ok = |l: &str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && l.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    name.len() <= MAX_RP_ID && name.split('.').all(label_ok)
+}
+
+/// The origin of a passkey request: `Origin::parse`, and also `invalid`
+/// for a host written with a trailing dot (which `Origin` drops, so
+/// `clientDataJSON` would name another origin than the page's) or a host
+/// that is not a DNS name or an address.
+pub fn passkey_origin(s: &str) -> OpResult<Origin> {
+    let page = Origin::parse(s).map_err(|e| match e {
+        crate::BridgeError::App(code) => code,
+        _ => AppErrorCode::Invalid,
+    })?;
+    let raw = Url::parse(s.trim()).map_err(|_| AppErrorCode::Invalid)?;
+    if raw.host_str().is_none_or(|h| h.ends_with('.')) {
+        return Err(AppErrorCode::Invalid);
+    }
+    if !page.is_ip() && !dns_name(page.host()) {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(page)
+}
+
+/// A passkey user name, trimmed: `invalid` when empty, longer than 1024
+/// bytes, or holding a control (Cc), a format character (Cf) or a bidi
+/// control, which could make a name display as another.
+pub fn check_user_name(name: &str) -> OpResult<&str> {
+    let name = name.trim();
+    let gc = CodePointMapData::<GeneralCategory>::new();
+    let bidi = CodePointSetData::new::<BidiControl>();
+    let bad = |c: char| {
+        matches!(
+            gc.get(c),
+            GeneralCategory::Control | GeneralCategory::Format
+        ) || bidi.contains(c)
+    };
+    if name.is_empty() || name.len() > MAX_USER_NAME || name.chars().any(bad) {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(name)
 }
 
 /// The `clientDataJSON` of a ceremony, built from the browser's origin:
 /// `{"type":...,"challenge":<base64url>,"origin":<origin>,"crossOrigin":false}`.
 /// The extension only lets the top frame or a same-origin frame ask, so
 /// `crossOrigin` is always false.
-pub fn client_data_json(ceremony: Ceremony, challenge: &[u8], page: &Origin) -> Vec<u8> {
-    // Every value is ASCII without a quote or a backslash (a fixed type,
-    // base64url, an origin of a punycode host), so no escaping is needed.
-    format!(
-        r#"{{"type":"{}","challenge":"{}","origin":"{}","crossOrigin":false}}"#,
-        ceremony.as_str(),
-        b64url(challenge),
-        page.origin_string(),
-    )
-    .into_bytes()
+pub fn client_data_json(ceremony: Ceremony, challenge: &[u8], page: &Origin) -> OpResult<Vec<u8>> {
+    let data = ClientData {
+        kind: ceremony.as_str(),
+        challenge: b64url(challenge),
+        origin: page.origin_string(),
+        cross_origin: false,
+    };
+    serde_json::to_vec(&data).map_err(|_| AppErrorCode::Internal)
+}
+
+/// `CollectedClientData`, fields in the order of the WebAuthn spec.
+#[derive(Serialize)]
+struct ClientData {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    challenge: String,
+    origin: String,
+    #[serde(rename = "crossOrigin")]
+    cross_origin: bool,
 }
 
 /// SHA-256 of a `clientDataJSON`.
@@ -238,17 +303,88 @@ mod tests {
     }
 
     #[test]
+    fn passkey_origin_refuses_trailing_dot_and_odd_hosts() {
+        assert_eq!(
+            passkey_origin("https://atlas-cloud.test.").unwrap_err(),
+            AppErrorCode::Invalid
+        );
+        assert_eq!(
+            passkey_origin("https://atlas-cloud.test./login").unwrap_err(),
+            AppErrorCode::Invalid
+        );
+        assert_eq!(
+            passkey_origin("http://atlas-cloud.test").unwrap_err(),
+            AppErrorCode::InsecureOrigin
+        );
+        assert_eq!(
+            passkey_origin("https://atlas-cloud.test:8443/x")
+                .unwrap()
+                .origin_string(),
+            "https://atlas-cloud.test:8443"
+        );
+        // A quote in the host never reaches clientDataJSON: refused, or
+        // escaped by the url parser.
+        match passkey_origin("https://at\"las.test") {
+            Err(_) => {}
+            Ok(o) => assert!(!o.host().contains('"'), "{}", o.host()),
+        }
+    }
+
+    #[test]
+    fn rp_id_checks_page_host_labels() {
+        // A page host the url parser keeps but no DNS label allows.
+        for host in ["at\"las.test", "at$las.test", "a_b.test"] {
+            if let Ok(o) = Origin::parse(&format!("https://{host}"))
+                && o.host().contains(['"', '$', '_'])
+            {
+                assert_eq!(
+                    rp_id_for(&o, "las.test"),
+                    Err(AppErrorCode::Invalid),
+                    "{host}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn user_name_controls_refused() {
+        assert_eq!(check_user_name("alex@atlas.dev"), Ok("alex@atlas.dev"));
+        assert_eq!(check_user_name("  Zoë Martín  "), Ok("Zoë Martín"));
+        for bad in [
+            "",
+            "   ",
+            "alex\u{0}x",
+            "alex\nx",
+            "alex\u{7f}",
+            "alex\u{200b}",
+            "alex\u{200e}",
+            "alex\u{202e}gro.live",
+            "alex\u{2066}x",
+            "alex\u{feff}",
+            "alex\u{e0041}",
+        ] {
+            assert_eq!(check_user_name(bad), Err(AppErrorCode::Invalid), "{bad:?}");
+        }
+        assert_eq!(
+            check_user_name(&"a".repeat(1025)),
+            Err(AppErrorCode::Invalid)
+        );
+    }
+
+    #[test]
     fn client_data_json_has_the_webauthn_layout() {
         let cdj = client_data_json(
             Ceremony::Get,
             &[0xfb, 0xff, 0x01],
             &page("https://login.atlas-cloud.test:8443/x?y#z"),
-        );
+        )
+        .unwrap();
         assert_eq!(
             String::from_utf8(cdj.clone()).unwrap(),
             r#"{"type":"webauthn.get","challenge":"-_8B","origin":"https://login.atlas-cloud.test:8443","crossOrigin":false}"#
         );
-        let create = client_data_json(Ceremony::Create, &[1], &page("https://atlas-cloud.test"));
+        let create =
+            client_data_json(Ceremony::Create, &[1], &page("https://atlas-cloud.test")).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&create).unwrap();
         assert_eq!(v["type"], "webauthn.create");
         assert_eq!(v["origin"], "https://atlas-cloud.test");

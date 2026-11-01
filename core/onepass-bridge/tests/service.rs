@@ -1405,12 +1405,12 @@ mod passkeys {
     }
 
     fn get_req(ctx: &str, origin: &str, rp_id: &str, item: Id, cred: &[u8]) -> Value {
-        json!({"op":"passkey_get","ctx":ctx,"origin":origin,"rp_id":rp_id,
+        json!({"op":"passkey_get","ctx":ctx,"origin":origin,"top_origin":origin,"rp_id":rp_id,
                "item_id":id(item),"credential_id":b64(cred),"challenge":b64(CHALLENGE)})
     }
 
     fn create_req(origin: &str, user: &str, exclude: &[&[u8]]) -> Value {
-        json!({"op":"passkey_create","ctx":"passkey","origin":origin,"rp_id":RP,
+        json!({"op":"passkey_create","ctx":"passkey","origin":origin,"top_origin":origin,"rp_id":RP,
                "user_name":user,"user_handle":b64(HANDLE),"challenge":b64(CHALLENGE),
                "exclude":exclude.iter().map(|c| b64(c)).collect::<Vec<_>>()})
     }
@@ -1545,7 +1545,12 @@ mod passkeys {
         verify(r, &point_of(&cred), RP);
         let auth = unb64(&r["authenticator_data"]);
         assert_eq!(auth.len(), 37);
-        assert_eq!(auth[32] & 0x05, 0x05, "user present and verified");
+        assert_eq!(auth[32] & 0x01, 0x01, "user present");
+        assert_eq!(
+            auth[32] & 0x04,
+            0,
+            "the bridge never claims user verification"
+        );
         assert_eq!(r.as_object().unwrap().len(), 5);
         assert!(!v.to_string().contains(&b64(&cred.private_key)));
     }
@@ -1657,6 +1662,7 @@ mod passkeys {
         assert_eq!(stored[0].credential_id, cred_id);
         let auth = unb64(&r["authenticator_data"]);
         assert_eq!(auth[..32], *digest(&SHA256, RP.as_bytes()).as_ref());
+        assert_eq!(auth[32] & 0x05, 0x01, "UP=1, UV=0");
         assert!(
             unb64(&r["attestation_object"])
                 .windows(auth.len())
@@ -1712,6 +1718,7 @@ mod passkeys {
         let mut req = create_req("http://atlas-cloud.test", "alex@atlas.dev", &[]);
         assert_eq!(err(&h.call(req.clone())), "insecure_origin");
         req["origin"] = json!(ATLAS);
+        req["top_origin"] = json!(ATLAS);
         req["rp_id"] = json!("evil.test");
         assert_eq!(err(&h.call(req.clone())), "origin_mismatch");
         req["rp_id"] = json!(RP);
@@ -1787,5 +1794,75 @@ mod passkeys {
             get_req("passkey", ATLAS, RP, atlas, &cred.credential_id),
             NOW + 60,
         ));
+    }
+
+    #[test]
+    fn passkey_top_origin_must_be_the_frame_origin() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        // A same-origin frame (top equals frame, path and port normalized).
+        let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        req["top_origin"] = json!("https://atlas-cloud.test:443/home");
+        ok(&h.call(req));
+        for top in [
+            "https://evil.test",
+            "https://login.atlas-cloud.test",
+            "https://atlas-cloud.test:8443",
+            "http://atlas-cloud.test",
+            "not an origin",
+        ] {
+            let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+            req["top_origin"] = json!(top);
+            assert_eq!(err(&h.call(req)), "not_allowed", "get {top}");
+            let mut req = create_req(ATLAS, "alex@atlas.dev", &[]);
+            req["top_origin"] = json!(top);
+            assert_eq!(err(&h.call(req)), "not_allowed", "create {top}");
+        }
+        // Required.
+        let mut req = get_req("passkey", ATLAS, RP, atlas, &cred.credential_id);
+        req.as_object_mut().unwrap().remove("top_origin");
+        assert_eq!(err(&h.call(req)), "invalid");
+        let mut req = create_req(ATLAS, "alex@atlas.dev", &[]);
+        req.as_object_mut().unwrap().remove("top_origin");
+        assert_eq!(err(&h.call(req)), "invalid");
+        // Still crossOrigin false on the accepted call.
+        let v = h.call(get_req("passkey", ATLAS, RP, atlas, &cred.credential_id));
+        let cd: Value = serde_json::from_slice(&unb64(&ok(&v)["client_data_json"])).unwrap();
+        assert_eq!(cd["crossOrigin"], false);
+        assert_eq!(h.audit.events().len(), 2);
+    }
+
+    #[test]
+    fn passkey_origin_with_trailing_dot_refused() {
+        let (mut h, cred) = with_passkey();
+        let atlas = h.ids.atlas;
+        let dotted = "https://atlas-cloud.test.";
+        let v = h.call(get_req("passkey", dotted, RP, atlas, &cred.credential_id));
+        assert_eq!(err(&v), "invalid");
+        assert_eq!(
+            err(&h.call(create_req(dotted, "alex@atlas.dev", &[]))),
+            "invalid"
+        );
+        assert_eq!(err(&h.call(list_req("passkey", dotted, RP))), "invalid");
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn passkey_create_refuses_control_characters_in_user_name() {
+        let mut h = H::new();
+        for user in [
+            "alex\u{202e}gro.live",
+            "alex\u{200b}",
+            "alex\nroot",
+            "alex\u{2066}",
+        ] {
+            assert_eq!(
+                err(&h.call(create_req(ATLAS, user, &[]))),
+                "invalid",
+                "{user:?}"
+            );
+        }
+        assert!(h.audit.events().is_empty());
+        assert!(h.vault().passkeys(h.ids.atlas).is_empty());
     }
 }

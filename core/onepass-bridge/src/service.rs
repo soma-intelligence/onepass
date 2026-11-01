@@ -41,7 +41,8 @@ use crate::provider::{ProviderId, from_host};
 use crate::session::UsernameSalt;
 use crate::webauthn_rp::{
     Ceremony, ES256, MAX_CHALLENGE, MAX_CREDENTIAL_ID, MAX_EXCLUDE, MAX_USER_HANDLE, b64url,
-    client_data_hash, client_data_json, from_b64url, p256_spki, rp_id_for,
+    check_user_name, client_data_hash, client_data_json, from_b64url, p256_spki, passkey_origin,
+    rp_id_for,
 };
 use crate::{AppErrorCode, BridgeError, Result};
 
@@ -55,8 +56,6 @@ const SAVED_URL_LABEL: &str = "site web";
 const MAX_STEPS: usize = 16;
 /// Longest site `forget_site` takes (a DNS name).
 const MAX_SITE_LEN: usize = 253;
-/// Longest passkey user name (as `onepass_core::webauthn`).
-const MAX_USER_NAME: usize = 1024;
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -563,6 +562,7 @@ impl<V: VaultAccess> Service<V> {
             Request::PasskeyGet {
                 ctx,
                 origin: o,
+                top_origin,
                 rp_id,
                 item_id,
                 credential_id,
@@ -570,6 +570,7 @@ impl<V: VaultAccess> Service<V> {
                 ..
             } => {
                 let get = PasskeyAsk {
+                    top_origin,
                     rp_id,
                     item_id,
                     credential_id,
@@ -580,6 +581,7 @@ impl<V: VaultAccess> Service<V> {
             Request::PasskeyCreate {
                 ctx,
                 origin: o,
+                top_origin,
                 rp_id,
                 user_name,
                 user_handle,
@@ -589,6 +591,7 @@ impl<V: VaultAccess> Service<V> {
                 ..
             } => {
                 let new = NewPasskey {
+                    top_origin,
                     rp_id,
                     user_name,
                     user_handle,
@@ -1151,12 +1154,26 @@ fn passkey_ctx(ctx: Ctx, create: bool) -> OpResult<()> {
     }
 }
 
+/// The frame origin of a passkey request whose top frame, as the browser
+/// gave it, is `top`: `not_allowed` unless both are the same origin (no
+/// passkey in a cross-origin frame, so `crossOrigin` is always false).
+fn framed_origin(o: &str, top: &str) -> OpResult<Origin> {
+    let page = passkey_origin(o)?;
+    let same = passkey_origin(top)
+        .ok()
+        .is_some_and(|t| t.origin_string() == page.origin_string());
+    if !same {
+        return Err(AppErrorCode::NotAllowed);
+    }
+    Ok(page)
+}
+
 impl<V: VaultAccess> Service<V> {
     /// Passkeys of `rp_id` in the eligible logins, once the `rp_id` is
     /// checked against the browser's origin. No secret, no user handle.
     fn passkey_list(&mut self, ctx: Ctx, o: &str, rp_id: &str) -> OpResult<Response> {
         passkey_ctx(ctx, false)?;
-        let page = origin(o)?;
+        let page = passkey_origin(o)?;
         let rp = rp_id_for(&page, rp_id)?;
         let all = self.items()?;
         let mut out: Vec<PasskeySummary> = all
@@ -1192,7 +1209,7 @@ impl<V: VaultAccess> Service<V> {
         now: u64,
     ) -> OpResult<Response> {
         passkey_ctx(ctx, false)?;
-        let page = origin(o)?;
+        let page = framed_origin(o, get.top_origin)?;
         let rp = rp_id_for(&page, get.rp_id)?;
         let cred_id = from_b64url(get.credential_id, MAX_CREDENTIAL_ID)?;
         let challenge = from_b64url(get.challenge, MAX_CHALLENGE)?;
@@ -1210,8 +1227,9 @@ impl<V: VaultAccess> Service<V> {
         // Signed over the checked rp id, in lower case, as the relying
         // party hashes it.
         let signer = onepass_core::model::PasskeyCredential { rp_id: rp, ..cred };
-        let client_data = client_data_json(Ceremony::Get, &challenge, &page);
-        let a = webauthn::assertion(&signer, &client_data_hash(&client_data))
+        let client_data = client_data_json(Ceremony::Get, &challenge, &page)?;
+        // The bridge never verified the user itself: UV stays 0.
+        let a = webauthn::assertion_with_uv(&signer, &client_data_hash(&client_data), false)
             .map_err(|_| AppErrorCode::Internal)?;
         self.record("passkey_get", item.id, Some(o), ctx, now);
         Ok(Response::PasskeyAssertion {
@@ -1234,15 +1252,12 @@ impl<V: VaultAccess> Service<V> {
         now: u64,
     ) -> OpResult<Response> {
         passkey_ctx(ctx, true)?;
-        let page = origin(o)?;
+        let page = framed_origin(o, new.top_origin)?;
         let rp = rp_id_for(&page, new.rp_id)?;
         let user_handle = from_b64url(new.user_handle, MAX_USER_HANDLE)?;
         let challenge = from_b64url(new.challenge, MAX_CHALLENGE)?;
-        let user_name = new.user_name.trim();
-        if user_name.is_empty()
-            || user_name.len() > MAX_USER_NAME
-            || new.exclude.len() > MAX_EXCLUDE
-        {
+        let user_name = check_user_name(new.user_name)?;
+        if new.exclude.len() > MAX_EXCLUDE {
             return Err(AppErrorCode::Invalid);
         }
         let exclude = new
@@ -1297,8 +1312,8 @@ impl<V: VaultAccess> Service<V> {
         };
         let cred = webauthn::new_credential(&rp, user_name, &user_handle, at)
             .map_err(|_| AppErrorCode::Invalid)?;
-        let client_data = client_data_json(Ceremony::Create, &challenge, &page);
-        let reg = webauthn::registration(&cred, &client_data_hash(&client_data))
+        let client_data = client_data_json(Ceremony::Create, &challenge, &page)?;
+        let reg = webauthn::registration_with_uv(&cred, &client_data_hash(&client_data), false)
             .map_err(|_| AppErrorCode::Internal)?;
         let public_key = p256_spki(&public_point(&cred)?)?;
         if created {
@@ -1352,6 +1367,7 @@ fn new_passkey_login(vault_id: Id, rp_id: &str, user_name: &str) -> Item {
 
 /// Input of `passkey_get`.
 struct PasskeyAsk<'a> {
+    top_origin: &'a str,
     rp_id: &'a str,
     item_id: &'a str,
     credential_id: &'a str,
@@ -1360,6 +1376,7 @@ struct PasskeyAsk<'a> {
 
 /// Input of `passkey_create`.
 struct NewPasskey<'a> {
+    top_origin: &'a str,
     rp_id: &'a str,
     user_name: &'a str,
     user_handle: &'a str,

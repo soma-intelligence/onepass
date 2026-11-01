@@ -307,10 +307,13 @@ pub enum Request {
     },
     /// An assertion by a stored passkey. `credential_id` and `challenge`
     /// are base64url; the host builds `clientDataJSON` from `origin`.
+    /// `top_origin`: the browser's origin of the top frame, which must be
+    /// `origin` (same-origin frames only).
     PasskeyGet {
         id: u64,
         ctx: Ctx,
         origin: String,
+        top_origin: String,
         rp_id: String,
         item_id: String,
         credential_id: String,
@@ -323,6 +326,7 @@ pub enum Request {
         id: u64,
         ctx: Ctx,
         origin: String,
+        top_origin: String,
         rp_id: String,
         user_name: String,
         user_handle: String,
@@ -945,7 +949,7 @@ mod tests {
     #[test]
     fn request_json_round_trip_passkey_get() {
         round_trip(
-            r#"{"id":26,"op":"passkey_get","ctx":"chain","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","item_id":"x","credential_id":"AQID","challenge":"BAUG"}"#,
+            r#"{"id":26,"op":"passkey_get","ctx":"chain","origin":"https://atlas-cloud.test","top_origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","item_id":"x","credential_id":"AQID","challenge":"BAUG"}"#,
             26,
             "passkey_get",
         );
@@ -954,12 +958,12 @@ mod tests {
     #[test]
     fn request_json_round_trip_passkey_create() {
         round_trip(
-            r#"{"id":27,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":["AQID"]}"#,
+            r#"{"id":27,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","top_origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":["AQID"]}"#,
             27,
             "passkey_create",
         );
         round_trip(
-            r#"{"id":28,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":[],"vault_id":"v"}"#,
+            r#"{"id":28,"op":"passkey_create","ctx":"passkey","origin":"https://atlas-cloud.test","top_origin":"https://atlas-cloud.test","rp_id":"atlas-cloud.test","user_name":"alex","user_handle":"AQ","challenge":"BAUG","exclude":[],"vault_id":"v"}"#,
             28,
             "passkey_create",
         );
@@ -1046,7 +1050,7 @@ mod tests {
             r#"{"id":1,"op":"fill_salt","ctx":"menu","x":1}"#,
             r#"{"id":1,"op":"note_fill","ctx":"chain","item_id":"x","origin":"https://a.test","roles":[],"intent":"login","steps":["Fill"]}"#,
             r#"{"id":1,"op":"forget_site","ctx":"popup"}"#,
-            r#"{"id":1,"op":"passkey_get","ctx":"passkey","origin":"https://a.test","rp_id":"a.test","item_id":"x","credential_id":"AQ","challenge":"AQ","client_data_json":"e30"}"#,
+            r#"{"id":1,"op":"passkey_get","ctx":"passkey","origin":"https://a.test","top_origin":"https://a.test","rp_id":"a.test","item_id":"x","credential_id":"AQ","challenge":"AQ","client_data_json":"e30"}"#,
             r#"{"id":1,"op":"passkey_list","ctx":"page","origin":"https://a.test","rp_id":"a.test"}"#,
             r#"{"id":1,"op":"passkey_create","ctx":"passkey","origin":"https://a.test","rp_id":"a.test","user_name":"a","challenge":"AQ"}"#,
         ] {

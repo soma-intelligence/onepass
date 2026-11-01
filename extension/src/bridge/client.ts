@@ -184,9 +184,21 @@ interface Ops {
    * `rp_id` against `origin` (host or registrable parent, never a public suffix).
    */
   passkey_list: { req: { ctx: Ctx; origin: string; rp_id: string }; res: { passkeys: PasskeySummary[] } };
-  /** An assertion (ctx `passkey` or `chain`); `credential_id` and `challenge` base64url. */
+  /**
+   * An assertion (ctx `passkey` or `chain`); `credential_id` and `challenge` base64url.
+   * `top_origin`: the browser's origin of the tab's top frame; `not_allowed` unless it equals
+   * `origin` (same-origin frames only). The authenticator data never claims UV.
+   */
   passkey_get: {
-    req: { ctx: Ctx; origin: string; rp_id: string; item_id: string; credential_id: string; challenge: string };
+    req: {
+      ctx: Ctx;
+      origin: string;
+      top_origin: string;
+      rp_id: string;
+      item_id: string;
+      credential_id: string;
+      challenge: string;
+    };
     res: PasskeyAssertion;
   };
   /**
@@ -198,7 +210,10 @@ interface Ops {
     req: {
       ctx: Ctx;
       origin: string;
+      /** As for `passkey_get`. */
+      top_origin: string;
       rp_id: string;
+      /** No control, format or bidi control character. */
       user_name: string;
       user_handle: string;
       challenge: string;
