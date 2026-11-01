@@ -1223,6 +1223,34 @@ impl SyncStore {
                 .is_some_and(|(p, _)| matches!(p.kind, PromptKind::Switch | PromptKind::Reapply)))
     }
 
+    /// `RecordStore::put_retained` under the copy tag `copy`.
+    fn put_retained_tagged(&mut self, rows: Vec<Record>, copy: &[u8]) -> Result<()> {
+        let tx = self.write_tx()?;
+        for r in rows {
+            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
+                return Err(Error::InvalidFormat("retained row"));
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO retained (kind, id, copy, version, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    r.kind.code(),
+                    &r.id.0[..],
+                    copy,
+                    to_i64(r.version)?,
+                    &r.data
+                ],
+            )
+            .map_err(store_err)?;
+            tx.execute(
+                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
+                params![r.kind.code(), &r.id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
+        tx.commit()
+    }
+
     /// Every `base` row, ordered by kind then id: the store as the server
     /// sees it, never a `pending` write. The pairing snapshot (spec 5.1).
     pub fn export_records(&self) -> Result<Vec<Record>> {
@@ -3644,7 +3672,11 @@ impl RecordStore for SyncStore {
                 .map_err(store_err)?;
                 tx.commit()?;
             }
-            self.put_retained(retained)
+            // Review M4 (fix round 1): tagged with the identity left, so
+            // the slot of the identity followed stays free for the copy a
+            // later fetch replaces.
+            let left = crate::repo::follow::current_records_id(expected).0.to_vec();
+            self.put_retained_tagged(retained, &left)
         })();
         match done {
             Ok(()) => self.commit_batch(),
@@ -3672,33 +3704,9 @@ impl RecordStore for SyncStore {
     }
 
     fn put_retained(&mut self, rows: Vec<Record>) -> Result<()> {
-        let tx = self.write_tx()?;
-        // Tagged with the identity the trust state is on now (after a
-        // switch, the one followed: the rows are wrapped for it).
-        let copy = copy_tag(&tx)?;
-        for r in rows {
-            if !matches!(r.kind, RecordKind::VaultKey | RecordKind::VaultMeta) {
-                return Err(Error::InvalidFormat("retained row"));
-            }
-            tx.execute(
-                "INSERT OR REPLACE INTO retained (kind, id, copy, version, data)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    r.kind.code(),
-                    &r.id.0[..],
-                    &copy,
-                    to_i64(r.version)?,
-                    &r.data
-                ],
-            )
-            .map_err(store_err)?;
-            tx.execute(
-                "DELETE FROM pending WHERE kind = ?1 AND id = ?2",
-                params![r.kind.code(), &r.id.0[..]],
-            )
-            .map_err(store_err)?;
-        }
-        tx.commit()
+        // Tagged with the identity the trust state is on now.
+        let copy = self.read(copy_tag)?;
+        self.put_retained_tagged(rows, &copy)
     }
 
     fn batch_begin(&mut self) -> Result<()> {
@@ -4356,6 +4364,44 @@ mod tests {
         s.put_all_if_version_with_trust(vec![], vec![], None, &trust)
             .unwrap();
         assert_eq!(RecordStore::trust_state(&s).unwrap(), Some(trust));
+    }
+
+    /// Review M4 (fix round 1): the own copy a switch keeps is tagged with
+    /// the identity left, so a fetch that later replaces the followed
+    /// identity's vault key still retains that copy too.
+    #[test]
+    fn switch_copy_leaves_the_followed_slot_free() {
+        let mut s = SyncStore::open_in_memory().unwrap();
+        let v = Id::new();
+        let mut left = crate::trust::tests::sample();
+        left.head.generation = 3;
+        s.put_all_if_version_with_trust(vec![], vec![], None, &left)
+            .unwrap();
+        seed_base(&mut s, RecordKind::VaultKey, v, 1, vec![1]);
+        let mut followed = left.clone();
+        followed.head.generation = 0;
+        let chain = s.chain_state().unwrap();
+        s.put_follow(
+            chain,
+            &left,
+            &followed,
+            vec![rec(v, RecordKind::VaultKey, 1, &[9])],
+            vec![],
+        )
+        .unwrap();
+        // Fetches replace the vault key twice on the identity followed.
+        seed_base(&mut s, RecordKind::VaultKey, v, 2, vec![2]);
+        seed_base(&mut s, RecordKind::VaultKey, v, 3, vec![3]);
+        let mut kept: Vec<Vec<u8>> = s
+            .retained_rows(v)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.data)
+            .collect();
+        kept.sort();
+        // The switch copy under the identity left, and the first row a
+        // fetch replaced once on the identity followed.
+        assert_eq!(kept, vec![vec![1], vec![9]]);
     }
 
     /// A `retained` table from before the copy tag keeps its rows.
