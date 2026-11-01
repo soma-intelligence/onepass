@@ -162,6 +162,17 @@ describe("classifyField: weighted scoring", () => {
     }
   });
 
+  it("email_typed_field_named_login_is_email", () => {
+    // Lab sites 30, 189 (lab-2026-10-26): an identity form's e-mail field named like a login.
+    for (const [name, text] of [["signin-form_login", "Adresse e-mail"], ["user_login", "Courriel"]] as const) {
+      document.body.innerHTML = `<div><span>${text}</span><input id="${name}" name="${name}" type="email"></div>`;
+      expect(role(name), name).toBe("email");
+    }
+    // A text field named like a login stays the account identifier.
+    document.body.innerHTML = '<div><span>Login</span><input id="u" name="user_login" type="text"></div>';
+    expect(role("u")).toBe("username");
+  });
+
   it("classifies a textarea street address", () => {
     document.body.innerHTML = '<label for="f">Adresse</label><textarea id="f" name="adresse"></textarea>';
     expect(role("f")).toBe("address_line1");

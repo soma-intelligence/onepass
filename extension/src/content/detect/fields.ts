@@ -201,5 +201,10 @@ export function classifyField(el: FieldElement, cardForm = true): { role: FieldR
     }
   }
   if (bestScore < SCORE_THRESHOLD) return { role: "unknown", score: 0 };
+  // An email-typed control only takes an e-mail address: a "login" or "user"
+  // name on it names the account's e-mail, which an identity form fills too.
+  if (best === "username" && controlType(el) === "email" && scores.email >= SCORE_THRESHOLD) {
+    return { role: "email", score: scores.email };
+  }
   return { role: best, score: bestScore };
 }
