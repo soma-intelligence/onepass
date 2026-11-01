@@ -78,6 +78,17 @@ struct IdentityStoreSyncTests {
         #expect(store.inner.identities.isEmpty)
     }
 
+    /// `dropPending` with nothing waiting leaves a queued replacement alone.
+    @Test func dropWithNothingWaitingKeepsAQueuedReplace() async {
+        let store = GatedIdentityStore()
+        let sync = IdentityStoreSync(client: store, debounce: .seconds(600))
+        await sync.replaceSoon([identity()])
+        await sync.dropPending()
+        store.open()
+        await sync.waitForIdle()
+        #expect(store.inner.identities.count == 1)
+    }
+
     @Test func disabledStoreIsLeftAlone() async {
         let store = InMemoryIdentityStore(enabled: false)
         let sync = IdentityStoreSync(client: store, debounce: .milliseconds(10))

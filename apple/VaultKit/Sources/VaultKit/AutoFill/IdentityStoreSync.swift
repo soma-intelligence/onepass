@@ -152,12 +152,10 @@ public actor IdentityStoreSync {
     }
 
     /// Drops the pending debounced refresh, if any (session locked: it could only fail). Queued
-    /// store operations still run.
+    /// store operations still run, a replacement queued by an earlier lock included: with nothing
+    /// pending, nothing is bumped.
     public func dropPending() {
-        revision &+= 1
-        pending?.cancel()
-        pending = nil
-        pendingRevision = nil
+        _ = takePending()
     }
 
     /// Drops the pending debounced refresh like `dropPending`, and tells whether one was waiting
@@ -165,7 +163,10 @@ public actor IdentityStoreSync {
     /// refresh that already read its identities is left alone (nothing bumped): it publishes them.
     public func takePending() -> Bool {
         guard pendingRevision != nil else { return false }
-        dropPending()
+        revision &+= 1
+        pending?.cancel()
+        pending = nil
+        pendingRevision = nil
         return true
     }
 

@@ -199,6 +199,22 @@ struct AutoFillSessionTests {
         #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
     }
 
+    /// A second lock right after the first (nothing open any more) leaves the first one's queued
+    /// publish alone.
+    @Test func secondLockKeepsTheFirstLocksPublish() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        session.lock()
+        session.lock()
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
     /// An erase right after a lock (clear) is never overtaken by the lock's publish.
     @Test func clearAfterLockEndsEmpty() async throws {
         let h = try SessionHarness()
