@@ -1266,6 +1266,8 @@ fn phantom_tofu_device_never_erases_its_revoker() {
     assert_eq!(state(&a), DeviceLineageState::Current);
     let t = trust(&a);
     assert!(t.excluded.contains(&x_id) && t.ignored.contains(&head));
+    // Hidden while locked, the 2b prompt comes back: R still holds the keys.
+    assert!(a.repo().migration_alerts().unwrap().rotate_now);
     assert_never_locked(&a);
     let v = a.vault();
     a.save(&login(v.id, "after", T0 + 99));

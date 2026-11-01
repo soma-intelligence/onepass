@@ -70,6 +70,9 @@ struct IdentityStoreSyncTests {
         let sync = IdentityStoreSync(client: store, debounce: .seconds(600))
         await sync.replaceSoon([identity()])
         #expect(store.inner.identities.isEmpty)
+        // A clear landing before the queued replacement checks its revision skips it (also safe):
+        // wait until it is inside the store, so the clear must queue behind a call in flight.
+        while store.replacementsStarted == 0 { try? await Task.sleep(for: .milliseconds(1)) }
         let cleared = Task { await sync.clear() }
         store.open()
         await cleared.value
