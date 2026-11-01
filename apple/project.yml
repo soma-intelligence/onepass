@@ -548,7 +548,10 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
-        CODE_SIGN_ENTITLEMENTS: NotificationService/OnePassNotifications.entitlements
+        # A personal install without the App Group on this extension's App ID passes the variant
+        # without the group (scripts/install-iphone.sh); the alert then omits the Mac's name.
+        ONEPASS_NOTIFICATIONS_ENTITLEMENTS: NotificationService/OnePassNotifications.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(ONEPASS_NOTIFICATIONS_ENTITLEMENTS)
       configs:
         Release-CloudKit:
           CODE_SIGN_STYLE: Automatic

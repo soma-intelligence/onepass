@@ -25,6 +25,11 @@ CLOUDKIT_CONTAINER="iCloud.me.quentincaron.onepass"
 KEYCHAIN_GROUP="me.somalabs.onepass.shared"
 CONFIGURATION="Release-CloudKit"
 OWNER_NAME="Quentin"
+# The App ID of the notifications extension has no App Group attached on the personal team, so
+# that extension is signed without one: its alert then omits the Mac's name.
+# Once the group is attached on developer.apple.com, set these to the shipped file and "$APP_GROUP".
+NOTIFICATIONS_ENTITLEMENTS="NotificationService/OnePassNotifications-NoGroup.entitlements"
+NOTIFICATIONS_GROUP="-"
 # --------------------------------------------------------------------------------------------------
 
 APPLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -98,6 +103,7 @@ xcodebuild -project OnePass.xcodeproj -scheme OnePass -configuration "$CONFIGURA
   CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM_ID" \
   ONEPASS_BUNDLE_ID_PREFIX="$BUNDLE_ID_PREFIX" ONEPASS_APP_GROUP="$APP_GROUP" \
   ONEPASS_CLOUDKIT_CONTAINER="$CLOUDKIT_CONTAINER" ONEPASS_KEYCHAIN_GROUP="$KEYCHAIN_GROUP" \
+  ONEPASS_NOTIFICATIONS_ENTITLEMENTS="$NOTIFICATIONS_ENTITLEMENTS" \
   build
 [ -d "$APP" ] || fail "built app not found at $APP"
 
@@ -142,7 +148,7 @@ PY
 verify "$APP" "$BUNDLE_ID_PREFIX" "$KEYCHAIN_GROUP" "$APP_GROUP" "$CLOUDKIT_CONTAINER"
 verify "$APP/PlugIns/OnePassAutoFill.appex" "$BUNDLE_ID_PREFIX.autofill" "$KEYCHAIN_GROUP" "$APP_GROUP" -
 verify "$APP/PlugIns/OnePassWidgets.appex" "$BUNDLE_ID_PREFIX.widgets" - "$APP_GROUP" -
-verify "$APP/PlugIns/OnePassNotifications.appex" "$BUNDLE_ID_PREFIX.notifications" - "$APP_GROUP" -
+verify "$APP/PlugIns/OnePassNotifications.appex" "$BUNDLE_ID_PREFIX.notifications" - "$NOTIFICATIONS_GROUP" -
 WATCH="$APP/Watch/OnePassWatch.app"
 if [ -d "$WATCH" ]; then
   verify "$WATCH" "$BUNDLE_ID_PREFIX.watchkitapp" - - -

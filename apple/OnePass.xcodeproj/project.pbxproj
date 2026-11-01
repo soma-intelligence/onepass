@@ -12,6 +12,7 @@
 		0283FD5F51CA58AA05D74578 /* GeneratorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */; };
 		03459B41D154F2E30DA9186B /* AutoFillTipCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F2C8E0964CF60998372520 /* AutoFillTipCard.swift */; };
 		034D7CB79ABF3119AE380303 /* CodesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */; };
+		044892BD8AA82E3F3CA2D209 /* AttachmentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */; };
 		05B744F29F1CC79754FD70F5 /* BackupSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */; };
 		063191CF93667BB90E350FAA /* ApproveDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E2696615474BD4D50D1B25C /* ApproveDeviceSheet.swift */; };
 		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
@@ -65,7 +66,6 @@
 		5488DA9BE99F72271C2E8276 /* AutoFillRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
-		044892BD8AA82E3F3CA2D209 /* AttachmentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
 		5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF97588217514C64DBA911D /* TravelSettings.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
@@ -348,7 +348,6 @@
 		70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchApp.swift; sourceTree = "<group>"; };
 		727D48838217D2195CC3694F /* DeveloperPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperPage.swift; sourceTree = "<group>"; };
 		73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
-		8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentsSection.swift; sourceTree = "<group>"; };
 		73396E5534184EF7CE76A170 /* SecuritySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettings.swift; sourceTree = "<group>"; };
 		75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTab.swift; sourceTree = "<group>"; };
 		76BD2E7EC1ED66DE899B55F0 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
@@ -366,6 +365,7 @@
 		89863609CCDE5B045CFDE000 /* AboutSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettings.swift; sourceTree = "<group>"; };
 		8E2BC05B539890907CE2714F /* UrlListEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UrlListEditor.swift; sourceTree = "<group>"; };
 		8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassAutoFill.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentsSection.swift; sourceTree = "<group>"; };
 		9119720BF7C06235BF6ED5AC /* ItemListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListRow.swift; sourceTree = "<group>"; };
 		9344AE02FE1EBBF9E0E47FE0 /* KitPrinter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitPrinter.swift; sourceTree = "<group>"; };
 		95190D978CCD258D8EDDE9FB /* KitShareController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitShareController.swift; sourceTree = "<group>"; };
@@ -886,10 +886,10 @@
 			children = (
 				62D4DDCD9735058F9697F671 /* FieldEditors */,
 				5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */,
+				8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */,
 				F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */,
 				A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */,
 				73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */,
-				8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */,
 				600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */,
 				4590FC000AF13D1212563044 /* ItemEditorView.swift */,
 				D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */,
@@ -1429,6 +1429,7 @@
 				9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */,
 				1FCDC473F5E86371EEA0641C /* ApprovalPanel.swift in Sources */,
 				063191CF93667BB90E350FAA /* ApproveDeviceSheet.swift in Sources */,
+				044892BD8AA82E3F3CA2D209 /* AttachmentsSection.swift in Sources */,
 				EB3A9494DA4CEFDC07BAD179 /* AuditLogView.swift in Sources */,
 				B40C7D0CDCD426EAD789C8DA /* AutoFillSettings.swift in Sources */,
 				03459B41D154F2E30DA9186B /* AutoFillTipCard.swift in Sources */,
@@ -1458,7 +1459,6 @@
 				BEE689BB8A0E7E69B6AF46DB /* IntegrityFailureView.swift in Sources */,
 				0C1F0AF7291B0BE18AD31812 /* IntentBridge.swift in Sources */,
 				57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */,
-				044892BD8AA82E3F3CA2D209 /* AttachmentsSection.swift in Sources */,
 				A5E46306C491074581373B73 /* ItemEditorModel.swift in Sources */,
 				469D03A44C80D8C1010565D6 /* ItemEditorView.swift in Sources */,
 				81B5B3F5574765BBFB58EB77 /* ItemEntity.swift in Sources */,
@@ -1819,7 +1819,7 @@
 		496BDF9393B792EA75E8DC4E /* Release-CloudKit */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(ONEPASS_NOTIFICATIONS_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -1831,6 +1831,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				ONEPASS_NOTIFICATIONS_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).notifications";
 				PRODUCT_NAME = OnePassNotifications;
 				SDKROOT = iphoneos;
@@ -1841,7 +1842,7 @@
 		4984C846C073F6D253E0DDE0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(ONEPASS_NOTIFICATIONS_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = "";
@@ -1853,6 +1854,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				ONEPASS_NOTIFICATIONS_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).notifications";
 				PRODUCT_NAME = OnePassNotifications;
 				SDKROOT = iphoneos;
@@ -1983,7 +1985,7 @@
 		9B58FC22790964226DA5D44F /* Release-Signed */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(ONEPASS_NOTIFICATIONS_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -1995,6 +1997,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				ONEPASS_NOTIFICATIONS_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).notifications";
 				PRODUCT_NAME = OnePassNotifications;
 				SDKROOT = iphoneos;
@@ -2798,7 +2801,7 @@
 		FAE2946BEE8C94330486001B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(ONEPASS_NOTIFICATIONS_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = "";
@@ -2810,6 +2813,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				ONEPASS_NOTIFICATIONS_ENTITLEMENTS = NotificationService/OnePassNotifications.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).notifications";
 				PRODUCT_NAME = OnePassNotifications;
 				SDKROOT = iphoneos;
