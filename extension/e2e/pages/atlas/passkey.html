@@ -1,0 +1,67 @@
+<div class="brand">{{brand}}</div>
+<h1>Connexion par passkey</h1>
+<p><button id="signin" type="button">Se connecter avec une passkey</button></p>
+<p><button id="register" type="button">Créer une passkey</button></p>
+<p id="result" data-challenge="{{challenge}}" data-rp="{{rp}}" data-auto="{{auto}}"></p>
+<script>
+(() => {
+  const el = document.getElementById("result");
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  const rpId = el.dataset.rp || undefined;
+  window.__passkeyResult = null;
+  const done = (r) => {
+    window.__passkeyResult = r;
+    el.dataset.status = r.status;
+    el.textContent = r.status;
+  };
+  async function signIn() {
+    try {
+      // "origin" is a lie a page may tell: nothing may take it (S21).
+      const publicKey = { challenge: unb64(el.dataset.challenge), timeout: 60000, userVerification: "preferred", origin: "https://bank.test" };
+      if (rpId) publicKey.rpId = rpId;
+      const c = await navigator.credentials.get({ publicKey });
+      const body = new URLSearchParams({
+        id: c.id,
+        rawId: b64(c.rawId),
+        type: c.type,
+        clientDataJSON: b64(c.response.clientDataJSON),
+        authenticatorData: b64(c.response.authenticatorData),
+        signature: b64(c.response.signature),
+        userHandle: c.response.userHandle ? b64(c.response.userHandle) : "",
+        ext: JSON.stringify(c.getClientExtensionResults()),
+        proto: String(typeof PublicKeyCredential === "function" && c instanceof PublicKeyCredential),
+      });
+      done(await (await fetch("/passkey/verify", { method: "POST", body })).json());
+    } catch (e) {
+      done({ status: "error:" + e.name });
+    }
+  }
+  async function register() {
+    try {
+      const c = await navigator.credentials.create({
+        publicKey: {
+          challenge: unb64(el.dataset.challenge),
+          rp: { id: "atlas-cloud.test", name: "Atlas Cloud" },
+          user: { id: new TextEncoder().encode("new-user-1"), name: "alex.new@atlas.dev", displayName: "Alex" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          timeout: 60000,
+        },
+      });
+      const body = new URLSearchParams({
+        id: c.id,
+        clientDataJSON: b64(c.response.clientDataJSON),
+        attestationObject: b64(c.response.attestationObject),
+        publicKey: b64(c.response.getPublicKey()),
+        alg: String(c.response.getPublicKeyAlgorithm()),
+      });
+      done(await (await fetch("/passkey/register", { method: "POST", body })).json());
+    } catch (e) {
+      done({ status: "error:" + e.name });
+    }
+  }
+  document.getElementById("signin").addEventListener("click", signIn);
+  document.getElementById("register").addEventListener("click", register);
+  if (el.dataset.auto === "1") signIn();
+})();
+</script>

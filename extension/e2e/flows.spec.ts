@@ -322,3 +322,60 @@ paired("provider_link_offered_after_a_manual_google_sign_in", async ({ ext }) =>
   const menu = await ext.openMenu(page, "#email");
   await expect(menu.locator('button.row[data-provider="google"] .t2').first()).toHaveText(FX.googlePerso.email);
 });
+
+paired("passkey_sign_in", async ({ ext }) => {
+  const { page } = ext;
+  const passkeyWindow = () =>
+    ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 15_000 });
+  await page.goto(`${ATLAS}/passkey`);
+  await expect(page.locator("onepass-root")).toHaveCount(1);
+
+  // The site's passkey button: OnePass's window lists the account holding a passkey of atlas-cloud.test.
+  let opened = passkeyWindow();
+  await page.locator("#signin").click();
+  let win = await opened;
+  await expect(win.getByRole("heading", { name: "Se connecter avec une passkey" })).toBeVisible();
+  await expect(win.getByText("atlas-cloud.test").first()).toBeVisible();
+  await expect(win.getByRole("button", { name: "Autre appareil" })).toBeVisible();
+  await ext.settle();
+  await win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` }).click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "Connecté");
+  await expect.poll(() => win.isClosed()).toBe(true);
+  // A conforming PublicKeyCredential, verified by the site with the passkey's public key.
+  const r = (await page.evaluate(() => (window as unknown as { __passkeyResult: unknown }).__passkeyResult)) as Record<string, unknown>;
+  expect(r).toMatchObject({ origin: ATLAS, crossOrigin: false, type: "webauthn.get", user: FX.passkey.userHandle, rawIdMatches: true, proto: "true", ext: "{}" });
+  await page.goto(`${ATLAS}/home`);
+  await expect(page.locator("#status")).toHaveText("Connecté");
+  expect(ext.audit()).toContain("passkey_get");
+
+  // Annuler: the page gets NotAllowedError.
+  await page.goto(`${ATLAS}/passkey`);
+  opened = passkeyWindow();
+  await page.locator("#signin").click();
+  win = await opened;
+  await ext.settle();
+  await win.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "error:NotAllowedError");
+
+  // Creation: a new passkey saved in OnePass, then offered at the next sign-in.
+  await page.goto(`${ATLAS}/passkey`);
+  opened = passkeyWindow();
+  await page.locator("#register").click();
+  win = await opened;
+  await expect(win.getByRole("heading", { name: "Enregistrer une passkey" })).toBeVisible();
+  await expect(win.getByText("alex.new@atlas.dev")).toBeVisible();
+  await ext.settle();
+  await win.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "Créée");
+  expect(ext.audit()).toContain("passkey_create");
+  await page.goto(`${ATLAS}/passkey`);
+  opened = passkeyWindow();
+  await page.locator("#signin").click();
+  win = await opened;
+  await expect(win.getByRole("button", { name: "Se connecter en tant que alex.new@atlas.dev" })).toBeVisible();
+  await expect(win.getByRole("button", { name: `Se connecter en tant que ${FX.passkey.user}` })).toBeVisible();
+  await ext.settle();
+  await win.getByRole("button", { name: "Annuler" }).click();
+  // The private key never left the host.
+  expect(ext.audit()).not.toContain("MIGHAgEAMBMGByqGSM49");
+});
