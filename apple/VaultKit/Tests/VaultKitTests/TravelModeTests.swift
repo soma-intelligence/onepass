@@ -68,7 +68,11 @@ struct TravelModeTests {
 
     @Test func refusalsHaveFrenchMessages() {
         #expect(VaultError.developerMessage("unsynced changes")?.contains("iCloud") == true)
-        #expect(VaultError.developerMessage("SSH key: wrong passphrase") == "Phrase de passe incorrecte.")
+        // Localized since the four-language catalogs: compare with the lookup, whatever the host language.
+        #expect(VaultError.developerMessage("SSH key: wrong passphrase")
+            == String(localized: "Phrase de passe incorrecte.", bundle: VaultKitStrings.bundle))
+        #expect(VaultError.developerMessage("nothing leaves")
+            == String(localized: "travel.error.nothingLeaves", bundle: VaultKitStrings.bundle))
         #expect(VaultError.developerMessage("anything else") == nil)
     }
 }
