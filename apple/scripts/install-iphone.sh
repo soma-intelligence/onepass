@@ -25,9 +25,10 @@ CLOUDKIT_CONTAINER="iCloud.me.quentincaron.onepass"
 KEYCHAIN_GROUP="me.somalabs.onepass.shared"
 CONFIGURATION="Release-CloudKit"
 OWNER_NAME="Quentin"
-# The App ID of the notifications extension has no App Group attached on the personal team, so
-# that extension is signed without one: its alert then omits the Mac's name.
-# Once the group is attached on developer.apple.com, set these to the shipped file and "$APP_GROUP".
+# The App ID of the notifications extension has no App Group (nor Time Sensitive Notifications)
+# attached on the personal team, so that extension is signed without them: its alert then omits the
+# Mac's name and may not break through a Focus. Once both are ticked on developer.apple.com, set
+# these to the shipped file (which carries the group and the time-sensitive key) and "$APP_GROUP".
 NOTIFICATIONS_ENTITLEMENTS="NotificationService/OnePassNotifications-NoGroup.entitlements"
 NOTIFICATIONS_GROUP="-"
 # --------------------------------------------------------------------------------------------------
