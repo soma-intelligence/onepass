@@ -305,6 +305,8 @@ jobs:
     environment: release
     permissions:
       contents: read
+    outputs:
+      built: ${{ steps.signing.outputs.ready }}
     env:
       VERSION: ${{ needs.meta.outputs.version }}
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.epoch }}
@@ -322,6 +324,9 @@ jobs:
           HAS_ASC_KEY: ${{ secrets.ASC_API_KEY_P8_BASE64 != '' }}
           HAS_ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID != '' }}
           HAS_ASC_ISSUER: ${{ secrets.ASC_API_ISSUER_ID != '' }}
+          # Updates (Sparkle): the public key the app trusts, the private key the appcast job signs with.
+          HAS_SPARKLE_PUBLIC: ${{ vars.SPARKLE_ED_PUBLIC_KEY != '' }}
+          HAS_SPARKLE_PRIVATE: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' }}
           REPOSITORY: ${{ github.repository }}
         run: |
           missing=()
@@ -333,6 +338,8 @@ jobs:
           [ "$HAS_ASC_KEY" = true ] || missing+=(ASC_API_KEY_P8_BASE64)
           [ "$HAS_ASC_KEY_ID" = true ] || missing+=(ASC_API_KEY_ID)
           [ "$HAS_ASC_ISSUER" = true ] || missing+=(ASC_API_ISSUER_ID)
+          [ "$HAS_SPARKLE_PUBLIC" = true ] || missing+=("SPARKLE_ED_PUBLIC_KEY (variable)")
+          [ "$HAS_SPARKLE_PRIVATE" = true ] || missing+=(SPARKLE_ED_PRIVATE_KEY)
           if [ "${#missing[@]}" -eq 0 ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -473,8 +480,13 @@ jobs:
           export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/onepass --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup"
           apple/scripts/build-core.sh shipped
 
+      # CFBundleVersion = the tag's numeric core (Sparkle compares it), and the update public key,
+      # on the command line: a base64 key may hold "//", which an xcconfig reads as a comment.
+      # apple/scripts/check-update-key.sh fails the archive if the key is not 32 bytes.
       - name: Archive (Release-CloudKit, Developer ID)
         if: steps.signing.outputs.ready == 'true'
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_ED_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/onepass --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup"
@@ -483,7 +495,10 @@ jobs:
             -configuration Release-CloudKit \
             -destination 'generic/platform=macOS' \
             -archivePath "$RUNNER_TEMP/OnePass.xcarchive" \
-            -xcconfig "$RUNNER_TEMP/release.xcconfig"
+            -xcconfig "$RUNNER_TEMP/release.xcconfig" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            CURRENT_PROJECT_VERSION="${VERSION%%-*}" \
+            ONEPASS_SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY"
           git diff --exit-code -- core/Cargo.lock
 
       - name: Export (developer-id)
@@ -541,9 +556,61 @@ jobs:
           path: out/*
           if-no-files-found: error
 
+  # The Sparkle feed of the Mac app (docs/security/release-pipeline.md, "Mises à jour de l'app
+  # Mac"): signs the notarized zip and the feed with the update key, after checking that the app
+  # trusts that key and carries this version. Its own job, so the private key never reaches the
+  # runner that builds. Once the release is published as Latest, every installed Mac app finds it
+  # at releases/latest/download/appcast.xml.
+  appcast:
+    name: signed update feed (Sparkle)
+    needs: [meta, mac]
+    if: needs.mac.outputs.built == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.epoch }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Tests of the appcast script
+        run: |
+          openssl version
+          python3 -I scripts/test_appcast.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-mac
+          path: mac
+      - name: Sign the archive and the feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_ED_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          zip="mac/OnePass-$VERSION-mac.zip"
+          python3 -I scripts/appcast.py build --version "$VERSION" --archive "$zip" \
+            --download-url "https://github.com/$REPOSITORY/releases/download/v$VERSION/OnePass-$VERSION-mac.zip" \
+            --release-url "https://github.com/$REPOSITORY/releases/tag/v$VERSION" \
+            --out out/appcast.xml
+          python3 -I scripts/appcast.py verify --appcast out/appcast.xml --archive "$zip" --public-key "$SPARKLE_PUBLIC_KEY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-appcast
+          path: out/appcast.xml
+          if-no-files-found: error
+
   attest:
     name: checksums and provenance
-    needs: [meta, preflight, extension, cli, rebuild, sbom, mac]
+    needs: [meta, preflight, extension, cli, rebuild, sbom, mac, appcast]
+    # appcast is skipped when no Mac app was built (fork, dry run without secrets); a failure of
+    # any job still stops here.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -601,8 +668,10 @@ jobs:
         run: |
           set -euo pipefail
           prerelease=()
+          # A suffixed tag (v0.3.0-rc.1) is a pre-release: never Latest, so never offered to the
+          # Mac app's updater. Any other version, 0.x included, becomes Latest once published.
           case "$VERSION" in
-            0.* | *-*) prerelease=(--prerelease) ;;
+            *-*) prerelease=(--prerelease) ;;
           esac
           cat > "$RUNNER_TEMP/notes.md" <<EOF
           Draft built by the release workflow from tag v$VERSION. Review it, write the notes, then publish.
@@ -615,6 +684,8 @@ jobs:
           \`\`\`
 
           The command line binaries (onepass-$VERSION-*) are the development CLI: not for real secrets yet. See docs/security/release-pipeline.md.
+
+          appcast.xml is the signed update feed of the Mac app: publishing this release as Latest offers OnePass $VERSION to every installed Mac app (with the user's approval).
           EOF
           gh release create "v$VERSION" --draft --verify-tag "${prerelease[@]}" \
             --title "OnePass $VERSION" --notes-file "$RUNNER_TEMP/notes.md" dist/*

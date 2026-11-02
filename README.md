@@ -367,9 +367,13 @@ Spot an error or an out-of-date claim? Open an issue with a link to the vendor's
 [ap-pw]: https://support.apple.com/en-us/120758
 [ap-win]: https://support.apple.com/guide/icloud-windows/set-up-icloud-passwords-icw2babf5e03/icloud
 
+## Privacy
+
+OnePass has no analytics and no telemetry. The Mac app's update check is the one request it makes to GitHub: at launch and every 24 hours it reads the signed update feed of the latest release on GitHub. That is a plain HTTPS GET to `github.com` (redirected to GitHub's release storage) with the usual User-Agent (app name and version, Sparkle version), and nothing else: no account, device or install identifier, no system profile, no cookie. Settings > About > "Automatically Check for Updates" turns it off. The iPhone, iPad, Apple Watch and Vision Pro apps update through the App Store and never check on their own.
+
 ## Install
 
-Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions.
+Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (OnePass > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
 
 For Chrome or Firefox, point the browser at the app's relay from a clone of this repository:
 ```bash

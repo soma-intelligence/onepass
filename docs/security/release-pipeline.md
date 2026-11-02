@@ -14,9 +14,10 @@ Déclenché par le push d'un tag `v*` (par exemple `v0.2.1`, ou `v0.3.0-rc.1` po
 | `cli` | macos-26, ubuntu-24.04 | `onepass-<v>-aarch64-apple-darwin`, `onepass-<v>-x86_64-unknown-linux-gnu` | `contents: read` |
 | `rebuild` | ubuntu-24.04 | reconstruit l'extension et la CLI Linux depuis un second checkout, à un autre chemin, et exige les mêmes octets | `contents: read` |
 | `sbom` | ubuntu-24.04 | `OnePass-<v>-sbom.zip` (CycloneDX de chaque crate et de l'extension) | `contents: read` |
-| `mac` | macos-26, Xcode épinglé (`XCODE_APP`) | `OnePass-<v>-mac.zip` : app signée Developer ID, notarisée, ticket agrafé | `contents: read`, environnement `release` |
+| `mac` | macos-26, Xcode épinglé (`XCODE_APP`) | `OnePass-<v>-mac.zip` : app signée Developer ID, notarisée, ticket agrafé, `CFBundleVersion` = cœur numérique du tag, clé publique de mise à jour dans l'Info.plist | `contents: read`, environnement `release` |
+| `appcast` | ubuntu-24.04 | `appcast.xml` : flux Sparkle signé (zip et flux signés Ed25519), après contrôle de la clé et des numéros de l'app | `contents: read`, environnement `release` |
 | `attest` | ubuntu-24.04 | `SHA256SUMS` et une attestation de provenance SLSA (`actions/attest-build-provenance`) dont les sujets sont tous les fichiers, `SHA256SUMS` compris | `contents: read`, `id-token: write`, `attestations: write` |
-| `release` | ubuntu-24.04 | release GitHub en **brouillon** avec tous les fichiers ; elle est marquée préversion tant que la version commence par `0.` ou porte un suffixe | `contents: write` |
+| `release` | ubuntu-24.04 | release GitHub en **brouillon** avec tous les fichiers ; elle est marquée préversion seulement si la version porte un suffixe (`-rc.1`) | `contents: write` |
 
 Rien n'est publié automatiquement : une personne relit le brouillon, écrit les notes et clique sur Publish.
 
@@ -38,8 +39,9 @@ Tous dans l'environnement GitHub `release` du dépôt public (Settings, Environm
 | `ASC_API_KEY_P8_BASE64` | clé d'API App Store Connect (`AuthKey_XXXX.p8`), en base64 |
 | `ASC_API_KEY_ID` | identifiant de cette clé |
 | `ASC_API_ISSUER_ID` | identifiant d'émetteur (Issuer ID) de l'équipe |
+| `SPARKLE_ED_PRIVATE_KEY` | clé privée de signature des mises à jour de l'app Mac (graine Ed25519 de 32 octets en base64), voir [Mises à jour de l'app Mac](#mises-à-jour-de-lapp-mac) |
 
-Aucune variable de dépôt n'est nécessaire. La version de Xcode (`XCODE_APP`) et le label du runner macOS sont écrits dans le workflow : les changer est une modification relue, pas un réglage. Si le runner n'a pas cette version, le job s'arrête et liste les Xcode installés.
+Une seule variable, elle aussi dans l'environnement `release` (Settings, Environments, `release`, Environment variables) : `SPARKLE_ED_PUBLIC_KEY`, la clé publique qui correspond à `SPARKLE_ED_PRIVATE_KEY`. Elle n'est pas secrète : elle finit dans l'Info.plist de l'app (`SUPublicEDKey`). La version de Xcode (`XCODE_APP`) et le label du runner macOS sont écrits dans le workflow : les changer est une modification relue, pas un réglage. Si le runner n'a pas cette version, le job s'arrête et liste les Xcode installés.
 
 Réglages de l'environnement `release` conseillés : un relecteur obligatoire (le job Mac attend son accord avant de toucher aux secrets) et des références de déploiement limitées aux tags `v*` (ajouter `main` pour pouvoir faire un essai à blanc signé).
 
@@ -73,13 +75,42 @@ Le workflow vérifie que chaque profil est bien celui de son App ID avant de l'i
 
 La notarisation passe par `xcrun notarytool submit --wait` ; si Apple refuse, le job affiche le journal de notarisation et s'arrête. Puis `xcrun stapler staple`, `stapler validate` et `spctl --assess` sur l'app avant de la zipper.
 
+### Mises à jour de l'app Mac
+
+L'app Mac se met à jour par Sparkle (conception : `docs/superpowers/specs/2026-11-02-mac-updater-design.md`). Elle lit `https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml`, le flux de la release marquée *Latest*, et n'installe une mise à jour que si le flux et le zip sont signés par la clé Ed25519 dont la clé publique est dans son Info.plist, si la nouvelle app est signée Developer ID par la même équipe, et si sa version est strictement plus récente. La clé est créée une fois, par le fondateur, jamais par le dépôt ni par un agent :
+
+1. Récupérer l'outil `generate_keys` de Sparkle 2.10.1 : `swift package resolve --package-path apple/UpdateKit`, puis l'outil est dans `apple/UpdateKit/.build/artifacts/sparkle/Sparkle/bin/generate_keys` (ou dans l'archive `Sparkle-2.10.1.tar.xz` de github.com/sparkle-project/Sparkle, dossier `bin`).
+2. `generate_keys` : crée la clé dans le trousseau de session (élément `https://sparkle-project.org`, compte `ed25519`) et affiche la clé publique. Sauvegarder ce trousseau (ou exporter la clé dans le gestionnaire de mots de passe de l'équipe) : **une clé perdue empêche toute mise à jour des apps déjà installées**, qui ne font confiance qu'à elle.
+3. `gh variable set SPARKLE_ED_PUBLIC_KEY --env release --repo soma-intelligence/onepass --body '<clé publique>'`.
+4. `generate_keys -x sparkle-private.txt`, puis `gh secret set SPARKLE_ED_PRIVATE_KEY --env release --repo soma-intelligence/onepass < sparkle-private.txt`, puis effacer `sparkle-private.txt`.
+5. Vérifier la paire : `python3 -I scripts/appcast.py public-key` (lit le trousseau) doit afficher la même clé publique. OpenSSL 3 ou plus récent est nécessaire (`brew install openssl`) : le LibreSSL de macOS ne signe pas en Ed25519.
+
+Faire le même jeu de secrets dans `onepass-dev` permet un essai à blanc signé complet.
+
+Chaque version : le job `mac` passe la clé publique et `CFBundleVersion` à `xcodebuild` ; la phase `Check update key` (`apple/scripts/check-update-key.sh`) fait échouer un build Developer ID sans clé valide. Le job `appcast` relance les tests de `scripts/appcast.py`, vérifie que l'app du zip fait confiance à la clé de signature et porte les numéros de la version, signe le zip et le flux, revérifie les deux signatures. `appcast.xml` rejoint `SHA256SUMS`, l'attestation et le brouillon. Signer à la main, depuis un Mac qui a la clé dans son trousseau :
+
+```sh
+python3 -I scripts/appcast.py build --version 0.3.0 --archive OnePass-0.3.0-mac.zip \
+  --download-url https://github.com/soma-intelligence/onepass/releases/download/v0.3.0/OnePass-0.3.0-mac.zip \
+  --release-url https://github.com/soma-intelligence/onepass/releases/tag/v0.3.0 --out appcast.xml
+python3 -I scripts/appcast.py verify --appcast appcast.xml --archive OnePass-0.3.0-mac.zip
+```
+
+Ce que la vérification envoie : une requête HTTPS GET vers `github.com`, redirigée vers le stockage des releases de GitHub, avec l'en-tête User-Agent habituel (nom et version de l'app, version de Sparkle). Aucun identifiant de compte, d'appareil ou d'installation, aucun profil système, aucun cookie posé par OnePass. Le réglage « Rechercher automatiquement les mises à jour » (Réglages, À propos) coupe toute requête automatique ; le menu OnePass, « Rechercher les mises à jour… », reste disponible.
+
+Points à connaître :
+
+- Seule la release *Latest* compte. Une préversion (tag avec suffixe) n'est jamais *Latest* et n'est proposée à personne ; cocher *Pre-release* à la main sur une version la retire aussi des mises à jour. Une release *Latest* sans `appcast.xml` coupe les mises à jour jusqu'à la suivante.
+- Rotation de clé : une app ne fait confiance qu'à la clé de son Info.plist. Pour changer de clé, publier d'abord une version signée par l'ancienne clé qui embarque la nouvelle clé publique, puis signer les suivantes avec la nouvelle.
+- iPhone, iPad, Apple Watch et Vision Pro se mettent à jour par l'App Store ; les extensions Chrome et Firefox par leurs magasins.
+
 ## Routine de publication
 
 1. Pousser `main` sur le dépôt public et attendre que le CI `core` soit vert.
 2. Facultatif mais conseillé avant une version qui touche au build : lancer `release` à la main sur `main` (essai à blanc) et lire le job `rebuild`.
 3. Pousser le tag `vX.Y.Z` sur le commit vérifié.
 4. Approuver le job `mac` quand l'environnement le demande.
-5. Relire le brouillon de release : fichiers attendus, `SHA256SUMS`, attestation listée dans le résumé du run. Écrire les notes, publier.
+5. Relire le brouillon de release : fichiers attendus (dont `appcast.xml`), `SHA256SUMS`, attestation listée dans le résumé du run. Écrire les notes, publier en laissant *Set as the latest release* coché : c'est ce qui propose la version aux apps Mac installées.
 
 Un échec de `rebuild` (un fichier dont les octets changent d'un build à l'autre) bloque la release : corriger la cause, ou la documenter dans `reproducible-builds.md` et retirer ce fichier de la comparaison, par une modification relue.
 
