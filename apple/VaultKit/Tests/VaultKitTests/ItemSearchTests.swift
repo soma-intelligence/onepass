@@ -61,3 +61,41 @@ struct ItemSearchTests {
         #expect(ItemSort.updated.sorted(items).map(\.title) == ["A", "é", "b"])
     }
 }
+
+@Suite("Search ranking and recent searches")
+struct SearchRankingTests {
+    @Test func bestAnswersComeFirst() {
+        let items = [
+            summary("Banque Populaire", subtitle: "camille@exemple.fr"),
+            summary("Netflix", subtitle: "famille@exemple.fr"),
+            summary("Compte Netflix famille"),
+            summary("Mutuelle", tags: ["netflix"]),
+            summary("Ma Banque en ligne"),
+        ]
+        func titles(_ q: String) -> [String] { ItemSearch.ranked(items, query: q).map(\.title) }
+        // The title starting with the query, then a title word starting with it, then the rest.
+        #expect(titles("netf") == ["Netflix", "Compte Netflix famille", "Mutuelle"])
+        #expect(titles("banque") == ["Banque Populaire", "Ma Banque en ligne"])
+        #expect(titles("famille") == ["Compte Netflix famille", "Netflix"])
+        // Same rank: the given order stays.
+        #expect(titles("exemple") == ["Banque Populaire", "Netflix"])
+        #expect(titles("").count == items.count)
+        #expect(titles("zzz").isEmpty)
+    }
+
+    @Test func recentSearchesKeepTheNewestOnce() {
+        var list: [String] = []
+        list = RecentSearches.adding("  netflix ", to: list)
+        list = RecentSearches.adding("Banque", to: list)
+        list = RecentSearches.adding("NETFLIX", to: list)
+        #expect(list == ["NETFLIX", "Banque"])
+        // Blank or a single character is not a search worth keeping.
+        #expect(RecentSearches.adding(" ", to: list) == list)
+        #expect(RecentSearches.adding("a", to: list) == list)
+        for i in 0..<20 { list = RecentSearches.adding("recherche \(i)", to: list) }
+        #expect(list.count == RecentSearches.limit)
+        #expect(list.first == "recherche 19")
+        // Accents do not make two searches.
+        #expect(RecentSearches.adding("électricité", to: ["Electricite"]) == ["électricité"])
+    }
+}

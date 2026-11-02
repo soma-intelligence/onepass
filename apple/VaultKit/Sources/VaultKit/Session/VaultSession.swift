@@ -24,6 +24,8 @@ public final class VaultSession {
     public private(set) var summaries: [FfiItemSummary] = []
     /// Recently opened item ids, newest first. Memory only, emptied on lock.
     public private(set) var recents: [String] = []
+    /// Searches typed in this session, newest first (`RecentSearches`). Memory only, emptied on lock.
+    public private(set) var recentSearches: [String] = []
     public var lastError: VaultError?
     public private(set) var hiddenVaultIDs: Set<String>
     /// The store holds an account but this device has no Secret Key for it: use `restore`.
@@ -838,6 +840,7 @@ public final class VaultSession {
         summaries = []
         allVaults = []
         recents = []
+        recentSearches = []
         locationIndex = LocationIndex()
         autoLockTimer?.cancel()
         autoLockTimer = nil
@@ -915,15 +918,20 @@ public final class VaultSession {
     }
 
     /// "À proximité": active items of visible vaults with a place within `radius` meters of
-    /// `origin`, closest first. Only items new or modified since the last call are decrypted (one
-    /// core call for all of them); the rest comes from the in-memory index. An item that cannot be
+    /// `origin`, closest first. Only items holding a place (`hasPlaces`, said by the summary) and
+    /// new or modified since the last call are decrypted (one core call for all of them); the rest
+    /// comes from the in-memory index. A library of 500 items with a dozen places reads a dozen. An item that cannot be
     /// read is left out and read again next time: a passing error (a sync applying) never hides it
     /// for good (its detail reports a lasting error when opened).
+    /// Items `nearbyItems` decrypted so far (tests: the index reads only what it must).
+    @ObservationIgnored var nearbyItemsRead = 0
+
     public func nearbyItems(from origin: GeoPoint, within radius: Double = LocationIndex.nearbyRadius) async throws
         -> [NearbyItem]
     {
-        let active = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
+        let active = placedSummaries()
         let stale = locationIndex.needsLoading(active).map { ($0.vaultId, $0.id, $0.updatedAt) }
+        nearbyItemsRead += stale.count
         if !stale.isEmpty {
             let loaded = try await read { session in
                 var out: [String: LocationIndex.Entry] = [:]
@@ -939,11 +947,24 @@ public final class VaultSession {
             locationIndex.update(loaded, keeping: summaries)
         }
         // Summaries may have changed during the read: the current ones decide what is listed.
-        let current = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
-        return locationIndex.nearby(current, from: origin, within: radius)
+        return locationIndex.nearby(placedSummaries(), from: origin, within: radius)
+    }
+
+    /// Active items of visible vaults that hold a place.
+    private func placedSummaries() -> [FfiItemSummary] {
+        summaries.filter { $0.hasPlaces && !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
     }
 
     // MARK: - Items
+
+    /// Remembers a search the user acted on (opened a result, submitted it), for the search screen.
+    public func noteSearch(_ query: String) {
+        recentSearches = RecentSearches.adding(query, to: recentSearches)
+    }
+
+    public func clearRecentSearches() {
+        recentSearches = []
+    }
 
     /// The full item, for the detail view only (which forgets it when closed).
     public func loadItem(vaultID: String, itemID: String) async throws -> FfiItem {

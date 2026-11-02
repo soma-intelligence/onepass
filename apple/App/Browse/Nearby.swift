@@ -1,4 +1,5 @@
 import CoreLocation
+import os
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -28,6 +29,24 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
     private var manager: CLLocationManager?
     private var authorizationWaiters: [CheckedContinuation<Void, Never>] = []
     private var locationWaiters: [CheckedContinuation<CLLocation, any Error>] = []
+    /// The best fix of the updates under way, kept in case none reaches `wantedAccuracy` in time.
+    private var bestFix: CLLocation?
+    private var fixDeadline: Task<Void, Never>?
+
+    /// A fix this recent and this precise is used as it is: "À proximité" opens with no wait.
+    static let reuseAge: TimeInterval = 5 * 60
+    static let reuseAccuracy: CLLocationAccuracy = 500
+    /// The first fix this precise ends the wait: plenty for "within 2 km". (`requestLocation`
+    /// waited for the most precise fix it could get, often several seconds.)
+    static let wantedAccuracy: CLLocationAccuracy = 1_000
+    /// Longest wait for that fix; the best one seen by then is used.
+    static let fixTimeout: Duration = .seconds(6)
+
+    /// Whether `location` can be used without asking for a new fix.
+    static func isReusable(_ location: CLLocation, now: Date = Date()) -> Bool {
+        location.horizontalAccuracy >= 0 && location.horizontalAccuracy <= reuseAccuracy
+            && now.timeIntervalSince(location.timestamp) < reuseAge
+    }
 
     private func makeManager() -> CLLocationManager {
         if let manager { return manager }
@@ -62,10 +81,21 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted, .notDetermined: throw Failure.denied
         default: break
         }
-        if let last = manager.location, last.timestamp.timeIntervalSinceNow > -60 { return last }
+        if let last = manager.location, Self.isReusable(last) { return last }
         return try await withCheckedThrowingContinuation { continuation in
             locationWaiters.append(continuation)
-            if locationWaiters.count == 1 { manager.requestLocation() }
+            guard locationWaiters.count == 1 else { return }
+            bestFix = nil
+            manager.startUpdatingLocation()
+            fixDeadline = Task { [weak self] in
+                try? await Task.sleep(for: Self.fixTimeout)
+                guard !Task.isCancelled, let self else { return }
+                if let best = self.bestFix {
+                    self.finish(.success(best))
+                } else {
+                    self.finish(.failure(Failure.unavailable))
+                }
+            }
         }
     }
 
@@ -83,16 +113,30 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        MainActor.assumeIsolated { finish(.success(location)) }
+        let fixes = locations.filter { $0.horizontalAccuracy >= 0 }
+        MainActor.assumeIsolated {
+            guard !locationWaiters.isEmpty else { return }
+            for fix in fixes where fix.horizontalAccuracy < bestFix?.horizontalAccuracy ?? .infinity {
+                bestFix = fix
+            }
+            if let best = bestFix, best.horizontalAccuracy <= Self.wantedAccuracy { finish(.success(best)) }
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: any Error) {
-        let denied = (error as? CLError)?.code == .denied
-        MainActor.assumeIsolated { finish(.failure(denied ? Failure.denied : Failure.unavailable)) }
+        let code = (error as? CLError)?.code
+        MainActor.assumeIsolated {
+            // "Location unknown" while updating is passing: the updates go on until the deadline.
+            if code == .locationUnknown { return }
+            finish(.failure(code == .denied ? Failure.denied : Failure.unavailable))
+        }
     }
 
     private func finish(_ result: Result<CLLocation, any Error>) {
+        manager?.stopUpdatingLocation()
+        fixDeadline?.cancel()
+        fixDeadline = nil
+        bestFix = nil
         let waiters = locationWaiters
         locationWaiters = []
         waiters.forEach { $0.resume(with: result) }
@@ -135,14 +179,22 @@ final class NearbyLoader {
         }
     }
 
+    /// Durations only (how long the fix and the index took), never a place.
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "nearby")
+
     func load(_ session: VaultSession, within radius: Double = LocationIndex.nearbyRadius) async {
         if items.isEmpty { phase = .locating }
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
             let location = try await LocationAccess.shared.currentLocation()
+            let located = clock.now
             origin = location.coordinate
             let point = GeoPoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
             items = try await session.nearbyItems(from: point, within: radius)
             phase = .ready
+            let fix = located - start, index = clock.now - located
+            Self.log.info("nearby: fix \(fix, privacy: .public), index \(index, privacy: .public), \(self.items.count) items")
         } catch let failure as LocationAccess.Failure {
             items = []
             phase = .failed(failure)
