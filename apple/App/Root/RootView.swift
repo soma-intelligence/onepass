@@ -13,36 +13,39 @@ struct RootView: View {
     #endif
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The split-screen passage playing between the lock screen and the vault (iPhone and iPad).
-    @State private var vaultPassage: VaultPassage.Direction?
+    /// The vault door between the lock screen and the vault (iPhone and iPad, `VaultDoorPassage`).
+    @State private var door = VaultDoorPassage()
+    /// The lock screen as it was at the end of the dial's turn: the two panels of the opening door.
+    @State private var doorSnapshot: UIImage?
+    /// The dial's center (global y): where the door splits.
+    @State private var doorSeam: CGFloat?
+    /// Bumped by each passage: a completion of a replaced passage is ignored.
+    @State private var doorGeneration = 0
+    #if DEBUG
+    @State private var demoDoorPlayed = false
+    #endif
     #endif
 
     var body: some View {
         content
             .animation(.smooth(duration: 0.25), value: route)
             #if os(iOS)
-            // Unlock: the mark turns, the screen splits open onto the vault. Lock: the reverse.
-            // Reduce Motion keeps the plain fade.
-            .overlay {
-                if let direction = vaultPassage {
-                    VaultPassage(direction: direction) { vaultPassage = nil }
-                        .transition(.opacity)
+            .environment(\.vaultDialTurn, door.dialTurn)
+            .onPreferenceChange(VaultSeamKey.self) { seam in
+                // The last place the dial was seen: it stays put once the lock screen leaves.
+                MainActor.assumeIsolated { if let seam { doorSeam = seam } }
+            }
+            .overlay { doorOverlay }
+            // A catch as the dial turns, a firmer one as the bolt releases and the door parts.
+            .sensoryFeedback(trigger: door.phase) { _, phase in
+                switch phase {
+                case .turning: .impact(flexibility: .rigid, intensity: 0.5)
+                case .parting: .impact(weight: .medium, intensity: 0.8)
+                default: nil
                 }
             }
-            #if DEBUG
-            // Captures: `-OnePassDemoVaultPassage YES` plays the opening then the closing passage.
-            .task {
-                guard UserDefaults.standard.bool(forKey: "OnePassDemoVaultPassage") else { return }
-                try? await Task.sleep(for: .seconds(1))
-                vaultPassage = .opening
-                try? await Task.sleep(for: .seconds(2.5))
-                vaultPassage = .closing
-            }
-            #endif
             .onChange(of: route) { old, new in
-                guard !reduceMotion else { return }
-                if old == .lock, new == .unlocked { vaultPassage = .opening }
-                if old == .unlocked, new == .lock { vaultPassage = .closing }
+                routeChanged(from: old, to: new)
             }
             #endif
             .onAppear { model.start() }
@@ -131,6 +134,16 @@ struct RootView: View {
     }
     #endif
 
+    #if os(iOS)
+    private var doorKeepsLock: Bool { door.keepsLockOnTop }
+    private var doorShowsVault: Bool { door.showsVaultUnderneath }
+    private var vaultScale: CGFloat { door.vaultScale }
+    #else
+    private var doorKeepsLock: Bool { false }
+    private var doorShowsVault: Bool { false }
+    private var vaultScale: CGFloat { 1 }
+    #endif
+
     private enum Route: Hashable {
         case onboarding, lock, unlocked, failed, guest, revoked
     }
@@ -151,12 +164,22 @@ struct RootView: View {
         case .onboarding:
             OnboardingFlow()
                 .transition(.opacity)
-        case .lock:
-            LockView()
-                .transition(.opacity)
-        case .unlocked:
-            BrowseRoot()
-                .transition(.opacity)
+        case .lock, .unlocked:
+            // One branch for both, so the lock screen can stay above the vault while the door
+            // opens (the same `LockView`, never a second one: its automatic Face ID runs once).
+            ZStack {
+                if route == .unlocked || doorShowsVault {
+                    BrowseRoot()
+                        .scaleEffect(vaultScale)
+                        .transition(.opacity)
+                }
+                if route == .lock || doorKeepsLock {
+                    LockView()
+                        // Under the door, the lock screen leaves at once: the panels are its picture.
+                        .transition(doorKeepsLock ? .identity : .opacity)
+                }
+            }
+            .transition(.opacity)
         case .revoked:
             RevokedDeviceView()
                 .transition(.opacity)
@@ -174,107 +197,165 @@ struct RootView: View {
 }
 
 #if os(iOS)
-/// A short passage over the screen change: the screen splits at its middle with the Lattice mark
-/// on the seam. Opening: the mark gives a quick quarter turn, then the top half slides up and the
-/// bottom half slides down onto the vault while the mark shrinks away. Closing: the halves slide
-/// in and meet over the lock screen, the mark turns back, then the passage fades. About 0.5 s,
-/// touches pass. Reduce Motion: a plain quick crossfade.
-struct VaultPassage: View {
-    enum Direction { case opening, closing }
+// MARK: - Vault door
 
-    let direction: Direction
-    let done: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.displayScale) private var displayScale
-    /// 0: the halves meet at the seam. 1: both are off screen.
-    @State private var parted: CGFloat
-    @State private var turn: Double
-    @State private var markShown: Bool
-    @State private var shown: Bool
-
-    init(direction: Direction, done: @escaping () -> Void) {
-        self.direction = direction
-        self.done = done
-        let opening = direction == .opening
-        _parted = State(initialValue: opening ? 0 : 1)
-        _turn = State(initialValue: opening ? 0 : 90)
-        _markShown = State(initialValue: opening)
-        _shown = State(initialValue: true)
+extension RootView {
+    @ViewBuilder private var doorOverlay: some View {
+        switch door.phase {
+        case .parting:
+            if let snapshot = doorSnapshot {
+                let generation = doorGeneration
+                VaultDoorOpening(snapshot: snapshot, seam: doorSeam) {
+                    doorEvent(.panelsOpened, generation: generation)
+                }
+                .transition(.identity)
+            }
+        case .closing, .fading:
+            let generation = doorGeneration
+            VaultDoorClosingPassage {
+                doorEvent(.panelsClosed, generation: generation)
+            } faded: {
+                doorEvent(.fadeFinished, generation: generation)
+            }
+            .transition(.identity)
+        case .idle, .turning:
+            EmptyView()
+        }
     }
+
+    /// Started by the session's real state change (`route`), never by a timer around the unlock.
+    private func routeChanged(from old: Route, to new: Route) {
+        doorGeneration &+= 1
+        let generation = doorGeneration
+        if old == .lock, new == .unlocked {
+            var next = door
+            next.handle(.unlocked(reduceMotion: reduceMotion))
+            guard next.phase == .turning else {
+                door = next
+                announceUnlocked()
+                return
+            }
+            // The dial turns with a little catch at the end; the vault is already rendered below.
+            withAnimation(.spring(duration: 0.3, bounce: 0.18), completionCriteria: .logicallyComplete) {
+                door = next
+            } completion: {
+                turnFinished(generation: generation)
+            }
+            #if DEBUG
+            demoLockIfAsked()
+            #endif
+        } else if old == .unlocked, new == .lock {
+            doorSnapshot = nil
+            door.handle(.locked(reduceMotion: reduceMotion))
+        } else {
+            doorSnapshot = nil
+            door.handle(.interrupted)
+            #if DEBUG
+            if new == .unlocked { demoLockIfAsked() }
+            #endif
+        }
+    }
+
+    /// The dial is at rest a quarter turn on: the lock screen is captured as it is on screen and
+    /// replaced by its picture in two panels, which part while the vault settles to full size.
+    private func turnFinished(generation: Int) {
+        guard generation == doorGeneration, door.phase == .turning else { return }
+        guard let snapshot = captureWindow() else {
+            withAnimation(.smooth(duration: 0.25)) { door.handle(.captureFailed) }
+            announceUnlocked()
+            return
+        }
+        doorSnapshot = snapshot
+        withAnimation(VaultDoorOpening.animation) { door.handle(.turnFinished) }
+    }
+
+    private func doorEvent(_ event: VaultDoorPassage.Event, generation: Int) {
+        guard generation == doorGeneration else { return }
+        let wasOpening = door.phase == .parting
+        door.handle(event)
+        guard !door.isActive else { return }
+        doorSnapshot = nil
+        if wasOpening { announceUnlocked() }
+    }
+
+    /// What is on screen right now (the last frame drawn, `afterScreenUpdates: false`): the lock
+    /// screen with its dial turned. The picture lives only while the door opens; it holds nothing
+    /// secret (the password field is empty once an unlock is under way).
+    private func captureWindow() -> UIImage? {
+        guard let window = windowScene?.windows.first(where: \.isKeyWindow) ?? windowScene?.windows.first,
+            window.bounds.width > 0, window.bounds.height > 0
+        else { return nil }
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        return renderer.image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }
+    }
+
+    /// VoiceOver hears it once the vault is the screen (the door itself is hidden from it).
+    private func announceUnlocked() {
+        AccessibilityNotification.Announcement(String(localized: "lock.unlockedAnnouncement")).post()
+    }
+
+    #if DEBUG
+    /// Captures and the fold showcase: `-OnePassDemoVaultPassage YES` locks the demo vault once,
+    /// a second after it opens; the lock screen then plays a refused try and a real unlock
+    /// (`LockView`), so the door opens through the session's own path.
+    private func demoLockIfAsked() {
+        guard UserDefaults.standard.bool(forKey: "OnePassDemoVaultPassage"), !demoDoorPlayed else { return }
+        demoDoorPlayed = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            model.lock()
+        }
+    }
+    #endif
+}
+
+/// The opening door, its own animation started as it appears (so it parts from closed).
+private struct VaultDoorOpening: View {
+    static let animation: Animation = .spring(duration: 0.42, bounce: 0)
+
+    let snapshot: UIImage
+    let seam: CGFloat?
+    let opened: () -> Void
+    @State private var parted: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
-            let travel = proxy.size.height / 2 + 24
-            ZStack {
-                VStack(spacing: 0) {
-                    half(seamAtBottom: true).offset(y: -parted * travel)
-                    half(seamAtBottom: false).offset(y: parted * travel)
-                }
-                AppGlyph(size: 88)
-                    .rotationEffect(.degrees(turn))
-                    .scaleEffect(markShown ? 1 : 0.6)
-                    .opacity(markShown ? 1 : 0)
-            }
+            VaultDoorPanels(snapshot: snapshot, seam: seam ?? proxy.size.height / 2, parted: parted)
         }
         .ignoresSafeArea()
-        .opacity(shown ? 1 : 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .task {
-            if reduceMotion {
-                await crossfade()
-            } else if direction == .opening {
-                await open()
-            } else {
-                await close()
+        .onAppear {
+            withAnimation(Self.animation, completionCriteria: .logicallyComplete) {
+                parted = 1
+            } completion: {
+                opened()
             }
-            done()
         }
     }
+}
 
-    /// One half of the screen in the system background, a hairline and a soft shadow on its seam edge.
-    private func half(seamAtBottom: Bool) -> some View {
-        Color(uiColor: .systemBackground)
-            .overlay(alignment: seamAtBottom ? .bottom : .top) {
-                Rectangle()
-                    .fill(Color(uiColor: .separator))
-                    .frame(height: 1 / displayScale)
+/// The closing door: the panels slide in and meet, then fade onto the lock screen below.
+private struct VaultDoorClosingPassage: View {
+    let closed: () -> Void
+    let faded: () -> Void
+    @State private var parted: CGFloat = 1
+    @State private var opacity: Double = 1
+
+    var body: some View {
+        VaultDoorClosing(parted: parted, opacity: opacity)
+            .onAppear {
+                withAnimation(.spring(duration: 0.32, bounce: 0), completionCriteria: .logicallyComplete) {
+                    parted = 0
+                } completion: {
+                    closed()
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        opacity = 0
+                    } completion: {
+                        faded()
+                    }
+                }
             }
-            .shadow(color: .black.opacity(0.14), radius: 10, y: seamAtBottom ? 3 : -3)
-            .zIndex(seamAtBottom ? 1 : 0)
-    }
-
-    private func open() async {
-        withAnimation(.snappy(duration: 0.22)) { turn = 90 }
-        try? await Task.sleep(for: .milliseconds(120))
-        withAnimation(.spring(duration: 0.36, bounce: 0)) { parted = 1 }
-        withAnimation(.easeOut(duration: 0.2)) { markShown = false }
-        try? await Task.sleep(for: .milliseconds(360))
-    }
-
-    private func close() async {
-        withAnimation(.spring(duration: 0.3, bounce: 0)) { parted = 0 }
-        withAnimation(.easeOut(duration: 0.2).delay(0.08)) { markShown = true }
-        try? await Task.sleep(for: .milliseconds(240))
-        withAnimation(.snappy(duration: 0.22)) { turn = 0 }
-        try? await Task.sleep(for: .milliseconds(200))
-        withAnimation(.easeOut(duration: 0.14)) { shown = false }
-        try? await Task.sleep(for: .milliseconds(150))
-    }
-
-    /// Reduce Motion: no slide, no turn. The halves stay closed and the cover fades.
-    private func crossfade() async {
-        parted = 0
-        turn = 0
-        markShown = true
-        if direction == .closing {
-            shown = false
-            withAnimation(.easeOut(duration: 0.12)) { shown = true }
-            try? await Task.sleep(for: .milliseconds(130))
-        }
-        withAnimation(.easeOut(duration: 0.18)) { shown = false }
-        try? await Task.sleep(for: .milliseconds(190))
     }
 }
 #endif
-

@@ -20,6 +20,8 @@ struct LockView: View {
     @State private var refusals = 0
     /// The keyboard focus of the password field (`SecretInputField` reaches its UIKit field both ways).
     @State private var fieldFocused = false
+    /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop.
+    @State private var dialRefusals = 0
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -32,6 +34,7 @@ struct LockView: View {
     private static let columnWidth: CGFloat = 300
     #else
     private static let glyphSize: CGFloat = 84
+    private static let dialSize: CGFloat = 120
     private static let fieldHeight: CGFloat = 50
     private static let buttonHeight: CGFloat = 36
     private static let columnWidth: CGFloat = 340
@@ -53,6 +56,9 @@ struct LockView: View {
             // The password field takes the focus (and the keyboard comes up) only when no automatic
             // biometric attempt runs, or once it failed or was cancelled.
             guard scenePhase == .active else { return }
+            #if DEBUG && os(iOS)
+            if await playDemoVaultDoor() { return }
+            #endif
             if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
                 await unlockWithBiometrics(automatic: true)
             } else {
@@ -84,7 +90,12 @@ struct LockView: View {
 
     private var column: some View {
         VStack(spacing: 0) {
+            #if os(iOS)
+            // The vault's dial: it turns, and the screen opens at its center (`RootView`).
+            VaultDial(size: Self.dialSize, refusals: dialRefusals)
+            #else
             AppGlyph(size: Self.glyphSize)
+            #endif
             Text("Déverrouille OnePass")
                 .font(.system(size: Platform.isMac ? 22 : 26, weight: .semibold))
                 .multilineTextAlignment(.center)
@@ -407,10 +418,29 @@ struct LockView: View {
         do {
             try await session.unlockWithBiometrics()
         } catch {
+            withAnimation(.linear(duration: 0.5)) { dialRefusals += 1 }
             fieldFocused = true
         }
     }
 }
+
+#if DEBUG && os(iOS)
+extension LockView {
+    /// `-OnePassDemoVaultPassage YES` (captures, demo data): a staged refusal (the dial's jiggle
+    /// only, no session call), then a real biometric unlock through the session, which opens the
+    /// vault door. Returns whether it played.
+    private func playDemoVaultDoor() async -> Bool {
+        guard UserDefaults.standard.bool(forKey: "OnePassDemoVaultPassage"), DemoData.requested else {
+            return false
+        }
+        try? await Task.sleep(for: .seconds(1.2))
+        withAnimation(.linear(duration: 0.5)) { dialRefusals += 1 }
+        try? await Task.sleep(for: .seconds(1.4))
+        await unlockWithBiometrics(automatic: false)
+        return true
+    }
+}
+#endif
 
 /// Horizontal shake, three swings per refusal.
 private struct Shake: GeometryEffect {

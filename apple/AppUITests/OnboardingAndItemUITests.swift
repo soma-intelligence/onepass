@@ -259,8 +259,8 @@ final class OnboardingAndItemUITests: XCTestCase {
     /// on a wide simulator (there is no foldable one), with the demo data.
     func testFoldShowcase() throws {
         let app = XCUIApplication()
-        // Demo data (fictional); `-OnePassDemoVaultPassage` plays the unlock and lock passages
-        // over it, as the demo store cannot be locked and unlocked again.
+        // Demo data (fictional); `-OnePassDemoVaultPassage` locks the demo vault once, then
+        // unlocks it through the session (Face ID simulated), so the vault door plays for real.
         app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
         app.launch()
         try XCTSkipUnless(app.windows.firstMatch.frame.width >= 600, "needs a wide simulator")

@@ -22395,6 +22395,35 @@
         }
       }
     },
+    "lock.unlockedAnnouncement" : {
+      "comment" : "Verrouillage: annonce VoiceOver une fois la porte du coffre ouverte sur le coffre",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass unlocked"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass desbloqueado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass déverrouillé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass sbloccato"
+          }
+        }
+      }
+    },
     "settings.about.postQuantum" : {
       "comment" : "Réglages > À propos: post-quantum algorithms row",
       "localizations" : {
