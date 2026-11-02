@@ -91,12 +91,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "request nonce (freshness, not a secret); the mailbox crate cannot depend on the core",
     ),
     (
-        "core/onepass-mailbox/src/credential.rs",
-        1,
-        "Credential::generate has no shipped caller (tests only); shipped credentials are \
-         built with Credential::from_seed",
-    ),
-    (
         "apple/VaultKit/Sources/VaultKit/Remote/RemoteUnlockKeyring.swift",
         1,
         "presence marker item: its content is never read as a secret",
