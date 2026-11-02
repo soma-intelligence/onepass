@@ -144,3 +144,51 @@ fn unprotected_wallets_are_the_funded_ones_with_a_phrase() {
         vec![key]
     );
 }
+
+#[test]
+fn watch_wallets_reads_public_fields_only() {
+    let (_dir, s, vault) = session();
+    let mut item = s
+        .new_item(vault.clone(), FfiItemType::CryptoWallet, "Froid".into())
+        .unwrap();
+    let main = &mut item.sections[0];
+    let at = main
+        .fields
+        .iter()
+        .position(|f| f.id == "public_addresses")
+        .unwrap();
+    let mut copy = main.fields[at].clone();
+    for f in main.fields.iter_mut() {
+        match f.id.as_str() {
+            "name" => f.value = FfiFieldValue::Text { value: "Froid".into() },
+            "recovery_phrase" => f.value = FfiFieldValue::Mnemonic { value: ABANDON.into() },
+            "public_addresses" => {
+                f.value = FfiFieldValue::Text {
+                    value: "eth, 0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed".into(),
+                }
+            }
+            "xpub" => {
+                f.value = FfiFieldValue::Text {
+                    value: "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs".into(),
+                }
+            }
+            _ => {}
+        }
+    }
+    copy.value = FfiFieldValue::Text {
+        value: "Bitcoin, pas une adresse".into(),
+    };
+    main.fields.insert(at + 1, copy);
+    s.save_item(item).unwrap();
+    let wallets = s.watch_wallets().unwrap();
+    assert_eq!(wallets.len(), 1);
+    let w = &wallets[0];
+    assert_eq!(w.addresses.len(), 1);
+    assert_eq!(
+        w.addresses[0].address,
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    );
+    assert_eq!(w.invalid_entries, vec!["Bitcoin, pas une adresse"]);
+    assert!(w.xpub.is_some() && !w.xpub_invalid);
+    assert!(w.has_phrase && w.phrase_unprotected);
+}
