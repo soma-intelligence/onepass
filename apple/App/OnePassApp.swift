@@ -21,6 +21,12 @@ struct OnePassApp: App {
         Window("OnePass", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
+                // The app outlives its window (menu bar icon): a closed window locks and ends a
+                // guest session, as quitting does (ruling A7).
+                .onDisappear {
+                    model.publicSession?.end()
+                    model.lock()
+                }
                 // No window-wide material: the split view's sidebar keeps the system's blurred,
                 // translucent material while the list and detail stay on the opaque window
                 // background (a see-through detail let the desktop wash out labels and cards).
@@ -44,6 +50,14 @@ struct OnePassApp: App {
             MacSettingsView()
                 .environment(model)
                 .tint(Theme.accent)
+        }
+        // Menu bar icon: opens the window from anywhere, and the app stays there once the window is
+        // closed (closing it locks, like quitting did).
+        MenuBarExtra {
+            MenuBarMenu(model: model)
+        } label: {
+            Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
+                .accessibilityLabel(Text("OnePass"))
         }
         #else
         WindowGroup {
@@ -155,6 +169,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// The menu bar icon keeps the app running; the closed window has already locked.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// The menu of the menu bar icon: open the window, search, lock, settings, quit.
+struct MenuBarMenu: View {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button("Ouvrir OnePass") { show() }
+        Button("Rechercher") {
+            show()
+            model.searchFocusRequest &+= 1
+        }
+        Divider()
+        Button("Verrouiller") { model.perform(.lock) }
+            .disabled(model.session.state != .unlocked)
+        Button("Réglages…") {
+            NSApp.activate()
+            openSettings()
+        }
+        Divider()
+        Button("Quitter OnePass") { NSApp.terminate(nil) }
+    }
+
+    private func show() {
+        openWindow(id: "main")
+        NSApp.activate()
+    }
 }
 #endif
