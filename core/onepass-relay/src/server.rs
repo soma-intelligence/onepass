@@ -42,6 +42,9 @@ pub struct Accepted {
     pub client: Client,
     /// `safari` for Safari, the browser-given id for the relay.
     pub extension_id: String,
+    /// The relay's verified parent (`team:<team>:<identifier>`), if any;
+    /// always `None` for Safari.
+    pub launcher: Option<String>,
     pub stream: UnixStream,
 }
 
@@ -127,15 +130,16 @@ fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static st
         .map_err(|_| "no opening frame")?
         .ok_or("no opening frame")?;
     let p = Preamble::parse(&first).ok_or("bad opening frame")?;
-    let extension_id = match (client, p.extension) {
-        (Client::Safari, None) => SAFARI_EXTENSION_ID.to_owned(),
-        (Client::Relay, Some(id)) => id,
+    let (extension_id, launcher) = match (client, p.extension, p.launcher) {
+        (Client::Safari, None, None) => (SAFARI_EXTENSION_ID.to_owned(), None),
+        (Client::Relay, Some(id), launcher) => (id, launcher),
         _ => return Err("opening frame does not fit the client"),
     };
     stream.set_read_timeout(None).map_err(|_| "socket error")?;
     Ok(Accepted {
         client,
         extension_id,
+        launcher,
         stream,
     })
 }
@@ -288,7 +292,7 @@ mod tests {
         server: Server,
         _dir: tempfile::TempDir,
         path: PathBuf,
-        accepted: std::sync::mpsc::Receiver<(Client, String)>,
+        accepted: std::sync::mpsc::Receiver<(Client, String, Option<String>)>,
         notes: Arc<Mutex<Vec<String>>>,
     }
 
@@ -314,7 +318,7 @@ mod tests {
             Arc::new(move |a: Accepted| {
                 tx.lock()
                     .unwrap()
-                    .send((a.client, a.extension_id.clone()))
+                    .send((a.client, a.extension_id.clone(), a.launcher.clone()))
                     .unwrap();
                 let mut s = a.stream;
                 while let Ok(Some(f)) = read_frame(&mut s) {
@@ -349,8 +353,11 @@ mod tests {
             &Preamble::new(Some("abc".into())),
         )
         .unwrap();
-        let (client, ext) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!((client, ext.as_str()), (Client::Relay, "abc"));
+        let (client, ext, launcher) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            (client, ext.as_str(), launcher),
+            (Client::Relay, "abc", None)
+        );
         write_frame(&mut s, br#"{"v":1}"#).unwrap();
         assert_eq!(read_frame(&mut s).unwrap().unwrap(), br#"{"v":1}"#);
         let mode = fs::metadata(&rig.path).unwrap().permissions().mode() & 0o777;
@@ -361,11 +368,28 @@ mod tests {
     fn safari_client_is_admitted_as_safari() {
         let rig = rig(team(SAFARI_ID), 8);
         let _s = connect(&rig.path, TEAM, APP_ID, &app(), &Preamble::new(None)).unwrap();
-        let (client, ext) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (client, ext, launcher) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(
-            (client, ext.as_str()),
-            (Client::Safari, SAFARI_EXTENSION_ID)
+            (client, ext.as_str(), launcher),
+            (Client::Safari, SAFARI_EXTENSION_ID, None)
         );
+    }
+
+    #[test]
+    fn relay_launcher_reaches_the_handler() {
+        let rig = rig(team(RELAY_ID), 8);
+        let chrome = "team:EQHXZ8M8AV:com.google.Chrome".to_owned();
+        let _s = connect(
+            &rig.path,
+            TEAM,
+            APP_ID,
+            &app(),
+            &Preamble::with_launcher("abc".into(), Some(chrome.clone())),
+        )
+        .unwrap();
+        let (client, ext, launcher) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!((client, ext.as_str()), (Client::Relay, "abc"));
+        assert_eq!(launcher, Some(chrome));
     }
 
     fn refused(rig: &Rig, preamble: &Preamble) {
@@ -408,6 +432,10 @@ mod tests {
         // Safari never names an extension; the relay always does.
         refused(&rig(team(SAFARI_ID), 8), &Preamble::new(Some("abc".into())));
         refused(&rig(team(RELAY_ID), 8), &Preamble::new(None));
+        // Only the relay reports a launcher.
+        let mut safari = Preamble::new(None);
+        safari.launcher = Some("team:EQHXZ8M8AV:com.google.Chrome".into());
+        refused(&rig(team(SAFARI_ID), 8), &safari);
     }
 
     #[test]

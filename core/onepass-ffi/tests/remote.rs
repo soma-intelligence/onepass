@@ -851,6 +851,7 @@ fn agent_only_session_refused_by_browser_bridge() {
             ext_name: "OnePass".into(),
             browser: "Chrome".into(),
             extension_id: "ext".into(),
+            verified_browser: String::new(),
             created_at: 1,
             last_used: 1,
         }],

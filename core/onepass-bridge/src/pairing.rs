@@ -336,6 +336,7 @@ impl ExtPairing {
             commit: B64(commit),
             ext_name: ext_name.to_owned(),
             browser: browser.to_owned(),
+            auto: false,
         };
         let ext = ExtPairing {
             started: now,

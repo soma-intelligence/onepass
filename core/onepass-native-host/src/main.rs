@@ -119,6 +119,9 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
     let clock = now;
     let mut conn = Conn {
         allowed,
+        // The development host proves nothing about its caller: never a
+        // pairing without the configured approval.
+        vouched: None,
         extension_id: extension_id.unwrap_or_default(),
         journal: &log,
         clock: &clock,

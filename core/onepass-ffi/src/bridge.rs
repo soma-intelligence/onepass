@@ -50,6 +50,10 @@ pub struct FfiBridgePairing {
     pub browser: String,
     /// `safari`, a Chrome extension id or a Firefox add-on id.
     pub extension_id: String,
+    /// The browser the app vouched for by code signature when it paired
+    /// without a code (`Safari`, `Google Chrome`...); empty after the code
+    /// flow (spec 2026-11-02-browser-auto-pairing).
+    pub verified_browser: String,
     pub created_at: u64,
     pub last_used: u64,
 }
@@ -121,6 +125,10 @@ struct Shared {
     // Read by the socket admission, which exists on macOS only.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     allowed_extensions: Vec<String>,
+    /// Extension ids the user revoked: never paired without a code again
+    /// until a code pairing or the user's "allow again".
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    blocked_auto: Mutex<Vec<String>>,
     answers: Mutex<HashMap<u64, Option<bool>>>,
     next_request: AtomicU64,
     audit_path: PathBuf,
@@ -156,13 +164,19 @@ impl PairingStore for Pairings<'_> {
         Some(key)
     }
 
-    fn add(&mut self, r: &PairingRecord, extension_id: &str) -> Result<(), String> {
+    fn add(
+        &mut self,
+        r: &PairingRecord,
+        extension_id: &str,
+        verified: Option<&str>,
+    ) -> Result<(), String> {
         let p = FfiBridgePairing {
             pairing_id: data_encoding::HEXLOWER.encode(&r.pairing_id),
             key: r.key.to_vec(),
             ext_name: r.ext_name.clone(),
             browser: r.browser.clone(),
             extension_id: extension_id.to_owned(),
+            verified_browser: verified.unwrap_or_default().to_owned(),
             created_at: r.created_at,
             last_used: r.created_at,
         };
@@ -170,6 +184,11 @@ impl PairingStore for Pairings<'_> {
             let mut list = lock(&self.0.pairings);
             list.retain(|q| q.pairing_id != p.pairing_id);
             list.push(p.clone());
+        }
+        // A code pairing approved with Touch ID lifts the user's block (the
+        // app's store does the same on `pairing_stored`).
+        if verified.is_none() {
+            lock(&self.0.blocked_auto).retain(|b| b != extension_id);
         }
         self.0.delegate.pairing_stored(p);
         Ok(())
@@ -426,8 +445,15 @@ impl VaultAccess for AppVault<'_> {
 }
 
 /// Serve one admitted connection until it ends. `allowed`: the caller's
-/// extension id passed the app's list (Safari always does).
-fn serve_stream(shared: &Shared, stream: UnixStream, extension_id: String, allowed: bool) {
+/// extension id passed the app's list (Safari always does). `vouched`: the
+/// browser the app vouches for, which may then pair without a code.
+fn serve_stream(
+    shared: &Shared,
+    stream: UnixStream,
+    extension_id: String,
+    allowed: bool,
+    vouched: Option<String>,
+) {
     let Ok(reader) = stream.try_clone() else {
         return;
     };
@@ -440,6 +466,7 @@ fn serve_stream(shared: &Shared, stream: UnixStream, extension_id: String, allow
     let clock = unix_now;
     let mut conn = Conn {
         allowed,
+        vouched,
         extension_id,
         journal: shared,
         clock: &clock,
@@ -482,6 +509,7 @@ impl BridgeServer {
                 excluded: Mutex::new(HashSet::new()),
                 pairings: Mutex::new(pairings),
                 allowed_extensions,
+                blocked_auto: Mutex::new(Vec::new()),
                 answers: Mutex::new(HashMap::new()),
                 next_request: AtomicU64::new(1),
                 audit_path: PathBuf::from(audit_path),
@@ -521,9 +549,13 @@ impl BridgeServer {
                     note: Arc::new(move |m| note.delegate.note(m.to_owned())),
                 },
                 Arc::new(move |a: Accepted| {
-                    let allowed = matches!(a.client, onepass_relay::Client::Safari)
-                        || shared.allowed_extensions.contains(&a.extension_id);
-                    serve_stream(&shared, a.stream, a.extension_id, allowed);
+                    serve_admitted(
+                        &shared,
+                        a.stream,
+                        a.client,
+                        a.extension_id,
+                        a.launcher.as_deref(),
+                    );
                 }),
             )
             .map_err(|_| invalid("bridge socket"))?;
@@ -584,6 +616,17 @@ impl BridgeServer {
         }
     }
 
+    /// Extension ids the user revoked (from the keychain at launch, then
+    /// after each "forget" or "allow again"): never paired without a code.
+    pub fn set_blocked_auto(&self, extension_ids: Vec<String>) {
+        *lock(&self.shared.blocked_auto) = extension_ids;
+    }
+
+    /// The current block list (a code pairing removes its id).
+    pub fn blocked_auto(&self) -> Vec<String> {
+        lock(&self.shared.blocked_auto).clone()
+    }
+
     /// Forget a pairing: its next session gets `unknown_pairing`.
     pub fn forget_pairing(&self, pairing_id: String) {
         lock(&self.shared.pairings).retain(|p| p.pairing_id != pairing_id);
@@ -601,6 +644,51 @@ impl BridgeServer {
     }
 }
 
+/// What the app decides for a client the socket admitted (code signature
+/// checked): whether it may use the bridge at all, and whether it may pair
+/// without a code (spec 2026-11-02-browser-auto-pairing 3).
+#[cfg(target_os = "macos")]
+fn serve_admitted(
+    shared: &Shared,
+    stream: UnixStream,
+    client: onepass_relay::Client,
+    extension_id: String,
+    launcher: Option<&str>,
+) {
+    use onepass_relay::Client;
+    use onepass_relay::launcher::vouch;
+
+    let allowed =
+        matches!(client, Client::Safari) || shared.allowed_extensions.contains(&extension_id);
+    let vouched = if allowed {
+        let blocked = lock(&shared.blocked_auto).clone();
+        vouch(
+            client,
+            &extension_id,
+            launcher,
+            &shared.allowed_extensions,
+            &blocked,
+        )
+    } else {
+        None
+    };
+    if matches!(client, Client::Relay) && allowed && vouched.is_none() {
+        // The relay's verified parent, never extension input: enough to see
+        // why a browser gets the code flow on a release install.
+        shared.delegate.note(match launcher {
+            Some(l) => format!("browser not vouched for automatic pairing: {l}"),
+            None => "browser not vouched for automatic pairing: no signed launcher".to_owned(),
+        });
+    }
+    serve_stream(
+        shared,
+        stream,
+        extension_id,
+        allowed,
+        vouched.map(str::to_owned),
+    );
+}
+
 /// Test entry: serve one connection on `stream` as an admitted client
 /// (the socket admission is tested in `onepass-relay`).
 #[doc(hidden)]
@@ -610,5 +698,43 @@ pub fn serve_for_tests(
     extension_id: &str,
     allowed: bool,
 ) {
-    serve_stream(&server.shared, stream, extension_id.to_owned(), allowed);
+    serve_stream(
+        &server.shared,
+        stream,
+        extension_id.to_owned(),
+        allowed,
+        None,
+    );
+}
+
+/// Test entry: a connection the socket admitted as the relay, with the
+/// launcher it reported; the app's own decision follows.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub fn serve_relay_for_tests(
+    server: &BridgeServer,
+    stream: UnixStream,
+    extension_id: &str,
+    launcher: Option<&str>,
+) {
+    serve_admitted(
+        &server.shared,
+        stream,
+        onepass_relay::Client::Relay,
+        extension_id.to_owned(),
+        launcher,
+    );
+}
+
+/// Test entry: a connection the socket admitted as the Safari extension.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub fn serve_safari_for_tests(server: &BridgeServer, stream: UnixStream) {
+    serve_admitted(
+        &server.shared,
+        stream,
+        onepass_relay::Client::Safari,
+        onepass_relay::SAFARI_EXTENSION_ID.to_owned(),
+        None,
+    );
 }

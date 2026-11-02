@@ -64,12 +64,17 @@ pub type PublicKeyB64 = B64<PUBLIC_LEN>;
 /// Hybrid ciphertext field (1600 bytes).
 pub type CiphertextB64 = B64<CT_LEN>;
 
-/// E to H, pairing step 1.
+/// E to H, pairing step 1. `auto`: pair without a code if the host can
+/// vouch for the caller, otherwise refuse (spec
+/// 2026-11-02-browser-auto-pairing 4); absent means the code flow. Not part
+/// of the transcript: it only asks, the host decides from system facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairHello {
     pub commit: B64<32>,
     pub ext_name: String,
     pub browser: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto: bool,
 }
 
 /// H to E, pairing step 2.
@@ -148,6 +153,9 @@ pub enum Envelope {
     PairReveal(PairReveal),
     /// The host computed the code and waits for the user's approval.
     PairSas,
+    /// The host vouches for the caller by its code signature: no code to
+    /// compare, `pair_done` follows.
+    PairAuto,
     PairDone(PairDone),
     PairConfirm(PairConfirm),
     /// The host stored the pairing.

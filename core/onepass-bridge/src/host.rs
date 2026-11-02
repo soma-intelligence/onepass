@@ -30,9 +30,16 @@ use crate::{AppErrorCode, BridgeError};
 pub trait PairingStore {
     /// The pairing key of `id`, if paired.
     fn key(&self, id: &[u8; 16]) -> Option<Zeroizing<[u8; 32]>>;
-    /// Store a completed pairing (replacing one with the same id). The
-    /// error is a fixed description, for the journal.
-    fn add(&mut self, record: &PairingRecord, extension_id: &str) -> Result<(), String>;
+    /// Store a completed pairing (replacing one with the same id).
+    /// `verified`: the browser name the host vouched for when it paired
+    /// without a code, `None` after the code flow. The error is a fixed
+    /// description, for the journal.
+    fn add(
+        &mut self,
+        record: &PairingRecord,
+        extension_id: &str,
+        verified: Option<&str>,
+    ) -> Result<(), String>;
     /// Record a session opened with `id` at `now`.
     fn touch(&mut self, id: &[u8; 16], now: u64) -> Result<(), String>;
 }
@@ -163,6 +170,10 @@ pub struct Conn<'a, W: Write> {
     /// its code signature). A refused caller gets `not_allowed` after its
     /// first frame and never reaches the vault.
     pub allowed: bool,
+    /// The browser the host vouches for by code signature (spec
+    /// 2026-11-02-browser-auto-pairing): a `pair_hello` with `auto` then
+    /// pairs without the approver. `None`: only the code flow.
+    pub vouched: Option<String>,
     /// Stored with a new pairing.
     pub extension_id: String,
     pub journal: &'a dyn Journal,
@@ -265,6 +276,16 @@ impl<W: Write> Conn<'_, W> {
     }
 
     fn pairing(&mut self, hello: PairHello) -> Flow {
+        let auto = match (hello.auto, self.vouched.clone()) {
+            (false, _) => None,
+            (true, Some(browser)) => Some(browser),
+            (true, None) => {
+                // Never a sheet nor a code for a request that asked for none.
+                self.journal
+                    .line("automatic pairing refused: caller not vouched");
+                return self.fail(AppErrorCode::NotAllowed);
+            }
+        };
         let ext_name = hello.ext_name.clone();
         let browser = hello.browser.clone();
         let (mut hp, offer) = match HostPairing::start(hello, (self.clock)()) {
@@ -283,8 +304,16 @@ impl<W: Write> Conn<'_, W> {
             Ok(s) => s,
             Err(e) => return self.reject("pairing failed", e),
         };
-        self.send(&Envelope::PairSas)?;
-        self.wait_approval(&sas.0, &ext_name, &browser, deadline)?;
+        // Without a person in the loop, `pair_confirm` comes within a step.
+        let confirm_by = if auto.is_some() {
+            self.send(&Envelope::PairAuto)?;
+            self.journal.line("pairing approved automatically");
+            deadline.min(Instant::now() + self.limits.step)
+        } else {
+            self.send(&Envelope::PairSas)?;
+            self.wait_approval(&sas.0, &ext_name, &browser, deadline)?;
+            deadline
+        };
         let done = match hp.approve((self.clock)()) {
             Ok(d) => d,
             Err(e) => return self.reject("pairing failed", e),
@@ -293,7 +322,7 @@ impl<W: Write> Conn<'_, W> {
 
         // The user compares the codes before the extension confirms: a
         // human step, bounded by the pairing deadline, not by `step`.
-        let f = self.next_raw(deadline.saturating_duration_since(Instant::now()))?;
+        let f = self.next_raw(confirm_by.saturating_duration_since(Instant::now()))?;
         let Envelope::PairConfirm(confirm) = self.parse(&f)? else {
             self.journal.line("expected pair_confirm");
             return self.fail(AppErrorCode::BadFrame);
@@ -303,7 +332,7 @@ impl<W: Write> Conn<'_, W> {
             Err(e) => return self.reject("pairing failed", e),
         };
         let ext_id = self.extension_id.clone();
-        if let Err(e) = self.pairings.add(&record, &ext_id) {
+        if let Err(e) = self.pairings.add(&record, &ext_id, auto.as_deref()) {
             self.journal.line(&format!("cannot store the pairing: {e}"));
             return self.fail(AppErrorCode::Internal);
         }
@@ -480,7 +509,12 @@ impl PairingStore for MemoryPairings {
             .find(|(r, _, _)| &r.pairing_id == id)
             .map(|(r, _, _)| r.key.clone())
     }
-    fn add(&mut self, record: &PairingRecord, extension_id: &str) -> Result<(), String> {
+    fn add(
+        &mut self,
+        record: &PairingRecord,
+        extension_id: &str,
+        _verified: Option<&str>,
+    ) -> Result<(), String> {
         self.records
             .retain(|(r, _, _)| r.pairing_id != record.pairing_id);
         let copy = PairingRecord {
@@ -637,6 +671,15 @@ mod tests {
     }
 
     fn rig_with(limits: Limits, allowed: bool, approver: Option<Scripted>) -> Rig {
+        rig_vouched(limits, allowed, approver, None)
+    }
+
+    fn rig_vouched(
+        limits: Limits,
+        allowed: bool,
+        approver: Option<Scripted>,
+        vouched: Option<&'static str>,
+    ) -> Rig {
         let record = PairingRecord {
             pairing_id: [4; 16],
             key: Zeroizing::new([5; 32]),
@@ -645,7 +688,7 @@ mod tests {
             created_at: T0,
         };
         let mut pairings = MemoryPairings::default();
-        pairings.add(&record, "ext").unwrap();
+        pairings.add(&record, "ext", None).unwrap();
         let clock = Arc::new(AtomicU64::new(T0));
         let (to_host, rx) = sync_channel(4);
         let (tx, from_host) = channel();
@@ -660,6 +703,7 @@ mod tests {
             };
             let mut conn = Conn {
                 allowed,
+                vouched: vouched.map(str::to_owned),
                 extension_id: "ext".into(),
                 journal: &Quiet,
                 clock: &clock_fn,
@@ -966,6 +1010,100 @@ mod tests {
         };
         assert_eq!(e.code, "internal");
         assert!(!*ended.lock().unwrap());
+        rig.assert_closed();
+    }
+
+    /// `pair_hello` asking for an automatic pairing.
+    fn auto_hello() -> (ExtPairing, PairHello) {
+        let (ext, mut hello) = ExtPairing::start("OnePass", "Chromium", T0).unwrap();
+        hello.auto = true;
+        (ext, hello)
+    }
+
+    #[test]
+    fn vouched_caller_pairs_automatically_without_the_approver() {
+        // An approver that would refuse at once: it must never be asked.
+        let (s, shown, ended) = scripted(Approval::Refused, 0);
+        let rig = rig_vouched(fast(), true, Some(s), Some("Google Chrome"));
+        let (mut ext, hello) = auto_hello();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::PairOffer(offer) = rig.recv() else {
+            panic!("pair_offer")
+        };
+        let (reveal, _) = ext.on_offer(offer).unwrap();
+        rig.send(&Envelope::PairReveal(reveal));
+        assert_eq!(rig.recv(), Envelope::PairAuto);
+        let Envelope::PairDone(done) = rig.recv() else {
+            panic!("pair_done")
+        };
+        // The key confirmation still runs both ways.
+        ext.on_done(done, T0).unwrap();
+        let (confirm, record) = ext.confirm(T0).unwrap();
+        rig.send(&Envelope::PairConfirm(confirm));
+        assert_eq!(rig.recv(), Envelope::PairOk);
+        assert!(shown.lock().unwrap().is_empty());
+        assert!(!*ended.lock().unwrap());
+        // The new pairing opens a session on the same port.
+        let rig = Rig { record, ..rig };
+        let mut ch = rig.open();
+        assert!(matches!(rig.status(&mut ch, 1), Envelope::Msg(_)));
+        drop(rig.to_host);
+        rig.done.join().unwrap();
+    }
+
+    #[test]
+    fn auto_request_without_a_voucher_is_refused_without_asking() {
+        let (s, shown, _) = scripted(Approval::Approved, 0);
+        let rig = rig_vouched(fast(), true, Some(s), None);
+        let (_ext, hello) = auto_hello();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::Error(e) = rig.recv() else {
+            panic!("error")
+        };
+        assert_eq!(e.code, "not_allowed");
+        assert!(shown.lock().unwrap().is_empty());
+        rig.assert_closed();
+    }
+
+    #[test]
+    fn vouched_caller_asking_for_the_code_gets_the_code() {
+        let (s, shown, _) = scripted(Approval::Approved, 0);
+        let rig = rig_vouched(fast(), true, Some(s), Some("Google Chrome"));
+        let (mut ext, sas) = start_pairing(&rig);
+        let Envelope::PairDone(done) = rig.recv() else {
+            panic!("pair_done")
+        };
+        ext.on_done(done, T0).unwrap();
+        let (confirm, _) = ext.confirm(T0).unwrap();
+        rig.send(&Envelope::PairConfirm(confirm));
+        assert_eq!(rig.recv(), Envelope::PairOk);
+        assert_eq!(shown.lock().unwrap().len(), 1);
+        assert!(shown.lock().unwrap()[0].starts_with(&sas));
+        drop(rig.to_host);
+        rig.done.join().unwrap();
+    }
+
+    #[test]
+    fn auto_pairing_waits_one_step_for_pair_confirm() {
+        // No person in the loop: the confirmation is bounded by `step`.
+        let rig = rig_vouched(
+            Limits {
+                approval_max: Duration::from_secs(30),
+                ..fast()
+            },
+            true,
+            None,
+            Some("Safari"),
+        );
+        let (mut ext, hello) = auto_hello();
+        rig.send(&Envelope::PairHello(hello));
+        let Envelope::PairOffer(offer) = rig.recv() else {
+            panic!("pair_offer")
+        };
+        let (reveal, _) = ext.on_offer(offer).unwrap();
+        rig.send(&Envelope::PairReveal(reveal));
+        assert_eq!(rig.recv(), Envelope::PairAuto);
+        assert!(matches!(rig.recv(), Envelope::PairDone(_)));
         rig.assert_closed();
     }
 

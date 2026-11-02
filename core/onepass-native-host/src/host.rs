@@ -27,7 +27,12 @@ impl PairingStore for Pairings {
     fn key(&self, id: &[u8; 16]) -> Option<Zeroizing<[u8; 32]>> {
         Pairings::key(self, id)
     }
-    fn add(&mut self, record: &PairingRecord, extension_id: &str) -> Result<(), String> {
+    fn add(
+        &mut self,
+        record: &PairingRecord,
+        extension_id: &str,
+        _verified: Option<&str>,
+    ) -> Result<(), String> {
         Pairings::add(self, record, extension_id).map_err(|e| e.to_string())
     }
     fn touch(&mut self, id: &[u8; 16], now: u64) -> Result<(), String> {

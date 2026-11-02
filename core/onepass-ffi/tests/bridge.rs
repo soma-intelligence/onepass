@@ -24,12 +24,16 @@ const FAST: FfiKdfParams = FfiKdfParams {
     p: 1,
 };
 const ATLAS: &str = "https://atlas-cloud.test";
+const CHROME_EXT: &str = "abcdefghijklmnopabcdefghijklmnop";
+#[cfg(target_os = "macos")]
+const CHROME: &str = "team:EQHXZ8M8AV:com.google.Chrome";
 
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
     Requested(FfiBridgePairingRequest),
     Ended(u64),
-    Stored(String, String),
+    /// Pairing id, extension id, verified browser ("" after the code flow).
+    Stored(String, String, String),
     Used(String),
     Unlock,
     Reprompt,
@@ -51,9 +55,11 @@ impl BridgeDelegate for Delegate {
     }
     fn pairing_stored(&self, p: FfiBridgePairing) {
         assert_eq!(p.key.len(), 32);
-        let _ = self
-            .events
-            .send(Event::Stored(p.pairing_id, p.extension_id));
+        let _ = self.events.send(Event::Stored(
+            p.pairing_id,
+            p.extension_id,
+            p.verified_browser,
+        ));
     }
     fn pairing_used(&self, pairing_id: String, _at: u64) {
         let _ = self.events.send(Event::Used(pairing_id));
@@ -106,10 +112,11 @@ fn rig() -> Rig {
             ext_name: "OnePass".into(),
             browser: "Chrome".into(),
             extension_id: "ext".into(),
+            verified_browser: String::new(),
             created_at: 1,
             last_used: 1,
         }],
-        vec!["ext".into()],
+        vec!["ext".into(), CHROME_EXT.into()],
         audit.to_string_lossy().into_owned(),
     );
     server.set_session(Some(created.session.clone()), "alex@atlas.dev".into());
@@ -304,10 +311,11 @@ fn approved_pairing_is_stored_through_the_delegate() {
     let rig = rig();
     let (ext, reply, _) = pair(&rig, true);
     assert!(matches!(reply, Envelope::PairDone(_)));
-    let Event::Stored(id, ext_id) = next(&rig.events) else {
+    let Event::Stored(id, ext_id, verified) = next(&rig.events) else {
         panic!("stored")
     };
     assert_eq!(ext_id, "ext");
+    assert_eq!(verified, "");
     assert!(
         rig.server
             .pairings()
@@ -368,4 +376,149 @@ fn unsigned_test_process_cannot_start_the_server() {
             .is_err()
     );
     assert!(!rig.server.is_running());
+}
+
+/// One connection admitted as the app's socket would admit it: the relay
+/// with `launcher`, or Safari when `extension_id` is `None`.
+#[cfg(target_os = "macos")]
+fn admitted(rig: &Rig, extension_id: Option<&str>, launcher: Option<&str>) -> Ext {
+    let (ext, app) = UnixStream::pair().unwrap();
+    ext.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+    let server = rig.server.clone();
+    let id = extension_id.map(str::to_owned);
+    let launcher = launcher.map(str::to_owned);
+    let done = thread::spawn(move || match id {
+        Some(id) => serve_relay_for_tests(&server, app, &id, launcher.as_deref()),
+        None => serve_safari_for_tests(&server, app),
+    });
+    Ext { s: ext, done }
+}
+
+/// An automatic pairing from the extension's side: `None` when the app
+/// refused it, else the record.
+#[cfg(target_os = "macos")]
+fn auto_pair(ext: &mut Ext) -> Result<PairingRecord, String> {
+    let (mut p, mut hello) = ExtPairing::start("OnePass", "Chrome", 1).unwrap();
+    hello.auto = true;
+    ext.send(&Envelope::PairHello(hello));
+    let offer = match ext.recv() {
+        Envelope::PairOffer(o) => o,
+        Envelope::Error(e) => return Err(e.code),
+        other => panic!("{other:?}"),
+    };
+    let (reveal, _) = p.on_offer(offer).unwrap();
+    ext.send(&Envelope::PairReveal(reveal));
+    assert_eq!(ext.recv(), Envelope::PairAuto);
+    let Envelope::PairDone(done) = ext.recv() else {
+        panic!("done")
+    };
+    p.on_done(done, 1).unwrap();
+    let (confirm, record) = p.confirm(1).unwrap();
+    ext.send(&Envelope::PairConfirm(confirm));
+    assert_eq!(ext.recv(), Envelope::PairOk);
+    Ok(record)
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn chrome_vouched_by_signature_pairs_without_a_request() {
+    let rig = rig();
+    let mut ext = admitted(&rig, Some(CHROME_EXT), Some(CHROME));
+    let record = auto_pair(&mut ext).unwrap();
+    let Event::Stored(id, ext_id, verified) = next(&rig.events) else {
+        panic!("stored")
+    };
+    assert_eq!(
+        (ext_id.as_str(), verified.as_str()),
+        (CHROME_EXT, "Google Chrome")
+    );
+    assert_eq!(
+        id,
+        record
+            .pairing_id
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    );
+    // The session on the same port still reads only the unlocked vault.
+    let mut ch = ext.open(&record);
+    let st = ext.request(&mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(st["ok"]["locked"], false, "{st}");
+    ext.end();
+    assert!(
+        rig.events
+            .try_iter()
+            .all(|e| !matches!(e, Event::Requested(_))),
+        "no pairing sheet"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn safari_pairs_automatically() {
+    let rig = rig();
+    let mut ext = admitted(&rig, None, None);
+    auto_pair(&mut ext).unwrap();
+    let Event::Stored(_, ext_id, verified) = next(&rig.events) else {
+        panic!("stored")
+    };
+    assert_eq!((ext_id.as_str(), verified.as_str()), ("safari", "Safari"));
+    ext.end();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn unknown_launcher_is_refused_silently() {
+    let rig = rig();
+    for launcher in [
+        None,
+        Some("team:AAAAAAAAAA:com.google.Chrome"),
+        Some("adhoc:00ff"),
+    ] {
+        let mut ext = admitted(&rig, Some(CHROME_EXT), launcher);
+        assert_eq!(auto_pair(&mut ext).unwrap_err(), "not_allowed");
+        ext.end();
+    }
+    // No sheet, nothing stored.
+    assert!(rig.events.try_recv().is_err());
+    assert_eq!(rig.server.pairings().len(), 1);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn revoked_extension_stays_out_until_a_code_pairing() {
+    let rig = rig();
+    rig.server.set_blocked_auto(vec![CHROME_EXT.into()]);
+    let mut ext = admitted(&rig, Some(CHROME_EXT), Some(CHROME));
+    assert_eq!(auto_pair(&mut ext).unwrap_err(), "not_allowed");
+    ext.end();
+    assert_eq!(rig.server.blocked_auto(), vec![CHROME_EXT.to_owned()]);
+
+    // The user pairs it with the code and Touch ID: the block is lifted.
+    let mut ext = admitted(&rig, Some(CHROME_EXT), Some(CHROME));
+    let (mut p, hello) = ExtPairing::start("OnePass", "Chrome", 1).unwrap();
+    ext.send(&Envelope::PairHello(hello));
+    let Envelope::PairOffer(offer) = ext.recv() else {
+        panic!("offer")
+    };
+    let (reveal, _) = p.on_offer(offer).unwrap();
+    ext.send(&Envelope::PairReveal(reveal));
+    assert_eq!(ext.recv(), Envelope::PairSas);
+    let Event::Requested(req) = next(&rig.events) else {
+        panic!("request")
+    };
+    rig.server.answer_pairing(req.request_id, true);
+    let Envelope::PairDone(done) = ext.recv() else {
+        panic!("done")
+    };
+    p.on_done(done, 1).unwrap();
+    let (confirm, _) = p.confirm(1).unwrap();
+    ext.send(&Envelope::PairConfirm(confirm));
+    assert_eq!(ext.recv(), Envelope::PairOk);
+    ext.end();
+    assert!(rig.server.blocked_auto().is_empty());
+
+    let mut ext = admitted(&rig, Some(CHROME_EXT), Some(CHROME));
+    auto_pair(&mut ext).unwrap();
+    ext.end();
 }
