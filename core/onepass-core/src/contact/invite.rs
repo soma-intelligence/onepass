@@ -48,6 +48,7 @@ use crate::crypto::{
 use crate::lineage::{decode_strict_with, identity_id};
 use crate::lists::AccountList;
 use crate::repo::Repository;
+use crate::share::SignedContactZoneOffer;
 use crate::store::RecordStore;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -55,6 +56,33 @@ use crate::{Error, Id, IntegrityError, Result, ValidationError};
 pub const CONTACT_INVITE_TTL_SECS: i64 = 72 * 3600;
 /// Everything of a link before the fragment.
 pub const CONTACT_LINK_PREFIX: &str = "onepass://contact#";
+/// The scheme and authority of a link, before an optional `/<host>`.
+const LINK_SCHEME: &str = "onepass://contact";
+/// Longest host a link names, in bytes.
+pub const MAX_LINK_HOST_BYTES: usize = 253;
+/// Version byte that opens the sealed answer: the card, then the contact
+/// zone offer (sharing spec 13.5). The first version had no offer.
+const ANSWER_VERSION: u8 = 2;
+
+/// A host a link may name: 1 to 253 bytes of lower case letters, digits,
+/// dots, hyphens and one optional `:port`, no leading or trailing dot.
+pub fn check_link_host(h: &str) -> bool {
+    let (name, port) = match h.split_once(':') {
+        Some((n, p)) => (n, Some(p)),
+        None => (h, None),
+    };
+    !name.is_empty()
+        && h.len() <= MAX_LINK_HOST_BYTES
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !name.contains("..")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
+        && port
+            .is_none_or(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// Prefix of the local metadata key of a pending invitation.
 pub const CONTACT_INVITE_META_PREFIX: &str = "contact_invite.";
 /// Largest sealed reply or answer blob opened: a card at the session cap,
@@ -109,35 +137,68 @@ impl ContactInvite {
     }
 
     /// `onepass://contact#<base32(invite_id || invite_secret)>`: 77 upper
-    /// case characters after the `#`, no padding. The string holds the
-    /// secret: the caller owns its lifetime (it is not wiped).
+    /// case characters after the `#`, no padding: a link for the hosted
+    /// instance. The string holds the secret: the caller owns its lifetime
+    /// (it is not wiped).
     pub fn link(&self) -> String {
+        self.link_for(None)
+    }
+
+    /// `link`, naming the inviter's server when it is not the hosted
+    /// instance: `onepass://contact/<host>#...` (sharing spec 13.9).
+    /// A host that breaks `check_link_host` is left out.
+    pub fn link_for(&self, host: Option<&str>) -> String {
         let mut raw = Zeroizing::new([0u8; LINK_BYTES]);
         raw[..16].copy_from_slice(&self.invite_id);
         raw[16..].copy_from_slice(&*self.invite_secret);
-        let mut out = String::with_capacity(CONTACT_LINK_PREFIX.len() + LINK_CHARS);
-        out.push_str(CONTACT_LINK_PREFIX);
+        let mut out = String::with_capacity(CONTACT_LINK_PREFIX.len() + 256 + LINK_CHARS);
+        match host.filter(|h| check_link_host(h)) {
+            Some(h) => {
+                out.push_str(LINK_SCHEME);
+                out.push('/');
+                out.push_str(h);
+                out.push('#');
+            }
+            None => out.push_str(CONTACT_LINK_PREFIX),
+        }
         out.push_str(&base32_encode(&*raw));
         out
     }
 
-    /// Strict: the exact prefix, then exactly 77 characters of the upper
-    /// case alphabet whose unused trailing bit is zero (the one canonical
-    /// spelling). Anything else is `InvalidFormat`. `created_at` is 0: only
-    /// the issuer knows the date.
-    pub fn parse_link(s: &str) -> Result<ContactInvite> {
+    /// Strict: the exact prefix (with or without a host), then exactly 77
+    /// characters of the upper case alphabet whose unused trailing bit is
+    /// zero (the one canonical spelling). Anything else is `InvalidFormat`.
+    /// Returns the host the link names, `None` for the hosted instance.
+    /// `created_at` is 0: only the issuer knows the date.
+    pub fn parse_link(s: &str) -> Result<(ContactInvite, Option<String>)> {
         const BAD: Error = Error::InvalidFormat("contact link");
-        let body = s.strip_prefix(CONTACT_LINK_PREFIX).ok_or(BAD)?;
+        let (host, body) = match s.strip_prefix(CONTACT_LINK_PREFIX) {
+            Some(body) => (None, body),
+            None => {
+                let rest = s
+                    .strip_prefix(LINK_SCHEME)
+                    .and_then(|r| r.strip_prefix('/'))
+                    .ok_or(BAD)?;
+                let (h, body) = rest.split_once('#').ok_or(BAD)?;
+                if !check_link_host(h) {
+                    return Err(BAD);
+                }
+                (Some(h.to_owned()), body)
+            }
+        };
         let raw = base32_decode(body).ok_or(BAD)?;
         let mut invite_id = [0u8; 16];
         invite_id.copy_from_slice(&raw[..16]);
         let mut secret = Zeroizing::new([0u8; 32]);
         secret.copy_from_slice(&raw[16..]);
-        Ok(ContactInvite {
-            invite_id,
-            invite_secret: secret,
-            created_at: 0,
-        })
+        Ok((
+            ContactInvite {
+                invite_id,
+                invite_secret: secret,
+                created_at: 0,
+            },
+            host,
+        ))
     }
 
     /// The public rendezvous id: `SHA-256("onepass/invite-rdv/v1" ||
@@ -325,13 +386,15 @@ pub fn open_reply(invite: &ContactInvite, bytes: &[u8]) -> Result<InviteReply> {
     InviteReply::decode(&plain)
 }
 
-/// Alice's side: her card for Bob, bound to the exact `reply_bytes` at
-/// `rdv` (plan ruling A-5).
+/// Alice's side: her card for Bob and her offer of the pair's mailbox,
+/// bound to the exact `reply_bytes` at `rdv` (plan ruling A-5). The sealed
+/// body is `2 || postcard((card, zone_offer))`.
 pub fn seal_answer(
     reply_bytes: &[u8],
     reply: &InviteReply,
     my_card: &SignedContactCard,
     rdv: Id,
+    zone_offer: &[u8],
 ) -> Result<Vec<u8>> {
     let key = SymmetricKey::generate()?;
     let envelope = wrap_key_labeled(
@@ -340,28 +403,35 @@ pub fn seal_answer(
         CONTACT_LABEL,
         &invite_transcript(rdv, reply_bytes),
     )?;
-    let card = my_card.encode();
-    if card.len() > MAX_CONTACT_MESSAGE_BYTES {
+    SignedContactZoneOffer::decode(zone_offer)?;
+    let mut body = vec![ANSWER_VERSION];
+    body.extend(
+        postcard::to_allocvec(&(my_card, zone_offer))
+            .map_err(|_| Error::InvalidFormat("invite answer"))?,
+    );
+    if body.len() > MAX_CONTACT_MESSAGE_BYTES {
         return Err(Error::InvalidFormat("invite answer"));
     }
     let sealed = seal(
         &key,
         BlobKind::ContactInvite,
         &aad(rdv, ANSWER_SCHEMA),
-        &card,
+        &body,
     )?;
     InviteAnswer { envelope, sealed }.encode()
 }
 
-/// Bob's side: Alice's card from `answer`, which opens only with the
-/// ephemeral secret of `reply_bytes`, for those bytes at `rdv`. The card
-/// is not checked here (`Repository::finish_invite` does).
+/// Bob's side: Alice's card and zone offer from `answer`, which opens only
+/// with the ephemeral secret of `reply_bytes`, for those bytes at `rdv`.
+/// An answer of the first version (no offer) is `InvalidFormat`. The card
+/// and the offer are not checked here (`Repository::finish_invite` does).
 pub fn open_answer(
     secret: &HybridKemSecret,
     reply_bytes: &[u8],
     rdv: Id,
     answer: &[u8],
-) -> Result<SignedContactCard> {
+) -> Result<(SignedContactCard, Vec<u8>)> {
+    const BAD: Error = Error::InvalidFormat("invite answer");
     let a = InviteAnswer::decode(answer)?;
     let key = unwrap_key_labeled(
         secret,
@@ -370,7 +440,14 @@ pub fn open_answer(
         &invite_transcript(rdv, reply_bytes),
     )?;
     let plain = open_invite_blob(&key, &aad(rdv, ANSWER_SCHEMA), &a.sealed)?;
-    SignedContactCard::decode(&plain)
+    let (&version, body) = plain.split_first().ok_or(BAD)?;
+    if version != ANSWER_VERSION {
+        return Err(BAD);
+    }
+    let (card, offer): (SignedContactCard, Vec<u8>) = decode_strict_with(body, BAD)?;
+    let card = SignedContactCard::decode(&card.encode())?;
+    SignedContactZoneOffer::decode(&offer)?;
+    Ok((card, offer))
 }
 
 /// The local record of a pending invitation: its date and its secret,
@@ -473,6 +550,7 @@ impl<S: RecordStore> Repository<S> {
         invite_id: [u8; 16],
         reply_bytes: &[u8],
         my_name: &str,
+        zone_offer: &[u8],
         now: i64,
     ) -> Result<(ContactEntry, Vec<u8>)> {
         let key = meta_key(&invite_id);
@@ -493,9 +571,11 @@ impl<S: RecordStore> Repository<S> {
         let reply = open_reply(&invite, reply_bytes)?;
         let rdv = invite.rdv_id();
         let transcript = invite_transcript(rdv, reply_bytes);
+        // Decision 16: the inviter creates the pair's mailbox first.
+        self.contact_zone_on_pin(&reply.card, true, None)?;
         let (entry, write) = self.plan_pin(&reply.card, ContactLevel::Link, transcript, now)?;
         let my_card = self.own_contact_card(my_name, now)?;
-        let answer = seal_answer(reply_bytes, &reply, &my_card, rdv)?;
+        let answer = seal_answer(reply_bytes, &reply, &my_card, rdv, zone_offer)?;
         match write {
             Some((current, entries)) => {
                 let (rec, expected, body) = self.list_write(current.as_ref(), entries)?;
@@ -510,9 +590,43 @@ impl<S: RecordStore> Repository<S> {
         Ok((entry, answer))
     }
 
+    /// Bob's card from his reply to this device's invitation `invite_id`,
+    /// without using the invitation: what the inviter needs to prepare the
+    /// pair's mailbox (`prepare_contact_zone`) before
+    /// `accept_invite_reply`. Refused as `accept_invite_reply` refuses an
+    /// unknown, unreadable or expired invitation or a reply that does not
+    /// open (an expired or unreadable one is removed, as there); the card
+    /// itself is checked by `prepare_contact_zone`.
+    pub fn invite_reply_card(
+        &mut self,
+        invite_id: [u8; 16],
+        reply_bytes: &[u8],
+        now: i64,
+    ) -> Result<SignedContactCard> {
+        let key = meta_key(&invite_id);
+        let raw = self
+            .store
+            .local_meta(&key)?
+            .ok_or_else(|| refused("unknown or used"))?;
+        let Ok(meta) = postcard::from_bytes::<InviteMeta>(&raw) else {
+            self.store.set_local_meta(&key, None)?;
+            return Err(refused("unreadable"));
+        };
+        if expired(meta.created_at, now) {
+            self.store.set_local_meta(&key, None)?;
+            return Err(refused("expired"));
+        }
+        let invite = self.held_invite(invite_id, &meta)?;
+        Ok(open_reply(&invite, reply_bytes)?.card)
+    }
+
     /// Bob's side, once Alice answered: open the answer to the reply this
     /// device wrote (`open_answer`) and pin her card at `Link`, transcript
-    /// `SHA-256(rdv || reply_bytes)`. `pin_contact`'s refusals apply.
+    /// `SHA-256(rdv || reply_bytes)`, with the pair's mailbox from her
+    /// offer in the same transaction (decision 16: the inviter is the
+    /// creator; an offer that does not check is `Validation("contact", "no
+    /// zone")` or `Integrity`, and nothing is pinned). `pin_contact`'s
+    /// refusals apply.
     pub fn finish_invite(
         &mut self,
         secret: &HybridKemSecret,
@@ -521,12 +635,14 @@ impl<S: RecordStore> Repository<S> {
         answer: &[u8],
         now: i64,
     ) -> Result<ContactEntry> {
-        let card = open_answer(secret, reply_bytes, rdv, answer)?;
-        self.pin_contact(
+        let (card, offer) = open_answer(secret, reply_bytes, rdv, answer)?;
+        let access = self.contact_zone_on_pin(&card, false, Some(&offer))?;
+        self.pin_with(
             &card,
             ContactLevel::Link,
             invite_transcript(rdv, reply_bytes),
             now,
+            access,
         )
     }
 

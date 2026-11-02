@@ -50,7 +50,7 @@ use zeroize::Zeroizing;
 
 use super::book::{ContactEntry, ContactLevel, check_card_lineage};
 use super::lineage::roster_at;
-use super::{CONTACT_LABEL, SignedContactCard};
+use super::{CONTACT_LABEL, SignedContactCard, is_contact_zone_creator};
 use crate::crypto::kem::{unwrap_key_labeled, wrap_key_labeled};
 use crate::crypto::sign::MLDSA_SIG_LEN;
 use crate::crypto::{
@@ -63,6 +63,7 @@ use crate::pairing::{
     CLOCK_SKEW_SECS, Channel, KeyExchange, PairingQr, QR_LIFETIME_SECS, sas, sha256, transcript,
 };
 use crate::repo::Repository;
+use crate::share::SignedContactZoneOffer;
 use crate::store::RecordStore;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -146,6 +147,9 @@ pub enum ContactMessage {
     Confirmed,
     /// The session is over.
     End,
+    /// The creator's signed offer of the pair's mailbox
+    /// (`SignedContactZoneOffer`, sharing spec 13.5), after both cards.
+    ZoneOffer(Vec<u8>),
 }
 
 impl ContactMessage {
@@ -174,6 +178,9 @@ impl ContactMessage {
                 return Err(BAD);
             }
         }
+        if let ContactMessage::ZoneOffer(o) = &msg {
+            SignedContactZoneOffer::decode(o).map_err(|_| BAD)?;
+        }
         Ok(msg)
     }
 }
@@ -192,6 +199,9 @@ pub enum ContactOutcome {
     /// The peer pinned this side's card (`Confirmed`), or ended the
     /// session (`End`).
     Done,
+    /// The peer's offer of the pair's mailbox, to hand to
+    /// `Repository::finish_contact_session`.
+    PeerZoneOffer(Vec<u8>),
 }
 
 /// A peer card from a completed face-to-face session: checked (signatures,
@@ -240,6 +250,9 @@ struct Session {
     released: bool,
     pinned_sent: bool,
     peer_pinned: bool,
+    /// This side sent its zone offer, or received the peer's: one offer
+    /// per session, from one side.
+    offer_seen: bool,
     failed: bool,
 }
 
@@ -254,6 +267,7 @@ impl Session {
             released: false,
             pinned_sent: false,
             peer_pinned: false,
+            offer_seen: false,
             failed: false,
         }
     }
@@ -351,6 +365,10 @@ impl Session {
                 self.channel.close();
                 Ok(ContactOutcome::Done)
             }
+            ContactMessage::ZoneOffer(o) if self.released && !self.offer_seen => {
+                self.offer_seen = true;
+                Ok(ContactOutcome::PeerZoneOffer(o))
+            }
             _ => Err(refused("unexpected message")),
         }
     }
@@ -363,6 +381,18 @@ impl Session {
             card: card.clone(),
             transcript_hash: self.transcript,
         })
+    }
+
+    fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.live()?;
+        if !self.released || self.offer_seen {
+            return Err(refused("no zone offer now"));
+        }
+        let msg = ContactMessage::ZoneOffer(offer.to_vec()).encode()?;
+        ContactMessage::decode(&msg)?;
+        let frame = self.channel.seal_bytes_at(&msg, false, now)?;
+        self.offer_seen = true;
+        Ok(frame)
     }
 
     fn confirm_pinned(&mut self, now: i64) -> Result<Vec<u8>> {
@@ -528,6 +558,12 @@ impl ContactResponder {
         self.session.as_ref().and_then(Session::verified_peer)
     }
 
+    /// The creator's `ZoneOffer` frame (`seal_contact_zone_offer`), once
+    /// both cards are through; one offer per session.
+    pub fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.session()?.send_zone_offer(offer, now)
+    }
+
     /// The `Confirmed` frame, once the peer's card was handed over.
     pub fn confirm_pinned(&mut self, now: i64) -> Result<Vec<u8>> {
         self.session()?.confirm_pinned(now)
@@ -626,6 +662,11 @@ impl ContactInitiator {
         self.session.verified_peer()
     }
 
+    /// See `ContactResponder::send_zone_offer`.
+    pub fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.session.send_zone_offer(offer, now)
+    }
+
     /// The `Confirmed` frame, once the peer's card was handed over.
     pub fn confirm_pinned(&mut self, now: i64) -> Result<Vec<u8>> {
         self.session.confirm_pinned(now)
@@ -680,13 +721,30 @@ impl fmt::Debug for ContactInitiator {
 
 impl<S: RecordStore> Repository<S> {
     /// Pin the peer of a completed face-to-face session at `Verified`, with
-    /// the session's transcript hash (`pin_contact`, whose refusals apply).
-    pub fn finish_contact_session(&mut self, peer: VerifiedPeer, now: i64) -> Result<ContactEntry> {
-        self.pin_contact(
+    /// the session's transcript hash (`pin_contact`, whose refusals apply),
+    /// and the pair's mailbox (decision 16): the creator (the smaller
+    /// account id) needs its own access of the pair's zone with a home and
+    /// no offer; the other side needs the creator's `zone_offer`, whose
+    /// access is written in the same transaction as the pin. Otherwise
+    /// `Validation("contact", "no zone")` and nothing is pinned.
+    pub fn finish_contact_session(
+        &mut self,
+        peer: VerifiedPeer,
+        zone_offer: Option<&[u8]>,
+        now: i64,
+    ) -> Result<ContactEntry> {
+        let creator = is_contact_zone_creator(
+            self.account.params.account_id,
+            peer.card.card.account_id,
+            None,
+        );
+        let access = self.contact_zone_on_pin(&peer.card, creator, zone_offer)?;
+        self.pin_with(
             &peer.card,
             ContactLevel::Verified,
             peer.transcript_hash,
             now,
+            access,
         )
     }
 }

@@ -16,6 +16,7 @@ mod card;
 mod invite;
 mod lineage;
 mod session;
+mod zone;
 
 pub use book::{CONTACT_BOOK_DOMAIN, ContactAlert, ContactEntry, ContactLevel, ContactState};
 pub use card::{CardKeys, ContactCard, SignedContactCard};
@@ -32,6 +33,7 @@ pub use session::{
     CONTACT_SESSION_SECS, ContactHello, ContactInitiator, ContactMessage, ContactOutcome,
     ContactResponder, MAX_CONTACT_HELLO_BYTES, MAX_CONTACT_MESSAGE_BYTES, VerifiedPeer,
 };
+pub use zone::{ContactZonePlan, is_contact_zone_creator};
 
 /// Signature domain of a `ContactCard`, by the identity key (spec 19.1).
 pub const CONTACT_CARD_DOMAIN: &[u8] = b"onepass/contact-card/v1";

@@ -5,6 +5,8 @@
 mod common;
 
 use common::*;
+use onepass_core::contact::ContactEntry;
+use onepass_core::contact::pair_id;
 use onepass_core::contact::{
     CONTACT_LABEL, CONTACT_SESSION_SECS, ContactHello, ContactInitiator, ContactLevel,
     ContactMessage, ContactOutcome, ContactResponder, MAX_CONTACT_MESSAGE_BYTES, SignedContactCard,
@@ -17,6 +19,8 @@ use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, sign_genesis,
 };
 use onepass_core::pairing::{Approver, Channel, DeviceInfo, Message, Newcomer};
+use onepass_core::share::{AccessTarget, ZoneHome};
+use onepass_core::store::Zone;
 use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
 
 fn entry_of(p: &DevicePublic, name: &str) -> RosterEntry {
@@ -125,6 +129,85 @@ fn handshake() -> (ContactResponder, ContactInitiator, String, String) {
     (r, i, sas_r, sas_i)
 }
 
+fn zone_home() -> ZoneHome {
+    ZoneHome {
+        url: "https://box.example.org".into(),
+        mailbox_id: [6; 16],
+        extra_ca_pem: None,
+    }
+}
+
+/// Both sides pin, with the pair's mailbox: the creator (smaller account
+/// id) prepares the zone and sends its offer over the session; the other
+/// side pins with that offer. Alice is the responder `r`, Bob the
+/// initiator `i`.
+fn finish_with_zone(
+    alice: &mut Person,
+    bob: &mut Person,
+    r: &mut ContactResponder,
+    i: &mut ContactInitiator,
+    bob_peer: VerifiedPeer,
+    alice_peer: VerifiedPeer,
+) -> (ContactEntry, ContactEntry) {
+    let a_id = alice.card.card.account_id;
+    let b_id = bob.card.card.account_id;
+    if a_id < b_id {
+        let plan = alice
+            .dev
+            .repo()
+            .prepare_contact_zone(&bob.card, NOW + 5)
+            .unwrap();
+        let offer = alice
+            .dev
+            .repo()
+            .seal_contact_zone_offer(plan, zone_home())
+            .unwrap();
+        let f = r.send_zone_offer(&offer, NOW + 5).unwrap();
+        let got = match i.on_frame(&f, NOW + 5).unwrap() {
+            ContactOutcome::PeerZoneOffer(o) => o,
+            other => panic!("{other:?}"),
+        };
+        let on_alice = alice
+            .dev
+            .repo()
+            .finish_contact_session(bob_peer, None, NOW + 5)
+            .unwrap();
+        let on_bob = bob
+            .dev
+            .repo()
+            .finish_contact_session(alice_peer, Some(&got), NOW + 5)
+            .unwrap();
+        (on_alice, on_bob)
+    } else {
+        let plan = bob
+            .dev
+            .repo()
+            .prepare_contact_zone(&alice.card, NOW + 5)
+            .unwrap();
+        let offer = bob
+            .dev
+            .repo()
+            .seal_contact_zone_offer(plan, zone_home())
+            .unwrap();
+        let f = i.send_zone_offer(&offer, NOW + 5).unwrap();
+        let got = match r.on_frame(&f, NOW + 5).unwrap() {
+            ContactOutcome::PeerZoneOffer(o) => o,
+            other => panic!("{other:?}"),
+        };
+        let on_bob = bob
+            .dev
+            .repo()
+            .finish_contact_session(alice_peer, None, NOW + 5)
+            .unwrap();
+        let on_alice = alice
+            .dev
+            .repo()
+            .finish_contact_session(bob_peer, Some(&got), NOW + 5)
+            .unwrap();
+        (on_alice, on_bob)
+    }
+}
+
 #[test]
 fn face_to_face_pins_both_sides() {
     let mut alice = person("Alice");
@@ -158,16 +241,10 @@ fn face_to_face_pins_both_sides() {
     // A real card is far below the message cap.
     assert!(alice.card.encode().len() < MAX_CONTACT_MESSAGE_BYTES / 20);
 
-    let on_alice = alice
-        .dev
-        .repo()
-        .finish_contact_session(bob_peer, NOW + 5)
-        .unwrap();
-    let on_bob = bob
-        .dev
-        .repo()
-        .finish_contact_session(alice_peer, NOW + 5)
-        .unwrap();
+    // The smaller account id creates the pair's mailbox and sends its
+    // offer once both cards are through.
+    let (on_alice, on_bob) =
+        finish_with_zone(&mut alice, &mut bob, &mut r, &mut i, bob_peer, alice_peer);
     assert_eq!(on_alice.level, ContactLevel::Verified);
     assert_eq!(on_bob.level, ContactLevel::Verified);
     assert_eq!(on_alice.transcript_hash, on_bob.transcript_hash);
@@ -419,9 +496,11 @@ fn own_card_refused() {
     // A session never yields one's own card; the repository refuses it
     // anyway.
     let own = VerifiedPeer::test_new(alice.card.clone(), [1; 32]);
-    assert!(is_validation(
-        &alice.dev.repo().finish_contact_session(own, NOW + 6)
-    ));
+    assert!(is_validation(&alice.dev.repo().finish_contact_session(
+        own,
+        None,
+        NOW + 6
+    )));
     assert!(alice.dev.repo().contacts().unwrap().is_empty());
 }
 
@@ -501,4 +580,218 @@ fn contact_frames_reject_garbage() {
         ContactMessage::decode(&vec![0u8; MAX_CONTACT_MESSAGE_BYTES + 1]),
         Err(Error::InvalidFormat(_))
     ));
+}
+
+// ------------------------------------------------- pair mailbox (plan 2, 7b)
+
+/// A completed handshake with both cards through: (responder Alice side,
+/// initiator Bob side, Bob's card on Alice's side, Alice's card on Bob's
+/// side).
+fn cards_through(
+    alice: &Person,
+    bob: &Person,
+) -> (
+    ContactResponder,
+    ContactInitiator,
+    VerifiedPeer,
+    VerifiedPeer,
+) {
+    let (mut r, mut i, _, _) = handshake();
+    let to_alice = i
+        .confirm_and_send_card(&bob.card, &bob.keys, bob.device_id, NOW + 3)
+        .unwrap();
+    r.on_frame(&to_alice, NOW + 3).unwrap();
+    let to_bob = r
+        .confirm_and_send_card(&alice.card, &alice.keys, alice.device_id, NOW + 4)
+        .unwrap();
+    let bob_peer = r.verified_peer().unwrap();
+    let alice_peer = match i.on_frame(&to_bob, NOW + 4).unwrap() {
+        ContactOutcome::PeerCard(c) => c,
+        other => panic!("{other:?}"),
+    };
+    (r, i, bob_peer, alice_peer)
+}
+
+/// Two people, `creator` with the smaller account id.
+fn creator_and_other() -> (Person, Person) {
+    let a = person("Alice");
+    let b = person("Bob");
+    if a.card.card.account_id < b.card.card.account_id {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
+
+fn contact_zones(p: &mut Person) -> Vec<(Zone, Option<ZoneHome>)> {
+    p.dev
+        .repo()
+        .zone_accesses()
+        .unwrap()
+        .into_iter()
+        .filter_map(|a| match a.target {
+            AccessTarget::Zone(z @ Zone::Contact(_)) => Some((z, a.home)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn face_to_face_creates_one_zone() {
+    let mut alice = person("Alice");
+    let mut bob = person("Bob");
+    let (mut r, mut i, bob_peer, alice_peer) = cards_through(&alice, &bob);
+    finish_with_zone(&mut alice, &mut bob, &mut r, &mut i, bob_peer, alice_peer);
+    let za = contact_zones(&mut alice);
+    let zb = contact_zones(&mut bob);
+    assert_eq!(za.len(), 1);
+    assert_eq!(za, zb);
+    let pair = pair_id(alice.card.card.account_id, bob.card.card.account_id);
+    assert_eq!(za[0], (Zone::Contact(pair), Some(zone_home())));
+    // Each side holds its own credential.
+    let sa = alice
+        .dev
+        .repo()
+        .zone_access(AccessTarget::Zone(Zone::Contact(pair)))
+        .unwrap()
+        .unwrap()
+        .1;
+    let sb = bob
+        .dev
+        .repo()
+        .zone_access(AccessTarget::Zone(Zone::Contact(pair)))
+        .unwrap()
+        .unwrap()
+        .1;
+    assert_ne!(sa.public_key(), sb.public_key());
+}
+
+#[test]
+fn no_offer_no_pin() {
+    let (mut c, mut o) = creator_and_other();
+    let (_r, _i, peer_on_r, peer_on_i) = cards_through(&c, &o);
+    // The responder is `c` here: its peer is `o`'s card.
+    let _ = peer_on_r;
+    let e = o
+        .dev
+        .repo()
+        .finish_contact_session(peer_on_i, None, NOW + 5)
+        .unwrap_err();
+    assert!(
+        matches!(&e, Error::Validation(v) if v.reason == "no zone"),
+        "{e:?}"
+    );
+    assert!(o.dev.repo().contacts().unwrap().is_empty());
+    assert!(contact_zones(&mut o).is_empty());
+    // The creator without its mailbox pins nothing either.
+    let (_r, _i, peer_on_c, _) = cards_through(&c, &o);
+    let e = c
+        .dev
+        .repo()
+        .finish_contact_session(peer_on_c, None, NOW + 5)
+        .unwrap_err();
+    assert!(
+        matches!(&e, Error::Validation(v) if v.reason == "no zone"),
+        "{e:?}"
+    );
+    assert!(c.dev.repo().contacts().unwrap().is_empty());
+}
+
+#[test]
+fn offer_from_non_creator_refused() {
+    let (mut c, mut o) = creator_and_other();
+    let (_r, _i, o_peer, _) = cards_through(&c, &o);
+    // The other side makes a mailbox and offers it to the creator.
+    let plan = o.dev.repo().prepare_contact_zone(&c.card, NOW).unwrap();
+    let offer = o
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    let r = c
+        .dev
+        .repo()
+        .finish_contact_session(o_peer, Some(&offer), NOW + 5);
+    assert!(is_validation(&r), "{r:?}");
+    assert!(c.dev.repo().contacts().unwrap().is_empty());
+}
+
+#[test]
+fn forged_offer_refused() {
+    let (mut c, mut o) = creator_and_other();
+    let mut mallory = person("Mallory");
+    let (_r, _i, _, c_peer) = cards_through(&c, &o);
+    // Mallory offers a mailbox to `o` in `c`'s place.
+    let plan = mallory
+        .dev
+        .repo()
+        .prepare_contact_zone(&o.card, NOW)
+        .unwrap();
+    let offer = mallory
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    assert!(
+        o.dev
+            .repo()
+            .finish_contact_session(c_peer.clone(), Some(&offer), NOW + 5)
+            .is_err()
+    );
+    assert!(o.dev.repo().contacts().unwrap().is_empty());
+    assert!(contact_zones(&mut o).is_empty());
+    let _ = &mut c;
+}
+
+#[test]
+fn offer_seed_for_other_account_refused() {
+    let (mut c, mut o) = creator_and_other();
+    let mut carol = person("Carol");
+    let (_r, _i, _, c_peer) = cards_through(&c, &o);
+    // A genuine offer of `c`, made for Carol.
+    let plan = c.dev.repo().prepare_contact_zone(&carol.card, NOW).unwrap();
+    let offer = c
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    assert!(
+        o.dev
+            .repo()
+            .finish_contact_session(c_peer, Some(&offer), NOW + 5)
+            .is_err()
+    );
+    assert!(o.dev.repo().contacts().unwrap().is_empty());
+    let _ = &mut carol;
+}
+
+#[test]
+fn zone_offer_frame_rules() {
+    let alice = person("Alice");
+    let bob = person("Bob");
+    let mut alice_dev = person("Alice2");
+    let plan = alice_dev
+        .dev
+        .repo()
+        .prepare_contact_zone(&bob.card, NOW)
+        .unwrap();
+    let offer = alice_dev
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    // Before both cards: refused.
+    let (mut r, _i, _, _) = handshake();
+    assert!(r.send_zone_offer(&offer, NOW + 3).is_err());
+    // Garbage is not an offer.
+    let (mut r, mut i, _, _) = cards_through(&alice, &bob);
+    assert!(r.send_zone_offer(b"nope", NOW + 5).is_err());
+    let f = r.send_zone_offer(&offer, NOW + 5).unwrap();
+    assert!(matches!(
+        i.on_frame(&f, NOW + 5).unwrap(),
+        ContactOutcome::PeerZoneOffer(_)
+    ));
+    // One offer per session, either way.
+    assert!(r.send_zone_offer(&offer, NOW + 5).is_err());
+    assert!(i.send_zone_offer(&offer, NOW + 5).is_err());
 }
