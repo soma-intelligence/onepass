@@ -522,7 +522,7 @@ pub fn run(cdp: &mut Cdp, cfg: &RunConfig, chrome_version: &str) -> RunOutput {
             .refused
             .iter()
             .filter(|(m, _)| m != "GET" && m != "HEAD")
-            .map(|(m, u)| format!("{m} {}", u.split('?').next().unwrap_or(u)))
+            .map(|(m, u)| format!("{m} {}", u.split(['?', ';']).next().unwrap_or(u)))
             .collect();
         if !posts.is_empty() {
             refused.insert(site.id.clone(), posts);

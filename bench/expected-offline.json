@@ -1,0 +1,94 @@
+{
+  "atlassian-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "discord-signup": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "docker-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "dropbox-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "duolingo-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "figma-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "gitlab-signup": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "google-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "lemonde-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "microsoft-login": {
+    "detection_pass": true,
+    "fill_pass": false
+  },
+  "notion-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "pixiv-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "qiita-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "qiita-signup": {
+    "detection_pass": true,
+    "fill_pass": false
+  },
+  "slack-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "spiegel-login": {
+    "detection_pass": true,
+    "fill_pass": false
+  },
+  "spotify-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "stackoverflow-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "tumblr-login": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "tumblr-signup": {
+    "detection_pass": true,
+    "fill_pass": true
+  },
+  "vimeo-login": {
+    "detection_pass": false,
+    "fill_pass": false
+  },
+  "wordpress-login": {
+    "detection_pass": false,
+    "fill_pass": false
+  },
+  "zoom-login": {
+    "detection_pass": false,
+    "fill_pass": false
+  }
+}

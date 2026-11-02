@@ -12,7 +12,8 @@ const LOGIN = `
     <input id="trap" name="website" tabindex="-1" style="display:none">
     <button type="submit">Sign in</button>
   </form>
-  <form id="s" role="search"><input id="q" type="search" name="q" placeholder="Search"></form>`;
+  <form id="s" role="search"><input id="q" type="search" name="q" placeholder="Search">
+    <select id="lang" name="hl"><option value="en" selected>English</option><option value="fr">Français</option></select></form>`;
 
 describe("bench probe", () => {
   beforeEach(() => {
@@ -34,7 +35,7 @@ describe("bench probe", () => {
 
   it("fill writes the plan's groups through the extension filler, readback gives booleans only", async () => {
     const probe = createProbe({ geometry: testGeometry, origin: ORIGIN });
-    const a = probe.analyze(["#u", "#p"]);
+    const a = probe.analyze(["#u", "#p", "#q", "#lang"]);
     const form = a.context.forms.find((f) => f.fields.some((x) => x.role === "current_password"))!;
     const groups = [{ form_ref: form.form_ref, fields: form.fields.filter((f) => f.role !== null).map((f) => [f.field_ref, f.role!] as [string, string]) }];
     const written = await probe.fill(groups, { username: "bench.user", email: "bench.user@example.invalid", current_password: "Fake-Bench-Pass-1" });
@@ -43,11 +44,13 @@ describe("bench probe", () => {
       { selector: "#u", expect: ["bench.user", "bench.user@example.invalid"] },
       { selector: "#p", expect: ["Fake-Bench-Pass-1"] },
       { selector: "#q", expect: [] },
+      { selector: "#lang", expect: [] },
     ]);
     expect(r).toEqual([
       { selector: "#u", found: true, filled: true, expected_value: true },
       { selector: "#p", found: true, filled: true, expected_value: true },
       { selector: "#q", found: true, filled: false, expected_value: false },
+      { selector: "#lang", found: true, filled: false, expected_value: false },
     ]);
     expect(JSON.stringify(r)).not.toContain("Fake-Bench");
   });

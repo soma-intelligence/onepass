@@ -1,0 +1,425 @@
+{
+  "version": 1,
+  "sites": [
+    {
+      "id": "google-login",
+      "url": "https://accounts.google.com/",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#identifierId",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        },
+        {
+          "selector": "select[name=\"hl\"]",
+          "role": "none"
+        }
+      ]
+    },
+    {
+      "id": "microsoft-login",
+      "url": "https://login.live.com/",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#usernameEntry",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stackoverflow-login",
+      "url": "https://stackoverflow.com/users/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        },
+        {
+          "selector": "#password",
+          "role": "password"
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "role": "none"
+        }
+      ]
+    },
+    {
+      "id": "dropbox-login",
+      "url": "https://www.dropbox.com/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[name=\"susi_email\"]",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "atlassian-login",
+      "url": "https://id.atlassian.com/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[name=\"username\"]",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slack-login",
+      "url": "https://slack.com/signin",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#signup_email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tumblr-login",
+      "url": "https://www.tumblr.com/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "role": "password"
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "role": "none"
+        }
+      ]
+    },
+    {
+      "id": "figma-login",
+      "url": "https://www.figma.com/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        },
+        {
+          "selector": "#current-password",
+          "role": "password"
+        }
+      ]
+    },
+    {
+      "id": "notion-login",
+      "url": "https://www.notion.so/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[type=\"email\"]",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "docker-login",
+      "url": "https://login.docker.com/u/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#username",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spotify-login",
+      "url": "https://accounts.spotify.com/en/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#username",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wordpress-login",
+      "url": "https://wordpress.com/log-in",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#usernameOrEmail",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zoom-login",
+      "url": "https://zoom.us/signin",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vimeo-login",
+      "url": "https://vimeo.com/log_in",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#unified_auth_email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duolingo-login",
+      "url": "https://www.duolingo.com/log-in",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#web-ui1",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        },
+        {
+          "selector": "#web-ui2",
+          "role": "password"
+        }
+      ]
+    },
+    {
+      "id": "lemonde-login",
+      "url": "https://secure.lemonde.fr/sfuser/connexion",
+      "kind": "login",
+      "lang": "fr",
+      "fields": [
+        {
+          "selector": "#email",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        },
+        {
+          "selector": "#password",
+          "role": "password"
+        }
+      ]
+    },
+    {
+      "id": "spiegel-login",
+      "url": "https://gruppenkonto.spiegel.de/anmelden.html",
+      "kind": "login",
+      "lang": "de",
+      "fields": [
+        {
+          "selector": "#username",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pixiv-login",
+      "url": "https://accounts.pixiv.net/login",
+      "kind": "login",
+      "lang": "ja",
+      "fields": [
+        {
+          "selector": "input[autocomplete=\"username webauthn\"]",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        },
+        {
+          "selector": "input[type=\"password\"]",
+          "role": "password"
+        }
+      ]
+    },
+    {
+      "id": "qiita-login",
+      "url": "https://qiita.com/login",
+      "kind": "login",
+      "lang": "ja",
+      "fields": [
+        {
+          "selector": "#identity",
+          "role": "username",
+          "accept": [
+            "email"
+          ]
+        },
+        {
+          "selector": "#password",
+          "role": "password"
+        }
+      ]
+    },
+    {
+      "id": "gitlab-signup",
+      "url": "https://gitlab.com/users/sign_up",
+      "kind": "signup",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "#new_user_first_name",
+          "role": "given_name"
+        },
+        {
+          "selector": "#new_user_last_name",
+          "role": "family_name"
+        },
+        {
+          "selector": "#new_user_username",
+          "role": "username"
+        },
+        {
+          "selector": "#new_user_email",
+          "role": "email"
+        },
+        {
+          "selector": "#new_user_password",
+          "role": "new_password"
+        }
+      ]
+    },
+    {
+      "id": "discord-signup",
+      "url": "https://discord.com/register",
+      "kind": "signup",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "role": "email",
+          "accept": [
+            "username"
+          ]
+        },
+        {
+          "selector": "input[name=\"global_name\"]",
+          "role": "full_name"
+        },
+        {
+          "selector": "input[name=\"username\"]",
+          "role": "username"
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "role": "new_password"
+        }
+      ]
+    },
+    {
+      "id": "qiita-signup",
+      "url": "https://qiita.com/signup",
+      "kind": "signup",
+      "lang": "ja",
+      "fields": [
+        {
+          "selector": "#user_url_name",
+          "role": "username"
+        },
+        {
+          "selector": "#user_email",
+          "role": "email"
+        },
+        {
+          "selector": "#user_password",
+          "role": "new_password"
+        }
+      ]
+    },
+    {
+      "id": "tumblr-signup",
+      "url": "https://www.tumblr.com/register",
+      "kind": "signup",
+      "lang": "en",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "role": "email"
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "role": "new_password"
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "role": "none"
+        }
+      ]
+    }
+  ]
+}

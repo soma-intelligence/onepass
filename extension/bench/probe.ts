@@ -106,6 +106,8 @@ export function createProbe(opts: ProbeOptions = {}) {
   const origin = opts.origin ?? doc.defaultView?.location.origin ?? "";
   const refs = new RefRegistry();
   const url = doc.URL;
+  /** Value of each truth field when it was analysed: a select holds a value before any fill. Stays in the page. */
+  const initial = new Map<string, string>();
   const analyze = (): PageAnalysis => analyzeDocument(doc, refs, { url, geometry });
 
   const rolesOf = (analysis: PageAnalysis): Map<Element, FieldRole> => {
@@ -138,6 +140,7 @@ export function createProbe(opts: ProbeOptions = {}) {
       const context = buildPageContext(doc, refs, analysis, { origin, topOrigin: origin, frame: "top" }, geometry);
       const truth = selectors.map((selector): TruthObservation => {
         const el = query(doc, selector);
+        if (el !== null && !initial.has(selector)) initial.set(selector, nativeValue(el));
         return { selector, found: el !== null, detected: (el && roles.get(el)) ?? null, features: (el && features.get(el)) ?? null };
       });
       return { context, truth, framework: page.framework, lang: doc.documentElement?.lang ?? "", forms: analysis.forms.length, featureVersion: FEATURE_VERSION };
@@ -162,13 +165,14 @@ export function createProbe(opts: ProbeOptions = {}) {
       return written;
     },
 
-    /** Whether each field holds a value, and whether it is one of `expect`. Never the value. */
+    /** Whether each field was written since it was analysed, and whether it now holds one of `expect`. Never the value. */
     readback(fields: { selector: string; expect: string[] }[]): Readback[] {
       return fields.map(({ selector, expect }) => {
         const el = query(doc, selector);
         if (el === null) return { selector, found: false, filled: false, expected_value: false };
         const v = nativeValue(el);
-        return { selector, found: true, filled: v !== "", expected_value: v !== "" && expect.includes(v) };
+        const filled = v !== "" && v !== (initial.get(selector) ?? "");
+        return { selector, found: true, filled, expected_value: filled && expect.includes(v) };
       });
     },
   };

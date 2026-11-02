@@ -6,12 +6,16 @@ on:
       - "extension/**"
       - "core/onepass-bridge/**"
       - "core/onepass-native-host/**"
+      - "core/onepass-bench/**"
+      - "bench/**"
       - ".github/workflows/extension.yml"
   pull_request:
     paths:
       - "extension/**"
       - "core/onepass-bridge/**"
       - "core/onepass-native-host/**"
+      - "core/onepass-bench/**"
+      - "bench/**"
       - ".github/workflows/extension.yml"
 
 permissions:
@@ -64,6 +68,13 @@ jobs:
           if-no-files-found: error
       - name: Install Chromium for Playwright
         run: npx playwright install chromium
+      # Real-site bench on its pruned recordings (no network): the content-script probe and the
+      # core planner on every recorded page, against the pinned verdicts. Blocking on regression.
+      - name: Real-site bench, offline
+        working-directory: .
+        run: |
+          (cd extension && npm run bench:probe)
+          cargo run --manifest-path core/Cargo.toml -p onepass-bench -- offline --sites bench/sites.json --out extension/test-results/bench --check bench/expected-offline.json
       - name: End-to-end tests
         run: npm run e2e -- --reporter=list,html
       - name: Keep the Playwright report
