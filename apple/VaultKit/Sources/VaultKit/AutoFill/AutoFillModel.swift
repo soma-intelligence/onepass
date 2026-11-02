@@ -47,6 +47,8 @@ public final class AutoFillModel {
     /// The service each Login of the current list matched (`"<vault id>:<item id>"` to service): what a
     /// fill from the list remembers. `others` are not in it.
     @ObservationIgnored private var listedServices: [String: String] = [:]
+    /// The language dates and country names are inserted in (text insertion).
+    @ObservationIgnored public var locale: Locale = .autoupdatingCurrent
 
     /// `ownAppIDs`: the containing app's bundle identifier, with and without the team prefix.
     public init(
@@ -547,13 +549,15 @@ public final class AutoFillModel {
 
     // MARK: - Text insertion
 
-    /// Every live item of the visible vaults, by title, without Crypto Wallets (spec 5.4) nor the
-    /// items hidden from AutoFill (ruling X3: never offered).
+    /// Every live item of the visible vaults without Crypto Wallets (spec 5.4) nor the items hidden
+    /// from AutoFill (ruling X3: never offered): Identities first (signup and address forms are what
+    /// text insertion mostly serves), then the rest, each by title.
     private func textItems() async throws -> [FfiItemSummary] {
         let hidden = try await session.autofillHiddenRecordIDs()
-        return session.items(filter: .all, query: "", sort: .title).filter {
+        let items = session.items(filter: .all, query: "", sort: .title).filter {
             $0.itemType != .cryptoWallet && !hidden.contains("\($0.vaultId):\($0.id)")
         }
+        return items.filter { $0.itemType == .identity } + items.filter { $0.itemType != .identity }
     }
 
     /// Back from the fields of an item to the item list.
@@ -582,19 +586,71 @@ public final class AutoFillModel {
     }
 
     /// The fields of `item` that can be inserted as text: every non-empty text-like field, concealed
-    /// ones included (the user picks them explicitly). Dates, addresses, amounts, files, keys and
-    /// passkeys are left out.
+    /// ones included (the user picks them explicitly); a date as the numeric date of `locale`; an
+    /// address as one text row per non-empty part (id `<field id>.<part>`, the country by its name
+    /// when it is a region code). Amounts, files, keys and passkeys are left out.
     public func insertableFields(of item: FfiItem) -> [FfiField] {
-        item.sections.flatMap(\.fields).filter { insertableText($0.value) != nil }
+        item.sections.flatMap(\.fields).flatMap { field -> [FfiField] in
+            switch field.value {
+            case .date(let date):
+                guard let text = Self.numericDate(date, locale: locale) else { return [] }
+                return [Self.textRow(of: field, id: field.id, label: field.displayLabel, text: text)]
+            case .address(let address):
+                return addressParts(address).map { part, label, text in
+                    Self.textRow(of: field, id: "\(field.id).\(part)", label: label, text: text)
+                }
+            default:
+                return insertableText(field.value) == nil ? [] : [field]
+            }
+        }
     }
 
-    /// Inserts the field's text (the current code for a one-time password field).
+    /// Inserts the field's text (the current code for a one-time password field). Only a row
+    /// `insertableFields` gives for the item on screen is inserted.
     public func insert(field: FfiField) async {
         guard !isFinished, session.state == .unlocked, case .textFields(let item) = screen,
-            item.sections.contains(where: { $0.fields.contains(field) }),
+            insertableFields(of: item).contains(field),
             let text = insertableText(field.value)
         else { return }
         finish(.text(text))
+    }
+
+    private static func textRow(of field: FfiField, id: String, label: String, text: String) -> FfiField {
+        FfiField(
+            id: id, label: label, kind: .text, value: .text(value: text),
+            required: false, repeatable: false, autofill: field.autofill)
+    }
+
+    /// `12/04/1990` or `04/12/1990`: day, month and four-digit year in the order of `locale`.
+    nonisolated static func numericDate(_ date: FfiDate, locale: Locale) -> String? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        guard let day = calendar.date(from: DateComponents(
+            year: Int(date.year), month: Int(date.month), day: Int(date.day)))
+        else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = locale
+        formatter.setLocalizedDateFormatFromTemplate("ddMMyyyy")
+        return formatter.string(from: day)
+    }
+
+    /// The non-empty parts of `address`: (part id, label, text).
+    private func addressParts(_ address: FfiAddress) -> [(String, String, String)] {
+        let country = address.country.trimmingCharacters(in: .whitespaces)
+        let countryName =
+            country.count == 2 && country.allSatisfy(\.isLetter)
+            ? locale.localizedString(forRegionCode: country.uppercased()) ?? country : country
+        let parts: [(String, String, String)] = [
+            ("line1", String(localized: "Adresse", bundle: VaultKitStrings.bundle), address.line1),
+            ("line2", String(localized: "Complément d’adresse", bundle: VaultKitStrings.bundle), address.line2),
+            ("city", String(localized: "Ville", bundle: VaultKitStrings.bundle), address.city),
+            ("postal_code", String(localized: "Code postal", bundle: VaultKitStrings.bundle), address.postalCode),
+            ("region", String(localized: "Région", bundle: VaultKitStrings.bundle), address.region),
+            ("country", String(localized: "Pays", bundle: VaultKitStrings.bundle), countryName),
+        ]
+        return parts.filter { !$0.2.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private func insertableText(_ value: FfiFieldValue) -> String? {

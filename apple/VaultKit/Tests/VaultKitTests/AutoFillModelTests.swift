@@ -634,6 +634,94 @@ struct AutoFillModelTests {
         #expect(model.screen == .finished)
     }
 
+    /// An Identity with a birth date and an address, saved by `seed`.
+    private func addIdentity(_ seed: VaultSession, vaultID: String) async throws -> FfiItem {
+        var draft = try seed.newItem(type: .identity, vaultID: vaultID)
+        draft.title = "Zoé Martin"
+        for s in draft.sections.indices {
+            for i in draft.sections[s].fields.indices {
+                switch draft.sections[s].fields[i].id {
+                case "first_name": draft.sections[s].fields[i].value = .text(value: "Zoé")
+                case "birth_date": draft.sections[s].fields[i].value = .date(value: FfiDate(year: 1990, month: 4, day: 12))
+                case "address":
+                    draft.sections[s].fields[i].value = .address(value: FfiAddress(
+                        line1: "1 Main St", line2: "", city: "Palo Alto", postalCode: "94301", region: "CA", country: "US"))
+                default: break
+                }
+            }
+        }
+        fillRequired(&draft)
+        return try await seed.save(draft)
+    }
+
+    @Test func textInsertionListsIdentitiesFirst() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let identity = try await addIdentity(seed, vaultID: login.vaultId)
+        seed.lock()
+
+        let (model, _, _) = f.model(.textToInsert)
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .textItems(let items) = model.screen else {
+            Issue.record("expected the items, got \(model.screen)")
+            return
+        }
+        // "Zoé Martin" sorts after "Exemple" by title, yet comes first.
+        #expect(items.first?.id == identity.id)
+        #expect(items.contains { $0.id == login.id })
+    }
+
+    @Test func textInsertionOffersBirthDateAndAddressParts() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let identity = try await addIdentity(seed, vaultID: login.vaultId)
+        seed.lock()
+
+        let (model, _, done) = f.model(.textToInsert)
+        model.locale = Locale(identifier: "en_US")
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .textItems(let items) = model.screen else {
+            Issue.record("expected the items, got \(model.screen)")
+            return
+        }
+        await model.chooseText(item: try #require(items.first { $0.id == identity.id }))
+        guard case .textFields(let item) = model.screen else {
+            Issue.record("expected the fields, got \(model.screen)")
+            return
+        }
+        let fields = model.insertableFields(of: item)
+        let text = { (id: String) -> String? in
+            guard case .text(let v) = fields.first(where: { $0.id == id })?.value else { return nil }
+            return v
+        }
+        #expect(text("birth_date") == "04/12/1990")
+        #expect(text("address.line1") == "1 Main St")
+        #expect(text("address.city") == "Palo Alto")
+        #expect(text("address.postal_code") == "94301")
+        #expect(text("address.region") == "CA")
+        #expect(text("address.country") == "United States")
+        // An empty part gives no row.
+        #expect(!fields.contains { $0.id == "address.line2" })
+
+        model.locale = Locale(identifier: "fr_FR")
+        let french = model.insertableFields(of: item)
+        #expect(french.first { $0.id == "birth_date" }?.value == .text(value: "12/04/1990"))
+        #expect(french.first { $0.id == "address.country" }?.value == .text(value: "États-Unis"))
+
+        // A part is inserted as its text; a field the item does not offer is refused.
+        let forged = FfiField(
+            id: "address.city", label: "Ville", kind: .text, value: .text(value: "Ailleurs"),
+            required: false, repeatable: false, autofill: true)
+        await model.insert(field: forged)
+        #expect(done.results.isEmpty)
+        await model.insert(field: try #require(french.first { $0.id == "address.city" }))
+        #expect(done.results == [.text("Palo Alto")])
+    }
+
     // MARK: - Guards on writes
 
     @Test func writesRequireShownTargets() async throws {

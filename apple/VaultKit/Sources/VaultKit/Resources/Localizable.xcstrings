@@ -509,6 +509,22 @@
         }
       }
     },
+    "Adresse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Address"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adresse"
+          }
+        }
+      }
+    },
     "Ajouter un appareil à ton compte" : {
       "localizations" : {
         "en" : {
@@ -1455,6 +1471,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passkey sconosciuta."
+          }
+        }
+      }
+    },
+    "Code postal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postal code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code postal"
+          }
+        }
+      }
+    },
+    "Complément d’adresse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Address line 2"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complément d’adresse"
           }
         }
       }
@@ -3153,6 +3201,22 @@
         }
       }
     },
+    "Pays" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Country"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pays"
+          }
+        }
+      }
+    },
     "Phrase de passe illisible." : {
       "localizations" : {
         "en" : {
@@ -3345,6 +3409,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rimuovi questo dispositivo dal tuo account"
+          }
+        }
+      }
+    },
+    "Région" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Region"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Région"
           }
         }
       }
@@ -4301,6 +4381,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud non ha ancora una copia completa di queste casseforti. Sincronizza, poi riprova: non è stato rimosso niente."
+          }
+        }
+      }
+    },
+    "Ville" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "City"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ville"
           }
         }
       }
