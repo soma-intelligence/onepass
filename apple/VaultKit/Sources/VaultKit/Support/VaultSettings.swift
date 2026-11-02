@@ -44,13 +44,25 @@ public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// Local, non secret settings on an injected `UserDefaults`.
+/// Local, non secret settings on an injected `UserDefaults`, one scope per account (multi-account
+/// spec 6): the primary account keeps its keys, an added account prefixes them (`ScopedDefaults`).
 public final class VaultSettings: @unchecked Sendable {
-    private let defaults: UserDefaults
+    private let defaults: ScopedDefaults
     private let counterLock = Mutex(())
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    /// `scope` nil: the primary account's keys. Otherwise the slot of an added account.
+    public init(defaults: UserDefaults = .standard, scope: String? = nil) {
+        self.defaults = ScopedDefaults(defaults, prefix: scope.map(ScopedDefaults.prefix(forSlot:)) ?? "")
+    }
+
+    /// The slot this instance reads, nil for the primary account.
+    public var scope: String? {
+        defaults.prefix.isEmpty ? nil : String(defaults.prefix.dropFirst("onepass.acct.".count).dropLast())
+    }
+
+    /// Erases every setting of an added account (it left the device). No effect on the primary one.
+    public func removeAll() {
+        defaults.removeAll()
     }
 
     private enum Key {

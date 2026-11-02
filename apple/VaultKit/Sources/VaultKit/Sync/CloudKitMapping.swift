@@ -5,6 +5,19 @@ import Foundation
 /// iCloud account (nothing here touches `CKContainer`).
 public enum CloudKitMapping {
     public static let zoneName = "OnePass"
+    /// Prefix of an added account's zone (multi-account spec 6).
+    static let accountZonePrefix = "OnePass."
+
+    /// The zone of an added account: `OnePass.<account id>`.
+    public static func zoneName(forAccount accountID: String) -> String { accountZonePrefix + accountID }
+
+    /// The account id of an added account's zone name, nil for any other zone.
+    public static func accountID(ofZone name: String) -> String? {
+        guard name.hasPrefix(accountZonePrefix) else { return nil }
+        let id = name.dropFirst(accountZonePrefix.count)
+        let hex = id.count == 32 && id.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+        return hex ? String(id) : nil
+    }
     public static let recordType = "OPRecord"
     public static let subscriptionID = "onepass.database"
 

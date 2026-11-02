@@ -12,6 +12,17 @@ struct CloudKitMappingTests {
     static let name = RecordName(kind: 5, id: "00112233445566778899aabbccddeeff")
     static let zone = CKRecordZone.ID(zoneName: CloudKitMapping.zoneName, ownerName: CKCurrentUserDefaultName)
 
+    /// Multi-account spec 6: an added account syncs `OnePass.<account id>`, never the primary zone.
+    @Test func addedAccountsHaveTheirOwnZone() {
+        let id = String(repeating: "0a", count: 16)
+        #expect(CloudKitMapping.zoneName(forAccount: id) == "OnePass.\(id)")
+        #expect(CloudKitMapping.accountID(ofZone: "OnePass.\(id)") == id)
+        #expect(CloudKitMapping.accountID(ofZone: "OnePass") == nil)
+        #expect(CloudKitMapping.accountID(ofZone: "AgentRequests") == nil)
+        #expect(CloudKitMapping.accountID(ofZone: "OnePass.../x") == nil)
+        #expect(CloudKitMapping.accountID(ofZone: "OnePass.\(id.uppercased())") == nil)
+    }
+
     @Test func mappingRoundtripsDataAndVersion() throws {
         let remote = RemoteRecord(name: Self.name, version: 42, data: Data([1, 2, 3, 0xFF]), serverMeta: nil)
         let record = try CloudKitMapping.record(from: remote, zoneID: Self.zone)

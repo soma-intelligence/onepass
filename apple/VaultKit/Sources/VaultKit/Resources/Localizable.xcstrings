@@ -225,6 +225,122 @@
         }
       }
     },
+    "accounts.error.alreadyOnDevice" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte est déjà sur cet appareil."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is already on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta ya está en este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account è già su questo dispositivo."
+          }
+        }
+      },
+      "comment" : "Add account: the account signed in is already on this device in another slot."
+    },
+    "accounts.error.primaryAccount" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise OnePass."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The device's first account can't be removed. To erase it, reset OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta OnePass."
+          }
+        }
+      },
+      "comment" : "Settings > Accounts: the first account cannot be removed, only reset."
+    },
+    "accounts.error.serverUnavailable" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte se connecte au serveur de ton organisation, qui n'est pas encore disponible dans cette version."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account connects to your organization's server, which isn't available in this version yet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta se conecta al servidor de tu organización, que aún no está disponible en esta versión."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account si collega al server della tua organizzazione, che non è ancora disponibile in questa versione."
+          }
+        }
+      },
+      "comment" : "Add account sheet: a managed (organisation) account cannot be created yet."
+    },
+    "accounts.error.storeMismatch" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de ce compte ne correspondent pas au compte attendu. Rien n'est ouvert. Retire ce compte de l'appareil puis connecte-toi à nouveau."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account's data doesn't match the expected account. Nothing is opened. Remove this account from the device, then sign in again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de esta cuenta no coinciden con la cuenta esperada. No se abre nada. Quita esta cuenta del dispositivo y vuelve a iniciar sesión."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati di questo account non corrispondono all'account previsto. Non viene aperto nulla. Rimuovi questo account dal dispositivo, poi accedi di nuovo."
+          }
+        }
+      },
+      "comment" : "Data refused screen: the store file of an account holds another account."
+    },
     "Ajouter un appareil à ton compte" : {
       "localizations" : {
         "en" : {

@@ -19,10 +19,24 @@ public actor CloudKitRemote: RemoteRecordStore {
     private var subscriptionReady = false
     private let accountChanges = AccountChangeCounter()
 
-    public init(containerIdentifier: String = "iCloud.me.somalabs.onepass") {
+    /// `zoneName`: `OnePass` for the primary account, `CloudKitMapping.zoneName(forAccount:)` for an added
+    /// one (multi-account spec 6, ruling P8): each account syncs its own zone, never another's.
+    public init(containerIdentifier: String = "iCloud.me.somalabs.onepass", zoneName: String = CloudKitMapping.zoneName) {
         container = CKContainer(identifier: containerIdentifier)
         database = container.privateCloudDatabase
-        zoneID = CKRecordZone.ID(zoneName: CloudKitMapping.zoneName, ownerName: CKCurrentUserDefaultName)
+        zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName)
+    }
+
+    /// The account ids of the added accounts' zones in this iCloud database (`OnePass.<id>`): how another
+    /// device finds the zone of an account it signs in to.
+    public static func accountZones(containerIdentifier: String = "iCloud.me.somalabs.onepass") async throws -> [String] {
+        let zones: [CKRecordZone]
+        do {
+            zones = try await CKContainer(identifier: containerIdentifier).privateCloudDatabase.allRecordZones()
+        } catch {
+            throw CloudKitMapping.storeError(for: error)
+        }
+        return zones.compactMap { CloudKitMapping.accountID(ofZone: $0.zoneID.zoneName) }.sorted()
     }
 
     public func accountAvailable() async -> Bool {
