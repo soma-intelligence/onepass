@@ -221,7 +221,8 @@ struct PhoneTabsView: View {
     #if DEBUG
     /// Captures: `-OnePassDemoTab items|watchtower|search` opens that tab (`settings` opens Réglages),
     /// `-OnePassDemoQuery <text>` fills the search, `-OnePassDemoNewItem YES` opens the add sheet,
-    /// `-OnePassDemoList <vault|category|tag|archive|trash>` pushes a list in Éléments. Debug builds only.
+    /// `-OnePassDemoList <vault|category|tag|archive|trash>` pushes a list in Éléments, `crypto[:<coin>]` the
+    /// Crypto screen. Debug builds only.
     private func applyDemoArguments() {
         let defaults = UserDefaults.standard
         if let name = defaults.string(forKey: "OnePassDemoTab") {
@@ -237,6 +238,13 @@ struct PhoneTabsView: View {
             searching = true
         }
         if defaults.bool(forKey: "OnePassDemoNewItem") { model.showNewItemPicker = true }
+        // `-OnePassDemoList crypto` or `crypto:<coin id>`: the Crypto screen, or a coin's detail.
+        if let list = defaults.string(forKey: "OnePassDemoList"), list.hasPrefix("crypto") {
+            tab = .home
+            let coin = list.split(separator: ":").dropFirst().first.map(String.init)
+            paths[.home] = [.crypto] + (coin.map { [PhoneRoute.cryptoCoin($0)] } ?? [])
+            return
+        }
         if let list = defaults.string(forKey: "OnePassDemoList") {
             let filter: ItemFilter? = switch list {
             case "archive": .archive

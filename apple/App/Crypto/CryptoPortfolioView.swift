@@ -47,7 +47,7 @@ struct CryptoPortfolioView: View {
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
         }
-        .background(alignment: .top) { CryptoBackdrop() }
+        .background { CryptoBackdrop() }
         .navigationTitle(Text("crypto.title"))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -396,14 +396,17 @@ struct CryptoBackdrop: View {
     var body: some View {
         let top = scheme == .dark ? Color(red: 0.20, green: 0.17, blue: 0.48) : Theme.accent.opacity(0.30)
         let mid = scheme == .dark ? Color(red: 0.11, green: 0.09, blue: 0.24) : Theme.accent.opacity(0.10)
-        LinearGradient(stops: [
-            .init(color: top, location: 0),
-            .init(color: mid, location: 0.55),
-            .init(color: .clear, location: 1),
-        ], startPoint: .top, endPoint: .bottom)
-        .frame(height: 720)
-        .frame(maxWidth: .infinity)
-        .background(PageBackground())
+        // The wash fades into the page color, which fills the whole screen below it.
+        ZStack(alignment: .top) {
+            PageBackground()
+            LinearGradient(stops: [
+                .init(color: top, location: 0),
+                .init(color: mid, location: 0.55),
+                .init(color: .clear, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: 720)
+            .frame(maxWidth: .infinity)
+        }
         .ignoresSafeArea()
     }
 }

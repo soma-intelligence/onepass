@@ -90,7 +90,7 @@ struct CryptoCoinView: View {
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
         }
-        .background(alignment: .top) { CryptoBackdrop() }
+        .background { CryptoBackdrop() }
         .navigationTitle(Text(verbatim: holding?.name ?? asset?.name ?? coin))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
