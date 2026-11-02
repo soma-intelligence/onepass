@@ -65,6 +65,11 @@ export const AUTOCOMPLETE_ROLES: Readonly<Record<string, ScoredRole>> = {
   "tel-national": "tel",
   organization: "organization",
   bday: "bday",
+  // One role for the whole date and each of its parts: the filler reads
+  // which part a field takes (content/date.ts).
+  "bday-day": "bday",
+  "bday-month": "bday",
+  "bday-year": "bday",
   "street-address": "address_line1",
   "address-line1": "address_line1",
   "address-line2": "address_line2",

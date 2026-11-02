@@ -52,8 +52,8 @@ Quand le groupe identité du plan a écrit l'e-mail dans un champ `email` ou `us
 `bday` reste un seul rôle (le classifieur n'est pas touché). Le remplisseur lit le champ et écrit la bonne forme de `AAAA-MM-JJ` :
 
 1. `input[type=date]` : `AAAA-MM-JJ`.
-2. Partie seule, par `autocomplete` (`bday-day`, `bday-month`, `bday-year`), sinon par `name`, `id`, `placeholder` ou libellé (`day`, `jour`, `dd`, `jj` ; `month`, `mois`, `mm` ; `year`, `année`, `yyyy`, `aaaa`), sinon, pour une liste, par ses options (1 à 31, 12 mois, années sur quatre chiffres) : la partie (jour et mois sans zéro de tête pour une liste dont les valeurs n'en ont pas).
-3. Champ texte entier : le motif lu dans `placeholder` ou `pattern` (`JJ/MM/AAAA`, `MM/DD/YYYY`, `DD.MM.YYYY`, `YYYY-MM-DD`, séparateurs `/`, `.`, `-`) ; sans motif, l'ordre de la langue de la page (`en-US` mois d'abord, sinon jour d'abord) avec `/`.
+2. Partie seule, par `autocomplete` (`bday-day`, `bday-month`, `bday-year`, lus comme le rôle `bday`), sinon par `name`, `id`, `placeholder` ou libellé (`day`, `jour`, `dd`, `jj` ; `month`, `mois`, `mm` ; `year`, `année`, `yyyy`, `aaaa`), sinon, pour une liste, par ses options (1 à 31, 12 mois, années sur quatre chiffres) : la partie (jour et mois sans zéro de tête pour une liste dont les valeurs n'en ont pas).
+3. Champ texte entier : le motif lu dans `placeholder` ou `pattern` (`JJ/MM/AAAA`, `MM/DD/YYYY`, `DD.MM.YYYY`, `YYYY-MM-DD`, séparateurs `/`, `.`, `-`) ; sans motif, l'ordre de la langue de la page (`en` et `en-US` mois d'abord, sinon jour d'abord) avec `/`.
 4. Liste des mois : par numéro, puis par nom (langue de la page, `fr`, `en`, abrégé ou entier), comme `matchOption`.
 
 Une partie qu'aucune règle ne désigne n'est pas écrite (rien d'inventé dans le champ).
