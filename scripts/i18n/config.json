@@ -1,0 +1,29 @@
+{
+  "source": "fr",
+  "languages": ["fr", "en", "es", "it"],
+  "apple": {
+    "catalogs": "apple/**/*.xcstrings",
+    "exclude": ["/.build/", "/build/", "/DerivedData/"],
+    "generated": {
+      "apple/VaultKit/Sources/VaultKit/Resources/CoreLabels.xcstrings": "apple/scripts/core_labels/gen.py"
+    },
+    "sources": {
+      "apple/App/Resources/Localizable.xcstrings": ["apple/App"],
+      "apple/App/Resources/AppShortcuts.xcstrings": ["apple/App"],
+      "apple/AutoFill/Support/Localizable.xcstrings": ["apple/AutoFill"],
+      "apple/DesignKit/Sources/DesignKit/Resources/Localizable.xcstrings": ["apple/DesignKit/Sources"],
+      "apple/NotificationService/Localizable.xcstrings": ["apple/NotificationService"],
+      "apple/VaultKit/Sources/VaultKit/Resources/Localizable.xcstrings": ["apple/VaultKit/Sources"],
+      "apple/Watch/Localizable.xcstrings": ["apple/Watch"],
+      "apple/WatchWidgets/Localizable.xcstrings": ["apple/WatchWidgets"],
+      "apple/Widgets/Localizable.xcstrings": ["apple/Widgets"]
+    }
+  },
+  "extension": {
+    "catalogs": "extension/src/shared/l10n",
+    "manifest": "extension/src/_locales",
+    "code": "extension/src",
+    "banned_calls": ["tr("]
+  },
+  "glossary": "scripts/i18n/glossary.json"
+}

@@ -8,6 +8,7 @@ TEST_XCFRAMEWORK := ../build/test/OnePassFFI.xcframework
 # The shell script keeps its own content stamp (apple/build/.core-stamp and
 # apple/build/test/.core-stamp) and is a no-op when the Rust sources are
 # unchanged; make always delegates to it.
+.PHONY: i18n-check
 .PHONY: core core-test test project simulators build-ios build-mac uitest screenshots clean
 .PHONY: simulators-m6 build-watch build-vision screenshots-m6
 .PHONY: simulator-m3 uitest-autofill simulator-fresh uitest-fresh install-iphone
@@ -27,6 +28,11 @@ test: core-test
 		ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/DesignKit"; \
 	fi
 	ONEPASS_FFI_XCFRAMEWORK="$(TEST_XCFRAMEWORK)" swift test --package-path "$(APPLE_DIR)/CompanionKit"
+
+## Localization check: four languages, placeholders, plurals, glossary (docs/i18n.md).
+i18n-check:
+	python3 -I "$(APPLE_DIR)/../scripts/i18n/i18n.py" check
+	python3 -I "$(APPLE_DIR)/../scripts/i18n/test_i18n.py"
 
 ## Xcode project from project.yml.
 project: core

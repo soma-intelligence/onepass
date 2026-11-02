@@ -1,0 +1,569 @@
+{
+  "_doc": "Single source of truth for product terms (term.*) and shared actions (common.*). Catalog entries with these keys are copied from here by `i18n.py sync`; never edit them in a catalog. `forms` lists the lower-case forms a sentence must use (checked as a warning).",
+  "entries": {
+    "term.vault": {
+      "fr": "Coffre",
+      "en": "Vault",
+      "es": "Bóveda",
+      "it": "Cassaforte",
+      "note": "A container of items, encrypted with its own key.",
+      "forms": {
+        "en": [
+          "vault",
+          "vaults"
+        ],
+        "fr": [
+          "coffre",
+          "coffres"
+        ],
+        "es": [
+          "bóveda",
+          "bóvedas"
+        ],
+        "it": [
+          "cassaforte",
+          "casseforti"
+        ]
+      }
+    },
+    "term.vaults": {
+      "fr": "Coffres",
+      "en": "Vaults",
+      "es": "Bóvedas",
+      "it": "Casseforti",
+      "note": "Plural of term.vault."
+    },
+    "term.item": {
+      "fr": "Élément",
+      "en": "Item",
+      "es": "Elemento",
+      "it": "Elemento",
+      "note": "Anything stored in a vault (login, card, note...).",
+      "forms": {
+        "en": [
+          "item",
+          "items"
+        ],
+        "fr": [
+          "élément",
+          "éléments"
+        ],
+        "es": [
+          "elemento",
+          "elementos"
+        ],
+        "it": [
+          "elemento",
+          "elementi"
+        ]
+      }
+    },
+    "term.items": {
+      "fr": "Éléments",
+      "en": "Items",
+      "es": "Elementos",
+      "it": "Elementi",
+      "note": "Plural of term.item."
+    },
+    "term.password": {
+      "fr": "Mot de passe",
+      "en": "Password",
+      "es": "Contraseña",
+      "it": "Password",
+      "note": "Italian keeps the English word, feminine (la password).",
+      "forms": {
+        "en": [
+          "password",
+          "passwords"
+        ],
+        "fr": [
+          "mot de passe",
+          "mots de passe"
+        ],
+        "es": [
+          "contraseña",
+          "contraseñas"
+        ],
+        "it": [
+          "password"
+        ]
+      }
+    },
+    "term.passwords": {
+      "fr": "Mots de passe",
+      "en": "Passwords",
+      "es": "Contraseñas",
+      "it": "Password",
+      "note": "Plural of term.password."
+    },
+    "term.masterPassword": {
+      "fr": "Mot de passe maître",
+      "en": "Master Password",
+      "es": "Contraseña maestra",
+      "it": "Password principale",
+      "note": "The account password that unlocks OnePass.",
+      "forms": {
+        "en": [
+          "master password"
+        ],
+        "fr": [
+          "mot de passe maître"
+        ],
+        "es": [
+          "contraseña maestra"
+        ],
+        "it": [
+          "password principale"
+        ]
+      }
+    },
+    "term.passkey": {
+      "fr": "Passkey",
+      "en": "Passkey",
+      "es": "Llave de acceso",
+      "it": "Passkey",
+      "note": "Apple's terms: llave de acceso (es), passkey (it).",
+      "forms": {
+        "en": [
+          "passkey",
+          "passkeys"
+        ],
+        "fr": [
+          "passkey",
+          "passkeys"
+        ],
+        "es": [
+          "llave de acceso",
+          "llaves de acceso"
+        ],
+        "it": [
+          "passkey"
+        ]
+      }
+    },
+    "term.passkeys": {
+      "fr": "Passkeys",
+      "en": "Passkeys",
+      "es": "Llaves de acceso",
+      "it": "Passkey",
+      "note": "Plural of term.passkey."
+    },
+    "term.oneTimeCode": {
+      "fr": "Code à usage unique",
+      "en": "One-Time Code",
+      "es": "Código de un solo uso",
+      "it": "Codice monouso",
+      "note": "TOTP code.",
+      "forms": {
+        "en": [
+          "one-time code",
+          "one-time codes"
+        ],
+        "fr": [
+          "code à usage unique",
+          "codes à usage unique"
+        ],
+        "es": [
+          "código de un solo uso",
+          "códigos de un solo uso"
+        ],
+        "it": [
+          "codice monouso",
+          "codici monouso"
+        ]
+      }
+    },
+    "term.watchtower": {
+      "fr": "Watchtower",
+      "en": "Watchtower",
+      "es": "Watchtower",
+      "it": "Watchtower",
+      "note": "Feature name, never translated.",
+      "forms": {
+        "en": [
+          "watchtower"
+        ],
+        "fr": [
+          "watchtower"
+        ],
+        "es": [
+          "watchtower"
+        ],
+        "it": [
+          "watchtower"
+        ]
+      }
+    },
+    "term.travelMode": {
+      "fr": "Travel Mode",
+      "en": "Travel Mode",
+      "es": "Travel Mode",
+      "it": "Travel Mode",
+      "note": "Feature name, never translated (French keeps it too).",
+      "forms": {
+        "en": [
+          "travel mode"
+        ],
+        "fr": [
+          "travel mode"
+        ],
+        "es": [
+          "travel mode"
+        ],
+        "it": [
+          "travel mode"
+        ]
+      }
+    },
+    "term.secretKey": {
+      "fr": "Secret Key",
+      "en": "Secret Key",
+      "es": "Secret Key",
+      "it": "Secret Key",
+      "note": "Feature name, never translated.",
+      "forms": {
+        "en": [
+          "secret key"
+        ],
+        "fr": [
+          "secret key"
+        ],
+        "es": [
+          "secret key"
+        ],
+        "it": [
+          "secret key"
+        ]
+      }
+    },
+    "term.emergencyKit": {
+      "fr": "Emergency Kit",
+      "en": "Emergency Kit",
+      "es": "Emergency Kit",
+      "it": "Emergency Kit",
+      "note": "Feature name, never translated.",
+      "forms": {
+        "en": [
+          "emergency kit"
+        ],
+        "fr": [
+          "emergency kit"
+        ],
+        "es": [
+          "emergency kit"
+        ],
+        "it": [
+          "emergency kit"
+        ]
+      }
+    },
+    "term.autofill": {
+      "fr": "Remplissage auto",
+      "en": "AutoFill",
+      "es": "Autorrelleno",
+      "it": "Riempimento automatico",
+      "note": "Apple's system feature name in each language.",
+      "forms": {
+        "en": [
+          "autofill"
+        ],
+        "fr": [
+          "remplissage"
+        ],
+        "es": [
+          "autorrelleno"
+        ],
+        "it": [
+          "riempimento automatico"
+        ]
+      }
+    },
+    "term.trash": {
+      "fr": "Corbeille",
+      "en": "Trash",
+      "es": "Papelera",
+      "it": "Cestino",
+      "forms": {
+        "en": [
+          "trash"
+        ],
+        "fr": [
+          "corbeille"
+        ],
+        "es": [
+          "papelera"
+        ],
+        "it": [
+          "cestino"
+        ]
+      }
+    },
+    "term.archive": {
+      "fr": "Archive",
+      "en": "Archive",
+      "es": "Archivo",
+      "it": "Archivio",
+      "note": "The place (noun). The action is common.archive."
+    },
+    "term.favorites": {
+      "fr": "Favoris",
+      "en": "Favorites",
+      "es": "Favoritos",
+      "it": "Preferiti",
+      "forms": {
+        "en": [
+          "favorite",
+          "favorites"
+        ],
+        "fr": [
+          "favori",
+          "favoris"
+        ],
+        "es": [
+          "favorito",
+          "favoritos"
+        ],
+        "it": [
+          "preferito",
+          "preferiti"
+        ]
+      }
+    },
+    "term.tags": {
+      "fr": "Tags",
+      "en": "Tags",
+      "es": "Etiquetas",
+      "it": "Tag"
+    },
+    "term.settings": {
+      "fr": "Réglages",
+      "en": "Settings",
+      "es": "Ajustes",
+      "it": "Impostazioni",
+      "note": "Apple's name for settings in each language.",
+      "forms": {
+        "en": [
+          "settings"
+        ],
+        "fr": [
+          "réglages"
+        ],
+        "es": [
+          "ajustes"
+        ],
+        "it": [
+          "impostazioni"
+        ]
+      }
+    },
+    "term.device": {
+      "fr": "Appareil",
+      "en": "Device",
+      "es": "Dispositivo",
+      "it": "Dispositivo",
+      "forms": {
+        "en": [
+          "device",
+          "devices"
+        ],
+        "fr": [
+          "appareil",
+          "appareils"
+        ],
+        "es": [
+          "dispositivo",
+          "dispositivos"
+        ],
+        "it": [
+          "dispositivo",
+          "dispositivi"
+        ]
+      }
+    },
+    "term.recoveryPhrase": {
+      "fr": "Phrase de récupération",
+      "en": "Recovery Phrase",
+      "es": "Frase de recuperación",
+      "it": "Frase di recupero",
+      "note": "Crypto wallet seed phrase."
+    },
+    "term.login": {
+      "fr": "Login",
+      "en": "Login",
+      "es": "Inicio de sesión",
+      "it": "Login",
+      "note": "The item type that holds a username and password."
+    },
+    "common.cancel": {
+      "fr": "Annuler",
+      "en": "Cancel",
+      "es": "Cancelar",
+      "it": "Annulla"
+    },
+    "common.ok": {
+      "fr": "OK",
+      "en": "OK",
+      "es": "OK",
+      "it": "OK"
+    },
+    "common.done": {
+      "fr": "Terminé",
+      "en": "Done",
+      "es": "OK",
+      "it": "Fine",
+      "note": "Apple's Done button: OK (es), Fine (it)."
+    },
+    "common.save": {
+      "fr": "Enregistrer",
+      "en": "Save",
+      "es": "Guardar",
+      "it": "Salva"
+    },
+    "common.delete": {
+      "fr": "Supprimer",
+      "en": "Delete",
+      "es": "Eliminar",
+      "it": "Elimina"
+    },
+    "common.edit": {
+      "fr": "Modifier",
+      "en": "Edit",
+      "es": "Editar",
+      "it": "Modifica"
+    },
+    "common.copy": {
+      "fr": "Copier",
+      "en": "Copy",
+      "es": "Copiar",
+      "it": "Copia"
+    },
+    "common.copied": {
+      "fr": "Copié",
+      "en": "Copied",
+      "es": "Copiado",
+      "it": "Copiato"
+    },
+    "common.share": {
+      "fr": "Partager",
+      "en": "Share",
+      "es": "Compartir",
+      "it": "Condividi"
+    },
+    "common.close": {
+      "fr": "Fermer",
+      "en": "Close",
+      "es": "Cerrar",
+      "it": "Chiudi"
+    },
+    "common.continue": {
+      "fr": "Continuer",
+      "en": "Continue",
+      "es": "Continuar",
+      "it": "Continua"
+    },
+    "common.tryAgain": {
+      "fr": "Réessayer",
+      "en": "Try Again",
+      "es": "Reintentar",
+      "it": "Riprova"
+    },
+    "common.add": {
+      "fr": "Ajouter",
+      "en": "Add",
+      "es": "Añadir",
+      "it": "Aggiungi"
+    },
+    "common.remove": {
+      "fr": "Retirer",
+      "en": "Remove",
+      "es": "Quitar",
+      "it": "Rimuovi"
+    },
+    "common.search": {
+      "fr": "Rechercher",
+      "en": "Search",
+      "es": "Buscar",
+      "it": "Cerca"
+    },
+    "common.back": {
+      "fr": "Retour",
+      "en": "Back",
+      "es": "Atrás",
+      "it": "Indietro"
+    },
+    "common.unlock": {
+      "fr": "Déverrouiller",
+      "en": "Unlock",
+      "es": "Desbloquear",
+      "it": "Sblocca"
+    },
+    "common.lock": {
+      "fr": "Verrouiller",
+      "en": "Lock",
+      "es": "Bloquear",
+      "it": "Blocca"
+    },
+    "common.show": {
+      "fr": "Afficher",
+      "en": "Show",
+      "es": "Mostrar",
+      "it": "Mostra"
+    },
+    "common.hide": {
+      "fr": "Masquer",
+      "en": "Hide",
+      "es": "Ocultar",
+      "it": "Nascondi"
+    },
+    "common.generate": {
+      "fr": "Générer",
+      "en": "Generate",
+      "es": "Generar",
+      "it": "Genera"
+    },
+    "common.open": {
+      "fr": "Ouvrir",
+      "en": "Open",
+      "es": "Abrir",
+      "it": "Apri"
+    },
+    "common.rename": {
+      "fr": "Renommer",
+      "en": "Rename",
+      "es": "Cambiar nombre",
+      "it": "Rinomina"
+    },
+    "common.import": {
+      "fr": "Importer",
+      "en": "Import",
+      "es": "Importar",
+      "it": "Importa"
+    },
+    "common.export": {
+      "fr": "Exporter",
+      "en": "Export",
+      "es": "Exportar",
+      "it": "Esporta"
+    },
+    "common.create": {
+      "fr": "Créer",
+      "en": "Create",
+      "es": "Crear",
+      "it": "Crea"
+    },
+    "common.archive": {
+      "fr": "Archiver",
+      "en": "Archive",
+      "es": "Archivar",
+      "it": "Archivia",
+      "note": "The action (verb)."
+    },
+    "common.fill": {
+      "fr": "Remplir",
+      "en": "Fill",
+      "es": "Rellenar",
+      "it": "Compila",
+      "note": "Fill a form on a web page."
+    }
+  }
+}

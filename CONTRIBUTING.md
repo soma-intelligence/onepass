@@ -16,6 +16,10 @@ Thank you for helping. Reviews of the cryptography, the threat model and the aut
 | Apple apps | `make -C apple core`, then `make -C apple test` and `make -C apple build-mac` |
 | Browser extension | `cd extension && npm ci && npm run check` |
 
+## Strings and translations
+
+OnePass ships in French, English, Spanish and Italian. Every user-facing string gets a semantic key and all four languages in the same change, product terms come from the glossary, and sentences are never assembled from fragments. Read [docs/i18n.md](docs/i18n.md); `python3 -I scripts/i18n/i18n.py check` must pass.
+
 Requirements are listed in the [README](README.md#requirements). CI runs the core and extension checks on every pull request.
 
 ## Rules for changes
