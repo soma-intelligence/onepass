@@ -243,3 +243,10 @@ path = "fuzz_targets/shared_manifest.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "zone_access"
+path = "fuzz_targets/zone_access.rs"
+test = false
+doc = false
+bench = false

@@ -3176,7 +3176,10 @@ fn protected_from_remote_deletion(
         return true;
     }
     match kind {
-        RecordKind::AccountParams
+        // The private zone's `ShareInvite` rows are zone accesses
+        // (`share::ZONE_ACCESS_KIND`): a mailbox and its credential.
+        RecordKind::ShareInvite
+        | RecordKind::AccountParams
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList

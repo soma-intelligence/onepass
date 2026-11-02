@@ -13,7 +13,14 @@ mod manifest;
 mod membership;
 mod state;
 
-pub use access::{MAX_ZONE_CA_PEM_BYTES, MAX_ZONE_URL_BYTES, ZoneHome};
+pub use access::{
+    AccessTarget, CONTACT_ZONE_DOMAIN, ContactZoneOffer, MAILBOX_CREDENTIAL_ID_PREFIX,
+    MAX_CREDENTIAL_ENVELOPE, MAX_ZONE_CA_PEM_BYTES, MAX_ZONE_URL_BYTES, SignedContactZoneOffer,
+    SignedZoneAccess, ZONE_ACCESS_DOMAIN, ZONE_ACCESS_ID_PREFIX, ZONE_ACCESS_KIND,
+    ZONE_ACCESS_SEED_LABEL, ZONE_CREDENTIAL_LABEL, ZoneAccess, ZoneHome, ZoneRole, ZoneSeed,
+    credential_id_of, open_zone_credential, server_role, verify_contact_zone_offer,
+    wrap_zone_credential,
+};
 pub use membership::{
     MEMBERSHIP_FORMAT, MEMBERSHIP_HISTORY, Member, MembershipBody, MembershipReason,
     MembershipSeen, MovedTo, Removed, SignedMembership, accept_first, accept_next,

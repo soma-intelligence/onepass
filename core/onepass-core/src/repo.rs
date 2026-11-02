@@ -80,6 +80,7 @@ pub mod pairing;
 pub mod profile;
 pub mod replay;
 pub mod rotate;
+pub mod share;
 pub mod travel;
 
 pub use follow::{LineageLock, PromptChoice, RotationPrompt};
