@@ -229,7 +229,8 @@ enum SettingsTint {
 
 extension View {
     /// Every settings page, iPhone, iPad and Mac: grouped cards and the page's title. iPhone and
-    /// iPad: an inline title over the app's page color, content fading softly under the bar.
+    /// iPad: an inline title over the app's page color, content fading under the bar with the
+    /// shared header fade.
     func settingsPage(_ title: LocalizedStringKey) -> some View {
         formStyle(.grouped)
             .navigationTitle(title)
@@ -241,7 +242,7 @@ extension View {
             .background(Theme.page.ignoresSafeArea())
             // Buttons and values in the accent keep 4.5:1 on the dark cards too.
             .tint(Theme.readableAccent)
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .headerFade()
             #endif
     }
 }

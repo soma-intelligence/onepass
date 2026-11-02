@@ -89,8 +89,8 @@ struct HeaderFade: ViewModifier {
 }
 
 extension HeaderFade {
-    /// The grouped background of the iPhone and iPad screens.
-    static let screenColor = Color(uiColor: .systemGroupedBackground)
+    /// The page color of the iPhone and iPad screens (the theme's token, light or dark).
+    static var screenColor: Color { Theme.page }
 }
 
 extension View {
