@@ -1,5 +1,6 @@
-// The database side of mailbox-push: push_take and push_forget as the
-// janitor role (migration 20261031120400).
+// The database side of mailbox-push: push_take, push_forget and
+// push_forget_target as the janitor role (migrations 20261031120400 and
+// 20261101120100).
 import { type JanitorDb, logSqlError } from "../_shared/janitor.ts";
 import type { PushStore } from "./push.ts";
 
@@ -11,6 +12,7 @@ export function pushStore(db: JanitorDb): PushStore {
         return rows.map((r) => ({
           mailboxId: r.mailbox_id as Uint8Array,
           credentialId: r.credential_id as Uint8Array,
+          tag: r.tag instanceof Uint8Array ? r.tag : null,
           kind: Number(r.push_kind),
           token: r.push_token as Uint8Array,
         }));
@@ -19,9 +21,17 @@ export function pushStore(db: JanitorDb): PushStore {
         throw e;
       }
     },
-    async forget(credential, token) {
+    async forget(credential, tag, token) {
       try {
-        await db.call("push_forget", [{ value: credential, cast: "bytea" }, { value: token, cast: "bytea" }]);
+        if (tag === null) {
+          await db.call("push_forget", [{ value: credential, cast: "bytea" }, { value: token, cast: "bytea" }]);
+        } else {
+          await db.call("push_forget_target", [
+            { value: credential, cast: "bytea" },
+            { value: tag, cast: "bytea" },
+            { value: token, cast: "bytea" },
+          ]);
+        }
       } catch (e) {
         logSqlError("mailbox-push", e);
         throw e;

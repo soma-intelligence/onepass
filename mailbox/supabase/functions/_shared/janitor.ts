@@ -13,7 +13,7 @@ export interface JanitorDb {
 }
 
 /** The only functions the janitor functions call. */
-export const JANITOR_FUNCTIONS = ["gc_take", "gc_done", "push_take", "push_forget"] as const;
+export const JANITOR_FUNCTIONS = ["gc_take", "gc_done", "push_take", "push_forget", "push_forget_target"] as const;
 export type JanitorFn = (typeof JANITOR_FUNCTIONS)[number];
 
 function plain(row: Row): Row {

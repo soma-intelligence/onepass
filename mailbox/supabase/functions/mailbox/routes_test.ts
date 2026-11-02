@@ -458,6 +458,32 @@ Deno.test("rdv_put: frame over 1 MiB is 413 without SQL, written frame 204, conf
   assertEquals(c.status, 409);
 });
 
+// ------------------------------------------------------------ push targets
+
+Deno.test("PUT push-targets/{tag}: SetPush body, one api_set_push_target call with the tag, 204", async () => {
+  const k = await newKey();
+  const db = new FakeDb(withKey(k));
+  const tag = "7".repeat(32);
+  // Version 1, PushKind::Apns (2), a 3 byte token.
+  const body = new Uint8Array([1, 2, 3, 0xaa, 0xbb, 0xcc]);
+  const r = await handler(deps(db))(await signed(k, "PUT", `/v1/mailboxes/${MHEX}/push-targets/${tag}`, body), IP);
+  assertEquals(r.status, 204);
+  const call = db.calls.find((c) => c.fn === "api_set_push_target")!;
+  assertEquals(toHex(call.args[4].value as Uint8Array), tag);
+  assertEquals(call.args[5].value, 2);
+  assertEquals(call.args[6].value, new Uint8Array([0xaa, 0xbb, 0xcc]));
+  const quota = new FakeDb(withKey(k, () => [{ status: "quota", retry_after: null }]));
+  await assertError(
+    await handler(deps(quota))(await signed(k, "PUT", `/v1/mailboxes/${MHEX}/push-targets/${tag}`, body), IP),
+    "quota",
+  );
+  const short = await handler(deps(new FakeDb(withKey(k))))(
+    await signed(k, "PUT", `/v1/mailboxes/${MHEX}/push-targets/${"7".repeat(31)}`, body),
+    IP,
+  );
+  assertEquals(short.status, 404);
+});
+
 // ---------------------------------------------------------- invite drops
 
 Deno.test("drop_body_cap_stops_reading: a slot over 64 KiB is 413 without SQL", async () => {

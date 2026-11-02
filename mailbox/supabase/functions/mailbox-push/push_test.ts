@@ -16,11 +16,13 @@ interface Cred {
   id: Uint8Array;
   kind: number;
   token: Uint8Array;
+  /** A device target (tag set) is sent whatever the queue excludes. */
+  tag?: Uint8Array;
 }
 
 /** push_take as the SQL does it: whole mailboxes, the author left out, queue emptied. */
 function fakeStore(queue: QueueEntry[], creds: Cred[]) {
-  const forgotten: { credential: Uint8Array; token: Uint8Array }[] = [];
+  const forgotten: { credential: Uint8Array; tag: Uint8Array | null; token: Uint8Array }[] = [];
   let takes = 0;
   const store: PushStore = {
     take(limit) {
@@ -30,14 +32,14 @@ function fakeStore(queue: QueueEntry[], creds: Cred[]) {
       for (const e of entries) {
         for (const c of creds) {
           if (hex(c.mailbox) !== hex(e.mailbox)) continue;
-          if (e.exclude && hex(e.exclude) === hex(c.id)) continue;
-          out.push({ mailboxId: c.mailbox, credentialId: c.id, kind: c.kind, token: c.token });
+          if (!c.tag && e.exclude && hex(e.exclude) === hex(c.id)) continue;
+          out.push({ mailboxId: c.mailbox, credentialId: c.id, tag: c.tag ?? null, kind: c.kind, token: c.token });
         }
       }
       return Promise.resolve(out);
     },
-    forget(credential, token) {
-      forgotten.push({ credential, token });
+    forget(credential, tag, token) {
+      forgotten.push({ credential, tag, token });
       return Promise.resolve();
     },
   };
@@ -267,4 +269,47 @@ Deno.test("MAILBOX_PUSH_PROVIDERS has no default: unset or unknown refuses to bo
   }
   assertEquals(providersFromEnv("none"), []);
   assertEquals(providersFromEnv("log").map((p) => p.kind), [1, 2, 3]);
+});
+
+Deno.test("sends_to_every_target: each device target of a shared credential, the author's included", async () => {
+  const m = bytes(1);
+  const shared = bytes(0xb1);
+  const apns = new FakeProvider(2);
+  const fcm = new FakeProvider(1);
+  const { h, f } = setup(
+    [{ mailbox: m, exclude: shared }],
+    [
+      { mailbox: m, id: shared, kind: 2, token: bytes(9) },
+      { mailbox: m, id: shared, kind: 2, token: bytes(1, 1), tag: bytes(0x71) },
+      { mailbox: m, id: shared, kind: 1, token: bytes(2, 2), tag: bytes(0x72) },
+      { mailbox: m, id: shared, kind: 2, token: bytes(3, 3), tag: bytes(0x73) },
+    ],
+    [apns, fcm],
+  );
+  const r = await h(post());
+  assertEquals(r.status, 200);
+  // The historical token of the author (09) stays out; its targets do not.
+  assertEquals(apns.calls.map(hex).sort(), ["0101", "0303"]);
+  assertEquals(fcm.calls.map(hex), ["0202"]);
+  assertEquals(f.forgotten.length, 0);
+});
+
+Deno.test("gone_target_forgotten: by credential, tag and token; the historical token by credential and token", async () => {
+  const m = bytes(1);
+  const c = bytes(0xc1);
+  const provider = new FakeProvider(2, ["gone", "gone"]);
+  const { h, f } = setup(
+    [{ mailbox: m, exclude: null }],
+    [
+      { mailbox: m, id: c, kind: 2, token: bytes(5) },
+      { mailbox: m, id: c, kind: 2, token: bytes(6), tag: bytes(0x7a) },
+    ],
+    [provider],
+  );
+  await h(post());
+  assertEquals(f.forgotten.length, 2);
+  const byTag = f.forgotten.find((x) => x.tag !== null)!;
+  assertEquals([hex(byTag.credential), hex(byTag.tag!), hex(byTag.token)], ["c1", "7a", "06"]);
+  const plain = f.forgotten.find((x) => x.tag === null)!;
+  assertEquals([hex(plain.credential), hex(plain.token)], ["c1", "05"]);
 });

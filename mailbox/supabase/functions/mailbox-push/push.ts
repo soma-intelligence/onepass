@@ -15,6 +15,11 @@ import type { PushProvider } from "./providers.ts";
 export interface PushTarget {
   mailboxId: Uint8Array;
   credentialId: Uint8Array;
+  /**
+   * The device tag of a per-device target (migration 20261101120100), null
+   * for the credential's historical token.
+   */
+  tag: Uint8Array | null;
   kind: number;
   token: Uint8Array;
 }
@@ -22,8 +27,12 @@ export interface PushTarget {
 export interface PushStore {
   /** push_take(limit): the tokens to wake for up to `limit` mailboxes. */
   take(limit: number): Promise<PushTarget[]>;
-  /** push_forget(credential, token): only if it is still the credential's token. */
-  forget(credential: Uint8Array, token: Uint8Array): Promise<void>;
+  /**
+   * push_forget(credential, token) for the historical token (tag null),
+   * push_forget_target(credential, tag, token) for a device target: either
+   * only if it still holds that token.
+   */
+  forget(credential: Uint8Array, tag: Uint8Array | null, token: Uint8Array): Promise<void>;
 }
 
 export interface PushDeps {
@@ -77,7 +86,7 @@ export function handler(deps: PushDeps): (req: Request) => Promise<Response> {
       if (answer === "gone") {
         s.gone++;
         try {
-          await deps.store.forget(t.credentialId, t.token);
+          await deps.store.forget(t.credentialId, t.tag, t.token);
         } catch {
           deps.log("mailbox-push: forgetting a gone token failed");
         }

@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use onepass_mailbox_proto::{
     Body, COMMIT_OPS_MAX, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialRole,
-    ErrorCode, MailboxCreated, MailboxId, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
-    put_kinds_of,
+    ErrorCode, MailboxCreated, MailboxId, Op, PAGE_MAX_RECORDS, PushKind, ServerRecord,
+    blob_sha256, put_kinds_of,
 };
 
 use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
@@ -91,6 +91,7 @@ pub const CASES: &[(&str, Case)] = &[
     ),
     ("child_round_trip", child_round_trip),
     ("child_grant_and_revoke", child_grant_and_revoke),
+    ("push_target_round_trip", push_target_round_trip),
     ("drop_round_trip", drop_round_trip),
     ("drop_conflict", drop_conflict),
 ];
@@ -1311,4 +1312,31 @@ fn drop_conflict(t: &mut dyn ConformanceTarget) {
         t.drop_get(d, 2).expect("read").as_deref(),
         Some(&b"first"[..])
     );
+}
+
+// ------------------------------------------------------------ push targets
+
+fn push_target_round_trip(t: &mut dyn ConformanceTarget) {
+    let mut c = t.client();
+    c.create(t.invite().as_deref(), b"").expect("create");
+    let tag = |n: u8| [n; 16];
+    for n in 0..8 {
+        c.set_push_target(tag(n), PushKind::Apns, &[n, 1])
+            .expect("eight targets");
+    }
+    assert_eq!(
+        c.set_push_target(tag(8), PushKind::Fcm, b"t"),
+        Err(MailboxError::Server(Code::Quota)),
+        "a ninth target"
+    );
+    c.set_push_target(tag(3), PushKind::Fcm, b"replaced")
+        .expect("replace within the cap");
+    c.set_push_target(tag(3), PushKind::None, b"")
+        .expect("delete");
+    c.set_push_target(tag(8), PushKind::UnifiedPush, b"now fits")
+        .expect("room after a delete");
+    assert!(matches!(
+        c.set_push_target(tag(9), PushKind::Apns, b""),
+        Err(MailboxError::Malformed(_))
+    ));
 }

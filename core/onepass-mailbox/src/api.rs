@@ -79,6 +79,18 @@ pub trait MailboxApi: Send {
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError>;
 
+    /// `PUT /v1/mailboxes/{m}/push-targets/{tag}` (sharing spec 13.7): this
+    /// device's own target under a credential several devices share, 8 per
+    /// credential (`Server(Quota)` past that). `PushKind::None` with an
+    /// empty token deletes it. Every target of the mailbox's credentials is
+    /// woken by a commit, the author's included.
+    fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError>;
+
     /// `PUT /v1/mailboxes/{m}/locator` (manager only, spec D.4): adds the
     /// locator derived from the Secret Key. The mailbox keeps its two latest
     /// (old and new during a rotation), a third drops the oldest, the same
@@ -208,6 +220,15 @@ impl MailboxApi for MailboxClient {
 
     fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         MailboxClient::set_push(self, kind, token)
+    }
+
+    fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError> {
+        MailboxClient::set_push_target(self, tag, kind, token)
     }
 
     fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {

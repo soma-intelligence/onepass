@@ -39,6 +39,7 @@ export const FUNCTIONS = [
   "api_enroll",
   "api_revoke_credential",
   "api_set_push",
+  "api_set_push_target",
   "api_grant_credential",
   "api_set_credential_role",
   "api_set_locator",

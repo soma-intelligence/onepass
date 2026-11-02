@@ -455,6 +455,24 @@ async function setPush(c: Ctx): Promise<Response> {
   return empty(204);
 }
 
+/** Per-device target of a credential shared by several devices (sharing spec 13.7). */
+async function setPushTarget(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const p = decode(proto.decodeSetPush, c.body) as { kind: string; token: Uint8Array };
+  const kind = PUSH_KIND[p.kind];
+  if (kind === undefined) throw new Refusal("malformed");
+  const rows = await call(c.deps.db, "api_set_push_target", [
+    ...signedArgs(c, m),
+    a.bytea(unhex(c.groups[1])),
+    a.smallint(kind),
+    a.bytea(p.token),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
 type WireBody = { Inline: Uint8Array } | { Blob: { sha256: Uint8Array; size: number } };
 type WireOp = {
   kind: number;
@@ -801,6 +819,14 @@ const ROUTES: Route[] = [
   },
   { method: "POST", re: new RegExp(`^${MB}/grants$`), auth: "signed", query: "none", maxBody: MAX, run: grant },
   { method: "PUT", re: new RegExp(`^${MB}/push$`), auth: "signed", query: "none", maxBody: MAX, run: setPush },
+  {
+    method: "PUT",
+    re: new RegExp(`^${MB}/push-targets/${H}$`),
+    auth: "signed",
+    query: "none",
+    maxBody: MAX,
+    run: setPushTarget,
+  },
   { method: "GET", re: new RegExp(`^${MB}/changes$`), auth: "signed", query: "changes", maxBody: MAX, run: changes },
   { method: "POST", re: new RegExp(`^${MB}/commit$`), auth: "signed", query: "none", maxBody: MAX, run: commit },
   {

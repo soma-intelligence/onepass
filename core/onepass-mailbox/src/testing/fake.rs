@@ -123,6 +123,9 @@ fn contact() -> Limits {
 /// plan `selfhost` of `seed.sql`, whatever limits the fake was given.
 const MAX_CHILDREN: (usize, usize) = (1024, 4096);
 
+/// Push targets a credential holds at most (`api_set_push_target`).
+const PUSH_TARGETS_MAX: usize = 8;
+
 /// `mailboxes.kind` of an account mailbox (2 shared, 3 contact).
 const ACCOUNT: u8 = 1;
 
@@ -234,6 +237,8 @@ struct Cred {
     key: [u8; 32],
     revoked: bool,
     push: Option<(PushKind, Vec<u8>)>,
+    /// Per-device push targets by tag (`push_targets`), 8 at most.
+    targets: HashMap<[u8; 16], (PushKind, Vec<u8>)>,
     role: CredentialRole,
     /// Write role only: the kinds it may put; no delete when set.
     put_kinds: Option<[u8; 32]>,
@@ -253,6 +258,7 @@ impl Cred {
             key,
             revoked: false,
             push: None,
+            targets: HashMap::new(),
             role: CredentialRole::Manage,
             put_kinds: None,
             owner: false,
@@ -370,6 +376,7 @@ impl State {
         let t = self.credentials.get_mut(target).expect("found");
         t.revoked = true;
         t.push = None;
+        t.targets.clear();
         Ok(())
     }
 
@@ -1542,6 +1549,29 @@ impl MailboxApi for FakeMailboxClient {
             .get_mut(&self.credential.id())
             .expect("authenticated credential");
         c.push = (req.kind != PushKind::None).then_some((req.kind, req.token));
+        Ok(())
+    }
+
+    fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError> {
+        let req = push_request(kind, token)?;
+        let (mut s, _m) = self.signed()?;
+        let c = s
+            .credentials
+            .get_mut(&self.credential.id())
+            .expect("authenticated credential");
+        if req.kind == PushKind::None {
+            c.targets.remove(&tag);
+            return Ok(());
+        }
+        if !c.targets.contains_key(&tag) && c.targets.len() >= PUSH_TARGETS_MAX {
+            return refused(ErrorCode::Quota);
+        }
+        c.targets.insert(tag, (req.kind, req.token));
         Ok(())
     }
 

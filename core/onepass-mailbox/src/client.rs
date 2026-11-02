@@ -316,6 +316,24 @@ impl MailboxClient {
         expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
     }
 
+    /// `PUT /v1/mailboxes/{m}/push-targets/{tag}` (sharing spec 13.7): one
+    /// device's own push target under a credential its devices share.
+    /// `PushKind::None` with an empty token deletes it.
+    pub fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError> {
+        let target = format!(
+            "{}/push-targets/{}",
+            self.mailbox_path()?,
+            onepass_mailbox_proto::hex(&tag)
+        );
+        let req = push_request(kind, token)?;
+        expect_empty(self.signed(Method::Put, &target, &encode(&req))?)
+    }
+
     /// An enroll ticket for `new_credential_pub`, valid 300 s from `now`,
     /// signed by this credential (spec 4.12). No request is made.
     pub fn issue_ticket(
