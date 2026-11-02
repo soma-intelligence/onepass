@@ -1,0 +1,20 @@
+[package]
+name = "onepass-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+onepass-core = { path = "../onepass-core" }
+onepass-mailbox = { path = "../onepass-mailbox" }
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
+
+[dev-dependencies]
+# FakeMailbox: the mailbox from memory.
+onepass-mailbox = { path = "../onepass-mailbox", features = ["testing"] }
+# Accounts with fast KDF parameters, as the core's own sync tests.
+onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+time = { version = "0.3", features = ["macros"] }
+tempfile = "3"

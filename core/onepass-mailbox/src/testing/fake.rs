@@ -45,6 +45,10 @@
 //! knows who calls), rate limits (`req_per_min` is reported, never
 //! enforced; the 20 children a day per parent neither), per-IP limits (the minute bucket of the rendezvous and its
 //! 200 MiB an hour included), frozen mailboxes, wake-ups and push.
+//!
+//! `FaultHandle` turns the server hostile (spec 11): replayed, withheld,
+//! reordered, injected or rewound records, a lost commit answer, a batch
+//! applied in part, another mailbox served in place of this one.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -202,6 +206,9 @@ struct Mbx {
     kind: u8,
     /// The account mailbox a child was created under.
     parent: Option<MailboxId>,
+    /// Every write: its seq, its key and the row it replaced (what
+    /// `FaultHandle::rewind_to` undoes).
+    undo: Vec<(u64, Key, Option<Row>)>,
 }
 
 impl Mbx {
@@ -221,6 +228,24 @@ impl Mbx {
             records_count: 0,
             records: BTreeMap::new(),
             blobs: BTreeMap::new(),
+            undo: Vec::new(),
+        }
+    }
+
+    /// Counters and blob references from the rows (after a fault rewrote
+    /// them).
+    fn recount(&mut self) {
+        self.bytes_used = self.records.values().map(Row::cost).sum();
+        self.records_count = self.records.len() as i64;
+        for b in self.blobs.values_mut() {
+            b.refs = 0;
+        }
+        for r in self.records.values() {
+            if let Some(Body::Blob { sha256, .. }) = &r.body
+                && let Some(b) = self.blobs.get_mut(sha256)
+            {
+                b.refs += 1;
+            }
         }
     }
 
@@ -282,6 +307,23 @@ struct State {
     next_gen: u64,
     fail_next: VecDeque<MailboxError>,
     collect_before_commit: bool,
+    hostile: Hostile,
+}
+
+/// What `FaultHandle` set.
+#[derive(Debug, Default)]
+struct Hostile {
+    /// The next page is the one after this seq, whatever was asked.
+    replay: Option<u64>,
+    /// Records never served.
+    withheld: HashSet<Key>,
+    /// Pages served in reverse seq order.
+    reorder: bool,
+    /// The next commit lands, its answer is lost.
+    drop_reply: bool,
+    /// The next commit drops its first `n` writing operations and answers
+    /// `Applied` for all.
+    partial: Option<usize>,
 }
 
 fn random16() -> [u8; 16] {
@@ -633,14 +675,20 @@ impl State {
             return refused(ErrorCode::Quota);
         }
 
+        let partial = self.hostile.partial.take();
         let mut seqs = Vec::with_capacity(ops.len());
-        for (o, w) in ops.iter().zip(writes) {
+        for (i, (o, w)) in ops.iter().zip(writes).enumerate() {
             if !w {
                 seqs.push(None);
                 continue;
             }
             let seq = mbx.next_seq;
             mbx.next_seq += 1;
+            if partial.is_some_and(|n| i < n) {
+                // Hostile: a seq answered, nothing written.
+                seqs.push(Some(seq));
+                continue;
+            }
             let key = (o.kind, o.id);
             let body = match &o.op {
                 Op::Put { body, .. } => Some(body.clone()),
@@ -657,6 +705,7 @@ impl State {
                     body,
                 },
             );
+            mbx.undo.push((seq, key, old.clone()));
             if let Some(Row {
                 body: Some(Body::Blob { sha256, .. }),
                 ..
@@ -669,6 +718,9 @@ impl State {
         }
         mbx.bytes_used += dbytes;
         mbx.records_count += drecords;
+        if partial.is_some() {
+            mbx.recount();
+        }
         Ok((CommitResponse::Applied { seqs }, 200))
     }
 
@@ -689,7 +741,10 @@ impl State {
         // of inline data).
         let mut size = 64usize;
         for (key, row) in mbx.by_seq() {
-            if row.seq <= after || (full && row.body.is_none()) {
+            if row.seq <= after
+                || (full && row.body.is_none())
+                || self.hostile.withheld.contains(&key)
+            {
                 continue;
             }
             if records.len() == limit as usize || row.seq > head {
@@ -702,6 +757,9 @@ impl State {
             records.push(row.server(key));
         }
         let last = records.last().map(|r: &ServerRecord| r.seq);
+        if self.hostile.reorder {
+            records.reverse();
+        }
         Ok(ChangesPage {
             incarnation: mbx.incarnation,
             min_cursor: mbx.min_cursor,
@@ -1083,6 +1141,7 @@ impl FakeMailbox {
                 next_gen: 0,
                 fail_next: VecDeque::new(),
                 collect_before_commit: false,
+                hostile: Hostile::default(),
             })),
             rdv: Arc::new(Rdv {
                 epoch: Instant::now(),
@@ -1312,6 +1371,140 @@ impl FaultHandle {
     pub fn collect_before_next_commit(&self) {
         self.lock().collect_before_commit = true;
     }
+
+    /// The next page served is the one after `after`, whatever the client
+    /// asked (an old page replayed).
+    pub fn replay_page(&self, after: u64) {
+        self.lock().hostile.replay = Some(after);
+    }
+
+    /// The record `(kind, id)` is never served again (pages and reads).
+    pub fn withhold(&self, kind: u8, id: [u8; 16]) {
+        self.lock().hostile.withheld.insert((kind, id));
+    }
+
+    /// Every page from now on lists its records in reverse seq order (the
+    /// strict codec refuses such a page: `ChangesPage` wants rising seqs).
+    pub fn reorder_pages(&self) {
+        self.lock().hostile.reorder = true;
+    }
+
+    /// The server is honest again: replay, withholding, reordering and the
+    /// pending commit faults end (records it wrote stay).
+    pub fn honest(&self) {
+        self.lock().hostile = Hostile::default();
+    }
+
+    /// The server writes `record` (its kind, id, version and body; its seq
+    /// is the next one) into every account mailbox, as no client asked.
+    pub fn inject(&self, record: ServerRecord) {
+        let mut s = self.lock();
+        for mbx in s.mailboxes.values_mut().filter(|x| x.kind == ACCOUNT) {
+            let seq = mbx.next_seq;
+            mbx.next_seq += 1;
+            let key = (record.kind, record.id);
+            let old = mbx.records.insert(
+                key,
+                Row {
+                    seq,
+                    version: record.version,
+                    body: record.body.clone(),
+                },
+            );
+            mbx.undo.push((seq, key, old));
+            mbx.recount();
+        }
+    }
+
+    /// The next commit lands, then its answer is lost (`Offline`).
+    pub fn drop_commit_reply(&self) {
+        self.lock().hostile.drop_reply = true;
+    }
+
+    /// The next commit drops its first `n` operations, writes the others
+    /// and answers `Applied` with a seq for every one: a batch of items
+    /// then their manifest lands as the manifest without its first items.
+    pub fn apply_partially(&self, n: usize) {
+        self.lock().hostile.partial = Some(n);
+    }
+
+    /// Every account mailbox of this server now holds what the first
+    /// account mailbox of `other` holds (records, blobs, seqs), under its
+    /// own id and incarnation: another mailbox served in place of this one.
+    pub fn serve_from(&self, other: &FakeMailbox) {
+        assert!(
+            !Arc::ptr_eq(&self.state, &other.state),
+            "serve_from needs another server"
+        );
+        let (records, blobs, next_seq, min_cursor, objects) = {
+            let o = other.lock();
+            let (id, mbx) = o
+                .mailboxes
+                .iter()
+                .find(|(_, x)| x.kind == ACCOUNT)
+                .expect("an account mailbox to serve");
+            let objects: Vec<(Sha256, u64, Vec<u8>)> = mbx
+                .blobs
+                .iter()
+                .filter_map(|(sha, b)| {
+                    o.objects
+                        .get(&object_name(id, sha, b.generation))
+                        .map(|d| (*sha, b.generation, d.clone()))
+                })
+                .collect();
+            (
+                mbx.records.clone(),
+                mbx.blobs.clone(),
+                mbx.next_seq,
+                mbx.min_cursor,
+                objects,
+            )
+        };
+        let mut s = self.lock();
+        let ids: Vec<MailboxId> = s
+            .mailboxes
+            .iter()
+            .filter(|(_, x)| x.kind == ACCOUNT)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            for (sha, generation, data) in &objects {
+                s.objects
+                    .insert(object_name(&id, sha, *generation), data.clone());
+            }
+            let mbx = s.mailboxes.get_mut(&id).expect("listed");
+            mbx.records = records.clone();
+            mbx.blobs = blobs.clone();
+            mbx.next_seq = next_seq;
+            mbx.min_cursor = min_cursor;
+            mbx.undo.clear();
+            mbx.recount();
+        }
+        let top = blobs.values().map(|b| b.generation).max().unwrap_or(0);
+        s.next_gen = s.next_gen.max(top);
+    }
+
+    /// Every account mailbox goes back to what it held at `seq` (an old
+    /// backup restored under the same incarnation): later writes undone,
+    /// the next write gets `seq + 1` again.
+    pub fn rewind_to(&self, seq: u64) {
+        let mut s = self.lock();
+        for mbx in s.mailboxes.values_mut().filter(|x| x.kind == ACCOUNT) {
+            while mbx.undo.last().is_some_and(|(q, _, _)| *q > seq) {
+                let (_, key, old) = mbx.undo.pop().expect("checked");
+                match old {
+                    Some(row) => {
+                        mbx.records.insert(key, row);
+                    }
+                    None => {
+                        mbx.records.remove(&key);
+                    }
+                }
+            }
+            mbx.next_seq = mbx.next_seq.min(seq + 1);
+            mbx.recount();
+        }
+    }
 }
 
 /// A client of a `FakeMailbox`: the same checks as `MailboxClient`, no
@@ -1458,8 +1651,9 @@ impl MailboxApi for FakeMailboxClient {
     fn changes(&self, after: u64, limit: u32, full: bool) -> Result<ChangesPage, MailboxError> {
         check_changes_query(after, limit)?;
         self.open_mailbox()?;
-        let (s, m) = self.signed()?;
-        let page = wire(&s.changes(&m, after, limit, full)?)?;
+        let (mut s, m) = self.signed()?;
+        let served = s.hostile.replay.take().unwrap_or(after);
+        let page = wire(&s.changes(&m, served, limit, full)?)?;
         check_page(after, limit, full, &page)?;
         Ok(page)
     }
@@ -1472,6 +1666,9 @@ impl MailboxApi for FakeMailboxClient {
             s.collect();
         }
         let (answer, status) = s.commit(&self.credential.id(), &m, &req.ops)?;
+        if std::mem::take(&mut s.hostile.drop_reply) {
+            return Err(MailboxError::Offline);
+        }
         let answer = wire(&answer)?;
         check_commit(&req.ops, &answer, status)?;
         Ok(answer)
@@ -1482,6 +1679,9 @@ impl MailboxApi for FakeMailboxClient {
             return Err(MailboxError::Malformed("kind zero"));
         }
         let (s, m) = self.signed()?;
+        if s.hostile.withheld.contains(&(kind, id)) {
+            return Ok(None);
+        }
         let Some(row) = s.mailboxes[&m].records.get(&(kind, id)) else {
             return Ok(None);
         };

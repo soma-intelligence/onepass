@@ -2017,6 +2017,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-sync"
+version = "0.2.0"
+dependencies = [
+ "onepass-core",
+ "onepass-mailbox",
+ "onepass-mailbox-proto",
+ "tempfile",
+ "time",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
