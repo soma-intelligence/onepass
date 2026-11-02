@@ -203,6 +203,14 @@ fn nothing_to_hide_is_refused() {
     assert!(dev.session.enter_travel().is_err());
 }
 
+fn set_username(item: &mut FfiItem, user: &str) {
+    for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "username" {
+            f.value = FfiFieldValue::Text { value: user.into() };
+        }
+    }
+}
+
 /// A device whose every vault is safe for travel, with a login "Banque"
 /// marked hidden in travel and a login "Mail" behind extra protection, in
 /// the first vault, everything pushed. Returns the vault id and both item
@@ -227,6 +235,7 @@ fn per_item(server: &mut Server) -> (Device, String, String, String) {
         rule: FfiMatchRule::Domain,
         primary: true,
     }];
+    set_username(&mut bank, "moi@banque.example");
     bank.tags = vec!["perso".into()];
     bank.travel_hidden = true;
     let bank = dev.session.save_item(bank).unwrap();
@@ -240,6 +249,7 @@ fn per_item(server: &mut Server) -> (Device, String, String, String) {
         rule: FfiMatchRule::Domain,
         primary: true,
     }];
+    set_username(&mut mail, "moi@mail.example");
     mail.travel_guard = true;
     let mail = dev.session.save_item(mail).unwrap();
     push(&dev, server);
@@ -275,9 +285,21 @@ fn item_flags_are_booleans_and_never_tags() {
         .into_iter()
         .filter(|s| s.vault_id == vault)
         .collect();
-    assert!(summaries.iter().all(|s| s.tags.iter().all(|t| !t.starts_with("onepass:"))));
-    assert!(summaries.iter().any(|s| s.title == "Banque" && s.travel_hidden));
-    assert!(summaries.iter().any(|s| s.title == "Mail" && s.travel_guard));
+    assert!(
+        summaries
+            .iter()
+            .all(|s| s.tags.iter().all(|t| !t.starts_with("onepass:")))
+    );
+    assert!(
+        summaries
+            .iter()
+            .any(|s| s.title == "Banque" && s.travel_hidden)
+    );
+    assert!(
+        summaries
+            .iter()
+            .any(|s| s.title == "Mail" && s.travel_guard)
+    );
 }
 
 #[test]
@@ -306,26 +328,27 @@ fn a_hidden_item_leaves_and_comes_back_and_guarded_ones_are_not_offered() {
     assert_eq!(titles(&dev.session, &vault), vec!["Mail".to_string()]);
     assert!(dev.session.item(vault.clone(), bank.clone()).is_err());
     // Extra protection: offered nowhere outside the app while travelling.
-    assert!(dev
-        .session
-        .autofill_candidates("https://mail.example".into(), true, vec![])
-        .unwrap()
-        .is_empty());
-    assert!(dev
-        .session
-        .autofill_hidden_record_ids()
-        .unwrap()
-        .iter()
-        .any(|r| r.ends_with(&mail)));
+    assert!(
+        dev.session
+            .autofill_candidates("https://mail.example".into(), true, vec![])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        dev.session
+            .autofill_hidden_record_ids()
+            .unwrap()
+            .iter()
+            .any(|r| r.ends_with(&mail))
+    );
 
     // A fetch while travelling does not bring it back; a relaunch resumes.
     full_fetch(&dev, &server);
     assert_eq!(titles(&dev.session, &vault), vec!["Mail".to_string()]);
     dev.session.lock();
-    let session =
-        unlock_with_password(dev.path.clone(), PASSWORD.into(), dev.secret_key.clone())
-            .unwrap()
-            .session;
+    let session = unlock_with_password(dev.path.clone(), PASSWORD.into(), dev.secret_key.clone())
+        .unwrap()
+        .session;
     assert_eq!(titles(&session, &vault), vec!["Mail".to_string()]);
 
     let status = session.begin_travel_exit().unwrap();

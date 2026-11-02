@@ -18,12 +18,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use onepass_core::Id;
 use onepass_core::attachment::chunk_ids;
+use onepass_core::model::Item;
 use onepass_core::repo::split_item_record;
 use onepass_core::repo::travel::TravelState;
 use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore};
 use onepass_core::sync::{SyncStore, TravelHiddenItems};
-use onepass_core::model::Item;
-use onepass_core::vault::{ItemRecord, Vault};
+use onepass_core::vault::ItemRecord;
 
 use crate::convert::id_hex;
 use crate::error::{OnePassError, invalid};
@@ -160,7 +160,10 @@ fn item_records_of(
         let Ok(rec) = ItemRecord::decode(body) else {
             continue;
         };
-        if !parked.get(&prefix).is_some_and(|s| s.contains(&rec.item_id)) {
+        if !parked
+            .get(&prefix)
+            .is_some_and(|s| s.contains(&rec.item_id))
+        {
             continue;
         }
         if let Some(item) = vaults
@@ -182,8 +185,13 @@ fn item_records_of(
 }
 
 /// Every item of the vaults that stay, read once: the hidden and guarded
-/// ones (profile excluded).
-fn marked_items(repo: &mut Repo) -> Result<Vec<(Vault, Item)>, OnePassError> {
+/// ones, with their vault's id and name.
+struct MarkedVault {
+    id: Id,
+    name: String,
+}
+
+fn marked_items(repo: &mut Repo) -> Result<Vec<(MarkedVault, Item)>, OnePassError> {
     let mut out = Vec::new();
     for v in repo.vaults()? {
         if !v.meta.travel_safe {
@@ -191,7 +199,13 @@ fn marked_items(repo: &mut Repo) -> Result<Vec<(Vault, Item)>, OnePassError> {
         }
         for item in repo.items(&v)? {
             if item.travel_hidden() || item.travel_guarded() {
-                out.push((v.clone(), item));
+                out.push((
+                    MarkedVault {
+                        id: v.id,
+                        name: v.meta.name.clone(),
+                    },
+                    item,
+                ));
             }
         }
     }
@@ -238,7 +252,7 @@ impl Session {
                     vault_id: id_hex(v.id),
                     item_id: id_hex(item.id),
                     title: item.title.clone(),
-                    vault_name: v.meta.name.clone(),
+                    vault_name: v.name.clone(),
                 };
                 if item.travel_hidden() {
                     plan.hidden.push(entry);
