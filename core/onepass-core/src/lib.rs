@@ -27,6 +27,7 @@ pub mod lists;
 pub mod manifest;
 pub mod model;
 pub mod pairing;
+pub mod profiles;
 pub mod reference;
 pub mod remote;
 pub mod remote_unlock;

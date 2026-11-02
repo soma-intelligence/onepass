@@ -5,6 +5,7 @@
 // This crate writes no `unsafe` (the UniFFI scaffolding builds under the lint).
 #![deny(unsafe_code)]
 
+mod accounts;
 mod archive;
 mod autofill;
 mod bridge;
@@ -37,6 +38,7 @@ use onepass_core::sync::{AccountState, SyncStore};
 use onepass_core::totp;
 use zeroize::Zeroizing;
 
+pub use accounts::*;
 pub use archive::*;
 pub use bridge::*;
 pub use companion::*;

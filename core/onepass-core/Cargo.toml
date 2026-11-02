@@ -131,3 +131,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "rotation_v2_attacks"
 required-features = ["dev-fast-kdf"]
+
+# Two real accounts in two store files (multi-account spec M1).
+[[test]]
+name = "profiles"
+required-features = ["dev-fast-kdf"]
