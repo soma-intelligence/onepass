@@ -39,6 +39,11 @@ struct HomeTab: View {
                         SyncRefusalSection()
                         AccountChangedSection()
                         tiles(all: counts.all, favorites: counts.favorites)
+                        if model.travel.suggestion != .none, !searchActive {
+                            TravelSuggestionCard()
+                                .padding(16)
+                                .phoneCard()
+                        }
                         if model.showsAutoFillTip, !searchActive {
                             AutoFillTipCard()
                                 .padding(16)

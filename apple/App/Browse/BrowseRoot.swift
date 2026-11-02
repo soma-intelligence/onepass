@@ -32,6 +32,20 @@ struct BrowseRoot: View {
                     },
                     purpose: .copy)
             }
+            // "Tu voyages ?" > Oui, or "De retour ?" > Désactiver (spec 2026-11-02).
+            .sheet(item: $model.travelSheet) { request in
+                NavigationStack {
+                    TravelSettings(autoConfirm: request == .enter)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Fermer") { model.travelSheet = nil }
+                            }
+                        }
+                }
+                #if os(macOS)
+                .frame(minWidth: 460, minHeight: 520)
+                #endif
+            }
             // Fichier > Importer… (⌘⇧I): exports of other password managers.
             .sheet(isPresented: $model.showImport) {
                 ImportSheet()

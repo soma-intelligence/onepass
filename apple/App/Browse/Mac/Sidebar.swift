@@ -168,6 +168,17 @@ struct Sidebar: View {
                 #if !os(macOS)
                 Divider()
                 #endif
+                if model.travel.suggestion != .none {
+                    TravelSuggestionCard(compact: true)
+                        .padding(12)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
                 if model.showsAutoFillTip {
                     #if os(macOS)
                     // A thick material, not clear glass: rows scrolling under the card must not read

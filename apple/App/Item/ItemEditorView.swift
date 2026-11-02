@@ -484,6 +484,24 @@ struct ItemEditorView: View {
                     .help("Face ID, Touch ID ou le mot de passe maître sera demandé avant d'afficher cet élément.")
                     .accessibilityIdentifier("editor.reprompt")
             }
+            // Travel Mode per item (spec 2026-11-02): hidden leaves the device, extra protection asks
+            // for the password and Face ID while travelling.
+            EditorCard {
+                OptionToggle(title: "Caché en voyage", isOn: $editor.draft.item.travelHidden)
+                    .help("Quitte cet appareil en Travel Mode, revient au retour.")
+                    .accessibilityIdentifier("editor.travelHidden")
+                CardDivider()
+                OptionToggle(title: "Protection renforcée en voyage", isOn: $editor.draft.item.travelGuard)
+                    .help("En Travel Mode : mot de passe maître et Face ID pour l'afficher, jamais proposé ailleurs.")
+                    .disabled(editor.draft.item.travelHidden)
+                    .accessibilityIdentifier("editor.travelGuard")
+            }
+            Text(editor.draft.item.travelHidden
+                ? "Quitte cet appareil en Travel Mode et revient vérifié au retour."
+                : "En Travel Mode, « Caché » le retire de l'appareil ; « Protection renforcée » demande mot de passe et Face ID.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
 
         }
     }

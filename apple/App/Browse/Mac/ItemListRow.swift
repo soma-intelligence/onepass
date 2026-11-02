@@ -46,6 +46,14 @@ struct ItemListRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            // Travel Mode per item (spec 2026-11-02): what leaves or locks harder while travelling.
+            if summary.travelHidden || summary.travelGuard {
+                Image(systemName: summary.travelHidden ? "airplane" : "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(summary.travelHidden ? "Caché en voyage" : "Protection renforcée en voyage")
+                    .accessibilityLabel(summary.travelHidden ? Text("Caché en voyage") : Text("Protection renforcée en voyage"))
+            }
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())

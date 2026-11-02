@@ -34,6 +34,9 @@ struct ItemDetailView: View {
     @State private var password = ""
     @State private var repromptError: String?
     @State private var checking = false
+    /// Travel Mode extra protection (spec 2026-11-02): each of the two checks passed.
+    @State private var presencePassed = false
+    @State private var passwordPassed = false
     /// "Modifier" was pressed on a reprompt item: edit once confirmed.
     @State private var editAfterConfirm = false
     /// While editing, a remote change replaced the stored item the editor started from.
@@ -114,7 +117,11 @@ struct ItemDetailView: View {
         if editingHere { remoteVersion = stored } else { item = stored }
     }
 
-    private func locked(_ item: FfiItem) -> Bool { item.reprompt && !confirmed }
+    private func locked(_ item: FfiItem) -> Bool { (item.reprompt || travelGuarded(item)) && !confirmed }
+
+    /// Behind extra protection while travelling: the master password and, when the device has
+    /// them, Face ID or Touch ID, both, every time the detail opens.
+    private func travelGuarded(_ item: FfiItem) -> Bool { item.travelGuard && session.isTravelling }
 
     // MARK: - Detail
 
@@ -379,9 +386,12 @@ struct ItemDetailView: View {
                 Image(systemName: "lock.shield")
                     .font(.system(size: 36))
                     .foregroundStyle(.tint)
-                Text("Cet élément demande une confirmation avant d'afficher son contenu.")
+                Text(travelGuarded(item)
+                    ? "Protégé en voyage : mot de passe maître et Face ID."
+                    : "Cet élément demande une confirmation avant d'afficher son contenu.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(travelGuarded(item) ? "item.travelGuard.locked" : "item.reprompt.locked")
                 if askPassword {
                     // No `.password` content type, emptied as it leaves the screen: iOS must never
                     // offer to save the master password.
@@ -411,7 +421,12 @@ struct ItemDetailView: View {
         guard let item else { return }
         repromptError = nil
         if await session.confirmUserPresence(prompt: String(localized: "Afficher « \(item.title) »")) {
-            unlockReprompt()
+            presencePassed = true
+            if travelGuarded(item), !passwordPassed {
+                askPassword = true
+            } else {
+                unlockReprompt()
+            }
         } else {
             askPassword = true
         }
@@ -430,7 +445,17 @@ struct ItemDetailView: View {
             }
             do {
                 try await session.verifyMasterPassword(typed)
-                unlockReprompt()
+                passwordPassed = true
+                if let item, travelGuarded(item), session.canUseBiometrics, !presencePassed {
+                    // Extra protection: Face ID too, when the device has it.
+                    askPassword = false
+                    await confirmPresence()
+                    if !presencePassed {
+                        repromptError = String(localized: "Confirme aussi avec Face ID ou Touch ID.")
+                    }
+                } else {
+                    unlockReprompt()
+                }
             } catch {
                 repromptError = VaultError(error).localizedMessage
             }
@@ -721,7 +746,7 @@ struct ItemDetailView: View {
 
     private func load() async {
         await reload(ref)
-        if let item, item.reprompt, !confirmed { await confirmPresence() }
+        if let item, item.reprompt || travelGuarded(item), !confirmed { await confirmPresence() }
     }
 
     private func reload(_ target: ItemRef) async {

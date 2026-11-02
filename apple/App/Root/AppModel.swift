@@ -89,6 +89,10 @@ final class AppModel {
     let watchtower = WatchtowerModel()
     /// Watch-only crypto balances of this account (spec 2026-11-02-crypto-watch). Emptied on lock.
     let cryptoWatch = CryptoWatch()
+    /// "Are you travelling?" (spec 2026-11-02): learned places and the suggestion card.
+    let travel = TravelDetection()
+    /// The Travel Mode sheet, opened by the suggestion card ("Oui", "Désactiver").
+    var travelSheet: TravelSheetRequest?
     var selectedItem: ItemRef?
     var editing = false
     /// A new item's editor, shown in place of the detail until saved or cancelled.
@@ -468,9 +472,12 @@ final class AppModel {
             // A browser installed or launched for the first time meanwhile gets its manifest.
             if let browserBridge, browserBridge.isRunning { browserBridge.refreshManifests() }
             #endif
+            travel.appMovedToBackground(false)
+            travel.check(travelling: session.state == .unlocked ? session.isTravelling : nil)
         case .inactive:
             accounts.scenePhaseChanged(.inactive)
         case .background:
+            travel.appMovedToBackground(true)
             // A guest session never survives the app leaving the screen (ruling A7).
             publicSession?.end()
             dropPendingOtpLink()
@@ -1041,6 +1048,12 @@ final class AppModel {
             showToast(noCode, kind: .error)
             return
         }
+        // Travel Mode: an item behind extra protection is read in its detail only, after the
+        // password and Face ID (spec 2026-11-02).
+        guard !(item.travelGuard && session.isTravelling) else {
+            showToast(String(localized: "Protégé en voyage : ouvre l'élément pour le lire."), kind: .error)
+            return
+        }
         let totp: FfiTotpCode
         do {
             totp = try totpNow(secretOrUri: secret, unixSeconds: UInt64(Date.now.timeIntervalSince1970))
@@ -1475,3 +1488,11 @@ extension AppModel {
     }
 }
 
+/// Why the Travel Mode sheet opens from the suggestion card.
+enum TravelSheetRequest: String, Identifiable {
+    /// "Oui": straight to the confirmation.
+    case enter
+    /// "De retour ?": the page, with "Désactiver".
+    case exit
+    var id: String { rawValue }
+}
