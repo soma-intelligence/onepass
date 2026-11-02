@@ -58,6 +58,20 @@ describe("bench probe", () => {
     expect(await probe.fill([{ form_ref: "nope", fields: [] }], { username: "x" })).toBe(0);
   });
 
+  it("survey lists every field with a selector that finds it alone", () => {
+    const probe = createProbe({ geometry: testGeometry, origin: ORIGIN });
+    const fields = probe.survey();
+    const sels = fields.map((f) => f.selector);
+    expect(sels).toContain("#u");
+    expect(sels).toContain("#p");
+    for (const f of fields) expect(document.querySelectorAll(f.selector)).toHaveLength(1);
+    expect(fields.find((f) => f.selector === "#p")?.detected).toBe("current_password");
+    document.body.innerHTML = `<div><form><input name="a"><input name="a"></form></div>`;
+    const two = createProbe({ geometry: testGeometry, origin: ORIGIN }).survey().map((f) => f.selector);
+    expect(new Set(two).size).toBe(2);
+    for (const s of two) expect(document.querySelectorAll(s)).toHaveLength(1);
+  });
+
   it("the guard cancels submit events and form.submit()", () => {
     installGuard(window);
     const f = document.getElementById("f") as HTMLFormElement;

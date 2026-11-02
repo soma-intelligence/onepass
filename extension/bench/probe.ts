@@ -9,7 +9,7 @@
 // request other than GET or HEAD before it leaves the browser. readback returns booleans only:
 // no value ever leaves the page.
 import { buildPageContext } from "../src/content/context";
-import { extractFeatures, type FieldFeatures } from "../src/content/detect/features";
+import { extractFeatures, FEATURE_VERSION, type FieldFeatures } from "../src/content/detect/features";
 import { analyzeDocument } from "../src/content/detect/forms";
 import { RefRegistry } from "../src/content/detect/refs";
 import { collectShadowRoots } from "../src/content/detect/shadow";
@@ -39,6 +39,13 @@ export interface Analysis {
   framework: string;
   lang: string;
   forms: number;
+  featureVersion: number;
+}
+
+export interface SurveyField {
+  selector: string;
+  detected: FieldRole | null;
+  features: FieldFeatures;
 }
 
 export interface PlanGroupIn {
@@ -51,6 +58,38 @@ export interface Readback {
   found: boolean;
   filled: boolean;
   expected_value: boolean;
+}
+
+function esc(s: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
+}
+
+/** A selector that finds `el` alone: its id, else tag and name, else a nth-of-type path. */
+export function cssPath(doc: Document, el: Element): string {
+  const unique = (sel: string): boolean => {
+    try {
+      const all = doc.querySelectorAll(sel);
+      return all.length === 1 && all[0] === el;
+    } catch {
+      return false;
+    }
+  };
+  if (el.id && unique(`#${esc(el.id)}`)) return `#${esc(el.id)}`;
+  const name = el.getAttribute("name");
+  if (name) {
+    const sel = `${el.localName}[name="${name.replace(/["\\]/g, "\\$&")}"]`;
+    if (unique(sel)) return sel;
+  }
+  const parts: string[] = [];
+  for (let t: Element | null = el; t && t !== doc.documentElement; t = t.parentElement) {
+    if (t.id && unique(`#${esc(t.id)}`)) {
+      parts.unshift(`#${esc(t.id)}`);
+      break;
+    }
+    const same = t.parentElement ? Array.from(t.parentElement.children).filter((c) => c.localName === t!.localName) : [];
+    parts.unshift(same.length > 1 ? `${t.localName}:nth-of-type(${same.indexOf(t) + 1})` : t.localName);
+  }
+  return parts.join(" > ");
 }
 
 function query(doc: Document, selector: string): Element | null {
@@ -69,18 +108,31 @@ export function createProbe(opts: ProbeOptions = {}) {
   const url = doc.URL;
   const analyze = (): PageAnalysis => analyzeDocument(doc, refs, { url, geometry });
 
-  return {
-    analyze(selectors: string[]): Analysis {
-      const analysis = analyze();
-      const roles = new Map<Element, FieldRole>();
-      for (const form of analysis.forms) {
-        for (const f of form.fields) {
-          for (const r of f.parts ?? [f.ref]) {
-            const el = refs.get(r);
-            if (el) roles.set(el, f.role);
-          }
+  const rolesOf = (analysis: PageAnalysis): Map<Element, FieldRole> => {
+    const roles = new Map<Element, FieldRole>();
+    for (const form of analysis.forms) {
+      for (const f of form.fields) {
+        for (const r of f.parts ?? [f.ref]) {
+          const el = refs.get(r);
+          if (el) roles.set(el, f.role);
         }
       }
+    }
+    return roles;
+  };
+
+  return {
+    /** Every field the feature extractor reaches, with a selector and the detected role (to write a truth by hand). */
+    survey(): SurveyField[] {
+      const roles = rolesOf(analyze());
+      const out: SurveyField[] = [];
+      extractFeatures(doc, { onField: (el, f) => out.push({ selector: cssPath(doc, el), detected: roles.get(el) ?? null, features: f }) });
+      return out;
+    },
+
+    analyze(selectors: string[]): Analysis {
+      const analysis = analyze();
+      const roles = rolesOf(analysis);
       const features = new Map<Element, FieldFeatures>();
       const page = extractFeatures(doc, { roots: collectShadowRoots(doc), onField: (el, f) => features.set(el, f) });
       const context = buildPageContext(doc, refs, analysis, { origin, topOrigin: origin, frame: "top" }, geometry);
@@ -88,7 +140,7 @@ export function createProbe(opts: ProbeOptions = {}) {
         const el = query(doc, selector);
         return { selector, found: el !== null, detected: (el && roles.get(el)) ?? null, features: (el && features.get(el)) ?? null };
       });
-      return { context, truth, framework: page.framework, lang: doc.documentElement?.lang ?? "", forms: analysis.forms.length };
+      return { context, truth, framework: page.framework, lang: doc.documentElement?.lang ?? "", forms: analysis.forms.length, featureVersion: FEATURE_VERSION };
     },
 
     /** Fills each group's form through the extension filler; resolves to the number of controls written. */

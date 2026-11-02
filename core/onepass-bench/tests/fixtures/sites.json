@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "sites": [
+    {
+      "id": "trap-login",
+      "url": "https://trap.example/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [
+        { "selector": "#email", "role": "email", "accept": ["username"] },
+        { "selector": "#pw", "role": "password" },
+        { "selector": "#q", "role": "none" }
+      ]
+    },
+    {
+      "id": "trap-signup",
+      "url": "https://trap.example/join",
+      "kind": "signup",
+      "lang": "en",
+      "fields": [
+        { "selector": "#new-email", "role": "email" },
+        { "selector": "#new-pw", "role": "new_password" },
+        { "selector": "#new-pw2", "role": "new_password" }
+      ]
+    },
+    {
+      "id": "no-recording",
+      "url": "https://absent.example/login",
+      "kind": "login",
+      "lang": "en",
+      "fields": [{ "selector": "#u", "role": "username" }]
+    }
+  ]
+}
