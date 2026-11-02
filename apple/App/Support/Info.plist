@@ -60,6 +60,10 @@
 	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>ASCredentialExchangeActivity</string>
+	</array>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
 	<key>OnePassBrowserExtensions</key>

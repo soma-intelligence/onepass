@@ -140,6 +140,8 @@ targets:
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
+        # Credential Exchange import: the system hands the export to the app through this activity.
+        NSUserActivityTypes: [ASCredentialExchangeActivity]
         # Sparkle (Mac, Developer ID): signed feed and archive, verified before extraction, no
         # system profile, a check every 24 hours, installs only after the user's yes, installer
         # through Sparkle's XPC service (sandbox). Read by UpdateKit's UpdateConfiguration; the
@@ -270,6 +272,9 @@ targets:
               ShowsConfigurationUI: true
               SupportsSavePasswordCredentials: true
               SupportsGeneratePasswordCredentials: true
+              # Credential Exchange (CXP 1.0): Passwords exports to OnePass, and the reverse.
+              SupportsCredentialExchange: true
+              SupportedCredentialExchangeVersions: ["1.0"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).autofill
