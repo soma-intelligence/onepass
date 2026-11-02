@@ -33,6 +33,9 @@ function worker(over: (m: UiToBg) => Reply | null = () => null) {
         return { ok: { password: m.kind === "pin" ? "482913" : "abcd7e.XYZ.wxyz4kq", entropy_bits: 90 } };
       case "popup_history":
         return { ok: { entries: [{ password: "old-Pass-1", kind: "random", at: 1 }] } };
+      case "popup_pair_auto":
+        // The app does not vouch for this browser: the code is shown.
+        return { ok: { paired: false } };
       case "popup_pair_start":
         return { ok: { sas: "123 456" } };
       default:
@@ -83,7 +86,32 @@ describe("popup", () => {
     await handle.settled();
     button(r, "Les codes sont identiques").click();
     await handle.settled();
-    expect(w.types()).toEqual(["popup_status", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions"]);
+    expect(w.types()).toEqual(["popup_status", "popup_pair_auto", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions"]);
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+  });
+
+  it("a browser the app vouches for connects from the button without a code", async () => {
+    let paired = false;
+    let toastShown = false;
+    const w = worker((m) => {
+      if (m.type === "popup_status" && !paired) return { err: "unpaired" };
+      if (m.type === "popup_status" && !toastShown) {
+        toastShown = true;
+        return { ok: { ...STATUS, connected: true } };
+      }
+      if (m.type === "popup_pair_auto") {
+        paired = true;
+        return { ok: { paired: true } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Appairer avec OnePass").click();
+    await handle.settled();
+    expect(w.types()).not.toContain("popup_pair_start");
+    expect(text(r)).not.toContain("123 456");
+    expect(text(r)).toContain("Connectée à OnePass");
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 

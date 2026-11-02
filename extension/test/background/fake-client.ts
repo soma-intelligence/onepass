@@ -1,6 +1,6 @@
 // A scripted stand-in for BridgeClient (same interface, no cryptography).
 import { BridgeError } from "../../src/bridge/bytes";
-import type { Op, RequestFor, ResponseFor } from "../../src/bridge/client";
+import type { Op, PairOptions, RequestFor, ResponseFor } from "../../src/bridge/client";
 import type { PairingRecord } from "../../src/bridge/pairing";
 import type { BridgeLike } from "../../src/background/session";
 
@@ -17,7 +17,7 @@ export class FakeClient implements BridgeLike {
   constructor(
     private readonly answer: Answer = () => ({}),
     private readonly openImpl: () => Promise<void> = async () => undefined,
-    private readonly pairImpl?: (sasCb: (sas: string) => Promise<boolean>) => Promise<PairingRecord>,
+    private readonly pairImpl?: (sasCb: (sas: string) => Promise<boolean>, opts?: PairOptions) => Promise<PairingRecord>,
   ) {}
 
   get isOpen(): boolean {
@@ -32,9 +32,14 @@ export class FakeClient implements BridgeLike {
     this.open_ = true;
   }
 
-  async pair(_extName: string, _browser: string, confirmCodes: (sas: string) => Promise<boolean>): Promise<PairingRecord> {
+  async pair(
+    _extName: string,
+    _browser: string,
+    confirmCodes: (sas: string) => Promise<boolean>,
+    opts?: PairOptions,
+  ): Promise<PairingRecord> {
     if (!this.pairImpl) throw new BridgeError("transport");
-    return this.pairImpl(confirmCodes);
+    return this.pairImpl(confirmCodes, opts);
   }
 
   async request<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>> {

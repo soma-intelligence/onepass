@@ -56,6 +56,10 @@ export interface BgExt {
     id: string;
     getURL(path: string): string;
     onMessage: Event<MessageListener>;
+    /** The extension was installed or updated (absent in some test fakes). */
+    onInstalled?: Event<() => void>;
+    /** The browser profile started. */
+    onStartup?: Event<() => void>;
     connectNative(application: string): NativePort;
     /** Safari: one request to the app extension's handler, one reply. */
     sendNativeMessage?(application: string, message: unknown): Promise<unknown>;

@@ -101,6 +101,8 @@
   "popup.linkExtensionToOnepass": "Enlaza esta extensión con la app OnePass de este ordenador para rellenar tus inicios de sesión.",
   "popup.pairWithOnepass": "Enlazar con OnePass",
   "popup.pairing": "Enlazando…",
+  "popup.connecting": "Conectando con OnePass…",
+  "popup.connectedToOnepass": "Conectada a OnePass",
   "popup.openOnepassAppIf": "Abre la app OnePass si no está abierta.",
   "popup.compareCodes": "Compara los códigos",
   "popup.onepassAppMustShow": "La app OnePass debe mostrar el mismo código.",

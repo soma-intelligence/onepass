@@ -27,6 +27,11 @@ export interface Transport {
 // ---- Application requests (mirror of onepass_bridge::api) ----
 
 /** `passkey`: the passkey choice window. */
+/** `auto`: pair only if the app vouches for this browser (spec 2026-11-02-browser-auto-pairing). */
+export interface PairOptions {
+  auto?: boolean;
+}
+
 export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
@@ -450,6 +455,12 @@ export class BridgeClient {
 
   /** The next handshake envelope of type `t`, within `timeoutMs`. */
   private next<T extends EnvelopeType>(t: T, timeoutMs: number): Promise<Extract<Envelope, { t: T }>> {
+    return this.nextOf([t], timeoutMs);
+  }
+
+  /** The next handshake envelope, of one of `types`, within `timeoutMs`. */
+  private nextOf<T extends EnvelopeType>(types: readonly T[], timeoutMs: number): Promise<Extract<Envelope, { t: T }>> {
+    const t = types.join(" or ");
     if (this.failure) return Promise.reject(this.failure);
     const queued = this.inbox.shift();
     const got: Promise<Envelope> = queued
@@ -461,7 +472,8 @@ export class BridgeClient {
         });
     return got.then((env) => {
       try {
-        return expectType(env, t);
+        const want = types.find((x) => x === env.t) ?? (types[0] as T);
+        return expectType(env, want);
       } catch (e) {
         this.fail(e as Error);
         throw e;
@@ -516,6 +528,7 @@ export class BridgeClient {
     extName: string,
     browser: string,
     confirmCodes: (sas: string) => Promise<boolean>,
+    opts: PairOptions = {},
   ): Promise<PairingRecord> {
     this.beginHandshake();
     let state: ExtPairing | undefined;
@@ -534,26 +547,40 @@ export class BridgeClient {
       ]);
       state = started.state;
       const st = state;
-      this.send(started.hello);
+      this.send(opts.auto ? { ...started.hello, auto: true } : started.hello);
       const offer = await this.next("pair_offer", this.stepTimeoutMs);
       const { reveal, sas } = await st.onOffer(offer);
       this.send(reveal);
-      const hostVerified = (async () => {
-        await this.next("pair_sas", this.stepTimeoutMs);
-        // The host waits for its user before `pair_done`.
-        const done = await this.next("pair_done", PAIRING_TIMEOUT_MS);
-        await st.onDone(done);
-      })();
-      const userAgreed = Promise.resolve()
-        .then(() => confirmCodes(sas))
-        .then((ok) => {
-          if (!ok) throw new BridgeError("refused", "codes rejected");
-        });
-      quiet(hostVerified);
-      quiet(userAgreed);
-      // A user step that never settles still ends at the deadline or when
-      // the connection fails.
-      await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
+      if (opts.auto) {
+        // No person on either side: the app vouched for this browser by its
+        // code signature, or it refuses (an older app asking for the code
+        // is refused here: the code flow starts only from the user's click).
+        const autoVerified = (async () => {
+          const step = await this.nextOf(["pair_auto", "pair_sas"], this.stepTimeoutMs);
+          if (step.t !== "pair_auto") throw new BridgeError("refused", "the app asks for the code");
+          const done = await this.next("pair_done", this.stepTimeoutMs);
+          await st.onDone(done);
+        })();
+        quiet(autoVerified);
+        await Promise.race([autoVerified, failed.promise]);
+      } else {
+        const hostVerified = (async () => {
+          await this.next("pair_sas", this.stepTimeoutMs);
+          // The host waits for its user before `pair_done`.
+          const done = await this.next("pair_done", PAIRING_TIMEOUT_MS);
+          await st.onDone(done);
+        })();
+        const userAgreed = Promise.resolve()
+          .then(() => confirmCodes(sas))
+          .then((ok) => {
+            if (!ok) throw new BridgeError("refused", "codes rejected");
+          });
+        quiet(hostVerified);
+        quiet(userAgreed);
+        // A user step that never settles still ends at the deadline or when
+        // the connection fails.
+        await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
+      }
       const out = await Promise.race([st.confirm(), failed.promise]);
       stored = out.record;
       this.send(out.confirm);

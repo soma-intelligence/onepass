@@ -224,8 +224,12 @@ export const parseLocked = (v: unknown): { locked: boolean } | null => guard(() 
 export const parseStatus = (v: unknown): PopupStatus | null =>
   guard(() => {
     const o = obj(v);
-    return { locked: bool(o.locked), account: str(o.account, 320), vaults: num(o.vaults) };
+    const s: PopupStatus = { locked: bool(o.locked), account: str(o.account, 320), vaults: num(o.vaults) };
+    if (o.connected === true) s.connected = true;
+    return s;
   });
+
+export const parsePaired = (v: unknown): { paired: boolean } | null => guard(() => ({ paired: bool(obj(v).paired) }));
 
 export const parseSas = (v: unknown): { sas: string } | null =>
   guard(() => {

@@ -324,6 +324,8 @@ export type UiToBg =
   | { type: "popup_history" }
   /** "Remplir" in the generator: into the new password fields of the active tab. */
   | { type: "popup_fill_generated"; password: string }
+  /** "Associer à OnePass": pair without a code if the app vouches for this browser. */
+  | { type: "popup_pair_auto" }
   | { type: "popup_pair_start" }
   | { type: "popup_pair_approve" }
   | { type: "popup_pair_cancel" }

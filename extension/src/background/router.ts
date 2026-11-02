@@ -434,6 +434,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "popup_unlock":
       case "popup_suggestions":
       case "popup_history":
+      case "popup_pair_auto":
       case "popup_pair_start":
       case "popup_pair_approve":
       case "popup_pair_cancel":

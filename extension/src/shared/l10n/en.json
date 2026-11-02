@@ -101,6 +101,8 @@
   "popup.linkExtensionToOnepass": "Link this extension to the OnePass app on this computer to fill your logins.",
   "popup.pairWithOnepass": "Pair with OnePass",
   "popup.pairing": "Pairing…",
+  "popup.connecting": "Connecting to OnePass…",
+  "popup.connectedToOnepass": "Connected to OnePass",
   "popup.openOnepassAppIf": "Open the OnePass app if it is not open.",
   "popup.compareCodes": "Compare the codes",
   "popup.onepassAppMustShow": "The OnePass app must show the same code.",

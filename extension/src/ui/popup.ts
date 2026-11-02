@@ -44,6 +44,7 @@ import {
   parseItem,
   parseItems,
   parseLocked,
+  parsePaired,
   parseSas,
   parseStatus,
   parseSuggestions,
@@ -244,9 +245,26 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         null,
         t("popup.linkExtensionToOnepass"),
       ),
-      h("div", { class: "actions" }, button(t("popup.pairWithOnepass"), "btn btn-primary", () => void track(startPairing()))),
+      h("div", { class: "actions" }, button(t("popup.pairWithOnepass"), "btn btn-primary", () => void track(connect()))),
       err ? h("p", { class: "error-line", attrs: { role: "alert" } }, err) : null,
     );
+  }
+
+  /**
+   * "Pair with OnePass": first without a code (the app vouches for this browser by its
+   * signature), then the code comparison when the app cannot.
+   */
+  async function connect(): Promise<void> {
+    center(mark("l"), h("h1", null, t("popup.connecting")), h("p", null, t("popup.openOnepassAppIf")));
+    const r = await call(deps.send, { type: "popup_pair_auto" }, parsePaired);
+    if (!r.ok) {
+      if (r.code === "host_missing") renderHostMissing();
+      else renderUnpaired(errorText(r.code));
+      return;
+    }
+    if (!r.value.paired) return startPairing();
+    // The status says "connected" once: load shows the toast.
+    await load();
   }
 
   async function startPairing(): Promise<void> {
@@ -906,8 +924,11 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       return;
     }
     status = r.value;
+    // The extension paired itself with the app while opening: said once, over the rendered view.
+    const connected = status.connected === true;
     if (status.locked) {
       renderLocked();
+      if (connected) toast(t("popup.connectedToOnepass"));
       return;
     }
     const s = await call(deps.send, { type: "popup_suggestions" }, parseSuggestions);
@@ -918,6 +939,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     results = null;
     view = "none";
     renderMain();
+    if (connected) toast(t("popup.connectedToOnepass"));
   }
 
   center(mark("l"));

@@ -157,6 +157,8 @@ export interface PopupStatus {
   locked: boolean;
   account: string;
   vaults: number;
+  /** The extension just paired itself with the app (no code): the popup says "Connected". */
+  connected?: boolean;
 }
 
 export interface PopupSuggestions {

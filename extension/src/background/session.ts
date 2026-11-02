@@ -8,7 +8,7 @@
 // (spec 10, plus `unpaired`, `host_missing`, `timeout`): a raw host message
 // is never surfaced.
 import { BridgeError, wipe } from "../bridge/bytes";
-import { BridgeAppError, type Op, type RequestFor, type ResponseFor } from "../bridge/client";
+import { BridgeAppError, type Op, type PairOptions, type RequestFor, type ResponseFor } from "../bridge/client";
 import type { PairingRecord } from "../bridge/pairing";
 import type { Store } from "./store";
 
@@ -16,7 +16,12 @@ import type { Store } from "./store";
 export interface BridgeLike {
   readonly isOpen: boolean;
   open(record: PairingRecord): Promise<void>;
-  pair(extName: string, browser: string, confirmCodes: (sas: string) => Promise<boolean>): Promise<PairingRecord>;
+  pair(
+    extName: string,
+    browser: string,
+    confirmCodes: (sas: string) => Promise<boolean>,
+    opts?: PairOptions,
+  ): Promise<PairingRecord>;
   request<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>>;
   close(): void;
 }
@@ -110,6 +115,11 @@ export interface SessionDeps {
   /** A client on a fresh native port. */
   newClient: () => BridgeLike;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Without a stored pairing, pair without a code if the app vouches for
+   * this browser (it adopts its client on success). True when paired.
+   */
+  autoPair?: () => Promise<boolean>;
 }
 
 /** An opening overtaken by `adopt` or `close`: its waiters ask again. */
@@ -232,7 +242,12 @@ export class Session {
     const record = await this.deps.store.getPairing();
     try {
       if (generation !== this.generation) throw SUPERSEDED;
-      if (!record) throw new BgError("unpaired");
+      if (!record) {
+        // A success adopts the pairing's client, which supersedes this opening.
+        // A refusal leaves the manual pairing; a missing app is reported.
+        if (this.deps.autoPair && (await this.deps.autoPair())) throw SUPERSEDED;
+        throw new BgError("unpaired");
+      }
       for (let attempt = 0; ; attempt++) {
         if (generation !== this.generation) throw SUPERSEDED;
         let client: BridgeLike | undefined;

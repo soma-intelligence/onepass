@@ -101,6 +101,8 @@
   "popup.linkExtensionToOnepass": "Collega questa estensione all'app OnePass di questo computer per compilare i tuoi login.",
   "popup.pairWithOnepass": "Abbina a OnePass",
   "popup.pairing": "Abbinamento…",
+  "popup.connecting": "Connessione a OnePass…",
+  "popup.connectedToOnepass": "Connessa a OnePass",
   "popup.openOnepassAppIf": "Apri l'app OnePass se non è aperta.",
   "popup.compareCodes": "Confronta i codici",
   "popup.onepassAppMustShow": "L'app OnePass deve mostrare lo stesso codice.",

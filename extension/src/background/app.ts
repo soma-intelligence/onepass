@@ -84,8 +84,21 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
   const openApp = opts.openApp ?? (() => openAppNative(ext.runtime));
-  const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
-  const pairing = new PairingFlow({ store, session, newClient, ...(opts.browser ? { browser: opts.browser } : {}) });
+  // Without a pairing, the session first asks the app to pair without a code
+  // (spec 2026-11-02-browser-auto-pairing).
+  const session: Session = new Session({
+    store,
+    newClient,
+    autoPair: (): Promise<boolean> => pairing.autoPair(),
+    ...(opts.sleep ? { sleep: opts.sleep } : {}),
+  });
+  const pairing: PairingFlow = new PairingFlow({
+    store,
+    session,
+    newClient,
+    ...(opts.browser ? { browser: opts.browser } : {}),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
   const frames = new Frames(ext.webNavigation);
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const keys = new KeyRelay();
@@ -594,6 +607,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
       store.restrictLocal();
+      // Connect at install and browser start, so that the first popup is already connected.
+      const connect = () => void session.getClient().catch(() => undefined);
+      ext.runtime.onInstalled?.addListener(connect);
+      ext.runtime.onStartup?.addListener(connect);
       menus.install(ext);
       overlays.tokens.install(ext);
       savePrompts.tokens.install(ext);

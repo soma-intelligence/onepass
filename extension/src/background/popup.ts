@@ -12,7 +12,7 @@
 import type { FillField, Summary } from "../bridge/client";
 import { parseOrigin } from "../shared/domain";
 import type { FormInfo, FormKind, PlanOut } from "../shared/messages";
-import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupSuggestions } from "../shared/ui";
+import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupStatus, PopupSuggestions } from "../shared/ui";
 import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
@@ -39,7 +39,10 @@ export interface PopupDeps {
   session: Pick<Session, "request" | "onLocked">;
   /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
   openApp?: () => Promise<boolean>;
-  pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing">;
+  pairing: Pick<
+    PairingFlow,
+    "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing" | "autoPair" | "takeJustPaired"
+  >;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
   /**
@@ -188,14 +191,14 @@ export class PopupBackend {
     return { t, host: tab.host, kind: form.kind };
   }
 
-  async status() {
+  async status(): Promise<PopupStatus> {
     const s = await this.deps.session.request({ op: "status" });
     if (s.locked) {
       this.known.clear();
       this.clearHistory();
       this.deps.onLock?.();
     }
-    return s;
+    return this.deps.pairing.takeJustPaired() ? { ...s, connected: true } : s;
   }
 
   async suggestions(): Promise<PopupSuggestions> {
@@ -328,6 +331,7 @@ export class PopupBackend {
       popup_fill_generated: async (m) => this.fillGenerated(m.password),
       popup_generate: async (m) => this.generate(m.kind, m.length, m.symbols),
       popup_history: async () => this.history(),
+      popup_pair_auto: async () => ({ paired: await this.deps.pairing.autoPair(true) }),
       popup_pair_start: async () => this.deps.pairing.startPairing(),
       popup_pair_approve: async () => {
         await this.deps.pairing.confirmPairing();
