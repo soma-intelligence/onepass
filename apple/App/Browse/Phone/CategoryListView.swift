@@ -75,6 +75,22 @@ struct CategoryListView: View {
                     .fixedSize()
             }
             .sharedBackgroundVisibility(.hidden)
+            // A new item of this list's type (Supprimés récemment and À proximité have none).
+            if filter != .trash, filter != .nearby {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Nouvel élément", systemImage: "plus") { addItem() }
+                        .accessibilityIdentifier("categoryList.new")
+                }
+            }
+        }
+    }
+
+    /// A category list opens the editor of that type at once; the other lists ask for the type.
+    private func addItem() {
+        if case .category(let type) = filter {
+            model.perform(.newItem(type))
+        } else {
+            model.showNewItemPicker = true
         }
     }
 
