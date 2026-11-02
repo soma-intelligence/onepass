@@ -103,6 +103,8 @@ public struct VaultEnvironment: Sendable {
         let clock = SystemClock()
         let group = sharedAccessGroup()
         let keychain = SystemKeychain(service: keychainService, accessGroup: group)
+        // Hedged randomness for every key the core makes from here on (best effort).
+        DeviceRngSeed.install(keychain: keychain)
         let keyring = SecureEnclaveKeyring(accessGroup: group, allowWatch: settings.allowWatchUnlock)
         return VaultEnvironment(
             databaseURL: databaseURL ?? container.databaseURL,

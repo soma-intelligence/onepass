@@ -15,6 +15,9 @@ data-encoding.workspace = true
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
 unicode-normalization = "0.1.26"
 slh-dsa = "=0.1.0"
+# Seeded ML-KEM-1024 key generation from hedged randomness (crypto::kem::
+# mlkem_generate): aws-lc has none. Keygen only, checked by aws-lc after.
+libcrux-ml-kem = { version = "0.0.11", default-features = false, features = ["mlkem1024"] }
 # Not used directly: slh-dsa 0.1.0 only builds against this prerelease
 # (later 2.3.0-pre releases moved to rand_core 0.9). Remove with slh-dsa 0.2.
 signature = "=2.3.0-pre.4"

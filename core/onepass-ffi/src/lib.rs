@@ -311,6 +311,23 @@ fn recipe_to_core(r: &FfiPasswordRecipe) -> Result<Recipe, OnePassError> {
     })
 }
 
+/// A new 32-byte device seed for the hedged random source (core
+/// `crypto::random`), made once per install: the app stores it in its
+/// keychain (this device only, never synced) and passes it to
+/// `set_device_rng_seed` at every launch.
+#[uniffi::export]
+pub fn new_device_rng_seed() -> Result<Vec<u8>, OnePassError> {
+    Ok(onepass_core::crypto::random::new_device_seed()?.to_vec())
+}
+
+/// Install this device's seed in the hedged random source. Until it is
+/// called, the core's randomness is OS random only.
+#[uniffi::export]
+pub fn set_device_rng_seed(seed: Vec<u8>) -> Result<(), OnePassError> {
+    let seed = zeroize::Zeroizing::new(seed);
+    Ok(onepass_core::crypto::random::set_device_seed(&seed)?)
+}
+
 #[uniffi::export]
 pub fn generate_password(recipe: FfiPasswordRecipe) -> Result<String, OnePassError> {
     Ok(generator::generate(&recipe_to_core(&recipe)?)?.to_string())
