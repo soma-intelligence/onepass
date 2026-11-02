@@ -151,7 +151,7 @@ final class ListsFeedbackCaptureUITests: XCTestCase {
         app.terminate()
 
         // Search: before typing, results, nothing found.
-        app = launch(["-OnePassDemoTab", "search"], ready: "tab.search")
+        app = launch(["-OnePassDemoTab", "search"], ready: "search.browse.login")
         shot("06-search-start")
         app.terminate()
         app = launch(["-OnePassDemoQuery", "atlas"], ready: "list.row.API Cartes Atlas")
@@ -184,6 +184,7 @@ final class ListsFeedbackCaptureUITests: XCTestCase {
         // À proximité from Éléments (the simulator's location is set by the caller).
         app = launch(["-OnePassDemoTab", "items"], ready: "items.vaults.new")
         let nearby = app.descendants(matching: .any)["items.nearby"].firstMatch
+        if !nearby.waitForExistence(timeout: 5) { app.swipeUp() }
         if nearby.waitForExistence(timeout: 10) {
             nearby.tap()
             Thread.sleep(forTimeInterval: 3)
