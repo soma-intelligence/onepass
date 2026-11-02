@@ -25,6 +25,18 @@ export interface FieldSpec { role: Role; name: string; id: string; label: string
 export interface Honeypot { role: Role; name: string; style: HoneypotStyle; }
 export interface Passkey { credentialId: string /* base64url */; d: string /* hex scalar */; x: string; y: string /* base64url */; }
 export interface Account { username: string; password: string; totpSecret?: string; passkey?: Passkey; }
+/**
+ * Password rules a signup site enforces (server side) and states (page side). `via` lists where the page states them:
+ * `attributes` (minlength, maxlength, pattern), `passwordrules` (Apple attribute), `hints` (a sentence in the site language).
+ * Every part is stated by at least one of the `via` sources, so a policy is satisfiable by a reader of those sources.
+ */
+export interface PasswordPolicy {
+  min?: number; max?: number;
+  required?: ("upper" | "digit" | "special")[];
+  noSpecial?: boolean;
+  pattern?: string;
+  via: ("attributes" | "passwordrules" | "hints")[];
+}
 export interface Site {
   index: number; seed: string; host: string; brand: string; lang: Lang; labelLang: Lang;
   flow: FlowId; traits: TraitId[];
@@ -33,6 +45,7 @@ export interface Site {
   framework?: FrameworkId;        // simulated front-end framework of the forms (absent = "static")
   layout?: LayoutId;              // label and field arrangement of the forms (absent = "stacked")
   buttons: { submit: string; next?: string; sso?: string; passkey?: string };
+  passwordPolicy?: PasswordPolicy; // signup only: rules the relying party enforces (about 60 % of signup sites)
   account?: Account;              // login flows, signup (password undefined until created: use "")
   sso?: { provider: ProviderId; email: string };
   passkeyOnly?: boolean;          // login_passkey: passkey button without password

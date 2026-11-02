@@ -15,6 +15,7 @@
 import { randomBytes } from "node:crypto";
 import { totp } from "../../e2e/server.ts";
 import type { Role, Site, World } from "../gen/model.ts";
+import { policyViolation } from "../gen/policy.ts";
 import { PAGE_PATH, renderSitePage, stepPath } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
 import type { Exchange, LabState } from "./server.ts";
@@ -29,10 +30,16 @@ export function totpOk(secret: string, code: string, now: number): boolean {
   return [-PERIOD_MS, 0, PERIOD_MS].some((d) => totp(secret, now + d) === c);
 }
 
-/** A password as a generator makes it: 12 characters or more, at least three character classes. */
-export function looksGenerated(pw: string): boolean {
-  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z\d]/].filter((re) => re.test(pw)).length;
-  return pw.length >= 12 && classes >= 3;
+/**
+ * A password as a generator makes it: 12 characters or more, at least three character classes.
+ * Under a site policy, the length floor drops to the policy's maximum when that is below 12, and a
+ * `noSpecial` policy counts three classes (lower, upper, digit) since a special one is forbidden.
+ */
+export function looksGenerated(pw: string, policy?: Site["passwordPolicy"]): boolean {
+  const res = [/[a-z]/, /[A-Z]/, /\d/];
+  if (!policy?.noSpecial) res.push(/[^A-Za-z\d]/);
+  const classes = res.filter((re) => re.test(pw)).length;
+  return [...pw].length >= Math.min(12, policy?.max ?? 12) && classes >= 3;
 }
 
 // ---- expected values of the card / address / identity forms ----
@@ -229,8 +236,13 @@ export function handleSite(site: Site, x: Exchange, st: LabState, mode: "site" |
       return page(formPage, { error: MSG.signup });
     }
     // The generator's password, not any matching pair: a typed or empty-ish one does not count.
-    if (!looksGenerated(pw)) {
+    if (!looksGenerated(pw, site.passwordPolicy)) {
       note({ form: formName, ok: false, fields: p1 ? [p1] : [], reason: "weak_password" });
+      return page(formPage, { error: MSG.signup });
+    }
+    // The site's own rules, after the generated-looking check.
+    if (site.passwordPolicy && policyViolation(pw, site.passwordPolicy) !== undefined) {
+      note({ form: formName, ok: false, fields: p1 ? [p1] : [], reason: "policy" });
       return page(formPage, { error: MSG.signup });
     }
     st.created.set(site.host, { username: user, password: pw });

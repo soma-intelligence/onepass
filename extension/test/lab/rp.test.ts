@@ -2,7 +2,7 @@
 // Lab relying party checks: TOTP (RFC 6238 appendix B, SHA-1 vectors, one
 // period of tolerance) and the comparison of posted card / identity fields
 // with the fictional values of the vault fixture; signup passwords must look
-// generated.
+// generated; under a site policy (max length, no special) the check adapts.
 import { describe, expect, it } from "vitest";
 import { totp } from "../../e2e/server.ts";
 import patternsJson from "../../lab/corpus/patterns.json";
@@ -73,5 +73,13 @@ describe("looksGenerated", () => {
     expect(looksGenerated("Ab1-xyz")).toBe(false); // too short
     expect(looksGenerated("ABCDEFGH123!")).toBe(true); // upper, digit, symbol
     expect(looksGenerated("")).toBe(false);
+  });
+
+  it("looksGenerated with a policy", () => {
+    expect(looksGenerated("Kp4mvXtQzr", { max: 10, via: ["attributes"] })).toBe(true); // 10 chars, the policy's maximum
+    expect(looksGenerated("Kp4mvXtQzr")).toBe(false);
+    expect(looksGenerated("abcdefgh1234", { noSpecial: true, via: ["hints"] })).toBe(false);
+    expect(looksGenerated("Abcdefgh1234", { noSpecial: true, via: ["hints"] })).toBe(true); // lower, upper, digit
+    expect(looksGenerated("ABCDEFGH12!?", { noSpecial: true, via: ["hints"] })).toBe(false); // special does not count
   });
 });

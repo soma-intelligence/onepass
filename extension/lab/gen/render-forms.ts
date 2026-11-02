@@ -5,7 +5,8 @@
 // Pure string builders: no DOM, no clock, no randomness.
 import { frameworkAttrs, frameworkRoot, hashOf } from "./frameworks.ts";
 import { layoutCss, layoutField, layoutGroup } from "./layouts.ts";
-import type { FieldSpec, FrameworkId, Honeypot, LayoutId, Role } from "./model.ts";
+import type { FieldSpec, FrameworkId, Honeypot, LayoutId, PasswordPolicy, Role } from "./model.ts";
+import { policyAttrs, policyHint } from "./policy.ts";
 
 /** Roles a step of a multi-step form can hold: identifier, password, one-time code. */
 export const STEP_ROLES: readonly Role[] = ["username", "email", "password", "otp"];
@@ -41,6 +42,7 @@ button,.btn{display:inline-block;width:100%;margin:4px 0 0;padding:10px 14px;fon
 iframe{display:block;width:100%;height:1000px;border:0}
 lab-shell{display:block}
 footer{margin:24px 0;color:#86868b;font-size:12px;text-align:center}
+.hint{display:block;margin:4px 0 0;color:#6e6e73;font-size:12px}
 [hidden]{display:none!important}`;
 
 const MONTHS = Array.from({ length: 12 }, (_, k) => String(k + 1).padStart(2, "0"));
@@ -87,6 +89,8 @@ export interface FormSpec {
   labels?: Map<FieldSpec, string>; // label overrides (signup password order)
   honeypot?: Honeypot;             // already filtered to this page
   noAutocomplete: boolean;
+  /** Signup only: the rules the new-password fields state, and the site language of the hint sentence. */
+  passwordPolicy?: { policy: PasswordPolicy; lang: string };
   splitOtp: boolean;
   reveal: boolean;                 // email then password: password step hidden until "next"
   submit: string;
@@ -110,6 +114,9 @@ export function formHtml(spec: FormSpec, opts: FormLook = {}): string {
   const placeHoneypot = () => {
     if (spec.honeypot && !hpPlaced) { fieldParts.push(honeypotHtml(spec.honeypot)); hpPlaced = true; }
   };
+  const policy = spec.passwordPolicy;
+  const hint = policy ? policyHint(policy.policy, policy.lang) : undefined;
+  let hintPlaced = false;
   spec.fields.forEach((f, index) => {
     if (spec.honeypot?.role === f.role) placeHoneypot();
     const auto = spec.noAutocomplete ? undefined : f.autocomplete;
@@ -119,7 +126,16 @@ export function formHtml(spec: FormSpec, opts: FormLook = {}): string {
       ? otpCells({ ...f, label }, auto, mark)
       : layoutField(layout, {
         id: esc(f.id), label: esc(label), select: f.type === "select",
-        control: (extra) => control(f, auto, `${extra}${frameworkAttrs(fw, hash, f.name)}${mark}`),
+        control: (extra) => {
+          const stated = policy && f.role === "new_password" ? policyAttrs(policy.policy, esc) : "";
+          let html = control(f, auto, `${extra}${frameworkAttrs(fw, hash, f.name)}${mark}${stated}`);
+          // The written hint follows the first new-password field, where a real page puts it.
+          if (hint !== undefined && f.role === "new_password" && !hintPlaced) {
+            hintPlaced = true;
+            html += `<small class="hint">${esc(hint)}</small>`;
+          }
+          return html;
+        },
       });
     if (spec.reveal && f.role === "password") html = `<div id="lab-pw-step" hidden>${html}</div>`;
     fieldParts.push(html);

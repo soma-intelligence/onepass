@@ -186,7 +186,9 @@ function mountedForm(site: Site, page: PageId, action: string, step = 0, labelMa
   const hp = site.honeypot && fields.some((f) => f.role === site.honeypot!.role) ? site.honeypot : undefined;
   const spec: FormSpec = {
     action, fields, labels: site.flow === "signup" ? signupLabels(site) : undefined, honeypot: hp,
-    noAutocomplete: has("no_autocomplete"), splitOtp: page === "otp" && site.totpCells === true, reveal,
+    noAutocomplete: has("no_autocomplete"),
+    ...(site.flow === "signup" && site.passwordPolicy ? { passwordPolicy: { policy: site.passwordPolicy, lang: site.lang } } : {}),
+    splitOtp: page === "otp" && site.totpCells === true, reveal,
     submit: page === "otp" ? t(site.lang, "verify") : firstStep ? site.buttons.next ?? site.buttons.submit
       : site.steps && step < site.steps.length - 1 ? site.buttons.next ?? site.buttons.submit : site.buttons.submit,
     next: site.buttons.next,

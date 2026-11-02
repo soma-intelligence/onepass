@@ -13,6 +13,7 @@ import { countryCases } from "./cases.ts";
 import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, passkeyPkcs8, password, person, totpSecret, userHandle } from "./data.ts";
 import { GENERATOR_VERSION } from "./model.ts";
 import { LAYOUTS } from "./layouts.ts";
+import { drawPolicy, POLICY_RATE } from "./policy.ts";
 import { DEFAULT_PROFILE_ID, drawProfiles, type Profile } from "./population.ts";
 import type {
   Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, HoneypotStyle, IdpAccount, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, Scenario, Site, TraitId, World,
@@ -398,6 +399,9 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
     item = login(base.brand, url, "domain", { username: acct.email }, { login_methods: [{ provider, account_title: acct.itemTitle }] });
   } else if (flow === "signup") {
     site.account = { username: who.email, password: "" };
+    // Own streams: drawing a policy shifts nothing else of the site.
+    const rp = r.fork("policy");
+    if (rp.chance(POLICY_RATE)) site.passwordPolicy = drawPolicy(rp.fork("draw"), lang);
   } else if (flow === "checkout_card") {
     const c = card(ra);
     site.cardTitle = `Carte ${base.brand}`;
