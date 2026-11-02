@@ -2172,13 +2172,8 @@
       }
     },
     "accounts.add" : {
+      "comment" : "Account menu and Settings > Accounts: button and sheet title to add another account on this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un compte"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2191,23 +2186,23 @@
             "value" : "Añadir cuenta"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un compte"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aggiungi account"
           }
         }
-      },
-      "comment" : "Account menu and Settings > Accounts: button and sheet title to add another account on this device."
+      }
     },
     "accounts.add.create" : {
+      "comment" : "Add Account: create a new account (its own sign up).",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Créer un compte"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2220,23 +2215,23 @@
             "value" : "Crear una cuenta"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Créer un compte"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Crea un account"
           }
         }
-      },
-      "comment" : "Add Account: create a new account (its own sign up)."
+      }
     },
     "accounts.add.footer" : {
+      "comment" : "Add Account: footer under the create and sign in buttons.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu peux annuler tant que le compte n'est pas créé."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2249,23 +2244,23 @@
             "value" : "Puedes cancelar mientras la cuenta no esté creada."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu peux annuler tant que le compte n'est pas créé."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puoi annullare finché l'account non è creato."
           }
         }
-      },
-      "comment" : "Add Account: footer under the create and sign in buttons."
+      }
     },
     "accounts.add.kind" : {
+      "comment" : "Add Account: header of the kind choice.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type de compte"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2278,23 +2273,23 @@
             "value" : "Tipo de cuenta"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type de compte"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tipo di account"
           }
         }
-      },
-      "comment" : "Add Account: header of the kind choice."
+      }
     },
     "accounts.add.kind.business.subtitle" : {
+      "comment" : "Add Account: description of a business account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les coffres de ton entreprise"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2307,23 +2302,23 @@
             "value" : "Las bóvedas de tu empresa"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les coffres de ton entreprise"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le casseforti della tua azienda"
           }
         }
-      },
-      "comment" : "Add Account: description of a business account."
+      }
     },
     "accounts.add.kind.footer" : {
+      "comment" : "Add Account: footer of the kind choice.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un compte séparé, avec son mot de passe maître et sa Secret Key. Tu passes de l'un à l'autre depuis le menu du compte."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2336,23 +2331,23 @@
             "value" : "Una cuenta separada, con su contraseña maestra y su Secret Key. Cambia de una a otra desde el menú de la cuenta."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un compte séparé, avec son mot de passe maître et sa Secret Key. Tu passes de l'un à l'autre depuis le menu du compte."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un account separato, con la sua password principale e la sua Secret Key. Passi dall'uno all'altro dal menu dell'account."
           }
         }
-      },
-      "comment" : "Add Account: footer of the kind choice."
+      }
     },
     "accounts.add.kind.managed.subtitle" : {
+      "comment" : "Add Account: description of an organization account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Géré par le serveur de ton organisation"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2365,23 +2360,23 @@
             "value" : "Gestionada por el servidor de tu organización"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Géré par le serveur de ton organisation"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gestito dal server della tua organizzazione"
           }
         }
-      },
-      "comment" : "Add Account: description of an organization account."
+      }
     },
     "accounts.add.kind.managed.unavailable" : {
+      "comment" : "Add Account: why an organization account cannot be added yet.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bientôt : demande un serveur OnePass à ton organisation"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2394,23 +2389,23 @@
             "value" : "Próximamente: requiere el servidor OnePass de tu organización"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bientôt : demande un serveur OnePass à ton organisation"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "In arrivo: serve il server OnePass della tua organizzazione"
           }
         }
-      },
-      "comment" : "Add Account: why an organization account cannot be added yet."
+      }
     },
     "accounts.add.kind.personal.subtitle" : {
+      "comment" : "Add Account: description of a personal account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pour toi ou un proche"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2423,23 +2418,23 @@
             "value" : "Para ti o alguien cercano"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour toi ou un proche"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Per te o una persona vicina"
           }
         }
-      },
-      "comment" : "Add Account: description of a personal account."
+      }
     },
     "accounts.add.look" : {
+      "comment" : "Add Account: header of the name and color section.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nom et couleur"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2452,23 +2447,23 @@
             "value" : "Nombre y color"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom et couleur"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nome e colore"
           }
         }
-      },
-      "comment" : "Add Account: header of the name and color section."
+      }
     },
     "accounts.add.signIn" : {
+      "comment" : "Add Account: sign in to an account that exists, with its Emergency Kit.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se connecter avec un Emergency Kit"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2481,23 +2476,23 @@
             "value" : "Iniciar sesión con un Emergency Kit"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se connecter avec un Emergency Kit"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Accedi con un Emergency Kit"
           }
         }
-      },
-      "comment" : "Add Account: sign in to an account that exists, with its Emergency Kit."
+      }
     },
     "accounts.color.blue" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bleu"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2510,23 +2505,23 @@
             "value" : "Azul"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bleu"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blu"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.graphite" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Graphite"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2539,23 +2534,23 @@
             "value" : "Grafito"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graphite"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Grafite"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.green" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vert"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2568,23 +2563,23 @@
             "value" : "Verde"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vert"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verde"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.indigo" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Indigo"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2597,23 +2592,23 @@
             "value" : "Índigo"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indigo"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Indaco"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.orange" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Orange"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2626,23 +2621,23 @@
             "value" : "Naranja"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orange"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Arancione"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.pink" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rose"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2655,23 +2650,23 @@
             "value" : "Rosa"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rose"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rosa"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.purple" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Violet"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2684,23 +2679,23 @@
             "value" : "Morado"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Violet"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Viola"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.color.teal" : {
+      "comment" : "VoiceOver name of an account color.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bleu canard"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2713,23 +2708,23 @@
             "value" : "Verde azulado"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bleu canard"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verde acqua"
           }
         }
-      },
-      "comment" : "VoiceOver name of an account color."
+      }
     },
     "accounts.detail.color" : {
+      "comment" : "Account settings: header of the color swatches.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couleur"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2742,23 +2737,23 @@
             "value" : "Color"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couleur"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Colore"
           }
         }
-      },
-      "comment" : "Account settings: header of the color swatches."
+      }
     },
     "accounts.detail.domains" : {
+      "comment" : "Account settings: header of the work domains whose logins AutoFill takes from this account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Domaines de travail"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2771,23 +2766,23 @@
             "value" : "Dominios de trabajo"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Domaines de travail"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Domini di lavoro"
           }
         }
-      },
-      "comment" : "Account settings: header of the work domains whose logins AutoFill takes from this account."
+      }
     },
     "accounts.detail.domains.footer" : {
+      "comment" : "Account settings: footer of the work domains.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sur ces sites et leurs sous-domaines, le remplissage automatique propose les éléments de ce compte. Ailleurs, il propose ceux du compte principal."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2800,23 +2795,23 @@
             "value" : "En estos sitios y sus subdominios, el autorrelleno ofrece los elementos de esta cuenta. En los demás, los de la cuenta principal."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur ces sites et leurs sous-domaines, le remplissage automatique propose les éléments de ce compte. Ailleurs, il propose ceux du compte principal."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Su questi siti e i loro sottodomini, il riempimento automatico propone gli elementi di questo account. Altrove propone quelli dell'account principale."
           }
         }
-      },
-      "comment" : "Account settings: footer of the work domains."
+      }
     },
     "accounts.detail.domains.placeholder" : {
+      "comment" : "Account settings: placeholder of the field that adds a work domain.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "exemple.com"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2829,23 +2824,23 @@
             "value" : "ejemplo.com"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "exemple.com"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "esempio.com"
           }
         }
-      },
-      "comment" : "Account settings: placeholder of the field that adds a work domain."
+      }
     },
     "accounts.detail.identity" : {
+      "comment" : "Account settings: header of the name and kind section.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compte"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2858,23 +2853,23 @@
             "value" : "Cuenta"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compte"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account"
           }
         }
-      },
-      "comment" : "Account settings: header of the name and kind section."
+      }
     },
     "accounts.detail.kind" : {
+      "comment" : "Account settings: label of the account's kind (personal, business, organization).",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2887,23 +2882,23 @@
             "value" : "Tipo"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tipo"
           }
         }
-      },
-      "comment" : "Account settings: label of the account's kind (personal, business, organization)."
+      }
     },
     "accounts.detail.name" : {
+      "comment" : "Account settings and Add Account: the account's name field.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nom"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2916,23 +2911,23 @@
             "value" : "Nombre"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nome"
           }
         }
-      },
-      "comment" : "Account settings and Add Account: the account's name field."
+      }
     },
     "accounts.detail.remove" : {
+      "comment" : "Account settings: button that takes an added account off this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retirer de cet appareil"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2945,23 +2940,23 @@
             "value" : "Quitar de este dispositivo"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer de cet appareil"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rimuovi da questo dispositivo"
           }
         }
-      },
-      "comment" : "Account settings: button that takes an added account off this device."
+      }
     },
     "accounts.detail.remove.confirm" : {
+      "comment" : "Confirmation button that takes the account off this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retirer"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2974,23 +2969,23 @@
             "value" : "Quitar"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rimuovi"
           }
         }
-      },
-      "comment" : "Confirmation button that takes the account off this device."
+      }
     },
     "accounts.detail.remove.footer" : {
+      "comment" : "Account settings: footer of the remove button.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le compte reste dans iCloud et sur tes autres appareils. Tu pourras le rajouter avec son Emergency Kit."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3003,23 +2998,23 @@
             "value" : "La cuenta sigue en iCloud y en tus otros dispositivos. Puedes volver a añadirla con su Emergency Kit."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le compte reste dans iCloud et sur tes autres appareils. Tu pourras le rajouter avec son Emergency Kit."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'account resta in iCloud e sui tuoi altri dispositivi. Puoi aggiungerlo di nuovo con il suo Emergency Kit."
           }
         }
-      },
-      "comment" : "Account settings: footer of the remove button."
+      }
     },
     "accounts.detail.remove.message" : {
+      "comment" : "Confirmation message before an account leaves this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ses éléments, sa Secret Key et ses réglages quittent cet appareil."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3032,23 +3027,23 @@
             "value" : "Sus elementos, su Secret Key y sus ajustes salen de este dispositivo."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses éléments, sa Secret Key et ses réglages quittent cet appareil."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "I suoi elementi, la sua Secret Key e le sue impostazioni lasciano questo dispositivo."
           }
         }
-      },
-      "comment" : "Confirmation message before an account leaves this device."
+      }
     },
     "accounts.detail.remove.title" : {
+      "comment" : "Confirmation title before an account leaves this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retirer ce compte de cet appareil ?"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3061,23 +3056,23 @@
             "value" : "¿Quitar esta cuenta de este dispositivo?"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer ce compte de cet appareil ?"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rimuovere questo account da questo dispositivo?"
           }
         }
-      },
-      "comment" : "Confirmation title before an account leaves this device."
+      }
     },
     "accounts.kind.business" : {
+      "comment" : "Kind of account: a business account the user owns (a vault with his company).",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Professionnel"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3090,23 +3085,23 @@
             "value" : "Profesional"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Professionnel"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lavoro"
           }
         }
-      },
-      "comment" : "Kind of account: a business account the user owns (a vault with his company)."
+      }
     },
     "accounts.kind.managed" : {
+      "comment" : "Kind of account: an account managed by an organization's server.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Organisation"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3119,23 +3114,23 @@
             "value" : "Organización"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Organizzazione"
           }
         }
-      },
-      "comment" : "Kind of account: an account managed by an organization's server."
+      }
     },
     "accounts.kind.personal" : {
+      "comment" : "Kind of account: a personal account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Personnel"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3148,23 +3143,23 @@
             "value" : "Personal"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personnel"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Personale"
           }
         }
-      },
-      "comment" : "Kind of account: a personal account."
+      }
     },
     "accounts.lockAll" : {
+      "comment" : "Account menu: lock every account of this device.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tout verrouiller"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3177,23 +3172,23 @@
             "value" : "Bloquear todo"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout verrouiller"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocca tutto"
           }
         }
-      },
-      "comment" : "Account menu: lock every account of this device."
+      }
     },
     "accounts.name.default" : {
+      "comment" : "Name shown for an account with no name and no profile name.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mon compte"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3206,23 +3201,23 @@
             "value" : "Mi cuenta"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mon compte"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Il mio account"
           }
         }
-      },
-      "comment" : "Name shown for an account with no name and no profile name."
+      }
     },
     "accounts.row.locked" : {
+      "comment" : "VoiceOver label of the lock icon next to a locked account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verrouillé"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3235,23 +3230,23 @@
             "value" : "Bloqueada"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verrouillé"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bloccato"
           }
         }
-      },
-      "comment" : "VoiceOver label of the lock icon next to a locked account."
+      }
     },
     "accounts.search.locked.footer" : {
+      "comment" : "Search all accounts: footer under the accounts that are locked and not searched.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ces comptes sont verrouillés : déverrouille-les pour y chercher."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3264,23 +3259,23 @@
             "value" : "Estas cuentas están bloqueadas. Desbloquéalas para buscar en ellas."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces comptes sont verrouillés : déverrouille-les pour y chercher."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questi account sono bloccati. Sbloccali per cercarvi."
           }
         }
-      },
-      "comment" : "Search all accounts: footer under the accounts that are locked and not searched."
+      }
     },
     "accounts.search.prompt" : {
+      "comment" : "Search all accounts: placeholder of the search field.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechercher dans les comptes déverrouillés"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3293,23 +3288,23 @@
             "value" : "Buscar en las cuentas desbloqueadas"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans les comptes déverrouillés"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cerca negli account sbloccati"
           }
         }
-      },
-      "comment" : "Search all accounts: placeholder of the search field."
+      }
     },
     "accounts.searchAll" : {
+      "comment" : "Account menu: search the items of every unlocked account (shown only when the user turned it on).",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechercher dans tous les comptes"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3322,23 +3317,23 @@
             "value" : "Buscar en todas las cuentas"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans tous les comptes"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cerca in tutti gli account"
           }
         }
-      },
-      "comment" : "Account menu: search the items of every unlocked account (shown only when the user turned it on)."
+      }
     },
     "accounts.settings.footer" : {
+      "comment" : "Settings > Accounts: footer under the list of accounts.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chaque compte a son mot de passe maître, sa Secret Key et son verrouillage. Rien ne passe d'un compte à l'autre."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3351,23 +3346,23 @@
             "value" : "Cada cuenta tiene su contraseña maestra, su Secret Key y su bloqueo. Nada pasa de una cuenta a otra."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque compte a son mot de passe maître, sa Secret Key et son verrouillage. Rien ne passe d'un compte à l'autre."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ogni account ha la sua password principale, la sua Secret Key e il suo blocco. Niente passa da un account all'altro."
           }
         }
-      },
-      "comment" : "Settings > Accounts: footer under the list of accounts."
+      }
     },
     "accounts.settings.unifiedSearch" : {
+      "comment" : "Settings > Accounts: toggle that allows searching every unlocked account at once.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recherche dans tous les comptes"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3380,23 +3375,23 @@
             "value" : "Buscar en todas las cuentas"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche dans tous les comptes"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cerca in tutti gli account"
           }
         }
-      },
-      "comment" : "Settings > Accounts: toggle that allows searching every unlocked account at once."
+      }
     },
     "accounts.settings.unifiedSearch.footer" : {
+      "comment" : "Settings > Accounts: footer of the unified search toggle.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajoute « Rechercher dans tous les comptes » au menu du compte. Seuls les comptes déverrouillés sont cherchés. Sinon, chaque compte ne montre que ses éléments."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3409,23 +3404,23 @@
             "value" : "Añade «Buscar en todas las cuentas» al menú de la cuenta. Solo se buscan las cuentas desbloqueadas. Si no, cada cuenta muestra solo sus elementos."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute « Rechercher dans tous les comptes » au menu du compte. Seuls les comptes déverrouillés sont cherchés. Sinon, chaque compte ne montre que ses éléments."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aggiunge «Cerca in tutti gli account» al menu dell'account. Si cerca solo negli account sbloccati. Altrimenti ogni account mostra solo i suoi elementi."
           }
         }
-      },
-      "comment" : "Settings > Accounts: footer of the unified search toggle."
+      }
     },
     "accounts.title" : {
+      "comment" : "Header of the accounts section in the account menu; title of Settings > Accounts.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comptes"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3438,14 +3433,19 @@
             "value" : "Cuentas"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comptes"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account"
           }
         }
-      },
-      "comment" : "Header of the accounts section in the account menu; title of Settings > Accounts."
+      }
     },
     "Accueil" : {
       "localizations" : {
@@ -9658,13 +9658,8 @@
       }
     },
     "common.add" : {
+      "comment" : "Glossary: shared Add button.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9677,23 +9672,23 @@
             "value" : "Añadir"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aggiungi"
           }
         }
-      },
-      "comment" : "Glossary: shared Add button."
+      }
     },
     "common.cancel" : {
+      "comment" : "Glossary: shared Cancel button.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuler"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9706,23 +9701,23 @@
             "value" : "Cancelar"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Annulla"
           }
         }
-      },
-      "comment" : "Glossary: shared Cancel button."
+      }
     },
     "common.done" : {
+      "comment" : "Glossary: shared Done button.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminé"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9735,14 +9730,19 @@
             "value" : "OK"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminé"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fine"
           }
         }
-      },
-      "comment" : "Glossary: shared Done button."
+      }
     },
     "Compare les codes" : {
       "localizations" : {
@@ -23864,6 +23864,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ripristinato"
+          }
+        }
+      }
+    },
+    "item.tags" : {
+      "comment" : "Label above an item's tags (lowercase like the other field labels).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tags"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "etiquetas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tags"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tag"
           }
         }
       }

@@ -286,7 +286,7 @@ struct ItemDetailView: View {
         if !item.tags.isEmpty {
             EditorCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    EditorLabel("tags")
+                    EditorLabel(String(localized: "item.tags"))
                     FlowLayout(spacing: 6) {
                         ForEach(item.tags, id: \.self) { tag in
                             Text(tag)

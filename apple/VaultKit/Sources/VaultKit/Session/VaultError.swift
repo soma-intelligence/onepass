@@ -229,11 +229,11 @@ public enum VaultError: Error, Equatable, Sendable {
     public static func integrityLabel(_ kind: String) -> String {
         switch kind {
         case "account_missing": String(localized: "Le compte a disparu du stockage.", bundle: VaultKitStrings.bundle)
-        case "vault_missing": String(localized: "Un vault a disparu du stockage.", bundle: VaultKitStrings.bundle)
+        case "vault_missing": String(localized: "integrity.vaultMissing", bundle: VaultKitStrings.bundle)
         case "manifest_rollback": String(localized: "Ancienne version rejouée.", bundle: VaultKitStrings.bundle)
         case "manifest_missing_item": String(localized: "Un élément a été retenu ou supprimé du stockage.", bundle: VaultKitStrings.bundle)
         case "manifest_unexpected_item": String(localized: "Un élément inconnu a été ajouté au stockage.", bundle: VaultKitStrings.bundle)
-        case "manifest_item_mismatch": String(localized: "Un élément ne correspond pas à la liste signée du vault.", bundle: VaultKitStrings.bundle)
+        case "manifest_item_mismatch": String(localized: "integrity.manifestItemMismatch", bundle: VaultKitStrings.bundle)
         case "commitment", "aead": String(localized: "Des données chiffrées ont été modifiées.", bundle: VaultKitStrings.bundle)
         case "signature", "params_unsigned": String(localized: "Une signature est invalide.", bundle: VaultKitStrings.bundle)
         case "params_downgrade": String(localized: "Les paramètres de sécurité du compte ont été affaiblis.", bundle: VaultKitStrings.bundle)

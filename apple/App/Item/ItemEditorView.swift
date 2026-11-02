@@ -75,7 +75,7 @@ struct ItemEditorView: View {
                     notesCard
                     locationsCard
                     VStack(alignment: .leading, spacing: 8) {
-                        EditorLabel("tags").padding(.leading, 16)
+                        EditorLabel(String(localized: "item.tags")).padding(.leading, 16)
                         TagEditor(draft: $editor.draft).padding(.horizontal, 16)
                     }
                     optionsCard

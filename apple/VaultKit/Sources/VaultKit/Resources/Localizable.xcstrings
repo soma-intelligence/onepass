@@ -4115,34 +4115,6 @@
         }
       }
     },
-    "Un vault a disparu du stockage." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A vault disappeared from storage."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una bóveda ha desaparecido del almacenamiento."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un vault a disparu du stockage."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una cassaforte è scomparsa dall'archivio."
-          }
-        }
-      }
-    },
     "Un élément a été retenu ou supprimé du stockage." : {
       "localizations" : {
         "en" : {
@@ -4195,34 +4167,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un elemento sconosciuto è stato aggiunto all'archivio."
-          }
-        }
-      }
-    },
-    "Un élément ne correspond pas à la liste signée du vault." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "An item doesn't match the vault's signed list."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un elemento no coincide con la lista firmada de la bóveda."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un élément ne correspond pas à la liste signée du vault."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un elemento non corrisponde all'elenco firmato della cassaforte."
           }
         }
       }
@@ -4469,6 +4413,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Città"
+          }
+        }
+      }
+    },
+    "integrity.manifestItemMismatch" : {
+      "comment" : "Integrity error: an item is not in the vault's signed list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An item doesn't match the vault's signed list."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento no coincide con la lista firmada de la bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un élément ne correspond pas à la liste signée du coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento non corrisponde all'elenco firmato della cassaforte."
+          }
+        }
+      }
+    },
+    "integrity.vaultMissing" : {
+      "comment" : "Integrity error: a vault is gone from storage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A vault disappeared from storage."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una bóveda ha desaparecido del almacenamiento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un coffre a disparu du stockage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una cassaforte è scomparsa dall'archivio."
           }
         }
       }
