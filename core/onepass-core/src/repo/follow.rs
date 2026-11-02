@@ -781,7 +781,11 @@ pub(crate) fn abandoned_rotation_rows<S: RecordStore + ?Sized>(
             .iter()
             .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
     );
-    for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
+    for kind in [
+        RecordKind::DeviceList,
+        RecordKind::VaultList,
+        RecordKind::SyncHome,
+    ] {
         rows.push((kind, left_id));
     }
     for (kind, id) in rows {
@@ -828,6 +832,8 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         mut drop_pending,
         device_keys,
     } = a;
+    // The new identity's home is pinned when first read, as its lists are:
+    // its chain starts at seq 1 under the new key.
     let chain = ChainState {
         sync_home: None,
         params_epoch: account.params.epoch,

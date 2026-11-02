@@ -51,6 +51,7 @@ use crate::lineage::{
 use crate::lists::{AccountList, ListBody, sign};
 use crate::manifest::{SeenManifest, sign_manifest};
 use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
+use crate::synchome::{SYNC_HOME_DOMAIN, SignedSyncHome, SyncBackend, SyncHomeBody};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
 use crate::vault::Vault;
 use crate::vaultlist::VaultListEntry;
@@ -156,6 +157,26 @@ fn first_list<E: AccountList>(
         Record {
             id,
             kind: E::KIND,
+            version: 1,
+            data: signed.encode(),
+        },
+        seen,
+    ))
+}
+
+/// The first `SyncHome` of a new identity: seq 1, no previous one.
+fn first_home(account: &Account, id: Id, backend: SyncBackend, at: i64) -> Result<(Record, Seen)> {
+    let body = SyncHomeBody::next(None, account.params.account_id, backend, at)?;
+    let seen = body.seen();
+    let sig = account
+        .keyset()
+        .signing
+        .sign(SYNC_HOME_DOMAIN, &body.encode())?;
+    let signed = SignedSyncHome { body, sig };
+    Ok((
+        Record {
+            id,
+            kind: RecordKind::SyncHome,
             version: 1,
             data: signed.encode(),
         },
@@ -334,6 +355,9 @@ impl<S: RecordStore> Repository<S> {
         let vault_list = self.read_list::<VaultListEntry>()?;
         let book = self.read_list::<ContactEntry>()?;
         let approvers = self.read_list::<ApproverEntry>()?;
+        // Where the account syncs (mailbox spec 4.13): the new identity
+        // opens its own chain on the same backend.
+        let home = self.sync_home()?;
 
         // The current password and Secret Key, with every unlock check, on
         // the records of the current identity (spec 6.6). This also gives
@@ -527,6 +551,17 @@ impl<S: RecordStore> Repository<S> {
             }
             None => None,
         };
+        // The home: seq 1 under the new identity, same backend, signed by
+        // the new key (a new identity opens a new chain). Phase 1, before
+        // the lineage record that announces the rotation.
+        let home_seen = match home {
+            Some(h) => {
+                let (rec, seen) = first_home(&account, new_id, h.backend, at)?;
+                writes.push((rec, None));
+                Some(seen)
+            }
+            None => None,
+        };
         // The approver list follows (agent-ready spec 4): without it the
         // other devices' approval keys would be gone until each one enrolls
         // again. A revoked device's entries are retired.
@@ -639,7 +674,7 @@ impl<S: RecordStore> Repository<S> {
         // lists start again (spec 6.6, 10.2); it replaces the stored one in
         // the same transaction, so no reopen pins the left identity's.
         let chain = ChainState {
-            sync_home: None,
+            sync_home: home_seen,
             params_epoch: account.params.epoch,
             device_list: Some(device_seen),
             vault_list: Some(vault_seen),

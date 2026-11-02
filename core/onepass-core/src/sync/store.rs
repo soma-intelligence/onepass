@@ -755,7 +755,8 @@ fn overwritten_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
 /// Phase 1 of a rotation (spec 7.1): the deliveries, the account records
 /// and lists under the new identity id `rid`, the lineage record. All new
 /// ids. The rank orders them: deliveries, params, keyset, lists (the
-/// contact book last of them), then the lineage record last.
+/// contact book last of them), the sync home, then the lineage record
+/// last.
 fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
     match kind {
         RecordKind::KeyDelivery => Some(0),
@@ -764,7 +765,8 @@ fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
         RecordKind::DeviceList if id == rid => Some(3),
         RecordKind::VaultList if id == rid => Some(4),
         RecordKind::ContactBook if id == rid => Some(5),
-        RecordKind::Lineage => Some(6),
+        RecordKind::SyncHome if id == rid => Some(6),
+        RecordKind::Lineage => Some(7),
         _ => None,
     }
 }

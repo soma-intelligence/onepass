@@ -5885,3 +5885,132 @@ fn locked_approver_list_survives_rotation_and_follow() {
     assert_eq!(on_c.entries.len(), 1);
     assert_eq!(on_c.entries[0].sign_pub, sign_pub);
 }
+
+// ------------------------------------------------------------- sync home
+
+/// A on a mailbox (its `SyncHome` pushed), C a follower; A rotates and
+/// pushes every phase, C pulls everything.
+fn rotated_on_a_mailbox() -> (
+    Server,
+    Device,
+    Device,
+    Fixture,
+    RotationOutcome,
+    onepass_core::synchome::SyncBackend,
+) {
+    let home = onepass_core::synchome::SyncBackend::Mailbox {
+        url: "https://mailbox.example.org/functions/v1/mailbox".into(),
+        mailbox_id: [4; 16],
+    };
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    a.repo().set_sync_home(home.clone(), T0).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let out = rotate(&mut a, &f, &new_sk);
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    pull(&server, &mut c);
+    (server, a, c, f, out, home)
+}
+
+#[test]
+fn rotation_carries_sync_home() {
+    let (server, mut a, _c, _f, _out, home) = rotated_on_a_mailbox();
+    let params = a.repo().account().params.clone();
+    let rid = account_record_id(params.account_id, Some(&params.identity_pub));
+    let got = a.repo().sync_home().unwrap().expect("a home");
+    // A new chain under the new identity, same backend, signed by the new
+    // key (`sync_home` verifies against it).
+    assert_eq!(got.seq, 1);
+    assert_eq!(got.prev_hash, [0; 32]);
+    assert_eq!(got.backend, home);
+    let rec = server.get(RecordKind::SyncHome, rid).expect("pushed");
+    assert_eq!(rec.version, 1);
+    assert_eq!(
+        RecordStore::chain_state(&a.store()).unwrap().sync_home,
+        Some(got.seen())
+    );
+}
+
+#[test]
+fn rotation_phase_one_writes_the_home_before_the_lineage_record() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let home = onepass_core::synchome::SyncBackend::CloudKit;
+    a.repo().set_sync_home(home, T0).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    let kinds: Vec<RecordKind> = outbox(&a).iter().map(|(c, _)| c.kind).collect();
+    let home_at = kinds
+        .iter()
+        .position(|k| *k == RecordKind::SyncHome)
+        .expect("the home in phase 1");
+    let lineage_at = kinds
+        .iter()
+        .position(|k| *k == RecordKind::Lineage)
+        .unwrap();
+    assert!(home_at < lineage_at, "{kinds:?}");
+}
+
+#[test]
+fn rotation_without_a_home_writes_none() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    assert!(
+        outbox(&a)
+            .iter()
+            .all(|(c, _)| c.kind != RecordKind::SyncHome)
+    );
+    assert_eq!(a.repo().sync_home().unwrap(), None);
+}
+
+#[test]
+fn follower_reads_new_home() {
+    let (_server, mut a, c, f, out, home) = rotated_on_a_mailbox();
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let got = repo.sync_home().unwrap().expect("a home");
+    assert_eq!(got.backend, home);
+    assert_eq!(got, a.repo().sync_home().unwrap().unwrap());
+}
+
+#[test]
+fn moved_home_after_rotation_is_read_not_adopted_silently() {
+    // A valid rotation, then the new identity names another mailbox: the
+    // follower reads the move as signed data (the driver stops on it and
+    // the app asks, `HomeMoved`), the pin moves forward only.
+    let (mut server, mut a, mut c, f, out, _home) = rotated_on_a_mailbox();
+    let elsewhere = onepass_core::synchome::SyncBackend::Mailbox {
+        url: "https://other.example.org/functions/v1/mailbox".into(),
+        mailbox_id: [5; 16],
+    };
+    a.repo().set_sync_home(elsewhere.clone(), T0 + 50).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let got = repo.sync_home().unwrap().unwrap();
+    assert_eq!((got.seq, got.backend), (2, elsewhere));
+}
+
+#[test]
+fn left_identity_home_never_read_after_follow() {
+    // The old identity's record stays on the server under its id; the
+    // follower reads only the new identity's chain, so an old home served
+    // again changes nothing.
+    let (server, _a, c, f, out, home) = rotated_on_a_mailbox();
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let left = server
+        .records
+        .keys()
+        .filter(|(k, _)| *k == RecordKind::SyncHome)
+        .count();
+    assert_eq!(left, 2, "old and new identity homes");
+    assert_eq!(repo.sync_home().unwrap().unwrap().backend, home);
+}
