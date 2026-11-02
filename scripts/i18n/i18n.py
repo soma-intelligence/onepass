@@ -160,6 +160,9 @@ def apple_catalogs(cfg: dict) -> list[str]:
 def leaves(loc: dict, path: tuple = ()):  # yields (path, stringUnit)
     if "stringUnit" in loc:
         yield path, loc["stringUnit"]
+    if "stringSet" in loc:  # App Shortcuts phrases: one leaf per phrase
+        for i, v in enumerate(loc["stringSet"].get("values", [])):
+            yield path + ("set", str(i)), {"state": loc["stringSet"].get("state", "translated"), "value": v}
     for kind, cases in loc.get("variations", {}).items():
         for case, sub in cases.items():
             yield from leaves(sub, path + (kind, case))
@@ -224,7 +227,7 @@ def check_entry(where: str, key: str, entry: dict, langs: list[str], source: str
             if value is None or (value == "" and (ref_text or "") != ""):
                 rep.error(where, f"'{lang}' {'/'.join(path) or 'value'} is empty")
                 continue
-            if state == "new":
+            if state == "new" and lang != source:  # Xcode leaves the source language 'new'; that is harmless
                 rep.error(where, f"'{lang}' {'/'.join(path) or 'value'} is still 'new'")
             elif state == "needs_review":
                 rep.warn(where, f"'{lang}' needs review")
