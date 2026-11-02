@@ -26,8 +26,9 @@ use zeroize::Zeroizing;
 use crate::convert::{bytes_hex, id_hex, item_to_ffi, parse_id};
 use crate::devices::{FfiDeviceKind, FfiDeviceMode};
 use crate::error::{OnePassError, invalid};
+use crate::mailbox::{FfiMailboxEnrollment, FfiSyncHome, MailboxSync};
 use crate::rotation::{FfiFollowed, FfiPqDeviceHalf, device_keys, followed, require_current};
-use crate::session::{Session, account_id_of, find_item, find_vault};
+use crate::session::{Repo, Session, account_id_of, find_item, find_vault};
 use crate::types::{FfiItem, FfiUnlocked};
 
 /// Default length of a public session, in minutes.
@@ -265,6 +266,35 @@ struct NewcomerState {
     /// The Secret Key, once the import succeeded, until Swift takes it.
     released: Option<Zeroizing<String>>,
     imported: bool,
+    /// Cross-platform sync (spec 4.12): this device's mailbox credential
+    /// key, sent inside the SAS channel with its device key, so the
+    /// approver can issue an enroll ticket for it.
+    mailbox_credential: Option<[u8; 32]>,
+}
+
+/// The account's signed home, and the enroll ticket `mailbox` issues for
+/// the newcomer's credential, added to a `FullV2` (`grant_with_mailbox`).
+fn with_mailbox(
+    core: &Approver,
+    repo: &mut Repo,
+    grant: FullGrantV2,
+    mailbox: Option<&MailboxSync>,
+) -> Result<FullGrantV2, OnePassError> {
+    let home = repo.signed_sync_home()?;
+    let now = now_unix();
+    let issue = |key: [u8; 32]| match mailbox {
+        Some(m) => m.ticket_for(key, now),
+        None => Err(onepass_core::Error::NotFound),
+    };
+    let issuer: Option<&dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>>> =
+        mailbox.map(|_| &issue as &dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>>);
+    Ok(core.grant_with_mailbox(grant, home.as_deref(), issuer)?)
+}
+
+/// A mailbox credential public key as the app hands it: 32 bytes, or none.
+fn credential_pub(key: Option<Vec<u8>>) -> Result<Option<[u8; 32]>, OnePassError> {
+    key.map(|k| k.try_into().map_err(|_| invalid("mailbox credential")))
+        .transpose()
 }
 
 /// The new device's side: shows the QR, gets the account or a public
@@ -285,12 +315,17 @@ impl PairingNewcomer {
     /// A new pairing session for this device, under a fresh device id. The
     /// QR is valid 120 s from `now` (Unix seconds); renew it by making a new
     /// object.
-    #[uniffi::constructor]
+    ///
+    /// `mailbox_credential_pub`: this device's mailbox credential key (32
+    /// bytes), when it will sync through a mailbox; the approver then
+    /// grants an enroll ticket for it (`mailbox_enrollment`).
+    #[uniffi::constructor(default(mailbox_credential_pub = None))]
     pub fn new(
         name: String,
         kind: FfiDeviceKind,
         mode: FfiDeviceMode,
         now: i64,
+        mailbox_credential_pub: Option<Vec<u8>>,
     ) -> Result<Arc<Self>, OnePassError> {
         let device_id = Id::new();
         let info = DeviceInfo {
@@ -311,6 +346,7 @@ impl PairingNewcomer {
                 grant_v2: None,
                 released: None,
                 imported: false,
+                mailbox_credential: credential_pub(mailbox_credential_pub)?,
             }),
         }))
     }
@@ -319,13 +355,15 @@ impl PairingNewcomer {
     /// connect to `service_name()` and send `hello()` (signed with the
     /// invite's secret); the key exchange is taken for 120 s from `now`.
     /// `qr_text()` is empty: this device shows no code.
-    #[uniffi::constructor]
+    /// `mailbox_credential_pub` as in `new`.
+    #[uniffi::constructor(default(mailbox_credential_pub = None))]
     pub fn join(
         invite_text: String,
         name: String,
         kind: FfiDeviceKind,
         mode: FfiDeviceMode,
         now: i64,
+        mailbox_credential_pub: Option<Vec<u8>>,
     ) -> Result<Arc<Self>, OnePassError> {
         let device_id = Id::new();
         let info = DeviceInfo {
@@ -346,6 +384,7 @@ impl PairingNewcomer {
                 grant_v2: None,
                 released: None,
                 imported: false,
+                mailbox_credential: credential_pub(mailbox_credential_pub)?,
             }),
         }))
     }
@@ -384,6 +423,7 @@ impl PairingNewcomer {
                 grant_v2: None,
                 released: None,
                 imported: false,
+                mailbox_credential: None,
             }),
         }))
     }
@@ -393,13 +433,15 @@ impl PairingNewcomer {
     /// device is valid for 120 s from `now`. `hello()` is the first frame to
     /// send to the host; `service_name()` is the code's service, `qr_text()` the
     /// canonical code text.
-    #[uniffi::constructor]
+    /// `mailbox_credential_pub` as in `new`.
+    #[uniffi::constructor(default(mailbox_credential_pub = None))]
     pub fn join_code(
         name: String,
         kind: FfiDeviceKind,
         mode: FfiDeviceMode,
         code: String,
         now: i64,
+        mailbox_credential_pub: Option<Vec<u8>>,
     ) -> Result<Arc<Self>, OnePassError> {
         let code = RendezvousCode::parse(&code)?;
         let device_id = Id::new();
@@ -422,6 +464,7 @@ impl PairingNewcomer {
                 grant_v2: None,
                 released: None,
                 imported: false,
+                mailbox_credential: credential_pub(mailbox_credential_pub)?,
             }),
         }))
     }
@@ -488,7 +531,31 @@ impl PairingNewcomer {
     ) -> Result<Vec<u8>, OnePassError> {
         let classical = Zeroizing::new(classical);
         let keys = device_keys(&classical, pq)?;
-        Ok(lock(&self.state).core.confirm_with_key(&keys)?)
+        let mut s = lock(&self.state);
+        let credential = s.mailbox_credential;
+        Ok(s.core.confirm_with_key_and_mailbox(&keys, credential)?)
+    }
+
+    /// Cross-platform sync (spec 4.12): the mailbox a `FullV2` grant hands
+    /// over, once opened (`open`): the account's signed home, verified
+    /// against the granted account key, and the enroll ticket for this
+    /// device's credential, checked against it (`mailbox_enroll`). `None`
+    /// when the grant names no mailbox to join (a CloudKit account, an
+    /// approver without a mailbox or from before the mailbox).
+    pub fn mailbox_enrollment(&self) -> Result<Option<FfiMailboxEnrollment>, OnePassError> {
+        Ok(lock(&self.state)
+            .core
+            .mailbox_enrollment()
+            .map(|(home, ticket)| FfiMailboxEnrollment {
+                home: (&home).into(),
+                ticket,
+            }))
+    }
+
+    /// The account's signed sync home a `FullV2` grant carried, verified
+    /// (`None` without one).
+    pub fn grant_sync_home(&self) -> Option<FfiSyncHome> {
+        lock(&self.state).core.sync_home().map(FfiSyncHome::from)
     }
 
     /// Key rotation v2: import the `FullV2` into the empty store at
@@ -1003,12 +1070,18 @@ impl PairingApprover {
     /// the new device list included; each is a signed record the newcomer
     /// checks like a server fetch. Refused before the peer's confirmation,
     /// for a public request, and for a mode other than the one requested.
+    ///
+    /// Cross-platform sync (spec 4.12): a `FullV2` carries the account's
+    /// signed `SyncHome`, if any, and, for a mailbox home, an enroll ticket
+    /// `mailbox` issues for the newcomer's credential (when it sent one).
+    #[uniffi::method(default(mailbox = None))]
     pub fn seal_full_grant(
         &self,
         session: Arc<Session>,
         secret_key: String,
         mode: FfiDeviceMode,
         include_pending: bool,
+        mailbox: Option<Arc<MailboxSync>>,
     ) -> Result<Vec<u8>, OnePassError> {
         let secret_key = Zeroizing::new(secret_key);
         let secret_key = Zeroizing::new(SecretKey::parse(&secret_key)?.to_display());
@@ -1062,7 +1135,7 @@ impl PairingApprover {
                     Some(snapshot) => snapshot,
                     None => local_snapshot(repo.store())?,
                 };
-                let grant = Grant::FullV2(FullGrantV2 {
+                let grant = FullGrantV2 {
                     full: FullGrant {
                         account_id,
                         secret_key: secret_key.clone(),
@@ -1073,8 +1146,9 @@ impl PairingApprover {
                     trust: repo.trust_snapshot()?,
                     sync: None,
                     enroll: None,
-                });
-                return Ok(core.seal_grant(grant, true)?);
+                };
+                let grant = with_mailbox(core, repo, grant, mailbox.as_deref())?;
+                return Ok(core.seal_grant(Grant::FullV2(grant), true)?);
             }
             let added_by = repo.this_device_id();
             let entry = DeviceEntry {
@@ -1109,12 +1183,13 @@ impl PairingApprover {
                 // A newcomer that sent its device key gets its trust
                 // snapshot (spec 5.2); its intro follows its acknowledgment.
                 let grant = if v2 {
-                    Grant::FullV2(FullGrantV2 {
+                    let grant = FullGrantV2 {
                         full,
                         trust: repo.trust_snapshot()?,
                         sync: None,
                         enroll: None,
-                    })
+                    };
+                    Grant::FullV2(with_mailbox(core, repo, grant, mailbox.as_deref())?)
                 } else {
                     Grant::Full(full)
                 };

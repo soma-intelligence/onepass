@@ -241,6 +241,7 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -254,6 +255,7 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -401,6 +403,7 @@ fn two_devices_rotate_and_follow() {
         FfiDeviceKind::Other,
         FfiDeviceMode::Public,
         now(),
+        None,
     )
     .unwrap();
     let pa = PairingApprover::begin(pn.qr_text(), pn.hello(), now()).unwrap();
@@ -795,6 +798,7 @@ fn migration_tofu_orphaned_and_outdated_kit() {
             new_sk.clone(),
             FfiDeviceMode::Personal,
             true,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -939,6 +943,7 @@ fn legacy_pair(server: &mut Server) -> (Device, Device) {
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -953,6 +958,7 @@ fn legacy_pair(server: &mut Server) -> (Device, Device) {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();

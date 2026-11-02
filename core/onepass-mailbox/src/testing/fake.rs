@@ -308,6 +308,8 @@ struct State {
     fail_next: VecDeque<MailboxError>,
     collect_before_commit: bool,
     hostile: Hostile,
+    /// The base URL the clients sign tickets for and check them against.
+    base_url: String,
 }
 
 /// What `FaultHandle` set.
@@ -1142,6 +1144,7 @@ impl FakeMailbox {
                 fail_next: VecDeque::new(),
                 collect_before_commit: false,
                 hostile: Hostile::default(),
+                base_url: FAKE_BASE_URL.to_string(),
             })),
             rdv: Arc::new(Rdv {
                 epoch: Instant::now(),
@@ -1153,6 +1156,13 @@ impl FakeMailbox {
 
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Serve under `url` instead of `FAKE_BASE_URL`: the URL the clients
+    /// put in the tickets they issue and check the tickets they enroll
+    /// with against (a test serving this model over HTTP).
+    pub fn set_base_url(&self, url: &str) {
+        self.lock().base_url = url.to_string();
     }
 
     /// A client of this mailbox server with `credential`, no mailbox open.
@@ -1691,7 +1701,8 @@ impl MailboxApi for FakeMailboxClient {
     }
 
     fn enroll(&mut self, ticket: &SignedEnrollTicket, label: &[u8]) -> Result<(), MailboxError> {
-        let req = enroll_request(ticket, label, self.credential.public_key(), FAKE_BASE_URL)?;
+        let base = self.fake.lock().base_url.clone();
+        let req = enroll_request(ticket, label, self.credential.public_key(), &base)?;
         self.state()?
             .enroll(self.credential.public_key(), &req.ticket)?;
         self.mailbox = Some(ticket.ticket.mailbox_id);
@@ -1884,9 +1895,10 @@ impl MailboxApi for FakeMailboxClient {
         new_credential_pub: CredentialKey,
         now: i64,
     ) -> Result<SignedEnrollTicket, MailboxError> {
+        let base = self.fake.lock().base_url.clone();
         issue_ticket(
             &self.credential,
-            FAKE_BASE_URL,
+            &base,
             self.mailbox,
             new_credential_pub,
             now,

@@ -57,6 +57,15 @@ pub enum OnePassError {
     /// The remote unlock envelope `C` no longer opens the account (master
     /// password changed elsewhere): erase it and enroll again.
     RemoteUnlockStale,
+    /// The mailbox refused the request as stale: this device's clock is
+    /// more than 300 s off. The app asks the user to fix the time.
+    ClockSkew,
+    /// The mailbox could not be used: unreachable, busy, refused, or an
+    /// answer the protocol does not allow. `reason` is the client's, never
+    /// a field value.
+    MailboxUnavailable {
+        reason: String,
+    },
 }
 
 impl fmt::Display for OnePassError {
@@ -83,6 +92,8 @@ impl fmt::Display for OnePassError {
             Self::Orphaned => f.write_str("this device is not in the account's keys"),
             Self::IdentityLeft => f.write_str("the account keys changed: lock and unlock"),
             Self::RemoteUnlockStale => f.write_str("remote unlock must be enrolled again"),
+            Self::ClockSkew => f.write_str("device clock is too far off"),
+            Self::MailboxUnavailable { reason } => write!(f, "mailbox unavailable: {reason}"),
         }
     }
 }

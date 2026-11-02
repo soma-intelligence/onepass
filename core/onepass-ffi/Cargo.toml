@@ -37,6 +37,11 @@ url = "2"
 # The production bridge (spec 2026-10-27-release-bridge-design): the host loop
 # of the extension protocol, and its JSON audit journal.
 onepass-bridge = { path = "../onepass-bridge" }
+# Cross-platform sync (spec 4.14): the mailbox client, its wire messages and
+# the Rust sync round.
+onepass-mailbox = { path = "../onepass-mailbox" }
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
+onepass-sync = { path = "../onepass-sync" }
 
 # The bridge's socket and the code-signature checks of its clients: Mac only.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -58,3 +63,6 @@ aws-lc-rs.workspace = true
 # The integration tests make fast-KDF accounts: they need the dev floor of the
 # core (debug builds only) whichever way the tests are invoked.
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+# The mailbox tests serve FakeMailbox over loopback TLS (test CA).
+onepass-mailbox = { path = "../onepass-mailbox", features = ["testing"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }

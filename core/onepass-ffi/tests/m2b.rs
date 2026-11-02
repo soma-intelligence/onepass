@@ -122,8 +122,14 @@ fn sync(from: &str, to: &str) {
 
 /// Both sides through the SAS and the newcomer's confirmation.
 fn confirmed(mode: FfiDeviceMode) -> (Arc<PairingNewcomer>, Arc<PairingApprover>) {
-    let n =
-        PairingNewcomer::new("iPad de Camille".into(), FfiDeviceKind::Tablet, mode, now()).unwrap();
+    let n = PairingNewcomer::new(
+        "iPad de Camille".into(),
+        FfiDeviceKind::Tablet,
+        mode,
+        now(),
+        None,
+    )
+    .unwrap();
     let qr = n.qr_text();
     assert!(qr.starts_with("OPPAIR1:"));
     assert_eq!(pairing_service_name(qr.clone()).unwrap(), n.service_name());
@@ -166,6 +172,7 @@ fn ffi_full_pairing_end_to_end() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     // A second grant is refused.
@@ -174,7 +181,8 @@ fn ffi_full_pairing_end_to_end() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
-            false
+            false,
+            None
         )
         .is_err()
     );
@@ -262,7 +270,8 @@ fn ffi_public_pairing_items_only() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Public,
-            false
+            false,
+            None
         )
         .is_err()
     );
@@ -372,6 +381,7 @@ fn tampered_snapshot_rejected() {
             a.secret_key.clone(),
             FfiDeviceMode::Shared,
             false,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -399,6 +409,7 @@ fn import_refuses_non_empty_store() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -459,6 +470,7 @@ fn import_onto_store_the_sync_filled() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -491,6 +503,7 @@ fn import_onto_store_the_sync_filled() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n2.open(frame).unwrap();
@@ -515,6 +528,7 @@ fn secret_key_withheld_after_failed_import() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -580,6 +594,7 @@ fn ffi_change_password() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -601,6 +616,7 @@ fn ffi_revoke_and_detect() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -711,7 +727,8 @@ fn full_grant_without_sync_includes_local_state() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
-            false
+            false,
+            None
         )
         .is_err()
     );
@@ -724,6 +741,7 @@ fn full_grant_without_sync_includes_local_state() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             true,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -844,6 +862,7 @@ fn oversized_full_grant_lists_nothing() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             true,
+            None,
         )
         .unwrap_err();
     assert!(
@@ -862,6 +881,7 @@ fn oversized_full_grant_lists_nothing() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             true,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -885,6 +905,7 @@ fn discarded_grant_cannot_be_imported() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -918,6 +939,7 @@ fn ffi_invite_pairing_grants_the_account() {
         FfiDeviceKind::Phone,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     assert_eq!(n.qr_text(), "");
@@ -933,6 +955,7 @@ fn ffi_invite_pairing_grants_the_account() {
         FfiDeviceKind::Mac,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     assert!(invite.accept(stranger.hello(), now()).is_err());
@@ -963,6 +986,7 @@ fn ffi_invite_pairing_grants_the_account() {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     let FfiPairingMessage::FullGrant { account_id, .. } = n.open(frame).unwrap() else {
@@ -978,6 +1002,7 @@ fn pairing_code_kind_tells_the_codes_apart() {
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     assert_eq!(pairing_code_kind(n.qr_text()), FfiPairingCodeKind::Pairing);
@@ -1077,6 +1102,7 @@ fn granted_v2(
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -1091,6 +1117,7 @@ fn granted_v2(
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -1200,6 +1227,7 @@ fn confirmed_rv(
         mode,
         code,
         now(),
+        None,
     )
     .unwrap();
     assert_eq!(n.service_name(), shown.service_name);
@@ -1229,6 +1257,7 @@ fn ffi_rendezvous_pairing_end_to_end() {
                 a.secret_key.clone(),
                 FfiDeviceMode::Personal,
                 false,
+                None,
             )
             .unwrap();
         let FfiPairingMessage::FullGrant { device_id, .. } = n.open(frame).unwrap() else {
@@ -1262,6 +1291,7 @@ fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
         FfiDeviceMode::Personal,
         other.qr_text,
         now(),
+        None,
     )
     .unwrap();
     assert!(host.accept(stranger.hello(), now()).is_err());
@@ -1273,7 +1303,8 @@ fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
             FfiDeviceKind::Phone,
             FfiDeviceMode::Personal,
             "pas un code".into(),
-            now()
+            now(),
+            None
         )
         .is_err()
     );
@@ -1283,6 +1314,7 @@ fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
         FfiDeviceKind::Phone,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     assert!(
@@ -1291,7 +1323,8 @@ fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
             FfiDeviceKind::Phone,
             FfiDeviceMode::Personal,
             v1.qr_text(),
-            now()
+            now(),
+            None
         )
         .is_err()
     );
@@ -1303,7 +1336,8 @@ fn ffi_rendezvous_refuses_wrong_code_and_host_is_single_use() {
             a.session.clone(),
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
-            false
+            false,
+            None
         )
         .is_err()
     );
