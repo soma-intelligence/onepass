@@ -20,6 +20,7 @@
     "lab:real": "node --experimental-strip-types lab/dataset/real.ts",
     "lab:dataset": "node --experimental-strip-types lab/cli.ts dataset",
     "lab:repro": "node --experimental-strip-types lab/cli.ts repro",
+    "bench:probe": "node bench/build-probe.mjs",
     "sbom": "mkdir -p sbom && npm sbom --sbom-format cyclonedx --omit dev > sbom/extension.cdx.json"
   },
   "dependencies": {

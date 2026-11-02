@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "e2e", "lab"]
+  "include": ["src", "test", "e2e", "lab", "bench"]
 }

@@ -15,6 +15,7 @@ apple/DerivedData-*/
 # Autofill lab run output
 extension/lab/out/
 extension/dist-lab/
+extension/dist-bench/
 
 # ProVerif (formal/run.sh logs and intermediate files)
 formal/out/
