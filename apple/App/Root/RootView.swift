@@ -135,6 +135,16 @@ struct RootView: View {
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 updateShield(phase)
+                #if os(iOS)
+                // The door never outlives the scene going to the background (its completions may
+                // not come back): the screen is simply the vault or the lock screen again. Not on
+                // `.inactive`: the Face ID sheet makes the scene inactive around the unlock itself.
+                if phase == .background, door.isActive {
+                    doorGeneration &+= 1
+                    doorSnapshot = nil
+                    door.handle(.interrupted)
+                }
+                #endif
             }
             .onChange(of: windowScene) { _, _ in
                 updateShield(scenePhase)
@@ -262,7 +272,8 @@ extension RootView {
             #endif
         } else if old == .unlocked, new == .lock {
             doorSnapshot = nil
-            door.handle(.locked(reduceMotion: reduceMotion))
+            // A lock in the background (auto-lock, app switcher) plays nothing nobody sees.
+            door.handle(.locked(reduceMotion: reduceMotion || scenePhase == .background))
         } else {
             doorSnapshot = nil
             door.handle(.interrupted)
