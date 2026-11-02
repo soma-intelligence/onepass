@@ -1269,6 +1269,33 @@ final class AppModel {
         }
     }
 
+    /// Archive (swipe on an iPhone list): out of the lists and the suggestions, kept in Archive. A
+    /// toast says it happened; the Archive list brings it back.
+    func archive(_ ref: ItemRef) {
+        setArchived(true, ref)
+    }
+
+    func unarchive(_ ref: ItemRef) {
+        setArchived(false, ref)
+    }
+
+    private func setArchived(_ archived: Bool, _ ref: ItemRef) {
+        let title = session.summaries.first { $0.id == ref.itemID }?.title ?? ""
+        Task {
+            do {
+                if archived {
+                    try await session.archive(itemID: ref.itemID, vaultID: ref.vaultID)
+                    showToast(String(localized: "« \(title) » archivé"))
+                } else {
+                    try await session.unarchive(itemID: ref.itemID, vaultID: ref.vaultID)
+                    showToast(String(localized: "« \(title) » désarchivé"))
+                }
+            } catch {
+                showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
     /// Short notification at the bottom of the window: green check for a success, red for a
     /// failure (shown longer, it has to be read), neutral for information.
     func showToast(_ text: String, kind: ToastKind = .success) {

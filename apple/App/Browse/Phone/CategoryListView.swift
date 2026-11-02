@@ -5,8 +5,9 @@ import VaultKit
 
 /// Items of one filter of the Éléments tab (vault, category, tag, Archive, Supprimés récemment)
 /// sorted by title, or of "À proximité" (closest first, the distance in the subtitle), with a search
-/// of its own. A row opens the item's detail; swiping an active item moves it to Supprimés
-/// récemment (toast, 30 days to restore).
+/// of its own. A row opens the item's detail. Swiping an active item from the right: Archive first
+/// (a full swipe archives), then Mettre à la corbeille (toast, 30 days to restore); an archived
+/// item offers Désarchiver.
 struct CategoryListView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,11 +28,22 @@ struct CategoryListView: View {
                 NavigationLink(value: PhoneRoute.item(ref)) {
                     ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
                 }
-                .swipeActions(edge: .trailing) {
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     if summary.trashedAt == nil {
-                        Button("Mettre à la corbeille", systemImage: "trash", role: .destructive) {
+                        // The first button is the one a full swipe runs: Archive, never the trash.
+                        if summary.archived {
+                            Button("Désarchiver", systemImage: "archivebox") { model.unarchive(ref) }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("list.swipe.unarchive")
+                        } else {
+                            Button("Archiver", systemImage: "archivebox") { model.archive(ref) }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("list.swipe.archive")
+                        }
+                        Button("Corbeille", systemImage: "trash", role: .destructive) {
                             model.trash(ref)
                         }
+                        .accessibilityIdentifier("list.swipe.trash")
                     }
                 }
                 .swipeActions(edge: .leading) {
@@ -68,14 +80,7 @@ struct CategoryListView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("Rechercher"))
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Text(ItemListColumn.countLabel(items.count))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-            .sharedBackgroundVisibility(.hidden)
-            // A new item of this list's type (Supprimés récemment and À proximité have none).
+            // No count in the bar: the list is the count. A new item of this list's type (Supprimés récemment and À proximité have none).
             if filter != .trash, filter != .nearby {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Nouvel élément", systemImage: "plus") { addItem() }
