@@ -50,7 +50,7 @@ struct DevicesSettings: View {
             } header: {
                 Text("Sur ton compte")
             } footer: {
-                Text("Liste signée par ton compte.")
+                Text("settings.devices.list.footer")
             }
             #if os(macOS)
             if let bridge = model.browserBridge {
@@ -86,11 +86,11 @@ struct DevicesSettings: View {
                 #endif
             } footer: {
                 #if os(iOS)
-                Text("Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code.")
+                Text("settings.devices.add.footer")
                 #elseif os(macOS)
                 Text("Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres.")
                 #else
-                Text("Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code avec ton iPhone ou ton iPad.")
+                Text("settings.devices.add.footer.mac")
                 #endif
             }
             if !revoked.isEmpty {

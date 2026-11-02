@@ -37,10 +37,10 @@ struct SecuritySettings: View {
         Form {
             unlockSection
             Section {
-                Button("Changer le mot de passe maître…", systemImage: "key") { changingPassword = true }
+                Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
                     .accessibilityIdentifier("settings.changePassword")
             } footer: {
-                Text("Ton Emergency Kit reste valable.")
+                Text("settings.security.changePassword.footer")
             }
             deviceModeSection
             Section {
@@ -120,7 +120,7 @@ struct SecuritySettings: View {
                 #endif
             }
             LabeledContent("Mot de passe maître") {
-                Text("Tous les 14 jours")
+                Text("settings.security.passwordReminder")
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
@@ -133,15 +133,15 @@ struct SecuritySettings: View {
 
     @ViewBuilder private func unlockFooter(personal: Bool) -> some View {
         if !personal {
-            Text("Appareil partagé : mot de passe maître à chaque fois.")
+            Text("settings.security.unlock.sharedFooter")
         } else if availability == .keychainRefused {
-            Text("\(biometry) demande un build signé (erreur -34018).")
+            Text("settings.security.biometry.unsigned \(biometry)")
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else if availability == .noBiometry {
-            Text("\(biometry) n'est pas configuré sur cet appareil.")
+            Text("settings.security.biometry.unavailable \(biometry)")
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else {
-            Text("Aussi demandé après un redémarrage.")
+            Text("settings.security.unlock.footer")
         }
     }
 
@@ -203,7 +203,7 @@ struct SecuritySettings: View {
             }
         } footer: {
             if settings.deviceMode == .shared {
-                Text("Pas de \(biometry), verrouillage après 5 minutes.")
+                Text("settings.security.deviceMode.sharedFooter \(biometry)")
             }
         }
     }

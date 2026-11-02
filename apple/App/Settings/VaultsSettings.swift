@@ -61,7 +61,7 @@ struct VaultsSettings: View {
                 }
                 .accessibilityIdentifier("settings.vaults.new")
             } footer: {
-                Text("Un coffre vide se supprime depuis sa fiche.")
+                Text("settings.vaults.footer")
             }
         }
         .settingsPage("Coffres")

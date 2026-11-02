@@ -84,7 +84,7 @@ struct WatchSettings: View {
                 }
                 .accessibilityIdentifier("settings.watch.wipe")
             } footer: {
-                Text("Efface tout ce que la montre a reçu.")
+                Text("settings.watch.wipe.footer")
             }
         }
     }

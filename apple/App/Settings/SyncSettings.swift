@@ -128,15 +128,15 @@ struct SyncSettings: View {
     @ViewBuilder private var footer: some View {
         switch line {
         case .disabled:
-            Text("La sync iCloud demande un build signé.")
+            Text("settings.sync.footer.local")
         case .refused:
-            Text("Rien de ce qu'iCloud a envoyé n'a été utilisé.")
+            Text("settings.sync.footer.refused")
         case .waiting:
-            Text("iCloud a une version plus ancienne. OnePass renvoie la sienne, rien à faire.")
+            Text("settings.sync.footer.stale")
         case .accountChanged:
             Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation, ou utilise ce compte : OnePass vérifie d'abord qu'il ne contient pas un autre coffre.")
         default:
-            Text("Chiffré avant de quitter l'appareil.")
+            Text("settings.sync.footer")
         }
     }
 

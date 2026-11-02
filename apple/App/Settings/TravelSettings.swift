@@ -20,7 +20,7 @@ struct TravelSettings: View {
                     .accessibilityIdentifier("settings.travel.status")
                 actionButton
             } footer: {
-                Text("Les coffres retirés restent dans iCloud et sont vérifiés au retour.")
+                Text("settings.travel.footer")
             }
             if let errorMessage {
                 Section {
@@ -49,7 +49,7 @@ struct TravelSettings: View {
                 } header: {
                     Text("Sûr en voyage")
                 } footer: {
-                    Text("Sur tous tes appareils.")
+                    Text("settings.travel.safe.footer")
                 }
             }
         }

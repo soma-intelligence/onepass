@@ -28,7 +28,7 @@ struct AboutSettings: View {
                 .accessibilityIdentifier("settings.about.source")
             }
             Section {
-                LabeledContent("Post-quantique") {
+                LabeledContent("settings.about.postQuantum") {
                     Text(verbatim: "ML-KEM-1024 · ML-DSA-87 · SLH-DSA")
                 }
                     .accessibilityIdentifier("settings.about.crypto")

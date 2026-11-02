@@ -96,7 +96,7 @@ struct AccountPanel: View {
                 }
                 .accessibilityIdentifier("account.import")
                 if SecretKeyScanner.isSupported {
-                    AccountPanelRow(title: "Scanner un code", symbol: "qrcode.viewfinder", color: AccountPanelTint.scan) {
+                    AccountPanelRow(title: "account.panel.scanCode", symbol: "qrcode.viewfinder", color: AccountPanelTint.scan) {
                         perform(.scanCode)
                     }
                     .accessibilityIdentifier("account.scanOtp")

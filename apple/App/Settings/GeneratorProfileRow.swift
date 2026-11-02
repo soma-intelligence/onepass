@@ -16,9 +16,9 @@ struct GeneratorProfileSection: View {
     var body: some View {
         Section {
             Picker("Profil", selection: kind) {
-                Text("Fort").tag(Kind.strong)
-                Text("Lisible").tag(Kind.readable)
-                Text("Personnalisé").tag(Kind.custom)
+                Text("settings.autofill.generator.strong").tag(Kind.strong)
+                Text("settings.autofill.generator.readable").tag(Kind.readable)
+                Text("settings.autofill.generator.custom").tag(Kind.custom)
             }
             .accessibilityIdentifier("autofill.generator.profile")
             if case .custom(let length, let digits, let symbols) = profile {
@@ -48,7 +48,7 @@ struct GeneratorProfileSection: View {
                     .accessibilityIdentifier("autofill.generator.symbols")
             }
         } header: {
-            Text("Mot de passe proposé")
+            Text("settings.autofill.generator.header")
         } footer: {
             Text(footer)
         }
@@ -58,11 +58,11 @@ struct GeneratorProfileSection: View {
     private var footer: LocalizedStringKey {
         switch profile {
         case .strong:
-            "24 caractères de toutes les sortes, ou le plus long que le site accepte jusqu'à 32."
+            "settings.autofill.generator.strong.footer"
         case .readable:
-            "Cinq mots français reliés par des tirets, avec une majuscule et un chiffre. Trop long pour le site, OnePass propose un mot de passe Fort."
+            "settings.autofill.generator.readable.footer"
         case .custom:
-            "Ta longueur et tes caractères, resserrés si le site impose ses règles."
+            "settings.autofill.generator.custom.footer"
         }
     }
 

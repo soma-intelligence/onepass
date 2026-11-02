@@ -67,7 +67,7 @@ struct AgentsSettings: View {
                     .foregroundStyle(.orange)
             }
         } footer: {
-            Text("Une demande d'agent arrive en notification. Tu réponds dans l'app, avec Face ID.")
+            Text("settings.agents.footer")
         }
 
         ForEach(agents.macs) { mac in

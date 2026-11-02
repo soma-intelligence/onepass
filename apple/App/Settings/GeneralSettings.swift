@@ -40,7 +40,7 @@ struct GeneralSettings: View {
             AppearanceSection()
             #endif
             Section {
-                Picker("Verrouillage auto", selection: Binding(
+                Picker("settings.general.autoLock", selection: Binding(
                     get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
                     set: { delay in model.updateSettings { $0.autoLockDelay = delay } }
                 )) {
@@ -57,9 +57,9 @@ struct GeneralSettings: View {
                 .accessibilityIdentifier("settings.siteIcons")
             } footer: {
                 if shared {
-                    Text("Appareil partagé : 5 minutes au plus.")
+                    Text("settings.general.autoLock.sharedFooter")
                 } else {
-                    Text("Icônes chargées depuis chaque site, sans service tiers.")
+                    Text("settings.general.siteIcons.footer")
                 }
             }
             Section {
@@ -68,26 +68,26 @@ struct GeneralSettings: View {
                 }
                 .accessibilityIdentifier("settings.import")
             } footer: {
-                Text("Apple, 1Password, Bitwarden, navigateurs et 8 autres.")
+                Text("settings.general.import.footer")
             }
             Section {
-                Button("Sauvegarde chiffrée…", systemImage: "square.and.arrow.down.on.square") {
+                Button("settings.general.backup.export", systemImage: "square.and.arrow.down.on.square") {
                     backupSheet = .export
                 }
                 .accessibilityIdentifier("settings.backup.export")
-                Button("Restaurer…", systemImage: "clock.arrow.circlepath") {
+                Button("settings.general.backup.restore", systemImage: "clock.arrow.circlepath") {
                     backupSheet = .restore
                 }
                 .accessibilityIdentifier("settings.backup.restore")
-                Button("Export CSV non chiffré…", systemImage: "exclamationmark.triangle") {
+                Button("settings.general.backup.plaintext", systemImage: "exclamationmark.triangle") {
                     backupSheet = .plaintext
                 }
                 .foregroundStyle(.red)
                 .accessibilityIdentifier("settings.backup.plaintext")
             } header: {
-                Text("Sauvegarde")
+                Text("settings.general.backup.header")
             } footer: {
-                Text("Restaurer n'écrase rien. Le CSV sert seulement à changer de gestionnaire.")
+                Text("settings.general.backup.footer")
             }
         }
         // Over the settings themselves (the Mac `Settings` window has no browse sheet).
@@ -140,7 +140,7 @@ private struct AppearanceSection: View {
             .padding(.vertical, 8)
             .sensoryFeedback(.selection, trigger: stored)
         } header: {
-            Text("Apparence")
+            Text("settings.general.appearance")
         }
     }
 }
@@ -174,9 +174,9 @@ private struct AppearanceChoice: View {
 
     private var title: LocalizedStringKey {
         switch appearance {
-        case .system: "Automatique"
-        case .light: "Clair"
-        case .dark: "Sombre"
+        case .system: "settings.general.appearance.system"
+        case .light: "settings.general.appearance.light"
+        case .dark: "settings.general.appearance.dark"
         }
     }
 

@@ -27,10 +27,10 @@ struct AutoFillSettings: View {
                 }
                 .accessibilityIdentifier("autofill.codes")
             } footer: {
-                Text("Le code du site est proposé dans le champ.")
+                Text("settings.autofill.codes.footer")
             }
             Section {
-                Toggle("Suggestions du clavier", isOn: Binding(
+                Toggle("settings.autofill.quickType", isOn: Binding(
                     get: { settings.quickTypeSuggestions },
                     set: { on in
                         model.session.setQuickTypeSuggestions(on)
@@ -39,7 +39,7 @@ struct AutoFillSettings: View {
                 ))
                 .accessibilityIdentifier("autofill.quicktype")
             } footer: {
-                Text("Le système reçoit les sites et identifiants, jamais les mots de passe ni les codes.")
+                Text("settings.autofill.quickType.footer")
             }
             #if os(iOS)
             // The system asks the extension for a password only on iOS (26.2 and later).
@@ -49,11 +49,11 @@ struct AutoFillSettings: View {
                 NavigationLink {
                     ForgetSiteChoices()
                 } label: {
-                    Label("Comptes retenus par site", systemImage: "eraser")
+                    Label("settings.autofill.forgetSites", systemImage: "eraser")
                 }
                 .accessibilityIdentifier("autofill.forgetSites")
             } footer: {
-                Text("Le compte choisi sur un site est proposé en premier.")
+                Text("settings.autofill.forgetSites.footer")
             }
         }
         .settingsPage("Remplissage automatique")
@@ -96,18 +96,18 @@ struct AutoFillSettings: View {
                 .accessibilityIdentifier("autofill.systemSettings")
             }
         } header: {
-            Text("Identifiants, codes et passkeys, dans les apps et Safari.")
+            Text("settings.autofill.provider.header")
                 .font(.subheadline)
                 .textCase(nil)
         } footer: {
             if enabled == true {
                 #if os(macOS)
-                Text("Clique dans un champ d'identifiant : OnePass propose tes comptes.")
+                Text("settings.autofill.enabled.footer.mac")
                 #else
-                Text("Touche un champ d'identifiant : OnePass apparaît au-dessus du clavier.")
+                Text("settings.autofill.enabled.footer.ios")
                 #endif
             } else {
-                Text("Sinon : Réglages du système > Remplissage automatique et mots de passe.")
+                Text("settings.autofill.disabled.footer")
             }
         }
     }
@@ -162,10 +162,10 @@ struct ForgetSiteChoices: View {
                     }
                 }
             } footer: {
-                Text("Oublier un site efface son choix sur tous tes appareils. Tes Logins ne changent pas.")
+                Text("settings.autofill.forgetSites.pageFooter")
             }
         }
-        .settingsPage("Comptes retenus")
+        .settingsPage("settings.autofill.forgetSites.title")
         .task { await reload() }
         .confirmationDialog(
             "Oublier ce site ?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
