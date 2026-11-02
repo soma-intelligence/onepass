@@ -236,3 +236,41 @@ describe("a plan's submit (planned)", () => {
     expect(n()).toBe(1);
   });
 });
+
+describe("the signup menu's passkey choice (click_passkey)", () => {
+  const SIGNUP = `
+    <form id="signup"><input type="email" id="e" autocomplete="email">
+      <input type="password" id="np" autocomplete="new-password">
+      <button type="button" id="pk">Sign up with a passkey</button>
+      <button type="submit" id="go">Create account</button></form>`;
+
+  const buttonRef = (label: RegExp): string => {
+    const r = s!.ext.deliver({ type: "plan_request" }) as { context: { forms: { buttons: { button_ref: string; class: string }[] }[] } };
+    const b = r.context.forms[0]!.buttons.find((x) => x.class === "passkey");
+    expect(b).toBeDefined();
+    expect(label.test(document.getElementById("pk")!.textContent ?? "")).toBe(true);
+    return b!.button_ref;
+  };
+
+  it("clicks the passkey button", () => {
+    setPage(SIGNUP);
+    s = start();
+    let n = 0;
+    document.getElementById("pk")!.addEventListener("click", () => void n++);
+    const ref = buttonRef(/passkey/);
+    expect(s.ext.deliver({ type: "click_passkey", origin: ORIGIN, ref })).toEqual({ ok: true });
+    expect(n).toBe(1);
+  });
+
+  it("refuses a button relabelled since the plan, and another origin", () => {
+    setPage(SIGNUP);
+    s = start();
+    let n = 0;
+    document.getElementById("pk")!.addEventListener("click", () => void n++);
+    const ref = buttonRef(/passkey/);
+    expect(s.ext.deliver({ type: "click_passkey", origin: "https://evil.test", ref })).toEqual({ ok: false });
+    document.getElementById("pk")!.textContent = "Delete my data";
+    expect(s.ext.deliver({ type: "click_passkey", origin: ORIGIN, ref })).toEqual({ ok: false });
+    expect(n).toBe(0);
+  });
+});

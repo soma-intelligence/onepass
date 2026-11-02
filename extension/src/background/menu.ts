@@ -9,7 +9,7 @@
 // after 10 minutes, on a navigation of their frame, on tab removal, and when
 // a new menu opens in the same frame.
 import type { Summary } from "../bridge/client";
-import type { FieldRole, FillIntent, FormKind, MenuKey, ProviderId } from "../shared/messages";
+import type { FieldRole, FillIntent, FormKind, MenuKey, PlanOut, ProviderId } from "../shared/messages";
 import { newToken } from "../shared/tokens";
 import type { MenuNotice } from "../shared/ui";
 import type { BgExt, StorageArea } from "./ext";
@@ -30,6 +30,8 @@ export interface MenuField {
   planned?: { roles: FieldRole[]; intent: FillIntent };
   /** That plan could not fill: the page refused every generated password. */
   notice?: MenuNotice;
+  /** That plan is a signup whose form can make a passkey: the user picks password or passkey (ids and refs only). */
+  signup?: PlanOut;
 }
 
 export interface MenuRecord extends MenuField {
@@ -78,6 +80,7 @@ export class MenuTokens {
     };
     if (field.first) rec.first = [...field.first];
     if (field.planned) rec.planned = { roles: [...field.planned.roles], intent: field.planned.intent };
+    if (field.signup) rec.signup = field.signup;
     if (field.notice) rec.notice = field.notice;
     if (cs.documentId !== undefined) rec.documentId = cs.documentId;
     this.mem.set(token, rec);
@@ -197,7 +200,21 @@ function parseRecord(raw: unknown): MenuRecord | null {
     if (typeof p !== "object" || p === null || typeof p.intent !== "string" || !Array.isArray(p.roles) || !p.roles.every((x) => typeof x === "string")) return null;
   }
   if (r.notice !== undefined && r.notice !== "site_refused") return null;
+  if (r.signup !== undefined && !signupPlan(r.signup)) return null;
   return r as unknown as MenuRecord;
+}
+
+/** A stored signup plan with its passkey offer: the shape `menu_signup` relies on. */
+function signupPlan(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const p = v as Record<string, unknown>;
+  const offer = p.passkey as Record<string, unknown> | null | undefined;
+  if (p.intent !== "signup" || !Array.isArray(p.groups) || typeof offer !== "object" || offer === null) return false;
+  if (typeof offer.form_ref !== "string" || typeof offer.button_ref !== "string") return false;
+  return p.groups.every((g) => {
+    const x = g as Record<string, unknown> | null;
+    return typeof x === "object" && x !== null && typeof x.form_ref === "string" && typeof x.kind === "string" && Array.isArray(x.fields);
+  });
 }
 
 /** A `menu_keys` request is answered empty after this long without a key. */

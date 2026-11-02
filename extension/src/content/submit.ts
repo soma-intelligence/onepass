@@ -74,6 +74,8 @@ export interface SubmitWatcher {
   stop(): void;
   /** Chain: clicks a rendered element by ref. */
   clickRef(ref: string): boolean;
+  /** One-click signup: clicks the button of `ref` only if it is rendered and still reads as a passkey button. */
+  clickPasskey(ref: string): boolean;
   /**
    * Chain and plan: submits a form (its button, then `requestSubmit`, then
    * Enter). `planned` (a plan's submit): only that very form, never a copy a
@@ -276,6 +278,13 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     clickRef(ref) {
       const el = refs.get(ref);
       if (!(el instanceof HTMLElement) || !isRendered(el, geometry)) return false;
+      el.click();
+      return true;
+    },
+    clickPasskey(ref) {
+      const el = refs.get(ref);
+      // Relabelled since the plan (or never one): refused, nothing clicked.
+      if (!(el instanceof HTMLElement) || !isRendered(el, geometry) || buttonClass(el) !== "passkey") return false;
       el.click();
       return true;
     },

@@ -21,6 +21,10 @@
 //   and kind of call (get or create);
 //   the host's list is asked at most PASSKEY_PROBES_PER_MIN per tab. Past any of
 //   these, the browser's API (a page cannot pop windows or probe the vault);
+// - one-click signup: after the user chose "Créer une clé d'accès à la place"
+//   in the signup menu, the site's next creation in that top document, within
+//   PASSKEY_ARM_MS and once, counts as activated (`armCreate`): it opens the
+//   window, which still asks;
 // - one window per document: a second request while one is open is refused;
 // - the page (MAIN world) only ever gets the final assertion or registration.
 import type { RequestFor } from "../bridge/client";
@@ -57,6 +61,8 @@ export const PASSKEY_COOLDOWN_MS = 10 * 1000;
 export const PASSKEY_WINDOWS_PER_MIN = 3;
 export const PASSKEY_PROBES_PER_MIN = 6;
 const MINUTE = 60 * 1000;
+/** One-click signup: a passkey creation chosen in the menu counts as activated this long, once. */
+export const PASSKEY_ARM_MS = 15 * 1000;
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
 const REQ_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
@@ -142,6 +148,8 @@ export class Passkeys {
   /** Per tab: times of the windows opened, of the lists asked (last minute). */
   private readonly opened = new Map<number, number[]>();
   private readonly probes = new Map<number, number[]>();
+  /** Per tab: a creation the user chose in the signup menu (`armCreate`), one, until `until`. */
+  private readonly armed = new Map<number, { origin: string; documentId: string | undefined; until: number }>();
   /** Chains (`tabId:itemId:startedAt`) that already signed once without a window. */
   private readonly chainSigned = new Set<string>();
   private readonly timers: NonNullable<PasskeyDeps["timers"]>;
@@ -160,6 +168,7 @@ export class Passkeys {
       for (const e of this.early.values()) {
         if (e.tabId === d.tabId && (d.frameId === 0 || d.frameId === e.frameId)) e.gone = true;
       }
+      if (d.frameId === 0) this.armed.delete(d.tabId);
       for (const p of [...this.byToken.values()]) {
         if (p.cs.tabId === d.tabId && (d.frameId === 0 || d.frameId === p.cs.frameId)) this.finish(p, fail("NotAllowedError"));
       }
@@ -168,6 +177,7 @@ export class Passkeys {
       for (const p of [...this.byToken.values()]) if (p.cs.tabId === tabId) this.finish(p, fail("NotAllowedError"));
       this.opened.delete(tabId);
       this.probes.delete(tabId);
+      this.armed.delete(tabId);
       this.forgetChains(tabId);
       for (const k of [...this.cooldown.keys()]) if (k.startsWith(`${tabId}:`)) this.cooldown.delete(k);
     });
@@ -179,6 +189,35 @@ export class Passkeys {
         }
       }
     });
+  }
+
+  /**
+   * The user chose "Créer une clé d'accès à la place" in the signup menu of
+   * this top document: the site's next passkey creation there, within
+   * `PASSKEY_ARM_MS`, counts as made under a user activation (the host's
+   * call and the button click can outlast the browser's 5 s). It only lets
+   * the choice window open, which still asks for a trusted click; a get,
+   * another document, frame or origin, a second creation or a navigation:
+   * nothing. Child frames are never armed.
+   */
+  armCreate(cs: CsContext): void {
+    const o = parseOrigin(cs.origin);
+    if (cs.frameId !== 0 || !o?.https) return;
+    this.armed.set(cs.tabId, { origin: o.origin, documentId: cs.documentId, until: this.now() + PASSKEY_ARM_MS });
+  }
+
+  /** Uses the arming of this create's tab, if it is this very top document (one creation). */
+  private takeArmed(cs: CsContext): boolean {
+    const a = this.armed.get(cs.tabId);
+    if (!a) return false;
+    if (this.now() > a.until) {
+      this.armed.delete(cs.tabId);
+      return false;
+    }
+    if (cs.frameId !== 0 || cs.origin !== a.origin) return false;
+    if (a.documentId !== undefined && cs.documentId !== a.documentId) return false;
+    this.armed.delete(cs.tabId);
+    return true;
   }
 
   /** Times of `map[tabId]` within the last minute (pruned). */
@@ -272,7 +311,9 @@ export class Passkeys {
     const c: Ctx = { cs: { ...cs, origin: origin.origin }, topOrigin, rpId };
     // A creation never goes through a chain; a get may, else it needs the window.
     const chain = req.kind === "get" ? await this.silentChain(c) : null;
-    const canOpen = await this.mayOpen(c.cs, req.kind, activated);
+    // A creation the user chose in the signup menu (one-click signup): as if activated.
+    const armed = req.kind === "create" && this.takeArmed(c.cs);
+    const canOpen = await this.mayOpen(c.cs, req.kind, activated || armed);
     if (!chain && !canOpen) return FALLBACK;
     const probes = this.recent(this.probes, cs.tabId);
     if (probes.length >= PASSKEY_PROBES_PER_MIN) return FALLBACK;

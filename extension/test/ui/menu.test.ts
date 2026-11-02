@@ -286,6 +286,34 @@ describe("inline menu", () => {
     expect(text(r)).toContain("Aucun login pour atlas-cloud.test");
   });
 
+  it("a signup that can make a passkey asks password or passkey first", async () => {
+    const init = { origin: SITE, formKind: "signup", items: [login("it_01")], signup: { passkey: true } };
+    const { r, handle, worker, clock } = setup((m) => (m.type === "menu_init" ? ok(init) : ok()), "signup");
+    await handle.ready;
+    const opts = [...r.querySelectorAll("[role=option]")];
+    expect(opts[0]?.getAttribute("data-signup")).toBe("password");
+    expect(opts[1]?.getAttribute("data-signup")).toBe("passkey");
+    expect(says(opts[0]!)).toContain("Créer le compte avec un mot de passe fort");
+    expect(says(opts[1]!)).toContain("Créer une clé d'accès à la place");
+    clock.advance(300);
+    (opts[1] as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signup", token: TOKEN, mode: "passkey" });
+    clock.advance(300);
+    (opts[0] as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signup", token: TOKEN, mode: "password" });
+  });
+
+  it("no signup rows without the offer, nor with a malformed one", async () => {
+    for (const extra of [{}, { signup: { passkey: "yes" } }]) {
+      const init = { origin: SITE, formKind: "signup", items: [login("it_01")], ...extra };
+      const { r, handle } = setup((m) => (m.type === "menu_init" ? ok(init) : ok()), "signup");
+      await handle.ready;
+      expect(r.querySelector("[data-signup]")).toBeNull();
+    }
+  });
+
   it("signup form offers Générer un mot de passe", async () => {
     const { r, handle, worker, clock } = setup(def, "signup");
     await handle.ready;

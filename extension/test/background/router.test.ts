@@ -293,6 +293,8 @@ describe("message validation", () => {
       itemId: "it_01",
     });
     expect(parseUiToBg({ type: "menu_pick", token, itemId: "" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_signup", token, mode: "passkey", x: 1 })).toEqual({ type: "menu_signup", token, mode: "passkey" });
+    expect(parseUiToBg({ type: "menu_signup", token, mode: "both" })).toBeNull();
     expect(parseUiToBg({ type: "save_decide", token, decision: "steal" })).toBeNull();
     expect(
       parseUiToBg({

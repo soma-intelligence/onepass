@@ -153,7 +153,8 @@ export type PlanReason =
   | "pay_button"
   | "create_button"
   | "child_frame"
-  | "multiple_forms";
+  | "multiple_forms"
+  | "passkey_offered";
 /** Rust `Step` of `note_fill`. */
 export type FillStep = "fill" | "otp" | "provider_click" | "account";
 
@@ -179,7 +180,18 @@ export interface PlanOut {
   /** Hyphenated item ids. */
   alternatives: string[];
   reasons: PlanReason[];
+  /** Signup only: the form's passkey button, offered instead of a password (null or absent: none). */
+  passkey?: PlanPasskey | null;
 }
+
+/** Rust `PasskeyOffer`: refs of the signup form and of its passkey button. */
+export interface PlanPasskey {
+  form_ref: string;
+  button_ref: string;
+}
+
+/** `menu_signup`: the signup with a generated password, or a passkey made by the site's own button. */
+export type SignupMode = "password" | "passkey";
 
 /** Bridge request `plan_fill` (the client adds `id` and `op`). `origin` is the frame's origin as the background knows it; `context.origin` must equal it. */
 export interface PlanFillRequest {
@@ -274,6 +286,8 @@ export type UiToBg =
    */
   | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId; accountId?: string }
   | { type: "menu_generate"; token: string }
+  /** The signup choice of a menu a passkey-offering plan opened (one-click signup). */
+  | { type: "menu_signup"; token: string; mode: SignupMode }
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
   | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
@@ -339,6 +353,8 @@ export type BgToCs =
   /** Values keyed by role; the content script writes them into the fields of `formRef` only. */
   | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>> }
   | { type: "click"; origin: string; ref: string }
+  /** The user chose a passkey: click this button only if it still reads as a passkey button. */
+  | { type: "click_passkey"; origin: string; ref: string }
   /**
    * `planned`: a submit decided by a fill plan. The content script then
    * refuses a re-rendered copy of the form (no lineage substitution) and a

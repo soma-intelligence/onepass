@@ -73,6 +73,8 @@ interface PlanForMenu {
   at: number;
   /** The run refused: the page's `pattern` took no generated password. */
   notice?: MenuNotice;
+  /** A signup plan whose form can make a passkey: the menu asks password or passkey. */
+  signup?: PlanOut;
 }
 
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
@@ -313,6 +315,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           field.first = left.alternatives;
           field.planned = left.planned;
           if (left.notice) field.notice = left.notice;
+          if (left.signup) field.signup = left.signup;
         }
         const token = await menus.register(from, field);
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
@@ -361,6 +364,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
             at: now(),
           };
           if (refused) left.notice = "site_refused";
+          if (plan.intent === "signup" && plan.passkey) left.signup = plan;
           planMenus.set(key, left);
         }
         return { outcome };
@@ -388,6 +392,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const best = rec.first?.[0];
         if (best !== undefined && items[0]?.item_id === best) out.best = best;
         if (rec.notice) out.notice = rec.notice;
+        // One-click signup: password or passkey, asked first.
+        if (rec.signup?.passkey && rec.frameId === 0) out.signup = { passkey: true };
         // On a provider's pages during a sign-in to a site: the account linked to it.
         const flow = rec.frameId === 0 ? await providerFlows.signingInto(rec.tabId, rec.origin) : null;
         if (flow) {
@@ -445,6 +451,27 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // A signup form: in the vault before it is sent (spec 7.1), as from the planner.
         const intent = rec.planned?.intent ?? (rec.formKind === "signup" ? "signup" : undefined);
         if (intent === "signup") await saveFlow.savePending(rec.tabId, rec.origin, g.password, { weak: g.report?.weak_by_site === true });
+        return {};
+      },
+      menu_signup: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const plan = rec.signup;
+        const offer = plan?.passkey;
+        // Only the choice the menu showed: a signup plan of this top document with its passkey button.
+        if (!plan || !offer || rec.frameId !== 0) throw new BgError("invalid");
+        const t = targetOf(rec);
+        await planner.runSignup(t, plan, m.mode);
+        if (m.mode === "passkey") {
+          // The site's own button starts the ceremony (it owns the challenge); the
+          // creation it asks for opens OnePass's window, which still asks (spec 2.3).
+          const cs: CsContext = { tabId: rec.tabId, frameId: 0, origin: rec.origin };
+          if (rec.documentId !== undefined) cs.documentId = rec.documentId;
+          passkeys.armCreate(cs);
+          const msg: BgToCs = { type: "click_passkey", origin: rec.origin, ref: offer.button_ref };
+          await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: 0 });
+        }
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
         return {};
       },
       menu_new_login: async (m, from) => {

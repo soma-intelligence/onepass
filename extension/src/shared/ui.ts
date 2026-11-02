@@ -107,6 +107,8 @@ export interface MenuInit {
   best?: string;
   /** Opened because the page refused every generated password: said at the top of the menu. */
   notice?: MenuNotice;
+  /** A signup form that can make a passkey: "Créer le compte avec un mot de passe fort" or "Créer une clé d'accès à la place" first. */
+  signup?: { passkey: true };
 }
 
 /** Why a plan opened the menu instead of filling. */

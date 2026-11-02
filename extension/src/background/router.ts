@@ -30,6 +30,7 @@ import {
   type Prefilled,
   type ProviderId,
   type SaveEdits,
+  type SignupMode,
   type UiToBg,
 } from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
@@ -227,7 +228,7 @@ function analysis(v: unknown): PageAnalysis {
 // and frame kind the content script may add are dropped, never read.
 
 const PREFILLED: ReadonlySet<string> = new Set<Prefilled>(["empty", "typed", "ours"]);
-const BUTTON_CLASSES: ReadonlySet<string> = new Set<ButtonClass>(["submit", "next", "pay", "create", "other"]);
+const BUTTON_CLASSES: ReadonlySet<string> = new Set<ButtonClass>(["submit", "next", "pay", "create", "other", "passkey"]);
 /** serde `[u8; 32]`. */
 const USERNAME_HASH_LEN = 32;
 
@@ -370,6 +371,7 @@ function height(v: unknown): number {
 }
 
 const GEN_KINDS: ReadonlySet<string> = new Set(["smart", "random", "memorable", "pin"]);
+const SIGNUP_MODES: ReadonlySet<SignupMode> = new Set<SignupMode>(["password", "passkey"]);
 
 /** A fully validated, rebuilt extension page message, or null. */
 export function parseUiToBg(m: unknown): UiToBg | null {
@@ -393,6 +395,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+      case "menu_signup":
+        return { type: o.type, token: token(o.token), mode: member<SignupMode>(o.mode, SIGNUP_MODES) };
       case "menu_signin": {
         const s: UiToBg = {
           type: o.type,

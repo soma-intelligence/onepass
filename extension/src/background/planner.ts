@@ -21,7 +21,7 @@
 // reset page is saved as a pending Login (save-flow.ts) before the run
 // answers; a locked vault or a refusal never blocks the fill.
 import type { FillField } from "../bridge/client";
-import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut } from "../shared/messages";
+import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut, SignupMode } from "../shared/messages";
 import type { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { FillTarget, Filler } from "./fill";
@@ -164,6 +164,11 @@ export class Planner {
     ) {
       return "menu";
     }
+    // One-click signup: a form that can make a passkey asks first (password or passkey,
+    // `runSignup`): the two paths exclude each other (spec 2.3).
+    if (full.intent === "signup" && full.action === "fill" && full.passkey && (opts.form === undefined || full.passkey.form_ref === opts.form)) {
+      return "menu";
+    }
     let plan = full;
     if (opts.form !== undefined && SCOPED.has(full.action)) {
       const groups = full.groups.filter((g) => g.form_ref === opts.form);
@@ -265,6 +270,23 @@ export class Planner {
         return "filled";
       }
     }
+  }
+
+  /**
+   * The user's choice in the menu a passkey-offering signup plan opened:
+   * `password` runs the plan's groups of the offer's form (identity,
+   * generated password, pending Login), `passkey` only its identity groups
+   * (no password made, nothing saved: the site's passkey button follows).
+   * Never a submit. Not a signup plan with an offer: the menu.
+   */
+  async runSignup(t: FillTarget, plan: PlanOut, mode: SignupMode): Promise<RunOutcome> {
+    const offer = plan.passkey;
+    if (plan.intent !== "signup" || !offer) return "menu";
+    const groups = plan.groups.filter((g) => g.form_ref === offer.form_ref && (mode === "password" || g.kind === "identity"));
+    const chosen: PlanOut = { ...plan, groups, action: "fill", passkey: null };
+    const made = this.made.get(plan);
+    if (made) this.made.set(chosen, made);
+    return this.run(t, chosen);
   }
 
   /** `plan` may submit in the frame of `t` (`OpenChain` or `FillAndSubmit` after every guard). */

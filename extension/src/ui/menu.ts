@@ -11,7 +11,7 @@
 // relays the arrows and Return to the worker, the menu asks for them
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
-import type { MenuKey, ProviderId, UiToBg } from "../shared/messages";
+import type { MenuKey, ProviderId, SignupMode, UiToBg } from "../shared/messages";
 import { t } from "../shared/i18n";
 import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
 import {
@@ -138,7 +138,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
 
   const header = (origin: string | null) =>
     h("h1", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
-  const glyphTile = (name: "key" | "plus", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
+  const glyphTile = (name: "key" | "plus" | "shield", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
 
   const showError = (line: HTMLElement | null, code: string) => {
     if (code === "locked" || code === "unpaired" || code === "host_missing") {
@@ -256,6 +256,33 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const linked = init.linked;
     const items = linked ? [...init.items].sort((a, b) => Number(b.item_id === linked.itemId) - Number(a.item_id === linked.itemId)) : init.items;
     const fill = t("common.fill");
+    // One-click signup on a form that can make a passkey: the two ways, asked first (spec 2.3).
+    if (init.signup?.passkey) {
+      const signup = (mode: SignupMode) => async () => {
+        if (!token) return;
+        const r = await call(deps.send, { type: "menu_signup", token, mode }, parseEmpty);
+        if (!r.ok) showError(errLine, r.code);
+      };
+      list.append(
+        option({
+          label: t("menu.signupWithPassword"),
+          sub: t("menu.signupWithPasswordDetail"),
+          lead: glyphTile("key", 16),
+          act: fill,
+          accent: true,
+          attrs: { "data-signup": "password" },
+          run: signup("password"),
+        }),
+        option({
+          label: t("menu.signupWithPasskey"),
+          sub: t("menu.signupWithPasskeyDetail"),
+          lead: glyphTile("shield", 14),
+          act: t("common.continue"),
+          attrs: { "data-signup": "passkey" },
+          run: signup("passkey"),
+        }),
+      );
+    }
     for (const it of items) {
       const providerOnly = it.kind === "login" && !it.has_password && it.methods.length > 0;
       if (!providerOnly) {

@@ -322,6 +322,10 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "click":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.clickRef(m.ref);
         break;
+      case "click_passkey":
+        // The user's choice in the signup menu; only in the top frame it was made for.
+        if (pinned(m.origin) && typeof m.ref === "string" && window === window.top) ok = parts.submit.clickPasskey(m.ref);
+        break;
       case "submit":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref, m.planned === true);
         break;

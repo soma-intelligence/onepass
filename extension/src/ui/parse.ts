@@ -105,6 +105,10 @@ export const parseMenuInit = (v: unknown): MenuInit | null =>
     if (o.choices !== undefined) m.choices = list(o.choices, signInChoice, 64);
     if (o.best !== undefined) m.best = str(o.best, 128);
     if (o.notice !== undefined) m.notice = oneOf<MenuNotice>(o.notice, ["site_refused"]);
+    if (o.signup !== undefined) {
+      if (obj(o.signup).passkey !== true) throw new Error("signup");
+      m.signup = { passkey: true };
+    }
     return m;
   });
 
