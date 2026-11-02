@@ -288,6 +288,27 @@ struct CryptoWatchTests {
         watch.clear()
         #expect(!watch.isEnabled && watch.snapshot == nil)
     }
+
+    @MainActor
+    @Test func screenOpenDoesNotRepeatAFreshRefresh() async throws {
+        let calls = Counter()
+        let http = RecordedCryptoHTTP { _ in
+            calls.add(1)
+            return Data()
+        }
+        let watch = CryptoWatch(service: CryptoWatchService(http: http))
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        watch.open(store: CryptoWatchStore(fileURL: dir.appending(path: "x.cryptowatch"), keychain: InMemoryKeychain(), accountID: "A"))
+        watch.update { $0.enabled = true; $0.prices = nil }
+        await watch.refreshIfStale()
+        let fetched = try #require(watch.snapshot?.fetchedAt)
+        await watch.refreshIfStale(now: fetched.addingTimeInterval(30))
+        #expect(watch.snapshot?.fetchedAt == fetched)
+        await watch.refreshIfStale(now: fetched.addingTimeInterval(61))
+        #expect(watch.snapshot?.fetchedAt != fetched)
+        #expect(calls.value == 0)
+    }
 }
 
 /// Thread-safe counters for the recorded providers.

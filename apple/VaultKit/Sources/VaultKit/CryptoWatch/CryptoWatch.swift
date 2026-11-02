@@ -111,6 +111,18 @@ public final class CryptoWatch {
         running = nil
     }
 
+    /// Screen open or period change: refreshes unless the last refresh is younger than `maxAge`,
+    /// in the same currency, for the same wallets and with the period's chart already there. Going
+    /// back and forth between screens does not repeat the requests.
+    public func refreshIfStale(maxAge: TimeInterval = 60, now: Date = .now) async {
+        if let s = snapshot, now.timeIntervalSince(s.fetchedAt) < maxAge, s.currency == settings.currency,
+           Set(s.wallets.map(\.itemID)) == Set(targets.map(\.itemID)),
+           settings.prices == nil || s.prices.isEmpty || s.charts.values.contains(where: { $0[settings.period] != nil }) {
+            return
+        }
+        await refresh()
+    }
+
     private func persist() {
         try? store?.save(CryptoWatchState(settings: settings, snapshot: snapshot))
     }

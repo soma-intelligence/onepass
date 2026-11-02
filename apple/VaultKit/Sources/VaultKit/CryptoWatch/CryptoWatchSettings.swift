@@ -78,6 +78,9 @@ public struct CryptoWatchSettings: Codable, Sendable, Equatable {
     public var period: CryptoPeriod = .day
     public var sections: [CryptoSection] = CryptoSection.allCases
     public var hiddenSections: Set<CryptoSection> = []
+    /// The user's own wallet app for "Ouvrir dans…": its URL scheme (`myWallet://`) and a name.
+    public var handoffScheme: String?
+    public var handoffName: String?
 
     public init(currency: String = CryptoWatchSettings.defaultCurrency) {
         self.currency = currency
