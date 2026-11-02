@@ -339,10 +339,20 @@ private struct BrowserExtensionsSection: View {
                     row(paired)
                 }
             }
+            ForEach(bridge.blocked, id: \.self) { extensionId in
+                LabeledContent {
+                    Button("Autoriser de nouveau") { bridge.allowAgain(extensionId) }
+                        .accessibilityIdentifier("settings.devices.browsers.allowAgain")
+                } label: {
+                    Text(extensionId == "safari" ? "Safari" : extensionId).lineLimit(1)
+                    Text("Oubliée : ne se reconnecte plus seule. Associe-la avec le code, ou autorise-la de nouveau.")
+                }
+                .accessibilityIdentifier("settings.devices.browsers.blocked")
+            }
         } header: {
             Text("Extensions de navigateur")
         } footer: {
-            Text("Elles remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
+            Text("Elles se connectent seules à OnePass quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
         }
         .confirmationDialog(
             Text("Oublier \(forgetting?.browser ?? "") ?"),
@@ -352,7 +362,7 @@ private struct BrowserExtensionsSection: View {
             Button("Oublier l'extension", role: .destructive) { bridge.forget(paired.id) }
                 .accessibilityIdentifier("settings.devices.browsers.confirmForget")
         } message: { _ in
-            Text("Elle ne pourra plus remplir. Pour la réutiliser, associe-la de nouveau.")
+            Text("Elle ne pourra plus remplir ni se reconnecter seule. Pour la réutiliser, associe-la avec le code, ou autorise-la de nouveau ici.")
         }
     }
 
@@ -374,7 +384,9 @@ private struct BrowserExtensionsSection: View {
                         .padding(.vertical, 2)
                         .background(.fill.tertiary, in: Capsule())
                 }
-                Text("\(paired.extensionName) · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))")
+                Text(paired.automatic
+                    ? "Associée automatiquement · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))"
+                    : "\(paired.extensionName) · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

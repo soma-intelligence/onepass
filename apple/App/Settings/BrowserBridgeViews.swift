@@ -96,14 +96,16 @@ struct BrowserBridgeSection: View {
                             .accessibilityIdentifier("bridge.forget")
                     } label: {
                         Text(p.browser)
-                        Text("\(p.extensionName), utilisé \(p.lastUsed.formatted(.relative(presentation: .named)))")
+                        Text(p.automatic
+                            ? "Associé automatiquement, utilisé \(p.lastUsed.formatted(.relative(presentation: .named)))"
+                            : "\(p.extensionName), utilisé \(p.lastUsed.formatted(.relative(presentation: .named)))")
                     }
                 }
             }
         } header: {
             Text("Navigateurs")
         } footer: {
-            Text("Les extensions OnePass de Safari, Chrome et Firefox remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi.")
+            Text("Les extensions OnePass de Safari, Chrome, Edge, Brave et Firefox se connectent seules quand le Mac vérifie la signature du navigateur, et remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi.")
         }
     }
 }

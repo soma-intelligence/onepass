@@ -461,6 +461,10 @@ final class AppModel {
             if let coordinator { Task { await coordinator.syncNow() } }
             // The provider may have been turned on or off in the system settings meanwhile.
             Task { await refreshAutoFillStatus() }
+            #if os(macOS)
+            // A browser installed or launched for the first time meanwhile gets its manifest.
+            if let browserBridge, browserBridge.isRunning { browserBridge.refreshManifests() }
+            #endif
         case .inactive:
             accounts.scenePhaseChanged(.inactive)
         case .background:

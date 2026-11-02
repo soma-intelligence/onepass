@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Foundation
 import OnePassCore
 import os
@@ -8,7 +9,9 @@ import os
 /// `bridge.sock` in the App Group container. The Rust `BridgeServer` checks each client's code
 /// signature and runs the bridge protocol; this class shows pairing requests, keeps the pairings in
 /// the keychain, confirms `reprompt` items with Touch ID and follows the session (a lock here locks
-/// the bridge).
+/// the bridge). Safari and known signed browsers pair without a code (spec
+/// 2026-11-02-browser-auto-pairing); this class also writes the browsers' native messaging
+/// manifests and keeps the user's revocations.
 @MainActor
 @Observable
 public final class BrowserBridge {
@@ -25,13 +28,19 @@ public final class BrowserBridge {
     public struct Paired: Identifiable, Equatable, Sendable {
         public let id: String
         public let extensionName: String
+        /// The browser verified by code signature for an automatic pairing, else what the
+        /// extension said about itself.
         public let browser: String
+        /// True when the app paired it without a code, on the browser's code signature.
+        public let automatic: Bool
         public let createdAt: Date
         public let lastUsed: Date
     }
 
     public private(set) var requests: [Request] = []
     public private(set) var paired: [Paired] = []
+    /// Extension ids the user forgot: they pair again only with the code, or after "allow again".
+    public private(set) var blocked: [String] = []
     /// False when this build cannot serve (unsigned, no App Group container) or the socket is
     /// taken by another running copy of the app.
     public private(set) var isRunning = false
@@ -71,8 +80,10 @@ public final class BrowserBridge {
         } catch {
             return
         }
+        server.setBlockedAuto(extensionIds: store.blockedAuto())
         self.server = server
         isRunning = true
+        refreshManifests(bundle: bundle, allowed: allowed)
         session.coreSessionChanged = { [weak self] core in self?.sessionChanged(core) }
         session.hiddenVaultsChanged = { [weak self] ids in self?.excluded(ids) }
         excluded(session.hiddenVaultIDs)
@@ -121,11 +132,38 @@ public final class BrowserBridge {
         requests.removeAll { $0.id == id }
     }
 
-    /// Forget a paired browser: its next connection must pair again.
+    /// Forget a paired browser: its next connection must pair again, and with the code (a forgotten
+    /// extension never pairs itself back automatically until a code pairing or `allowAgain`).
     public func forget(_ id: String) {
         server?.forgetPairing(pairingId: id)
-        store.remove(id)
+        store.forget(id)
+        server?.setBlockedAuto(extensionIds: store.blockedAuto())
         refreshPaired()
+    }
+
+    /// Lets a forgotten extension pair automatically again.
+    public func allowAgain(_ extensionId: String) {
+        store.allowAuto(extensionId)
+        server?.setBlockedAuto(extensionIds: store.blockedAuto())
+        refreshPaired()
+    }
+
+    /// Write or refresh the native messaging manifests of the installed browsers, so that Chrome,
+    /// Edge, Brave and Firefox find `onepass-relay` with no step from the user. Called at start and
+    /// whenever the app comes forward. Never throws: a browser whose folder is missing waits.
+    public func refreshManifests(bundle: Bundle = .main) {
+        refreshManifests(
+            bundle: bundle,
+            allowed: Self.allowedExtensions(bundle.object(forInfoDictionaryKey: Self.allowedExtensionsKey)))
+    }
+
+    private func refreshManifests(bundle: Bundle, allowed: [String]) {
+        guard let home = NativeMessagingManifests.userHome() else { return }
+        let relay = bundle.bundleURL.appendingPathComponent("Contents/Helpers/onepass-relay")
+        let written = NativeMessagingManifests.install(
+            home: home, relay: relay, extensionIDs: allowed,
+            isInstalled: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil })
+        if !written.isEmpty { BridgeLog.note("native messaging manifests written: \(written.count)") }
     }
 
     // MARK: - From the bridge threads (through `Delegate`)
@@ -154,10 +192,13 @@ public final class BrowserBridge {
     fileprivate func refreshPaired() {
         paired = store.load().map {
             Paired(
-                id: $0.pairingId, extensionName: $0.extName, browser: $0.browser,
+                id: $0.pairingId, extensionName: $0.extName,
+                browser: $0.verifiedBrowser.isEmpty ? $0.browser : $0.verifiedBrowser,
+                automatic: !$0.verifiedBrowser.isEmpty,
                 createdAt: Date(timeIntervalSince1970: TimeInterval($0.createdAt)),
                 lastUsed: Date(timeIntervalSince1970: TimeInterval($0.lastUsed)))
         }.sorted { $0.createdAt < $1.createdAt }
+        blocked = store.blockedAuto()
     }
 
     fileprivate func wroteVault() async {
@@ -191,9 +232,11 @@ public final class BrowserBridge {
             Task { @MainActor [weak owner] in owner?.ended(requestId) }
         }
 
-        /// Persisted before the extension hears `pair_ok`.
+        /// Persisted before the extension hears `pair_ok`. A code pairing lifts the extension's
+        /// block here as it does in the core.
         func pairingStored(pairing: FfiBridgePairing) {
             store.add(pairing)
+            BridgeLog.note(pairing.verifiedBrowser.isEmpty ? "pairing stored" : "pairing stored automatically")
             Task { @MainActor [weak owner] in owner?.refreshPaired() }
         }
 
@@ -267,6 +310,8 @@ extension BrowserBridge {
 final class BridgePairingStore: @unchecked Sendable {
     static let service = "me.somalabs.onepass.bridge"
     static let key = "pairings"
+    /// Extension ids the user forgot (JSON list): no automatic pairing for them.
+    static let blockedKey = "auto-blocked"
     /// `last_used` is written back at most this often per pairing.
     static let touchInterval: UInt64 = 3600
 
@@ -283,6 +328,8 @@ final class BridgePairingStore: @unchecked Sendable {
         var extName: String
         var browser: String
         var extensionId: String
+        /// Absent in items written before automatic pairing, and after a code pairing.
+        var verifiedBrowser: String?
         var createdAt: UInt64
         var lastUsed: UInt64
     }
@@ -304,7 +351,8 @@ final class BridgePairingStore: @unchecked Sendable {
             guard let key = Data(base64Encoded: s.key), key.count == 32 else { return nil }
             return FfiBridgePairing(
                 pairingId: s.pairingId, key: key, extName: s.extName, browser: s.browser,
-                extensionId: s.extensionId, createdAt: s.createdAt, lastUsed: s.lastUsed)
+                extensionId: s.extensionId, verifiedBrowser: s.verifiedBrowser ?? "",
+                createdAt: s.createdAt, lastUsed: s.lastUsed)
         }
     }
 
@@ -315,9 +363,11 @@ final class BridgePairingStore: @unchecked Sendable {
         list.append(
             Stored(
                 pairingId: p.pairingId, key: p.key.base64EncodedString(), extName: p.extName,
-                browser: p.browser, extensionId: p.extensionId, createdAt: p.createdAt,
-                lastUsed: p.lastUsed))
+                browser: p.browser, extensionId: p.extensionId,
+                verifiedBrowser: p.verifiedBrowser.isEmpty ? nil : p.verifiedBrowser,
+                createdAt: p.createdAt, lastUsed: p.lastUsed))
         write(list)
+        if p.verifiedBrowser.isEmpty { unblock(p.extensionId) }
     }
 
     func touch(_ id: String, at: UInt64) {
@@ -337,6 +387,53 @@ final class BridgePairingStore: @unchecked Sendable {
         let list = read()
         let kept = list.filter { $0.pairingId != id }
         if kept.count != list.count { write(kept) }
+    }
+
+    /// The user forgot this pairing: remove it and block its extension id from pairing itself
+    /// back without a code. The extension id, or nil when the pairing was unknown.
+    @discardableResult
+    func forget(_ id: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        let list = read()
+        guard let gone = list.first(where: { $0.pairingId == id }) else { return nil }
+        write(list.filter { $0.pairingId != id })
+        var blocked = readBlocked()
+        if !blocked.contains(gone.extensionId) {
+            blocked.append(gone.extensionId)
+            writeBlocked(blocked)
+        }
+        return gone.extensionId
+    }
+
+    func blockedAuto() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return readBlocked()
+    }
+
+    /// "Autoriser de nouveau".
+    func allowAuto(_ extensionId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        unblock(extensionId)
+    }
+
+    /// Caller holds the lock.
+    private func unblock(_ extensionId: String) {
+        let blocked = readBlocked()
+        let kept = blocked.filter { $0 != extensionId }
+        if kept.count != blocked.count { writeBlocked(kept) }
+    }
+
+    private func readBlocked() -> [String] {
+        guard let data = try? keychain.read(Self.blockedKey) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    private func writeBlocked(_ list: [String]) {
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        try? keychain.write(Self.blockedKey, data)
     }
 }
 #endif
