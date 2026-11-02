@@ -964,7 +964,41 @@ struct SyncCoordinatorStoreSafetyTests {
             #expect(SyncCoordinator.isValid(record(kind)))
         }
         #expect(!SyncCoordinator.isValid(record(0)))
-        #expect(!SyncCoordinator.isValid(record(11)))
+        #expect(!SyncCoordinator.isValid(record(28)))
+    }
+
+    /// X1b Task 3: the kinds come from the core. Intros, deliveries, approver list, sharing kinds,
+    /// attachments and the `SyncHome` stage; the side kind and unknown codes do not.
+    @Test func knownKindsComeFromTheCore() {
+        let meta = InMemoryRemote.serverMeta(tag: 1)
+        let record = { (kind: UInt8) in
+            RemoteRecord(name: RecordName(kind: kind, id: Self.hex(1)), version: 1, data: Data([1]), serverMeta: meta)
+        }
+        for kind: UInt8 in [10, 11, 12, 24, 25, 27] {
+            #expect(SyncCoordinator.isValid(record(kind)), "kind \(kind)")
+        }
+        for kind: UInt8 in [0, 28, 200] {
+            #expect(!SyncCoordinator.isValid(record(kind)), "kind \(kind)")
+        }
+    }
+
+    /// X1b Task 3: an enroll request in the zone is neither staged nor read as an unknown record;
+    /// the rest of the page is staged and the round ends idle.
+    @Test func sideRecordsAreKeptApart() async throws {
+        let meta = InMemoryRemote.serverMeta(tag: 7)
+        let good = RemoteRecord(name: RecordName(kind: 4, id: Self.hex(1)), version: 1, data: Data([1, 2]), serverMeta: meta)
+        let side = RemoteRecord(name: RecordName(kind: 28, id: Self.hex(2)), version: 1, data: Data([9]), serverMeta: meta)
+        let remote = ScriptedRemote(pages: [[side, good]])
+        let device = try SyncDevice(name: "A", client: remote)
+        defer { device.cleanUp() }
+        await device.coordinator.syncNow()
+        #expect(await device.coordinator.status.isIdle)
+        #expect(try await Self.serverMeta(device.store, good.name) == meta)
+        // The store knows no kind 28: it could not even hold it.
+        await #expect(throws: OnePassError.InvalidInput(what: "record kind")) {
+            try await Self.serverMeta(device.store, side.name)
+        }
+        #expect(try await Self.readToken(device.store) == ScriptedRemote.token(1))
     }
 
     /// I2: the token moves only once a page is staged; a crash in between fetches the page again.

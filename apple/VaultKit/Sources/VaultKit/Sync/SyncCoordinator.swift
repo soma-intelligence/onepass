@@ -492,8 +492,11 @@ public actor SyncCoordinator: SyncTrigger {
             }
             if batch.restartedFromScratch { try await CoreThread.run { try store.beginFullFetch() } }
             let valid = batch.changes.filter(Self.isValid)
-            if valid.count < batch.changes.count {
-                Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
+            // Side records (a follower's enroll request) are read by the frozen zone watcher, never
+            // staged and never counted as unknown.
+            let side = CloudKitMapping.sideRecords(in: batch).count
+            if valid.count + side < batch.changes.count {
+                Self.log.notice("skipped \(batch.changes.count - valid.count - side, privacy: .public) unknown remote records")
             }
             let next = batch.token
             let (count, echoed) = try await CoreThread.run {
@@ -599,10 +602,10 @@ public actor SyncCoordinator: SyncTrigger {
     /// Attachment chunks (`RecordKind::Attachment` in the core).
     static let attachmentKind: UInt8 = 25
 
-    /// A record the core can stage: known kind (1 to 10, or an attachment chunk), canonical id,
-    /// version that fits SQLite.
+    /// A record the core can stage: a kind the core knows (`isKnownRecordKind`, never a side kind),
+    /// canonical id, version that fits SQLite.
     static func isValid(_ record: RemoteRecord) -> Bool {
-        ((1...10).contains(record.name.kind) || record.name.kind == attachmentKind)
+        isKnownRecordKind(code: record.name.kind)
             && RecordName(string: record.name.string) == record.name
             && record.version <= UInt64(Int64.max)
     }
