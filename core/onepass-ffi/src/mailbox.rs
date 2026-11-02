@@ -768,8 +768,8 @@ impl Session {
 
     /// Verify a signed home (this device's, or the winner's of a migration
     /// race) and adopt it.
-    pub fn adopt_sync_home(&self, signed: Vec<u8>) -> Result<FfiSyncHome, OnePassError> {
-        self.with(|repo| Ok((&repo.adopt_sync_home(&signed)?).into()))
+    pub fn adopt_sync_home(&self, home: Vec<u8>) -> Result<FfiSyncHome, OnePassError> {
+        self.with(|repo| Ok((&repo.adopt_sync_home(&home)?).into()))
     }
 
     /// A request, signed with this device's keys (`classical` and `pq`, as
