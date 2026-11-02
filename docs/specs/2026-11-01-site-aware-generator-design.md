@@ -140,7 +140,7 @@ Recherche par domaine enregistrable puis par domaine parent. La règle trouvée 
 
 ## 7. Jamais affiché, jamais perdu
 
-1. Au remplissage d'un mot de passe généré sur une page d'inscription ou de réinitialisation, l'extension écrit aussitôt un élément Login en attente dans le coffre : site, identifiant s'il est connu, mot de passe, tag `onepass:pending`. Opération hôte `save_pending`, même contrôle d'origine que `save`.
+1. Au remplissage d'un mot de passe généré sur une page d'inscription, l'extension écrit aussitôt un élément Login en attente dans le coffre : site, identifiant s'il est connu, mot de passe, tag `onepass:pending`. Opération hôte `save_pending`, même contrôle d'origine que `save`. Une page de réinitialisation ou de changement n'écrit rien en attente : le mot de passe est seulement retenu, et à l'envoi la proposition de mise à jour vise le Login que l'utilisateur a déjà.
 2. L'envoi détecté (flux existant de `save-flow.ts`) confirme l'élément : le tag tombe, l'identifiant final est complété.
 3. Sans envoi détecté, l'élément reste en attente. Le prochain remplissage du même site le propose en premier. Au bout de 30 jours sans usage, OnePass le signale dans Watchtower ; il n'est jamais supprimé sans l'utilisateur.
 4. Une nouvelle génération sur le même onglet et le même site remplace le mot de passe de l'élément en attente, l'ancien part dans `password_history`.

@@ -229,6 +229,20 @@ describe("planner", () => {
     // Made for the generated group's form, through the page's rules (generate.ts).
     expect(calls.generated).toEqual([[target({ formRef: "f1" }), "menu"]]);
     expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+    expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
+  });
+
+  it("a reset page only remembers the generated password (the update prompt follows)", async () => {
+    const { calls, outcome } = await planAndRun(
+      plan({
+        intent: "reset",
+        groups: [{ form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }, { field_ref: "f1e2", role: "confirm_password" }] }],
+      }),
+      context([form("f1", ["current_password", "new_password", "confirm_password"])]),
+    );
+    expect(outcome).toBe("filled");
+    expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+    expect(calls.pending).toEqual([]);
   });
 
   it("a page that refuses every generated password gets the menu, nothing written", async () => {

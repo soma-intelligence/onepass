@@ -220,7 +220,8 @@ export class Planner {
                 this.saveFlow.rememberGenerated(t.tabId, t.origin, generated);
                 remembered = true;
                 // In the vault before the form is sent (spec 7.1): a lock or a closed tab loses nothing.
-                if (plan.intent === "signup" || plan.intent === "reset") {
+                // Signup only: a reset keeps the save prompt, which updates the existing Login.
+                if (plan.intent === "signup") {
                   await this.saveFlow.savePending(t.tabId, t.origin, generated, { weak });
                 }
               }
