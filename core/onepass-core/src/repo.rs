@@ -915,6 +915,14 @@ impl<S: RecordStore> Repository<S> {
     /// A quarantined device reads nothing: `Validation("device")` (key
     /// rotation v2, spec 8.4); `items` too.
     pub fn vaults(&self) -> Result<Vec<Vault>> {
+        let mut out = self.personal_vaults()?;
+        out.extend(self.open_shared_vaults()?);
+        Ok(out)
+    }
+
+    /// The account's own vaults (`vaults` without the shared ones), with
+    /// the epoch and `VaultMissing` checks.
+    pub fn personal_vaults(&self) -> Result<Vec<Vault>> {
         self.readable()?;
         let stored = self.stored_epoch()?;
         let newer = self.epoch_rule(stored.as_ref())?;
@@ -1115,7 +1123,7 @@ impl<S: RecordStore> Repository<S> {
     pub fn issue_restore_epoch(&mut self, reason: EpochReason) -> Result<RestoreEpoch> {
         self.writable()?;
         let stored = self.sync_epoch()?.map(|e| e.epoch);
-        let vaults = self.vaults()?;
+        let vaults = self.personal_vaults()?;
         self.issue_epoch(reason, stored, vaults, false)
     }
 
@@ -1309,7 +1317,7 @@ impl<S: RecordStore> Repository<S> {
         if self.read_list::<VaultListEntry>()?.is_none() {
             self.maintain_lists(None)?;
         }
-        if !self.vaults()?.iter().any(|v| v.id == vault.id) {
+        if !self.personal_vaults()?.iter().any(|v| v.id == vault.id) {
             return Err(Error::NotFound);
         }
         let list = self.read_list::<VaultListEntry>()?.ok_or(Error::NotFound)?;
@@ -1334,7 +1342,7 @@ impl<S: RecordStore> Repository<S> {
         // The hidden account profile does not count, and moves to another
         // live vault before this one goes.
         if let Some(id) = profile {
-            let to = self.vaults()?.into_iter().find(|v| v.id != vault.id);
+            let to = self.personal_vaults()?.into_iter().find(|v| v.id != vault.id);
             if let Some(to) = to {
                 self.move_item(id, vault, &to)?;
             }
@@ -1402,6 +1410,9 @@ impl<S: RecordStore> Repository<S> {
     /// records' versions: two racing updates cannot both win, and a store
     /// cannot serve an older meta (its flags) under the newer manifest.
     pub fn update_vault_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        if vault.zone().is_shared() {
+            return self.shared_update_meta(vault, meta);
+        }
         self.writable()?;
         self.sync_epoch()?;
         let key = self
@@ -1469,6 +1480,9 @@ impl<S: RecordStore> Repository<S> {
     /// write in flight. A lost race (`Conflict`) deletes only the record
     /// this call wrote.
     pub fn save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
+        if vault.zone().is_shared() {
+            return self.shared_save_item(vault, item);
+        }
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
@@ -1576,6 +1590,9 @@ impl<S: RecordStore> Repository<S> {
     /// Remove an item for good: manifest without it first, then its record
     /// and its ignored leftovers, then its attachments' chunks.
     pub fn delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
+        if vault.zone().is_shared() {
+            return self.shared_delete_item(vault, item_id);
+        }
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let (blob, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
@@ -1621,6 +1638,9 @@ impl<S: RecordStore> Repository<S> {
     pub fn move_item(&mut self, item_id: Id, from: &Vault, to: &Vault) -> Result<()> {
         if from.id == to.id {
             return Err(Error::InvalidFormat("move to the same vault"));
+        }
+        if from.zone().is_shared() || to.zone().is_shared() {
+            return self.shared_move_item(item_id, from, to);
         }
         self.sync_epoch()?;
         let src = self.served(from, Use::Write)?;
@@ -1686,6 +1706,9 @@ impl<S: RecordStore> Repository<S> {
     /// verified copy (a vault this device never read, or a copy that fails
     /// too) is an alert and the visible state's error.
     pub(crate) fn served(&mut self, vault: &Vault, use_: Use) -> Result<Loaded> {
+        if vault.zone().is_shared() {
+            return self.shared_served(vault, use_);
+        }
         if use_ != Use::Read {
             self.writable()?;
         }

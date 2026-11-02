@@ -84,16 +84,18 @@ impl<S: RecordStore> RepoPort<'_, S> {
 
 impl<S: RecordStore> VaultPort for RepoPort<'_, S> {
     fn vaults(&mut self) -> Result<Vec<VaultInfo>, PortError> {
-        Ok(self
-            .0
-            .vaults()?
-            .into_iter()
-            .map(|v| VaultInfo {
+        let mut out = Vec::new();
+        for v in self.0.vaults()? {
+            // A shared vault this device hid from the MCP server counts as
+            // closed to it (sharing spec 10.2).
+            let mcp_access = self.0.mcp_visible(&v)?;
+            out.push(VaultInfo {
                 id: v.id,
                 name: v.meta.name.clone(),
-                mcp_access: v.meta.mcp_access,
-            })
-            .collect())
+                mcp_access,
+            });
+        }
+        Ok(out)
     }
 
     fn items(&mut self, vault_id: Id) -> Result<Vec<Item>, PortError> {

@@ -128,7 +128,7 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             }
             if others.is_none() {
-                others = Some(self.vaults()?);
+                others = Some(self.personal_vaults()?);
             }
             if let Some(from) = others.iter().flatten().find(|v| v.id == owner)
                 && let Ok(moved) = attachment::rewrap(from, vault, &rec)

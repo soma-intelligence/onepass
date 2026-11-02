@@ -166,7 +166,7 @@ impl Repository<SyncStore> {
         }
         let troubled = self.store.keep_targets()?;
         let stored = self.sync_epoch()?.map(|e| e.epoch);
-        let vaults = self.vaults()?;
+        let vaults = self.personal_vaults()?;
         let issued = self.issue_epoch(reason, stored, vaults, true)?;
         self.store.rebuild_ancestors_on_base(&troubled)?;
         let heads: BTreeMap<Id, u64> = troubled

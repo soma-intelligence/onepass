@@ -98,7 +98,7 @@ impl Repository<SyncStore> {
 
     fn check_vaults(&mut self) -> Result<()> {
         self.sync_epoch()?;
-        for vault in self.vaults()? {
+        for vault in self.personal_vaults()? {
             match self.served(&vault, Use::Read) {
                 Ok(loaded) => {
                     self.device

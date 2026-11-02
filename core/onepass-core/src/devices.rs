@@ -292,7 +292,7 @@ impl<S: RecordStore> Repository<S> {
         }
 
         let mut vault_body = None;
-        if let Ok(present) = self.vaults() {
+        if let Ok(present) = self.personal_vaults() {
             let listed: Vec<VaultListEntry> = vault_list
                 .as_ref()
                 .map(|v| v.body.entries.clone())

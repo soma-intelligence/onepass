@@ -142,7 +142,7 @@ impl<S: RecordStore> Repository<S> {
         let local_items = self.store.list(RecordKind::Item)?;
         let local_chunks = self.store.list(RecordKind::Attachment)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
-        for vault in self.vaults()? {
+        for vault in self.personal_vaults()? {
             if vault.meta.travel_safe {
                 continue;
             }
@@ -413,7 +413,7 @@ impl<S: RecordStore> Repository<S> {
                 }
             }
         }
-        let listed = self.vaults()?;
+        let listed = self.personal_vaults()?;
         for v in vaults {
             let vault = listed
                 .iter()

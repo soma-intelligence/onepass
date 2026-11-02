@@ -1,17 +1,27 @@
 //! Shared vaults and zones on the repository (sharing plan 2): zone
 //! accesses (Task 5b), then sharing, members and roles (Tasks 6 to 15).
 
-use super::{Repository, split_item_record};
+use super::reseal::item_record;
+use super::{Loaded, Repository, Use, entry, split_item_record};
 use crate::contact::ContactLevel;
 use crate::lineage::identity_id;
+use crate::manifest::{
+    Manifest, ManifestEntry, SeenManifest, check_records, manifest_hash, meta_hash, record_hash,
+    sign_manifest,
+};
+use crate::model::Item;
 use crate::share::{
     AccessTarget, MEMBERSHIP_FORMAT, Member, MemberRef, MemberView, MembershipBody,
     MembershipReason, Role, ShareAction, ShareState, SharedVaultInfo, SignedZoneAccess,
     ZONE_ACCESS_KIND, ZoneAccess, ZoneHome, ZoneMailboxKind, ZoneSeed, accept_first,
     identity_pub_hash, key_commit, sign_membership, sign_shared_manifest, wrap_member_key,
 };
+use crate::share::{
+    MemberKey, SharedSignedManifest, SignedMembership, member_key_id, open_member_key,
+    verify_shared_manifest,
+};
 use crate::store::{Record, RecordKind, RecordStore, Zone};
-use crate::vault::Vault;
+use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -467,4 +477,409 @@ fn refused(field: &str, reason: &'static str) -> Error {
         reason,
     }
     .into()
+}
+
+impl<S: RecordStore> Repository<S> {
+    fn share_state_of(&self, vault: Id) -> Result<ShareState> {
+        self.store.share_state(vault)?.ok_or(Error::NotFound)
+    }
+
+    /// Open shared vault `vault_id` (spec 6.3): my `MemberKey` of the
+    /// pinned head's generation, checked against its key commitment, then
+    /// the zone's sealed meta.
+    pub fn open_shared(&self, vault_id: Id) -> Result<Vault> {
+        let state = self.share_state_of(vault_id)?;
+        self.open_shared_with(&state)
+    }
+
+    fn open_shared_with(&self, state: &ShareState) -> Result<Vault> {
+        let me = self.me();
+        let zone = state.zone;
+        let g = state.head.generation;
+        let mk_rec = self
+            .store
+            .get_in(
+                zone,
+                RecordKind::MemberKey,
+                member_key_id(state.vault_id, g, &me),
+            )?
+            .ok_or(Error::NotFound)?;
+        let mk = MemberKey::decode(&mk_rec.data)?;
+        if mk.vault_id != state.vault_id || mk.generation != g || mk.member() != me {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let key = open_member_key(self.account.keyset(), &mk, &state.head.key_commit)?;
+        let meta = self
+            .store
+            .get_in(zone, RecordKind::VaultMeta, state.vault_id)?
+            .ok_or(Error::InvalidFormat("vault meta"))?;
+        Vault::from_shared(state.vault_id, key, &meta.data)
+    }
+
+    /// Every shared vault that opens, by id. One that does not open is left
+    /// out here (its screen shows it through `shared_vaults`); during
+    /// Travel Mode only the travel-safe ones.
+    pub(crate) fn open_shared_vaults(&self) -> Result<Vec<Vault>> {
+        let travel = !self.travel_parked.is_empty();
+        let mut out = Vec::new();
+        for state in self.store.share_states()? {
+            if let Ok(v) = self.open_shared_with(&state)
+                && (!travel || v.meta.travel_safe)
+            {
+                out.push(v);
+            }
+        }
+        out.sort_by_key(|v| v.id);
+        Ok(out)
+    }
+
+    /// The shared vaults this account is a member of, as the screens show
+    /// them. Zone accesses synced from this account's other devices are
+    /// adopted first (ruling A-14).
+    pub fn shared_vaults(&mut self) -> Result<Vec<SharedVaultInfo>> {
+        self.adopt_zone_accesses()?;
+        let mut out = Vec::new();
+        for state in self.store.share_states()? {
+            let name = self
+                .open_shared_with(&state)
+                .map(|v| v.meta.name)
+                .unwrap_or_default();
+            out.push(self.shared_info(&state, &name)?);
+        }
+        Ok(out)
+    }
+
+    /// For each `ZoneAccess` of a vault zone without a local share state:
+    /// pin the zone's membership head when its signer is this account
+    /// (another device of mine) or a `Verified` contact of the book with
+    /// `Manage` in that body (ruling A-14). Anything else waits.
+    pub fn adopt_zone_accesses(&mut self) -> Result<()> {
+        let me = self.me();
+        for access in self.zone_accesses()? {
+            let AccessTarget::Zone(zone @ Zone::Vault(id)) = access.target else {
+                continue;
+            };
+            if self.store.share_state(id)?.is_some() {
+                continue;
+            }
+            let Some(rec) = self.store.get_in(zone, RecordKind::Membership, id)? else {
+                continue;
+            };
+            let Ok(signed) = SignedMembership::decode(&rec.data) else {
+                continue;
+            };
+            let signer = signed.body.signer;
+            let key = if signer.account_id == me.account_id {
+                Some(self.account.params.signing_pub.clone())
+            } else {
+                match self.contact(signer.account_id)? {
+                    Some(c)
+                        if c.level == ContactLevel::Verified
+                            && signed.body.member(signer.account_id).is_some_and(|m| {
+                                m.role == Role::Manage && m.sign_pub == c.sign_pub
+                            }) =>
+                    {
+                        Some(c.sign_pub.clone())
+                    }
+                    _ => None,
+                }
+            };
+            let Some(key) = key else {
+                continue;
+            };
+            let Ok(head) = accept_first(&signed, &key) else {
+                continue;
+            };
+            if head.member(me.account_id).is_none() {
+                continue;
+            }
+            let state = ShareState::new(zone, head);
+            self.store
+                .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+        }
+        Ok(())
+    }
+
+    /// Hide a shared vault from the MCP server on this device (only ever
+    /// restricts: a vault whose meta refuses MCP stays hidden).
+    pub fn set_shared_vault_mcp_hidden(&mut self, vault_id: Id, hidden: bool) -> Result<()> {
+        let mut state = self.share_state_of(vault_id)?;
+        state.mcp_hidden = hidden;
+        self.store
+            .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))
+    }
+
+    /// Whether the MCP server may see `vault`: its meta allows it, and for
+    /// a shared vault, this device did not hide it.
+    pub fn mcp_visible(&self, vault: &Vault) -> Result<bool> {
+        if !vault.meta.mcp_access {
+            return Ok(false);
+        }
+        match vault.zone() {
+            Zone::Vault(id) => Ok(!self.share_state_of(id)?.mcp_hidden),
+            _ => Ok(true),
+        }
+    }
+
+    /// My role in the pinned head: refused below `min`.
+    fn require_role(&self, state: &ShareState, min: Role) -> Result<()> {
+        let me = self.me();
+        let role = state
+            .head
+            .member(me.account_id)
+            .filter(|m| m.identity_id == me.identity_id)
+            .map(|m| m.role)
+            .ok_or_else(|| refused("role", "not a member"))?;
+        if role < min {
+            return Err(refused(
+                "role",
+                if min == Role::Manage {
+                    "manager only"
+                } else {
+                    "read only"
+                },
+            ));
+        }
+        Ok(())
+    }
+
+    /// `served` for a shared vault: the zone's manifest verified against
+    /// the pinned chain (`verify_shared_manifest`) and the records it
+    /// lists. Records of the vault the manifest does not list are ignored
+    /// (a race lost by another member). The manifest and its meta hash are
+    /// then remembered in the share state.
+    pub(crate) fn shared_served(&mut self, vault: &Vault, use_: Use) -> Result<Loaded> {
+        if use_ != Use::Read {
+            self.writable()?;
+        }
+        let mut state = self.share_state_of(vault.id)?;
+        let zone = state.zone;
+        let rec = self
+            .store
+            .get_in(zone, RecordKind::Manifest, vault.id)?
+            .ok_or(IntegrityError::ManifestMissingItem)?;
+        let sm = SharedSignedManifest::decode(&rec.data)?;
+        let manifest = verify_shared_manifest(
+            vault,
+            &state.view(),
+            &sm,
+            state.last_manifest.as_ref(),
+            state.last_meta,
+        )?;
+        let mut records = Vec::new();
+        let mut ignored = Vec::new();
+        for r in self.store.list_in(zone, RecordKind::Item)? {
+            let (prefix, body) = split_item_record(&r.data)?;
+            if prefix != vault.id {
+                continue;
+            }
+            let item =
+                ItemRecord::decode(body).map_err(|_| IntegrityError::ManifestUnexpectedItem)?;
+            let listed = manifest.entries.iter().any(|e| {
+                e.item_id == item.item_id
+                    && e.version == item.version
+                    && record_hash(&item) == e.record_hash
+            });
+            if listed {
+                records.push((r.id, item));
+            } else {
+                ignored.push((r.id, item.item_id));
+            }
+        }
+        records.sort_by_key(|(_, r)| r.item_id);
+        let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
+        check_records(&manifest, &plain)?;
+        let seen = SeenManifest {
+            seq: manifest.seq,
+            hash: manifest_hash(&manifest),
+        };
+        let meta = manifest.ext.as_ref().and_then(|e| e.meta_hash);
+        if state.last_manifest.as_ref() != Some(&seen) || state.last_meta != meta {
+            state.last_manifest = Some(seen);
+            state.last_meta = meta;
+            self.store
+                .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+        }
+        Ok(Loaded {
+            manifest,
+            records,
+            ignored,
+        })
+    }
+
+    /// One shared write: `items` (new records) and `deletes` in the zone,
+    /// with the next manifest over `entries`, signed by me under the pinned
+    /// head, in one transaction conditional on the manifest loaded.
+    fn shared_commit(
+        &mut self,
+        vault: &Vault,
+        state: &ShareState,
+        loaded: &Loaded,
+        entries: Vec<ManifestEntry>,
+        mut writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+    ) -> Result<()> {
+        let m = Manifest::next(Some(&loaded.manifest), vault.id, entries)?
+            .with_meta(&vault.meta)
+            .with_membership(state.head.seen(), state.head.generation);
+        let sm = sign_shared_manifest(vault, &self.account.keyset().signing, self.me(), &m)?;
+        writes.push((
+            state.zone,
+            Record {
+                kind: RecordKind::Manifest,
+                id: vault.id,
+                version: m.seq,
+                data: sm.encode(),
+            },
+            Some(loaded.manifest.seq),
+        ));
+        let mut state = state.clone();
+        state.last_manifest = Some(SeenManifest {
+            seq: m.seq,
+            hash: manifest_hash(&m),
+        });
+        state.last_meta = Some(meta_hash(&vault.meta));
+        self.store
+            .put_all_zoned(writes, deletes, None, std::slice::from_ref(&state))
+    }
+
+    fn writer_state(&mut self, vault: &Vault) -> Result<ShareState> {
+        let state = self.share_state_of(vault.id)?;
+        self.require_role(&state, Role::Write)?;
+        // The vault must be open under the head's generation (a rekey
+        // since it was opened: reopen it).
+        if key_commit(vault.key(), vault.id, state.head.generation) != state.head.key_commit {
+            return Err(Error::Conflict);
+        }
+        Ok(state)
+    }
+
+    pub(crate) fn shared_save_item(&mut self, vault: &Vault, item: Item) -> Result<()> {
+        let state = self.writer_state(vault)?;
+        let loaded = self.shared_served(vault, Use::Write)?;
+        let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
+        let mut entries = loaded.entries_without(item.id);
+        entries.push(entry(&rec));
+        let mut deletes: Vec<(Zone, RecordKind, Id)> = loaded
+            .listed(item.id)
+            .map(|(blob, _)| (state.zone, RecordKind::Item, *blob))
+            .into_iter()
+            .collect();
+        deletes.extend(
+            loaded
+                .ignored_of(item.id)
+                .map(|b| (state.zone, RecordKind::Item, b)),
+        );
+        let writes = vec![(state.zone, item_record(vault.id, &rec)?, None)];
+        self.shared_commit(vault, &state, &loaded, entries, writes, deletes)
+    }
+
+    pub(crate) fn shared_delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
+        let state = self.writer_state(vault)?;
+        let loaded = self.shared_served(vault, Use::Write)?;
+        let (blob, _) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let mut deletes = vec![(state.zone, RecordKind::Item, *blob)];
+        deletes.extend(
+            loaded
+                .ignored_of(item_id)
+                .map(|b| (state.zone, RecordKind::Item, b)),
+        );
+        let entries = loaded.entries_without(item_id);
+        self.shared_commit(vault, &state, &loaded, entries, vec![], deletes)
+    }
+
+    /// Move an item between two vaults, one of them at least shared: both
+    /// manifests and both records in one transaction.
+    pub(crate) fn shared_move_item(&mut self, item_id: Id, from: &Vault, to: &Vault) -> Result<()> {
+        self.writable()?;
+        let src = self.served(from, Use::Write)?;
+        let (blob, rec) = src.listed(item_id).ok_or(Error::NotFound)?.clone();
+        let dst = self.served(to, Use::Write)?;
+        let moved = from.move_item(to, &rec, dst.next_version(item_id)?)?;
+        let mut writes: Vec<(Zone, Record, Option<u64>)> = Vec::new();
+        let mut deletes: Vec<(Zone, RecordKind, Id)> = vec![(from.zone(), RecordKind::Item, blob)];
+        writes.push((to.zone(), item_record(to.id, &moved)?, None));
+        if let Some((b, _)) = dst.listed(item_id) {
+            deletes.push((to.zone(), RecordKind::Item, *b));
+        }
+        let mut to_entries = dst.entries_without(item_id);
+        to_entries.push(entry(&moved));
+        let from_entries = src.entries_without(item_id);
+        let mut shares = Vec::new();
+        for (v, loaded, entries) in [(to, &dst, to_entries), (from, &src, from_entries)] {
+            match v.zone() {
+                Zone::Vault(_) => {
+                    let mut state = self.writer_state(v)?;
+                    let m = Manifest::next(Some(&loaded.manifest), v.id, entries)?
+                        .with_meta(&v.meta)
+                        .with_membership(state.head.seen(), state.head.generation);
+                    let sm =
+                        sign_shared_manifest(v, &self.account.keyset().signing, self.me(), &m)?;
+                    writes.push((
+                        state.zone,
+                        Record {
+                            kind: RecordKind::Manifest,
+                            id: v.id,
+                            version: m.seq,
+                            data: sm.encode(),
+                        },
+                        Some(loaded.manifest.seq),
+                    ));
+                    state.last_manifest = Some(SeenManifest {
+                        seq: m.seq,
+                        hash: manifest_hash(&m),
+                    });
+                    state.last_meta = Some(meta_hash(&v.meta));
+                    shares.push(state);
+                }
+                _ => {
+                    let m =
+                        Manifest::next(Some(&loaded.manifest), v.id, entries)?.with_meta(&v.meta);
+                    let sm = sign_manifest(v, &self.account.keyset().signing, &m)?;
+                    writes.push((
+                        Zone::Private,
+                        Record {
+                            kind: RecordKind::Manifest,
+                            id: v.id,
+                            version: m.seq,
+                            data: postcard::to_allocvec(&sm)
+                                .map_err(|_| Error::InvalidFormat("manifest"))?,
+                        },
+                        Some(loaded.manifest.seq),
+                    ));
+                    self.device.last_seen.insert(v.id, super::seen(&m));
+                }
+            }
+        }
+        self.store.put_all_zoned(writes, deletes, None, &shares)
+    }
+
+    /// Rename or change the options of a shared vault: managers only
+    /// (spec 10.2).
+    pub(crate) fn shared_update_meta(&mut self, vault: &Vault, meta: VaultMeta) -> Result<Vault> {
+        self.writable()?;
+        let state = self.share_state_of(vault.id)?;
+        self.require_role(&state, Role::Manage)?;
+        let loaded = self.shared_served(vault, Use::Write)?;
+        let current = self
+            .store
+            .get_in(state.zone, RecordKind::VaultMeta, vault.id)?
+            .ok_or(Error::InvalidFormat("vault meta"))?;
+        let updated = vault.with_meta(meta)?;
+        let blob = updated.seal_meta_blob()?;
+        let version = current.version.checked_add(1).ok_or(Error::Conflict)?;
+        let writes = vec![(
+            state.zone,
+            Record {
+                kind: RecordKind::VaultMeta,
+                id: vault.id,
+                version,
+                data: blob,
+            },
+            Some(current.version),
+        )];
+        let entries = loaded.manifest.entries.clone();
+        self.shared_commit(&updated, &state, &loaded, entries, writes, vec![])?;
+        Ok(updated)
+    }
 }

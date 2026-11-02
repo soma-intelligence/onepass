@@ -89,7 +89,7 @@ impl<S: RecordStore> Repository<S> {
     fn profile_items(&mut self) -> Result<Vec<Item>> {
         let id = profile_item_id(self.account.params.account_id);
         let mut found = Vec::new();
-        for vault in self.vaults()? {
+        for vault in self.personal_vaults()? {
             if let Some(item) = self.all_items(&vault)?.into_iter().find(|i| i.id == id) {
                 found.push(item);
             }
@@ -119,7 +119,7 @@ impl<S: RecordStore> Repository<S> {
         if photo.len() > MAX_PROFILE_PHOTO_BYTES {
             return Err(invalid(PHOTO, "is too large"));
         }
-        let vaults = self.vaults()?;
+        let vaults = self.personal_vaults()?;
         let existing = self.profile_items()?;
         let vault_id = match existing.first() {
             Some(item) => item.vault_id,
@@ -183,9 +183,12 @@ impl<S: RecordStore> Repository<S> {
             .iter()
             .map(|(_, r)| vault.open_item(r))
             .collect::<Result<Vec<_>>>()?;
-        self.device
-            .last_seen
-            .insert(vault.id, super::seen(&loaded.manifest));
+        // A shared vault keeps its last manifest in its share state.
+        if !vault.zone().is_shared() {
+            self.device
+                .last_seen
+                .insert(vault.id, super::seen(&loaded.manifest));
+        }
         Ok(items)
     }
 }

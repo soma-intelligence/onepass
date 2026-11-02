@@ -288,6 +288,16 @@ impl Vault {
     }
 
     /// The sealed meta blob of this vault under its key.
+    /// The same vault with another meta (same key and zone).
+    pub(crate) fn with_meta(&self, meta: VaultMeta) -> Result<Vault> {
+        Ok(Vault {
+            id: self.id,
+            meta,
+            key: self.key.duplicate(),
+            zone: self.zone,
+        })
+    }
+
     pub fn seal_meta_blob(&self) -> Result<Vec<u8>> {
         seal_meta(&self.key, self.id, &self.meta)
     }

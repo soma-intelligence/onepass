@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{MEMBERSHIP_HISTORY, MemberRef, MembershipBody, MembershipView, ShareAction};
 use crate::lineage::decode_strict_with;
+use crate::manifest::SeenManifest;
 use crate::store::Zone;
 use crate::{Error, Id, Result};
 
@@ -43,6 +44,12 @@ pub struct ShareState {
     /// Mailbox steps queued for the transport, in order, written in the
     /// same transaction as the change that needs them.
     pub actions: Vec<ShareAction>,
+    /// The last shared manifest this device accepted (the personal vaults
+    /// keep theirs in the device state).
+    pub last_manifest: Option<SeenManifest>,
+    /// The `meta_hash` that manifest committed to: a change needs a
+    /// manager (spec 8.2 rule 4).
+    pub last_meta: Option<[u8; 32]>,
 }
 
 impl ShareState {
@@ -58,6 +65,8 @@ impl ShareState {
             identity_pending: None,
             mcp_hidden: false,
             actions: Vec::new(),
+            last_manifest: None,
+            last_meta: None,
         }
     }
 

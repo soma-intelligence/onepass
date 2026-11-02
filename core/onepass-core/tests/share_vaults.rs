@@ -1,12 +1,14 @@
 //! Shared vaults on the repository (sharing plan 2, Tasks 6 and 7).
 
 mod common;
+mod share_common;
 
 use common::*;
 use onepass_core::share::{
     AccessTarget, MemberKey, Role, ShareAction, SignedMembership, ZoneMailboxKind, open_member_key,
 };
 use onepass_core::store::{MemoryStore, Zone};
+use share_common::*;
 
 const NOW: i64 = 1_800_000_000;
 
@@ -209,4 +211,137 @@ fn last_personal_vault_cannot_be_shared() {
         matches!(r, Err(Error::InvalidFormat("last vault"))),
         "{r:?}"
     );
+}
+
+/// A and B, two devices of one account; "Famille" shared on A, synced.
+fn two_devices_shared() -> (Server, Zones, Device, Device, Id, Vec<Item>) {
+    let mut server = Server::default();
+    let mut zs = Zones::default();
+    let (mut a, sk, fam, items) = with_family();
+    sync(&mut server, &mut a).unwrap();
+    let mut b = Device::empty();
+    pull(&server, &mut b);
+    b.unlock(&sk);
+    a.repo().share_vault(&fam, NOW).unwrap();
+    zsettle(&mut server, &mut zs, &mut [&mut a, &mut b]);
+    (server, zs, a, b, fam.id, items)
+}
+
+fn shared(dev: &mut Device, id: Id) -> Vault {
+    dev.repo().shared_vaults().unwrap();
+    dev.repo()
+        .vaults()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.id == id)
+        .expect("shared vault listed")
+}
+
+fn ids(items: &[Item]) -> Vec<Id> {
+    let mut v: Vec<Id> = items.iter().map(|i| i.id).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn second_device_reads_and_writes_shared() {
+    let (mut server, mut zs, mut a, mut b, id, items) = two_devices_shared();
+    let infos = b.repo().shared_vaults().unwrap();
+    assert_eq!(infos.len(), 1);
+    assert_eq!(infos[0].name, "Famille");
+    let vb = shared(&mut b, id);
+    assert_eq!(vb.zone(), Zone::Vault(id));
+    let got = b.repo().items(&vb).unwrap();
+    assert_eq!(ids(&got), ids(&items));
+    // B writes, A reads.
+    let new = login(id, "dave", 500);
+    b.repo().save_item(&vb, new.clone()).unwrap();
+    zsettle(&mut server, &mut zs, &mut [&mut b, &mut a]);
+    let va = shared(&mut a, id);
+    let got = a.repo().items(&va).unwrap();
+    assert!(got.iter().any(|i| i.id == new.id));
+    // A trashes and deletes, B follows.
+    a.repo().trash_item(&va, new.id).unwrap();
+    a.repo().delete_item(&va, items[0].id).unwrap();
+    zsettle(&mut server, &mut zs, &mut [&mut a, &mut b]);
+    let got = b.repo().items(&vb).unwrap();
+    assert!(got.iter().all(|i| i.id != items[0].id));
+    assert!(
+        got.iter()
+            .find(|i| i.id == new.id)
+            .unwrap()
+            .trashed_at
+            .is_some()
+    );
+}
+
+#[test]
+fn manager_rename_ok() {
+    let (mut server, mut zs, mut a, mut b, id, _) = two_devices_shared();
+    let va = shared(&mut a, id);
+    let mut m = va.meta.clone();
+    m.name = "Maison".into();
+    a.repo().update_vault_meta(&va, m).unwrap();
+    zsettle(&mut server, &mut zs, &mut [&mut a, &mut b]);
+    let vb = shared(&mut b, id);
+    assert_eq!(vb.meta.name, "Maison");
+    b.repo().items(&vb).unwrap();
+}
+
+#[test]
+fn move_between_personal_and_shared() {
+    let (mut server, mut zs, mut a, mut b, id, items) = two_devices_shared();
+    let va = shared(&mut a, id);
+    let personal = a.vault_named("Personnel");
+    a.repo().move_item(items[0].id, &va, &personal).unwrap();
+    assert!(
+        a.repo()
+            .items(&personal)
+            .unwrap()
+            .iter()
+            .any(|i| i.id == items[0].id)
+    );
+    assert!(
+        a.repo()
+            .items(&va)
+            .unwrap()
+            .iter()
+            .all(|i| i.id != items[0].id)
+    );
+    a.repo().move_item(items[0].id, &personal, &va).unwrap();
+    zsettle(&mut server, &mut zs, &mut [&mut a, &mut b]);
+    let vb = shared(&mut b, id);
+    assert!(
+        b.repo()
+            .items(&vb)
+            .unwrap()
+            .iter()
+            .any(|i| i.id == items[0].id)
+    );
+}
+
+#[test]
+fn mcp_hidden_locally() {
+    let (_server, _zs, mut a, _b, id, _) = two_devices_shared();
+    let va = shared(&mut a, id);
+    let mut m = va.meta.clone();
+    m.mcp_access = true;
+    let va = a.repo().update_vault_meta(&va, m).unwrap();
+    assert!(a.repo().mcp_visible(&va).unwrap());
+    a.repo().set_shared_vault_mcp_hidden(id, true).unwrap();
+    assert!(!a.repo().mcp_visible(&va).unwrap());
+    assert!(a.repo().shared_vaults().unwrap()[0].mcp_hidden);
+}
+
+#[test]
+fn personal_vaults_exclude_shared() {
+    let (_server, _zs, mut a, _b, id, _) = two_devices_shared();
+    assert!(
+        a.repo()
+            .personal_vaults()
+            .unwrap()
+            .iter()
+            .all(|v| v.id != id)
+    );
+    assert!(a.repo().vaults().unwrap().iter().any(|v| v.id == id));
 }

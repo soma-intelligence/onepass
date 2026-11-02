@@ -324,7 +324,7 @@ impl<S: RecordStore> Repository<S> {
             .ok_or(Error::InvalidFormat("lineage generation"))?;
 
         // R22: every live vault loads through the verified path.
-        let vaults = self.vaults()?;
+        let vaults = self.personal_vaults()?;
         let mut loaded = Vec::with_capacity(vaults.len());
         for vault in vaults {
             let l = self.load(&vault)?;
