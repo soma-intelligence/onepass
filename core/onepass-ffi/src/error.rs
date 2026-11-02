@@ -66,6 +66,10 @@ pub enum OnePassError {
     MailboxUnavailable {
         reason: String,
     },
+    /// The mailbox refused the call to this credential: its role does not
+    /// allow it (a grant or a locator by a non-manager, an abandon of a
+    /// mailbox no longer fresh).
+    Forbidden,
 }
 
 impl fmt::Display for OnePassError {
@@ -94,6 +98,7 @@ impl fmt::Display for OnePassError {
             Self::RemoteUnlockStale => f.write_str("remote unlock must be enrolled again"),
             Self::ClockSkew => f.write_str("device clock is too far off"),
             Self::MailboxUnavailable { reason } => write!(f, "mailbox unavailable: {reason}"),
+            Self::Forbidden => f.write_str("not allowed for this credential"),
         }
     }
 }

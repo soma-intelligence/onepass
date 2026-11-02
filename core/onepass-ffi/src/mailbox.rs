@@ -12,19 +12,25 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use onepass_core::Id;
+use onepass_core::crypto::SecretKey;
+use onepass_core::mailbox_recovery::{mailbox_locator as locator_of, mailbox_recovery_seed};
+use onepass_core::store::{RecordKind, SIDE_KIND_MAILBOX_ENROLL_REQUEST};
 use onepass_core::sync::{RebaseReport, SyncStore, VaultSyncHealth};
 use onepass_core::synchome::{SyncBackend, SyncHomeBody};
 use onepass_mailbox::{
     Credential, CredentialKey, Endpoint, MailboxClient, MailboxError, RdvRole, Rendezvous,
     WakeListener,
 };
-use onepass_mailbox_proto::{PushKind, SignedEnrollTicket, decode, encode};
+use onepass_mailbox_proto::{
+    CredentialRole, ErrorCode, PushKind, SignedEnrollTicket, decode, encode,
+};
 use onepass_sync::{MailboxTransport, RoundHooks, RoundReport, RoundStatus, SyncDriver};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::convert::{bytes_hex, hex_bytes, id_hex};
 use crate::error::{OnePassError, invalid};
+use crate::rotation::{FfiPqDeviceHalf, device_keys};
 use crate::session::{Session, identity_left};
 
 /// What the server sees of a device's label: none. The app names devices in
@@ -42,6 +48,9 @@ impl From<MailboxError> for OnePassError {
     fn from(e: MailboxError) -> Self {
         match e {
             MailboxError::Stale => OnePassError::ClockSkew,
+            MailboxError::Forbidden | MailboxError::Server(ErrorCode::Forbidden) => {
+                OnePassError::Forbidden
+            }
             e => OnePassError::MailboxUnavailable {
                 reason: e.to_string(),
             },
@@ -167,6 +176,32 @@ pub struct FfiMailboxEnrollment {
     pub ticket: Vec<u8>,
 }
 
+/// A credential's role on a mailbox.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiCredentialRole {
+    Read,
+    Write,
+    Manage,
+}
+
+impl From<FfiCredentialRole> for CredentialRole {
+    fn from(r: FfiCredentialRole) -> Self {
+        match r {
+            FfiCredentialRole::Read => CredentialRole::Read,
+            FfiCredentialRole::Write => CredentialRole::Write,
+            FfiCredentialRole::Manage => CredentialRole::Manage,
+        }
+    }
+}
+
+/// A verified enroll request: grant `credential_pub` to `device_id`.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiEnrollRequest {
+    pub device_id: String,
+    pub credential_pub: Vec<u8>,
+    pub issued_at: i64,
+}
+
 /// How a round ended (`onepass_sync::RoundStatus`).
 #[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
 pub enum FfiRoundStatus {
@@ -267,13 +302,65 @@ pub struct FfiWakeInfo {
 /// A fresh mailbox credential (Ed25519). Nothing is kept on the Rust side.
 #[uniffi::export]
 pub fn mailbox_generate_credential() -> Result<FfiMailboxCredential, OnePassError> {
-    let c = Credential::generate()?;
+    Ok(credential_record(&Credential::generate()?))
+}
+
+fn credential_record(c: &Credential) -> FfiMailboxCredential {
     let public = c.public_key();
-    Ok(FfiMailboxCredential {
+    FfiMailboxCredential {
         seed: c.seed().to_vec(),
         public_key: public.to_bytes().to_vec(),
         id: bytes_hex(&public.id()),
-    })
+    }
+}
+
+/// The locator of the account of `secret_key` (16 bytes, spec D.4): what
+/// its mailbox registers (`MailboxSync::set_locator`) and a restore looks
+/// up (`mailbox_locate`). Secret Key as displayed.
+#[uniffi::export]
+pub fn mailbox_locator(secret_key: String) -> Result<Vec<u8>, OnePassError> {
+    let sk = SecretKey::parse(&Zeroizing::new(secret_key))?;
+    Ok(locator_of(&sk)?.to_vec())
+}
+
+/// The recovery credential of `mailbox_id` (hex) for the account of
+/// `secret_key`: derived, never stored. The app grants it once
+/// (`MailboxSync::grant`, role manage) and signs with it during a restore.
+#[uniffi::export]
+pub fn mailbox_recovery_credential(
+    secret_key: String,
+    mailbox_id: String,
+) -> Result<FfiMailboxCredential, OnePassError> {
+    let sk = SecretKey::parse(&Zeroizing::new(secret_key))?;
+    let seed = mailbox_recovery_seed(&sk, &self::mailbox_id(&mailbox_id)?)?;
+    Ok(credential_record(&credential(&*seed)?))
+}
+
+/// The mailboxes registered under `locator` on `endpoint` (hex ids, at
+/// most 8, oldest first; empty when none). An id is only where to look:
+/// the app tries each with its recovery credential.
+#[uniffi::export]
+pub fn mailbox_locate(
+    endpoint: FfiMailboxEndpoint,
+    locator: Vec<u8>,
+) -> Result<Vec<String>, OnePassError> {
+    let locator: [u8; 16] = locator.try_into().map_err(|_| invalid("locator"))?;
+    let ids = onepass_mailbox::locate(&endpoint.into(), locator)?;
+    Ok(ids.iter().map(|m| bytes_hex(m)).collect())
+}
+
+/// Whether `code` is a record kind of this core: what a CloudKit record
+/// may carry to the store. The side kind of the enroll request and any
+/// unknown code are not.
+#[uniffi::export]
+pub fn is_known_record_kind(code: u8) -> bool {
+    code != SIDE_KIND_MAILBOX_ENROLL_REQUEST && RecordKind::from_code(code).is_ok()
+}
+
+/// The side kind of a mailbox enroll request in the frozen iCloud zone.
+#[uniffi::export]
+pub fn side_kind_mailbox_enroll_request() -> u8 {
+    SIDE_KIND_MAILBOX_ENROLL_REQUEST
 }
 
 /// Create a mailbox on `endpoint`, managed by the credential of
@@ -500,6 +587,42 @@ impl MailboxSync {
         Ok(encode(&t))
     }
 
+    /// Let `public_key` (32 bytes) in with `role`, without a ticket (spec
+    /// D.7; manager only, else `Forbidden`). Returns the new credential's
+    /// hex id. A weak key is refused by the server.
+    pub fn grant(
+        &self,
+        public_key: Vec<u8>,
+        role: FfiCredentialRole,
+        label: Vec<u8>,
+    ) -> Result<String, OnePassError> {
+        let key: [u8; 32] = public_key
+            .try_into()
+            .map_err(|_| invalid("credential public key"))?;
+        let inner = self.inner();
+        let id = inner
+            .driver
+            .transport()
+            .api()
+            .grant(key, role.into(), None, &label)?;
+        Ok(bytes_hex(&id))
+    }
+
+    /// Register the account's locator (16 bytes) on this mailbox (manager
+    /// only). A mailbox holds the last two.
+    pub fn set_locator(&self, locator: Vec<u8>) -> Result<(), OnePassError> {
+        let locator: [u8; 16] = locator.try_into().map_err(|_| invalid("locator"))?;
+        let inner = self.inner();
+        Ok(inner.driver.transport().api().set_locator(locator)?)
+    }
+
+    /// Abandon this fresh mailbox (its creator, before anyone else used
+    /// it: a migration that lost its race, spec D.5).
+    pub fn abandon(&self) -> Result<(), OnePassError> {
+        let inner = self.inner();
+        Ok(inner.driver.transport().api().abandon()?)
+    }
+
     /// Revoke a credential of the mailbox (hex id, as
     /// `FfiMailboxCredential::id`).
     pub fn revoke_credential(&self, credential_id: String) -> Result<(), OnePassError> {
@@ -633,5 +756,58 @@ impl Session {
         let backend = SyncBackend::try_from(backend)?;
         let now = OffsetDateTime::now_utc().unix_timestamp();
         self.with(|repo| Ok((&repo.set_sync_home(backend.clone(), now)?).into()))
+    }
+
+    /// The next home to `backend`, signed and not adopted: a migration
+    /// claims it in iCloud first, then adopts it (spec D.5).
+    pub fn sign_sync_home(&self, backend: FfiSyncBackend) -> Result<Vec<u8>, OnePassError> {
+        let backend = SyncBackend::try_from(backend)?;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        self.with(|repo| Ok(repo.sign_sync_home(backend.clone(), now)?))
+    }
+
+    /// Verify a signed home (this device's, or the winner's of a migration
+    /// race) and adopt it.
+    pub fn adopt_sync_home(&self, signed: Vec<u8>) -> Result<FfiSyncHome, OnePassError> {
+        self.with(|repo| Ok((&repo.adopt_sync_home(&signed)?).into()))
+    }
+
+    /// A request, signed with this device's keys (`classical` and `pq`, as
+    /// for `rotate_keys`), for the credential `credential_pub` on
+    /// `mailbox_id` (hex).
+    pub fn sign_enroll_request(
+        &self,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        credential_pub: Vec<u8>,
+        mailbox_id: String,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
+        let credential: [u8; 32] = credential_pub
+            .try_into()
+            .map_err(|_| invalid("credential public key"))?;
+        let mailbox = self::mailbox_id(&mailbox_id)?;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        self.with(|repo| Ok(repo.sign_enroll_request(&keys, credential, mailbox, now)?))
+    }
+
+    /// Verify a request read from the frozen iCloud zone for `mailbox_id`
+    /// (hex): a device of the verified roster, this account, 7 days.
+    pub fn verify_enroll_request(
+        &self,
+        bytes: Vec<u8>,
+        mailbox_id: String,
+    ) -> Result<FfiEnrollRequest, OnePassError> {
+        let mailbox = self::mailbox_id(&mailbox_id)?;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        self.with(|repo| {
+            let body = repo.verify_enroll_request(&bytes, mailbox, now)?;
+            Ok(FfiEnrollRequest {
+                device_id: id_hex(body.device_id),
+                credential_pub: body.credential_pub.to_vec(),
+                issued_at: body.issued_at,
+            })
+        })
     }
 }
