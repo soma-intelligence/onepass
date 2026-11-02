@@ -30,6 +30,8 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEAD_CODE_STRIPPING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    # Typed symbols for manual String Catalog keys: Text(.settingsTitle) (docs/i18n.md).
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
     # Signing identity, as build settings only (a personal team overrides them, see
     # scripts/install-iphone.sh; never edit an entitlements file or a bundle id below for it).
@@ -115,7 +117,7 @@ targets:
       path: App/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
@@ -218,7 +220,7 @@ targets:
       path: AutoFill/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         AppIdentifierPrefix: $(AppIdentifierPrefix)
@@ -296,7 +298,7 @@ targets:
       path: SafariExtension/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -403,7 +405,7 @@ targets:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: true
@@ -445,7 +447,7 @@ targets:
       path: WatchWidgets/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -490,7 +492,7 @@ targets:
       properties:
         CFBundleDisplayName: OnePass
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -532,7 +534,7 @@ targets:
       properties:
         CFBundleDisplayName: OnePass
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:

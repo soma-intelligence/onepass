@@ -5,7 +5,7 @@
 	<key>AppIdentifierPrefix</key>
 	<string>$(AppIdentifierPrefix)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>fr</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>OnePass</string>
 	<key>CFBundleExecutable</key>
@@ -66,10 +66,6 @@
 	<string>$(ONEPASS_BROWSER_EXTENSIONS)</string>
 	<key>OnePassCloudKitContainer</key>
 	<string>$(ONEPASS_CLOUDKIT_CONTAINER)</string>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>ASCredentialExchangeActivity</string>
-	</array>
 	<key>OnePassKeychainGroup</key>
 	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
 	<key>UIApplicationSceneManifest</key>

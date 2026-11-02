@@ -1190,7 +1190,9 @@
 			knownRegions = (
 				Base,
 				en,
+				es,
 				fr,
+				it,
 			);
 			mainGroup = 1F7631CD98A4452524E10D73;
 			minimizedProjectReferenceProxies = 1;
@@ -2181,6 +2183,7 @@
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -2461,6 +2464,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -2573,6 +2577,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -2796,6 +2801,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
