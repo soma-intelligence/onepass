@@ -225,6 +225,29 @@ struct EmergencyKitTests {
         #expect(message == EmergencyKit.qrPayload(secretKey: Self.secretKey))
     }
 
+    /// Kits made since multi-account carry the account id, so a sign in on a new device fetches the
+    /// right iCloud zone (multi-account spec 6, ruling P8). Version 1 kits still scan.
+    @Test func qrPayloadCarriesTheAccountID() throws {
+        let id = "0123456789abcdef0123456789abcdef"
+        let payload = EmergencyKit.qrPayload(secretKey: Self.secretKey, accountID: id)
+        #expect(payload == "onepass-kit:2:\(id):" + Self.secretKey.replacingOccurrences(of: "-", with: ""))
+        let scan = try #require(EmergencyKit.parseKit(payload))
+        #expect(scan.secretKey == Self.secretKey)
+        #expect(scan.accountID == id)
+        #expect(EmergencyKit.parsePayload(payload) == Self.secretKey)
+        let old = try #require(EmergencyKit.parseKit(EmergencyKit.qrPayload(secretKey: Self.secretKey)))
+        #expect(old.secretKey == Self.secretKey)
+        #expect(old.accountID == nil)
+        // A malformed account id is no kit.
+        #expect(EmergencyKit.parseKit("onepass-kit:2:XYZ:" + Self.secretKey) == nil)
+        let image = try #require(EmergencyKit.qrImage(for: Self.secretKey, accountID: id, size: 300))
+        let detector = try #require(
+            CIDetector(ofType: CIDetectorTypeQRCode, context: nil,
+                       options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
+        let message = (detector.features(in: CIImage(cgImage: image)).first as? CIQRCodeFeature)?.messageString
+        #expect(message == payload)
+    }
+
     @Test func qrImageIsNilForInvalidKey() {
         #expect(EmergencyKit.qrImage(for: "pas une cle", size: 200) == nil)
     }

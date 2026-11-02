@@ -422,6 +422,64 @@
         }
       }
     },
+    "accounts.error.needsAccountID" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plusieurs comptes de ton iCloud ne sont pas sur cet appareil. Scanne le QR code de ton Emergency Kit ou saisis l'identifiant du compte imprimé dessus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Several accounts in your iCloud aren't on this device. Scan the QR code of your Emergency Kit or enter the account ID printed on it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varias cuentas de tu iCloud no están en este dispositivo. Escanea el código QR de tu Emergency Kit o introduce el identificador de cuenta impreso en él."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diversi account del tuo iCloud non sono su questo dispositivo. Scansiona il codice QR del tuo Emergency Kit o inserisci l'identificativo dell'account stampato sopra."
+          }
+        }
+      },
+      "comment" : "Signing in to an added account: several accounts of this iCloud are not on this device, so the account id of the Emergency Kit is needed."
+    },
+    "accounts.error.notInICloud" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte avec cet identifiant dans ton iCloud. Vérifie l'identifiant imprimé sur ton Emergency Kit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No account with this ID in your iCloud. Check the ID printed on your Emergency Kit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna cuenta con este identificador en tu iCloud. Comprueba el identificador impreso en tu Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun account con questo identificativo nel tuo iCloud. Controlla l'identificativo stampato sul tuo Emergency Kit."
+          }
+        }
+      },
+      "comment" : "Signing in to an added account: no account with that id in this iCloud."
+    },
     "accounts.error.primaryAccount" : {
       "comment" : "Settings > Accounts: the first account cannot be removed, only reset.",
       "localizations" : {

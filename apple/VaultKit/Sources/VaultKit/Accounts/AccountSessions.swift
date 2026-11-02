@@ -13,6 +13,10 @@ public enum AccountsError: Error, Equatable, Sendable {
     case alreadyOnDevice
     /// The primary account is reset, never removed (M8).
     case primaryAccount
+    /// Several accounts of this iCloud are not on this device: the kit's account id is needed.
+    case needsAccountID
+    /// No account with that id in this iCloud.
+    case notInICloud
 
     public var message: String {
         switch self {
@@ -23,6 +27,10 @@ public enum AccountsError: Error, Equatable, Sendable {
             String(localized: "accounts.error.alreadyOnDevice", bundle: VaultKitStrings.bundle)
         case .primaryAccount:
             String(localized: "accounts.error.primaryAccount", bundle: VaultKitStrings.bundle)
+        case .needsAccountID:
+            String(localized: "accounts.error.needsAccountID", bundle: VaultKitStrings.bundle)
+        case .notInICloud:
+            String(localized: "accounts.error.notInICloud", bundle: VaultKitStrings.bundle)
         }
     }
 }

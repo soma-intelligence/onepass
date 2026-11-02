@@ -21,6 +21,15 @@ public enum EmergencyKitError: Error, Equatable {
 /// is written to disk here: the caller owns the bytes.
 public enum EmergencyKit {
     static let payloadPrefix = "onepass-kit:1:"
+    /// Kits made since multi-account: `onepass-kit:2:<account id>:<Secret Key without dashes>`.
+    static let payloadPrefixV2 = "onepass-kit:2:"
+
+    /// What a scanned kit gives: its Secret Key (display format) and, on a version 2 kit, the account
+    /// id that names its iCloud zone (multi-account ruling P8).
+    public struct Scan: Equatable, Sendable {
+        public let secretKey: String
+        public let accountID: String?
+    }
 
     // MARK: QR code
 
@@ -30,23 +39,44 @@ public enum EmergencyKit {
         return payloadPrefix + bare
     }
 
+    /// The version 2 payload: the account id, then the Secret Key without dashes.
+    public static func qrPayload(secretKey: String, accountID: String) -> String {
+        let bare = secretKey.filter { $0 != "-" && !$0.isWhitespace }.uppercased()
+        return payloadPrefixV2 + accountID.lowercased() + ":" + bare
+    }
+
     /// The Secret Key (display format) carried by a scanned payload, or nil when the text is
-    /// not a version 1 OnePass kit payload or the key is malformed.
+    /// not a OnePass kit payload or the key is malformed.
     public static func parsePayload(_ s: String) -> String? {
+        parseKit(s)?.secretKey
+    }
+
+    /// The Secret Key and, on a version 2 kit, the account id of a scanned payload. Nil when the text
+    /// is not a OnePass kit payload, the key is malformed or the account id is not 32 hex characters.
+    public static func parseKit(_ s: String) -> Scan? {
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.lowercased().hasPrefix(payloadPrefix) else { return nil }
-        let body = String(trimmed.dropFirst(payloadPrefix.count))
-        guard !body.isEmpty else { return nil }
-        return try? normalizeSecretKey(text: body)
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix(payloadPrefix) {
+            let body = String(trimmed.dropFirst(payloadPrefix.count))
+            guard !body.isEmpty, let key = try? normalizeSecretKey(text: body) else { return nil }
+            return Scan(secretKey: key, accountID: nil)
+        }
+        guard lowered.hasPrefix(payloadPrefixV2) else { return nil }
+        let parts = trimmed.dropFirst(payloadPrefixV2.count).split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let id = SignInZone.accountID(String(parts[0])), !parts[1].isEmpty,
+            let key = try? normalizeSecretKey(text: String(parts[1]))
+        else { return nil }
+        return Scan(secretKey: key, accountID: id)
     }
 
     /// A square QR code (error correction M, 4 module quiet zone, nearest neighbor scaling so
     /// modules stay sharp). The side is the largest whole multiple of the module count that
     /// fits `size`. Nil when the key is invalid.
-    public static func qrImage(for secretKey: String, size: CGFloat) -> CGImage? {
+    public static func qrImage(for secretKey: String, accountID: String? = nil, size: CGFloat) -> CGImage? {
         guard let display = try? normalizeSecretKey(text: secretKey) else { return nil }
         let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(qrPayload(secretKey: display).utf8)
+        let payload = accountID.flatMap(SignInZone.accountID).map { qrPayload(secretKey: display, accountID: $0) }
+        filter.message = Data((payload ?? qrPayload(secretKey: display)).utf8)
         filter.correctionLevel = "M"
         guard let raw = filter.outputImage else { return nil }
         let quiet: CGFloat = 4
@@ -150,7 +180,7 @@ public enum EmergencyKit {
         y = text(secretKey, font: mono, top: y) - 16
 
         let qrSide: CGFloat = 150
-        if let qr = qrImage(for: secretKey, size: qrSide) {
+        if let qr = qrImage(for: secretKey, accountID: accountID, size: qrSide) {
             let rect = CGRect(x: margin, y: y - qrSide, width: qrSide, height: qrSide)
             context.saveGState()
             context.interpolationQuality = .none

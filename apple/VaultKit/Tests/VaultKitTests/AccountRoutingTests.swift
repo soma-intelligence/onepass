@@ -46,3 +46,32 @@ struct AccountRoutingTests {
         #expect(h.store.slot(for: lookalike) == AccountDirectoryStore.primarySlot)
     }
 }
+
+/// Signing in to an account on a new device picks the iCloud zone of that account (ruling P8).
+@Suite("Sign in zone")
+struct SignInZoneTests {
+    let a = String(repeating: "a", count: 32)
+    let b = String(repeating: "b", count: 32)
+    let mine = String(repeating: "c", count: 32)
+
+    @Test func twoAbsentAccountsAreToldApartByTheKit() {
+        let zones = [a, b, mine]
+        // The kit names the second absent account: its zone, never the first unknown one.
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: b) == .zone(b))
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: a) == .zone(a))
+        // Without the account id (a typed key, an older kit) two absent accounts are ambiguous.
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: nil) == .needsAccountID)
+    }
+
+    @Test func oneAbsentAccountNeedsNoID() {
+        #expect(SignInZone.choose(zones: [a, mine], known: [mine], kitAccountID: nil) == .zone(a))
+    }
+
+    @Test func anAccountOnThisDeviceOrNotInICloudIsRefused() {
+        #expect(SignInZone.choose(zones: [a, mine], known: [mine], kitAccountID: mine) == .alreadyOnDevice)
+        #expect(SignInZone.choose(zones: [a], known: [], kitAccountID: b) == .notFound)
+        #expect(SignInZone.choose(zones: [mine], known: [mine], kitAccountID: nil) == .notFound)
+        // The id typed from the printed kit is accepted with spaces and capitals.
+        #expect(SignInZone.choose(zones: [a, b], known: [], kitAccountID: " " + b.uppercased()) == .zone(b))
+    }
+}

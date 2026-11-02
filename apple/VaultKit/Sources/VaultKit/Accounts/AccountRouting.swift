@@ -63,3 +63,39 @@ extension VaultEnvironment {
         return environment
     }
 }
+
+/// The iCloud zone an account signed in on a new device comes from (multi-account ruling P8). The
+/// Emergency Kit names its account (the account id in a version 2 QR code, or printed on the kit);
+/// without it, a single zone this device does not have is the one. Never a guess between two.
+public enum SignInZone: Equatable, Sendable {
+    /// The account id whose zone to fetch.
+    case zone(String)
+    /// Two or more accounts are in iCloud and not on this device: the account id is asked.
+    case needsAccountID
+    /// The kit's account is already on this device (M5).
+    case alreadyOnDevice
+    /// No zone of that account (or none at all) in this iCloud.
+    case notFound
+
+    /// `zones`: the account ids with a zone in iCloud; `known`: the accounts on this device.
+    public static func choose(zones: [String], known: Set<String>, kitAccountID: String?) -> SignInZone {
+        if let typed = kitAccountID {
+            guard let id = accountID(typed) else { return .notFound }
+            if known.contains(id) { return .alreadyOnDevice }
+            return zones.contains(id) ? .zone(id) : .notFound
+        }
+        let unknown = zones.filter { !known.contains($0) }
+        switch unknown.count {
+        case 0: return .notFound
+        case 1: return .zone(unknown[0])
+        default: return .needsAccountID
+        }
+    }
+
+    /// An account id as typed or scanned: 32 hex characters, spaces and dashes ignored, lowercased.
+    public static func accountID(_ text: String) -> String? {
+        let cleaned = text.lowercased().filter { !$0.isWhitespace && $0 != "-" }
+        guard cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) else { return nil }
+        return cleaned
+    }
+}
