@@ -232,6 +232,10 @@ extension AppModel {
             } catch {
                 DemoTrace.log("demo: seeding failed: %@", String(describing: VaultError(error)))
                 onboardingInProgress = false
+                #if os(iOS) || os(visionOS)
+                // The settings captures need no items.
+                showSettings = defaults.bool(forKey: "OnePassDemoSettings")
+                #endif
             }
         }
     }

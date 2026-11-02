@@ -37,10 +37,10 @@ struct SecuritySettings: View {
         Form {
             unlockSection
             Section {
-                Button("Changer le mot de passe maître", systemImage: "key") { changingPassword = true }
+                Button("Changer le mot de passe maître…", systemImage: "key") { changingPassword = true }
                     .accessibilityIdentifier("settings.changePassword")
             } footer: {
-                Text("Ta Secret Key ne change pas : ton Emergency Kit reste valable.")
+                Text("Ton Emergency Kit reste valable.")
             }
             deviceModeSection
             Section {
@@ -59,11 +59,7 @@ struct SecuritySettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Sécurité")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Sécurité")
         .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
         .sheet(item: $prompt) { current in
             PasswordPromptSheet(title: promptTitle(current), footer: promptFooter(current)) { password in
@@ -124,7 +120,7 @@ struct SecuritySettings: View {
                 #endif
             }
             LabeledContent("Mot de passe maître") {
-                Text("Redemandé tous les 14 jours")
+                Text("Tous les 14 jours")
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
@@ -137,15 +133,15 @@ struct SecuritySettings: View {
 
     @ViewBuilder private func unlockFooter(personal: Bool) -> some View {
         if !personal {
-            Text("\(biometry) n'est pas proposé sur un appareil partagé : le mot de passe maître est demandé à chaque déverrouillage.")
+            Text("Appareil partagé : mot de passe maître à chaque fois.")
         } else if availability == .keychainRefused {
-            Text("Cet appareil a \(biometry), mais cette version de OnePass n'est pas signée : le trousseau refuse sa clé de la Secure Enclave (erreur -34018). Le mot de passe maître déverrouille OnePass. \(biometry) marche dans un build signé.")
+            Text("\(biometry) demande un build signé (erreur -34018).")
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else if availability == .noBiometry {
-            Text("\(biometry) n'est pas disponible sur cet appareil (pas de Secure Enclave ou biométrie non configurée). Le mot de passe maître déverrouille OnePass.")
+            Text("\(biometry) n'est pas configuré sur cet appareil.")
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else {
-            Text("Le mot de passe maître est aussi redemandé après un redémarrage et quand les empreintes ou le visage enregistrés changent.")
+            Text("Aussi demandé après un redémarrage.")
         }
     }
 
@@ -185,7 +181,7 @@ struct SecuritySettings: View {
 
     private var deviceModeSection: some View {
         Section {
-            Picker("Mode de l'appareil", selection: Binding(
+            Picker("Cet appareil", selection: Binding(
                 get: { settings.deviceMode },
                 set: { mode in
                     if mode != settings.deviceMode { pendingMode = mode }
@@ -205,13 +201,9 @@ struct SecuritySettings: View {
                 }
                 .accessibilityIdentifier("settings.visibleVaults")
             }
-        } header: {
-            Text("Mode de l'appareil")
         } footer: {
             if settings.deviceMode == .shared {
-                Text("Appareil de la famille ou du bureau : pas de \(biometry), verrouillage après 5 minutes, coffres visibles au choix.")
-            } else {
-                Text("Appareil à toi : déverrouillage par \(biometry), verrouillage automatique réglable.")
+                Text("Pas de \(biometry), verrouillage après 5 minutes.")
             }
         }
     }

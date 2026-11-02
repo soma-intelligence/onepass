@@ -274,6 +274,16 @@
         }
       }
     },
+    "%@ demande un build signé (erreur -34018)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ needs a signed build (error -34018)."
+          }
+        }
+      }
+    },
     "%@ est activé" : {
       "localizations" : {
         "en" : {
@@ -358,6 +368,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ non è stato confermato: non è stato attivato nulla."
+          }
+        }
+      }
+    },
+    "%@ n'est pas configuré sur cet appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is not set up on this device."
           }
         }
       }
@@ -3622,6 +3642,16 @@
         }
       }
     },
+    "Appareil partagé : 5 minutes au plus." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared device: 5 minutes at most."
+          }
+        }
+      }
+    },
     "Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler." : {
       "localizations" : {
         "en" : {
@@ -3640,6 +3670,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivo condiviso: il tempo è fisso (5 minuti al massimo). Torna alla modalità personale per modificarlo."
+          }
+        }
+      }
+    },
+    "Appareil partagé : mot de passe maître à chaque fois." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared device: master password every time."
           }
         }
       }
@@ -3710,6 +3750,16 @@
         }
       }
     },
+    "Apparence" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance"
+          }
+        }
+      }
+    },
     "Apple Watch" : {
       "localizations" : {
         "en" : {
@@ -3750,6 +3800,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apple, 1Password, Bitwarden, i browser e altri 8."
+          }
+        }
+      }
+    },
+    "Apple, 1Password, Bitwarden, navigateurs et 8 autres." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple, 1Password, Bitwarden, browsers and 8 more."
           }
         }
       }
@@ -4788,6 +4848,26 @@
         }
       }
     },
+    "Aussi demandé après un redémarrage." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also asked after a restart."
+          }
+        }
+      }
+    },
+    "Automatique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        }
+      }
+    },
     "Autorisations en cours" : {
       "localizations" : {
         "en" : {
@@ -5400,6 +5480,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fatto. Tienila lontana dai tuoi schermi."
+          }
+        }
+      }
+    },
+    "Changer le mot de passe maître…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Master Password…"
+          }
+        }
+      }
+    },
+    "Chiffré avant de quitter l'appareil." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted before it leaves the device."
+          }
+        }
+      }
+    },
+    "Clair" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
           }
         }
       }
@@ -7626,6 +7736,16 @@
         }
       }
     },
+    "Clique dans un champ d'identifiant : OnePass propose tes comptes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click a username field: OnePass offers your accounts."
+          }
+        }
+      }
+    },
     "Clé" : {
       "localizations" : {
         "en" : {
@@ -8458,6 +8578,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account di accesso esposti"
+          }
+        }
+      }
+    },
+    "Comptes retenus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered Accounts"
+          }
+        }
+      }
+    },
+    "Comptes retenus par site" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered Accounts"
           }
         }
       }
@@ -11190,6 +11330,16 @@
         }
       }
     },
+    "Efface tout ce que la montre a reçu." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erases everything the watch received."
+          }
+        }
+      }
+    },
     "EFFACER" : {
       "localizations" : {
         "en" : {
@@ -12132,6 +12282,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eccellenti"
+          }
+        }
+      }
+    },
+    "Export CSV non chiffré…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unencrypted CSV Export…"
           }
         }
       }
@@ -13588,6 +13748,16 @@
         }
       }
     },
+    "iCloud a une version plus ancienne. OnePass renvoie la sienne, rien à faire." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud has an older version. OnePass sends its own back, nothing to do."
+          }
+        }
+      }
+    },
     "Icône" : {
       "localizations" : {
         "en" : {
@@ -13606,6 +13776,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Icona"
+          }
+        }
+      }
+    },
+    "Icônes chargées depuis chaque site, sans service tiers." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icons come from each site, no third party."
           }
         }
       }
@@ -13672,6 +13852,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Identificativo copiato"
+          }
+        }
+      }
+    },
+    "Identifiants, codes et passkeys, dans les apps et Safari." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logins, codes and passkeys, in apps and Safari."
           }
         }
       }
@@ -15568,6 +15758,16 @@
         }
       }
     },
+    "La sync iCloud demande un build signé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud sync needs a signed build."
+          }
+        }
+      }
+    },
     "La synchronisation continue en arrière-plan. Tu peux fermer cette fenêtre." : {
       "localizations" : {
         "en" : {
@@ -15740,6 +15940,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lingua"
+          }
+        }
+      }
+    },
+    "Le code du site est proposé dans le champ." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The site's code is offered in the field."
+          }
+        }
+      }
+    },
+    "Le compte choisi sur un site est proposé en premier." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The account you pick on a site comes first next time."
           }
         }
       }
@@ -16404,6 +16624,16 @@
         }
       }
     },
+    "Le système reçoit les sites et identifiants, jamais les mots de passe ni les codes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system gets sites and usernames, never passwords or codes."
+          }
+        }
+      }
+    },
     "Le temps accordé est écoulé." : {
       "localizations" : {
         "en" : {
@@ -16598,6 +16828,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le casseforti che partono restano in iCloud: niente viene eliminato. Al tuo ritorno, OnePass le verifica prima di riaprirle."
+          }
+        }
+      }
+    },
+    "Les coffres retirés restent dans iCloud et sont vérifiés au retour." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed vaults stay in iCloud and are checked on return."
           }
         }
       }
@@ -17236,6 +17476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elenco firmato di una cassaforte"
+          }
+        }
+      }
+    },
+    "Liste signée par ton compte." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List signed by your account."
           }
         }
       }
@@ -19704,6 +19954,16 @@
         }
       }
     },
+    "Oublier un site efface son choix sur tous tes appareils. Tes Logins ne changent pas." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forgetting a site clears its choice on all your devices. Your Logins stay."
+          }
+        }
+      }
+    },
     "Oui" : {
       "localizations" : {
         "en" : {
@@ -20140,6 +20400,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apri un elemento"
+          }
+        }
+      }
+    },
+    "Pas de %@, verrouillage après 5 minutes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No %@, locks after 5 minutes."
           }
         }
       }
@@ -20870,6 +21140,16 @@
         }
       }
     },
+    "Post-quantique" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Post-quantum"
+          }
+        }
+      }
+    },
     "Pour approuver un navigateur, OnePass demande Touch ID. Active-le dans Réglages > Sécurité, puis approuve : l'extension attend." : {
       "localizations" : {
         "en" : {
@@ -21482,6 +21762,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lascia il dispositivo"
+          }
+        }
+      }
+    },
+    "Restaurer n'écrase rien. Le CSV sert seulement à changer de gestionnaire." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restoring overwrites nothing. Use the CSV only to switch managers."
+          }
+        }
+      }
+    },
+    "Restaurer…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore…"
+          }
+        }
+      }
+    },
+    "Rien de ce qu'iCloud a envoyé n'a été utilisé." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing iCloud sent was used."
           }
         }
       }
@@ -22362,6 +22672,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ripristinato"
+          }
+        }
+      }
+    },
+    "Sauvegarde" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup"
+          }
+        }
+      }
+    },
+    "Sauvegarde chiffrée…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted Backup…"
+          }
+        }
+      }
+    },
+    "Scanner un code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a Code"
+          }
+        }
+      }
+    },
+    "Sinon : Réglages du système > Remplissage automatique et mots de passe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otherwise: System Settings > AutoFill & Passwords."
+          }
+        }
+      }
+    },
+    "Sombre" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark"
+          }
+        }
+      }
+    },
+    "Suggestions du clavier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard Suggestions"
+          }
+        }
+      }
+    },
+    "Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code avec ton iPhone ou ton iPad." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the new device: \"I already have OnePass\", then scan its code with your iPhone or iPad."
+          }
+        }
+      }
+    },
+    "Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the new device: \"I already have OnePass\", then scan its code."
+          }
+        }
+      }
+    },
+    "Sur tous tes appareils." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On all your devices."
           }
         }
       }
@@ -26282,6 +26682,16 @@
         }
       }
     },
+    "Ton Emergency Kit reste valable." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Emergency Kit stays valid."
+          }
+        }
+      }
+    },
     "Ton mot de passe maître" : {
       "localizations" : {
         "en" : {
@@ -26498,6 +26908,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tocca un campo di accesso: OnePass compare sopra la tastiera e si sblocca con %@ o con la password principale prima di compilare."
+          }
+        }
+      }
+    },
+    "Touche un champ d'identifiant : OnePass apparaît au-dessus du clavier." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a username field: OnePass shows above the keyboard."
+          }
+        }
+      }
+    },
+    "Tous les 14 jours" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 14 days"
           }
         }
       }
@@ -27140,6 +27570,26 @@
         }
       }
     },
+    "Un coffre vide se supprime depuis sa fiche." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete an empty vault from its page."
+          }
+        }
+      }
+    },
+    "Une demande d'agent arrive en notification. Tu réponds dans l'app, avec Face ID." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An agent request arrives as a notification. You answer in the app, with Face ID."
+          }
+        }
+      }
+    },
     "URL" : {
       "localizations" : {
         "en" : {
@@ -27774,6 +28224,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valore del codice"
+          }
+        }
+      }
+    },
+    "Verrouillage auto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-Lock"
           }
         }
       }

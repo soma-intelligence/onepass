@@ -27,10 +27,10 @@ struct AutoFillSettings: View {
                 }
                 .accessibilityIdentifier("autofill.codes")
             } footer: {
-                Text("Choisis OnePass comme app de codes de vérification : le code du Login du site est proposé dans le champ.")
+                Text("Le code du site est proposé dans le champ.")
             }
             Section {
-                Toggle("Suggestions au-dessus du clavier", isOn: Binding(
+                Toggle("Suggestions du clavier", isOn: Binding(
                     get: { settings.quickTypeSuggestions },
                     set: { on in
                         model.session.setQuickTypeSuggestions(on)
@@ -38,10 +38,8 @@ struct AutoFillSettings: View {
                     }
                 ))
                 .accessibilityIdentifier("autofill.quicktype")
-            } header: {
-                Text("Ce que voit le système")
             } footer: {
-                Text("Pour te suggérer le bon compte, le système reçoit les domaines et les identifiants de tes Logins, jamais tes mots de passe, codes ou clés. Désactivées, plus rien n'est transmis : tu choisis alors le compte avec la touche clé du clavier.")
+                Text("Le système reçoit les sites et identifiants, jamais les mots de passe ni les codes.")
             }
             #if os(iOS)
             // The system asks the extension for a password only on iOS (26.2 and later).
@@ -51,18 +49,14 @@ struct AutoFillSettings: View {
                 NavigationLink {
                     ForgetSiteChoices()
                 } label: {
-                    Label("Oublier les choix pour un site", systemImage: "eraser")
+                    Label("Comptes retenus par site", systemImage: "eraser")
                 }
                 .accessibilityIdentifier("autofill.forgetSites")
             } footer: {
-                Text("OnePass retient le compte que tu choisis sur chaque site pour te le proposer en premier la fois suivante.")
+                Text("Le compte choisi sur un site est proposé en premier.")
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Remplissage automatique")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
     }
 
@@ -102,18 +96,18 @@ struct AutoFillSettings: View {
                 .accessibilityIdentifier("autofill.systemSettings")
             }
         } header: {
-            Text("OnePass remplit tes identifiants, codes et passkeys dans les apps et Safari.")
+            Text("Identifiants, codes et passkeys, dans les apps et Safari.")
                 .font(.subheadline)
                 .textCase(nil)
         } footer: {
             if enabled == true {
                 #if os(macOS)
-                Text("Clique dans un champ d'identifiant : OnePass propose tes comptes et se déverrouille par \(OnboardingModel.biometryName) ou ton mot de passe maître avant de remplir.")
+                Text("Clique dans un champ d'identifiant : OnePass propose tes comptes.")
                 #else
-                Text("Touche un champ d'identifiant : OnePass apparaît au-dessus du clavier et se déverrouille par \(OnboardingModel.biometryName) ou ton mot de passe maître avant de remplir.")
+                Text("Touche un champ d'identifiant : OnePass apparaît au-dessus du clavier.")
                 #endif
             } else {
-                Text("Si la demande ne s'affiche pas, active OnePass dans les réglages du système, rubrique Remplissage automatique et mots de passe.")
+                Text("Sinon : Réglages du système > Remplissage automatique et mots de passe.")
             }
         }
     }
@@ -168,14 +162,10 @@ struct ForgetSiteChoices: View {
                     }
                 }
             } footer: {
-                Text("Oublier un site efface le compte retenu pour lui dans tous tes coffres visibles, sur tous tes appareils. Tes Logins ne changent pas.")
+                Text("Oublier un site efface son choix sur tous tes appareils. Tes Logins ne changent pas.")
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Oublier les choix pour un site")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Comptes retenus")
         .task { await reload() }
         .confirmationDialog(
             "Oublier ce site ?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),

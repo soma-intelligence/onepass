@@ -32,9 +32,15 @@ struct GeneralSettings: View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
         Form {
+            #if os(macOS)
+            // iPhone and iPad: Profil is the account row on top of Réglages.
             ProfileSection()
+            #endif
+            #if os(iOS)
+            AppearanceSection()
+            #endif
             Section {
-                Picker("Verrouillage automatique", selection: Binding(
+                Picker("Verrouillage auto", selection: Binding(
                     get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
                     set: { delay in model.updateSettings { $0.autoLockDelay = delay } }
                 )) {
@@ -44,52 +50,44 @@ struct GeneralSettings: View {
                 }
                 .disabled(shared)
                 .accessibilityIdentifier("settings.autoLock")
-            } footer: {
-                if shared {
-                    Text("Appareil partagé : le délai est imposé (5 minutes au plus). Repasse en mode personnel pour le régler.")
-                } else if settings.autoLockDelay.locksInBackground {
-                    Text("Dès que OnePass quitte l'écran. Face ID ou ton mot de passe le rouvrent.")
-                } else {
-                    Text("Aussi après ce temps en arrière-plan.")
-                }
-            }
-            Section {
                 Toggle("Icônes des sites", isOn: Binding(
                     get: { settings.siteIconsEnabled },
                     set: { value in model.updateSettings { $0.siteIconsEnabled = value } }
                 ))
                 .accessibilityIdentifier("settings.siteIcons")
             } footer: {
-                Text("Depuis le site lui-même, sans service tiers.")
+                if shared {
+                    Text("Appareil partagé : 5 minutes au plus.")
+                } else {
+                    Text("Icônes chargées depuis chaque site, sans service tiers.")
+                }
             }
             Section {
-                Button("Importer depuis un autre gestionnaire…", systemImage: "square.and.arrow.down") {
+                Button("Importer…", systemImage: "square.and.arrow.down") {
                     importing = true
                 }
                 .accessibilityIdentifier("settings.import")
-            } header: {
-                Text("Import")
             } footer: {
-                Text("Apple, 1Password, Bitwarden, les navigateurs et 8 autres.")
+                Text("Apple, 1Password, Bitwarden, navigateurs et 8 autres.")
             }
             Section {
-                Button("Exporter une sauvegarde chiffrée…", systemImage: "square.and.arrow.down.on.square") {
+                Button("Sauvegarde chiffrée…", systemImage: "square.and.arrow.down.on.square") {
                     backupSheet = .export
                 }
                 .accessibilityIdentifier("settings.backup.export")
-                Button("Restaurer une sauvegarde…", systemImage: "clock.arrow.circlepath") {
+                Button("Restaurer…", systemImage: "clock.arrow.circlepath") {
                     backupSheet = .restore
                 }
                 .accessibilityIdentifier("settings.backup.restore")
-                Button("Exporter en CSV non chiffré…", systemImage: "exclamationmark.triangle") {
+                Button("Export CSV non chiffré…", systemImage: "exclamationmark.triangle") {
                     backupSheet = .plaintext
                 }
                 .foregroundStyle(.red)
                 .accessibilityIdentifier("settings.backup.plaintext")
             } header: {
-                Text("Sauvegarde et export")
+                Text("Sauvegarde")
             } footer: {
-                Text("La sauvegarde chiffrée s'ouvre avec ton compte, dont la signature est vérifiée, ou avec sa phrase de passe. Restaurer n'écrase rien. Le CSV non chiffré sert seulement à passer à un autre gestionnaire.")
+                Text("Restaurer n'écrase rien. Le CSV sert seulement à changer de gestionnaire.")
             }
         }
         // Over the settings themselves (the Mac `Settings` window has no browse sheet).
@@ -103,16 +101,148 @@ struct GeneralSettings: View {
             case .plaintext: PlaintextExportSheet()
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Général")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Général")
     }
 }
 
-/// Profil: the account's name and photo, shown in the sidebar, the account menu and the settings.
-private struct ProfileSection: View {
+/// iPhone and iPad: Profil, opened from the account row on top of Réglages.
+struct ProfileSettings: View {
+    var body: some View {
+        Form {
+            ProfileSection()
+        }
+        .settingsPage("Profil")
+    }
+}
+
+#if os(iOS)
+/// Apparence: follow the system, or keep OnePass light or dark. Three small screens to pick from,
+/// as in the system's Display settings. Stored on this device only.
+private struct AppearanceSection: View {
+    @AppStorage(Appearance.storageKey, store: AppModel.browseDefaults) private var stored = Appearance.system.rawValue
+
+    var body: some View {
+        let current = Appearance(stored: stored)
+        Section {
+            HStack(spacing: 0) {
+                ForEach(Appearance.allCases) { appearance in
+                    Button {
+                        stored = appearance.rawValue
+                    } label: {
+                        AppearanceChoice(appearance: appearance, selected: appearance == current)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("settings.appearance.\(appearance.rawValue)")
+                    .accessibilityAddTraits(appearance == current ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 8)
+            .sensoryFeedback(.selection, trigger: stored)
+        } header: {
+            Text("Apparence")
+        }
+    }
+}
+
+/// One appearance: a small screen drawn with the app's own surfaces in that appearance (half and
+/// half for Automatique), its name, and the selection circle.
+private struct AppearanceChoice: View {
+    let appearance: Appearance
+    let selected: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            preview
+                .frame(width: 58, height: 96)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(selected ? Theme.accent : Color.primary.opacity(0.12), lineWidth: selected ? 2 : 1)
+                }
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(selected ? Theme.accent : Color.secondary.opacity(0.6))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+    }
+
+    private var title: LocalizedStringKey {
+        switch appearance {
+        case .system: "Automatique"
+        case .light: "Clair"
+        case .dark: "Sombre"
+        }
+    }
+
+    @ViewBuilder private var preview: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        switch appearance {
+        case .system:
+            ZStack {
+                MiniScreen().environment(\.colorScheme, .light)
+                MiniScreen().environment(\.colorScheme, .dark)
+                    .mask {
+                        GeometryReader { proxy in
+                            Path { path in
+                                path.move(to: CGPoint(x: proxy.size.width, y: 0))
+                                path.addLine(to: CGPoint(x: proxy.size.width, y: proxy.size.height))
+                                path.addLine(to: CGPoint(x: 0, y: proxy.size.height))
+                                path.closeSubpath()
+                            }
+                        }
+                    }
+            }
+            .clipShape(shape)
+        case .light:
+            MiniScreen().environment(\.colorScheme, .light).clipShape(shape)
+        case .dark:
+            MiniScreen().environment(\.colorScheme, .dark).clipShape(shape)
+        }
+    }
+}
+
+/// The app in miniature: the page, a title bar, two cards and a row of tiles.
+private struct MiniScreen: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            Theme.page
+            VStack(alignment: .leading, spacing: 5) {
+                Capsule().fill(Color.primary.opacity(0.55)).frame(width: 24, height: 4)
+                    .padding(.bottom, 2)
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.card).frame(height: 18)
+                        .overlay(alignment: .topLeading) {
+                            RoundedRectangle(cornerRadius: 2).fill(Theme.accent).frame(width: 6, height: 6).padding(3)
+                        }
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.card).frame(height: 18)
+                        .overlay(alignment: .topLeading) {
+                            RoundedRectangle(cornerRadius: 2).fill(.orange).frame(width: 6, height: 6).padding(3)
+                        }
+                }
+                RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.card).frame(height: 30)
+                    .overlay(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Capsule().fill(Color.primary.opacity(0.35)).frame(width: 22, height: 3)
+                            Capsule().fill(Color.primary.opacity(0.2)).frame(width: 16, height: 3)
+                        }
+                        .padding(.leading, 5)
+                    }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 12)
+        }
+    }
+}
+#endif
+
+/// Profil: the account's name and photo, shown in the sidebar, the account panel and the settings.
+struct ProfileSection: View {
     @Environment(AppModel.self) private var model
     @State private var choosingFile = false
     @State private var failed = false

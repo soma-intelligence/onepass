@@ -61,14 +61,10 @@ struct VaultsSettings: View {
                 }
                 .accessibilityIdentifier("settings.vaults.new")
             } footer: {
-                Text("Un coffre vide peut être supprimé depuis sa fiche, sauf le dernier.")
+                Text("Un coffre vide se supprime depuis sa fiche.")
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Coffres")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Coffres")
         #if DEBUG
         .onAppear {
             // Screenshots: `-OnePassDemoVaultEditor YES` opens the editor of the first vault.

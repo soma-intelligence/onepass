@@ -26,11 +26,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .general: "gearshape"
-        case .security: "lock.shield"
+        case .general: "gearshape.fill"
+        case .security: "lock.shield.fill"
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
-        case .vaults: "square.stack.3d.up"
+        case .vaults: "square.stack.3d.up.fill"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
         case .developer: "chevron.left.forwardslash.chevron.right"
@@ -40,7 +40,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
-        case .general: Color(red: 0.36, green: 0.62, blue: 0.86)
+        case .general: Color(red: 0.54, green: 0.55, blue: 0.58)
         case .security: Color(red: 0.88, green: 0.58, blue: 0.0)
         case .autofill: Color(red: 0.20, green: 0.47, blue: 0.96)
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
@@ -48,7 +48,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
-        case .about: Color(red: 0.36, green: 0.40, blue: 0.45)
+        case .about: Theme.accent
         }
     }
 
@@ -74,16 +74,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 }
 
 #if os(iOS) || os(visionOS)
-/// iPhone, iPad and Vision Pro (mockup `PhoneSettings`): grouped list of pages, "OK" closes. Later milestones
-/// add their pages (Extension Safari, Remplissage auto, Appareils) to this list. On iPhone it is the
-/// Réglages tab (`inTab`): the account on top, as in the Mac account popover, "Verrouiller" at the
-/// bottom, no "OK".
+/// iPhone, iPad and Vision Pro: Réglages, a sheet opened from the account panel. The account on
+/// top (it opens Profil), then the pages in grouped cards, each with its colored tile as in the
+/// Mac sidebar, on the app's page color. Labels stay short; a footer only where a choice needs one.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsPage] = SettingsView.initialPath
-    @State private var creatingVault = false
-    var inTab = false
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page.
     private static var initialPath: [SettingsPage] {
@@ -100,8 +97,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if inTab {
-                    accountSection
+                Section {
+                    NavigationLink {
+                        ProfileSettings()
+                    } label: {
+                        SettingsAccountHeader()
+                    }
+                    .accessibilityIdentifier("settings.account")
                 }
                 Section {
                     row(.general)
@@ -121,90 +123,25 @@ struct SettingsView: View {
                 Section {
                     row(.about)
                 } footer: {
-                    if !inTab { Text("OnePass est open source (AGPL-3.0)") }
-                }
-                if inTab {
-                    Section {
-                        Button(role: .destructive) {
-                            model.perform(.lock)
-                        } label: {
-                            Label {
-                                Text("Verrouiller").foregroundStyle(.red)
-                            } icon: {
-                                tile("lock.fill", .red)
-                            }
-                        }
-                        .accessibilityIdentifier("settings.lock")
-                    } footer: {
-                        Text("OnePass est open source (AGPL-3.0)")
-                    }
+                    Text("OnePass est open source (AGPL-3.0)")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
                 }
             }
-            .navigationTitle("Réglages")
-            .navigationBarTitleDisplayMode(inTab ? .large : .inline)
+            .settingsPage("Réglages")
             .navigationDestination(for: SettingsPage.self) { page in
                 page.content
             }
             .toolbar {
-                if !inTab {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("OK") { dismiss() }
-                            .accessibilityIdentifier("settings.done")
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("OK") { dismiss() }
+                        .accessibilityIdentifier("settings.done")
                 }
-            }
-            .sheet(isPresented: $creatingVault) {
-                VaultEditorView(vault: nil) { creatingVault = false }
             }
         }
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
-    }
-
-    /// The Réglages tab: who is signed in and on which kind of device, then the account actions.
-    @ViewBuilder private var accountSection: some View {
-        let name = model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
-        Section {
-            HStack(spacing: 14) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.title3.weight(.semibold)).lineLimit(1)
-                    Text(model.settings.deviceMode == .shared
-                         ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("settings.account")
-            Button {
-                creatingVault = true
-            } label: {
-                Label { Text("Nouveau coffre…").foregroundStyle(.primary) } icon: {
-                    tile("plus.rectangle.on.rectangle", Theme.accent)
-                }
-            }
-            .accessibilityIdentifier("settings.newVault")
-            Button {
-                model.showImport = true
-            } label: {
-                Label { Text("Importer…").foregroundStyle(.primary) } icon: {
-                    tile("square.and.arrow.down", Color(red: 0.13, green: 0.63, blue: 0.42))
-                }
-            }
-            .accessibilityIdentifier("settings.import")
-        }
-    }
-
-    /// The colored tile of a row, as in the Mac settings sidebar.
-    private func tile(_ symbol: String, _ color: Color) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-            .background(color.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     #if os(iOS)
@@ -214,17 +151,7 @@ struct SettingsView: View {
         NavigationLink {
             WatchSettings()
         } label: {
-            Label {
-                Text("Apple Watch")
-            } icon: {
-                Image(systemName: "applewatch")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        Color(red: 0.20, green: 0.52, blue: 0.80).gradient,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
+            SettingsRowLabel(title: "Apple Watch", symbol: "applewatch", color: SettingsTint.watch)
         }
         .accessibilityIdentifier("settings.watch")
     }
@@ -235,11 +162,7 @@ struct SettingsView: View {
         NavigationLink {
             AgentsSettings()
         } label: {
-            Label {
-                Text("Agents")
-            } icon: {
-                tile("point.3.connected.trianglepath.dotted", .purple)
-            }
+            SettingsRowLabel(title: "Agents", symbol: "point.3.connected.trianglepath.dotted", color: SettingsTint.agents)
         }
         .accessibilityIdentifier("settings.agents")
     }
@@ -247,20 +170,76 @@ struct SettingsView: View {
 
     private func row(_ page: SettingsPage) -> some View {
         NavigationLink(value: page) {
-            Label {
-                Text(page.title)
-            } icon: {
-                Image(systemName: page.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(page.tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
+            SettingsRowLabel(title: page.title, symbol: page.symbol, color: page.tint)
         }
         .accessibilityIdentifier("settings.\(page.rawValue)")
     }
 }
+
+/// The account at the top of Réglages: the photo or initials, the name, the kind of device.
+private struct SettingsAccountHeader: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let _ = model.settingsRevision
+        HStack(spacing: 14) {
+            AccountAvatar(initials: model.initials, photo: model.profileImage, size: 56)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(model.settings.deviceMode == .shared
+                     ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A settings row: the colored tile of the Mac sidebar and the page's name.
+struct SettingsRowLabel: View {
+    let title: LocalizedStringKey
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            SymbolTile(symbol: symbol, color: color, size: 29)
+        }
+    }
+}
+
+/// Tiles of the iOS-only rows (the pages' own tints live on `SettingsPage`).
+enum SettingsTint {
+    static let watch = Color(red: 0.20, green: 0.52, blue: 0.80)
+    static let agents = Color(red: 0.55, green: 0.30, blue: 0.85)
+}
 #endif
+
+extension View {
+    /// Every settings page, iPhone, iPad and Mac: grouped cards and the page's title. iPhone and
+    /// iPad: an inline title over the app's page color, content fading softly under the bar.
+    func settingsPage(_ title: LocalizedStringKey) -> some View {
+        formStyle(.grouped)
+            .navigationTitle(title)
+            #if os(iOS) || os(visionOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            #if os(iOS)
+            .scrollContentBackground(.hidden)
+            .background(Theme.page.ignoresSafeArea())
+            // Buttons and values in the accent keep 4.5:1 on the dark cards too.
+            .tint(Theme.readableAccent)
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            #endif
+    }
+}
 
 #if os(macOS)
 /// The Mac `Settings` window (⌘,): pages in a sidebar of colored tiles, the page on the right.

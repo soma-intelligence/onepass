@@ -82,8 +82,7 @@ struct SyncSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Sync")
+        .settingsPage("Sync")
         .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
             SafeExitChooserSheet(kind: $0.kind)
         }
@@ -129,15 +128,15 @@ struct SyncSettings: View {
     @ViewBuilder private var footer: some View {
         switch line {
         case .disabled:
-            Text("Les données restent sur cet appareil. La synchronisation chiffrée par iCloud demande une version signée de OnePass.")
+            Text("La sync iCloud demande un build signé.")
         case .refused:
-            Text("Les données reçues d'iCloud ont été refusées par OnePass. Aucune n'a été utilisée.")
+            Text("Rien de ce qu'iCloud a envoyé n'a été utilisé.")
         case .waiting:
-            Text("iCloud sert encore une version plus ancienne que celle de cet appareil. OnePass continue avec sa copie vérifiée et la renvoie ; rien n'est à faire.")
+            Text("iCloud a une version plus ancienne. OnePass renvoie la sienne, rien à faire.")
         case .accountChanged:
             Text("Cet appareil est maintenant connecté à un autre compte iCloud que celui avec lequel ton coffre se synchronisait. Par sécurité, OnePass ne lit et n'envoie plus rien vers iCloud : ton coffre reste intact sur cet appareil. Reconnecte-toi au compte iCloud d'origine dans Réglages pour reprendre la synchronisation, ou utilise ce compte : OnePass vérifie d'abord qu'il ne contient pas un autre coffre.")
         default:
-            Text("Tout est chiffré avant de quitter cet appareil. iCloud ne voit que des données illisibles.")
+            Text("Chiffré avant de quitter l'appareil.")
         }
     }
 

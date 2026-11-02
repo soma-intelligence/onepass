@@ -50,7 +50,7 @@ struct DevicesSettings: View {
             } header: {
                 Text("Sur ton compte")
             } footer: {
-                Text("Cette liste est signée par ton compte : le serveur ne peut ni ajouter ni cacher un appareil.")
+                Text("Liste signée par ton compte.")
             }
             #if os(macOS)
             if let bridge = model.browserBridge {
@@ -86,11 +86,11 @@ struct DevicesSettings: View {
                 #endif
             } footer: {
                 #if os(iOS)
-                Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner d'ici.")
+                Text("Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code.")
                 #elseif os(macOS)
                 Text("Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres.")
                 #else
-                Text("Sur le nouvel appareil, choisis « J'ai déjà OnePass sur un autre appareil » : il affiche un QR code à scanner avec ton iPhone ou ton iPad.")
+                Text("Sur le nouvel appareil : « J'ai déjà OnePass », puis scanne son code avec ton iPhone ou ton iPad.")
                 #endif
             }
             if !revoked.isEmpty {
@@ -108,11 +108,7 @@ struct DevicesSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Appareils")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Appareils")
         .task { await reload() }
         #if os(iOS)
         .refreshable { await reload() }

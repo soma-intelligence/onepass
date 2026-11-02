@@ -28,14 +28,12 @@ struct AboutSettings: View {
                 .accessibilityIdentifier("settings.about.source")
             }
             Section {
-                Text("Cryptographie post-quantique : ML-KEM-1024, ML-DSA-87, SLH-DSA")
+                LabeledContent("Post-quantique") {
+                    Text(verbatim: "ML-KEM-1024 · ML-DSA-87 · SLH-DSA")
+                }
                     .accessibilityIdentifier("settings.about.crypto")
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("À propos")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("À propos")
     }
 }

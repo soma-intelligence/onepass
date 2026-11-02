@@ -19,9 +19,7 @@ struct WatchSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Apple Watch")
-        .navigationBarTitleDisplayMode(.inline)
+        .settingsPage("Apple Watch")
     }
 
     @ViewBuilder private func content(_ phone: PhoneCompanion) -> some View {
@@ -86,7 +84,7 @@ struct WatchSettings: View {
                 }
                 .accessibilityIdentifier("settings.watch.wipe")
             } footer: {
-                Text("Efface tout ce que la montre a reçu et coupe l'envoi. Réactive « Envoyer à l'Apple Watch » pour envoyer de nouveau.")
+                Text("Efface tout ce que la montre a reçu.")
             }
         }
     }

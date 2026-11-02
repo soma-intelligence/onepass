@@ -25,9 +25,7 @@ struct AgentsSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Agents")
-        .navigationBarTitleDisplayMode(.inline)
+        .settingsPage("Agents")
         .disabled(busy)
         .task { await model.phoneAgents?.refresh() }
     }
@@ -69,7 +67,7 @@ struct AgentsSettings: View {
                     .foregroundStyle(.orange)
             }
         } footer: {
-            Text("Quand un agent de ton Mac demande un secret, cet iPhone reçoit une notification. Tu réponds dans l'app, avec Face ID. Rien ne se décide depuis la notification.")
+            Text("Une demande d'agent arrive en notification. Tu réponds dans l'app, avec Face ID.")
         }
 
         ForEach(agents.macs) { mac in

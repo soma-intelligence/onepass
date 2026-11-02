@@ -20,7 +20,7 @@ struct TravelSettings: View {
                     .accessibilityIdentifier("settings.travel.status")
                 actionButton
             } footer: {
-                Text("Les coffres qui partent restent dans iCloud : rien n'est supprimé. Au retour, OnePass les vérifie avant de les rouvrir.")
+                Text("Les coffres retirés restent dans iCloud et sont vérifiés au retour.")
             }
             if let errorMessage {
                 Section {
@@ -49,15 +49,11 @@ struct TravelSettings: View {
                 } header: {
                     Text("Sûr en voyage")
                 } footer: {
-                    Text("Ce réglage suit le coffre sur tous tes appareils.")
+                    Text("Sur tous tes appareils.")
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Travel Mode")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("Travel Mode")
         .task { await reload() }
         .confirmationDialog(
             "Activer le Travel Mode ?", isPresented: $confirming, titleVisibility: .visible
