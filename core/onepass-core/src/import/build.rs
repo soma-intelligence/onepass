@@ -341,6 +341,9 @@ impl Draft {
                     relay_email: None,
                 }));
         }
+        if kind == ItemType::Login {
+            passkey_login(&mut item);
+        }
         if keep_login
             && kind == ItemType::Login
             && !has_value(&item, "username")
@@ -350,6 +353,34 @@ impl Draft {
         }
         settle(&mut item, codes);
         item
+    }
+}
+
+/// A Login that holds a passkey signs in with it: `Passkey` joins its login methods (after
+/// `Password` when it has one), and a Login without a username takes the passkey's account name,
+/// so a passkey exported alone stays a Login instead of falling back to a secure note.
+fn passkey_login(item: &mut Item) {
+    let first_user = item
+        .sections
+        .iter()
+        .filter(|s| s.id != IMPORTED_ID)
+        .flat_map(|s| &s.fields)
+        .find_map(|f| match &f.value {
+            FieldValue::Passkey(p) => Some(p.user_name.clone()),
+            _ => None,
+        });
+    let Some(user) = first_user else { return };
+    if !has_value(item, "username")
+        && !user.is_empty()
+        && let Some(f) = item.field_mut("username")
+    {
+        f.value = FieldValue::Text(user);
+    }
+    if item.login_methods.is_empty() && has_value(item, "password") {
+        item.login_methods.push(LoginMethod::Password);
+    }
+    if !item.login_methods.contains(&LoginMethod::Passkey) {
+        item.login_methods.push(LoginMethod::Passkey);
     }
 }
 

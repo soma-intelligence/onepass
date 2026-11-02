@@ -702,6 +702,50 @@ mod tests {
         assert_eq!(p.created_at.unix_timestamp(), 1_700_000_000);
     }
 
+    /// Passwords exports a passkey alone (no basic-auth): still a Login, signed in with that passkey,
+    /// its account name as the username. Never a secure note.
+    #[test]
+    fn cxf_passkey_alone_is_a_login() {
+        let json = br#"{"accounts":[{"items":[{"title":"GitHub","creationAt":1760000000,
+            "scope":{"urls":["https://github.com"]},
+            "credentials":[{"type":"passkey","credentialId":"AQID","rpId":"github.com",
+            "username":"camille","userDisplayName":"Camille","userHandle":"CQgH","key":"MIGH"}]}]}]}"#;
+        let out = parse_cxf(json).unwrap();
+        assert!(
+            out.warnings.is_empty(),
+            "{:?}",
+            out.warnings.iter().map(|w| w.code).collect::<Vec<_>>()
+        );
+        let item = &out.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("camille"));
+        assert_eq!(item.login_methods, [crate::model::LoginMethod::Passkey]);
+        assert!(matches!(
+            item.field("passkeys").map(|f| &f.value),
+            Some(FieldValue::Passkey(_))
+        ));
+        validate(item).unwrap();
+    }
+
+    /// A password beside the passkey: both sign-in methods, the password's username kept.
+    #[test]
+    fn cxf_passkey_and_password_keep_both_methods() {
+        let json = br#"{"accounts":[{"items":[{"title":"WebAuthn",
+            "credentials":[{"type":"passkey","credentialId":"AQID","rpId":"webauthn.io",
+            "username":"camille","userHandle":"CQgH","key":"MIGH"},
+            {"type":"basic-auth","username":"c@example.com","password":"fictif"}]}]}]}"#;
+        let item = &parse_cxf(json).unwrap().items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("c@example.com"));
+        assert_eq!(
+            item.login_methods,
+            [
+                crate::model::LoginMethod::Password,
+                crate::model::LoginMethod::Passkey
+            ]
+        );
+    }
+
     #[test]
     fn cxf_broken_passkey_is_moved() {
         let imp = parse(
