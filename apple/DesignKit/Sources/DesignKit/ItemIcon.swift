@@ -76,11 +76,12 @@ public struct ItemIcon: View {
 
     /// The tile behind a mark (`SiteIconTreatment.mark`): a neutral gray for a one color mark
     /// (drawn in the text color), else white or near black, whichever keeps the mark readable in
-    /// this appearance.
-    static func markBackground(monochrome: Bool, luminance: Double, dark: Bool) -> Color {
-        if monochrome { return dark ? Color(white: 0.19) : Color(white: 0.955) }
-        if dark { return luminance < 0.3 ? Color(white: 0.94) : Color(white: 0.19) }
-        return luminance > 0.82 ? Color(white: 0.19) : .white
+    /// this appearance: white in light mode unless the mark is almost all white, near black in dark
+    /// mode unless the mark is mostly black.
+    static func markBackground(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Color {
+        if monochrome { return darkMode ? Color(white: 0.19) : Color(white: 0.955) }
+        if darkMode { return darkShare > 0.5 ? Color(white: 0.94) : Color(white: 0.19) }
+        return pale > 0.85 ? Color(white: 0.19) : .white
     }
 
     /// Many sites ship their mark small in the middle of a plain square (white or transparent):
@@ -156,10 +157,10 @@ public struct ItemIcon: View {
             if image == nil, let brand, let color = Self.brandColor(brand) {
                 BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
-            } else if let image, case .mark(let monochrome, let luminance) = treatment {
-                // A mark on its own: centered on a tile that suits it, never stretched past twice
-                // its pixels (a 32 px favicon stays crisp).
-                let mark = min(side * 0.62, CGFloat(max(image.width, image.height)) / 2)
+            } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment {
+                // A mark on its own: centered on a tile that suits it, stretched at most to 1.5
+                // points per 2 pixels (a 32 px favicon stays crisp, at 21 points).
+                let mark = min(side * 0.62, CGFloat(max(image.width, image.height)) / 1.5)
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .renderingMode(monochrome ? .template : .original)
@@ -168,7 +169,7 @@ public struct ItemIcon: View {
                     .foregroundStyle(.primary)
                     .frame(width: mark, height: mark)
                     .frame(width: side, height: side)
-                    .background(Self.markBackground(monochrome: monochrome, luminance: luminance, dark: colorScheme == .dark))
+                    .background(Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark))
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: corner, style: .continuous)

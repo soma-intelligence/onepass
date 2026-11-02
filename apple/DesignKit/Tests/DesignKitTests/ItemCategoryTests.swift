@@ -1,3 +1,4 @@
+import ImageIO
 import Foundation
 import Testing
 import VaultKit
@@ -162,21 +163,21 @@ import SwiftUI
 
     @Test func blackMarkOnTransparentIsAOneColorMark() {
         let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: nil, markColor: (0, 0, 0)))
-        guard case .mark(let monochrome, let luminance) = treatment else { Issue.record("not a mark"); return }
+        guard case .mark(let monochrome, _, let dark) = treatment else { Issue.record("not a mark"); return }
         #expect(monochrome)
-        #expect(luminance < 0.05)
+        #expect(dark > 0.95)
     }
 
     @Test func redMarkKeepsItsColors() {
         let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: nil, markColor: (0.89, 0.1, 0.13)))
-        guard case .mark(let monochrome, _) = treatment else { Issue.record("not a mark"); return }
+        guard case .mark(let monochrome, _, _) = treatment else { Issue.record("not a mark"); return }
         #expect(!monochrome)
     }
 
     @Test func plainWhiteSquareIsCleared() throws {
         let (image, treatment) = SiteIconTreatment.prepare(Self.icon(background: (1, 1, 1), markColor: (0.05, 0.05, 0.3)))
-        guard case .mark(let monochrome, let luminance) = treatment else { Issue.record("not a mark"); return }
-        #expect(!monochrome || luminance < 0.2)
+        guard case .mark(let monochrome, _, let dark) = treatment else { Issue.record("not a mark"); return }
+        #expect(!monochrome || dark > 0.5)
         // The corners are transparent now, the mark is still there.
         let bitmap = try #require(SiteIconTreatment.Bitmap(image))
         #expect(bitmap.alpha(0) == 0)
@@ -191,9 +192,87 @@ import SwiftUI
     }
 
     @Test func tileBackgroundKeepsTheMarkReadable() {
-        // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile.
-        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.1, dark: true) == Color(white: 0.94))
-        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.9, dark: false) == Color(white: 0.19))
-        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.5, dark: false) == .white)
+        // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile. A colored mark
+        // on a white disc (half pale) keeps white in light mode.
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0, dark: 0.8, darkMode: true) == Color(white: 0.94))
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.95, dark: 0, darkMode: false) == Color(white: 0.19))
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.7, dark: 0, darkMode: false) == .white)
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.5, dark: 0, darkMode: true) == Color(white: 0.19))
+    }
+}
+
+@Suite struct ScanProgressBarTests {
+    @Test func fractionIsClampedAndNeedsATotal() {
+        #expect(ScanProgressBar.fraction(done: 3, total: 12) == 0.25)
+        #expect(ScanProgressBar.fraction(done: 20, total: 12) == 1)
+        #expect(ScanProgressBar.fraction(done: -1, total: 12) == 0)
+        #expect(ScanProgressBar.fraction(done: 3, total: 0) == nil)
+        #expect(ScanProgressBar.fraction(done: nil, total: 12) == nil)
+    }
+
+    /// Renders the bar to a PNG for the feedback captures (only when `ONEPASS_FEEDBACK_DIR` is set).
+    @MainActor @Test func renderForCaptures() throws {
+        guard let folder = ProcessInfo.processInfo.environment["ONEPASS_FEEDBACK_DIR"], !folder.isEmpty else { return }
+        for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+            let view = VStack(spacing: 24) {
+                ScanProgressBar(title: Text(verbatim: "Analyse des éléments"))
+                ScanProgressBar(
+                    title: Text(verbatim: "Vérification des fuites"), detail: Text(verbatim: "42 sur 120"),
+                    done: 42, total: 120)
+            }
+            .padding(20)
+            .frame(width: 360)
+            .background(scheme == .dark ? Color(white: 0.11) : Color.white)
+            .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = try #require(renderer.cgImage)
+            let url = URL(fileURLWithPath: folder).appendingPathComponent("scan-progress-\(name).png")
+            let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, nil)
+            #expect(CGImageDestinationFinalize(destination))
+        }
+    }
+}
+
+@Suite struct SiteIconTileCaptures {
+    /// Renders each icon of `ONEPASS_ICON_SAMPLES` (a folder of PNG or ICO files) as its raw image
+    /// and as list tiles in light and dark, to `ONEPASS_FEEDBACK_DIR` (captures only).
+    @MainActor @Test func renderSamples() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let samples = environment["ONEPASS_ICON_SAMPLES"], let folder = environment["ONEPASS_FEEDBACK_DIR"]
+        else { return }
+        let files = try FileManager.default.contentsOfDirectory(atPath: samples).sorted()
+        let icons = files.compactMap { name -> (String, Data)? in
+            guard let data = FileManager.default.contents(atPath: samples + "/" + name) else { return nil }
+            return ((name as NSString).deletingPathExtension, data)
+        }
+        let view = VStack(alignment: .leading, spacing: 14) {
+            ForEach(icons, id: \.0) { name, data in
+                HStack(spacing: 18) {
+                    Text(verbatim: name).font(.headline).frame(width: 90, alignment: .leading)
+                    if let raw = ItemIcon.decode(data) {
+                        Image(decorative: raw, scale: 1).resizable().interpolation(.high)
+                            .frame(width: 38, height: 38)
+                            .background(Color.gray.opacity(0.2))
+                    }
+                    ForEach([ColorScheme.light, .dark], id: \.self) { scheme in
+                        ItemIcon(type: .login, title: name, siteIcon: data, size: 38)
+                            .padding(10)
+                            .background(scheme == .dark ? Color(white: 0.11) : Color.white)
+                            .environment(\.colorScheme, scheme)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(white: 0.6))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 3
+        let image = try #require(renderer.cgImage)
+        let url = URL(fileURLWithPath: folder).appendingPathComponent("site-icon-tiles.png")
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
     }
 }

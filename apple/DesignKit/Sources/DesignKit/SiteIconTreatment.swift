@@ -14,9 +14,10 @@ import Foundation
 ///   dark mode, a pale one a dark tile in light mode).
 public enum SiteIconTreatment: Equatable, Sendable {
     case fullBleed
-    /// `monochrome`: drawn as a template in the text color. `luminance`: of the mark's opaque
-    /// pixels, 0 (black) to 1 (white).
-    case mark(monochrome: Bool, luminance: Double)
+    /// `monochrome`: drawn as a template in the text color. `pale` and `dark`: the share of the
+    /// mark's opaque pixels that is near white and near black, 0 to 1 (a colored G on a white disc
+    /// is about half pale: it keeps a white tile in light mode).
+    case mark(monochrome: Bool, pale: Double, dark: Double)
 
     /// The pixels of an image, RGBA premultiplied, drawn at `side` (or its own size, if smaller).
     struct Bitmap {
@@ -159,18 +160,21 @@ public enum SiteIconTreatment: Equatable, Sendable {
         return true
     }
 
-    /// A mark on a transparent background: one color or several, and how light it is.
+    /// A mark on a transparent background: one color or several, and how much of it is near white
+    /// or near black.
     static func classify(_ bitmap: Bitmap) -> SiteIconTreatment {
-        var lum = 0.0, weight = 0.0, colorful = 0.0
+        var pale = 0.0, dark = 0.0, weight = 0.0, colorful = 0.0
         for i in 0..<(bitmap.width * bitmap.height) {
             let a = Double(bitmap.alpha(i)) / 255
             guard a > 0.5 else { continue }
             let c = bitmap.color(i)
-            lum += luminance(c) * a
+            let lum = luminance(c)
+            if lum > 0.85, chroma(c) < 0.12 { pale += a }
+            if lum < 0.2 { dark += a }
             if chroma(c) > 0.18 { colorful += a }
             weight += a
         }
-        guard weight > 0 else { return .mark(monochrome: true, luminance: 0) }
-        return .mark(monochrome: colorful / weight < 0.06, luminance: lum / weight)
+        guard weight > 0 else { return .mark(monochrome: true, pale: 0, dark: 1) }
+        return .mark(monochrome: colorful / weight < 0.06, pale: pale / weight, dark: dark / weight)
     }
 }
