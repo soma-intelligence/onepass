@@ -52,7 +52,9 @@ pub struct GenerationReport {
     pub fallback: bool,
     /// Readable did not fit the site and Strong was used instead.
     pub readable_fell_back: bool,
-    /// `entropy_bits` is below 60.
+    /// The site pulled `entropy_bits` below 60: the same profile without
+    /// any site constraint reaches 60 or more. A user's own short Custom
+    /// profile is never weak by site.
     pub weak_by_site: bool,
     pub entropy_bits: f64,
 }
@@ -399,6 +401,11 @@ pub fn generate_for(
         }
     };
     let (password, entropy_bits, gave_way) = generated;
+    // Weak by site only when the same profile, unconstrained, would not be.
+    let weak_by_site = entropy_bits < WEAK_BITS
+        && !fallback
+        && run(&Constraints::default(), profile, classes)
+            .is_some_and(|(_, bits, _)| bits >= WEAK_BITS);
     let has = |f: fn(&char) -> bool| password.chars().any(|ch| f(&ch));
     let report = GenerationReport {
         length: password.chars().count() as u32,
@@ -410,7 +417,7 @@ pub fn generate_for(
         dropped: resolved.dropped,
         fallback,
         readable_fell_back: gave_way,
-        weak_by_site: entropy_bits < WEAK_BITS,
+        weak_by_site,
         entropy_bits,
     };
     Ok((password, report))

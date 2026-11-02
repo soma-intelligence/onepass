@@ -3,7 +3,7 @@
 
 use onepass_core::site_password::{
     CharSet, Constraints, GenerationReport, PasswordContext, Profile, Source, generate_for,
-    parse_hints,
+    parse_hints, parse_passwordrules,
 };
 use proptest::prelude::*;
 
@@ -371,6 +371,78 @@ fn six_digits_site_is_weak_by_site() {
     assert!(r.weak_by_site);
     assert!(r.entropy_bits < 60.0);
     assert!(!r.fallback);
+}
+
+#[test]
+fn short_custom_is_not_weak_by_site() {
+    // 8 chars of letters: under 60 bits, but the user's choice, not the site's.
+    let custom = Profile::Custom {
+        length: 8,
+        digits: false,
+        symbols: false,
+    };
+    let (_, r) = run(&PasswordContext::default(), &custom, 0);
+    assert!(r.entropy_bits < 60.0);
+    assert!(!r.weak_by_site);
+    // A site maximum that keeps it as short: still the user's length.
+    let ctx = PasswordContext {
+        max_length: Some(12),
+        ..PasswordContext::default()
+    };
+    let (_, r) = run(&ctx, &custom, 0);
+    assert!(!r.weak_by_site);
+}
+
+#[test]
+fn custom_cut_by_site_is_weak_by_site() {
+    // The user asked for 20 letters (over 100 bits); the site allows 8.
+    let custom = Profile::Custom {
+        length: 20,
+        digits: false,
+        symbols: false,
+    };
+    let ctx = PasswordContext {
+        max_length: Some(8),
+        ..PasswordContext::default()
+    };
+    let (p, r) = run(&ctx, &custom, 0);
+    assert_eq!(p.chars().count(), 8);
+    assert!(r.weak_by_site);
+}
+
+#[test]
+fn repeated_rule_strings_require_each_class_once() {
+    let rule = "required: lower; required: upper; required: digit; maxlength: 8;";
+    let once = parse_passwordrules(rule).unwrap();
+    let mut thrice = Constraints::default();
+    for _ in 0..3 {
+        thrice.merge(&parse_passwordrules(rule).unwrap());
+    }
+    thrice.merge(&parse_passwordrules("maxlength: 8;").unwrap());
+    let mut once_with_max = Constraints::default();
+    once_with_max.merge(&once);
+    once_with_max.merge(&parse_passwordrules("maxlength: 8;").unwrap());
+    assert_eq!(thrice, once_with_max);
+    assert_eq!(thrice.required.len(), 3);
+    // Field, confirmation and quirk give the same string: the max still holds.
+    let ctx = PasswordContext {
+        rules: vec![rule.to_owned(), rule.to_owned()],
+        quirk_rules: Some(rule.to_owned()),
+        max_length: Some(8),
+        ..PasswordContext::default()
+    };
+    let (p, r) = run(&ctx, &Profile::Strong, 0);
+    assert!(!r.fallback);
+    assert_eq!(p.chars().count(), 8);
+}
+
+#[test]
+fn required_digit_alone_gives_digits_only() {
+    // Apple semantics (ruled kept): `allowed` is the union of the named
+    // classes, so `required: digit` alone means digits only (PIN quirks).
+    let (p, r) = run(&rules(&["required: digit; minlength: 4; maxlength: 8;"]), &Profile::Strong, 0);
+    assert!(!r.fallback);
+    assert!(p.chars().all(|c| c.is_ascii_digit()), "{p}");
 }
 
 #[test]

@@ -179,7 +179,8 @@ interface Ops {
     res: { item_id: string };
   };
   update_password: {
-    req: { ctx: Ctx; item_id: string; origin: string; password: string };
+    /** `weak_by_site`: a regenerated pending Login's weak tag is set (true) or cleared (false). */
+    req: { ctx: Ctx; item_id: string; origin: string; password: string; weak_by_site?: boolean };
     res: Record<string, never>;
   };
   /**

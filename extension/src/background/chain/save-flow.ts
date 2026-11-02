@@ -11,12 +11,14 @@
 // change-password form often has no identifier field.
 //
 // Pending save (spec 7): right after a generated password went into a signup
-// or reset form, `savePending` writes it to the vault as a Login tagged
+// form, `savePending` writes it to the vault as a Login tagged
 // `onepass:pending` (and `onepass:weak-by-site` when the site imposed a weak
-// one), so a lock or a closed tab loses nothing. Per tab, only the item id,
-// site and username are kept here, in memory: never the password. A new
-// generation on the same tab and site replaces the item's password
-// (`update_password`, the old one goes to its history). The submission of
+// one), so a lock or a closed tab loses nothing. A reset form does not: its
+// password is only remembered, and the save prompt then updates the Login
+// the user already has. Per tab, only the item id, site and username are
+// kept here, in memory: never the password. A new generation on the same
+// tab and site replaces the item's password (`update_password`, the old one
+// goes to its history, the weak tag follows the new draw). The submission of
 // that password confirms the item (`confirm_pending`) instead of opening the
 // save prompt. When this memory is gone (lock, service worker restart), the
 // host still finds the item: `check_credentials` answers `pending` for it
@@ -139,7 +141,14 @@ export class SaveFlow {
     const prev = this.saved.get(tabId);
     if (prev && prev.site === page.site) {
       try {
-        await this.deps.session.request({ op: "update_password", ctx: "save_prompt", item_id: prev.itemId, origin, password });
+        await this.deps.session.request({
+          op: "update_password",
+          ctx: "save_prompt",
+          item_id: prev.itemId,
+          origin,
+          password,
+          weak_by_site: opts.weak === true,
+        });
         return true;
       } catch (e) {
         // Gone, or no longer of this site: a new pending item. Any other

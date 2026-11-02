@@ -18,7 +18,7 @@ use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist}
 use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
     EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
-    PasswordHistoryEntry, new_item, validate,
+    PasswordHistoryEntry, WEAK_BY_SITE_TAG, new_item, validate,
 };
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
 use onepass_core::webauthn;
@@ -541,8 +541,9 @@ impl<V: VaultAccess> Service<V> {
                 item_id,
                 origin: o,
                 password,
+                weak_by_site,
                 ..
-            } => self.update_password(*ctx, item_id, o, password, now),
+            } => self.update_password(*ctx, item_id, o, password, *weak_by_site, now),
             Request::ConfirmPending {
                 ctx,
                 item_id,
@@ -931,6 +932,7 @@ impl<V: VaultAccess> Service<V> {
         item_id: &str,
         o: &str,
         password: &SecretString,
+        weak_by_site: Option<bool>,
         now: u64,
     ) -> OpResult<Response> {
         let page = origin(o)?;
@@ -954,6 +956,15 @@ impl<V: VaultAccess> Service<V> {
             "password",
             FieldValue::Password(password.0.clone()),
         )?;
+        // A regenerated pending password: its weak flag follows the new draw.
+        if let Some(weak) = weak_by_site
+            && item.is_pending()
+        {
+            item.tags.retain(|t| t != WEAK_BY_SITE_TAG);
+            if weak {
+                item.tags.push(WEAK_BY_SITE_TAG.to_owned());
+            }
+        }
         item.updated_at = at;
         let (id, vault_id) = (item.id, item.vault_id);
         self.vault.save(vault_id, item).map_err(app_code)?;

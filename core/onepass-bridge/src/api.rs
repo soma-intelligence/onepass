@@ -275,6 +275,10 @@ pub enum Request {
         item_id: String,
         origin: String,
         password: SecretString,
+        /// A pending Login regenerated: set (true) or clear (false) its
+        /// `onepass:weak-by-site` tag. Ignored on any other item.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weak_by_site: Option<bool>,
     },
     /// A pending Login (tag `onepass:pending`) whose form was sent: the tag
     /// drops, `username` (when not blank) replaces the stored one.
@@ -885,6 +889,17 @@ mod tests {
             r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z"}"#,
             15,
             "update_password",
+        );
+        round_trip(
+            r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z","weak_by_site":true}"#,
+            15,
+            "update_password",
+        );
+        assert!(
+            serde_json::from_str::<Request>(
+                r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z","weak":true}"#,
+            )
+            .is_err()
         );
     }
 

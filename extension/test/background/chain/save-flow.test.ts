@@ -383,10 +383,33 @@ describe("pending save of a generated password (spec 7)", () => {
         tags: [PENDING_TAG, WEAK_BY_SITE_TAG],
       },
     ]);
-    // A login page's generated fill (no signup or reset intent) saves nothing.
+    // A login page's generated fill (no signup intent) saves nothing.
     const u = setup();
     await plannerFor(u).run(target, { ...signup(), intent: "login" });
     expect(u.requests).toEqual([]);
+  });
+
+  it("reset_page_keeps_the_update_prompt", async () => {
+    // A reset form: no pending item, the submission asks the host and the
+    // update prompt opens for the existing Login.
+    const t = setup("update");
+    await plannerFor(t).run(target, { ...signup(), intent: "reset" });
+    expect(t.requests).toEqual([]);
+    await t.submit("", GEN, true);
+    await t.timers.advance(CHECK_DELAY_MS);
+    expect(ops(t)).toEqual(["check_credentials"]);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01" } });
+  });
+
+  it("regenerate_carries_the_weak_flag", async () => {
+    const t = setup();
+    await t.flow.savePending(7, SITE, "first-Pass-1", { weak: true });
+    expect(t.requests.at(-1)).toMatchObject({ op: "save_login", tags: [PENDING_TAG, WEAK_BY_SITE_TAG] });
+    await t.flow.savePending(7, SITE, "second-Pass-2");
+    expect(t.requests.at(-1)).toMatchObject({ op: "update_password", weak_by_site: false });
+    await t.flow.savePending(7, SITE, "third-Pass-3", { weak: true });
+    expect(t.requests.at(-1)).toMatchObject({ op: "update_password", weak_by_site: true });
   });
 
   it("regenerate_same_tab_updates_pending", async () => {
@@ -400,6 +423,7 @@ describe("pending save of a generated password (spec 7)", () => {
       item_id: "it_new",
       origin: `${SITE}/signup`,
       password: "second-Pass-2",
+      weak_by_site: false,
     });
     // Another tab, or another site in this tab: a pending item of its own.
     await t.flow.savePending(8, SITE, "third-Pass-3");

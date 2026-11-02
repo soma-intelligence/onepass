@@ -2042,6 +2042,54 @@ fn confirm_pending_drops_tag_sets_username() {
 }
 
 #[test]
+fn update_password_sets_and_clears_weak_tag_on_pending() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "");
+    let update = |h: &mut H, weak: Option<bool>| {
+        let mut req = json!({"op":"update_password","ctx":"save_prompt","item_id":id(item),
+            "origin":ATLAS,"password":"Gen-Pass-0043"});
+        if let Some(w) = weak {
+            req["weak_by_site"] = json!(w);
+        }
+        let v = h.call(req);
+        assert_eq!(ok(&v), &json!({}));
+    };
+    // A strong regeneration clears the tag.
+    update(&mut h, Some(false));
+    assert_eq!(h.vault().item(item).tags, ["onepass:pending"]);
+    // A weak one sets it, once.
+    update(&mut h, Some(true));
+    update(&mut h, Some(true));
+    assert_eq!(
+        h.vault().item(item).tags,
+        ["onepass:pending", "onepass:weak-by-site"]
+    );
+    // No flag: tags untouched.
+    update(&mut h, None);
+    assert_eq!(
+        h.vault().item(item).tags,
+        ["onepass:pending", "onepass:weak-by-site"]
+    );
+}
+
+#[test]
+fn update_password_weak_flag_ignored_off_pending() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "known@atlas.dev");
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"username":""}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"password":"Gen-Pass-0044","weak_by_site":false}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    assert_eq!(h.vault().item(item).tags, ["onepass:weak-by-site"]);
+}
+
+#[test]
 fn confirm_pending_refuses_untagged() {
     let mut h = H::new();
     let atlas = h.ids.atlas;
