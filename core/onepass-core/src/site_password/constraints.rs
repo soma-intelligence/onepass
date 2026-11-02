@@ -97,7 +97,9 @@ impl Constraints {
 
     /// Fold `other` in: max of `min_length`, min of `max_length` and
     /// `max_consecutive`, intersection of `allowed` (`None` is everything),
-    /// concatenation of `required`, union of `forbidden`.
+    /// `required` sets not already present appended, union of `forbidden`.
+    /// The grammar has no counts: a rule string read twice (field and
+    /// confirmation, or page and quirk) requires each class once.
     pub fn merge(&mut self, other: &Constraints) {
         self.recognized |= other.recognized;
         self.min_length = self.min_length.max(other.min_length);
@@ -108,7 +110,11 @@ impl Constraints {
             (Some(a), None) => Some(a),
             (None, b) => b.clone(),
         };
-        self.required.extend(other.required.iter().cloned());
+        for set in &other.required {
+            if !self.required.contains(set) {
+                self.required.push(set.clone());
+            }
+        }
         self.forbidden = self.forbidden.union(&other.forbidden);
     }
 

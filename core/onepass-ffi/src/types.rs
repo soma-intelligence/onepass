@@ -473,12 +473,15 @@ pub enum FfiPasswordRecipe {
 }
 
 /// What a signup field says about the password it wants (see
-/// `password_for_context`). On Apple the system's quirk string for the site
-/// arrives inside `rules`, next to the field's and the confirmation's.
+/// `password_for_context`). On Apple the field's and the confirmation's
+/// strings go in `rules`, the system's quirk string for the site in
+/// `quirk_rules` (less trusted, dropped first on a contradiction).
 #[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
 pub struct FfiPasswordContext {
     /// `passwordrules` strings, most trusted first.
     pub rules: Vec<String>,
+    /// The known quirk string of the site, if any.
+    pub quirk_rules: Option<String>,
     /// The field's `minlength` attribute.
     pub min_length: Option<u32>,
     /// The field's `maxlength` attribute.

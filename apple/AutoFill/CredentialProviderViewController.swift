@@ -150,16 +150,19 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     /// Ruling A10, spec G5: the field, confirmation and quirks rules through the core's
     /// `passwordForContext`, built with the profile chosen in the app (`GeneratorProfileStore`, "Fort"
-    /// by default). Unreadable or contradictory rules leave the profile alone. One `strong` password.
+    /// by default). The quirk string goes in its own, less trusted tier, as in the browser bridge.
+    /// Unreadable or contradictory rules leave the profile alone. One `strong` password.
     @available(iOS 26.2, *)
     private func generatePasswords(_ request: ASGeneratePasswordsRequest) {
-        let rules = [
-            request.passwordFieldPasswordRules, request.confirmPasswordFieldPasswordRules,
-            request.passwordRulesFromQuirks,
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-        let context = FfiPasswordContext(rules: rules, minLength: nil, maxLength: nil, hintText: nil)
+        let trimmed: (String?) -> String? = { rule in
+            guard let rule = rule?.trimmingCharacters(in: .whitespacesAndNewlines), !rule.isEmpty else { return nil }
+            return rule
+        }
+        let rules = [request.passwordFieldPasswordRules, request.confirmPasswordFieldPasswordRules]
+            .compactMap(trimmed)
+        let context = FfiPasswordContext(
+            rules: rules, quirkRules: trimmed(request.passwordRulesFromQuirks), minLength: nil, maxLength: nil,
+            hintText: nil)
         do {
             let generated = try passwordForContext(
                 context: context, profile: GeneratorProfileStore.shared().profile.ffi)

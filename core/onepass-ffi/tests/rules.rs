@@ -269,7 +269,9 @@ fn oversized_rule_string_is_dropped_not_fatal() {
 
 #[test]
 fn ninth_rule_string_ignored() {
-    let mut rules = vec!["minlength: 8;"; 8];
+    // Eight distinct strings (identical ones are read once).
+    let distinct: Vec<String> = (0..8).map(|i| format!("minlength: {};", 8 + i)).collect();
+    let mut rules: Vec<&str> = distinct.iter().map(String::as_str).collect();
     rules.push("maxlength: 10;");
     let g = password_for_context(context(&rules), FfiPasswordProfile::Strong).unwrap();
     // The ninth string's maximum is never read: Strong stays at 24.
@@ -279,4 +281,40 @@ fn ninth_rule_string_ignored() {
     rules.push("maxlength: 10;");
     let g = password_for_context(context(&rules), FfiPasswordProfile::Strong).unwrap();
     assert_eq!(g.password.chars().count(), 10);
+}
+
+#[test]
+fn repeated_rule_strings_keep_the_maximum() {
+    // Field, confirmation and quirk carry one string: each class counts
+    // once, so four required classes still fit in 4 to 7 chars.
+    let rule = "required: lower; required: upper; required: digit; required: special; maxlength: 7;";
+    let ctx = FfiPasswordContext {
+        rules: vec![rule.to_owned(), rule.to_owned()],
+        quirk_rules: Some(rule.to_owned()),
+        max_length: Some(7),
+        ..FfiPasswordContext::default()
+    };
+    let g = password_for_context(ctx, FfiPasswordProfile::Strong).unwrap();
+    assert!(!g.fallback);
+    assert_eq!(g.password.chars().count(), 7);
+}
+
+#[test]
+fn quirk_rules_are_the_quirk_tier() {
+    // A quirk contradicting the field's rules is dropped, the field's kept.
+    let ctx = FfiPasswordContext {
+        rules: vec!["minlength: 20;".to_owned()],
+        quirk_rules: Some("maxlength: 12;".to_owned()),
+        ..FfiPasswordContext::default()
+    };
+    let g = password_for_context(ctx, FfiPasswordProfile::Strong).unwrap();
+    assert!(!g.fallback);
+    assert!(g.password.chars().count() >= 20);
+    // Alone, the quirk applies.
+    let ctx = FfiPasswordContext {
+        quirk_rules: Some("maxlength: 12;".to_owned()),
+        ..FfiPasswordContext::default()
+    };
+    let g = password_for_context(ctx, FfiPasswordProfile::Strong).unwrap();
+    assert_eq!(g.password.chars().count(), 12);
 }

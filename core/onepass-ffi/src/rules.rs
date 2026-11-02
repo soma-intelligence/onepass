@@ -109,8 +109,10 @@ fn profile_to_core(p: FfiPasswordProfile) -> Result<Profile, OnePassError> {
 /// dropped, least trusted first, and the profile runs alone when nothing
 /// usable is left (`fallback`).
 ///
-/// Rule strings over 1024 bytes are dropped and only the first 8 left are
-/// read: the page writes them, so they never fail the request.
+/// Rule strings over 1024 bytes are dropped, identical ones are read once
+/// and only the first 8 left are read: the page writes them, so they never
+/// fail the request. `quirk_rules` is read in the quirk tier, as in the
+/// bridge.
 ///
 /// Errors: `Validation` on field `length` for a `Custom` length outside 8 to
 /// 64; `Crypto` when the system random source fails.
@@ -122,15 +124,22 @@ pub fn password_for_context(
     let profile = profile_to_core(profile)?;
     // The field's and the confirmation's rules come from the page: limits
     // drop what is over them, never fail the request.
-    let rules: Vec<String> = context
-        .rules
-        .into_iter()
-        .filter(|r| !r.trim().is_empty() && r.len() <= MAX_RULE_LEN)
-        .take(MAX_RULE_STRINGS)
-        .collect();
+    // Identical strings (field and confirmation) are read once.
+    let mut rules: Vec<String> = Vec::new();
+    for r in context.rules {
+        if !r.trim().is_empty() && r.len() <= MAX_RULE_LEN && !rules.contains(&r) {
+            rules.push(r);
+        }
+        if rules.len() == MAX_RULE_STRINGS {
+            break;
+        }
+    }
+    let quirk_rules = context
+        .quirk_rules
+        .filter(|r| !r.trim().is_empty() && r.len() <= MAX_RULE_LEN);
     let ctx = PasswordContext {
         rules,
-        quirk_rules: None,
+        quirk_rules,
         min_length: context.min_length,
         max_length: context.max_length,
         hint_text: context.hint_text,

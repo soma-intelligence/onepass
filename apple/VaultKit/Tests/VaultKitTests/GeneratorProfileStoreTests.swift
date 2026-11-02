@@ -49,8 +49,8 @@ struct GeneratorProfileStoreTests {
 
     @Test func generatesThroughTheCore() throws {
         let context = FfiPasswordContext(
-            rules: ["required: lower; required: digit; maxlength: 16;"], minLength: nil, maxLength: nil,
-            hintText: nil)
+            rules: ["required: lower; required: digit; maxlength: 16;"], quirkRules: nil, minLength: nil,
+            maxLength: nil, hintText: nil)
         let generated = try passwordForContext(context: context, profile: GeneratorProfile.strong.ffi)
         #expect(generated.password.count == 16)
         #expect(!generated.fallback)
