@@ -135,8 +135,41 @@ fn text(value: &FieldValue) -> Option<&str> {
     }
 }
 
+/// An item the app holds a non-zero watched balance for.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiItemKey {
+    pub vault_id: String,
+    pub item_id: String,
+}
+
 #[uniffi::export]
 impl Session {
+    /// Watchtower: among `funded` (wallets with a non-zero watched balance),
+    /// those that store a recovery phrase without per-item Travel Mode
+    /// protection. Unknown or unreadable items are left out.
+    pub fn watch_unprotected_wallets(
+        &self,
+        funded: Vec<FfiItemKey>,
+    ) -> Result<Vec<FfiItemKey>, OnePassError> {
+        self.with(|repo| {
+            let mut out = Vec::new();
+            for key in &funded {
+                let (Ok(vid), Ok(iid)) = (parse_id(&key.vault_id), parse_id(&key.item_id)) else {
+                    continue;
+                };
+                let Ok(vault) = find_vault(repo, vid) else {
+                    continue;
+                };
+                if let Ok(item) = find_item(repo, &vault, iid)
+                    && wallet_watch::phrase_unprotected(&item)
+                {
+                    out.push(key.clone());
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// "Dériver les adresses publiques de cette phrase": reads the stored
     /// recovery phrase (and BIP39 passphrase) of a crypto wallet item in
     /// memory, derives the public watch data, wipes the secrets and returns

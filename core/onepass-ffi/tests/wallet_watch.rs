@@ -107,3 +107,40 @@ fn entries_and_xpubs() {
     ));
     assert_eq!(watch_gap_limit(), 20);
 }
+
+#[test]
+fn unprotected_wallets_are_the_funded_ones_with_a_phrase() {
+    let (_dir, s, vault) = session();
+    let mut item = s
+        .new_item(vault.clone(), FfiItemType::CryptoWallet, "Chaud".into())
+        .unwrap();
+    for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        match f.id.as_str() {
+            "name" => {
+                f.value = FfiFieldValue::Text {
+                    value: "Chaud".into(),
+                }
+            }
+            "recovery_phrase" => {
+                f.value = FfiFieldValue::Mnemonic {
+                    value: ABANDON.into(),
+                }
+            }
+            _ => {}
+        }
+    }
+    let saved = s.save_item(item).unwrap();
+    let key = FfiItemKey {
+        vault_id: vault.clone(),
+        item_id: saved.id.clone(),
+    };
+    let bogus = FfiItemKey {
+        vault_id: vault,
+        item_id: "zz".into(),
+    };
+    assert_eq!(
+        s.watch_unprotected_wallets(vec![key.clone(), bogus])
+            .unwrap(),
+        vec![key]
+    );
+}
