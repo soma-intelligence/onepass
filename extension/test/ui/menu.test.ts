@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import { mountMenu } from "../../src/ui/menu";
-import { Clock, FakeVisibility, FakeWorker, HASH, type Reply, TOKEN, button, login, root, text } from "./helpers";
+import { Clock, FakeVisibility, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
 
@@ -40,8 +40,9 @@ function setup(answer: (m: UiToBg) => Reply | Promise<Reply>, formKind = "login"
     }
     return answer(m);
   });
-  const handle = mountMenu(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: vis.observe });
-  return { r, clock, vis, worker, handle };
+  const timers = new ManualTimers();
+  const handle = mountMenu(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: vis.observe, timers });
+  return { r, clock, vis, worker, handle, timers };
 }
 
 const ok = (v: unknown = {}): Reply => ({ ok: v });
@@ -261,6 +262,47 @@ describe("inline menu", () => {
     await new Promise((res) => setTimeout(res, 0));
     expect(worker.types()).toEqual(["menu_init", "menu_unlock", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("locked: the app comes forward, the menu waits for the unlock and reloads by itself", async () => {
+    let locked = true;
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      return ok();
+    });
+    await handle.ready;
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    locked = false;
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Atlas Cloud");
+    expect(worker.types().filter((t) => t === "menu_unlock")).toHaveLength(1);
+  });
+
+  it("locked: after a minute without unlock, the button comes back", async () => {
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      return ok();
+    });
+    await handle.ready;
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    for (let i = 0; i < 60; i++) {
+      timers.runTimeouts();
+      await flush();
+    }
+    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(worker.types().filter((t) => t === "menu_init").length).toBeLessThanOrEqual(62);
   });
 
   it("unpaired, host missing and malformed replies", async () => {

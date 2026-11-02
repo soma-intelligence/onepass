@@ -37,6 +37,8 @@ export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
   session: Pick<Session, "request" | "onLocked">;
+  /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
+  openApp?: () => Promise<boolean>;
   pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing">;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
@@ -313,7 +315,10 @@ export class PopupBackend {
   handlers(): Handlers["ui"] {
     return {
       popup_status: async () => this.status(),
-      popup_unlock: async () => this.deps.session.request({ op: "unlock" }),
+      popup_unlock: async () => {
+        await this.deps.openApp?.();
+        return this.deps.session.request({ op: "unlock" });
+      },
       popup_suggestions: async () => this.suggestions(),
       popup_search: async (m) => this.search(m.query),
       popup_item: async (m) => this.getItem(m.itemId),

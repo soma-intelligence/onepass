@@ -90,6 +90,12 @@ struct RootView: View {
             .onOpenURL { url in
                 // The three `onepass://` links and the verification code links; anything else is
                 // ignored. A code link waits for the unlock like the others.
+                #if os(macOS)
+                if BrowserBridge.isUnlockLink(url) {
+                    model.showForUnlock()
+                    return
+                }
+                #endif
                 if let link = OnePassLink(url: url) {
                     model.open(link)
                 } else if OtpLink.handles(url) {

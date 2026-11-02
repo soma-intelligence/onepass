@@ -92,6 +92,19 @@ struct RelayRequestTests {
                 == RelayRequest(conn: conn, op: .send(frame: Data(text.utf8))))
     }
 
+    @Test func parsesOpenApp() throws {
+        // "Déverrouiller dans OnePass": not a bridge frame, no connection.
+        #expect(try RelayRequest.parse(["onepass": 1, "op": "open_app"]) == RelayRequest(conn: "", op: .openApp))
+        for m: [String: Any] in [
+            ["onepass": 1, "op": "open_app", "conn": conn],
+            ["onepass": 1, "op": "open_app", "frame": "{}"],
+            ["onepass": 2, "op": "open_app"],
+            ["onepass": 1, "op": "open", "extra": 1],
+        ] {
+            #expect(throws: RelayError.badRequest) { try RelayRequest.parse(m) }
+        }
+    }
+
     @Test func refusesMalformedRequests() {
         let bad: [Any?] = [
             nil,

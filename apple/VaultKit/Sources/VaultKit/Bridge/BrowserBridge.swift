@@ -244,6 +244,22 @@ enum BridgeLog {
 extension BrowserBridge {
     /// Posted when an extension asks to unlock or to pair: the app activates its window.
     public static let unlockRequestedNotification = Notification.Name("me.somalabs.onepass.bridge.unlock")
+
+    /// "Déverrouiller dans OnePass": opened by the Safari extension's handler and by the relay of
+    /// Chrome and Firefox through LaunchServices, from the process that served the user's click.
+    /// Since macOS 14 the app cannot bring itself forward while the browser is in front; a link
+    /// opened for it can, and launches it when it is not running. It carries nothing.
+    public static let unlockURL = URL(string: "onepass://unlock")!
+
+    /// Exactly `onepass://unlock`: no path, query, fragment, user or port.
+    public static func isUnlockLink(_ url: URL) -> Bool {
+        guard url.scheme == "onepass",
+            let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            c.host == "unlock", c.path.isEmpty, c.query == nil, c.fragment == nil,
+            c.user == nil, c.password == nil, c.port == nil
+        else { return false }
+        return true
+    }
 }
 
 /// The pairings in one keychain item (JSON list, keys in base64), `WhenUnlockedThisDeviceOnly`,

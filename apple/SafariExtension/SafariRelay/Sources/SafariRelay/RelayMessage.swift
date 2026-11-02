@@ -25,7 +25,8 @@ public enum RelayError: String, Error, Sendable, Equatable {
 /// `browser.runtime.sendNativeMessage` (`extension/src/background/safari.ts`).
 ///
 /// `{"onepass": 1, "op": "open" | "send" | "poll" | "close", "conn": <32 hex>,
-/// "frame": <JSON text of one bridge envelope, send only>}`.
+/// "frame": <JSON text of one bridge envelope, send only>}`, or
+/// `{"onepass": 1, "op": "open_app"}` (no connection: bring the app forward).
 ///
 /// The envelope travels as text and is relayed byte for byte: the relay never
 /// parses or re-serializes protocol JSON (spec R-03, one protocol to audit).
@@ -35,6 +36,8 @@ public struct RelayRequest: Equatable, Sendable {
         case send(frame: Data)
         case poll
         case close
+        /// "Déverrouiller dans OnePass": bring the app forward, outside any bridge connection.
+        case openApp
     }
 
     public static let version = 1
@@ -56,6 +59,10 @@ public struct RelayRequest: Equatable, Sendable {
         guard let v = dict["onepass"] as? NSNumber, !isBool(v), v.intValue == version,
             v.doubleValue == Double(version)
         else { throw .badRequest }
+        if dict["op"] as? String == "open_app" {
+            guard dict.count == 2 else { throw .badRequest }
+            return RelayRequest(conn: "", op: .openApp)
+        }
         guard let conn = dict["conn"] as? String, isConnId(conn) else { throw .badRequest }
         guard let opName = dict["op"] as? String else { throw .badRequest }
         let frame = dict["frame"]

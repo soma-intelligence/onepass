@@ -31,6 +31,8 @@ import {
   providerGlyph,
   providerLabel,
   realTimers,
+  UNLOCK_POLL_MS,
+  UNLOCK_WAIT_TRIES,
   tokenFromHash,
   wayArt,
 } from "./components";
@@ -58,6 +60,7 @@ function methodOf(it: Summary): string {
 
 /** An empty `menu_keys` answer sooner than this: ask again only after it. */
 const KEYS_BACKOFF_MS = 1000;
+
 
 export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   const now = deps.now ?? (() => performance.now());
@@ -193,6 +196,28 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     return b;
   };
 
+  /**
+   * The app came forward on its lock screen: say so, ask again every second
+   * and reload the menu once unlocked. After a minute, the button again.
+   */
+  function waitForUnlock(origin: string | null): void {
+    mount(container, header(origin), messageBlock(t("ui.unlockToContinue")));
+    remeasure();
+    let left = UNLOCK_WAIT_TRIES;
+    const check = (): void => {
+      if (!token) return;
+      void call(deps.send, { type: "menu_init", token }, parseMenuInit).then((r) => {
+        if (r.ok) {
+          render(r.value);
+          void listenKeys();
+        } else if (r.code !== "locked") renderState(r.code, origin);
+        else if (--left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
+        else renderState("locked", origin);
+      });
+    };
+    timers.setTimeout(check, UNLOCK_POLL_MS);
+  }
+
   function renderState(code: string, origin: string | null): void {
     let body: HTMLElement;
     if (code === "locked") {
@@ -206,7 +231,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
               if (!token) return;
               void call(deps.send, { type: "menu_unlock", token }, parseLocked).then((r) => {
                 if (r.ok && !r.value.locked) void load();
-                else if (!r.ok) renderState(r.code, origin);
+                else if (r.ok) waitForUnlock(origin);
+                else renderState(r.code, origin);
               });
             }),
           },

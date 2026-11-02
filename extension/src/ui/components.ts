@@ -508,6 +508,10 @@ export class ClickGuard {
 
 // ---- timers ----
 
+/** After "Déverrouiller dans OnePass": one status check a second, for a minute. */
+export const UNLOCK_POLL_MS = 1000;
+export const UNLOCK_WAIT_TRIES = 60;
+
 export interface Timers {
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(id: unknown): void;

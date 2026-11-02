@@ -26,6 +26,7 @@
   "ui.extensionAndOnepassApp": "The extension and the OnePass app are not on the same version.",
   "ui.exchangeWithOnepassApp": "Exchange with the OnePass app refused. Try again.",
   "ui.onepassLocked": "OnePass is locked",
+  "ui.unlockToContinue": "Unlock OnePass to continue",
   "ui.itemNotFound": "Item not found.",
   "ui.pageChangedFillCancelled": "The page changed: fill cancelled.",
   "ui.insecurePageHttpFill": "Insecure page (HTTP): fill refused.",

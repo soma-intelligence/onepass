@@ -40,6 +40,8 @@ struct OnePassApp: App {
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
+        // Links (`onepass://`, verification code links) go to the main window, reopened if closed.
+        .handlesExternalEvents(matching: ["*"])
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
         }
@@ -58,6 +60,8 @@ struct OnePassApp: App {
         WindowGroup(id: ItemWindow.id, for: String.self) { $key in
             ItemWindowRoot(key: key).environment(model).tint(Theme.accent)
         }
+        // Never opened by a link: an empty item window would appear.
+        .handlesExternalEvents(matching: [])
         .defaultSize(width: 720, height: 780)
         Settings {
             MacSettingsView()
@@ -70,8 +74,7 @@ struct OnePassApp: App {
         MenuBarExtra {
             MenuBarMenu(model: model)
         } label: {
-            Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
-                .accessibilityLabel(Text("OnePass"))
+            MenuBarLabel(model: model)
         }
         #else
         WindowGroup {
@@ -224,6 +227,22 @@ struct CheckForUpdatesButton: View {
     var body: some View {
         Button("menu.app.checkForUpdates") { updater.checkForUpdates() }
             .disabled(!updater.canCheckForUpdates)
+    }
+}
+
+/// The menu bar icon. It lives while no window is open, so it reopens the main window when the
+/// model asks (`mainWindowRequest`: "Déverrouiller dans OnePass" from an extension).
+struct MenuBarLabel: View {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
+            .accessibilityLabel(Text("OnePass"))
+            .onChange(of: model.mainWindowRequest) {
+                openWindow(id: "main")
+                NSApp.activate()
+            }
     }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafari, openTransport } from "../../src/background/native";
+import { NATIVE_HOST, isSafari, openApp, openTransport } from "../../src/background/native";
 import { SAFARI_APP, randomConnId, safariTransport } from "../../src/background/safari";
 import { FakeExt } from "./fake-ext";
 
@@ -189,5 +189,48 @@ describe("openTransport", () => {
     const runtime = { ...ext.runtime, getURL: (p: string) => `safari-web-extension://x/${p}` };
     expect(() => openTransport(runtime)).toThrow();
     expect(ext.ports.length).toBe(0);
+  });
+});
+
+describe("openApp", () => {
+  const OPEN_APP = { onepass: 1, op: "open_app" };
+
+  it("asks the native host outside Safari, in one message", async () => {
+    const sent: [string, unknown][] = [];
+    const ext = new FakeExt();
+    const runtime = {
+      ...ext.runtime,
+      sendNativeMessage: async (app: string, msg: unknown) => {
+        sent.push([app, msg]);
+        return { ok: true };
+      },
+    };
+    expect(await openApp(runtime)).toBe(true);
+    expect(sent).toEqual([[NATIVE_HOST, OPEN_APP]]);
+    // Exactly the bytes the relay compares.
+    expect(JSON.stringify(sent[0]?.[1])).toBe('{"onepass":1,"op":"open_app"}');
+    expect(ext.ports.length).toBe(0);
+  });
+
+  it("asks the Safari handler in Safari", async () => {
+    const sent: [string, unknown][] = [];
+    const ext = new FakeExt();
+    const runtime = {
+      ...ext.runtime,
+      getURL: (p: string) => `safari-web-extension://x/${p}`,
+      sendNativeMessage: async (app: string, msg: unknown) => {
+        sent.push([app, msg]);
+        return { ok: true, frames: [], closed: true };
+      },
+    };
+    expect(await openApp(runtime)).toBe(true);
+    expect(sent).toEqual([["me.somalabs.onepass", OPEN_APP]]);
+  });
+
+  it("a failure is only false: the unlock request still goes to the app", async () => {
+    const ext = new FakeExt();
+    expect(await openApp({ ...ext.runtime, sendNativeMessage: async () => Promise.reject(new Error("no host")) })).toBe(false);
+    expect(await openApp({ ...ext.runtime, sendNativeMessage: async () => ({ ok: false, error: "unavailable" }) })).toBe(false);
+    expect(await openApp({ ...ext.runtime, sendNativeMessage: undefined })).toBe(false);
   });
 });

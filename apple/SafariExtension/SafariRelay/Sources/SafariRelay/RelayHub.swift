@@ -153,14 +153,21 @@ public final class RelayHub: @unchecked Sendable {
     private let launcher: (any HostLauncher)?
     private let pollTimeout: TimeInterval
     private let maxConnections: Int
+    /// Brings the OnePass app forward on its lock screen (launching it if needed). Run from the
+    /// extension process that served the user's click, so macOS lets the app come forward.
+    private let openApp: (@Sendable () -> Bool)?
     private let lock = NSLock()
     private var conns: [String: Connection] = [:]
     private var clock: UInt64 = 0
 
     /// `launcher` nil: this build has no bridge host, every `open` answers
     /// `unavailable`.
-    public init(launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = 4) {
+    public init(
+        launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = 4,
+        openApp: (@Sendable () -> Bool)? = nil
+    ) {
         self.launcher = launcher
+        self.openApp = openApp
         self.pollTimeout = pollTimeout
         self.maxConnections = maxConnections
     }
@@ -181,6 +188,9 @@ public final class RelayHub: @unchecked Sendable {
         case .poll: return poll(request.conn)
         case .close:
             if let c = take(request.conn) { c.end() }
+            return .ok(frames: [], closed: true)
+        case .openApp:
+            guard let openApp, openApp() else { return .failure(.unavailable) }
             return .ok(frames: [], closed: true)
         }
     }

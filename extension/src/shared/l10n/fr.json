@@ -26,6 +26,7 @@
   "ui.extensionAndOnepassApp": "L'extension et l'app OnePass ne sont pas à la même version.",
   "ui.exchangeWithOnepassApp": "Échange avec l'app OnePass refusé. Réessaie.",
   "ui.onepassLocked": "OnePass est verrouillé",
+  "ui.unlockToContinue": "Déverrouille OnePass pour continuer",
   "ui.itemNotFound": "Élément introuvable.",
   "ui.pageChangedFillCancelled": "La page a changé : remplissage annulé.",
   "ui.insecurePageHttpFill": "Page non sécurisée (HTTP) : remplissage refusé.",

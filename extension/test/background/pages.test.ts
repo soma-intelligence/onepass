@@ -90,17 +90,22 @@ async function setup(clock = { t: 1_000_000 }) {
   await new Store(ext, pairings).setPairing(record());
   const client = new FakeClient(answer);
   const chain = new FakeChain();
+  const opened = { n: 0 };
   const bg = createBackground(ext, {
     pairings,
     newClient: () => client,
     sleep: async () => undefined,
     chain,
     now: () => clock.t,
+    openApp: async () => {
+      opened.n++;
+      return true;
+    },
   });
   bg.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
   const top = contentSender(ext.runtime, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }))!;
-  return { ext, client, chain, bg, top, clock };
+  return { ext, client, chain, bg, top, clock, opened };
 }
 
 const hashOf = (url: string) => url.slice(url.indexOf("#") + 1);
@@ -193,10 +198,12 @@ describe("menu extras", () => {
   });
 
   it("menu_unlock asks the host, menu_close removes the frame", async () => {
-    const { ext, client } = await setup();
+    const { ext, client, opened } = await setup();
     const { token, ui } = await menu(ext);
     expect(await ext.send({ type: "menu_unlock", token }, ui)).toEqual({ ok: { locked: false } });
     expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+    // The click's process brings the app forward (macOS ignores the app's own activation).
+    expect(opened.n).toBe(1);
     expect(await ext.send({ type: "menu_close", token }, ui)).toEqual({ ok: {} });
     expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
   });

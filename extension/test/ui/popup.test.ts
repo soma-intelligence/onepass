@@ -1,36 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
-import type { Timers } from "../../src/ui/components";
 import { GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
-import { FakeWorker, type Reply, button, login, root, text } from "./helpers";
+import { FakeWorker, ManualTimers, type Reply, button, login, root, text } from "./helpers";
 
-class ManualTimers implements Timers {
-  private n = 0;
-  readonly timeouts = new Map<number, () => void>();
-  readonly intervals = new Map<number, () => void>();
-  setTimeout(fn: () => void) {
-    this.timeouts.set(++this.n, fn);
-    return this.n;
-  }
-  clearTimeout(id: unknown) {
-    this.timeouts.delete(id as number);
-  }
-  setInterval(fn: () => void) {
-    this.intervals.set(++this.n, fn);
-    return this.n;
-  }
-  clearInterval(id: unknown) {
-    this.intervals.delete(id as number);
-  }
-  runTimeouts() {
-    const fns = [...this.timeouts.values()];
-    this.timeouts.clear();
-    fns.forEach((f) => f());
-  }
-  tick() {
-    [...this.intervals.values()].forEach((f) => f());
-  }
-}
 
 const STATUS = { locked: false, account: "alex@atlas.dev", vaults: 2 };
 const items = [login("it_01", { has_totp: true }), login("id_01", { kind: "identity", title: "Alex Martin", subtitle: "Identité", has_password: false })];
@@ -113,6 +85,47 @@ describe("popup", () => {
     await handle.settled();
     expect(w.types()).toEqual(["popup_status", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions"]);
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+  });
+
+  it("locked: the app comes forward, the popup waits for the unlock and loads by itself", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_unlock") return { ok: { locked: true } };
+      return null;
+    });
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    button(r, "Déverrouiller dans OnePass").click();
+    await handle.settled();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await handle.settled();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    locked = false;
+    timers.runTimeouts();
+    await handle.settled();
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock")).toHaveLength(1);
+  });
+
+  it("locked: after a minute without unlock, the button comes back", async () => {
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked: true } };
+      if (m.type === "popup_unlock") return { ok: { locked: true } };
+      return null;
+    });
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    button(r, "Déverrouiller dans OnePass").click();
+    await handle.settled();
+    for (let i = 0; i < 60; i++) {
+      timers.runTimeouts();
+      await handle.settled();
+    }
+    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(62);
   });
 
   it("locked: Déverrouiller dans OnePass", async () => {

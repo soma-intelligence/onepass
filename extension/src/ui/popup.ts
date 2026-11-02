@@ -30,6 +30,8 @@ import {
   mark,
   mount,
   realTimers,
+  UNLOCK_POLL_MS,
+  UNLOCK_WAIT_TRIES,
   siteIcon,
   srOnly,
 } from "./components";
@@ -323,6 +325,27 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderUnpaired(r.ok ? undefined : errorText(r.code));
   }
 
+  /**
+   * The app came forward on its lock screen: say so, ask again every second
+   * and load once unlocked. After a minute, the locked screen again.
+   */
+  function waitForUnlock(): void {
+    center(mark("l"), h("h1", null, t("ui.unlockToContinue")), h("p", null, t("popup.unlockAppToSee")));
+    let left = UNLOCK_WAIT_TRIES;
+    const check = (): void => {
+      void track(
+        call(deps.send, { type: "popup_status" }, parseStatus).then((r) => {
+          if (r.ok && !r.value.locked) return load();
+          if (r.ok && --left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
+          else if (r.ok) renderLocked();
+          else return load();
+          return undefined;
+        }),
+      );
+    };
+    timers.setTimeout(check, UNLOCK_POLL_MS);
+  }
+
   function renderLocked(): void {
     center(
       mark("l"),
@@ -335,7 +358,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
           void track(
             call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
               if (r.ok && !r.value.locked) return load();
-              if (!r.ok) toast(errorText(r.code), "error");
+              if (r.ok) waitForUnlock();
+              else toast(errorText(r.code), "error");
               return undefined;
             }),
           ),

@@ -55,7 +55,17 @@ async function setup(a: Answer = answer, opts: { paired?: boolean; openError?: E
   const client = new FakeClient(a, async () => {
     if (opts.openError) throw opts.openError;
   });
-  const bg = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined, now: () => 42 });
+  const opened = { n: 0 };
+  const bg = createBackground(ext, {
+    pairings,
+    newClient: () => client,
+    sleep: async () => undefined,
+    now: () => 42,
+    openApp: async () => {
+      opened.n++;
+      return true;
+    },
+  });
   bg.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
   ext.activeTab = { id: 7, url: `${SITE}/login` };
@@ -63,10 +73,17 @@ async function setup(a: Answer = answer, opts: { paired?: boolean; openError?: E
   const send = (m: unknown) => ext.send(m, popup);
   const reportForms = (forms: unknown[]) =>
     ext.send({ type: "page_analysis", analysis: analysis(forms) }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
-  return { ext, client, bg, send, reportForms, pairings };
+  return { ext, client, bg, send, reportForms, pairings, opened };
 }
 
 describe("popup background", () => {
+  it("Déverrouiller dans OnePass brings the app forward and asks it to unlock", async () => {
+    const { send, client, opened } = await setup();
+    expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
+    expect(opened.n).toBe(1);
+    expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+  });
+
   it("suggestions for the active tab origin, from the browser", async () => {
     const { send, client } = await setup();
     expect(await send({ type: "popup_suggestions" })).toEqual({ ok: { domain: "atlas-cloud.test", items: [summary("it_01")] } });

@@ -23,7 +23,7 @@ import { type FillTarget, Filler } from "./fill";
 import { FormGenerator } from "./generate";
 import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
-import { openTransport } from "./native";
+import { openApp as openAppNative, openTransport } from "./native";
 import { NeverSave } from "./never-save";
 import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
@@ -47,6 +47,8 @@ export interface BackgroundOptions {
   browser?: string;
   /** Sign-in chain; the real driver (`ChainRunner`) by default. */
   chain?: ChainDriver;
+  /** Brings the app forward for "Déverrouiller dans OnePass"; `openApp` of native.ts by default. */
+  openApp?: () => Promise<boolean>;
 }
 
 /** The command of manifests/base.json that runs smart fill in the active tab. */
@@ -81,6 +83,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const now = opts.now ?? Date.now;
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
+  const openApp = opts.openApp ?? (() => openAppNative(ext.runtime));
   const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
   const pairing = new PairingFlow({ store, session, newClient, ...(opts.browser ? { browser: opts.browser } : {}) });
   const frames = new Frames(ext.webNavigation);
@@ -245,6 +248,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     area: store.session,
     session,
     pairing,
+    openApp,
     filler,
     analyses,
     onLock: () => saveFlow.clearGenerated(),
@@ -505,6 +509,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_unlock: async (m, from) => {
         await menuRecord(m.token, from);
+        await openApp();
         return session.request({ op: "unlock" });
       },
       menu_keys: async (m, from) => {

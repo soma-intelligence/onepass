@@ -14,6 +14,17 @@ struct BrowserBridgeTests {
             extensionId: "abc", createdAt: at, lastUsed: at)
     }
 
+    @Test func unlockLinkIsExactlyOnepassUnlock() {
+        #expect(BrowserBridge.unlockURL.absoluteString == "onepass://unlock")
+        #expect(BrowserBridge.isUnlockLink(URL(string: "onepass://unlock")!))
+        for s in [
+            "onepass://unlock?x=1", "onepass://unlock/", "onepass://unlock#a", "onepass://generator",
+            "other://unlock", "onepass://user@unlock",
+        ] {
+            #expect(!BrowserBridge.isUnlockLink(URL(string: s)!), "\(s)")
+        }
+    }
+
     @Test func pairingsLiveInOneKeychainItem() throws {
         let keychain = InMemoryKeychain()
         let store = BridgePairingStore(keychain: keychain)

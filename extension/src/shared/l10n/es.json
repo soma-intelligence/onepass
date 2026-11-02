@@ -26,6 +26,7 @@
   "ui.extensionAndOnepassApp": "La extensión y la app OnePass no tienen la misma versión.",
   "ui.exchangeWithOnepassApp": "La app OnePass rechazó el intercambio. Inténtalo de nuevo.",
   "ui.onepassLocked": "OnePass está bloqueado",
+  "ui.unlockToContinue": "Desbloquea OnePass para continuar",
   "ui.itemNotFound": "Elemento no encontrado.",
   "ui.pageChangedFillCancelled": "La página ha cambiado: relleno cancelado.",
   "ui.insecurePageHttpFill": "Página no segura (HTTP): relleno rechazado.",

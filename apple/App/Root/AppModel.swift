@@ -415,9 +415,9 @@ final class AppModel {
         if let browserBridge {
             browserBridge.start()
             // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
-            tasks.append(Task {
+            tasks.append(Task { [weak self] in
                 for await _ in NotificationCenter.default.notifications(named: BrowserBridge.unlockRequestedNotification) {
-                    NSApplication.shared.activate()
+                    self?.showForUnlock()
                 }
             })
         }
@@ -831,6 +831,22 @@ final class AppModel {
     }
 
     // MARK: - Routes from outside the app
+
+    #if os(macOS)
+    /// Bumped to show the main window (reopened if it was closed): the menu bar label observes it,
+    /// being the one view that lives while no window is open.
+    var mainWindowRequest = 0
+
+    /// "Déverrouiller dans OnePass" (`onepass://unlock` or the bridge's request): the main window
+    /// comes forward on the lock screen, which then asks for biometrics once. The activation alone
+    /// is not enough since macOS 14 while the browser is in front; the link, opened through
+    /// LaunchServices by the extension's process, is what brings the app forward.
+    func showForUnlock() {
+        if session.state != .unlocked { autoBiometricsPending = true }
+        mainWindowRequest &+= 1
+        NSApplication.shared.activate()
+    }
+    #endif
 
     /// A deep link (`onepass://`), from a widget, a Control or the system.
     func open(_ link: OnePassLink) {
