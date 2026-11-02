@@ -59,4 +59,5 @@ Tuile (`ItemIcon`, `SiteIconTreatment`) :
 - R2 : « un balayage plus long donne la corbeille » n'existe pas sur iOS (le balayage complet lance le premier bouton) : Archiver au balayage complet, Corbeille en second bouton, comme le brief l'autorise.
 - R3 : pas de rendu SVG sur iOS (aucune API système, un moteur maison serait une surface d'attaque) ni de service d'icônes tiers (fuite des sites du coffre).
 - R4 : `has_places` dans le résumé plutôt que les coordonnées elles-mêmes : un booléen ne dit rien du lieu.
-- R5 : le fondu n'est appliqué ni aux Réglages ni au thème (agent ios-shell) ; ses couleurs suivent le fond système, que le thème clair reprendra.
+- R5 : les Réglages (agent ios-shell) prennent le même fondu dans `settingsPage()` ; la couleur par défaut du voile est le jeton `Theme.page`, il suit donc le thème clair ou sombre.
+- R6 : la tuile d'une marque se choisit sur la part de pixels presque blancs ou presque noirs, pas sur la luminance moyenne : un G en couleurs sur un disque blanc garde une tuile blanche en clair.
