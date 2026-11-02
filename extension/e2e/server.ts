@@ -449,6 +449,12 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           state.users.set(email, body.password);
           return signedIn(email);
         }
+        case "/signup-passkey": {
+          // One-click signup: a form that can also make a passkey (its own button).
+          const challenge = randomBytes(32).toString("base64url");
+          passkeyChallenges.add(challenge);
+          return send(page("Atlas Cloud - Inscription", "atlas/signup-passkey.html", { challenge }));
+        }
         case "/change-password": {
           const show = (error = "") =>
             send(page("Atlas Cloud - Sécurité", "atlas/change-password.html", { email: FX.ops.email, error }));

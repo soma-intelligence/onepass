@@ -1,0 +1,51 @@
+<div class="brand">Atlas Cloud</div>
+<h1>Créer un compte</h1>
+<form id="signup" action="/signup" method="post">
+  <label for="given-name">Prénom</label>
+  <input id="given-name" name="given" type="text" autocomplete="given-name">
+  <label for="email">Adresse e-mail</label>
+  <input id="email" name="email" type="email" autocomplete="username">
+  <label for="new-password">Mot de passe</label>
+  <input id="new-password" name="password" type="password" autocomplete="new-password">
+  <label for="confirm-password">Confirmer le mot de passe</label>
+  <input id="confirm-password" name="confirm" type="password" autocomplete="new-password">
+  <button id="passkey" type="button">S'inscrire avec une clé d'accès</button>
+  <button id="submit" type="submit">Créer le compte</button>
+</form>
+<p id="result" data-challenge="{{challenge}}"></p>
+<script>
+(() => {
+  // The site's own passkey signup: its button asks for a creation with the e-mail typed above.
+  const el = document.getElementById("result");
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  const done = (r) => {
+    el.dataset.status = r.status;
+    el.textContent = r.status;
+  };
+  document.getElementById("passkey").addEventListener("click", async () => {
+    try {
+      const name = document.getElementById("email").value;
+      const c = await navigator.credentials.create({
+        publicKey: {
+          challenge: unb64(el.dataset.challenge),
+          rp: { id: "atlas-cloud.test", name: "Atlas Cloud" },
+          user: { id: new TextEncoder().encode("signup-1"), name, displayName: name },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          timeout: 60000,
+        },
+      });
+      const body = new URLSearchParams({
+        id: c.id,
+        clientDataJSON: b64(c.response.clientDataJSON),
+        attestationObject: b64(c.response.attestationObject),
+        publicKey: b64(c.response.getPublicKey()),
+        alg: String(c.response.getPublicKeyAlgorithm()),
+      });
+      done(await (await fetch("/passkey/register", { method: "POST", body })).json());
+    } catch (e) {
+      done({ status: "error:" + e.name });
+    }
+  });
+})();
+</script>
