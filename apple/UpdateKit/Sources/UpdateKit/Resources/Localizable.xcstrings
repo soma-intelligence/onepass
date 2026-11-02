@@ -1,0 +1,35 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "updates.refused.notNewer" : {
+      "comment" : "Error shown when an update offered by the feed is not newer than the installed app (downgrade refused)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This update is not newer than the installed version: OnePass refused it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta actualización no es más reciente que la versión instalada: OnePass la ha rechazado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette mise à jour n'est pas plus récente que la version installée : OnePass l'a refusée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo aggiornamento non è più recente della versione installata: OnePass l'ha rifiutato."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
