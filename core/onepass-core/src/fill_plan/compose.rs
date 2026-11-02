@@ -74,6 +74,18 @@ pub enum ReasonCode {
     CreateButton,
     ChildFrame,
     MultipleForms,
+    PasskeyButton,
+    PasskeyOffered,
+}
+
+/// A signup form's own passkey button: the user may create a passkey
+/// instead of a password (one-click signup, spec 2.2). The site owns the
+/// WebAuthn challenge, so the offer is its button, never a call of ours.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PasskeyOffer {
+    pub form_ref: String,
+    pub button_ref: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -85,6 +97,8 @@ pub struct FillPlan {
     pub confidence: Confidence,
     pub alternatives: Vec<Id>,
     pub reasons: Vec<ReasonCode>,
+    /// Signup only: the planned form's passkey button.
+    pub passkey: Option<PasskeyOffer>,
 }
 
 /// Candidates already through the hard filter (spec 6.1), one list per kind.
@@ -252,6 +266,7 @@ fn ignored() -> FillPlan {
         confidence: Confidence::Low,
         alternatives: vec![],
         reasons: vec![ReasonCode::IgnoredForm],
+        passkey: None,
     }
 }
 
@@ -431,6 +446,11 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
             push(&mut reasons, ReasonCode::CreateButton);
             held = true;
         }
+        // A passkey-creation button: an account is being made here.
+        if buttons().any(|b| b.class == ButtonClass::Passkey) {
+            push(&mut reasons, ReasonCode::PasskeyButton);
+            held = true;
+        }
         // Which form to send is ambiguous with more than one planned.
         let mut planned: Vec<&str> = groups.iter().map(|g| g.form_ref.as_str()).collect();
         planned.dedup();
@@ -471,6 +491,24 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         Action::Fill
     };
 
+    // A signup form that can create a passkey instead: its first such button.
+    let passkey = if intent == Intent::Signup {
+        forms.iter().find_map(|f| {
+            f.buttons
+                .iter()
+                .find(|b| b.class == ButtonClass::Passkey)
+                .map(|b| PasskeyOffer {
+                    form_ref: f.form_ref.clone(),
+                    button_ref: b.button_ref.clone(),
+                })
+        })
+    } else {
+        None
+    };
+    if passkey.is_some() {
+        push(&mut reasons, ReasonCode::PasskeyOffered);
+    }
+
     Ok(FillPlan {
         intent,
         groups,
@@ -478,6 +516,7 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         confidence,
         alternatives,
         reasons,
+        passkey,
     })
 }
 

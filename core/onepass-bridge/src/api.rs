@@ -11,7 +11,7 @@ use std::fmt;
 use onepass_core::fill_plan::context::{FieldRole, PageContext};
 use onepass_core::fill_plan::intent::Intent;
 use onepass_core::fill_plan::score::Confidence;
-use onepass_core::fill_plan::{Action, FillPlan, GroupItem, GroupKind, ReasonCode};
+use onepass_core::fill_plan::{Action, FillPlan, GroupItem, GroupKind, PasskeyOffer, ReasonCode};
 use onepass_core::model::MatchRule;
 use onepass_core::model::usage::StepKind;
 use onepass_core::site_password::GenerationReport;
@@ -545,6 +545,8 @@ pub struct PlanOut {
     pub confidence: Confidence,
     pub alternatives: Vec<String>,
     pub reasons: Vec<ReasonCode>,
+    /// Signup only: the form's passkey button (`null` when none).
+    pub passkey: Option<PasskeyOffer>,
 }
 
 impl From<FillPlan> for PlanOut {
@@ -573,6 +575,7 @@ impl From<FillPlan> for PlanOut {
             confidence: p.confidence,
             alternatives: p.alternatives.iter().map(|id| id.to_string()).collect(),
             reasons: p.reasons,
+            passkey: p.passkey,
         }
     }
 }
@@ -1161,14 +1164,19 @@ mod tests {
             action: Action::Fill,
             confidence: Confidence::Medium,
             alternatives: vec![item],
-            reasons: vec![ReasonCode::Tie],
+            reasons: vec![ReasonCode::Tie, ReasonCode::PasskeyOffered],
+            passkey: Some(PasskeyOffer {
+                form_ref: "f".into(),
+                button_ref: "b".into(),
+            }),
         };
         let reply = Response::Plan { plan: plan.into() };
         let id = "07070707-0707-0707-0707-070707070707";
         assert_eq!(
             serde_json::to_value(&reply).unwrap(),
             json!({"plan":{"intent":"signup","action":"fill","confidence":"medium",
-                "alternatives":[id],"reasons":["tie"],
+                "alternatives":[id],"reasons":["tie","passkey_offered"],
+                "passkey":{"form_ref":"f","button_ref":"b"},
                 "groups":[
                     {"form_ref":"f","kind":"login","item_id":id,
                      "fields":[{"field_ref":"u","role":"email"}]},

@@ -891,3 +891,54 @@ fn plan_500_items_under_20ms() {
         assert!(median < 20_000, "median {median} us");
     }
 }
+
+// One-click signup (2026-11-02): the form's passkey button.
+
+#[test]
+fn signup_with_passkey_button_offers_it() {
+    let mut f = signup_form(ButtonClass::Create);
+    f.buttons.push(button("pk", ButtonClass::Passkey));
+    let pl = Pool {
+        identities: vec![identity(5)],
+        ..pool()
+    };
+    let p = plan(&page(vec![f]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Signup);
+    assert_eq!(p.action, Action::Fill);
+    let offer = p.passkey.as_ref().expect("a passkey offer");
+    assert_eq!(offer.form_ref, "signup");
+    assert_eq!(offer.button_ref, "pk");
+    assert!(p.reasons.contains(&ReasonCode::PasskeyOffered));
+}
+
+#[test]
+fn signup_without_passkey_button_offers_nothing() {
+    let p = plan(&page(vec![signup_form(ButtonClass::Create)]), pool()).unwrap();
+    assert_eq!(p.passkey, None);
+    assert!(!p.reasons.contains(&ReasonCode::PasskeyOffered));
+}
+
+#[test]
+fn login_never_offers_passkey() {
+    let mut f = login_form();
+    f.buttons.push(button("pk", ButtonClass::Passkey));
+    let p = plan(&page(vec![f]), logins(vec![login(1)])).unwrap();
+    assert_eq!(p.intent, Intent::Login);
+    assert_eq!(p.passkey, None);
+}
+
+#[test]
+fn passkey_button_holds_login_auto_submit() {
+    let mut f = login_form();
+    f.buttons.push(button("pk", ButtonClass::Passkey));
+    let p = plan(&page(vec![f]), logins(vec![login(1)])).unwrap();
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::Fill);
+    assert!(p.reasons.contains(&ReasonCode::PasskeyButton));
+}
+
+#[test]
+fn passkey_class_reads_from_the_wire() {
+    let b: ButtonContext = serde_json::from_str(r#"{"button_ref":"b","class":"passkey"}"#).unwrap();
+    assert_eq!(b.class, ButtonClass::Passkey);
+}

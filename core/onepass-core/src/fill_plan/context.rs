@@ -102,6 +102,8 @@ pub enum ButtonClass {
     Pay,
     Create,
     Other,
+    /// Creates a passkey ("Sign up with a passkey"), never a sign-in with one.
+    Passkey,
 }
 
 /// The extension's `FormKind`.
