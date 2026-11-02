@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import OnePassCore
+import os
 
 /// The production bridge of the Mac app (spec 2026-10-27-release-bridge-design): the Safari
 /// extension and the Chrome and Firefox relay reach the vault the user unlocked here, over
@@ -110,6 +111,7 @@ public final class BrowserBridge {
         let prompt = String(
             localized: "Associer \(request.browser) à OnePass", bundle: VaultKitStrings.bundle)
         let ok = await session.confirmUserPresence(prompt: prompt)
+        BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (locked or Touch ID off)")
         server?.answerPairing(requestId: id, approved: ok)
         requests.removeAll { $0.id == id }
     }
@@ -137,6 +139,7 @@ public final class BrowserBridge {
     }
 
     fileprivate func show(_ r: FfiBridgePairingRequest) {
+        BridgeLog.note("pairing request shown")
         requests.removeAll { $0.id == r.requestId }
         requests.append(
             Request(id: r.requestId, extensionName: r.extName, browser: r.browser, code: r.code))
@@ -228,12 +231,13 @@ public final class BrowserBridge {
     }
 }
 
-/// Bridge journal: fixed messages only, in the unified log (private by default).
+/// Bridge journal: fixed messages only (no secret, no item data), in the unified log of every
+/// build, so a refused Safari or Chrome connection can be diagnosed on a release install.
 enum BridgeLog {
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "bridge")
+
     static func note(_ message: String) {
-        #if DEBUG
-        NSLog("OnePass bridge: %@", message)
-        #endif
+        log.notice("\(message, privacy: .public)")
     }
 }
 

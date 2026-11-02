@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import os
 
 /// The production path (spec 2026-10-27-release-bridge-design): the Mac app
 /// listens on `bridge.sock` at the root of its App Group container
@@ -17,6 +18,8 @@ import Security
 /// with the app's Touch ID sheet). A listener positively identified as anything
 /// else is refused.
 public enum AppSocket {
+    /// Fixed messages only: why the app could not be reached.
+    static let log = Logger(subsystem: "me.somalabs.onepass", category: "safari-relay")
     public static let appIdentifier = "me.somalabs.onepass"
     public static let groupSuffix = "me.somalabs.onepass"
     public static let socketName = "bridge.sock"
@@ -113,11 +116,21 @@ public enum AppSocket {
     /// The launcher for the app's socket, or nil when this build is not
     /// signed by a team or has no App Group container.
     public static func launcher() -> AppSocketLauncher? {
-        guard let team = ownTeam(),
-            let app = appIdentifier(extensionIdentifier: Bundle.main.bundleIdentifier),
-            let requirement = requirement(team: team, identifier: app),
-            let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "\(team).\(groupSuffix)")
-        else { return nil }
+        guard let team = ownTeam() else {
+            log.error("no team in this extension's signature: no bridge")
+            return nil
+        }
+        guard let app = appIdentifier(extensionIdentifier: Bundle.main.bundleIdentifier),
+            let requirement = requirement(team: team, identifier: app)
+        else {
+            log.error("extension identifier does not end in .safari: no bridge")
+            return nil
+        }
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "\(team).\(groupSuffix)")
+        else {
+            log.error("no App Group container: no bridge")
+            return nil
+        }
         let path = dir.appendingPathComponent(socketName).path
         return AppSocketLauncher(path: path) { fd in acceptsListener(checkPeer(fd: fd, requirement: requirement)) }
     }
@@ -155,16 +168,25 @@ public struct AppSocketLauncher: HostLauncher {
                 connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        guard connected == 0, verifyListener(fd) else {
+        guard connected == 0 else {
+            let code = errno
             close(fd)
+            AppSocket.log.error("connect to the app's socket failed, errno \(code, privacy: .public)")
+            throw RelayError.unavailable
+        }
+        guard verifyListener(fd) else {
+            close(fd)
+            AppSocket.log.error("listener refused by its code signature")
             throw RelayError.unavailable
         }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         do {
             try handle.write(contentsOf: Framing.encode(AppSocket.opening))
         } catch {
+            AppSocket.log.error("opening frame not written")
             throw RelayError.unavailable
         }
+        AppSocket.log.notice("connected to the app")
         return SocketHost(handle: handle)
     }
 }

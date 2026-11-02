@@ -99,11 +99,27 @@ impl Drop for Slot {
     }
 }
 
+/// What a refused client was signed as: kind, identifier and team, never a
+/// path or a hash (enough to tell a wrong prefix from an ad hoc build).
+fn refused_note(id: &CodeIdentity) -> String {
+    match id {
+        CodeIdentity::Team {
+            team_id,
+            identifier,
+        } => format!("refused client: team {team_id}, identifier {identifier}"),
+        CodeIdentity::Platform { identifier } => format!("refused client: platform {identifier}"),
+        CodeIdentity::AdHoc { .. } => "refused client: ad hoc or invalid signature".to_owned(),
+        CodeIdentity::Unsigned { .. } => "refused client: unsigned".to_owned(),
+    }
+}
+
 /// Identify, classify and read the opening frame of `stream`.
 fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static str> {
     let id = (cfg.identify)(&stream).map_err(|_| "client not identified")?;
-    let client =
-        classify_client(&id, &cfg.team, &cfg.app).ok_or("client refused by code signature")?;
+    let Some(client) = classify_client(&id, &cfg.team, &cfg.app) else {
+        (cfg.note)(&refused_note(&id));
+        return Err("client refused by code signature");
+    };
     stream
         .set_read_timeout(Some(cfg.opening_timeout))
         .map_err(|_| "socket error")?;
@@ -377,14 +393,13 @@ mod tests {
             let rig = rig(id, 8);
             refused(&rig, &Preamble::new(None));
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
-            while rig.notes.lock().unwrap().is_empty() {
+            while rig.notes.lock().unwrap().len() < 2 {
                 assert!(std::time::Instant::now() < deadline);
                 thread::sleep(Duration::from_millis(5));
             }
-            assert_eq!(
-                rig.notes.lock().unwrap()[0],
-                "client refused by code signature"
-            );
+            let notes = rig.notes.lock().unwrap();
+            assert!(notes[0].starts_with("refused client: "));
+            assert_eq!(notes[1], "client refused by code signature");
         }
     }
 
