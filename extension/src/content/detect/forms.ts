@@ -6,7 +6,7 @@ import { detectCaptcha, detectPush } from "./captcha";
 import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
 import { extractFeatures, type FieldFeatures } from "./features";
 import { autocompleteRole, classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
-import { AUTOCOMPLETE_SCORE, normalizeText } from "./lexicon";
+import { AUTOCOMPLETE_SCORE, CREATE_WORDS, normalizeText, SIGN_IN_WORDS } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
 import { collectShadowRoots, composedOrder, queryAll } from "./shadow";
@@ -135,17 +135,19 @@ export function isNavigatingLink(el: Element): boolean {
   return href !== "" && !href.startsWith("#") && !/^javascript:/i.test(href);
 }
 
-/** Buttons that may submit a form group, the document's first, then each root's. */
-function submitCandidates(doc: Document, roots: readonly ShadowRoot[], geometry: Geometry): Element[] {
-  return queryAll(doc, roots, BUTTON_SELECTOR, MAX_BUTTONS)
-    .filter(
-      (el) =>
-        !isNavigatingLink(el) &&
-        (isSubmitType(el) || isNextLabel(el)) &&
-        providerOfButton(el) === null &&
-        !el.matches(":disabled") &&
-        isRendered(el, geometry),
-    );
+/**
+ * Buttons that may submit a form group, the document's first, then each root's: the enabled ones,
+ * and apart the disabled ones (a page often disables "Continue" until the identifier is typed).
+ */
+function submitCandidates(doc: Document, roots: readonly ShadowRoot[], geometry: Geometry): { enabled: Element[]; disabled: Element[] } {
+  const all = queryAll(doc, roots, BUTTON_SELECTOR, MAX_BUTTONS).filter(
+    (el) =>
+      !isNavigatingLink(el) &&
+      (isSubmitType(el) || isNextLabel(el)) &&
+      providerOfButton(el) === null &&
+      isRendered(el, geometry),
+  );
+  return { enabled: all.filter((el) => !el.matches(":disabled")), disabled: all.filter((el) => el.matches(":disabled")) };
 }
 
 /** Submit control of a group: a submit-type button first, else a "Next" style label. */
@@ -154,6 +156,39 @@ function findSubmit(group: Group, buttons: Element[], isForm: boolean): Element 
     isForm ? controlForm(b) === group.container : group.container.contains(b) && controlForm(b) === null,
   );
   return inside.find(isSubmitType) ?? inside.find(isNextLabel);
+}
+
+/**
+ * A "Next" style button outside any form, placed after a <form> that holds no button of its own
+ * (the form wraps the field only, the page's script reads it on click). It counts only when the
+ * nearest ancestor holding both holds no field of another group, so a page-wide button never
+ * becomes a form's submit.
+ */
+function trailingNext(form: Element, buttons: Element[], groups: readonly Group[]): Element | undefined {
+  const others = groups.filter((g) => g.container !== form).flatMap((g) => g.fields.map((f) => f.el));
+  let best: { button: Element; depth: number } | undefined;
+  for (const b of buttons) {
+    if (controlForm(b) !== null || !isNextLabel(b)) continue;
+    if (!(form.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    const shared = climb(b, (a) => a.contains(form));
+    if (shared === null || others.some((el) => shared.contains(el))) continue;
+    const d = depth(shared);
+    if (best === undefined || d > best.depth) best = { button: b, depth: d };
+  }
+  return best?.button;
+}
+
+/**
+ * A lone password guessed as the current one (no `autocomplete`) is a new password when the
+ * group's submit says the form makes an account ("Register", "Create account") and not a sign-in:
+ * a signup with a single password field and no `new-password` hint.
+ */
+function resolveSignupPassword(fields: Classified[], submit: Element | undefined): void {
+  const pw = fields.filter((f) => f.role === "current_password" || f.role === "new_password" || f.role === "confirm_password");
+  const [only] = pw;
+  if (pw.length !== 1 || only === undefined || only.role !== "current_password" || only.direct || submit === undefined) return;
+  const label = normalizeText(buttonLabel(submit));
+  if (CREATE_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) only.role = "new_password";
 }
 
 /** Nearest ancestor of `el` (inclusive of body) for which `pred` holds. */
@@ -441,7 +476,7 @@ export function detectForms(
     else byForm.set(form, [...(byForm.get(form) ?? []), f]);
   }
 
-  const buttons = submitCandidates(doc, roots, geometry);
+  const { enabled: buttons, disabled: idleButtons } = submitCandidates(doc, roots, geometry);
   const groups: { group: Group; isForm: boolean }[] = [
     ...Array.from(byForm, ([container, fields]) => ({ group: { container, fields }, isForm: true })),
     ...groupOrphans(orphans, buttons).map((group) => ({ group, isForm: false })),
@@ -456,10 +491,16 @@ export function detectForms(
     resolveSecurityCodes(group.fields);
     resolvePasswords(group.fields);
     resolveNames(group.fields);
-    const submit = findSubmit(group, buttons, isForm);
+    const submit =
+      findSubmit(group, buttons, isForm) ??
+      (isForm ? trailingNext(group.container, buttons, groups.map((g) => g.group)) : undefined);
+    resolveSignupPassword(group.fields, submit);
+    // A disabled "Continue" (enabled once the identifier is typed) still marks the step, but is
+    // never the submit OnePass presses.
+    const step = submit ?? findSubmit(group, idleButtons, isForm);
     const kind = formKind(
       group.fields.map((f) => f.role),
-      submit !== undefined && isNextLabel(submit) && identifierStep(group.fields, submit, isSignInPage),
+      step !== undefined && isNextLabel(step) && identifierStep(group.fields, step, isSignInPage),
     );
     if (kind === null) continue;
     const info: FormInfo = { ref: refs.refFor(group.container), kind, fields: mergeSplitOtp(group.fields, refs) };

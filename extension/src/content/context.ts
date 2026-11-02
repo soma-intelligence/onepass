@@ -84,7 +84,8 @@ export function buttonClass(el: HTMLElement): ButtonClass {
   // A passkey made here (signup), never a sign-in with one.
   if (PASSKEY_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "passkey";
   if (PAY_WORDS.test(label)) return "pay";
-  if (CREATE_WORDS.test(label)) return "create";
+  // "Sign in or create account" (one identifier-first door for both): a sign-in.
+  if (CREATE_WORDS.test(label)) return SIGN_IN_WORDS.test(label) ? "submit" : "create";
   if (NEXT_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "next";
   if (isSubmitType(el) || SIGN_IN_WORDS.test(label)) return "submit";
   return "other";

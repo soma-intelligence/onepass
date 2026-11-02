@@ -37,7 +37,7 @@
   },
   "microsoft-login": {
     "detection_pass": true,
-    "fill_pass": false
+    "fill_pass": true
   },
   "notion-login": {
     "detection_pass": true,
@@ -53,7 +53,7 @@
   },
   "qiita-signup": {
     "detection_pass": true,
-    "fill_pass": false
+    "fill_pass": true
   },
   "slack-login": {
     "detection_pass": true,
@@ -61,7 +61,7 @@
   },
   "spiegel-login": {
     "detection_pass": true,
-    "fill_pass": false
+    "fill_pass": true
   },
   "spotify-login": {
     "detection_pass": true,
@@ -80,15 +80,15 @@
     "fill_pass": true
   },
   "vimeo-login": {
-    "detection_pass": false,
-    "fill_pass": false
+    "detection_pass": true,
+    "fill_pass": true
   },
   "wordpress-login": {
-    "detection_pass": false,
-    "fill_pass": false
+    "detection_pass": true,
+    "fill_pass": true
   },
   "zoom-login": {
-    "detection_pass": false,
-    "fill_pass": false
+    "detection_pass": true,
+    "fill_pass": true
   }
 }
