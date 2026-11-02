@@ -349,6 +349,28 @@ pub fn mailbox_locate(
     Ok(ids.iter().map(|m| bytes_hex(m)).collect())
 }
 
+/// What a OnePass server says of itself before anyone signs up: the
+/// "Tester" button of a self-host URL (spec D.2).
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiMailboxServerInfo {
+    /// Anyone may create a mailbox; false: an invite is needed.
+    pub open_signup: bool,
+}
+
+/// Ask `endpoint` for its public config (`GET /v1/config`, unsigned):
+/// reachable, speaks the mailbox protocol, and whether signup is open.
+#[uniffi::export]
+pub fn mailbox_server_check(
+    endpoint: FfiMailboxEndpoint,
+) -> Result<FfiMailboxServerInfo, OnePassError> {
+    // The route is unsigned: a throwaway credential only builds the client.
+    let client = MailboxClient::new(endpoint.into(), Credential::generate()?)?;
+    let config = client.server_config()?;
+    Ok(FfiMailboxServerInfo {
+        open_signup: config.open_signup,
+    })
+}
+
 /// Whether `code` is a record kind of this core: what a CloudKit record
 /// may carry to the store. The side kind of the enroll request and any
 /// unknown code are not.
@@ -756,6 +778,12 @@ impl Session {
         let backend = SyncBackend::try_from(backend)?;
         let now = OffsetDateTime::now_utc().unix_timestamp();
         self.with(|repo| Ok((&repo.set_sync_home(backend.clone(), now)?).into()))
+    }
+
+    /// The record id (hex) of the account's `SyncHome`: the CloudKit claim
+    /// of a migration names it (spec D.5).
+    pub fn sync_home_record_id(&self) -> Result<String, OnePassError> {
+        self.with(|repo| Ok(id_hex(repo.sync_home_record_id())))
     }
 
     /// The next home to `backend`, signed and not adopted: a migration

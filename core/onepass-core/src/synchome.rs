@@ -223,6 +223,13 @@ pub fn verify_sync_home(
 }
 
 impl<S: RecordStore> Repository<S> {
+    /// The record id the account's `SyncHome` is stored under (the
+    /// account's signed lists id): what a migrating device claims in
+    /// CloudKit before it adopts a new home (cross-platform spec D.5).
+    pub fn sync_home_record_id(&self) -> Id {
+        self.records_id
+    }
+
     /// The stored record of the current identity, verified against the
     /// pinned one, with its record version. Absent while one was pinned is
     /// a rollback.

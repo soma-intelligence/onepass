@@ -247,6 +247,32 @@ fn enroll_request_through_ffi() {
 }
 
 #[test]
+fn server_check_reads_config() {
+    let shim = Shim::start();
+    let info = mailbox_server_check(shim.endpoint()).unwrap();
+    assert!(info.open_signup);
+    // Nothing listens there: unavailable, never a panic.
+    let dead = FfiMailboxEndpoint {
+        base_url: "http://127.0.0.1:9".into(),
+        extra_ca_pem: None,
+    };
+    assert!(matches!(
+        mailbox_server_check(dead),
+        Err(OnePassError::MailboxUnavailable { .. })
+    ));
+}
+
+#[test]
+fn sync_home_record_id_is_hex_and_stable() {
+    let shim = Shim::start();
+    let a = legacy_first(&shim);
+    let id = a.session.sync_home_record_id().unwrap();
+    assert_eq!(id.len(), 32);
+    assert!(id.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(a.session.sync_home_record_id().unwrap(), id);
+}
+
+#[test]
 fn known_kinds() {
     for code in [1u8, 5, 10, 13, 24, 25, 27] {
         assert!(is_known_record_kind(code), "{code}");
