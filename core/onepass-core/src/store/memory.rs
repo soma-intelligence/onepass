@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{Record, RecordKind, RecordStore, check_local_meta_key, check_local_meta_prefix};
+use super::{Record, RecordKind, RecordStore, Zone, check_local_meta_key, check_local_meta_prefix};
 use crate::chain::ChainState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -12,6 +12,8 @@ pub struct MemoryStore {
     records: BTreeMap<(RecordKind, Id), Record>,
     trust: Option<TrustState>,
     meta: BTreeMap<String, Vec<u8>>,
+    /// Shared zones (sharing plan 2): one table per zone.
+    zoned: BTreeMap<Zone, BTreeMap<(RecordKind, Id), Record>>,
 }
 
 impl MemoryStore {
@@ -21,6 +23,98 @@ impl MemoryStore {
 }
 
 impl RecordStore for MemoryStore {
+    fn get_in(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        match zone {
+            Zone::Private => self.get(kind, id),
+            _ => Ok(self
+                .zoned
+                .get(&zone)
+                .and_then(|t| t.get(&(kind, id)))
+                .cloned()),
+        }
+    }
+
+    fn list_in(&self, zone: Zone, kind: RecordKind) -> Result<Vec<Record>> {
+        match zone {
+            Zone::Private => self.list(kind),
+            _ => Ok(self
+                .zoned
+                .get(&zone)
+                .map(|t| t.values().filter(|r| r.kind == kind).cloned().collect())
+                .unwrap_or_default()),
+        }
+    }
+
+    fn put_all_zoned(
+        &mut self,
+        writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+        trust: Option<&TrustState>,
+    ) -> Result<()> {
+        for (zone, r, expected) in &writes {
+            if self.get_in(*zone, r.kind, r.id)?.map(|c| c.version) != *expected {
+                return Err(Error::Conflict);
+            }
+            if r.kind.is_immutable()
+                && self
+                    .get_in(*zone, r.kind, r.id)?
+                    .is_some_and(|old| old.data != r.data)
+            {
+                return Err(Error::Conflict);
+            }
+        }
+        for (zone, kind, _) in &deletes {
+            if zone.is_shared() && kind.server_deletion_refused() {
+                return Err(Error::InvalidFormat("zone record deletion"));
+            }
+        }
+        for (zone, r, _) in writes {
+            match zone {
+                Zone::Private => {
+                    self.records.insert((r.kind, r.id), r);
+                }
+                _ => {
+                    self.zoned
+                        .entry(zone)
+                        .or_default()
+                        .insert((r.kind, r.id), r);
+                }
+            }
+        }
+        for (zone, kind, id) in deletes {
+            match zone {
+                Zone::Private => {
+                    self.records.remove(&(kind, id));
+                }
+                _ => {
+                    if let Some(t) = self.zoned.get_mut(&zone) {
+                        t.remove(&(kind, id));
+                    }
+                }
+            }
+        }
+        if let Some(t) = trust {
+            self.trust = Some(t.clone());
+        }
+        Ok(())
+    }
+
+    fn zones(&self) -> Result<Vec<Zone>> {
+        Ok(self
+            .zoned
+            .iter()
+            .filter(|(_, t)| !t.is_empty())
+            .map(|(z, _)| *z)
+            .collect())
+    }
+
+    fn drop_zone(&mut self, zone: Zone) -> Result<()> {
+        if zone.is_shared() {
+            self.zoned.remove(&zone);
+        }
+        Ok(())
+    }
+
     fn put(&mut self, r: Record) -> Result<()> {
         self.records.insert((r.kind, r.id), r);
         Ok(())

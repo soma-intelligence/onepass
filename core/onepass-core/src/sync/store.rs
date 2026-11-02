@@ -26,6 +26,8 @@
 //! - `meta`: device state, change token, sync health and other small
 //!   values.
 
+mod zones;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -52,7 +54,7 @@ use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
 use crate::store::{
-    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, account_record_id,
+    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, Zone, account_record_id,
     check_local_meta_key, check_local_meta_prefix,
 };
 use crate::trust::{DeviceLineageState, TrustState};
@@ -206,6 +208,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
     }
     migrate_retained(conn)?;
     conn.execute_batch(SCHEMA).map_err(store_err)?;
+    conn.execute_batch(zones::ZONE_SCHEMA).map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
@@ -1994,7 +1997,17 @@ impl SyncStore {
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -2022,7 +2035,17 @@ impl SyncStore {
             return Err(Error::InvalidFormat("store holds an account"));
         }
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -3448,6 +3471,39 @@ fn delete_vault_rows(tx: &Connection, vault: Id) -> Result<()> {
 }
 
 impl RecordStore for SyncStore {
+    fn get_in(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        match zone {
+            Zone::Private => self.get(kind, id),
+            _ => self.read(|c| zones::zone_get(c, zone, kind, id)),
+        }
+    }
+
+    fn list_in(&self, zone: Zone, kind: RecordKind) -> Result<Vec<Record>> {
+        match zone {
+            Zone::Private => self.list(kind),
+            _ => self.read(|c| zones::zone_list(c, zone, kind)),
+        }
+    }
+
+    fn put_all_zoned(
+        &mut self,
+        writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+        trust: Option<&TrustState>,
+    ) -> Result<()> {
+        self.put_all_zoned_tx(writes, deletes, trust)
+    }
+
+    fn zones(&self) -> Result<Vec<Zone>> {
+        self.read(zones::zones_in)
+    }
+
+    fn drop_zone(&mut self, zone: Zone) -> Result<()> {
+        let tx = self.write_tx()?;
+        zones::drop_zone_in(&tx, zone)?;
+        tx.commit()
+    }
+
     fn put(&mut self, r: Record) -> Result<()> {
         check_size(&r.data)?;
         let tx = self.write_tx()?;
@@ -3679,7 +3735,17 @@ impl RecordStore for SyncStore {
             return Err(Error::Conflict);
         }
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;

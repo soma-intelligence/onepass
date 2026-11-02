@@ -3,9 +3,11 @@
 
 mod memory;
 mod sqlite;
+mod zone;
 
 pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
+pub use zone::Zone;
 
 use crate::chain::ChainState;
 use crate::crypto::IdentityVerifyingKey;
@@ -240,6 +242,10 @@ pub fn check_local_meta_prefix(prefix: &str) -> Result<()> {
     }
 }
 
+fn zones_unsupported() -> Error {
+    Error::Store("zones unsupported".into())
+}
+
 fn local_meta_unsupported() -> Error {
     Error::Store("local meta unsupported".into())
 }
@@ -247,6 +253,60 @@ fn local_meta_unsupported() -> Error {
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
 /// record with the same key; `delete` of a missing record is not an error.
 pub trait RecordStore {
+    /// `get` in `zone` (sharing spec 13.2). The default holds the private
+    /// zone only: any other zone is `Store("zones unsupported")`.
+    fn get_in(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        match zone {
+            Zone::Private => self.get(kind, id),
+            _ => Err(zones_unsupported()),
+        }
+    }
+
+    /// `list` in `zone`. Same default as `get_in`.
+    fn list_in(&self, zone: Zone, kind: RecordKind) -> Result<Vec<Record>> {
+        match zone {
+            Zone::Private => self.list(kind),
+            _ => Err(zones_unsupported()),
+        }
+    }
+
+    /// Writes (each conditional on the version the caller read, as
+    /// `put_all_if_version`) and deletions in any zones, and the trust
+    /// state when given, all or nothing (`Conflict` on a version mismatch,
+    /// nothing written in any zone). The default holds the private zone
+    /// only.
+    fn put_all_zoned(
+        &mut self,
+        writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+        trust: Option<&TrustState>,
+    ) -> Result<()> {
+        if writes.iter().any(|(z, _, _)| z.is_shared())
+            || deletes.iter().any(|(z, _, _)| z.is_shared())
+        {
+            return Err(zones_unsupported());
+        }
+        let writes = writes.into_iter().map(|(_, r, v)| (r, v)).collect();
+        let deletes = deletes.into_iter().map(|(_, k, id)| (k, id)).collect();
+        match trust {
+            Some(t) => self.put_all_if_version_with_trust(writes, deletes, None, t),
+            None => self.put_all_if_version_and_delete(writes, deletes),
+        }
+    }
+
+    /// The shared zones this store holds records of (the private zone is
+    /// not listed). The default holds none.
+    fn zones(&self) -> Result<Vec<Zone>> {
+        Ok(Vec::new())
+    }
+
+    /// Forget everything of shared `zone` on this device (pending writes
+    /// included), pushing nothing. The default holds no shared zone.
+    fn drop_zone(&mut self, zone: Zone) -> Result<()> {
+        let _ = zone;
+        Err(zones_unsupported())
+    }
+
     fn put(&mut self, r: Record) -> Result<()>;
     /// Write `r` only if the stored record with its key has version
     /// `expected` (`None`: only if there is no such record), atomically.
