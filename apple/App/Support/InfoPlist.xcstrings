@@ -24,10 +24,22 @@
             "value" : "OnePass uses the camera to read the QR code on your Emergency Kit, the one shown by a new device or one for a verification code."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la cámara para leer el código QR de tu Emergency Kit, el que muestra un dispositivo nuevo o el de un código de verificación."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la fotocamera per leggere il codice QR del tuo Emergency Kit, quello di un nuovo dispositivo o quello di un codice di verifica."
           }
         }
       }
@@ -42,10 +54,22 @@
             "value" : "OnePass uses Face ID to unlock your vault without retyping your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa Face ID para desbloquear tu bóveda sin volver a escribir tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa Face ID per sbloccare la cassaforte senza digitare di nuovo la password principale."
           }
         }
       }
@@ -60,10 +84,22 @@
             "value" : "OnePass uses the local network to add a device to your account, without going through a server."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la red local para añadir un dispositivo a tu cuenta, sin pasar por un servidor."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la rete locale per aggiungere un dispositivo al tuo account, senza passare da un server."
           }
         }
       }

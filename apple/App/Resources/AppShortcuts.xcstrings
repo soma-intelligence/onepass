@@ -10,12 +10,24 @@
             "value" : "Copy the code for ${item} with ${applicationName}"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar el código de ${item} con ${applicationName}"
+          }
+        },
         "fr" : {
           "stringSet" : {
             "state" : "new",
             "values" : [
               "Copier le code de ${item} avec ${applicationName}"
             ]
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia il codice di ${item} con ${applicationName}"
           }
         }
       }
@@ -29,12 +41,24 @@
             "value" : "Generate a password with ${applicationName}"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generar una contraseña con ${applicationName}"
+          }
+        },
         "fr" : {
           "stringSet" : {
             "state" : "new",
             "values" : [
               "Générer un mot de passe avec ${applicationName}"
             ]
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genera una password con ${applicationName}"
           }
         }
       }
@@ -48,12 +72,24 @@
             "value" : "Open ${item} in ${applicationName}"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir ${item} en ${applicationName}"
+          }
+        },
         "fr" : {
           "stringSet" : {
             "state" : "new",
             "values" : [
               "Ouvrir ${item} dans ${applicationName}"
             ]
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri ${item} in ${applicationName}"
           }
         }
       }
@@ -67,12 +103,24 @@
             "value" : "Lock ${applicationName}"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloquear ${applicationName}"
+          }
+        },
         "fr" : {
           "stringSet" : {
             "state" : "new",
             "values" : [
               "Verrouiller ${applicationName}"
             ]
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocca ${applicationName}"
           }
         }
       }
