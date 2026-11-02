@@ -1,3 +1,4 @@
+import AuthenticationServices
 import DesignKit
 import GlanceKit
 import SwiftUI
@@ -25,6 +26,8 @@ struct RootView: View {
     @State private var demoDoorPlayed = false
     #endif
     #endif
+    /// Credentials handed over by another app (Credential Exchange), waiting for the unlock.
+    @State private var credentialExchange: CredentialExchangeRequest?
 
     var body: some View {
         content
@@ -63,6 +66,19 @@ struct RootView: View {
             // A route kept during the onboarding (its account creation unlocks first).
             .onChange(of: model.onboardingInProgress) { _, inProgress in
                 if !inProgress { model.consumePendingRoute() }
+            }
+            // Passwords > Export Data to Another App > OnePass: the import sheet opens on what the
+            // other app sends (passkeys included) once the vault is unlocked.
+            .onContinueUserActivity(ASCredentialExchangeActivity) { activity in
+                if let token = CredentialExchangeImport.token(of: activity) {
+                    credentialExchange = CredentialExchangeRequest(token: token)
+                }
+            }
+            .sheet(item: Binding(
+                get: { model.session.state == .unlocked ? credentialExchange : nil },
+                set: { if $0 == nil { credentialExchange = nil } }
+            )) { request in
+                ImportSheet(credentialExchange: request.token)
             }
             .onOpenURL { url in
                 // The three `onepass://` links and the verification code links; anything else is
@@ -359,3 +375,9 @@ private struct VaultDoorClosingPassage: View {
     }
 }
 #endif
+
+/// One Credential Exchange hand-over: its one-time token.
+private struct CredentialExchangeRequest: Identifiable {
+    let token: UUID
+    var id: UUID { token }
+}

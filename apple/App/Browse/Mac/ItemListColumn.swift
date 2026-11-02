@@ -358,6 +358,7 @@ struct ItemListColumn: View {
         switch model.selection {
         case .all: String(localized: "Tous les éléments")
         case .favorites: String(localized: "Favoris")
+        case .passkeys: String(localized: "Passkeys")
         case .nearby: String(localized: "À proximité")
         case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
         case .category(let type): ItemCategory.of(type).plural
@@ -441,6 +442,11 @@ struct ItemListEmptyState: View {
             EmptyState(
                 title: String(localized: "Rien à proximité"), systemImage: "mappin.slash",
                 message: String(localized: "Ajoute un lieu à un élément pour le retrouver ici quand tu es à moins de 2 km."))
+        case .noPasskeys:
+            EmptyState(
+                title: String(localized: "Aucune passkey"), systemImage: "person.badge.key",
+                message: String(localized: "Choisis OnePass quand un site te propose de créer une passkey, ou importe celles de Mots de passe (Exporter vers OnePass)."))
+            .accessibilityIdentifier("list.empty.passkeys")
         case .noFavorites:
             EmptyState(
                 title: String(localized: "Aucun favori"), systemImage: "star",

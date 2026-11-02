@@ -264,6 +264,7 @@ Ce que livre le jalon 3 :
 - **Insertion de texte** (iOS 18 et plus) : n'importe quel champ d'un item dans n'importe quel champ.
 - **Conteneur partagé** : la base et les réglages passent dans le conteneur App Group (`group.me.somalabs.onepass` sur iOS, `<préfixe d'équipe>me.somalabs.onepass` sur Mac), migrés au lancement sans jamais rien supprimer.
 - **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login, quand OnePass est le fournisseur (iOS 26.2 et plus).
+- Liste **Passkeys** (onglet Éléments sur iPhone, barre latérale sur Mac et iPad) : les éléments qui portent au moins une passkey (2026-11-02).
 - Page **Remplissage automatique** dans les réglages (état, activation, codes de vérification, interrupteur "Suggestions au-dessus du clavier" qui vide le magasin du système quand il est coupé) et carte d'activation sur l'Accueil.
 
 ### Limites du jalon 3
@@ -281,7 +282,7 @@ Ce qui demande un build signé ou un appareil réel (spec, section 10) :
 
 Hors périmètre du jalon 3 (spec, section 11) :
 
-- Import et export de passkeys par FIDO Credential Exchange (`ASCredentialImportManager`, `ASCredentialExportManager`) : avec l'import et l'export du jalon 5.
+- Export de passkeys par FIDO Credential Exchange (`ASCredentialExportManager`). L'import est livré (2026-11-02) : Mots de passe > Exporter vers une autre app > OnePass ouvre la feuille Importer (`CredentialExchangeImport`, spec `2026-11-02-passkeys-on-iphone-design.md`).
 - Quick Access et barre de menus du Mac : jalon ultérieur.
 - Vision Pro (jalon 6), extension Safari et icône dans le champ des pages web (jalon 4). Aucun fournisseur ne peut dessiner dans les champs des autres apps : l'expérience système est la barre QuickType, la touche clé et la feuille passkey.
 - Signal des passkeys inconnues ou renommées au système (`reportUnknownPublicKeyCredential`, `reportAllAcceptedPublicKeyCredentials`).

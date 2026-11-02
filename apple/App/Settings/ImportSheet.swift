@@ -147,6 +147,14 @@ struct ImportSheet: View {
     /// What the import wrote, shown before the sheet closes.
     @State private var done: FfiImportSummary?
     @State private var doneVaultName = ""
+    /// Credentials another app handed over through the system's Credential Exchange (Passwords >
+    /// Export to OnePass): read with this one-time token when the sheet opens, then previewed and
+    /// imported like a CXF file (passkeys included).
+    private let credentialExchange: UUID?
+
+    init(credentialExchange: UUID? = nil) {
+        self.credentialExchange = credentialExchange
+    }
 
     private static let calloutID = "import.callout"
 
@@ -183,6 +191,10 @@ struct ImportSheet: View {
         #endif
         .onAppear {
             if vaultID.isEmpty { vaultID = defaultVaultID }
+        }
+        .task(id: credentialExchange) {
+            guard let token = credentialExchange else { return }
+            await receive(token)
         }
         #if DEBUG
         .task {
@@ -788,6 +800,27 @@ struct ImportSheet: View {
             }
         } catch {
             errorMessage = VaultError(error).localizedMessage
+            buffer.wipe()
+        }
+    }
+
+    /// Reads the credentials of a Credential Exchange (`CredentialExchangeImport`) and previews them
+    /// as CXF. The token works once: a failure leaves the sheet on its sources with the reason.
+    private func receive(_ token: UUID) async {
+        reset()
+        busy = true
+        defer { busy = false }
+        do {
+            buffer.replace(with: try await CredentialExchangeImport.receive(token: token))
+            let summary = try await VaultSession.previewImport(format: CredentialExchangeImport.format, data: buffer.data)
+            fileName = String(localized: "Credential Exchange")
+            format = CredentialExchangeImport.format
+            preview = summary
+            if vaultID.isEmpty || !model.session.vaults.contains(where: { $0.id == vaultID }) {
+                vaultID = defaultVaultID
+            }
+        } catch {
+            errorMessage = String(localized: "Les identifiants envoyés par l'autre app n'ont pas pu être lus. Relance l'export depuis cette app.")
             buffer.wipe()
         }
     }

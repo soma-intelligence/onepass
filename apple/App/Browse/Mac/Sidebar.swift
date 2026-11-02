@@ -125,6 +125,8 @@ struct Sidebar: View {
                     filter: .all, id: "library.all")
                 row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,
                     filter: .favorites, id: "library.favorites")
+                row("Passkeys", symbol: "person.badge.key.fill", color: Self.passkeysColor, count: counts.passkeys,
+                    filter: .passkeys, id: "library.passkeys")
                 pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
@@ -219,6 +221,7 @@ struct Sidebar: View {
     static let watchtowerColor = Color(red: 0xE1 / 255, green: 0x4D / 255, blue: 0x3C / 255)
     /// Graphite, like Terminal: the accent stays for "Tous les éléments".
     static let developerColor = Color(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255)
+    static let passkeysColor = Color.purple
     static let favoritesColor = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
     static let binColor = Color(red: 0x8E / 255, green: 0x8E / 255, blue: 0x93 / 255)
 

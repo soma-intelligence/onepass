@@ -107,6 +107,7 @@ struct CategoryListView: View {
         switch filter {
         case .all: String(localized: "Tous les éléments")
         case .favorites: String(localized: "Favoris")
+        case .passkeys: String(localized: "Passkeys")
         case .nearby: String(localized: "À proximité")
         case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
         case .category(let type): ItemCategory.of(type).plural

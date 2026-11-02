@@ -4751,6 +4751,16 @@
         }
       }
     },
+    "Aucune passkey" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Passkeys"
+          }
+        }
+      }
+    },
     "Aucune passkey : elle s'ajoute quand un site t'en fait créer une" : {
       "localizations" : {
         "en" : {
@@ -5429,6 +5439,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fatto. Tienila lontana dai tuoi schermi."
+          }
+        }
+      }
+    },
+    "Choisis OnePass quand un site te propose de créer une passkey, ou importe celles de Mots de passe (Exporter vers OnePass)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick OnePass when a site offers to create a passkey, or bring yours over from Passwords (Export to OnePass)."
           }
         }
       }
@@ -9499,6 +9519,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Corsa"
+          }
+        }
+      }
+    },
+    "Credential Exchange" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credential Exchange"
           }
         }
       }
@@ -16829,6 +16859,16 @@
         }
       }
     },
+    "Les identifiants envoyés par l'autre app n'ont pas pu être lus. Relance l'export depuis cette app." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The credentials sent by the other app couldn't be read. Start the export again from that app."
+          }
+        }
+      }
+    },
     "Les modifications de cet élément ne sont pas enregistrées." : {
       "localizations" : {
         "en" : {
@@ -20169,6 +20209,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apri un elemento"
+          }
+        }
+      }
+    },
+    "Passkeys" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys"
           }
         }
       }

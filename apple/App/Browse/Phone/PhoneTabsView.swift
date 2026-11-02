@@ -230,6 +230,7 @@ struct PhoneTabsView: View {
             case "archive": .archive
             case "trash": .trash
             case "favorites": .favorites
+            case "passkeys": .passkeys
             case "all": .all
             case "category": model.session.summaries.first.map { .category($0.itemType) }
             case "tag": model.session.counts().byTag.keys.sorted().first.map { .tag($0) }

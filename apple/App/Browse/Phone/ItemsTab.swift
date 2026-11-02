@@ -33,6 +33,14 @@ struct ItemsTab: View {
                 } count: {
                     Text(counts.all, format: .number)
                 }
+                // Always listed, even empty: its empty state says how a passkey arrives.
+                row(.passkeys, id: "items.passkeys") {
+                    SymbolTile(symbol: "person.badge.key.fill", color: .purple, size: 30)
+                } label: {
+                    Text("Passkeys")
+                } count: {
+                    Text(counts.passkeys, format: .number)
+                }
             } header: {
                 Text(accountName)
                     .font(.title2.weight(.semibold))
