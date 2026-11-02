@@ -5817,3 +5817,49 @@ fn forged_or_misplaced_acks_show_waiting() {
     assert!(!acked(&a, c.id()));
 }
 
+// ---------------------------------------------------------------- approver list across a rotation
+
+/// Ruling 2026-11-02 (approver list at rotation): the list survives a
+/// rotation, and a locked Mac reads it under the new identity too
+/// (`approvers_without_unlock`, agent-ready spec 6.2), on the rotator and on
+/// a device that followed. Before the fix the locked read looked under the
+/// account id, where only generation 0's records are.
+#[test]
+fn locked_approver_list_survives_rotation_and_follow() {
+    use onepass_core::approvers::{ApproverRole, approvers_without_unlock};
+    use onepass_core::crypto::{HybridKemSecret, HybridSigningKey};
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let sign_pub = HybridSigningKey::generate()
+        .unwrap()
+        .verifying_key()
+        .unwrap();
+    let kem_pub = HybridKemSecret::generate().unwrap().public().unwrap();
+    a.repo()
+        .register_this_approver(sign_pub.clone(), kem_pub, ApproverRole::Phone)
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let locked = |d: &mut Device| {
+        let repo = d.repo();
+        approvers_without_unlock(repo.store(), repo.device_state(), repo.chain()).unwrap()
+    };
+    let on_a = locked(&mut a);
+    assert_eq!(on_a.entries.len(), 1);
+    assert_eq!(on_a.entries[0].sign_pub, sign_pub);
+    assert_eq!(on_a.approver_list_seq, 1);
+
+    pull(&server, &mut c);
+    let (repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(c.repo().approvers().unwrap().len(), 1);
+    let on_c = locked(&mut c);
+    assert_eq!(on_c.entries.len(), 1);
+    assert_eq!(on_c.entries[0].sign_pub, sign_pub);
+}
