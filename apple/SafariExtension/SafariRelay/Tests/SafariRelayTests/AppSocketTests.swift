@@ -100,6 +100,14 @@ struct AppSocketTests {
         #expect(AppSocket.requirement(team: #"X" or anchor"#) == nil)
     }
 
+    @Test func appIdentifierComesFromTheExtensionIdentifier() {
+        #expect(AppSocket.appIdentifier(extensionIdentifier: "me.quentincaron.onepass.safari") == "me.quentincaron.onepass")
+        #expect(AppSocket.appIdentifier(extensionIdentifier: "me.somalabs.onepass.safari") == "me.somalabs.onepass")
+        #expect(AppSocket.appIdentifier(extensionIdentifier: "me.somalabs.onepass.autofill") == nil)
+        #expect(AppSocket.appIdentifier(extensionIdentifier: ".safari") == nil)
+        #expect(AppSocket.appIdentifier(extensionIdentifier: nil) == nil)
+    }
+
     @Test func unsignedTestProcessHasNoTeamAndNoAppSocket() {
         // `swift test` binaries are signed ad hoc: no production bridge.
         #expect(AppSocket.ownTeam() == nil)

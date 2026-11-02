@@ -33,6 +33,15 @@ public enum AppSocket {
         return #"anchor apple generic and certificate leaf[subject.OU] = "\#(team)" and identifier "\#(identifier)""#
     }
 
+    /// The app's identifier from this extension's own (`<app>.safari`): a build
+    /// signed under another bundle id prefix finds its own app. Nil for any
+    /// other identifier.
+    public static func appIdentifier(extensionIdentifier: String?) -> String? {
+        guard let id = extensionIdentifier, id.hasSuffix(".safari") else { return nil }
+        let app = String(id.dropLast(".safari".count))
+        return app.isEmpty ? nil : app
+    }
+
     static func isTeamId(_ s: String) -> Bool {
         s.utf8.count == 10 && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x41...0x5A).contains($0) }
     }
@@ -104,7 +113,9 @@ public enum AppSocket {
     /// The launcher for the app's socket, or nil when this build is not
     /// signed by a team or has no App Group container.
     public static func launcher() -> AppSocketLauncher? {
-        guard let team = ownTeam(), let requirement = requirement(team: team),
+        guard let team = ownTeam(),
+            let app = appIdentifier(extensionIdentifier: Bundle.main.bundleIdentifier),
+            let requirement = requirement(team: team, identifier: app),
             let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "\(team).\(groupSuffix)")
         else { return nil }
         let path = dir.appendingPathComponent(socketName).path

@@ -12,10 +12,14 @@ use onepass_peer::{CodeIdentity, PeerError, identify_peer, identify_pid, peer_cr
 pub const GROUP_SUFFIX: &str = "me.somalabs.onepass";
 /// The socket file at the root of the group container.
 pub const SOCKET_NAME: &str = "bridge.sock";
-/// Code-signing identifiers of the three ends.
+/// Code-signing identifiers of the three ends in the reference build. A
+/// build signed under another bundle id prefix keeps the same shape: the
+/// app is `<app>`, its clients `<app>.safari` and `<app>.relay`.
 pub const APP_ID: &str = "me.somalabs.onepass";
 pub const SAFARI_ID: &str = "me.somalabs.onepass.safari";
 pub const RELAY_ID: &str = "me.somalabs.onepass.relay";
+/// Suffix of the relay's identifier after the app's.
+pub const RELAY_SUFFIX: &str = ".relay";
 /// The extension id recorded for a Safari pairing (Safari routes only this
 /// app's own extension to its handler).
 pub const SAFARI_EXTENSION_ID: &str = "safari";
@@ -51,27 +55,27 @@ pub enum Client {
     Relay,
 }
 
-/// The kind of client `id` is, when signed by `team` with one of the two
-/// client identifiers; `None` otherwise (ad hoc, another team, platform
-/// code, another identifier).
-pub fn classify_client(id: &CodeIdentity, team: &str) -> Option<Client> {
+/// The kind of client `id` is, when signed by `team` as `<app>.safari` or
+/// `<app>.relay` (`app` being the app's own identifier); `None` otherwise
+/// (ad hoc, another team, platform code, another identifier).
+pub fn classify_client(id: &CodeIdentity, team: &str, app: &str) -> Option<Client> {
     match id {
         CodeIdentity::Team {
             team_id,
             identifier,
-        } if team_id == team => match identifier.as_str() {
-            SAFARI_ID => Some(Client::Safari),
-            RELAY_ID => Some(Client::Relay),
+        } if team_id == team => match identifier.strip_prefix(app)? {
+            ".safari" => Some(Client::Safari),
+            RELAY_SUFFIX => Some(Client::Relay),
             _ => None,
         },
         _ => None,
     }
 }
 
-/// Whether `id` is the OnePass app signed by `team`.
-pub fn is_app(id: &CodeIdentity, team: &str) -> bool {
+/// Whether `id` is the OnePass app `app` signed by `team`.
+pub fn is_app(id: &CodeIdentity, team: &str, app: &str) -> bool {
     matches!(id, CodeIdentity::Team { team_id, identifier }
-        if team_id == team && identifier == APP_ID)
+        if team_id == team && identifier == app)
 }
 
 /// The code identity of the process at the other end of `s`, by its audit
@@ -83,11 +87,20 @@ pub fn peer_identity(s: &UnixStream) -> Result<CodeIdentity, PeerError> {
 /// The team that signed this process, or `None` (ad hoc or unsigned: such
 /// a build neither serves nor reaches the bridge).
 pub fn own_team() -> Option<String> {
+    own_identity().map(|(team, _)| team)
+}
+
+/// The team and code-signing identifier of this process, or `None` (ad hoc
+/// or unsigned).
+pub fn own_identity() -> Option<(String, String)> {
     match identify_pid(i32::try_from(std::process::id()).ok()?)
         .ok()?
         .code
     {
-        CodeIdentity::Team { team_id, .. } if is_team_id(&team_id) => Some(team_id),
+        CodeIdentity::Team {
+            team_id,
+            identifier,
+        } if is_team_id(&team_id) => Some((team_id, identifier)),
         _ => None,
     }
 }
@@ -150,15 +163,23 @@ mod tests {
     #[test]
     fn only_the_two_clients_of_the_same_team() {
         let t = "ABCDE12345";
+        let a = APP_ID;
         assert_eq!(
-            classify_client(&team(t, SAFARI_ID), t),
+            classify_client(&team(t, SAFARI_ID), t, a),
             Some(Client::Safari)
         );
-        assert_eq!(classify_client(&team(t, RELAY_ID), t), Some(Client::Relay));
-        assert_eq!(classify_client(&team("AAAAAAAAAA", SAFARI_ID), t), None);
-        assert_eq!(classify_client(&team(t, APP_ID), t), None);
         assert_eq!(
-            classify_client(&team(t, "me.somalabs.onepass.autofill"), t),
+            classify_client(&team(t, RELAY_ID), t, a),
+            Some(Client::Relay)
+        );
+        assert_eq!(classify_client(&team("AAAAAAAAAA", SAFARI_ID), t, a), None);
+        assert_eq!(classify_client(&team(t, APP_ID), t, a), None);
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepass.autofill"), t, a),
+            None
+        );
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepassx.safari"), t, a),
             None
         );
         let adhoc = CodeIdentity::AdHoc {
@@ -166,19 +187,37 @@ mod tests {
             cdhash: "00".into(),
             hardened: true,
         };
-        assert_eq!(classify_client(&adhoc, t), None);
+        assert_eq!(classify_client(&adhoc, t, a), None);
         let platform = CodeIdentity::Platform {
             identifier: SAFARI_ID.into(),
         };
-        assert_eq!(classify_client(&platform, t), None);
+        assert_eq!(classify_client(&platform, t, a), None);
+    }
+
+    #[test]
+    fn clients_follow_the_app_identifier() {
+        let t = "ABCDE12345";
+        let a = "me.quentincaron.onepass";
+        assert_eq!(
+            classify_client(&team(t, "me.quentincaron.onepass.safari"), t, a),
+            Some(Client::Safari)
+        );
+        assert_eq!(
+            classify_client(&team(t, "me.quentincaron.onepass.relay"), t, a),
+            Some(Client::Relay)
+        );
+        // The reference build's clients are another app's.
+        assert_eq!(classify_client(&team(t, SAFARI_ID), t, a), None);
+        assert!(is_app(&team(t, a), t, a));
+        assert!(!is_app(&team(t, APP_ID), t, a));
     }
 
     #[test]
     fn app_is_exact() {
         let t = "ABCDE12345";
-        assert!(is_app(&team(t, APP_ID), t));
-        assert!(!is_app(&team("AAAAAAAAAA", APP_ID), t));
-        assert!(!is_app(&team(t, RELAY_ID), t));
+        assert!(is_app(&team(t, APP_ID), t, APP_ID));
+        assert!(!is_app(&team("AAAAAAAAAA", APP_ID), t, APP_ID));
+        assert!(!is_app(&team(t, RELAY_ID), t, APP_ID));
     }
 
     #[test]
@@ -192,5 +231,6 @@ mod tests {
         // cargo test binaries are signed ad hoc: they can neither serve nor
         // reach the bridge.
         assert_eq!(own_team(), None);
+        assert_eq!(own_identity(), None);
     }
 }

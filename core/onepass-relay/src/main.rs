@@ -12,17 +12,22 @@ use std::process::ExitCode;
 
 use onepass_relay::Preamble;
 use onepass_relay::preamble::extension_from_args;
-use onepass_relay::rendezvous::{own_team, peer_identity, socket_path, user_home};
+use onepass_relay::rendezvous::{
+    RELAY_SUFFIX, own_identity, peer_identity, socket_path, user_home,
+};
 use onepass_relay::server::{connect, pump};
 
 fn run() -> Option<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let extension = extension_from_args(&args)?;
-    let team = own_team()?;
+    // Signed `<app>.relay`: the app it may talk to is `<app>`.
+    let (team, me) = own_identity()?;
+    let app = me.strip_suffix(RELAY_SUFFIX)?;
     let path = socket_path(&user_home()?, &team)?;
     let stream = connect(
         &path,
         &team,
+        app,
         &peer_identity,
         &Preamble::new(Some(extension)),
     )

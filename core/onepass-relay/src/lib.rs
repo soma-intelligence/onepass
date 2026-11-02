@@ -19,6 +19,6 @@ pub mod server;
 
 pub use preamble::Preamble;
 pub use rendezvous::{
-    APP_ID, Client, GROUP_SUFFIX, RELAY_ID, SAFARI_EXTENSION_ID, SAFARI_ID, SOCKET_NAME,
-    classify_client, is_app, socket_path,
+    APP_ID, Client, GROUP_SUFFIX, RELAY_ID, RELAY_SUFFIX, SAFARI_EXTENSION_ID, SAFARI_ID,
+    SOCKET_NAME, classify_client, is_app, socket_path,
 };

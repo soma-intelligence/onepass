@@ -7,7 +7,7 @@
 # through the App Group container of its own team and checks the app's
 # signature, so an ad hoc relay could reach nothing. It is signed here, before
 # Xcode signs the app around it: hardened runtime, the App Group only,
-# identifier me.somalabs.onepass.relay (the one the app accepts).
+# identifier <app bundle id>.relay (the one the app accepts).
 #
 # Not sandboxed, on purpose (spec P-09): inside an app bundle the App Sandbox
 # refuses a client the code-signature lookup of the listener (EPERM, measured
@@ -58,4 +58,4 @@ case "${EXPANDED_CODE_SIGN_IDENTITY_NAME:-}" in
   "Developer ID"*) TIMESTAMP=--timestamp ;;
 esac
 codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --options runtime "$TIMESTAMP" \
-  --identifier me.somalabs.onepass.relay --entitlements "$ENTITLEMENTS" "$RELAY"
+  --identifier "${PRODUCT_BUNDLE_IDENTIFIER}.relay" --entitlements "$ENTITLEMENTS" "$RELAY"

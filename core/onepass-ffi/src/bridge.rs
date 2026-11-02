@@ -497,7 +497,7 @@ impl BridgeServer {
     pub fn start(&self, group_container: String) -> Result<(), OnePassError> {
         #[cfg(target_os = "macos")]
         {
-            use onepass_relay::rendezvous::{SOCKET_NAME, own_team, peer_identity};
+            use onepass_relay::rendezvous::{SOCKET_NAME, own_identity, peer_identity};
             use onepass_relay::server::{
                 Accepted, MAX_CONNECTIONS, OPENING_TIMEOUT, Server, ServerConfig,
             };
@@ -506,7 +506,7 @@ impl BridgeServer {
             if slot.is_some() {
                 return Ok(());
             }
-            let team = own_team().ok_or_else(|| invalid("unsigned app: no bridge"))?;
+            let (team, app) = own_identity().ok_or_else(|| invalid("unsigned app: no bridge"))?;
             let path = PathBuf::from(group_container).join(SOCKET_NAME);
             let shared = self.shared.clone();
             let note = self.shared.clone();
@@ -514,6 +514,7 @@ impl BridgeServer {
                 ServerConfig {
                     path,
                     team,
+                    app,
                     max_connections: MAX_CONNECTIONS,
                     opening_timeout: OPENING_TIMEOUT,
                     identify: Arc::new(peer_identity),

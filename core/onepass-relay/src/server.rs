@@ -49,6 +49,9 @@ pub struct ServerConfig {
     pub path: PathBuf,
     /// The team the clients must be signed by (the app's own).
     pub team: String,
+    /// The app's own code-signing identifier: clients are `<app>.safari`
+    /// and `<app>.relay`.
+    pub app: String,
     pub max_connections: usize,
     pub opening_timeout: Duration,
     pub identify: Identify,
@@ -99,7 +102,8 @@ impl Drop for Slot {
 /// Identify, classify and read the opening frame of `stream`.
 fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static str> {
     let id = (cfg.identify)(&stream).map_err(|_| "client not identified")?;
-    let client = classify_client(&id, &cfg.team).ok_or("client refused by code signature")?;
+    let client =
+        classify_client(&id, &cfg.team, &cfg.app).ok_or("client refused by code signature")?;
     stream
         .set_read_timeout(Some(cfg.opening_timeout))
         .map_err(|_| "socket error")?;
@@ -194,16 +198,17 @@ impl Drop for Server {
 }
 
 /// Connect to the app at `path`, check that the listener is the OnePass app
-/// signed by `team`, and send the opening frame.
+/// `app` signed by `team`, and send the opening frame.
 pub fn connect(
     path: &Path,
     team: &str,
+    app: &str,
     identify: &dyn Fn(&UnixStream) -> Result<CodeIdentity, PeerError>,
     preamble: &Preamble,
 ) -> io::Result<UnixStream> {
     let stream = UnixStream::connect(path)?;
     let id = identify(&stream).map_err(|_| io::Error::from(ErrorKind::PermissionDenied))?;
-    if !is_app(&id, team) {
+    if !is_app(&id, team, app) {
         return Err(io::Error::from(ErrorKind::PermissionDenied));
     }
     write_frame(&mut &stream, &preamble.to_bytes())
@@ -284,6 +289,7 @@ mod tests {
             ServerConfig {
                 path: path.clone(),
                 team: TEAM.into(),
+                app: APP_ID.into(),
                 max_connections: max,
                 opening_timeout: Duration::from_millis(300),
                 identify: fixed(client),
@@ -319,7 +325,14 @@ mod tests {
     #[test]
     fn relay_client_is_admitted_with_its_extension_id_and_frames_flow() {
         let rig = rig(team(RELAY_ID), 8);
-        let mut s = connect(&rig.path, TEAM, &app(), &Preamble::new(Some("abc".into()))).unwrap();
+        let mut s = connect(
+            &rig.path,
+            TEAM,
+            APP_ID,
+            &app(),
+            &Preamble::new(Some("abc".into())),
+        )
+        .unwrap();
         let (client, ext) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!((client, ext.as_str()), (Client::Relay, "abc"));
         write_frame(&mut s, br#"{"v":1}"#).unwrap();
@@ -331,7 +344,7 @@ mod tests {
     #[test]
     fn safari_client_is_admitted_as_safari() {
         let rig = rig(team(SAFARI_ID), 8);
-        let _s = connect(&rig.path, TEAM, &app(), &Preamble::new(None)).unwrap();
+        let _s = connect(&rig.path, TEAM, APP_ID, &app(), &Preamble::new(None)).unwrap();
         let (client, ext) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(
             (client, ext.as_str()),
@@ -340,7 +353,7 @@ mod tests {
     }
 
     fn refused(rig: &Rig, preamble: &Preamble) {
-        let mut s = connect(&rig.path, TEAM, &app(), preamble).unwrap();
+        let mut s = connect(&rig.path, TEAM, APP_ID, &app(), preamble).unwrap();
         // The server closes without a byte.
         assert!(matches!(read_frame(&mut s), Ok(None) | Err(_)));
         assert!(rig.accepted.try_recv().is_err());
@@ -402,7 +415,14 @@ mod tests {
             },
         ] {
             let id = move |_: &UnixStream| Ok(wrong.clone());
-            let e = connect(&rig.path, TEAM, &id, &Preamble::new(Some("abc".into()))).unwrap_err();
+            let e = connect(
+                &rig.path,
+                TEAM,
+                APP_ID,
+                &id,
+                &Preamble::new(Some("abc".into())),
+            )
+            .unwrap_err();
             assert_eq!(e.kind(), ErrorKind::PermissionDenied);
         }
     }
@@ -410,11 +430,24 @@ mod tests {
     #[test]
     fn connections_beyond_the_cap_are_closed() {
         let rig = rig(team(RELAY_ID), 1);
-        let _first = connect(&rig.path, TEAM, &app(), &Preamble::new(Some("a".into()))).unwrap();
+        let _first = connect(
+            &rig.path,
+            TEAM,
+            APP_ID,
+            &app(),
+            &Preamble::new(Some("a".into())),
+        )
+        .unwrap();
         rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         // The server may close the extra connection before the client's
         // preamble is written (BrokenPipe on Linux) or right after it.
-        if let Ok(mut second) = connect(&rig.path, TEAM, &app(), &Preamble::new(Some("b".into()))) {
+        if let Ok(mut second) = connect(
+            &rig.path,
+            TEAM,
+            APP_ID,
+            &app(),
+            &Preamble::new(Some("b".into())),
+        ) {
             assert!(matches!(read_frame(&mut second), Ok(None) | Err(_)));
         }
         assert!(rig.accepted.try_recv().is_err());
