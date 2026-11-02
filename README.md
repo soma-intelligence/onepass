@@ -15,7 +15,7 @@
 ![Platforms](https://img.shields.io/badge/iOS%20·%20iPadOS%20·%20macOS%20·%20watchOS%20·%20visionOS-26%2B-1D1D2B?logo=apple&logoColor=white)
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
 
-**[Features](#features)** · **[Security](#security-model)** · **[Screenshots](#a-look-around)** · **[Install](#install)** · **[Build from source](#build-from-source)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
+**[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Screenshots](#a-look-around)** · **[Install](#install)** · **[Build from source](#build-from-source)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
 
 </div>
 
@@ -258,6 +258,114 @@ Crypto comes from `aws-lc-rs`, `argon2` and `slh-dsa` in Rust, and from WebCrypt
 | **Autofill lab** | hundreds of seeded, fictional websites served locally (`extension/lab/`). First 200-site run: 63.8% fill rate and **0 leaks** ([report](docs/lab/2026-10-26-autofill-lab-run.md)) |
 
 Found a vulnerability? Please do not open a public issue. See [Reporting a vulnerability](#reporting-a-vulnerability).
+
+## How OnePass compares
+
+Two honest caveats first.
+
+- **OnePass is the youngest product in every table below, and the only one without an outside audit.** Its design is strong on paper and its proof is thin. The vendors below have years of public scrutiny, bug bounties, audits and real users. OnePass has none of those yet (an external audit is planned for M8).
+- **Everything about other products comes from their own pages or from named reports, checked on 2026-11-02.** Each claim links to its source, and the full dated list is in [docs/comparison/closed-source-sources.md](docs/comparison/closed-source-sources.md). Where a vendor does not say, the cell says "not public" or "not found". That is not proof of absence. Prices and plans change: check the vendor before you buy. Product names are the property of their owners and are used here only to name them.
+
+### Against open source managers
+
+On 2026-10-28 OnePass was scored against 10 open source managers with one 11-point rubric: design (8 dimensions, out of 40) and proof, meaning tests, releases and maturity (3 dimensions, out of 15). **OnePass was scored from its code, the others from public evidence**, which favors products that have had years of public bug reports. It is a desk review, not a pentest.
+
+| Product | Type | Design /40 | Proof /15 | Total /55 |
+|---|---|---|---|---|
+| KeePassXC | Local file, desktop | 29 | 10 | 39 |
+| **OnePass v0.2.0** | Cloud sync (CloudKit), Apple and extension | **29** | **5** | **34** |
+| [Proton Pass](https://proton.me/blog/pass-open-source-security-audit) | Cloud | 24 | 9 | 33 |
+| AliasVault | Cloud or self-host | 26 | 6 | 32 |
+| Bitwarden | Cloud or self-host | 22 | 9 | 31 |
+| gopass | Git and GPG or age | 21 | 10 | 31 |
+| Passbolt | Self-host, teams | 21 | 9 | 30 |
+| KeePassDX | Local file, Android | 24 | 6 | 30 |
+| Psono | Self-host, teams | 21 | 8 | 29 |
+| Vaultwarden | Bitwarden server, self-host | 20 | 8 | 28 |
+| Strongbox | Local file, Apple | 24 | 4 | 28 |
+
+OnePass ties for first on design and is second to last on proof. It is the the only one of the 11 scored shipping hybrid post-quantum public-key encryption, and its KDF default is the strongest found. Proton Pass is open source with published audits ([Cure53, 2023](https://proton.me/blog/pass-open-source-security-audit), [Recurity Labs, Jan to Apr 2026](https://proton.me/business/pass/security)), wraps keys with bcrypt ([Proton](https://proton.me/blog/proton-pass-security-model)), and since 2026-05-21 offers read-only, vault-scoped [access tokens for AI agents](https://proton.me/blog/pass-access-tokens). KeePassXC, Bitwarden, Proton Pass, gopass and Passbolt are ahead of it on proof.
+
+### Against closed source managers
+
+"Closed source" here means the vendor does not publish the source of its apps and servers. None of the vendor pages reviewed link to any, so "not published" rests on that absence.
+
+#### Trust and cryptography
+
+| | Source and license | Independent audits | Key derivation, Secret Key | Zero-knowledge | Post-quantum |
+|---|---|---|---|---|---|
+| **OnePass** | AGPL-3.0-or-later, all of it | None yet. Own desk review (2026-10-28), ProVerif models, 19 fuzz targets, NIST ACVP vectors | Argon2id (256 MiB, t=4, p=4) + 256-bit Secret Key | Yes, end to end. Signed, hash-chained manifests detect a hostile server | ML-KEM-1024 + X25519, ML-DSA-87 + Ed25519, SLH-DSA |
+| 1Password | Proprietary, source not published | Says it publishes independent audit results ([security][1p-sec]) | PBKDF2-HMAC-SHA256 + 128-bit Secret Key, SRP login ([support][1p-support]) | Not named on the page, but the account password is never shared ([support][1p-support]) | Not public |
+| NordPass | Proprietary, source not published | Says Cure53 audited it, first in March 2020, and that Business holds ISO 27001 and SOC 2 Type 2 ([NordPass][np-sec]). Reports not retrieved | Argon2id, XChaCha20-Poly1305. No Secret Key described ([NordPass][np-sec]) | Claimed ([NordPass][np-sec]) | Not public |
+| Dashlane | Proprietary, source not published | No independent audit report found | Argon2d (3 iterations, 32 MB, 2 threads), AES-256-CBC + HMAC-SHA256. No Secret Key ([Dashlane][dl-sec]) | Claimed ([Dashlane][dl-sec]) | Prototype only, not shipped ([Dashlane][dl-pq], 2022, updated 2024) |
+| Keeper | Proprietary, source not published | Third-party pen tests (NCC Group, Cybertest), reports to business customers under NDA. SOC 2 Type 2, ISO 27001 and FedRAMP High claimed ([Keeper][kp-sec], [docs][kp-model]) | PBKDF2, 1,000,000 iterations, AES-256-GCM per-record keys. No Secret Key ([Keeper docs][kp-model]) | Claimed ([Keeper][kp-sec]) | Not public |
+| LastPass | Proprietary, source not published | SOC 2 and ISO 27001/27701 control audits, zero findings per [LastPass][lp-news]. No published cryptographic audit found | PBKDF2-SHA256, 600,000 iterations by default, up to 1,000,000. No Secret Key. Argon2 and AES-GCM are in rollout ([LastPass][lp-zk], [bulletin][lp-support]) | Claimed ([LastPass][lp-zk]) | Not public |
+| Apple Passwords | Proprietary, part of the OS | Design documented in the [Platform Security guide][ap-sec]. No named third-party audit of Passwords found | No master password: key made from device information and your passcode, escrow recovery limited to 10 attempts ([Apple][ap-sec]) | End-to-end encrypted, Apple holds no key ([Apple][ap-e2e]) | Not public for Keychain |
+
+#### Platforms and features
+
+| | Self-hosting | Platforms | Passkeys | Travel mode | Family and business sharing | Agent and MCP access |
+|---|---|---|---|---|---|---|
+| **OnePass** | Planned after v1. Today sync is CloudKit in your own iCloud | iPhone, iPad, Mac, Apple Watch, Vision Pro. Safari, Chrome and Firefox extension. CLI (development). **No Android, Windows or Linux app** | Yes, created and used inside the Rust core | Manual "Safe for Travel" vaults on Mac and iOS. **Automatic travel detection is being built** | **Being built, not in a release yet:** shared vaults, family, mailbox for invites, multi-account. No business admin console | Built in: MCP server and SSH agent, per-secret approval on Mac or iPhone, signed audit log |
+| 1Password | Not offered, none found | macOS, iOS, watchOS, Windows, Android, Linux. Chrome, Safari, Edge, Firefox, Brave ([pricing][1p-price]) | Yes ([pricing][1p-price]) | Yes, every plan ([support][1p-travel]) | Families (up to 5) with shared vaults. Business with admin controls ([pricing][1p-price], [travel][1p-travel]) | Secure Agentic Autofill, early access with Browserbase since Oct 2025, and an MCP server for Environments ([1Password][1p-ai]) |
+| NordPass | Not offered, none found | Windows, macOS, Linux, iOS, Android and browsers ([NordPass][np-pass]) | Yes ([NordPass][np-pass]) | Not documented | Family (6 vaults) with sharing and emergency access. Business plan ([NordPass][np-pass]) | None found |
+| Dashlane | Not offered, none found | iOS, Android, Windows, macOS. Linux only through the browser extension ([Dashlane][dl-pass]) | Yes ([Dashlane][dl-pass]) | Not documented | Friends and Family (10 members). Business with SSO and SCIM ([Dashlane][dl-plans], [business][dl-biz]) | Official MCP server (beta) for Business audit logs, read only. No credential access documented ([Dashlane][dl-mcp]) |
+| Keeper | Not offered for the vault, none found | Not checked | Yes ([Keeper][kp-fam]) | Not documented | Family (up to 5, separate vaults). Business ([Keeper][kp-fam]) | Secrets Manager MCP server with confirmation prompts, and Agent Kit for coding agents (May 2026) ([Keeper docs][kp-mcp]) |
+| LastPass | Not offered, none found | Not checked | Yes on individual plans ([LastPass][lp-price]) | Not documented | Families plan (includes Premium features). Business ([LastPass][lp-price]) | None official found |
+| Apple Passwords | No | iOS 18, iPadOS 18, macOS Sequoia, visionOS 2 and later. Windows through iCloud for Windows with Chrome, Edge or Firefox extension. Android not covered ([Apple][ap-pw], [Windows][ap-win]) | Yes ([Apple][ap-pw]) | Not documented | Shared groups of trusted contacts, iOS 17 and macOS 14 or later ([Apple][ap-pw]). No business offering documented | None found |
+
+#### Price and track record
+
+| | Price model | Breach history |
+|---|---|---|
+| **OnePass** | Free, AGPL. No subscription and no hosted service to pay for. A commercial license is available on request | None known. The product is young, so this is not evidence of anything |
+| 1Password | Subscription, billed yearly. Regular list price $3.99 a month (Individual) and $5.99 (Families) on 2026-11-02, with first-year promotions ([pricing][1p-price]) | No breach of user data documented. In the 2023 Okta support-system incident, 1Password says no user data was accessed ([1Password][1p-okta]) |
+| NordPass | Subscription with a free tier. Current prices not retrieved, check the [plans page](https://nordpass.com/plans/) | None found in the sources reviewed |
+| Dashlane | Subscription, annual billing only, no monthly plans ([Dashlane][dl-plans]) | Security advisory on its support site: a brute-force attack let an attacker register a device on fewer than 20 personal accounts and download their encrypted vaults, which stayed encrypted ([Dashlane][dl-adv]). Date not retrieved |
+| Keeper | Subscription with a free tier of 10 items on one mobile device ([Keeper][kp-fam]) | None found in the sources reviewed |
+| LastPass | Subscription, and its free plan has been restricted over time ([LastPass blog][lp-free], [pricing][lp-price]) | **2022 breach, documented:** attackers took source code, then copies of cloud backups from five dates in Aug and Sep 2022. Vault fields such as passwords were encrypted, website URLs were not ([Schneier][lp-sch], [Help Net Security][lp-hns], [Wikipedia][lp-wiki]) |
+| Apple Passwords | Included with Apple devices, no separate fee documented | None found for iCloud Keychain |
+
+#### Where each choice fits
+
+- **Pick OnePass if** you live in Apple's ecosystem, want a password manager whose code you and others can read, and want post-quantum encryption and agent access built in. Do not pick it yet for real secrets: it has no outside audit, no family sharing in a release, no Android or Windows app and no self-hosted server.
+- **Pick 1Password, NordPass, Dashlane or Keeper if** you need Android, Windows or Linux apps, family or business sharing today, and a longer track record. The tables above show how they differ on the points that can be checked.
+- **Pick Apple Passwords if** you want the simplest option and only use Apple devices, with Windows as an occasional second platform.
+- **Pick LastPass with care.** The 2022 breach is documented, and the vendor has since raised its iteration defaults ([LastPass][lp-support]).
+
+Spot an error or an out-of-date claim? Open an issue with a link to the vendor's page and we will correct it.
+
+[1p-sec]: https://1password.com/security
+[1p-support]: https://support.1password.com/1password-security/
+[1p-price]: https://1password.com/pricing/password-manager
+[1p-travel]: https://support.1password.com/travel-mode/
+[1p-ai]: https://www.1password.dev/get-started/secure-ai-access
+[1p-okta]: https://1password.com/blog/okta-incident
+[np-sec]: https://nordpass.com/security/
+[np-pass]: https://nordpass.com/family-password-manager/
+[dl-sec]: https://www.dashlane.com/security
+[dl-pq]: https://www.dashlane.com/blog/preparing-for-the-quantum-world
+[dl-pass]: https://support.dashlane.com/hc/en-us/articles/32830330815762-Create-and-save-a-passkey-using-Dashlane
+[dl-plans]: https://support.dashlane.com/hc/en-us/articles/360001166969-Compare-Dashlane-personal-plans
+[dl-biz]: https://www.dashlane.com/pricing
+[dl-mcp]: https://www.dashlane.com/blog/mcp-server-audit-log-access
+[dl-adv]: https://support.dashlane.com/hc/en-us/articles/36038764990866-Security-advisory-Brute-force-attack-on-Dashlane-user-accounts
+[kp-sec]: https://www.keepersecurity.com/security.html
+[kp-model]: https://docs.keeper.io/enterprise-guide/keeper-encryption-model
+[kp-fam]: https://www.keepersecurity.com/pricing/personal-and-family.html
+[kp-mcp]: https://docs.keeper.io/en/keeperpam/secrets-manager/integrations/model-context-protocol-mcp-for-ai-agents
+[lp-zk]: https://www.lastpass.com/security/zero-knowledge-security
+[lp-support]: https://support.lastpass.com/help/what-have-we-done-to-ensure-lastpass-is-safe-to-use
+[lp-news]: https://www.lastpass.com/company/newsroom/da86056a-167c-4e6f-a506-b99d07c30501
+[lp-price]: https://www.lastpass.com/pricing
+[lp-free]: https://blog.lastpass.com/posts/changes-to-lastpass-free
+[lp-sch]: https://www.schneier.com/blog/archives/2022/12/lastpass-breach.html
+[lp-hns]: https://www.helpnetsecurity.com/?p=251654
+[lp-wiki]: https://en.wikipedia.org/wiki/2022_LastPass_data_breach
+[ap-sec]: https://support.apple.com/guide/security/icloud-keychain-security-overview-sec1c89c6f3b/web
+[ap-e2e]: https://support.apple.com/en-us/102651
+[ap-pw]: https://support.apple.com/en-us/120758
+[ap-win]: https://support.apple.com/guide/icloud-windows/set-up-icloud-passwords-icw2babf5e03/icloud
 
 ## Install
 
