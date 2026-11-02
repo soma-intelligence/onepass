@@ -35,7 +35,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$APPLE_DIR/.." && pwd)"
 CORE_DIR="$ROOT_DIR/core"
-TARGET_DIR="$CORE_DIR/target"
+TARGET_DIR="${ONEPASS_CORE_TARGET_DIR:-$CORE_DIR/target}"
+# Cargo writes where this script reads the libraries back. An inherited
+# CARGO_TARGET_DIR (one shared between clones, say) would make it link another
+# checkout's libonepass_ffi.a against this checkout's Swift bindings.
+export CARGO_TARGET_DIR="$TARGET_DIR"
 SWIFT_OUT="$APPLE_DIR/VaultKit/Sources/OnePassCore"
 
 if [ "$MODE" = shipped ]; then
@@ -86,6 +90,16 @@ fi
 
 mkdir -p "$OUT_DIR"
 rm -f "$STAMP"
+
+# A symlinked target directory is most likely shared with another checkout,
+# whose builds would overwrite these libraries between build and packaging.
+for dir in "$TARGET_DIR" "${TARGETS[@]/#/$TARGET_DIR/}"; do
+  if [ -L "$dir" ]; then
+    echo "core: $dir is a symlink; give this checkout its own target directory" \
+      "(remove the link, or point ONEPASS_CORE_TARGET_DIR at a real directory)" >&2
+    exit 1
+  fi
+done
 
 echo "core ($MODE): cargo build ${TARGETS[*]}"
 for target in "${TARGETS[@]}"; do
