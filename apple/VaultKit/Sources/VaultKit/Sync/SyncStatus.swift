@@ -17,6 +17,11 @@ public enum SyncStatus: Equatable, Sendable {
     /// The iCloud account is not the one this store first synced with: sync stopped until
     /// `SyncCoordinator.acceptAccountChange(expected:)`.
     case accountChanged
+    /// A mailbox account: the server serves an older state, or a safe exit waits for it.
+    case waitingForMailbox
+    /// The account's signed home names another server (or iCloud): this device sends nothing more
+    /// until it follows. `server`: the host, or "iCloud".
+    case homeMoved(server: String)
 
     /// French text for the UI.
     public var label: String {
@@ -29,6 +34,8 @@ public enum SyncStatus: Equatable, Sendable {
         case .refused(let kind): String(localized: "Données refusées : \(VaultError.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
         case .accountChanged: String(localized: "Le compte iCloud a changé", bundle: VaultKitStrings.bundle)
         case .waitingForServer: String(localized: "Synchronisation en attente d'iCloud", bundle: VaultKitStrings.bundle)
+        case .waitingForMailbox: String(localized: "sync.status.waitingForMailbox", bundle: VaultKitStrings.bundle)
+        case .homeMoved: String(localized: "sync.status.homeMoved", bundle: VaultKitStrings.bundle)
         }
     }
 }

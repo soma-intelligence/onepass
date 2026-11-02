@@ -223,3 +223,130 @@ final class WriteOnlyKeychain: KeychainStore {
     func write(_ key: String, _ data: Data) throws {}
     func delete(_ key: String) throws {}
 }
+
+/// Scripted `MailboxSyncing`: each round answers the next scripted report (then `Idle`), records the
+/// session it got, and can block until released.
+final class FakeMailboxSync: MailboxSyncing {
+    private struct State {
+        var reports: [FfiRoundReport] = []
+        var sessions: [Bool] = []
+        var rounds = 0
+        var running = 0
+        var maxRunning = 0
+        var gate: CheckedContinuation<Void, Never>?
+        var holdNext = false
+        var wakes: [@Sendable () -> Void] = []
+        var wakeStops = 0
+        var calls: [String] = []
+        var failGrant: Error?
+        var locators: [Data] = []
+        var grants: [(Data, FfiCredentialRole)] = []
+        var pushes: [(FfiPushKind, Data)] = []
+    }
+    private let state = Mutex(State())
+
+    static func report(
+        _ status: FfiRoundStatus, changed: Bool = false, retryAfter: UInt32? = nil, rerun: Bool = false
+    ) -> FfiRoundReport {
+        FfiRoundReport(status: status, changed: changed, rebased: [], retryAfterSeconds: retryAfter, rerun: rerun)
+    }
+
+    func script(_ reports: [FfiRoundReport]) { state.withLock { $0.reports += reports } }
+    /// The next round waits for `release()`.
+    func holdNextRound() { state.withLock { $0.holdNext = true } }
+    func release() {
+        let gate = state.withLock { s -> CheckedContinuation<Void, Never>? in
+            defer { s.gate = nil }
+            return s.gate
+        }
+        gate?.resume()
+    }
+
+    var rounds: Int { state.withLock { $0.rounds } }
+    var maxRunning: Int { state.withLock { $0.maxRunning } }
+    /// Per round: whether a session was passed.
+    var sessions: [Bool] { state.withLock { $0.sessions } }
+    var wakeListeners: Int { state.withLock { $0.wakes.count } }
+    var wakeStops: Int { state.withLock { $0.wakeStops } }
+    var calls: [String] { state.withLock { $0.calls } }
+    var locators: [Data] { state.withLock { $0.locators } }
+    var grantedKeys: [Data] { state.withLock { $0.grants.map(\.0) } }
+    var pushes: [(FfiPushKind, Data)] { state.withLock { $0.pushes } }
+
+    /// Fires every wake listener started.
+    func wake() {
+        for w in state.withLock({ $0.wakes }) { w() }
+    }
+
+    func runRound(session: Session?, now: Int64) async -> FfiRoundReport {
+        let hold = state.withLock { s -> Bool in
+            s.rounds += 1
+            s.running += 1
+            s.maxRunning = max(s.maxRunning, s.running)
+            s.sessions.append(session != nil)
+            s.calls.append("round")
+            defer { s.holdNext = false }
+            return s.holdNext
+        }
+        if hold {
+            await withCheckedContinuation { c in state.withLock { $0.gate = c } }
+        }
+        return state.withLock { s in
+            s.running -= 1
+            return s.reports.isEmpty ? Self.report(.idle) : s.reports.removeFirst()
+        }
+    }
+
+    func wakeInfo() async throws -> FfiWakeInfo {
+        FfiWakeInfo(realtimeUrl: "wss://localhost/realtime/v1", publishableKey: "pk", topic: String(repeating: "0", count: 32))
+    }
+
+    func startWake(_ onWake: @escaping @Sendable () -> Void) async throws -> any WakeStopping {
+        state.withLock { $0.wakes.append(onWake) }
+        return Stopper(owner: self)
+    }
+
+    fileprivate func stopped() {
+        state.withLock {
+            $0.wakeStops += 1
+            $0.wakes.removeAll()
+        }
+    }
+
+    func setPushToken(kind: FfiPushKind, token: Data) async throws {
+        state.withLock {
+            $0.calls.append("push")
+            $0.pushes.append((kind, token))
+        }
+    }
+
+    func failNextGrant(_ error: Error) { state.withLock { $0.failGrant = error } }
+
+    func grant(publicKey: Data, role: FfiCredentialRole, label: Data) async throws -> String {
+        try state.withLock { s in
+            s.calls.append("grant")
+            if let e = s.failGrant {
+                s.failGrant = nil
+                throw e
+            }
+            s.grants.append((publicKey, role))
+        }
+        return publicKey.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func setLocator(_ locator: Data) async throws {
+        state.withLock {
+            $0.calls.append("locator")
+            $0.locators.append(locator)
+        }
+    }
+
+    func abandon() async throws {
+        state.withLock { $0.calls.append("abandon") }
+    }
+
+    private struct Stopper: WakeStopping {
+        let owner: FakeMailboxSync
+        func stop() { owner.stopped() }
+    }
+}

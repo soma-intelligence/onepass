@@ -50,6 +50,13 @@ public enum VaultError: Error, Equatable, Sendable {
                 self = .other(String(localized: "Cet appareil ne figure pas dans les clés du compte.", bundle: VaultKitStrings.bundle))
             case .IdentityLeft:
                 self = .passwordRequired
+            // The mailbox (spec 4.6, 4.13): the sync status carries the details.
+            case .ClockSkew:
+                self = .other(MailboxSyncCoordinator.clockSkewMessage)
+            case .MailboxUnavailable:
+                self = .other(MailboxSyncCoordinator.retryingMessage)
+            case .Forbidden:
+                self = .other(String(localized: "sync.mailbox.forbidden", bundle: VaultKitStrings.bundle))
             }
         case let error as BiometricError:
             switch error {

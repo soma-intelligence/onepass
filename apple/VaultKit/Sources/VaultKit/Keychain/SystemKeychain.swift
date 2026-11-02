@@ -104,11 +104,19 @@ public struct SystemKeychain: KeychainStore {
     }
 
     public func write(_ key: String, _ data: Data) throws {
+        try write(key, data, accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+    }
+
+    public func writeAfterFirstUnlock(_ key: String, _ data: Data) throws {
+        try write(key, data, accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+    }
+
+    private func write(_ key: String, _ data: Data, accessible: CFString) throws {
         try withFallback { legacy in
             let query = baseQuery(key, legacy: legacy)
             let update: [String: Any] = [
                 kSecValueData as String: data,
-                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecAttrAccessible as String: accessible,
             ]
             var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
             if status == errSecItemNotFound {
