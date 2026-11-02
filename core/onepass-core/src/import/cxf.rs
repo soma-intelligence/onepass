@@ -673,6 +673,35 @@ mod tests {
         assert!(parse(r#"{"accounts":null}"#).items.is_empty());
     }
 
+    /// The JSON `ASExportedCredentialData` encodes (iOS 26 Credential Exchange): base64url without
+    /// padding, `creationAt` in Unix seconds, `username` on the passkey, `version` as an object.
+    #[test]
+    fn cxf_apple_credential_exchange_passkey() {
+        let json = br#"{"accounts":[{"collections":[],"email":"","id":"AQ","items":[{"creationAt":1700000000,
+            "credentials":[{"credentialId":"AQID-g","key":"MIGH","rpId":"webauthn.io","type":"passkey",
+            "userDisplayName":"Quentin","userHandle":"CQgH","username":"quentin"},
+            {"password":{"fieldType":"concealed-string","value":"pw"},"type":"basic-auth",
+            "username":{"fieldType":"string","value":"q@x.io"}}],
+            "id":"qrs","modifiedAt":1700000000,"scope":{"androidApps":[],"urls":["https://webauthn.io"]},
+            "title":"WebAuthn"}],"username":""}],"exporterDisplayName":"Passwords",
+            "exporterRpId":"com.apple.Passwords","timestamp":1700000000,"version":{"major":1,"minor":0}}"#;
+        let out = parse_cxf(json).unwrap();
+        assert_eq!(out.items.len(), 1);
+        assert!(out.warnings.is_empty());
+        let item = &out.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("q@x.io"));
+        let Some(FieldValue::Passkey(p)) = item.field("passkeys").map(|f| &f.value) else {
+            panic!("passkey")
+        };
+        assert_eq!(p.rp_id, "webauthn.io");
+        assert_eq!(p.user_name, "quentin");
+        assert_eq!(p.credential_id, [1, 2, 3, 250]);
+        assert_eq!(p.user_handle, [9, 8, 7]);
+        assert_eq!(p.private_key.as_slice(), [0x30, 0x81, 0x87]);
+        assert_eq!(p.created_at.unix_timestamp(), 1_700_000_000);
+    }
+
     #[test]
     fn cxf_broken_passkey_is_moved() {
         let imp = parse(

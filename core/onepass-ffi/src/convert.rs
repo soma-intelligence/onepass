@@ -619,6 +619,13 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
             _ => None,
         }),
         card_brand: card_brand_of(i),
+        passkey_count: count(
+            i.sections
+                .iter()
+                .flat_map(|s| &s.fields)
+                .filter(|f| matches!(f.value, FieldValue::Passkey(_)))
+                .count(),
+        ),
     }
 }
 

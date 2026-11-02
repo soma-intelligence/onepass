@@ -1161,3 +1161,26 @@ fn otp_identity_rank_counts_logins_with_a_code_only() {
         100
     );
 }
+
+#[test]
+fn summaries_count_passkeys() {
+    let fx = fixture();
+    let plain = login(&fx, "Sans passkey", &["https://plain.example"]);
+    let reg = fx
+        .session
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"))
+        .unwrap();
+    fx.session
+        .create_passkey(creation(
+            &fx.vault_id,
+            Some(reg.item_id.clone()),
+            "example.com",
+            "camille",
+        ))
+        .unwrap();
+    let rows = fx.session.item_summaries().unwrap();
+    let with = rows.iter().find(|r| r.id == reg.item_id).unwrap();
+    assert_eq!(with.passkey_count, 2);
+    let without = rows.iter().find(|r| r.id == plain.id).unwrap();
+    assert_eq!(without.passkey_count, 0);
+}

@@ -357,6 +357,10 @@ pub struct FfiItemSummary {
     /// "amex"... as `card_brand`). `None` for other types or an unknown brand.
     #[uniffi(default = None)]
     pub card_brand: Option<String>,
+    /// Passkeys stored in the item (`Passkey` field values): the "Passkeys" list counts and
+    /// filters on it.
+    #[uniffi(default = 0)]
+    pub passkey_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
