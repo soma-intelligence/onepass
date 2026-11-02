@@ -1029,15 +1029,28 @@ fn cut_between_phases_resumes() {
         PhaseOutcome::Done
     );
 
-    // Reopened: phase 2 only, the vault records, nothing deleted.
+    // Reopened: phase 2 only, the vault records, nothing deleted; the
+    // rotator's acknowledgment of its own head (spec 6.8, O6), which phase 1
+    // does not rank, goes with them.
     assert_eq!(state(&a), rotating(2));
     let phase_two = outbox(&a);
     assert!(!phase_two.is_empty());
     assert!(phase_two.iter().all(|(c, _)| c.data.is_some()
         && matches!(
             c.kind,
-            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Item | RecordKind::Manifest
+            RecordKind::VaultKey
+                | RecordKind::VaultMeta
+                | RecordKind::Item
+                | RecordKind::Manifest
+                | RecordKind::DeviceAck
         )));
+    assert_eq!(
+        phase_two
+            .iter()
+            .filter(|(c, _)| c.kind == RecordKind::DeviceAck)
+            .count(),
+        1
+    );
     push_outbox(&mut server, &a).unwrap();
     assert_eq!(
         a.store().push_rotation_phase(2).unwrap(),
@@ -5687,3 +5700,120 @@ fn write_loop_timing() {
         "TIMING writes(1000)={writes:?} pending_changes({changes})={outbox_time:?} push={pushed:?}"
     );
 }
+
+// ---------------------------------------------------------------- acknowledgments (O6)
+
+use onepass_core::lineage::{AckStatus, SignedAck, ack_id, ack_statuses, verify_ack};
+
+fn statuses(dev: &Device) -> Option<Vec<AckStatus>> {
+    let store = dev.store();
+    let trust = store.trust_state().unwrap().unwrap();
+    ack_statuses(&store, &trust)
+}
+
+fn acked(dev: &Device, id: Id) -> bool {
+    statuses(dev)
+        .expect("statuses past generation 0")
+        .iter()
+        .find(|s| s.device_id == id)
+        .expect("in the roster")
+        .acknowledged
+}
+
+/// Spec 6.8 (O6): nothing to acknowledge before the first rotation.
+#[test]
+fn generation_zero_shows_no_ack_status() {
+    let (a, _f) = fixture();
+    assert_eq!(statuses(&a), None);
+}
+
+/// The rotator writes its own acknowledgment in the rotation's
+/// transaction; the others show "en attente" until they follow, then "à
+/// jour" on the rotator once their acknowledgment syncs.
+#[test]
+fn follow_writes_its_ack_and_the_rotator_shows_it() {
+    let (mut server, mut a, mut c, f, out, _new_sk) = rotated();
+    let me = f.me.id();
+    let cid = f.others[C].id();
+    assert!(acked(&a, me));
+    assert!(!acked(&a, cid));
+    assert!(!acked(&a, f.others[2].id()));
+    // B was revoked: not in the roster any more.
+    assert!(
+        statuses(&a)
+            .unwrap()
+            .iter()
+            .all(|s| s.device_id != f.others[B].id())
+    );
+
+    let (repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    // In C's own store, in the follow's transaction.
+    let rec = c
+        .store()
+        .get(RecordKind::DeviceAck, ack_id(&out.head, cid))
+        .unwrap()
+        .expect("C's ack");
+    assert_eq!(rec.version, 1);
+    let ack = SignedAck::decode(&rec.data).unwrap();
+    assert_eq!(ack.body.head, out.head);
+    assert_eq!(ack.body.device_id, cid);
+    verify_ack(&ack, &f.others[C].public.sign_pub).unwrap();
+    assert!(acked(&c, cid));
+
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert!(acked(&a, cid));
+    assert!(acked(&a, me));
+    assert!(!acked(&a, f.others[2].id()));
+}
+
+/// Display only: an acknowledgment signed by another key, or naming
+/// another head or device, never shows "à jour".
+#[test]
+fn forged_or_misplaced_acks_show_waiting() {
+    use onepass_core::lineage::{AckBody, sign_ack};
+    let (_server, mut a, _c, f, out, _new_sk) = rotated();
+    let trust = a.store().trust_state().unwrap().unwrap();
+    let d = &f.others[2];
+    let body = |head: [u8; 32], device: Id| AckBody {
+        format: LINEAGE_FORMAT,
+        account_id: trust.account_id,
+        head,
+        device_id: device,
+        acked_at: T0,
+    };
+    let put = |a: &mut Device, id: Id, ack: SignedAck| {
+        a.repo()
+            .store_mut()
+            .put_if_version(
+                Record {
+                    id,
+                    kind: RecordKind::DeviceAck,
+                    version: 1,
+                    data: ack.encode(),
+                },
+                None,
+            )
+            .unwrap();
+    };
+    // D's ack, signed by A's key.
+    put(
+        &mut a,
+        ack_id(&out.head, d.id()),
+        sign_ack(body(out.head, d.id()), &f.me.keys).unwrap(),
+    );
+    assert!(!acked(&a, d.id()));
+
+    // C's honest signature over another head, stored under the current
+    // head's id.
+    let c = &f.others[C];
+    put(
+        &mut a,
+        ack_id(&out.head, c.id()),
+        sign_ack(body([7; 32], c.id()), &c.keys).unwrap(),
+    );
+    assert!(!acked(&a, c.id()));
+}
+

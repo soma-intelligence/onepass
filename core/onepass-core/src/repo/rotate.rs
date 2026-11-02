@@ -646,6 +646,12 @@ impl<S: RecordStore> Repository<S> {
             device_id: self.chain.device_id,
             contact_book: book_seen,
         };
+        // Spec 6.8 (O6): this device's acknowledgment of the head it pins,
+        // in the same transaction (display only).
+        writes.push((
+            crate::lineage::ack::ack_record(&next, req.device_keys, at)?,
+            None,
+        ));
         collect.sort();
         collect.dedup();
         let push = RotationPush {

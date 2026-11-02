@@ -697,13 +697,20 @@ impl<S: RecordStore> Repository<S> {
             data: signed.encode(),
         };
 
+        // Spec 6.8 (O6): this device's acknowledgment of the head it pins,
+        // in the same transaction (display only).
+        let ack = crate::lineage::ack::ack_write(
+            &repo.store,
+            &trust,
+            req.device_keys,
+            crate::devices::now(),
+        )?;
+        let mut writes = vec![(intro, None)];
+        writes.extend(ack);
         match &existing {
             None => {
-                repo.store.put_first_trust(
-                    vec![(intro, None)],
-                    Some(repo.chain.clone()),
-                    &trust,
-                )?;
+                repo.store
+                    .put_first_trust(writes, Some(repo.chain.clone()), &trust)?;
             }
             Some(old) => {
                 // The device's unsent rotation and a password change made
@@ -719,10 +726,11 @@ impl<S: RecordStore> Repository<S> {
                 }
                 if !drop.is_empty() {
                     let stored = repo.store.chain_state()?;
-                    repo.store.put_follow(stored, old, old, Vec::new(), drop)?;
+                    repo.store
+                        .put_follow(Vec::new(), stored, old, old, Vec::new(), drop)?;
                 }
                 repo.store.put_with_trust_cas(
-                    vec![(intro, None)],
+                    writes,
                     Vec::new(),
                     Some(repo.chain.clone()),
                     old,

@@ -68,6 +68,10 @@ pub enum RecordKind {
     /// `attachment::chunk_id`, data = `vault_id (16 bytes) ||
     /// postcard(AttachmentChunk)`, like an item record.
     Attachment,
+    /// A signed follow acknowledgment (spec 6.8, O6), id = `ack_id(head,
+    /// device_id)`, version = the head's generation. Immutable, display
+    /// only.
+    DeviceAck,
 }
 
 impl RecordKind {
@@ -98,6 +102,7 @@ impl RecordKind {
             Self::ItemSend => 23,
             Self::ShareInvite => 24,
             Self::Attachment => 25,
+            Self::DeviceAck => 26,
         }
     }
 
@@ -128,6 +133,7 @@ impl RecordKind {
             23 => Self::ItemSend,
             24 => Self::ShareInvite,
             25 => Self::Attachment,
+            26 => Self::DeviceAck,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -151,6 +157,7 @@ impl RecordKind {
                 | Self::KeyDelivery
                 | Self::MemberKey
                 | Self::MemberLineage
+                | Self::DeviceAck
         )
     }
 
@@ -166,6 +173,7 @@ impl RecordKind {
                 | Self::Membership
                 | Self::Family
                 | Self::MemberLineage
+                | Self::DeviceAck
         )
     }
 }
@@ -649,6 +657,8 @@ pub trait RecordStore {
     }
 
     /// The local transaction of a follow (spec 7.2 step 3, Task 11): the
+    /// `writes` (each conditional on its version: the device's
+    /// acknowledgment of the new head, spec 6.8), the
     /// chain state and trust state of the new head, conditional on the
     /// stored trust state being `expected` (`put_with_trust_cas`), the
     /// retained rows of the own copies a switch keeps (`put_retained`), the
@@ -664,6 +674,7 @@ pub trait RecordStore {
     /// state (`put_with_trust_cas`), then the retained rows.
     fn put_follow(
         &mut self,
+        writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
         expected: &TrustState,
         trust: &TrustState,
@@ -675,7 +686,7 @@ pub trait RecordStore {
                 return Err(Error::Store("pending rows to drop unsupported".into()));
             }
         }
-        self.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain), expected, trust)?;
+        self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)?;
         if retained.is_empty() {
             return Ok(());
         }
@@ -870,6 +881,7 @@ mod tests {
             RecordKind::Lineage,
             RecordKind::DeviceIntro,
             RecordKind::KeyDelivery,
+            RecordKind::DeviceAck,
         ] {
             assert!(kind.is_immutable());
             let mut s = MemoryStore::default();
@@ -925,6 +937,8 @@ mod tests {
             RecordKind::RecoveryMessage,
             RecordKind::ItemSend,
             RecordKind::ShareInvite,
+            RecordKind::Attachment,
+            RecordKind::DeviceAck,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -956,8 +970,11 @@ mod tests {
         assert_eq!(RecordKind::ApproverList.code(), 13);
         assert_eq!(RecordKind::Attachment.code(), 25);
         assert!(RecordKind::Attachment.is_vault_prefixed());
+        // Spec 6.8 (O6): code 13 went to the approver lists, the ack takes 26.
+        assert_eq!(RecordKind::DeviceAck.code(), 26);
+        assert!(RecordKind::DeviceAck.server_deletion_refused());
         assert_eq!(
-            RecordKind::from_code(26).unwrap_err(),
+            RecordKind::from_code(u8::MAX).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

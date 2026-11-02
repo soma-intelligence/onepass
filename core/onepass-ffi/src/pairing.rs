@@ -497,12 +497,19 @@ impl PairingNewcomer {
     /// every vault and item, as `import_snapshot`. Refused without a
     /// `FullV2`, after a successful import, on a store that is not empty;
     /// any later failure empties the store again. Then `seal_key_ack`.
+    /// `classical` and `pq` are this device's keys (the ones it confirmed
+    /// with): they sign its acknowledgment of the approver's head (spec
+    /// 6.8, O6).
     pub fn import_snapshot_v2(
         &self,
         db_path: String,
         password: String,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
     ) -> Result<FfiUnlocked, OnePassError> {
         let password = Zeroizing::new(password);
+        let classical = Zeroizing::new(classical);
+        let keys = device_keys(&classical, pq)?;
         let mut s = lock(&self.state);
         if s.imported {
             return Err(refused("already imported"));
@@ -527,7 +534,7 @@ impl PairingNewcomer {
         let done = (|| {
             {
                 let mut store = SyncStore::open(path)?;
-                import_full_v2(&mut store, grant, &me, &info)?;
+                import_full_v2(&mut store, grant, &me, &keys, &info)?;
             }
             let unlocked = crate::unlock_password(&db_path, &password, &grant.full.secret_key)?;
             if unlocked.session.account_id() != id_hex(grant.full.account_id) {

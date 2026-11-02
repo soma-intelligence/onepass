@@ -3868,6 +3868,7 @@ impl RecordStore for SyncStore {
 
     fn put_follow(
         &mut self,
+        writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
         expected: &TrustState,
         trust: &TrustState,
@@ -3877,7 +3878,7 @@ impl RecordStore for SyncStore {
         self.begin_batch()?;
         let done = (|| {
             self.put_with_trust(
-                Vec::new(),
+                writes,
                 Vec::new(),
                 Some(chain),
                 TrustGuard::Is(expected),
@@ -4612,6 +4613,7 @@ mod tests {
         followed.head.generation = 0;
         let chain = s.chain_state().unwrap();
         s.put_follow(
+            vec![],
             chain,
             &left,
             &followed,

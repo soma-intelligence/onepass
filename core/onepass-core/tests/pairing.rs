@@ -731,7 +731,7 @@ fn granted(v: &mut V2, n: &Keys) -> (Newcomer, Approver, DeviceInfo, Device) {
     let mut dev = Device::empty();
     {
         let mut store = SyncStore::open(&dev.path).unwrap();
-        import_full_v2(&mut store, &got, &n.public, &info).unwrap();
+        import_full_v2(&mut store, &got, &n.public, &n.keys, &info).unwrap();
     }
     dev.unlock(&SecretKey::parse(&got.full.secret_key).unwrap());
     dev.lock();

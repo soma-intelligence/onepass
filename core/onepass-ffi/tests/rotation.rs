@@ -262,7 +262,9 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
     ));
     let dir = TempDir::new().unwrap();
     let path = db_path(dir.path());
-    let unlocked = n.import_snapshot_v2(path.clone(), PASSWORD.into()).unwrap();
+    let unlocked = n
+        .import_snapshot_v2(path.clone(), PASSWORD.into(), keys.c(), keys.half())
+        .unwrap();
     let ack = n.seal_key_ack(keys.c(), keys.half()).unwrap();
     assert_eq!(ap.on_frame(ack).unwrap(), FfiPairingMessage::Ack);
     ap.introduce(a.session.clone(), a.keys.c(), a.keys.half())
@@ -1260,4 +1262,44 @@ fn kit_claim_and_reject_through_the_ffi() {
     assert!(a.session.reject_kit_restored("00".repeat(16)).is_err());
     a.session.reject_kit_restored(asking[0].id.clone()).unwrap();
     assert!(a.session.kit_restored_devices().unwrap().is_empty());
+}
+
+/// Spec 6.8 (O6) through the FFI: nothing shown before a rotation; after
+/// it the rotator is "à jour" and the other device "en attente" until it
+/// follows and its signed acknowledgment syncs back.
+#[test]
+fn rotation_acks_show_who_followed() {
+    let mut server = Server::default();
+    let mut a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    assert!(a.session.rotation_acks().unwrap().is_empty());
+    let (a_id, b_id) = (this_id(&a), this_id(&b));
+
+    let (out, new_sk) = rotate(&a, vec![], vec![]);
+    a.secret_key = new_sk;
+    push(&mut server, &a.path);
+    let acks = a.session.rotation_acks().unwrap();
+    assert_eq!(acks.len(), 2);
+    let of = |acks: &[FfiDeviceAck], id: &str| acks.iter().find(|x| x.id == id).cloned().unwrap();
+    assert!(of(&acks, &a_id).acknowledged);
+    assert!(of(&acks, &a_id).acked_at.is_some());
+    assert!(!of(&acks, &b_id).acknowledged);
+    assert_eq!(of(&acks, &b_id).acked_at, None);
+
+    pull(&server, &b);
+    let followed = follow_rotation(
+        b.path.clone(),
+        out.head.clone(),
+        PASSWORD.into(),
+        b.keys.c(),
+        b.keys.half(),
+    )
+    .unwrap();
+    let s = followed.session.as_ref().unwrap();
+    assert!(of(&s.rotation_acks().unwrap(), &b_id).acknowledged);
+    push(&mut server, &b.path);
+    pull(&server, &a);
+    let acks = a.session.rotation_acks().unwrap();
+    assert!(of(&acks, &a_id).acknowledged);
+    assert!(of(&acks, &b_id).acknowledged);
 }

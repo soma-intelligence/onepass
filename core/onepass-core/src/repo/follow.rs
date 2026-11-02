@@ -873,7 +873,17 @@ pub(crate) fn commit_adoption<S: RecordStore>(
             drop_pending.push((kind, left_id));
         }
     }
-    store.put_follow(chain.clone(), trust, &next, retained, drop_pending)?;
+    // Spec 6.8 (O6): this device's acknowledgment of the head it pins, in
+    // the same transaction (display only).
+    let ack = crate::lineage::ack::ack_write(&store, &next, device_keys, crate::devices::now())?;
+    store.put_follow(
+        ack.into_iter().collect(),
+        chain.clone(),
+        trust,
+        &next,
+        retained,
+        drop_pending,
+    )?;
     // Best effort: a leftover not collected is what R21 tolerates anyway.
     let _ = store.collect_foreign_items(collect);
     // Spec 6.4, 8.5: the devices this one introduced that the new roster

@@ -350,6 +350,19 @@ pub struct FfiRosterDevice {
     pub is_this_device: bool,
 }
 
+/// A roster device and its acknowledgment of this device's current head
+/// (spec 6.8, 9, O6): "à jour" when `acknowledged`, else "en attente".
+/// Display only, never a trust decision.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiDeviceAck {
+    /// The device id, as in the device list and the roster.
+    pub id: String,
+    pub acknowledged: bool,
+    /// When it acknowledged (Unix seconds, informative), `None` while
+    /// waiting.
+    pub acked_at: Option<i64>,
+}
+
 /// The own-write alert (spec 10.4, G4): writes of this device that a
 /// rotation could not carry over, named.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -638,6 +651,27 @@ impl Session {
                     mode: e.mode.into(),
                     tofu: t.levels.get(&e.device_id) == Some(&TrustLevel::Tofu),
                     is_this_device: e.device_id == t.me.device_id,
+                })
+                .collect())
+        })
+    }
+
+    /// Each roster device, "à jour" or "en attente" for this device's
+    /// current head (spec 6.8, 9, O6), in roster order. Empty before the
+    /// first rotation (generation 0) and on a legacy device: nothing to
+    /// acknowledge.
+    pub fn rotation_acks(&self) -> Result<Vec<FfiDeviceAck>, OnePassError> {
+        self.with(|repo| {
+            let Some(t) = repo.store().trust_state()? else {
+                return Ok(Vec::new());
+            };
+            Ok(onepass_core::lineage::ack_statuses(repo.store(), &t)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| FfiDeviceAck {
+                    id: id_hex(a.device_id),
+                    acknowledged: a.acknowledged,
+                    acked_at: a.acked_at,
                 })
                 .collect())
         })

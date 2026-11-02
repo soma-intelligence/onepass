@@ -18,11 +18,15 @@ use crate::devices::{DeviceKind, DeviceMode};
 use crate::manifest::SeenManifest;
 use crate::{Error, Id, Result};
 
+pub mod ack;
 mod codec;
 mod legacy;
 pub mod resolve;
 pub mod verify;
 
+pub use ack::{
+    ACK_DOMAIN, AckBody, AckStatus, SignedAck, ack_id, ack_statuses, sign_ack, verify_ack,
+};
 pub(crate) use codec::{check_entry, decode_strict_with};
 pub use codec::{check_genesis, check_intro, check_legacy_intro, check_rotation};
 pub use legacy::{LegacyAnchor, LegacyIntros, accept_legacy_intros, legacy_intro_id};

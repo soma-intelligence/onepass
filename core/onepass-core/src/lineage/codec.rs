@@ -38,7 +38,7 @@ pub(crate) fn decode_strict_with<T: Serialize + DeserializeOwned>(
     Ok(value)
 }
 
-fn check_hybrid_sig(s: &HybridSignature) -> Result<()> {
+pub(crate) fn check_hybrid_sig(s: &HybridSignature) -> Result<()> {
     if s.mldsa.len() != MLDSA_SIG_LEN {
         return Err(bad("signature length"));
     }

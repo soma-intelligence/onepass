@@ -1104,7 +1104,12 @@ fn granted_v2(
             .is_err()
     );
     let unlocked = n
-        .import_snapshot_v2(dev.path.clone(), PASSWORD.into())
+        .import_snapshot_v2(
+            dev.path.clone(),
+            PASSWORD.into(),
+            keys.classical.clone(),
+            keys.half(),
+        )
         .unwrap();
     (n, ap, keys, dev, unlocked)
 }
