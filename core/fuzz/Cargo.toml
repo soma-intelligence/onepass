@@ -222,3 +222,17 @@ path = "fuzz_targets/contact_frames.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "member_key"
+path = "fuzz_targets/member_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "membership"
+path = "fuzz_targets/membership.rs"
+test = false
+doc = false
+bench = false

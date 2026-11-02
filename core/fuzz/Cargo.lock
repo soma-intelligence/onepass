@@ -904,6 +904,7 @@ dependencies = [
  "onepass-core",
  "onepass-guard",
  "onepass-peer",
+ "serde_json",
  "zeroize",
 ]
 

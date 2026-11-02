@@ -15,6 +15,7 @@ use crate::crypto::{
 use crate::model::events::{EventKind, ItemTrailer};
 use crate::model::usage::UsageTrailer;
 use crate::model::{Item, validate};
+use crate::store::Zone;
 use crate::{Error, Id, IntegrityError, Result};
 
 const SCHEMA: u16 = crate::format::ITEM_SCHEMA;
@@ -34,6 +35,9 @@ pub struct Vault {
     pub id: Id,
     pub meta: VaultMeta,
     key: SymmetricKey,
+    /// Where the vault's records live: `Zone::Private` for a personal
+    /// vault, `Zone::Vault(id)` for a shared one (sharing plan 2).
+    pub(crate) zone: Zone,
 }
 
 impl std::fmt::Debug for Vault {
@@ -184,7 +188,16 @@ impl Vault {
     ) -> Result<(Vault, Vec<u8>, Vec<u8>)> {
         let envelope = wrap_key(&account.params.kem_pub, &key, &kem_context(id))?;
         let meta_blob = seal_meta(&key, id, &meta)?;
-        Ok((Vault { id, meta, key }, envelope, meta_blob))
+        Ok((
+            Vault {
+                id,
+                meta,
+                key,
+                zone: Zone::Private,
+            },
+            envelope,
+            meta_blob,
+        ))
     }
 
     /// A vault with a fresh key and no account, for unit tests of the
@@ -195,6 +208,7 @@ impl Vault {
             id: Id::new(),
             meta,
             key: SymmetricKey::generate().unwrap(),
+            zone: Zone::Private,
         }
     }
 
@@ -227,7 +241,58 @@ impl Vault {
             Ok((meta, [])) => meta,
             _ => return Err(Error::InvalidFormat("vault meta")),
         };
-        Ok(Vault { id, meta, key })
+        Ok(Vault {
+            id,
+            meta,
+            key,
+            zone: Zone::Private,
+        })
+    }
+
+    /// A shared vault with a fresh key (generation 1 of `id`, sharing spec
+    /// 6.2): the vault, its key (to wrap per member) and the sealed meta.
+    #[allow(dead_code)] // used from plan 2 Task 6 (repo/share.rs)
+    pub(crate) fn new_shared(id: Id, meta: VaultMeta) -> Result<(Vault, SymmetricKey, Vec<u8>)> {
+        let key = SymmetricKey::generate()?;
+        let meta_blob = seal_meta(&key, id, &meta)?;
+        Ok((
+            Vault {
+                id,
+                meta,
+                key: key.duplicate(),
+                zone: Zone::Vault(id),
+            },
+            key,
+            meta_blob,
+        ))
+    }
+
+    /// A shared vault from the key of its current generation (opened from
+    /// the member's `MemberKey`) and its sealed meta.
+    #[allow(dead_code)] // used from plan 2 Task 6 (repo/share.rs)
+    pub(crate) fn from_shared(id: Id, key: SymmetricKey, meta_blob: &[u8]) -> Result<Vault> {
+        let plain = open(&key, BlobKind::VaultMeta, &meta_aad(id), meta_blob)?;
+        let meta: VaultMeta = match postcard::take_from_bytes(&plain) {
+            Ok((meta, [])) => meta,
+            _ => return Err(Error::InvalidFormat("vault meta")),
+        };
+        Ok(Vault {
+            id,
+            meta,
+            key,
+            zone: Zone::Vault(id),
+        })
+    }
+
+    /// The zone the vault's records live in.
+    pub fn zone(&self) -> Zone {
+        self.zone
+    }
+
+    /// The sealed meta blob of this vault under its key.
+    #[allow(dead_code)] // used from plan 2 Task 6 (repo/share.rs)
+    pub(crate) fn seal_meta_blob(&self) -> Result<Vec<u8>> {
+        seal_meta(&self.key, self.id, &self.meta)
     }
 
     /// The vault key. The manifest of the vault is sealed with it.
