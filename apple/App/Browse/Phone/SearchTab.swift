@@ -6,73 +6,207 @@ import VaultKit
 /// Rechercher (spec 6.2, mockup `PhoneSearch`): the search tab (role `.search`) searches every
 /// active item. The search field belongs to the tab view (`PhoneTabsView`): iOS 26 shows it in
 /// the tab bar only when `searchable` is applied there.
-/// Category chips (types present only) narrow the results; with an empty search they are the
-/// suggestions and the list shows every item of the chosen category.
+///
+/// Before anything is typed the screen helps start: the recent searches of this session (memory
+/// only, gone on lock), the items opened lately, and the categories to browse. Once a word is typed
+/// the results come at every key, best answers first (`ItemSearch.ranked`), with scope chips (the
+/// categories among the results, and their counts) to narrow them. Nothing found says what to try.
 struct SearchTab: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var query: String
     @Binding var isSearching: Bool
     @State private var category: FfiItemType?
 
     private var session: VaultSession { model.session }
+    private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
-        let counts = session.counts()
-        let categories = ItemCategory.all.filter { (counts.byType[$0.type] ?? 0) > 0 }
-        let filter: ItemFilter = category.map { .category($0) } ?? .all
-        let results = session.items(filter: filter, query: query, sort: .title)
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let all = session.items(filter: .all, query: "", sort: .title)
+        let matches = ItemSearch.ranked(all, query: trimmed)
+        let results = category.map { type in matches.filter { $0.itemType == type } } ?? matches
         let showVault = session.vaults.count > 1
         List {
-            if !categories.isEmpty {
-                Section {
-                    chips(categories)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                }
-            }
-            Section {
-                ForEach(results, id: \.id) { summary in
-                    NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
-                        ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+            if all.isEmpty {
+                emptyVault
+            } else if trimmed.isEmpty, category == nil {
+                start(all: all)
+            } else {
+                let present = scopes(in: trimmed.isEmpty ? all : matches)
+                if present.count > 1 || category != nil {
+                    Section {
+                        chips(present, total: trimmed.isEmpty ? all.count : matches.count)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
+                    .listSectionSpacing(8)
                 }
                 if results.isEmpty {
-                    Text(trimmed.isEmpty ? String(localized: "Ce coffre est vide")
-                        : String(localized: "Aucun résultat pour « \(trimmed) »"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
-                        .accessibilityIdentifier("search.empty")
+                    noResults
+                } else {
+                    Section {
+                        ForEach(results, id: \.id) { summary in
+                            resultRow(summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+                        }
+                    } header: {
+                        PhoneSectionLabel(verbatim: resultsTitle(count: results.count))
+                            .textCase(nil)
+                            .contentTransition(.numericText())
+                    }
                 }
-            } header: {
-                HStack(alignment: .firstTextBaseline) {
-                    PhoneSectionLabel(verbatim: resultsTitle(searching: !trimmed.isEmpty).lowercased())
-                    Spacer()
-                    Text(ItemListColumn.countLabel(results.count))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .textCase(nil)
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.immediately)
         .background(PhoneBackground())
+        .animation(Motion.list(reduceMotion: reduceMotion), value: results.map(\.id))
+        .animation(Motion.fold(reduceMotion: reduceMotion), value: trimmed.isEmpty)
         .navigationTitle("Rechercher")
+        // A category chosen for another search would hide what the next one finds.
+        .onChange(of: trimmed.isEmpty) { _, empty in if empty { category = nil } }
     }
 
-    private func chips(_ categories: [ItemCategory]) -> some View {
+    // MARK: Before typing
+
+    @ViewBuilder private func start(all: [FfiItemSummary]) -> some View {
+        let searches = session.recentSearches
+        if !searches.isEmpty {
+            Section {
+                ForEach(searches, id: \.self) { text in
+                    Button {
+                        query = text
+                        isSearching = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 30)
+                            Text(verbatim: text)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Image(systemName: "arrow.up.left")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Rechercher « \(text) »"))
+                }
+            } header: {
+                HStack(alignment: .firstTextBaseline) {
+                    PhoneSectionLabel("Recherches récentes")
+                    Spacer()
+                    Button("Vider") {
+                        withAnimation(Motion.list(reduceMotion: reduceMotion)) { session.clearRecentSearches() }
+                    }
+                    .font(.subheadline)
+                    .accessibilityIdentifier("search.recent.clear")
+                }
+                .textCase(nil)
+            }
+            .accessibilityIdentifier("search.recent")
+        }
+        let opened = recentlyOpened(all)
+        if !opened.isEmpty {
+            Section {
+                ForEach(opened, id: \.id) { summary in
+                    resultRow(summary, vaultName: nil)
+                }
+            } header: {
+                PhoneSectionLabel("Ouverts récemment").textCase(nil)
+            }
+        }
+        Section {
+            browseGrid(all)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+        } header: {
+            PhoneSectionLabel("Parcourir").textCase(nil)
+        }
+    }
+
+    /// Items opened during the session, newest first (at most five).
+    private func recentlyOpened(_ all: [FfiItemSummary]) -> [FfiItemSummary] {
+        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return Array(session.recents.compactMap { byID[$0] }.prefix(5))
+    }
+
+    /// The categories present, two to a row: the type's artwork, its name and its count. A tile
+    /// shows that category; typing then searches inside it.
+    private func browseGrid(_ all: [FfiItemSummary]) -> some View {
+        let present = scopes(in: all)
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(present, id: \.type) { scope in
+                Button {
+                    withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = scope.type }
+                } label: {
+                    HStack(spacing: 10) {
+                        CategoryArtwork(type: scope.type, size: 30)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(ItemCategory.of(scope.type).plural)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                            Text(scope.count, format: .number)
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .phoneCard()
+                    .contentShape(.rect(cornerRadius: PhoneCard.radius))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("search.browse.\(NewItemMenu.key(scope.type))")
+            }
+        }
+    }
+
+    // MARK: Results
+
+    private func resultRow(_ summary: FfiItemSummary, vaultName: String?) -> some View {
+        NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
+            ItemListRow(summary: summary, vaultName: vaultName)
+        }
+        // Opening a result keeps the search that found it for next time.
+        .simultaneousGesture(TapGesture().onEnded { session.noteSearch(trimmed) })
+    }
+
+    private struct Scope: Equatable {
+        let type: FfiItemType
+        let count: Int
+    }
+
+    /// The categories among `items`, in the house order, with their counts.
+    private func scopes(in items: [FfiItemSummary]) -> [Scope] {
+        var counts: [FfiItemType: Int] = [:]
+        for item in items { counts[item.itemType, default: 0] += 1 }
+        return ItemCategory.all.compactMap { category in
+            counts[category.type].map { Scope(type: category.type, count: $0) }
+        }
+    }
+
+    private func chips(_ scopes: [Scope], total: Int) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                chip(String(localized: "Tout"), type: nil, selected: category == nil, id: "search.category.all") {
+                chip(String(localized: "Tout"), type: nil, count: total, selected: category == nil, id: "search.category.all") {
                     category = nil
                 }
-                ForEach(categories) { item in
-                    chip(item.plural, type: item.type, selected: category == item.type,
-                        id: "search.category.\(NewItemMenu.key(item.type))") {
-                        category = category == item.type ? nil : item.type
+                // A category chosen keeps its chip even when the search no longer finds it.
+                let shown = category.flatMap { chosen in scopes.contains { $0.type == chosen } ? nil : Scope(type: chosen, count: 0) }
+                ForEach(scopes + (shown.map { [$0] } ?? []), id: \.type) { scope in
+                    chip(ItemCategory.of(scope.type).plural, type: scope.type, count: scope.count,
+                        selected: category == scope.type, id: "search.category.\(NewItemMenu.key(scope.type))") {
+                        category = category == scope.type ? nil : scope.type
                     }
                 }
             }
@@ -83,14 +217,19 @@ struct SearchTab: View {
         .sensoryFeedback(.selection, trigger: category)
     }
 
-    /// A category chip: the type's artwork, its name; the chosen one in the accent.
-    private func chip(_ label: String, type: FfiItemType?, selected: Bool, id: String, action: @escaping () -> Void)
-        -> some View
-    {
+    /// A scope chip: the type's artwork, its name and its count; the chosen one in the accent.
+    private func chip(
+        _ label: String, type: FfiItemType?, count: Int, selected: Bool, id: String, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let type { CategoryArtwork(type: type, size: 20) }
                 Text(label).font(.subheadline.weight(.semibold))
+                Text(count, format: .number)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .contentTransition(.numericText())
             }
             .padding(.leading, type == nil ? 14 : 7)
             .padding(.trailing, 14)
@@ -107,9 +246,54 @@ struct SearchTab: View {
         .accessibilityIdentifier(id)
     }
 
-    private func resultsTitle(searching: Bool) -> String {
-        if let category { return ItemCategory.of(category).plural }
-        return searching ? String(localized: "Résultats") : String(localized: "Tous les éléments")
+    private func resultsTitle(count: Int) -> String {
+        if trimmed.isEmpty, let category { return ItemCategory.of(category).plural }
+        return count == 1 ? String(localized: "1 résultat") : String(localized: "\(count) résultats")
+    }
+
+    // MARK: Empty states
+
+    /// Nothing found: what was searched, what to try, and the way out of a category.
+    private var noResults: some View {
+        Section {
+            VStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 34, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 2)
+                Text(trimmed.isEmpty ? String(localized: "Rien dans cette catégorie")
+                    : String(localized: "Aucun résultat pour « \(trimmed) »"))
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("search.empty")
+                Text(category == nil
+                    ? String(localized: "Cherche un titre, un site, un identifiant ou un tag.")
+                    : String(localized: "La recherche porte sur une seule catégorie."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                if category != nil {
+                    Button("Chercher partout") {
+                        withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = nil }
+                    }
+                    .buttonStyle(.glass)
+                    .padding(.top, 4)
+                    .accessibilityIdentifier("search.everywhere")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private var emptyVault: some View {
+        Section {
+            ItemListEmptyState(reason: .emptyLibrary) { model.showNewItemPicker = true }
+                .padding(.vertical, 40)
+                .listRowBackground(Color.clear)
+                .accessibilityIdentifier("search.empty")
+        }
     }
 
     private func vaultName(_ id: String) -> String? {
