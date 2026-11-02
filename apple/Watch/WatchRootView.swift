@@ -18,23 +18,23 @@ struct WatchRootView: View {
         case .needsPasscode:
             WatchMessageView(
                 systemImage: "lock.trianglebadge.exclamationmark",
-                message: "Active un code sur ton Apple Watch pour utiliser OnePass"
+                message: "watchRootView.setPasscodeOnApple"
             )
         case .closed:
             WatchMessageView(
                 systemImage: "lock.shield",
-                message: "Déverrouille ton Apple Watch pour ouvrir OnePass."
+                message: "watchRootView.unlockAppleWatchTo"
             )
         case .waitingForPhone:
             WatchMessageView(
                 systemImage: "iphone.and.arrow.forward",
-                message: "Marque des éléments « Sur l'Apple Watch » dans OnePass sur ton iPhone."
+                message: "watchRootView.markItemsOnApple"
             )
         case .ready:
             if model.entries.isEmpty {
                 WatchMessageView(
                     systemImage: "applewatch",
-                    message: "Marque des éléments « Sur l'Apple Watch » dans OnePass sur ton iPhone."
+                    message: "watchRootView.markItemsOnApple"
                 )
             } else {
                 EntryListView(model: model)

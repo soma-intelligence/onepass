@@ -1,29 +1,8 @@
 {
   "sourceLanguage" : "fr",
   "strings" : {
-    "+ %lld autres" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+ %lld more"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+ %lld más"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+ altri %lld"
-          }
-        }
-      }
-    },
-    "Ajoute un favori avec un code" : {
+    "codesWidget.addFavoriteWithCode" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37,6 +16,12 @@
             "value" : "Añade un favorito con un código"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute un favori avec un code"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -45,29 +30,8 @@
         }
       }
     },
-    "Ajoute un favori dans OnePass" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add a favorite in OnePass"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añade un favorito en OnePass"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi un preferito in OnePass"
-          }
-        }
-      }
-    },
-    "Codes" : {
+    "codesWidget.codes" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -81,6 +45,12 @@
             "value" : "Códigos"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codes"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -89,73 +59,8 @@
         }
       }
     },
-    "Déverrouille ton iPhone" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unlock your iPhone"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desbloquea tu iPhone"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sblocca iPhone"
-          }
-        }
-      }
-    },
-    "Favoris" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Favorites"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Favoritos"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preferiti"
-          }
-        }
-      }
-    },
-    "Générer un mot de passe" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generate Password"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generar una contraseña"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Genera una password"
-          }
-        }
-      }
-    },
-    "Les codes à usage unique de tes favoris." : {
+    "codesWidget.oneTimeCodesFrom" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -169,6 +74,12 @@
             "value" : "Los códigos de un solo uso de tus favoritos."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les codes à usage unique de tes favoris."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -177,51 +88,37 @@
         }
       }
     },
-    "Ouvre OnePass pour actualiser" : {
+    "controls.generatePassword" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open OnePass to refresh"
+            "value" : "Generate Password"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre OnePass para actualizar"
+            "value" : "Generar una contraseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Générer un mot de passe"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri OnePass per aggiornare"
+            "value" : "Genera una password"
           }
         }
       }
     },
-    "Ouvre la recherche de OnePass." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens OnePass search."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre la búsqueda de OnePass."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apre la ricerca di OnePass."
-          }
-        }
-      }
-    },
-    "Ouvre le générateur de mots de passe de OnePass." : {
+    "controls.opensOnepassPasswordGenerator" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -235,6 +132,12 @@
             "value" : "Abre el generador de contraseñas de OnePass."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre le générateur de mots de passe de OnePass."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -243,29 +146,37 @@
         }
       }
     },
-    "Ouvre un de tes favoris dans OnePass." : {
+    "controls.opensOnepassSearch" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens one of your favorites in OnePass."
+            "value" : "Opens OnePass search."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre uno de tus favoritos en OnePass."
+            "value" : "Abre la búsqueda de OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre la recherche de OnePass."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre uno dei tuoi preferiti in OnePass."
+            "value" : "Apre la ricerca di OnePass."
           }
         }
       }
     },
-    "Rechercher dans OnePass" : {
+    "controls.searchOnepass" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -279,6 +190,12 @@
             "value" : "Buscar en OnePass"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans OnePass"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -287,29 +204,124 @@
         }
       }
     },
-    "Verrouille OnePass sur cet appareil." : {
+    "favoritesWidget.addFavoriteInOnepass" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Locks OnePass on this device."
+            "value" : "Add a favorite in OnePass"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquea OnePass en este dispositivo."
+            "value" : "Añade un favorito en OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute un favori dans OnePass"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Blocca OnePass su questo dispositivo."
+            "value" : "Aggiungi un preferito in OnePass"
           }
         }
       }
     },
-    "Verrouiller OnePass" : {
+    "favoritesWidget.opensOneOfFavorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens one of your favorites in OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre uno de tus favoritos en OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre un de tes favoris dans OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre uno dei tuoi preferiti in OnePass."
+          }
+        }
+      }
+    },
+    "glanceViews.unlockIphone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock your iPhone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea tu iPhone"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouille ton iPhone"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca iPhone"
+          }
+        }
+      }
+    },
+    "term.favorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorites"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoris"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preferiti"
+          }
+        }
+      }
+    },
+    "widgets.lockOnepass" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -323,10 +335,103 @@
             "value" : "Bloquear OnePass"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verrouiller OnePass"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocca OnePass"
+          }
+        }
+      }
+    },
+    "widgets.locksOnepassOnDevice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locks OnePass on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloquea OnePass en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verrouille OnePass sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocca OnePass su questo dispositivo."
+          }
+        }
+      }
+    },
+    "widgets.more %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld more"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld más"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld autres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ altri %lld"
+          }
+        }
+      }
+    },
+    "widgets.openOnepassToRefresh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to refresh"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para actualizar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre OnePass pour actualiser"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per aggiornare"
           }
         }
       }

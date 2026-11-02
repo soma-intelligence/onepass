@@ -16,8 +16,8 @@ struct OnePassLauncherWidget: Widget {
             LauncherView()
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("OnePass")
-        .description("Ouvre OnePass.")
+        .configurationDisplayName("onePassWatchWidgets.onepass")
+        .description("onePassWatchWidgets.opensOnepass")
         .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryRectangular])
     }
 }
@@ -46,14 +46,14 @@ struct LauncherView: View {
         case .accessoryCorner:
             Image(systemName: "lock.shield")
                 .font(.title2)
-                .widgetLabel("OnePass")
-                .accessibilityLabel("OnePass")
+                .widgetLabel("onePassWatchWidgets.onepass")
+                .accessibilityLabel("onePassWatchWidgets.onepass")
         case .accessoryRectangular:
             HStack(spacing: 6) {
                 Image(systemName: "lock.shield")
                     .font(.title2)
                     .accessibilityHidden(true)
-                Text("OnePass")
+                Text("onePassWatchWidgets.onepass")
                     .font(.headline)
                     .widgetAccentable()
                 Spacer(minLength: 0)
@@ -65,7 +65,7 @@ struct LauncherView: View {
                     .font(.title2)
                     .widgetAccentable()
             }
-            .accessibilityLabel("OnePass")
+            .accessibilityLabel("onePassWatchWidgets.onepass")
         }
     }
 }

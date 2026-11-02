@@ -21,8 +21,8 @@ struct ConcealedValueView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(revealed ? Text(value) : Text("Masqué"))
-        .accessibilityHint(revealed ? Text("Touche pour masquer") : Text("Touche pour révéler"))
+        .accessibilityLabel(revealed ? Text(value) : Text("concealedValueView.hidden"))
+        .accessibilityHint(revealed ? Text("concealedValueView.tapToHide") : Text("concealedValueView.tapToReveal"))
         .onDisappear(perform: hide)
     }
 

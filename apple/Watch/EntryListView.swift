@@ -12,7 +12,7 @@ struct EntryListView: View {
     var body: some View {
         List {
             if !codes.isEmpty {
-                Section("Codes") {
+                Section("entryListView.codes") {
                     ForEach(codes, id: \.itemId) { entry in
                         NavigationLink {
                             EntryDetailView(model: model, entry: entry)
@@ -23,7 +23,7 @@ struct EntryListView: View {
                 }
             }
             if !items.isEmpty {
-                Section("Éléments") {
+                Section("term.items") {
                     ForEach(items, id: \.itemId) { entry in
                         NavigationLink {
                             EntryDetailView(model: model, entry: entry)
