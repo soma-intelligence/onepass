@@ -1,0 +1,30 @@
+# cargo-nextest settings (https://nexte.st). `make quick` and `make nextest`
+# run through these; `cargo test` still works and ignores this file.
+
+[profile.default]
+# Report a test as slow after 60 s and kill it after 5 periods (5 min), so a
+# hung test fails loudly instead of holding a build slot for an hour.
+slow-timeout = { period = "60s", terminate-after = 5 }
+# A test that leaves a subprocess behind fails after 1 s instead of hanging.
+leak-timeout = "1s"
+fail-fast = false
+# Debug builds already optimize the crypto crates (see Cargo.toml), so most
+# tests take well under a second; 4 threads keep the Mac usable while
+# several builds run. Override with NEXTEST_TEST_THREADS.
+test-threads = 4
+status-level = "slow"
+final-status-level = "fail"
+
+# The SLH-DSA identity key and full rotation suites are legitimately slow in
+# debug builds: give them twice the budget before they are killed.
+[[profile.default.overrides]]
+filter = "test(/slh_dsa|identity_key|rotation_v2|share_vaults/)"
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[profile.ci]
+test-threads = "num-cpus"
+fail-fast = false
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[profile.ci.junit]
+path = "junit.xml"

@@ -1,4 +1,4 @@
-.PHONY: check fmt-check test lint deny audit vet sbom fuzz miri
+.PHONY: check fmt-check test lint deny audit vet sbom fuzz miri quick nextest
 
 # Seconds per fuzz target (override: make fuzz FUZZ_SECONDS=300).
 FUZZ_SECONDS ?= 60
@@ -13,6 +13,31 @@ fmt-check:
 
 test:
 	cargo test --workspace
+
+# Fast local loop (needs cargo-nextest: brew install cargo-nextest). Runs only
+# the crates changed since origin/main (QUICK_BASE overrides it; QUICK_CRATES
+# names them directly), with the dev KDF, per-test timeouts from
+# .config/nextest.toml, and at low priority so the Mac stays usable. Source
+# ../scripts/dev-env.sh first for the shared sccache cache and the job cap.
+QUICK_BASE ?= origin/main
+QUICK_CRATES ?= $(shell git diff --name-only $(QUICK_BASE) -- . 2>/dev/null \
+	| sed -n 's|^core/\(onepass-[a-z0-9-]*\)/.*|\1|p' | sort -u)
+
+quick:
+	@if [ -z "$(QUICK_CRATES)" ]; then echo "quick: no crate changed since $(QUICK_BASE)"; exit 0; fi
+	@echo "quick: $(QUICK_CRATES)"
+	@with=""; without=""; \
+	for c in $(QUICK_CRATES); do \
+		if [ "$$c" = onepass-core ] || grep -q '^onepass-core' $$c/Cargo.toml; then with="$$with -p $$c"; \
+		else without="$$without -p $$c"; fi; \
+	done; \
+	if [ -n "$$with" ]; then nice -n 10 cargo nextest run $$with --features onepass-core/dev-fast-kdf || exit 1; fi; \
+	if [ -n "$$without" ]; then nice -n 10 cargo nextest run $$without || exit 1; fi
+
+# The whole workspace through nextest: same tests as `make test`, with the
+# per-test timeouts.
+nextest:
+	nice -n 10 cargo nextest run --workspace --features onepass-core/dev-fast-kdf
 
 lint:
 	cargo clippy --workspace --all-targets -- -D warnings
