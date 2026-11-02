@@ -524,6 +524,8 @@ impl<S: RecordStore> Repository<S> {
             epoch_cache: Mutex::new(None),
             chain,
             travel_parked: BTreeSet::new(),
+            travel_parked_items: std::collections::BTreeMap::new(),
+            travelling: false,
             lists_forced: true,
             records_id: params.id,
             pending: None,

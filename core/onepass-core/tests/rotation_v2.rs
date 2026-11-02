@@ -249,6 +249,7 @@ fn rotate_refused_in_travel_mode() {
     a.repo().resume_travel(&TravelState {
         parked: BTreeMap::from([(v.id, seen)]),
         entered_at: T0,
+        parked_items: Default::default(),
     });
     let before = snapshot(&a.store());
     let new_sk = SecretKey::generate().unwrap();
@@ -2602,6 +2603,7 @@ fn travel_refused_while_candidate() {
     let parked = TravelState {
         parked: BTreeMap::new(),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     assert_eq!(c.repo().exit_travel(&upstream, &parked).err(), ro);
     assert_eq!(c.repo().exit_travel_unpinned(&upstream).err(), ro);
@@ -5589,6 +5591,7 @@ fn old_key_travel_state_listing_a_later_vault_is_refused() {
             },
         )]),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     let sealed = t.ipad.repo().seal_travel_state(&forged).unwrap();
     assert!(t.c.repo().open_travel_state(&sealed).is_err());
@@ -5641,6 +5644,7 @@ fn travel_state_is_resealed_under_the_new_identity() {
             },
         )]),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     let sealed = t.c.repo().seal_travel_state(&both).unwrap();
     assert_eq!(t.c.repo().open_travel_state(&sealed).unwrap(), both);

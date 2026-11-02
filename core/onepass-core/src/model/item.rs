@@ -72,6 +72,20 @@ pub const PENDING_TAG: &str = "onepass:pending";
 pub const WEAK_BY_SITE_TAG: &str = "onepass:weak-by-site";
 /// Tag of the account profile item (`repo::profile`): never listed.
 pub const PROFILE_TAG: &str = "onepass:profile";
+/// Tag of an item that leaves the device in Travel Mode even when its vault
+/// stays (`repo::travel`, spec 2026-11-02).
+pub const TRAVEL_HIDDEN_TAG: &str = "onepass:travel-hidden";
+/// Tag of an item behind extra protection in Travel Mode: password and
+/// biometrics in the app, offered nowhere else (spec 2026-11-02).
+pub const TRAVEL_GUARD_TAG: &str = "onepass:travel-guard";
+
+/// Add `tag` once when `on`, remove every copy otherwise.
+fn set_tag(tags: &mut Vec<String>, tag: &str, on: bool) {
+    tags.retain(|t| t != tag);
+    if on {
+        tags.push(tag.to_owned());
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
@@ -123,6 +137,26 @@ impl Item {
     /// Carries `PROFILE_TAG`: the hidden account profile item.
     pub fn is_profile(&self) -> bool {
         self.tags.iter().any(|t| t == PROFILE_TAG)
+    }
+
+    /// Carries `TRAVEL_HIDDEN_TAG`: leaves the device in Travel Mode.
+    pub fn travel_hidden(&self) -> bool {
+        self.tags.iter().any(|t| t == TRAVEL_HIDDEN_TAG)
+    }
+
+    /// Carries `TRAVEL_GUARD_TAG`: extra protection in Travel Mode.
+    pub fn travel_guarded(&self) -> bool {
+        self.tags.iter().any(|t| t == TRAVEL_GUARD_TAG)
+    }
+
+    /// Add or remove `TRAVEL_HIDDEN_TAG` (never twice).
+    pub fn set_travel_hidden(&mut self, on: bool) {
+        set_tag(&mut self.tags, TRAVEL_HIDDEN_TAG, on);
+    }
+
+    /// Add or remove `TRAVEL_GUARD_TAG` (never twice).
+    pub fn set_travel_guarded(&mut self, on: bool) {
+        set_tag(&mut self.tags, TRAVEL_GUARD_TAG, on);
     }
 
     /// First field with this id, searching sections in order.

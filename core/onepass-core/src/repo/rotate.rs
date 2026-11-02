@@ -258,7 +258,7 @@ impl<S: RecordStore> Repository<S> {
     /// under the new keys, pinned to the new identity.
     pub fn rotate(&mut self, req: RotateRequest<'_>) -> Result<RotationOutcome> {
         // Preconditions that need no derivation, cheapest first.
-        if !self.travel_parked.is_empty() {
+        if self.travelling() {
             return Err(refused("travel mode", "active"));
         }
         let account_id = self.account.params.account_id;

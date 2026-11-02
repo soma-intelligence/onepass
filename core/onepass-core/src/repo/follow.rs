@@ -907,6 +907,8 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         epoch_cache: Mutex::new(None),
         chain,
         travel_parked: BTreeSet::new(),
+        travel_parked_items: BTreeMap::new(),
+        travelling: false,
         lists_forced: true,
         records_id: rid,
         pending: None,

@@ -10,7 +10,7 @@ pub use rebase::RebaseReport;
 pub(crate) use store::merge_chain;
 pub use store::{
     AccountState, DroppedVaultWrites, IgnoredDeletion, IgnoredParams, MAX_IGNORED_DELETIONS,
-    PhaseOutcome, SyncStore,
+    PhaseOutcome, SyncStore, TravelHiddenItems,
 };
 
 use crate::store::RecordKind;

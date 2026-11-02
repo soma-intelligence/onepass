@@ -87,6 +87,40 @@ const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
 const IGNORED_VERSIONS_KEY: &str = "ignored_versions";
 /// The vaults the Travel Mode keeps off this device (16-byte ids).
 const TRAVEL_HIDDEN_KEY: &str = "travel_hidden";
+/// The items (and their attachment chunks) the Travel Mode keeps off this
+/// device in vaults that stay (spec 2026-11-02), postcard.
+const TRAVEL_HIDDEN_ITEMS_KEY: &str = "travel_hidden_items";
+
+/// The records of items the Travel Mode keeps off this device while their
+/// vault stays: item records by the item id in their body, attachment
+/// chunks by record id. Device-local, never pushed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TravelHiddenItems {
+    pub items: BTreeSet<Id>,
+    pub chunks: BTreeSet<Id>,
+}
+
+impl TravelHiddenItems {
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty() && self.chunks.is_empty()
+    }
+
+    /// Whether a change from the server is one of these records. A
+    /// deletion (no data) of an item record cannot be told apart and is
+    /// let through: this device holds no row for a hidden item anyway.
+    fn covers(&self, c: &RemoteChange) -> bool {
+        match c.kind {
+            RecordKind::Attachment => self.chunks.contains(&c.id),
+            RecordKind::Item => c.data.as_deref().is_some_and(|d| {
+                split_item_record(d)
+                    .ok()
+                    .and_then(|(_, body)| crate::vault::ItemRecord::decode(body).ok())
+                    .is_some_and(|r| self.items.contains(&r.item_id))
+            }),
+            _ => false,
+        }
+    }
+}
 const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
 /// Most entries kept in the log of ignored deletions (and in the log of
@@ -1570,6 +1604,9 @@ impl SyncStore {
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
             return Ok(());
         }
+        if self.travel_hidden_items()?.covers(&c) {
+            return Ok(());
+        }
         // The lineage kinds decode with no cap of their own (a rotation
         // lists every vault head), so their size is bounded here, before
         // anything reads them. No honest writer exceeds it (`check_size` on
@@ -1798,6 +1835,29 @@ impl SyncStore {
         }
         let bytes: Vec<u8> = vaults.iter().flat_map(|v| v.0).collect();
         self.set_meta(TRAVEL_HIDDEN_KEY, &bytes)
+    }
+
+    /// The items the Travel Mode keeps off this device in vaults that stay:
+    /// `stage_remote` drops their records and chunks. Device-local, never
+    /// pushed. An empty set removes the entry.
+    pub fn set_travel_hidden_items(&mut self, hidden: &TravelHiddenItems) -> Result<()> {
+        if hidden.is_empty() {
+            return self.delete_meta(TRAVEL_HIDDEN_ITEMS_KEY);
+        }
+        let bytes = postcard::to_allocvec(hidden)
+            .map_err(|_| Error::InvalidFormat("travel hidden items"))?;
+        self.set_meta(TRAVEL_HIDDEN_ITEMS_KEY, &bytes)
+    }
+
+    /// The items of `set_travel_hidden_items`, empty when none.
+    pub fn travel_hidden_items(&self) -> Result<TravelHiddenItems> {
+        let Some(bytes) = self.meta(TRAVEL_HIDDEN_ITEMS_KEY)? else {
+            return Ok(TravelHiddenItems::default());
+        };
+        match postcard::take_from_bytes(&bytes) {
+            Ok((h, [])) => Ok(h),
+            _ => Err(Error::InvalidFormat("travel hidden items")),
+        }
     }
 
     /// The vaults of `set_travel_hidden`, empty when none.

@@ -541,6 +541,7 @@ fn sealed_state_roundtrip_and_fixed_len() {
     let empty = TravelState {
         parked: Default::default(),
         entered_at: 0,
+        parked_items: Default::default(),
     };
     let sealed_empty = f.repo.seal_travel_state(&empty).unwrap();
     assert_eq!(sealed_empty.len(), SEALED_TRAVEL_STATE_LEN);

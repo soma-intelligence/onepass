@@ -158,3 +158,107 @@ fn hidden_set_roundtrips_and_clears() {
     store.set_travel_hidden(&BTreeSet::new()).unwrap();
     assert!(store.travel_hidden().unwrap().is_empty());
 }
+
+/// Device A with a synced travel safe vault "Voyage" holding a plain login
+/// and one marked hidden in travel, and device B pulled and unlocked.
+/// Returns the vault id and the hidden item id.
+fn hidden_item_setup(server: &mut Server) -> (Device, Device, Id, Id) {
+    let (mut a, sk) = Device::create();
+    let mut m = meta("Voyage");
+    m.travel_safe = true;
+    let voyage = a.repo().create_vault(m).unwrap();
+    a.repo()
+        .save_item(&voyage, login(voyage.id, "plain@exemple.fr", T0))
+        .unwrap();
+    let mut secret = login(voyage.id, "secret@exemple.fr", T0);
+    secret.set_travel_hidden(true);
+    let secret_id = secret.id;
+    a.repo().save_item(&voyage, secret).unwrap();
+    sync(server, &mut a).unwrap();
+    let mut b = Device::empty();
+    pull(server, &mut b);
+    b.unlock(&sk);
+    (a, b, voyage.id, secret_id)
+}
+
+fn holds_item(dev: &Device, vault: Id, item: Id) -> bool {
+    dev.store()
+        .export_records()
+        .unwrap()
+        .iter()
+        .filter(|r| r.kind == RecordKind::Item)
+        .any(|r| {
+            let (prefix, body) = onepass_core::repo::split_item_record(&r.data).unwrap();
+            prefix == vault
+                && onepass_core::vault::ItemRecord::decode(body).unwrap().item_id == item
+        })
+}
+
+#[test]
+fn hidden_items_set_roundtrips_and_clears() {
+    let dev = Device::empty();
+    let mut store = dev.store();
+    assert!(store.travel_hidden_items().unwrap().is_empty());
+    let set = onepass_core::sync::TravelHiddenItems {
+        items: BTreeSet::from([Id::new()]),
+        chunks: BTreeSet::from([Id::new(), Id::new()]),
+    };
+    store.set_travel_hidden_items(&set).unwrap();
+    assert_eq!(store.travel_hidden_items().unwrap(), set);
+    store
+        .set_travel_hidden_items(&Default::default())
+        .unwrap();
+    assert!(store.travel_hidden_items().unwrap().is_empty());
+}
+
+#[test]
+fn a_hidden_item_stays_off_the_device_while_another_device_edits_it() {
+    let mut server = Server::default();
+    let (mut a, mut b, voyage, secret) = hidden_item_setup(&mut server);
+    let up = base_upstream(&a);
+    let state = a.repo().enter_travel(&up).unwrap();
+    assert!(state.parked_items[&voyage].contains(&secret));
+    a.store()
+        .set_travel_hidden_items(&onepass_core::sync::TravelHiddenItems {
+            items: BTreeSet::from([secret]),
+            chunks: BTreeSet::new(),
+        })
+        .unwrap();
+    assert!(!holds_item(&a, voyage, secret));
+    assert!(a.store().pending_changes().unwrap().is_empty());
+
+    // B edits the hidden item; A syncs: the new version does not land.
+    let vault = b.vault_named("Voyage");
+    let item = b
+        .repo()
+        .items(&vault)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id == secret)
+        .unwrap();
+    b.repo()
+        .save_item(&vault, edited(&item, "edited@exemple.fr", T0 + 60))
+        .unwrap();
+    sync(&mut server, &mut b).unwrap();
+    pull(&server, &mut a);
+    full_fetch(&server, &mut a);
+    assert!(!holds_item(&a, voyage, secret));
+    let vault = a.vault_named("Voyage");
+    assert_eq!(a.repo().items(&vault).unwrap().len(), 1);
+
+    // Leaving: the filter goes, a fetch from scratch brings B's version,
+    // verified against the manifest this device pinned.
+    a.store()
+        .set_travel_hidden_items(&Default::default())
+        .unwrap();
+    full_fetch(&server, &mut a);
+    a.repo().exit_travel(&MemoryStore::new(), &state).unwrap();
+    let items = a.repo().items(&vault).unwrap();
+    assert_eq!(items.len(), 2);
+    let back = items.iter().find(|i| i.id == secret).unwrap();
+    assert_eq!(
+        back.field("username").unwrap().value,
+        onepass_core::model::FieldValue::Text("edited@exemple.fr".into())
+    );
+    assert!(a.store().pending_changes().unwrap().is_empty());
+}

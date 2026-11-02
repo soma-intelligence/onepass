@@ -203,6 +203,14 @@ pub struct Repository<S: RecordStore> {
     /// absent on purpose, so `vaults()` does not expect them although the
     /// vault list does. In memory only.
     pub(crate) travel_parked: BTreeSet<Id>,
+    /// Items parked by the Travel Mode in vaults that stay (spec
+    /// 2026-11-02): vault id to item ids. Their records are absent on
+    /// purpose; their manifest entries stay and every write keeps them. In
+    /// memory only.
+    pub(crate) travel_parked_items: BTreeMap<Id, BTreeSet<Id>>,
+    /// The Travel Mode is on in this session (`enter_travel`,
+    /// `resume_travel`), even when nothing is parked (guarded items only).
+    pub(crate) travelling: bool,
     /// The lists seen in `chain` were set back on purpose since the state
     /// was last persisted (a list rebase renumbered them, or the owner took
     /// the server's lists): a merging persist keeps the in-memory ones
@@ -615,6 +623,8 @@ impl<S: RecordStore> Repository<S> {
             epoch_cache: Mutex::new(None),
             chain,
             travel_parked: BTreeSet::new(),
+            travel_parked_items: BTreeMap::new(),
+            travelling: false,
             lists_forced: false,
             records_id: id,
             pending: None,
@@ -757,6 +767,8 @@ impl<S: RecordStore> Repository<S> {
             epoch_cache: Mutex::new(None),
             chain,
             travel_parked: BTreeSet::new(),
+            travel_parked_items: BTreeMap::new(),
+            travelling: false,
             lists_forced: false,
             records_id: params.id,
             pending: None,
@@ -1483,6 +1495,11 @@ impl<S: RecordStore> Repository<S> {
         if vault.zone().is_shared() {
             return self.shared_save_item(vault, item);
         }
+        // A parked item is off this device: writing it would replace the
+        // version the server keeps for it (spec 2026-11-02).
+        if self.is_parked_item(vault.id, item.id) {
+            return Err(Error::NotFound);
+        }
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
         let rec = vault.seal_item(&item, loaded.next_version(item.id)?)?;
@@ -1861,7 +1878,7 @@ impl<S: RecordStore> Repository<S> {
             } else if let Some((r, i)) = held.iter().find(|(_, i)| exact(e, i)) {
                 restore.push(r.clone());
                 records.push((r.id, i.clone()));
-            } else {
+            } else if !self.is_parked_item(vault.id, e.item_id) {
                 return Err(IntegrityError::ManifestMissingItem.into());
             }
         }
@@ -1974,7 +1991,19 @@ impl<S: RecordStore> Repository<S> {
         }
         records.sort_by_key(|(_, r)| r.item_id);
         let plain: Vec<ItemRecord> = records.iter().map(|(_, r)| r.clone()).collect();
-        check_records(&manifest, &plain)?;
+        match self.travel_parked_items.get(&vault.id) {
+            // Travel Mode (spec 2026-11-02): a parked item's entry needs no
+            // record; one that is there is checked like any other.
+            Some(parked) if !parked.is_empty() => {
+                let present: BTreeSet<Id> = plain.iter().map(|r| r.item_id).collect();
+                let mut expected = manifest.clone();
+                expected
+                    .entries
+                    .retain(|e| !parked.contains(&e.item_id) || present.contains(&e.item_id));
+                check_records(&expected, &plain)?;
+            }
+            _ => check_records(&manifest, &plain)?,
+        }
         Ok(Loaded {
             manifest,
             records,
