@@ -20,6 +20,7 @@ mod api;
 mod blobs;
 mod client;
 mod credential;
+mod drops;
 mod http;
 mod rendezvous;
 #[cfg(feature = "testing")]
@@ -34,6 +35,7 @@ pub const RETRY_AFTER_MAX: u32 = 3600;
 pub use api::MailboxApi;
 pub use client::{ChangeFeed, FeedPage, MailboxClient, locate};
 pub use credential::{Credential, CredentialKey};
+pub use drops::{DROP_LIFE_SECS, DROP_MAX, DROP_SLOTS, drop_delete, drop_get, drop_put};
 pub use http::{Endpoint, tls_client_config};
 pub use onepass_mailbox_proto::ErrorCode;
 pub use rendezvous::{RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, Rendezvous};
@@ -82,6 +84,9 @@ pub enum MailboxError {
     /// A rendezvous frame number this side was about to write was already
     /// written by someone else (`409`): the session is spoiled and closed.
     FrameTaken,
+    /// An invite drop slot was already written (`409`): the first write
+    /// stands, this one changed nothing.
+    Conflict,
 }
 
 impl fmt::Display for MailboxError {
@@ -105,6 +110,7 @@ impl fmt::Display for MailboxError {
                 "mailbox incarnation changed from {expected} to {found}: local reset needed"
             ),
             Self::FrameTaken => f.write_str("rendezvous frame already written by another party"),
+            Self::Conflict => f.write_str("drop slot already written"),
         }
     }
 }

@@ -53,6 +53,9 @@ export const FUNCTIONS = [
   "rdv_put",
   "rdv_get",
   "rdv_close",
+  "drop_put",
+  "drop_get",
+  "drop_delete",
 ] as const;
 
 export type Fn = (typeof FUNCTIONS)[number];

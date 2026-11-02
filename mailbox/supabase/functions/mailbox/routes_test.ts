@@ -3,7 +3,7 @@ import * as proto from "./proto.ts";
 import { type Code, CODES } from "./errors.ts";
 import type { Arg, Db, Fn, Row, Tx } from "./db.ts";
 import type { Signer } from "./storage.ts";
-import { type Deps, handler as makeHandler } from "./routes.ts";
+import { type Deps, DROP_MAX, handler as makeHandler } from "./routes.ts";
 import { DEFAULT_IP_SOURCE, FALLBACK_ADDRESS, ipKey } from "./ip.ts";
 
 /**
@@ -456,6 +456,77 @@ Deno.test("rdv_put: frame over 1 MiB is 413 without SQL, written frame 204, conf
     IP,
   );
   assertEquals(c.status, 409);
+});
+
+// ---------------------------------------------------------- invite drops
+
+Deno.test("drop_body_cap_stops_reading: a slot over 64 KiB is 413 without SQL", async () => {
+  const db = new FakeDb(() => [ok()]);
+  const h = handler(deps(db));
+  // Announced too large.
+  await assertError(
+    await h(new Request(url(`/v1/drops/${MHEX}/0`), { method: "PUT", body: new Uint8Array(DROP_MAX + 1) }), IP),
+    "too_large",
+  );
+  // Streamed without a length: reading stops past the cap.
+  let pulled = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(ctrl) {
+      pulled++;
+      if (pulled > 64) {
+        ctrl.close();
+        return;
+      }
+      ctrl.enqueue(new Uint8Array(4096));
+    },
+  });
+  await assertError(
+    await h(
+      new Request(url(`/v1/drops/${MHEX}/1`), { method: "PUT", body: stream, duplex: "half" } as RequestInit),
+      IP,
+    ),
+    "too_large",
+  );
+  assert(pulled < 64, `read ${pulled} chunks`);
+  assertEquals(db.calls.length, 0);
+  const r = await h(new Request(url(`/v1/drops/${MHEX}/3`), { method: "PUT", body: new Uint8Array(DROP_MAX) }), IP);
+  assertEquals(r.status, 204);
+  assertEquals(db.calls[0].fn, "drop_put");
+  assertEquals(db.calls[0].args[1].value, 3);
+});
+
+Deno.test("drops: conflict 409, read 200 raw or 204, delete 204, slot 4 has no route", async () => {
+  const c = await handler(deps(new FakeDb(() => [{ status: "conflict", retry_after: null }])))(
+    new Request(url(`/v1/drops/${MHEX}/0`), { method: "PUT", body: new Uint8Array([1]) }),
+    IP,
+  );
+  assertEquals(c.status, 409);
+  const g = await handler(deps(new FakeDb(() => [ok({ data: new Uint8Array([7, 8]) })])))(
+    new Request(url(`/v1/drops/${MHEX}/2`)),
+    IP,
+  );
+  assertEquals(g.status, 200);
+  assertEquals(new Uint8Array(await g.arrayBuffer()), new Uint8Array([7, 8]));
+  const n = await handler(deps(new FakeDb(() => [{ status: "not_found", retry_after: null, data: null }])))(
+    new Request(url(`/v1/drops/${MHEX}/2`)),
+    IP,
+  );
+  assertEquals(n.status, 204);
+  const db = new FakeDb(() => [ok()]);
+  const d = await handler(deps(db))(new Request(url(`/v1/drops/${MHEX}`), { method: "DELETE" }), IP);
+  assertEquals(d.status, 204);
+  assertEquals(db.calls[0].fn, "drop_delete");
+  const four = await handler(deps(new FakeDb()))(
+    new Request(url(`/v1/drops/${MHEX}/4`), { method: "PUT", body: new Uint8Array([1]) }),
+    IP,
+  );
+  assertEquals(four.status, 404);
+  const limited = await handler(deps(new FakeDb(() => [{ status: "rate_limited", retry_after: 9 }])))(
+    new Request(url(`/v1/drops/${MHEX}/0`), { method: "PUT", body: new Uint8Array([1]) }),
+    IP,
+  );
+  assertEquals(limited.status, 429);
+  assertEquals(limited.headers.get("retry-after"), "9");
 });
 
 // ---------------------------------------------------------- signed routes

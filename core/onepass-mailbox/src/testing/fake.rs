@@ -66,6 +66,9 @@ use crate::client::{
     create_refusal, enroll_request, error_of, grant_request, issue_ticket, local, push_request,
     role_request,
 };
+use crate::drops::{
+    DROP_LIFE_SECS, DROP_SLOTS, check_put as check_drop_put, check_slot as check_drop_slot,
+};
 use crate::rendezvous::{
     RDV_CHUNK_MAX, RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, RdvTransport, Rendezvous,
 };
@@ -873,6 +876,17 @@ struct RdvInner {
     lose_next_answer: bool,
     /// The `n` of every read, per session and direction.
     reads: HashMap<(SessionId, u8), Vec<u32>>,
+    /// Invite drops (`drop_put`, `drop_get`, `drop_delete`), on the same
+    /// clock as the rendezvous.
+    drops: HashMap<[u8; 16], FakeDrop>,
+}
+
+/// One invite drop: open until `expires` (72 hours after its first write,
+/// or the moment of its delete), its slots written once.
+#[derive(Debug)]
+struct FakeDrop {
+    expires: Duration,
+    slots: [Option<Vec<u8>>; DROP_SLOTS as usize],
 }
 
 /// The rendezvous tables, apart from the mailbox state: a waiting read
@@ -1189,6 +1203,52 @@ impl FakeMailbox {
     /// The next rendezvous write lands, but its answer is lost (`Offline`).
     pub fn rdv_lose_next_answer(&self) {
         self.rdv.lock().lose_next_answer = true;
+    }
+
+    /// `PUT /v1/drops/{d}/{slot}` (sharing spec 13.9): the rules of
+    /// `drop_put`. Per-IP limits are not modelled.
+    pub fn drop_put(&self, id: [u8; 16], slot: u8, bytes: &[u8]) -> Result<(), MailboxError> {
+        check_drop_put(slot, bytes)?;
+        let mut inner = self.rdv.lock();
+        let now = self.rdv.now(&inner);
+        let d = inner.drops.entry(id).or_insert_with(|| FakeDrop {
+            expires: now + Duration::from_secs(DROP_LIFE_SECS),
+            slots: Default::default(),
+        });
+        if now >= d.expires {
+            return refused(ErrorCode::NotFound);
+        }
+        let s = &mut d.slots[usize::from(slot)];
+        if s.is_some() {
+            return Err(MailboxError::Conflict);
+        }
+        *s = Some(bytes.to_vec());
+        Ok(())
+    }
+
+    /// `GET /v1/drops/{d}/{slot}`: `None` when nothing is there to read.
+    pub fn drop_get(&self, id: [u8; 16], slot: u8) -> Result<Option<Vec<u8>>, MailboxError> {
+        check_drop_slot(slot)?;
+        let inner = self.rdv.lock();
+        let now = self.rdv.now(&inner);
+        Ok(inner
+            .drops
+            .get(&id)
+            .filter(|d| now < d.expires)
+            .and_then(|d| d.slots[usize::from(slot)].clone()))
+    }
+
+    /// `DELETE /v1/drops/{d}`: closed for good, even one never opened.
+    pub fn drop_delete(&self, id: [u8; 16]) -> Result<(), MailboxError> {
+        let mut inner = self.rdv.lock();
+        let now = self.rdv.now(&inner);
+        let d = inner.drops.entry(id).or_insert_with(|| FakeDrop {
+            expires: now,
+            slots: Default::default(),
+        });
+        d.expires = d.expires.min(now);
+        d.slots = Default::default();
+        Ok(())
     }
 
     /// `POST /v1/locate`: the live mailboxes holding `locator`, up to 8,

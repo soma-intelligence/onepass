@@ -727,6 +727,49 @@ async function rdvClose(c: Ctx): Promise<Response> {
   return empty(204);
 }
 
+// ------------------------------------------------------------- invite drops
+
+/** Largest slot of an invite drop (sharing spec 13.9). */
+export const DROP_MAX = 64 * 1024;
+
+function dropArgs(c: Ctx): Arg[] {
+  return [a.bytea(unhex(c.groups[0])), a.smallint(Number(c.groups[1]))];
+}
+
+async function dropPut(c: Ctx): Promise<Response> {
+  const ipk = await c.ipKey();
+  const rows = await call(c.deps.db, "drop_put", [...dropArgs(c), a.bytea(c.body), a.bytea(ipk)]);
+  if (rows[0]?.status === "conflict") return empty(409);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
+/** 200 with the slot's bytes, 204 when there is nothing to read (never written, expired or deleted). */
+async function dropGet(c: Ctx): Promise<Response> {
+  requireEmpty(c);
+  const ipk = await c.ipKey();
+  const rows = await call(c.deps.db, "drop_get", [...dropArgs(c), a.bytea(ipk)]);
+  if (rows[0]?.status === "not_found") return empty(204);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  const data = rows[0].data;
+  if (!(data instanceof Uint8Array)) throw new Refusal("retry");
+  return new Response(data as BodyInit, {
+    status: 200,
+    headers: { "content-type": "application/octet-stream", ...NO_STORE },
+  });
+}
+
+async function dropDelete(c: Ctx): Promise<Response> {
+  requireEmpty(c);
+  const ipk = await c.ipKey();
+  const rows = await call(c.deps.db, "drop_delete", [a.bytea(unhex(c.groups[0])), a.bytea(ipk)]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return empty(204);
+}
+
 const MAX = proto.COMMIT_BODY_MAX;
 const KIND = "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)";
 const N = "(0|[1-9][0-9]{0,3})";
@@ -807,6 +850,30 @@ const ROUTES: Route[] = [
     query: "none",
     maxBody: MAX,
     run: rdvClose,
+  },
+  {
+    method: "PUT",
+    re: new RegExp(`^/v1/drops/${H}/([0-3])$`),
+    auth: "none",
+    query: "none",
+    maxBody: DROP_MAX,
+    run: dropPut,
+  },
+  {
+    method: "GET",
+    re: new RegExp(`^/v1/drops/${H}/([0-3])$`),
+    auth: "none",
+    query: "none",
+    maxBody: MAX,
+    run: dropGet,
+  },
+  {
+    method: "DELETE",
+    re: new RegExp(`^/v1/drops/${H}$`),
+    auth: "none",
+    query: "none",
+    maxBody: MAX,
+    run: dropDelete,
   },
 ];
 

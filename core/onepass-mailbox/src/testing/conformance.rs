@@ -39,6 +39,15 @@ pub trait ConformanceTarget {
     /// none.
     fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError>;
 
+    /// `PUT /v1/drops/{d}/{slot}` on the same server (sharing spec 13.9).
+    fn drop_put(&mut self, id: [u8; 16], slot: u8, bytes: &[u8]) -> Result<(), MailboxError>;
+
+    /// `GET /v1/drops/{d}/{slot}`.
+    fn drop_get(&mut self, id: [u8; 16], slot: u8) -> Result<Option<Vec<u8>>, MailboxError>;
+
+    /// `DELETE /v1/drops/{d}`.
+    fn drop_delete(&mut self, id: [u8; 16]) -> Result<(), MailboxError>;
+
     /// Runs before each case (the end-to-end target clears the per-IP
     /// creation day window there: every case creates mailboxes).
     fn before_case(&mut self) {}
@@ -82,6 +91,8 @@ pub const CASES: &[(&str, Case)] = &[
     ),
     ("child_round_trip", child_round_trip),
     ("child_grant_and_revoke", child_grant_and_revoke),
+    ("drop_round_trip", drop_round_trip),
+    ("drop_conflict", drop_conflict),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -1259,4 +1270,45 @@ fn child_grant_and_revoke(t: &mut dyn ConformanceTarget) {
     forbidden(o.set_locator(session_id()), "the owner sets a locator");
     forbidden(mg.set_locator(session_id()), "a manager sets a locator");
     o.info().expect("the owner is still in");
+}
+
+// ------------------------------------------------------------ invite drops
+
+/// A fresh drop id per run, so the end-to-end target never meets a drop a
+/// previous run left behind.
+fn fresh_drop_id() -> [u8; 16] {
+    let mut id = [0u8; 16];
+    aws_lc_rs::rand::fill(&mut id).expect("random drop id");
+    id
+}
+
+fn drop_round_trip(t: &mut dyn ConformanceTarget) {
+    let d = fresh_drop_id();
+    assert_eq!(t.drop_get(d, 0).expect("empty drop"), None);
+    let big = vec![0x5a; crate::DROP_MAX];
+    t.drop_put(d, 0, b"invite").expect("slot 0");
+    t.drop_put(d, 3, &big).expect("slot 3, 64 KiB");
+    assert_eq!(
+        t.drop_get(d, 0).expect("read 0").as_deref(),
+        Some(&b"invite"[..])
+    );
+    assert_eq!(t.drop_get(d, 3).expect("read 3"), Some(big));
+    assert_eq!(t.drop_get(d, 1).expect("unwritten slot"), None);
+    t.drop_delete(d).expect("delete");
+    assert_eq!(t.drop_get(d, 0).expect("deleted"), None);
+    assert_eq!(
+        t.drop_put(d, 1, b"late"),
+        Err(MailboxError::Server(Code::NotFound)),
+        "a deleted drop never opens again"
+    );
+}
+
+fn drop_conflict(t: &mut dyn ConformanceTarget) {
+    let d = fresh_drop_id();
+    t.drop_put(d, 2, b"first").expect("first write");
+    assert_eq!(t.drop_put(d, 2, b"second"), Err(MailboxError::Conflict));
+    assert_eq!(
+        t.drop_get(d, 2).expect("read").as_deref(),
+        Some(&b"first"[..])
+    );
 }

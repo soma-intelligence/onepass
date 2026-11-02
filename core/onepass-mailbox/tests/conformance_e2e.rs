@@ -74,6 +74,18 @@ impl ConformanceTarget for E2e {
         onepass_mailbox::locate(&self.endpoint, locator)
     }
 
+    fn drop_put(&mut self, id: [u8; 16], slot: u8, bytes: &[u8]) -> Result<(), MailboxError> {
+        onepass_mailbox::drop_put(&self.endpoint, id, slot, bytes)
+    }
+
+    fn drop_get(&mut self, id: [u8; 16], slot: u8) -> Result<Option<Vec<u8>>, MailboxError> {
+        onepass_mailbox::drop_get(&self.endpoint, id, slot)
+    }
+
+    fn drop_delete(&mut self, id: [u8; 16]) -> Result<(), MailboxError> {
+        onepass_mailbox::drop_delete(&self.endpoint, id)
+    }
+
     fn before_case(&mut self) {
         self.admin(&["reset-rate"]);
     }

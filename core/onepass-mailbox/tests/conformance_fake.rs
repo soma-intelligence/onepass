@@ -42,6 +42,18 @@ impl ConformanceTarget for Fake {
     fn locate(&mut self, locator: [u8; 16]) -> Result<Vec<MailboxId>, MailboxError> {
         self.0.locate(locator)
     }
+
+    fn drop_put(&mut self, id: [u8; 16], slot: u8, bytes: &[u8]) -> Result<(), MailboxError> {
+        self.0.drop_put(id, slot, bytes)
+    }
+
+    fn drop_get(&mut self, id: [u8; 16], slot: u8) -> Result<Option<Vec<u8>>, MailboxError> {
+        self.0.drop_get(id, slot)
+    }
+
+    fn drop_delete(&mut self, id: [u8; 16]) -> Result<(), MailboxError> {
+        self.0.drop_delete(id)
+    }
 }
 
 #[test]
@@ -282,4 +294,24 @@ fn locate_answers_eight_oldest_first() {
     assert_eq!(fake.locate(loc).unwrap(), ids[..8]);
     clients[0].abandon().unwrap();
     assert_eq!(fake.locate(loc).unwrap(), ids[1..]);
+}
+
+/// The 72 hours of a drop, which the end-to-end suite cannot wait out:
+/// every slot shares the first write's deadline, and an expired drop never
+/// opens again.
+#[test]
+fn drop_expires_72_hours_after_first_write() {
+    let fake = FakeMailbox::new();
+    let d = [9; 16];
+    fake.drop_put(d, 0, b"a").unwrap();
+    fake.rdv_time_passes(Duration::from_secs(71 * 3600));
+    fake.drop_put(d, 1, b"b").unwrap();
+    fake.rdv_time_passes(Duration::from_secs(3600));
+    assert_eq!(fake.drop_get(d, 0), Ok(None));
+    assert_eq!(fake.drop_get(d, 1), Ok(None));
+    assert_eq!(code(fake.drop_put(d, 2, b"c")), Some(ErrorCode::NotFound));
+    assert_eq!(
+        fake.drop_put(d, 4, b"c"),
+        Err(MailboxError::Malformed("drop slot"))
+    );
 }
