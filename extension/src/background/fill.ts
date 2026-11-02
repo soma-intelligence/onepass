@@ -119,8 +119,18 @@ export class Filler {
     return this.deliver(t, values, roles);
   }
 
-  /** With `roles`, the identity's e-mail alone can go into a signup or checkout group, also as its `username`. */
-  async fillIdentity(t: FillTarget, itemId: string, ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
+  /**
+   * With `roles`, the identity's e-mail alone can go into a signup or checkout group, also as its `username`.
+   * `onIdentifier`: told the e-mail once it was sent to an `email` or `username` field of `roles`
+   * (the pending signup Login's username); not kept here.
+   */
+  async fillIdentity(
+    t: FillTarget,
+    itemId: string,
+    ctx: Ctx = "menu",
+    roles?: readonly FieldRole[],
+    onIdentifier?: (email: string) => void,
+  ): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_identity", ctx, item_id: itemId, origin: t.origin });
     const values: FillValues = {};
@@ -143,7 +153,10 @@ export class Filler {
       put(values, "region", a.region);
       put(values, "country", a.country);
     }
-    return this.deliver(t, values, roles);
+    const written = await this.deliver(t, values, roles);
+    const email = values.email ?? values.username;
+    if (written > 0 && onIdentifier && email !== undefined && roles?.some((r) => r === "email" || r === "username")) onIdentifier(email);
+    return written;
   }
 
   /** A freshly generated password into the new and confirm fields. */

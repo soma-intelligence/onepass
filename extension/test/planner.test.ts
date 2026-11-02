@@ -78,6 +78,9 @@ function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = fals
     async (...a: unknown[]) => {
       calls.filler.push([name, ...a]);
       if (name === "fillLogin" && failLogin) throw new Error("boom");
+      // The identity's e-mail went into an identifier field of the group.
+      const onIdentifier = a[4];
+      if (name === "fillIdentity" && typeof onIdentifier === "function") onIdentifier("jo@atlas.dev");
       return 1;
     };
   const filler = {
@@ -158,7 +161,9 @@ describe("planner", () => {
     );
     expect(outcome).toBe("filled");
     expect(calls.filler.map((c) => c[0])).toEqual(["fillIdentity", "fillCard", "fillGenerated"]);
-    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, "menu", ["given_name", "email"]]);
+    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, "menu", ["given_name", "email"], expect.any(Function)]);
+    // The pending Login gets the e-mail the identity wrote (spec 4).
+    expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false, username: "jo@atlas.dev" }]]);
     expect(calls.filler[1]).toEqual(["fillCard", { ...target(), formRef: "f1" }, CARD, "menu", ["cc_number"]]);
     expect(calls.filler[2]).toEqual(["fillGenerated", { ...target(), formRef: "f1" }, "Gen-Secret-42!", ["new_password"]]);
   });
@@ -239,6 +244,21 @@ describe("planner", () => {
     // Made for the generated group's form, through the page's rules (generate.ts).
     expect(calls.generated).toEqual([[target({ formRef: "f1" }), "menu"]]);
     expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+    expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
+  });
+
+  it("a signup identity without identifier field leaves the pending Login without username", async () => {
+    const { calls } = await planAndRun(
+      plan({
+        intent: "signup",
+        groups: [
+          { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e0", role: "given_name" }] },
+          { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+        ],
+      }),
+      context([form("f1", ["given_name", "new_password"])]),
+    );
+    expect(calls.filler[0]).toHaveLength(5);
     expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
   });
 

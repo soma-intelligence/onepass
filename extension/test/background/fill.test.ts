@@ -121,6 +121,16 @@ describe("fill pipeline", () => {
     expect(Object.keys((ext.sentToTabs[1]?.message as { values: object }).values)).not.toContain("username");
   });
 
+  it("tells the e-mail it wrote in an identifier field, only then", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    const told: string[] = [];
+    await filler.fillIdentity(target(), "it_03", "menu", ["email", "given_name"], (e) => told.push(e));
+    expect(told).toEqual(["alex@atlas.dev"]);
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name"], (e) => told.push(e));
+    expect(told).toEqual(["alex@atlas.dev"]);
+  });
+
   it("fill_refused_after_navigation (other origin, nothing asked to the host)", async () => {
     const { ext, client, filler } = await setup();
     ext.setFrame(7, 0, "https://evil.test/login", "doc-2");
