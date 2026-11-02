@@ -9,7 +9,9 @@ use crate::Id;
 
 mod access;
 mod key;
+mod manifest;
 mod membership;
+mod state;
 
 pub use access::{MAX_ZONE_CA_PEM_BYTES, MAX_ZONE_URL_BYTES, ZoneHome};
 pub use membership::{
@@ -17,6 +19,12 @@ pub use membership::{
     MembershipSeen, MovedTo, Removed, SignedMembership, accept_first, accept_next,
     merge_concurrent, merge_removed, sign_membership,
 };
+
+pub use manifest::{
+    MembershipView, SharedSignedManifest, sign_shared_manifest, verify_shared_manifest,
+};
+
+pub use state::{PendingIdentity, SHARE_STATE_VERSION, ShareState};
 
 pub use key::{
     MAX_MEMBER_KEY_ENVELOPE, MemberKey, key_commit, key_context, member_key_id, open_member_key,

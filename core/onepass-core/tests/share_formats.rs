@@ -827,3 +827,422 @@ mod merge_props {
         }
     }
 }
+
+// ------------------------------------------------------------ shared manifests
+
+mod manifests {
+    use super::*;
+    use onepass_core::manifest::{
+        Manifest, ManifestEntry, SeenManifest, manifest_hash, sign_manifest, verify_manifest,
+    };
+    use onepass_core::share::{
+        MembershipView, SharedSignedManifest, sign_shared_manifest, verify_shared_manifest,
+    };
+    use onepass_core::vault::{Vault, VaultMeta};
+
+    fn meta(name: &str) -> VaultMeta {
+        VaultMeta {
+            name: name.into(),
+            icon: "folder".into(),
+            color: "blue".into(),
+            travel_safe: false,
+            mcp_access: false,
+        }
+    }
+
+    struct World {
+        c: Cast,
+        vault: Vault,
+    }
+
+    fn world() -> World {
+        let c = cast();
+        let (vault, _, _) = Vault::new_shared(c.head.vault_id, meta("Family")).unwrap();
+        World { c, vault }
+    }
+
+    fn manifest(w: &World, body: &MembershipBody) -> Manifest {
+        Manifest::next(None, w.vault.id, Vec::new())
+            .unwrap()
+            .with_meta(&w.vault.meta)
+            .with_membership(body.seen(), body.generation)
+    }
+
+    fn sign(w: &World, by: &Person, m: &Manifest) -> SharedSignedManifest {
+        sign_shared_manifest(&w.vault, &by.key, by.member.member_ref(), m).unwrap()
+    }
+
+    fn view<'a>(head: &'a MembershipBody, ancestors: &'a [MembershipBody]) -> MembershipView<'a> {
+        MembershipView { head, ancestors }
+    }
+
+    #[test]
+    fn shared_manifest_round_trip() {
+        let w = world();
+        let m = manifest(&w, &w.c.head);
+        let sm = sign(&w, &w.c.bob, &m);
+        assert_eq!(SharedSignedManifest::decode(&sm.encode()).unwrap(), sm);
+        let mut longer = sm.encode();
+        longer.push(0);
+        assert!(SharedSignedManifest::decode(&longer).is_err());
+        let got = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &sm, None, None).unwrap();
+        assert_eq!(got, m);
+        // Without the shared fields, nothing is signed.
+        let plain = Manifest::next(None, w.vault.id, Vec::new()).unwrap();
+        assert!(
+            sign_shared_manifest(&w.vault, &w.c.bob.key, w.c.bob.member.member_ref(), &plain)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn personal_manifest_bytes_unchanged() {
+        // A personal manifest keeps its EXT_V1 encoding: the hash below is
+        // the one `manifest_hash` gave before the shared extension existed.
+        let m = Manifest {
+            vault_id: Id([1; 16]),
+            seq: 2,
+            prev_hash: [3; 32],
+            entries: vec![ManifestEntry {
+                item_id: Id([4; 16]),
+                version: 5,
+                record_hash: [6; 32],
+            }],
+            merkle_root: [7; 32],
+            ext: Some(onepass_core::manifest::ManifestExt {
+                meta_hash: Some([8; 32]),
+                history: vec![(1, [9; 32])],
+                membership: None,
+                generation: None,
+            }),
+        };
+        let mut plain = postcard::to_allocvec(&m).unwrap();
+        plain.push(1);
+        plain.extend(postcard::to_allocvec(&(Some([8u8; 32]), vec![(1u64, [9u8; 32])])).unwrap());
+        assert_eq!(manifest_hash(&m), digest(&SHA256, &plain).as_ref());
+    }
+
+    #[test]
+    fn a21_domain_separation() {
+        let w = world();
+        // A personal manifest, signed by Alice, served as a shared one.
+        let personal = Manifest::next(None, w.vault.id, Vec::new()).unwrap();
+        let sm = sign_manifest(&w.vault, &w.c.alice.key, &personal).unwrap();
+        let replay = SharedSignedManifest {
+            blob: sm.blob.clone(),
+            signer: w.c.alice.member.member_ref(),
+            sig: sm.sig.clone(),
+        };
+        let r = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &replay, None, None);
+        assert!(
+            matches!(r, Err(Error::Integrity(IntegrityError::Signature))),
+            "{r:?}"
+        );
+        // And the other way.
+        let shared = sign(&w, &w.c.alice, &manifest(&w, &w.c.head));
+        let back = onepass_core::manifest::SignedManifest {
+            blob: shared.blob,
+            sig: shared.sig,
+        };
+        let r = verify_manifest(&w.vault, &w.c.alice.member.sign_pub, &back, None);
+        assert!(
+            matches!(r, Err(Error::Integrity(IntegrityError::Signature))),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn a6_reader_manifest_refused() {
+        let w = world();
+        let sm = sign(&w, &w.c.carol, &manifest(&w, &w.c.head));
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&w.c.head, &[]),
+            &sm,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn a7_writer_meta_refused() {
+        let w = world();
+        let m = manifest(&w, &w.c.head);
+        let other_meta = Some([0xaa; 32]);
+        let by_bob = sign(&w, &w.c.bob, &m);
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&w.c.head, &[]),
+            &by_bob,
+            None,
+            other_meta,
+        ));
+        let by_alice = sign(&w, &w.c.alice, &m);
+        verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &by_alice, None, other_meta)
+            .unwrap();
+        // Same meta: a writer is fine.
+        let same = Some(onepass_core::manifest::meta_hash(&w.vault.meta));
+        verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &by_bob, None, same).unwrap();
+    }
+
+    #[test]
+    fn pointer_to_ancestor_ok_unless_role_or_generation_changed() {
+        let w = world();
+        let h1 = w.c.head.clone();
+        let old = sign(&w, &w.c.bob, &manifest(&w, &h1));
+        // A meta body: nothing changes for Bob.
+        let h2 = next_by(&h1, &w.c.alice, MembershipReason::Meta);
+        let anc = [h1.clone()];
+        verify_shared_manifest(&w.vault, &view(&h2, &anc), &old, None, None).unwrap();
+        // Bob demoted to reader since.
+        let mut demoted = next_by(&h1, &w.c.alice, MembershipReason::Role);
+        for m in &mut demoted.members {
+            if m.account_id == w.c.bob.member.account_id {
+                m.role = Role::Read;
+            }
+        }
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&demoted, &anc),
+            &old,
+            None,
+            None,
+        ));
+        // A rekey since.
+        let mut rekey = next_by(&h1, &w.c.alice, MembershipReason::Rekey);
+        rekey.generation = 2;
+        rekey.key_commit = [8; 32];
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&rekey, &anc),
+            &old,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn a5_removed_write_refused() {
+        let w = world();
+        // Carol made writer, then removed; she signs under the old body.
+        let mut h1 = w.c.head.clone();
+        let mut carol = person(Role::Write, ContactLevel::Verified, false);
+        carol.member = {
+            let mut m = w.c.carol.member.clone();
+            m.role = Role::Write;
+            m.level = ContactLevel::Verified;
+            m
+        };
+        carol.key = HybridSigningKey::generate().unwrap();
+        carol.member.sign_pub = carol.key.verifying_key().unwrap();
+        for m in &mut h1.members {
+            if m.account_id == carol.member.account_id {
+                *m = carol.member.clone();
+            }
+        }
+        let sm = sign(&w, &carol, &manifest(&w, &h1));
+        let mut h2 = next_by(&h1, &w.c.alice, MembershipReason::Remove);
+        remove(&mut h2, &carol, &w.c.alice);
+        h2.generation = 2;
+        h2.key_commit = [8; 32];
+        let anc = [h1.clone()];
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&h2, &anc),
+            &sm,
+            None,
+            None,
+        ));
+        // Pointing at the head that removed her: not a member.
+        let sm = sign(&w, &carol, &manifest(&w, &h2));
+        validation(verify_shared_manifest(
+            &w.vault,
+            &view(&h2, &anc),
+            &sm,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn generation_must_match_pointer() {
+        let w = world();
+        let m = Manifest::next(None, w.vault.id, Vec::new())
+            .unwrap()
+            .with_membership(w.c.head.seen(), w.c.head.generation + 1);
+        let sm = sign(&w, &w.c.bob, &m);
+        let r = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &sm, None, None);
+        assert!(
+            matches!(r, Err(Error::Integrity(IntegrityError::WrongContext))),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_pointer_set_aside() {
+        let w = world();
+        let ahead = next_by(&w.c.head, &w.c.alice, MembershipReason::Meta);
+        let sm = sign(&w, &w.c.bob, &manifest(&w, &ahead));
+        let r = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &sm, None, None);
+        assert!(matches!(r, Err(Error::NotFound)), "{r:?}");
+    }
+
+    #[test]
+    fn a8_membership_fork_detected() {
+        let w = world();
+        let mut other = w.c.head.clone();
+        other.issued_at += 1;
+        let sm = sign(&w, &w.c.bob, &manifest(&w, &other));
+        let r = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &sm, None, None);
+        assert!(
+            matches!(r, Err(Error::Integrity(IntegrityError::MembershipFork))),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn shared_manifest_rollback_refused() {
+        let w = world();
+        let m1 = manifest(&w, &w.c.head);
+        let m2 = Manifest::next(Some(&m1), w.vault.id, Vec::new())
+            .unwrap()
+            .with_membership(w.c.head.seen(), w.c.head.generation);
+        let s1 = sign(&w, &w.c.bob, &m1);
+        let seen = SeenManifest {
+            seq: m2.seq,
+            hash: manifest_hash(&m2),
+        };
+        let r = verify_shared_manifest(&w.vault, &view(&w.c.head, &[]), &s1, Some(&seen), None);
+        assert!(
+            matches!(r, Err(Error::Integrity(IntegrityError::ManifestRollback))),
+            "{r:?}"
+        );
+    }
+}
+
+// ------------------------------------------------------------ local share state
+
+mod state {
+    use super::*;
+    use onepass_core::share::{MEMBERSHIP_HISTORY, PendingIdentity, ShareState};
+    use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore, Zone};
+    use onepass_core::sync::SyncStore;
+
+    fn state() -> ShareState {
+        let c = cast();
+        let mut s = ShareState::new(Zone::Vault(c.head.vault_id), c.head.clone());
+        s.retired_signers.insert(c.bob.member.member_ref(), 3);
+        s.identity_pending = Some(PendingIdentity {
+            new_identity: c.alice.member.member_ref(),
+            since: 9,
+        });
+        s
+    }
+
+    #[test]
+    fn share_state_strict_decode() {
+        let s = state();
+        let b = s.encode();
+        assert_eq!(ShareState::decode(&b).unwrap(), s);
+        let mut longer = b.clone();
+        longer.push(0);
+        assert!(ShareState::decode(&longer).is_err());
+        let mut v = s.clone();
+        v.version = 2;
+        assert!(ShareState::decode(&v.encode()).is_err());
+        let mut private = s.clone();
+        private.zone = Zone::Private;
+        assert!(ShareState::decode(&private.encode()).is_err());
+        let mut other = s.clone();
+        other.vault_id = Id::new();
+        assert!(ShareState::decode(&other.encode()).is_err());
+        // An ancestor newer than the head.
+        let mut bad = s.clone();
+        let mut newer = s.head.clone();
+        newer.seq = 5;
+        bad.ancestors.push(newer);
+        assert!(ShareState::decode(&bad.encode()).is_err());
+    }
+
+    #[test]
+    fn ancestors_capped_at_64() {
+        let mut s = state();
+        let alice = MemberRef {
+            account_id: s.head.members[0].account_id,
+            identity_id: s.head.members[0].identity_id,
+        };
+        for i in 0..(MEMBERSHIP_HISTORY + 10) {
+            let next = s
+                .head
+                .next(alice, MembershipReason::Meta, 2000 + i as i64)
+                .unwrap();
+            s.advance(next);
+        }
+        assert_eq!(s.ancestors.len(), MEMBERSHIP_HISTORY);
+        assert_eq!(s.ancestors[0].seq, s.head.seq - 1);
+        assert_eq!(ShareState::decode(&s.encode()).unwrap(), s);
+        let mut over = s.clone();
+        over.ancestors.push({
+            let mut b = s.head.clone();
+            b.seq = 0;
+            b
+        });
+        assert!(ShareState::decode(&over.encode()).is_err());
+    }
+
+    fn stores() -> Vec<Box<dyn RecordStore>> {
+        vec![
+            Box::new(MemoryStore::new()),
+            Box::new(SyncStore::open_in_memory().unwrap()),
+        ]
+    }
+
+    #[test]
+    fn share_state_written_with_records() {
+        let s = state();
+        let zone = s.zone;
+        let id = Id::new();
+        for mut st in stores() {
+            let rec = |v: u64, d: &[u8]| Record {
+                kind: RecordKind::Item,
+                id,
+                version: v,
+                data: d.to_vec(),
+            };
+            st.put_all_zoned(vec![(zone, rec(1, b"a"), None)], vec![], None, &[])
+                .unwrap();
+            // A conditional write that fails: neither record nor state.
+            let r = st.put_all_zoned(
+                vec![(zone, rec(2, b"b"), Some(7))],
+                vec![],
+                None,
+                std::slice::from_ref(&s),
+            );
+            assert!(matches!(r, Err(Error::Conflict)));
+            assert_eq!(st.share_state(s.vault_id).unwrap(), None);
+            st.put_all_zoned(
+                vec![(zone, rec(2, b"b"), Some(1))],
+                vec![],
+                None,
+                std::slice::from_ref(&s),
+            )
+            .unwrap();
+            assert_eq!(st.share_state(s.vault_id).unwrap(), Some(s.clone()));
+            assert_eq!(st.share_states().unwrap(), vec![s.clone()]);
+            // Dropping the zone forgets the state too.
+            st.drop_zone(zone).unwrap();
+            assert_eq!(st.share_state(s.vault_id).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn share_state_never_pushed() {
+        let s = state();
+        let mut st = SyncStore::open_in_memory().unwrap();
+        st.put_all_zoned(vec![], vec![], None, std::slice::from_ref(&s))
+            .unwrap();
+        assert!(st.pending_changes().unwrap().is_empty());
+        assert!(st.pending_changes_in(s.zone).unwrap().is_empty());
+        assert!(st.zones().unwrap().is_empty());
+    }
+}

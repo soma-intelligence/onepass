@@ -236,3 +236,10 @@ path = "fuzz_targets/membership.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "shared_manifest"
+path = "fuzz_targets/shared_manifest.rs"
+test = false
+doc = false
+bench = false

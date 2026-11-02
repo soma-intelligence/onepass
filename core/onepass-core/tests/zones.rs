@@ -74,6 +74,7 @@ fn same_id_in_two_zones_is_two_records() {
             ],
             vec![],
             None,
+            &[],
         )
         .unwrap();
         assert_eq!(
@@ -106,6 +107,7 @@ fn zoned_write_is_atomic() {
             vec![(Zone::Vault(v), rec(RecordKind::Item, b, 1, b"one"), None)],
             vec![],
             None,
+            &[],
         )
         .unwrap();
         let r = s.put_all_zoned(
@@ -116,6 +118,7 @@ fn zoned_write_is_atomic() {
             ],
             vec![],
             None,
+            &[],
         );
         assert!(matches!(r, Err(Error::Conflict)));
         assert!(s.get(RecordKind::Item, a).unwrap().is_none());
@@ -222,6 +225,7 @@ fn drop_zone_wipes_only_that_zone() {
             ],
             vec![],
             None,
+            &[],
         )
         .unwrap();
         s.drop_zone(Zone::Vault(v)).unwrap();
@@ -255,6 +259,7 @@ fn pending_changes_are_per_zone() {
         ],
         vec![],
         None,
+        &[],
     )
     .unwrap();
     let pv = s.pending_changes_in(Zone::Vault(v)).unwrap();
@@ -272,8 +277,13 @@ fn pending_changes_are_per_zone() {
         Some(b"t".to_vec())
     );
     // A local deletion of a pushed row is queued; of a membership, refused.
-    s.put_all_zoned(vec![], vec![(Zone::Vault(v), RecordKind::Item, a)], None)
-        .unwrap();
+    s.put_all_zoned(
+        vec![],
+        vec![(Zone::Vault(v), RecordKind::Item, a)],
+        None,
+        &[],
+    )
+    .unwrap();
     let pv = s.pending_changes_in(Zone::Vault(v)).unwrap();
     assert_eq!((pv.len(), pv[0].data.is_none()), (1, true));
     assert!(
@@ -285,7 +295,8 @@ fn pending_changes_are_per_zone() {
         s.put_all_zoned(
             vec![],
             vec![(Zone::Vault(v), RecordKind::Membership, a)],
-            None
+            None,
+            &[]
         ),
         Err(Error::InvalidFormat(_))
     ));
@@ -336,6 +347,7 @@ fn reset_wipes_shared_zones() {
         )],
         vec![],
         None,
+        &[],
     )
     .unwrap();
     s.reset().unwrap();

@@ -6,7 +6,9 @@
 use crate::{Error, Id, Result};
 
 /// Where a record lives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Zone {
     /// The account's own records (every record before sharing).
     Private,

@@ -11,6 +11,7 @@ pub use zone::Zone;
 
 use crate::chain::ChainState;
 use crate::crypto::IdentityVerifyingKey;
+use crate::share::ShareState;
 use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -271,18 +272,20 @@ pub trait RecordStore {
     }
 
     /// Writes (each conditional on the version the caller read, as
-    /// `put_all_if_version`) and deletions in any zones, and the trust
-    /// state when given, all or nothing (`Conflict` on a version mismatch,
-    /// nothing written in any zone). The default holds the private zone
-    /// only.
+    /// `put_all_if_version`) and deletions in any zones, the trust state
+    /// when given, and the local state of shared vaults, all or nothing
+    /// (`Conflict` on a version mismatch, nothing written in any zone).
+    /// The default holds the private zone only.
     fn put_all_zoned(
         &mut self,
         writes: Vec<(Zone, Record, Option<u64>)>,
         deletes: Vec<(Zone, RecordKind, Id)>,
         trust: Option<&TrustState>,
+        shares: &[ShareState],
     ) -> Result<()> {
         if writes.iter().any(|(z, _, _)| z.is_shared())
             || deletes.iter().any(|(z, _, _)| z.is_shared())
+            || !shares.is_empty()
         {
             return Err(zones_unsupported());
         }
@@ -294,6 +297,18 @@ pub trait RecordStore {
         }
     }
 
+    /// The local pinned state of shared vault `vault`, never synced. The
+    /// default holds none.
+    fn share_state(&self, vault: Id) -> Result<Option<ShareState>> {
+        let _ = vault;
+        Ok(None)
+    }
+
+    /// Every shared vault's local state, by vault id.
+    fn share_states(&self) -> Result<Vec<ShareState>> {
+        Ok(Vec::new())
+    }
+
     /// The shared zones this store holds records of (the private zone is
     /// not listed). The default holds none.
     fn zones(&self) -> Result<Vec<Zone>> {
@@ -301,7 +316,8 @@ pub trait RecordStore {
     }
 
     /// Forget everything of shared `zone` on this device (pending writes
-    /// included), pushing nothing. The default holds no shared zone.
+    /// included, and the local state of the vault of a `Vault` zone),
+    /// pushing nothing. The default holds no shared zone.
     fn drop_zone(&mut self, zone: Zone) -> Result<()> {
         let _ = zone;
         Err(zones_unsupported())

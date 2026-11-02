@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{Record, RecordKind, RecordStore, Zone, check_local_meta_key, check_local_meta_prefix};
 use crate::chain::ChainState;
+use crate::share::ShareState;
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
 
@@ -14,6 +15,8 @@ pub struct MemoryStore {
     meta: BTreeMap<String, Vec<u8>>,
     /// Shared zones (sharing plan 2): one table per zone.
     zoned: BTreeMap<Zone, BTreeMap<(RecordKind, Id), Record>>,
+    /// Local state of each shared vault, never synced.
+    shares: BTreeMap<Id, ShareState>,
 }
 
 impl MemoryStore {
@@ -50,6 +53,7 @@ impl RecordStore for MemoryStore {
         writes: Vec<(Zone, Record, Option<u64>)>,
         deletes: Vec<(Zone, RecordKind, Id)>,
         trust: Option<&TrustState>,
+        shares: &[ShareState],
     ) -> Result<()> {
         for (zone, r, expected) in &writes {
             if self.get_in(*zone, r.kind, r.id)?.map(|c| c.version) != *expected {
@@ -96,7 +100,18 @@ impl RecordStore for MemoryStore {
         if let Some(t) = trust {
             self.trust = Some(t.clone());
         }
+        for s in shares {
+            self.shares.insert(s.vault_id, s.clone());
+        }
         Ok(())
+    }
+
+    fn share_state(&self, vault: Id) -> Result<Option<ShareState>> {
+        Ok(self.shares.get(&vault).cloned())
+    }
+
+    fn share_states(&self) -> Result<Vec<ShareState>> {
+        Ok(self.shares.values().cloned().collect())
     }
 
     fn zones(&self) -> Result<Vec<Zone>> {
@@ -111,6 +126,9 @@ impl RecordStore for MemoryStore {
     fn drop_zone(&mut self, zone: Zone) -> Result<()> {
         if zone.is_shared() {
             self.zoned.remove(&zone);
+        }
+        if let Zone::Vault(id) = zone {
+            self.shares.remove(&id);
         }
         Ok(())
     }

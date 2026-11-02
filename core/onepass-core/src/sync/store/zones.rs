@@ -16,6 +16,7 @@ use super::{
     StagedRow, SyncStore, TRUST_STATE_KEY, check_size, decode_id, decode_kind, delete_in,
     effective_version, set_meta_in, store_err, to_i64, write_pending,
 };
+use crate::share::ShareState;
 use crate::store::{Record, RecordKind, Zone};
 use crate::sync::{Change, RemoteChange};
 use crate::trust::TrustState;
@@ -205,7 +206,46 @@ pub(super) fn drop_zone_in(conn: &Connection, zone: Zone) -> Result<()> {
         conn.execute(&format!("DELETE FROM {table} WHERE zone = ?1"), params![&z])
             .map_err(store_err)?;
     }
+    if let Zone::Vault(id) = zone {
+        conn.execute(
+            "DELETE FROM meta WHERE key = ?1",
+            params![share_state_key(id)],
+        )
+        .map_err(store_err)?;
+    }
     Ok(())
+}
+
+/// Meta key prefix of a shared vault's local state (never synced).
+const SHARE_STATE_PREFIX: &str = "share_state/";
+
+fn share_state_key(vault: Id) -> String {
+    let hex: String = vault.0.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{SHARE_STATE_PREFIX}{hex}")
+}
+
+pub(super) fn share_state_in(conn: &Connection, vault: Id) -> Result<Option<ShareState>> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![share_state_key(vault)],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    bytes.map(|b| ShareState::decode(&b)).transpose()
+}
+
+pub(super) fn share_states_in(conn: &Connection) -> Result<Vec<ShareState>> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM meta WHERE key >= ?1 AND key < ?2 ORDER BY key")
+        .map_err(store_err)?;
+    let rows: Vec<Vec<u8>> = stmt
+        .query_map(params!["share_state/", "share_state0"], |r| r.get(0))
+        .map_err(store_err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(store_err)?;
+    rows.iter().map(|b| ShareState::decode(b)).collect()
 }
 
 /// One zoned write in `tx`: conditional on the version the caller read.
@@ -234,6 +274,7 @@ impl SyncStore {
         writes: Vec<(Zone, Record, Option<u64>)>,
         deletes: Vec<(Zone, RecordKind, Id)>,
         trust: Option<&TrustState>,
+        shares: &[ShareState],
     ) -> Result<()> {
         let tx = self.write_tx()?;
         for (zone, r, expected) in &writes {
@@ -247,6 +288,9 @@ impl SyncStore {
         }
         if let Some(trust) = trust {
             set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
+        }
+        for s in shares {
+            set_meta_in(&tx, &share_state_key(s.vault_id), &s.encode())?;
         }
         tx.commit()
     }

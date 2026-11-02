@@ -57,6 +57,7 @@ use crate::store::{
     Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, Zone, account_record_id,
     check_local_meta_key, check_local_meta_prefix,
 };
+use crate::share::ShareState;
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
@@ -3490,8 +3491,17 @@ impl RecordStore for SyncStore {
         writes: Vec<(Zone, Record, Option<u64>)>,
         deletes: Vec<(Zone, RecordKind, Id)>,
         trust: Option<&TrustState>,
+        shares: &[ShareState],
     ) -> Result<()> {
-        self.put_all_zoned_tx(writes, deletes, trust)
+        self.put_all_zoned_tx(writes, deletes, trust, shares)
+    }
+
+    fn share_state(&self, vault: Id) -> Result<Option<ShareState>> {
+        self.read(|c| zones::share_state_in(c, vault))
+    }
+
+    fn share_states(&self) -> Result<Vec<ShareState>> {
+        self.read(zones::share_states_in)
     }
 
     fn zones(&self) -> Result<Vec<Zone>> {
