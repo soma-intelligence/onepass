@@ -43,6 +43,8 @@ struct CategoryListView: View {
                         Button("Corbeille", systemImage: "trash", role: .destructive) {
                             model.trash(ref)
                         }
+                        // The list's accent tint would paint it like Archive.
+                        .tint(.red)
                         .accessibilityIdentifier("list.swipe.trash")
                     }
                 }
