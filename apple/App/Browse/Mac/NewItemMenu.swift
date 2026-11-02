@@ -125,12 +125,13 @@ struct NewItemSheet: View {
             #if os(iOS)
             // iPhone: the title and the search field float over the tiles, which scroll up under them
             // and fade out there as under every other header of the app.
+            // The fade goes on the tiles, under the bar: the title and the field stay sharp on top.
             scrollContent
+                .headerFade(color: Color(uiColor: .systemBackground), header: headerHeight)
                 .safeAreaBar(edge: .top, spacing: 0) {
                     header
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
                 }
-                .headerFade(color: Color(uiColor: .systemBackground), header: headerHeight)
             #else
             header
             scrollContent

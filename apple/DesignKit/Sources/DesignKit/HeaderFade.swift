@@ -75,9 +75,9 @@ struct HeaderFade: ViewModifier {
     @ViewBuilder private func wash(_ stops: [Gradient.Stop]) -> some View {
         if let header {
             // Under a header of its own the content must not show through the title or the field:
-            // the wash is at its densest there, then fades out below it along the same curve.
+            // the wash is solid there, then fades out below it along the same curve.
             VStack(spacing: 0) {
-                color.opacity(Self.curve[0].opacity).frame(height: header)
+                color.frame(height: header)
                 LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
                     .frame(height: Self.headerFadeLength)
             }
