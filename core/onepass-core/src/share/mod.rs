@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::Id;
 
 mod access;
+mod action;
 mod key;
 mod manifest;
 mod membership;
@@ -24,7 +25,7 @@ pub use access::{
 pub use membership::{
     MEMBERSHIP_FORMAT, MEMBERSHIP_HISTORY, Member, MembershipBody, MembershipReason,
     MembershipSeen, MovedTo, Removed, SignedMembership, accept_first, accept_next,
-    merge_concurrent, merge_removed, sign_membership,
+    identity_pub_hash, merge_concurrent, merge_removed, sign_membership,
 };
 
 pub use manifest::{
@@ -32,6 +33,8 @@ pub use manifest::{
 };
 
 pub use state::{PendingIdentity, SHARE_STATE_VERSION, ShareState};
+
+pub use action::{MemberView, ShareAction, SharedVaultInfo, ZoneMailboxKind};
 
 pub use key::{
     MAX_MEMBER_KEY_ENVELOPE, MemberKey, key_commit, key_context, member_key_id, open_member_key,

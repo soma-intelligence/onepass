@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{MEMBERSHIP_HISTORY, MemberRef, MembershipBody, MembershipView};
+use super::{MEMBERSHIP_HISTORY, MemberRef, MembershipBody, MembershipView, ShareAction};
 use crate::lineage::decode_strict_with;
 use crate::store::Zone;
 use crate::{Error, Id, Result};
@@ -40,6 +40,9 @@ pub struct ShareState {
     /// Local only: hide this vault from the MCP server even when its meta
     /// allows it (spec 10.2).
     pub mcp_hidden: bool,
+    /// Mailbox steps queued for the transport, in order, written in the
+    /// same transaction as the change that needs them.
+    pub actions: Vec<ShareAction>,
 }
 
 impl ShareState {
@@ -54,6 +57,7 @@ impl ShareState {
             retired_signers: BTreeMap::new(),
             identity_pending: None,
             mcp_hidden: false,
+            actions: Vec::new(),
         }
     }
 

@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use aws_lc_rs::digest::{SHA256, digest};
 
 use super::replay::meta_hash;
-use super::{Repository, entry, pin, seen};
+use super::{Repository, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
 use crate::approvers::ApproverEntry;
 use crate::chain::{ChainState, Seen};
@@ -49,10 +49,10 @@ use crate::lineage::{
     delivery_id, identity_id, rotation_code, sign_rotation,
 };
 use crate::lists::{AccountList, ListBody, sign};
-use crate::manifest::{Manifest, SeenManifest, record_hash, sign_manifest};
+use crate::manifest::{SeenManifest, sign_manifest};
 use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
-use crate::vault::{ItemRecord, Vault};
+use crate::vault::Vault;
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -140,19 +140,6 @@ fn sha256(b: &[u8]) -> [u8; 32] {
 
 fn next_version(r: &Record) -> Result<u64> {
     r.version.checked_add(1).ok_or(Error::Conflict)
-}
-
-/// The stored record of an item: `vault_id || postcard(ItemRecord)` under a
-/// fresh blob id (see the layout in `repo`).
-fn item_record(vault_id: Id, rec: &ItemRecord) -> Result<Record> {
-    let mut data = vault_id.0.to_vec();
-    data.extend(postcard::to_allocvec(rec).map_err(|_| Error::InvalidFormat("item record"))?);
-    Ok(Record {
-        id: Id::new(),
-        kind: RecordKind::Item,
-        version: rec.version,
-        data,
-    })
 }
 
 /// The first list of a new identity: seq 1, signed by its key, under its
@@ -464,33 +451,12 @@ impl<S: RecordStore> Repository<S> {
                 .ok_or(Error::InvalidFormat("vault meta"))?;
             let (fresh, envelope, meta_blob) =
                 Vault::create_with_id(&account, vault.id, vault.meta.clone())?;
-            let mut entries = Vec::with_capacity(l.records.len());
-            for (blob, rec) in &l.records {
-                collect.push(*blob);
-                let item = vault.open_item(rec)?;
-                let version = rec
-                    .version
-                    .checked_add(1)
-                    .ok_or(Error::InvalidFormat("item version"))?;
-                let sealed = fresh.reseal_item(&item, version)?;
-                resealed.insert((vault.id, item.id), record_hash(&sealed));
-                entries.push(entry(&sealed));
-                writes.push((item_record(vault.id, &sealed)?, None));
-                // Its attachments: the key re-wrapped under the new vault
-                // key, the chunks unchanged. A chunk not synced yet is
-                // left as it is.
-                for r in &item.attachments {
-                    for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
-                        if let Some(chunk) = self.store.get(RecordKind::Attachment, id)?
-                            && let Ok(moved) = crate::attachment::rewrap(vault, &fresh, &chunk)
-                        {
-                            writes.push((moved, Some(chunk.version)));
-                        }
-                    }
-                }
-            }
-            // Spec 6.7: prev_hash and seq follow the manifest loaded.
-            let m = Manifest::next(Some(&l.manifest), vault.id, entries)?.with_meta(&fresh.meta);
+            let r = self.reseal_vault(vault, &fresh, l)?;
+            collect.extend(r.collect);
+            resealed.extend(r.hashes.into_iter().map(|(i, h)| ((vault.id, i), h)));
+            writes.extend(r.items.into_iter().map(|rec| (rec, None)));
+            writes.extend(r.attachments.into_iter().map(|(moved, v)| (moved, Some(v))));
+            let m = r.manifest.with_meta(&fresh.meta);
             let sm = sign_manifest(&fresh, &account.keyset().signing, &m)?;
             writes.push((
                 Record {

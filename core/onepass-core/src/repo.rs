@@ -79,6 +79,7 @@ pub mod migrate;
 pub mod pairing;
 pub mod profile;
 pub mod replay;
+mod reseal;
 pub mod rotate;
 pub mod share;
 pub mod travel;

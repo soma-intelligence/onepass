@@ -66,6 +66,11 @@ pub struct Member {
     pub credential_id: [u8; 16],
 }
 
+/// `Member::identity_pub_hash`: SHA-256 of the identity public key bytes.
+pub fn identity_pub_hash(k: &crate::crypto::IdentityVerifyingKey) -> [u8; 32] {
+    sha256(&[k.as_bytes()])
+}
+
 impl Member {
     pub fn member_ref(&self) -> MemberRef {
         MemberRef {

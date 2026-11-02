@@ -146,3 +146,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "zone_access"
 required-features = ["dev-fast-kdf"]
+
+# Shared vaults over fast-KDF accounts (sharing plan 2, Tasks 6 to 15).
+[[test]]
+name = "share_vaults"
+required-features = ["dev-fast-kdf"]
