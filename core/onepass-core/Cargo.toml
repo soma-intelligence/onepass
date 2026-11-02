@@ -28,6 +28,9 @@ csv = "1"
 serde_json = "1"
 quick-xml = "0.42.0"
 zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
+k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
+ripemd = "0.1"
+sha3 = "0.10"
 
 # mlock for the page-locked key slots (crypto::locked).
 [target.'cfg(unix)'.dependencies]

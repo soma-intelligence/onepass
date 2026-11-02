@@ -39,6 +39,7 @@ pub mod totp;
 pub mod trust;
 pub mod vault;
 pub mod vaultlist;
+pub mod wallet_watch;
 pub mod watchtower;
 pub mod webauthn;
 
