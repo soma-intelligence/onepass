@@ -9,6 +9,7 @@ use crate::Id;
 
 mod access;
 mod action;
+mod invite;
 mod key;
 mod manifest;
 mod membership;
@@ -35,6 +36,8 @@ pub use manifest::{
 pub use state::{PendingIdentity, SHARE_STATE_VERSION, ShareState};
 
 pub use action::{MemberView, ShareAction, SharedVaultInfo, ZoneMailboxKind};
+
+pub use invite::{CredentialRenewal, InviteRecord, ShareInvite, ShareInviteView};
 
 pub use key::{
     MAX_MEMBER_KEY_ENVELOPE, MemberKey, key_commit, key_context, member_key_id, open_member_key,

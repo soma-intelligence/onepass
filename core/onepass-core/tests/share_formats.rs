@@ -1246,3 +1246,103 @@ mod state {
         assert!(st.zones().unwrap().is_empty());
     }
 }
+
+// ---------------------------------------------------------------- invites
+
+mod invites {
+    use super::*;
+    use onepass_core::share::{CredentialRenewal, InviteRecord, ShareInvite};
+
+    fn home() -> ZoneHome {
+        ZoneHome {
+            url: "https://box.example.org".into(),
+            mailbox_id: [4; 16],
+            extra_ca_pem: None,
+        }
+    }
+
+    fn invite(c: &Cast) -> ShareInvite {
+        let body = c.head.clone();
+        let sm = signed(body, &c.alice);
+        ShareInvite::sign(
+            c.head.vault_id,
+            sm,
+            home(),
+            vec![9; 64],
+            c.alice.member.member_ref(),
+            &c.alice.key,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn invite_round_trip_and_strict() {
+        let c = cast();
+        let i = invite(&c);
+        let r = InviteRecord::Vault(i.clone());
+        let bytes = r.encode();
+        assert_eq!(InviteRecord::decode(&bytes).unwrap(), r);
+        assert_eq!(r.id(), InviteRecord::decode(&bytes).unwrap().id());
+        let mut longer = bytes.clone();
+        longer.push(0);
+        assert!(InviteRecord::decode(&longer).is_err());
+        assert!(InviteRecord::decode(&bytes[..bytes.len() - 1]).is_err());
+        // A body of another vault, an empty or oversized credential.
+        let mut other = i.clone();
+        other.vault_id = Id::new();
+        assert!(InviteRecord::decode(&InviteRecord::Vault(other).encode()).is_err());
+        for cred in [vec![], vec![1; 4097]] {
+            let mut bad = i.clone();
+            bad.credential = cred;
+            assert!(InviteRecord::decode(&InviteRecord::Vault(bad).encode()).is_err());
+        }
+        let mut http = i.clone();
+        http.home.url = "http://box.example.org".into();
+        assert!(InviteRecord::decode(&InviteRecord::Vault(http).encode()).is_err());
+    }
+
+    #[test]
+    fn invite_signature_binds_every_field() {
+        let c = cast();
+        let i = invite(&c);
+        let alice = c.alice.key.verifying_key().unwrap();
+        i.verify(&alice).unwrap();
+        assert!(i.verify(&c.bob.key.verifying_key().unwrap()).is_err());
+        let mut t = i.clone();
+        t.home.mailbox_id = [5; 16];
+        assert!(t.verify(&alice).is_err());
+        let mut t = i.clone();
+        t.credential[0] ^= 1;
+        assert!(t.verify(&alice).is_err());
+        let mut t = i.clone();
+        t.signer = c.bob.member.member_ref();
+        assert!(t.verify(&alice).is_err());
+    }
+
+    #[test]
+    fn renewal_and_invite_signatures_differ() {
+        let c = cast();
+        let i = invite(&c);
+        let r = CredentialRenewal::sign(
+            i.vault_id,
+            i.home.clone(),
+            i.credential.clone(),
+            i.signer,
+            &c.alice.key,
+        )
+        .unwrap();
+        let alice = c.alice.key.verifying_key().unwrap();
+        r.verify(&alice).unwrap();
+        // The renewal's signature is no invite's, and back.
+        let mut forged = i.clone();
+        forged.sig = r.sig.clone();
+        assert!(forged.verify(&alice).is_err());
+        let mut forged = r.clone();
+        forged.sig = i.sig.clone();
+        assert!(forged.verify(&alice).is_err());
+        let rec = InviteRecord::Credential(r);
+        assert_eq!(InviteRecord::decode(&rec.encode()).unwrap(), rec);
+        let rem = InviteRecord::Removed(signed(c.head.clone(), &c.alice));
+        assert_eq!(InviteRecord::decode(&rem.encode()).unwrap(), rem);
+    }
+}

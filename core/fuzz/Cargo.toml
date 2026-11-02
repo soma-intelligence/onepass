@@ -250,3 +250,10 @@ path = "fuzz_targets/zone_access.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "share_invite"
+path = "fuzz_targets/share_invite.rs"
+test = false
+doc = false
+bench = false

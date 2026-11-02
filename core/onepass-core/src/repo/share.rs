@@ -3,7 +3,7 @@
 
 use super::reseal::item_record;
 use super::{Loaded, Repository, Use, entry, split_item_record};
-use crate::contact::ContactLevel;
+use crate::contact::{ContactEntry, ContactLevel, pair_id};
 use crate::lineage::identity_id;
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, check_records, manifest_hash, meta_hash, record_hash,
@@ -15,6 +15,10 @@ use crate::share::{
     MembershipReason, Role, ShareAction, ShareState, SharedVaultInfo, SignedZoneAccess,
     ZONE_ACCESS_KIND, ZoneAccess, ZoneHome, ZoneMailboxKind, ZoneSeed, accept_first,
     identity_pub_hash, key_commit, sign_membership, sign_shared_manifest, wrap_member_key,
+};
+use crate::share::{
+    InviteRecord, ShareInvite, ShareInviteView, accept_next, open_zone_credential, server_role,
+    wrap_zone_credential,
 };
 use crate::share::{
     MemberKey, SharedSignedManifest, SignedMembership, member_key_id, open_member_key,
@@ -550,11 +554,10 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// For each `ZoneAccess` of a vault zone without a local share state:
-    /// pin the zone's membership head when its signer is this account
-    /// (another device of mine) or a `Verified` contact of the book with
-    /// `Manage` in that body (ruling A-14). Anything else waits.
+    /// pin the zone's membership head when `pin_head_from` accepts it
+    /// (ruling A-14): signed by this account or by an `Active` contact of
+    /// the book, naming me under my current keys. Anything else waits.
     pub fn adopt_zone_accesses(&mut self) -> Result<()> {
-        let me = self.me();
         for access in self.zone_accesses()? {
             let AccessTarget::Zone(zone @ Zone::Vault(id)) = access.target else {
                 continue;
@@ -568,31 +571,9 @@ impl<S: RecordStore> Repository<S> {
             let Ok(signed) = SignedMembership::decode(&rec.data) else {
                 continue;
             };
-            let signer = signed.body.signer;
-            let key = if signer.account_id == me.account_id {
-                Some(self.account.params.signing_pub.clone())
-            } else {
-                match self.contact(signer.account_id)? {
-                    Some(c)
-                        if c.level == ContactLevel::Verified
-                            && signed.body.member(signer.account_id).is_some_and(|m| {
-                                m.role == Role::Manage && m.sign_pub == c.sign_pub
-                            }) =>
-                    {
-                        Some(c.sign_pub.clone())
-                    }
-                    _ => None,
-                }
-            };
-            let Some(key) = key else {
+            let Ok(head) = self.pin_head_from(&signed) else {
                 continue;
             };
-            let Ok(head) = accept_first(&signed, &key) else {
-                continue;
-            };
-            if head.member(me.account_id).is_none() {
-                continue;
-            }
             let state = ShareState::new(zone, head);
             self.store
                 .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
@@ -881,5 +862,403 @@ impl<S: RecordStore> Repository<S> {
         let entries = loaded.manifest.entries.clone();
         self.shared_commit(&updated, &state, &loaded, entries, writes, vec![])?;
         Ok(updated)
+    }
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// The zone this account shares with contact `account_id` (spec 13.5):
+    /// `Zone::Contact(pair_id)`, once a `ZoneAccess` of that zone with a
+    /// home exists (Task 7b sets it). Otherwise `Validation("contact", "no
+    /// zone")`.
+    pub fn contact_zone(&mut self, account_id: Id) -> Result<Zone> {
+        let zone = Zone::Contact(pair_id(self.me().account_id, account_id));
+        let ready = self
+            .zone_accesses()?
+            .iter()
+            .any(|a| a.target == AccessTarget::Zone(zone) && a.home.is_some());
+        if !ready {
+            return Err(refused("contact", "no zone"));
+        }
+        Ok(zone)
+    }
+
+    /// The next manifest of a shared vault over the same entries, pointing
+    /// at `head`: written with each membership change so that a member who
+    /// pinned `head` as its first body can verify the zone (plan 2 ruling,
+    /// spec 8.2 rule 5 sets aside a manifest naming an unknown body).
+    fn manifest_for_head(
+        &mut self,
+        vault: &Vault,
+        head: &MembershipBody,
+    ) -> Result<(Record, Option<u64>, SeenManifest)> {
+        let loaded = self.shared_served(vault, Use::Write)?;
+        let m = Manifest::next(
+            Some(&loaded.manifest),
+            vault.id,
+            loaded.manifest.entries.clone(),
+        )?
+        .with_meta(&vault.meta)
+        .with_membership(head.seen(), head.generation);
+        let sm = sign_shared_manifest(vault, &self.account.keyset().signing, self.me(), &m)?;
+        Ok((
+            Record {
+                kind: RecordKind::Manifest,
+                id: vault.id,
+                version: m.seq,
+                data: sm.encode(),
+            },
+            Some(loaded.manifest.seq),
+            SeenManifest {
+                seq: m.seq,
+                hash: manifest_hash(&m),
+            },
+        ))
+    }
+
+    /// Add contact `contact` to shared vault `vault_id` with `role` (spec
+    /// 7.3, 13.4): I manage the vault; the contact is `Active` in my book,
+    /// `Verified` for any role above `Read`; its keys are copied from the
+    /// book, never from anywhere else; the zone has its mailbox. One
+    /// transaction writes the `Add` body, the contact's `MemberKey` of the
+    /// current generation, the next manifest naming the new body, the
+    /// signed invite in our contact zone (with the contact's credential
+    /// seed wrapped for its pinned KEM key) and the share state with a
+    /// `GrantCredential` action at `server_role(role)`.
+    pub fn add_member(
+        &mut self,
+        vault_id: Id,
+        contact: Id,
+        role: Role,
+        now: i64,
+    ) -> Result<SharedVaultInfo> {
+        self.writable()?;
+        let state = self.share_state_of(vault_id)?;
+        self.require_role(&state, Role::Manage)?;
+        let me = self.me();
+        if contact == me.account_id {
+            return Err(refused("contact", "self"));
+        }
+        let c = self
+            .contact(contact)?
+            .ok_or_else(|| refused("contact", "unknown"))?;
+        if !c.usable_for(ContactLevel::Link) {
+            return Err(refused("contact", "not active"));
+        }
+        if role > Role::Read && c.level != ContactLevel::Verified {
+            return Err(refused("contact", "not verified"));
+        }
+        if state.head.member(contact).is_some() {
+            return Err(refused("member", "already a member"));
+        }
+        let zone = state.zone;
+        let home = self
+            .zone_accesses()?
+            .into_iter()
+            .find(|a| a.target == AccessTarget::Zone(zone))
+            .and_then(|a| a.home)
+            .ok_or_else(|| refused("zone", "not created yet"))?;
+        let czone = self.contact_zone(contact)?;
+        let vault = self.open_shared_with(&state)?;
+
+        let seed = ZoneSeed::generate()?;
+        let member = Member {
+            account_id: c.account_id,
+            identity_id: identity_id(&c.identity_pub),
+            identity_pub_hash: identity_pub_hash(&c.identity_pub),
+            sign_pub: c.sign_pub.clone(),
+            kem_pub: c.kem_pub.clone(),
+            role,
+            owner: false,
+            level: c.level,
+            added_by: me,
+            added_at: now,
+            key_pending: false,
+            credential_id: seed.credential_id(),
+        };
+        let who = member.member_ref();
+        let mut body = state.head.next(me, MembershipReason::Add, now)?;
+        let at = body
+            .members
+            .partition_point(|m| m.account_id < member.account_id);
+        body.members.insert(at, member);
+        let signed = sign_membership(body, &self.account.keyset().signing)?;
+        let head = accept_next(&state.head, &signed)?;
+        let g = head.generation;
+        let mk = wrap_member_key(&c.kem_pub, vault.key(), vault_id, g, &who)?;
+        let credential = wrap_zone_credential(&c.kem_pub, &seed, zone, home.mailbox_id, &who)?;
+        let invite = ShareInvite::sign(
+            vault_id,
+            signed.clone(),
+            home,
+            credential,
+            me,
+            &self.account.keyset().signing,
+        )?;
+        let invite = InviteRecord::Vault(invite);
+        let (manifest_rec, manifest_expected, seen) = self.manifest_for_head(&vault, &head)?;
+        // `manifest_for_head` refreshed the state's last manifest.
+        let mut state = self.share_state_of(vault_id)?;
+
+        let writes = vec![
+            (
+                zone,
+                Record {
+                    kind: RecordKind::Membership,
+                    id: vault_id,
+                    version: head.seq,
+                    data: signed.encode(),
+                },
+                Some(state.head.seq),
+            ),
+            (
+                zone,
+                Record {
+                    kind: RecordKind::MemberKey,
+                    id: mk.id(),
+                    version: 1,
+                    data: mk.encode(),
+                },
+                None,
+            ),
+            (zone, manifest_rec, manifest_expected),
+            (
+                czone,
+                Record {
+                    kind: RecordKind::ShareInvite,
+                    id: invite.id(),
+                    version: 1,
+                    data: invite.encode(),
+                },
+                None,
+            ),
+        ];
+        state.advance(head);
+        state.last_manifest = Some(seen);
+        state.last_meta = Some(meta_hash(&vault.meta));
+        let (zrole, put_kinds) = server_role(role);
+        state.actions.push(ShareAction::GrantCredential {
+            zone,
+            public_key: seed.public_key(),
+            role: zrole,
+            put_kinds,
+        });
+        self.store
+            .put_all_zoned(writes, vec![], None, std::slice::from_ref(&state))?;
+        self.shared_info(&state, &vault.meta.name)
+    }
+
+    /// The contact zones this account has an access to.
+    fn contact_zones(&self) -> Result<Vec<Zone>> {
+        Ok(self
+            .zone_accesses()?
+            .into_iter()
+            .filter_map(|a| match a.target {
+                AccessTarget::Zone(z @ Zone::Contact(_)) => Some(z),
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// An invite of a contact zone checked for this account (spec 7.3):
+    /// in the zone of the pair, from an `Active` contact of the book whose
+    /// book keys sign it, the signer `Manage` in the body with those keys,
+    /// and me a member of the body under my current keys. Returns the
+    /// invite, the pinned first body, the contact and my member entry.
+    fn checked_invite(
+        &mut self,
+        zone: Zone,
+        rec: &Record,
+    ) -> Result<(ShareInvite, MembershipBody, ContactEntry, Member)> {
+        let InviteRecord::Vault(invite) = InviteRecord::decode(&rec.data)? else {
+            return Err(refused("invite", "not a vault invite"));
+        };
+        if rec.id != InviteRecord::Vault(invite.clone()).id() {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let me = self.me();
+        let from = invite.signer;
+        if from.account_id == me.account_id {
+            return Err(refused("invite", "mine"));
+        }
+        if zone != Zone::Contact(pair_id(me.account_id, from.account_id)) {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let c = self
+            .contact(from.account_id)?
+            .ok_or_else(|| refused("invite", "unknown signer"))?;
+        if !c.usable_for(ContactLevel::Link) || identity_id(&c.identity_pub) != from.identity_id {
+            return Err(refused("invite", "unknown signer"));
+        }
+        invite.verify(&c.sign_pub)?;
+        if invite.membership.body.signer != from {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let head = accept_first(&invite.membership, &c.sign_pub)?;
+        let signer = head.member(from.account_id).ok_or(Error::NotFound)?;
+        if signer.level != ContactLevel::Verified || signer.kem_pub != c.kem_pub {
+            return Err(refused("invite", "signer keys"));
+        }
+        let p = &self.account.params;
+        let mine = head
+            .member(me.account_id)
+            .filter(|m| {
+                m.identity_id == me.identity_id
+                    && m.sign_pub == p.signing_pub
+                    && m.kem_pub == p.kem_pub
+                    && m.identity_pub_hash == identity_pub_hash(&p.identity_pub)
+            })
+            .ok_or_else(|| refused("invite", "not for my keys"))?
+            .clone();
+        Ok((invite, head, c, mine))
+    }
+
+    /// The vault invites waiting for this account, from `Active` contacts
+    /// of the book only; one whose vault I already joined is left out.
+    pub fn share_invites(&mut self) -> Result<Vec<ShareInviteView>> {
+        let mut out = Vec::new();
+        for zone in self.contact_zones()? {
+            for rec in self.store.list_in(zone, RecordKind::ShareInvite)? {
+                let Ok((invite, _, c, mine)) = self.checked_invite(zone, &rec) else {
+                    continue;
+                };
+                if self.store.share_state(invite.vault_id)?.is_some() {
+                    continue;
+                }
+                out.push(ShareInviteView {
+                    id: rec.id,
+                    vault_name_hint: None,
+                    from_name_local: c.name_local.clone(),
+                    role: mine.role,
+                    server_host: invite.home.host().to_owned(),
+                });
+            }
+        }
+        out.sort_by_key(|v| v.id);
+        Ok(out)
+    }
+
+    fn find_invite(&self, invite: Id) -> Result<(Zone, Record)> {
+        for zone in self.contact_zones()? {
+            if let Some(r) = self.store.get_in(zone, RecordKind::ShareInvite, invite)? {
+                return Ok((zone, r));
+            }
+        }
+        Err(Error::NotFound)
+    }
+
+    /// Accept invite `invite` (spec 7.3): checked as `share_invites` does,
+    /// the body pinned as the first head, my credential seed opened and
+    /// matched against my member entry, my `ZoneAccess` written with the
+    /// invite's home and the share state created, in one transaction.
+    pub fn accept_share_invite(&mut self, invite: Id, now: i64) -> Result<SharedVaultInfo> {
+        let _ = now;
+        self.writable()?;
+        let (zone, rec) = self.find_invite(invite)?;
+        let (inv, head, _, mine) = self.checked_invite(zone, &rec)?;
+        if self.store.share_state(inv.vault_id)?.is_some() {
+            return Err(refused("vault", "already joined"));
+        }
+        let vzone = Zone::Vault(inv.vault_id);
+        let seed = open_zone_credential(
+            self.account.keyset(),
+            &inv.credential,
+            vzone,
+            inv.home.mailbox_id,
+            &self.me(),
+        )?;
+        if seed.credential_id() != mine.credential_id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let (access, expected) =
+            self.zone_access_record(AccessTarget::Zone(vzone), Some(inv.home.clone()), &seed)?;
+        let state = ShareState::new(vzone, head);
+        self.store.put_all_zoned(
+            vec![(Zone::Private, access, expected)],
+            vec![],
+            None,
+            std::slice::from_ref(&state),
+        )?;
+        let name = self
+            .open_shared_with(&state)
+            .map(|v| v.meta.name)
+            .unwrap_or_default();
+        self.shared_info(&state, &name)
+    }
+
+    /// Decline invite `invite`: its record leaves our contact zone.
+    pub fn decline_share_invite(&mut self, invite: Id) -> Result<()> {
+        self.writable()?;
+        let (zone, _) = self.find_invite(invite)?;
+        self.store.put_all_zoned(
+            vec![],
+            vec![(zone, RecordKind::ShareInvite, invite)],
+            None,
+            &[],
+        )
+    }
+
+    /// Join a shared vault from the zone's membership head (ruling A-14):
+    /// another device of mine accepted, its `ZoneAccess` synced here.
+    /// `NotFound` while the access or the zone's head is missing here,
+    /// `Validation` when the head is not one this account may pin.
+    pub fn join_from_head(&mut self, vault_id: Id, now: i64) -> Result<SharedVaultInfo> {
+        let _ = now;
+        if let Some(state) = self.store.share_state(vault_id)? {
+            let name = self
+                .open_shared_with(&state)
+                .map(|v| v.meta.name)
+                .unwrap_or_default();
+            return self.shared_info(&state, &name);
+        }
+        let zone = Zone::Vault(vault_id);
+        if self.zone_access(AccessTarget::Zone(zone))?.is_none() {
+            return Err(Error::NotFound);
+        }
+        let rec = self
+            .store
+            .get_in(zone, RecordKind::Membership, vault_id)?
+            .ok_or(Error::NotFound)?;
+        let signed = SignedMembership::decode(&rec.data)?;
+        let head = self.pin_head_from(&signed)?;
+        let state = ShareState::new(zone, head);
+        self.store
+            .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+        let name = self
+            .open_shared_with(&state)
+            .map(|v| v.meta.name)
+            .unwrap_or_default();
+        self.shared_info(&state, &name)
+    }
+
+    /// A body this account may pin without its history: signed by me, or
+    /// by an `Active` contact of the book whose book keys are the signer's
+    /// in the body (the rule of `accept_share_invite`), and naming me under
+    /// my current keys.
+    pub(crate) fn pin_head_from(&mut self, signed: &SignedMembership) -> Result<MembershipBody> {
+        let me = self.me();
+        let signer = signed.body.signer;
+        let key = if signer.account_id == me.account_id {
+            self.account.params.signing_pub.clone()
+        } else {
+            let c = self
+                .contact(signer.account_id)?
+                .ok_or_else(|| refused("membership", "unknown signer"))?;
+            if !c.usable_for(ContactLevel::Link)
+                || identity_id(&c.identity_pub) != signer.identity_id
+            {
+                return Err(refused("membership", "unknown signer"));
+            }
+            c.sign_pub.clone()
+        };
+        let head = accept_first(signed, &key)?;
+        let p = &self.account.params;
+        head.member(me.account_id)
+            .filter(|m| {
+                m.identity_id == me.identity_id
+                    && m.sign_pub == p.signing_pub
+                    && m.kem_pub == p.kem_pub
+            })
+            .ok_or_else(|| refused("membership", "not for my keys"))?;
+        Ok(head)
     }
 }
