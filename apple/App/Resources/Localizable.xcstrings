@@ -4758,6 +4758,18 @@
             "state" : "translated",
             "value" : "No Passkeys"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna passkey"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna passkey"
+          }
         }
       }
     },
@@ -5449,6 +5461,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pick OnePass when a site offers to create a passkey, or bring yours over from Passwords (Export to OnePass)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige OnePass cuando un sitio te proponga crear una passkey, o trae las tuyas desde Contraseñas (Exportar a OnePass)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli OnePass quando un sito ti propone di creare una passkey, o porta le tue da Password (Esporta in OnePass)."
           }
         }
       }
@@ -9526,6 +9550,18 @@
     "Credential Exchange" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credential Exchange"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credential Exchange"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Credential Exchange"
@@ -16866,6 +16902,18 @@
             "state" : "translated",
             "value" : "The credentials sent by the other app couldn't be read. Start the export again from that app."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer las credenciales enviadas por la otra app. Vuelve a exportar desde esa app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è stato possibile leggere le credenziali inviate dall'altra app. Riavvia l'esportazione da quell'app."
+          }
         }
       }
     },
@@ -20219,6 +20267,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passkeys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
           }
         }
       }
