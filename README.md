@@ -284,7 +284,7 @@ On 2026-10-28 OnePass was scored against 10 open source managers with one 11-poi
 | Vaultwarden | Bitwarden server, self-host | 20 | 8 | 28 |
 | Strongbox | Local file, Apple | 24 | 4 | 28 |
 
-OnePass ties for first on design and is second to last on proof. It is the the only one of the 11 scored shipping hybrid post-quantum public-key encryption, and its KDF default is the strongest found. Proton Pass is open source with published audits ([Cure53, 2023](https://proton.me/blog/pass-open-source-security-audit), [Recurity Labs, Jan to Apr 2026](https://proton.me/business/pass/security)), wraps keys with bcrypt ([Proton](https://proton.me/blog/proton-pass-security-model)), and since 2026-05-21 offers read-only, vault-scoped [access tokens for AI agents](https://proton.me/blog/pass-access-tokens). KeePassXC, Bitwarden, Proton Pass, gopass and Passbolt are ahead of it on proof.
+OnePass ties for first on design and is second to last on proof. It is the only one of the 11 scored shipping hybrid post-quantum public-key encryption, and its KDF default is the strongest found. Proton Pass is open source with published audits ([Cure53, 2023](https://proton.me/blog/pass-open-source-security-audit), [Recurity Labs, Jan to Apr 2026](https://proton.me/business/pass/security)), wraps keys with bcrypt ([Proton](https://proton.me/blog/proton-pass-security-model)), and since 2026-05-21 offers read-only, vault-scoped [access tokens for AI agents](https://proton.me/blog/pass-access-tokens). KeePassXC, Bitwarden, Proton Pass, gopass and Passbolt are ahead of it on proof.
 
 ### Against closed source managers
 
