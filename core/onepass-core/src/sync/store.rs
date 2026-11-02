@@ -53,11 +53,11 @@ use crate::lineage::resolve::PromptKind;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
+use crate::share::ShareState;
 use crate::store::{
     Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, Zone, account_record_id,
     check_local_meta_key, check_local_meta_prefix,
 };
-use crate::share::ShareState;
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};

@@ -1354,7 +1354,10 @@ impl<S: RecordStore> Repository<S> {
         // The hidden account profile does not count, and moves to another
         // live vault before this one goes.
         if let Some(id) = profile {
-            let to = self.personal_vaults()?.into_iter().find(|v| v.id != vault.id);
+            let to = self
+                .personal_vaults()?
+                .into_iter()
+                .find(|v| v.id != vault.id);
             if let Some(to) = to {
                 self.move_item(id, vault, &to)?;
             }
