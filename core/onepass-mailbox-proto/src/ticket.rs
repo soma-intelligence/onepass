@@ -55,6 +55,14 @@ impl EnrollTicket {
     }
 }
 
+/// The encoding a pairing grant carries (`FullGrantV2::enroll`): the
+/// newcomer decodes it strictly before it calls the server.
+impl Message for SignedEnrollTicket {
+    fn check(&self) -> Result<(), ProtoError> {
+        self.ticket.check()
+    }
+}
+
 impl Message for Enroll {
     fn check(&self) -> Result<(), ProtoError> {
         self.ticket.ticket.check()?;

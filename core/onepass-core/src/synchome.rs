@@ -257,6 +257,19 @@ impl<S: RecordStore> Repository<S> {
         Ok(home.map(|(_, b)| b))
     }
 
+    /// The signed record of the current home, as stored and verified (and
+    /// pinned): what a pairing grant carries (`FullGrantV2::sync`).
+    pub fn signed_sync_home(&mut self) -> Result<Option<Vec<u8>>> {
+        let Some((_, body)) = self.stored_sync_home()? else {
+            return Ok(None);
+        };
+        self.chain.sync_home = Some(body.seen());
+        Ok(self
+            .store
+            .get(RecordKind::SyncHome, self.records_id)?
+            .map(|r| r.data))
+    }
+
     /// The signed record of the home following the current one, without
     /// writing it.
     pub(crate) fn sync_home_write(

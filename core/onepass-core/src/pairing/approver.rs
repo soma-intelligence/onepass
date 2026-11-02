@@ -10,12 +10,13 @@ use crate::devices::DeviceMode;
 use crate::{Id, IntegrityError, Result};
 
 use super::channel::Channel;
-use super::messages::{DeviceInfo, Grant, Hello, KeyExchange, Message, ProfileCard};
+use super::messages::{DeviceInfo, FullGrantV2, Grant, Hello, KeyExchange, Message, ProfileCard};
 use super::qr::PairingQr;
 use super::snapshot::check_snapshot;
 use super::{
     CLOCK_SKEW_SECS, KEM_LABEL, QR_LIFETIME_SECS, now_unix, refused, sas, sha256, transcript,
 };
+use crate::synchome::{SignedSyncHome, SyncBackend};
 
 pub struct Approver {
     pub(crate) channel: Channel,
@@ -43,6 +44,9 @@ pub struct Approver {
     /// its second `ConfirmedWithKey` (its acknowledgment): what the intro
     /// carries (spec 6.4).
     account_pop: Option<HybridSignature>,
+    /// The mailbox credential key the newcomer sent with its first
+    /// `ConfirmedWithKey` (mailbox spec 4.12), authenticated by the channel.
+    peer_mailbox: Option<[u8; 32]>,
 }
 
 impl Approver {
@@ -128,6 +132,7 @@ impl Approver {
             peer_key: None,
             granted_account: None,
             account_pop: None,
+            peer_mailbox: None,
         };
         let kx = KeyExchange { envelope }.to_bytes();
         Ok((approver, kx, code, h.device, h.requested_mode))
@@ -172,9 +177,14 @@ impl Approver {
         }
         match &msg {
             Message::Confirmed => self.peer_confirmed = true,
-            Message::ConfirmedWithKey { device, .. } if !self.peer_confirmed => {
+            Message::ConfirmedWithKey {
+                device,
+                mailbox_credential,
+                ..
+            } if !self.peer_confirmed => {
                 self.peer_confirmed = true;
                 self.peer_key = Some(device.clone());
+                self.peer_mailbox = *mailbox_credential;
             }
             Message::ConfirmedWithKey { pop, .. } => {
                 self.account_pop = Some(pop.clone());
@@ -214,6 +224,40 @@ impl Approver {
     /// the approver's intro carries (`Repository::introduce`).
     pub fn newcomer_account_pop(&self) -> Option<&HybridSignature> {
         self.account_pop.as_ref()
+    }
+
+    /// The mailbox credential key the newcomer asked to be enrolled with,
+    /// from its first `ConfirmedWithKey`.
+    pub fn newcomer_mailbox_credential(&self) -> Option<[u8; 32]> {
+        self.peer_mailbox
+    }
+
+    /// `grant` with the account's home (`home`: the signed `SyncHome`
+    /// record, `Repository::signed_sync_home`) and, when the home is a
+    /// mailbox and the newcomer sent a mailbox credential, an enroll ticket
+    /// for that credential (`ticket_issuer`: the app's or the CLI's mailbox
+    /// client signs it; the core makes no network call). A CloudKit home,
+    /// no credential or no issuer: no ticket (the newcomer is a one-time
+    /// transfer, spec 5.5).
+    pub fn grant_with_mailbox(
+        &self,
+        mut grant: FullGrantV2,
+        home: Option<&[u8]>,
+        ticket_issuer: Option<&dyn Fn([u8; 32]) -> Result<Vec<u8>>>,
+    ) -> Result<FullGrantV2> {
+        grant.sync = None;
+        grant.enroll = None;
+        let Some(home) = home else {
+            return Ok(grant);
+        };
+        let signed = SignedSyncHome::decode(home)?;
+        if let (SyncBackend::Mailbox { .. }, Some(credential), Some(issue)) =
+            (&signed.body.backend, self.peer_mailbox, ticket_issuer)
+        {
+            grant.enroll = Some(issue(credential)?);
+        }
+        grant.sync = Some(home.to_vec());
+        Ok(grant)
     }
 
     pub fn seal_grant(&mut self, grant: Grant, user_confirmed: bool) -> Result<Vec<u8>> {

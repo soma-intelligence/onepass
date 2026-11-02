@@ -7,6 +7,9 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# The enroll ticket a pairing grant carries (mailbox spec 4.12): decoded
+# and checked against this device's credential before any network call.
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 serde.workspace = true
 uuid.workspace = true
 aws-lc-rs.workspace = true

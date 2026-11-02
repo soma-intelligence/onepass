@@ -1535,3 +1535,237 @@ fn rendezvous_session_does_not_mix_with_version_one() {
     let (_, kx_v1, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
     assert!(n_rv.on_key_exchange(&kx_v1, NOW + 2).is_err());
 }
+
+// ----------------------------------------------------------------- mailbox
+
+use onepass_core::synchome::SyncBackend;
+use onepass_mailbox_proto::{EnrollTicket, SignedEnrollTicket, TICKET_VERSION};
+
+const MAILBOX_URL: &str = "https://mailbox.example.org/functions/v1/mailbox";
+
+fn mailbox_home() -> SyncBackend {
+    SyncBackend::Mailbox {
+        url: MAILBOX_URL.into(),
+        mailbox_id: [3; 16],
+    }
+}
+
+/// The ticket an approver's mailbox client would sign (the newcomer does
+/// not check the signature: the server does).
+fn ticket_for(url: &str, mailbox_id: [u8; 16], credential: [u8; 32]) -> Vec<u8> {
+    onepass_mailbox_proto::encode(&SignedEnrollTicket {
+        ticket: EnrollTicket {
+            version: TICKET_VERSION,
+            mailbox_url: url.into(),
+            mailbox_id,
+            new_credential_pub: credential,
+            expires_at: NOW + 600,
+            nonce: [1; 16],
+        },
+        approver_credential: [2; 16],
+        sig: [0; 64],
+    })
+}
+
+/// A v2 session where the newcomer sends `credential`; A grants with its
+/// signed home and `issuer` (a `ticket_for` its home unless replaced).
+/// Returns what the newcomer's open gave, and the session.
+fn mailbox_grant(
+    v: &mut V2,
+    n: &Keys,
+    credential: Option<[u8; 32]>,
+    edit: impl FnOnce(&mut FullGrantV2),
+    issuer: Option<&dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>>>,
+) -> (
+    onepass_core::Result<Message>,
+    Newcomer,
+    Approver,
+    Vec<Vec<u8>>,
+) {
+    let info = n.info("Pixel de Camille");
+    let (mut nc, qr, hello) = Newcomer::new(info, DeviceMode::Personal, NOW).unwrap();
+    let (mut ap, kx, _, _, _) = Approver::begin(&qr.to_text(), &hello, NOW + 1).unwrap();
+    nc.on_key_exchange(&kx, NOW + 2).unwrap();
+    let confirm = nc
+        .confirm_with_key_and_mailbox(&n.keys, credential)
+        .unwrap();
+    ap.on_frame_at(&confirm, NOW + 3).unwrap();
+    let home = v.a.repo().signed_sync_home().unwrap();
+    let mut grant = grant_v2(&mut v.a, &v.sk, n.id());
+    grant = ap
+        .grant_with_mailbox(grant, home.as_deref(), issuer)
+        .unwrap();
+    edit(&mut grant);
+    let frame = ap
+        .seal_grant_at(Grant::FullV2(grant), true, NOW + 4)
+        .unwrap();
+    let opened = nc.open_at(&frame, NOW + 5);
+    let wire = vec![qr.to_text().into_bytes(), hello.clone(), kx, confirm, frame];
+    (opened, nc, ap, wire)
+}
+
+fn own_ticket(c: [u8; 32]) -> onepass_core::Result<Vec<u8>> {
+    Ok(ticket_for(MAILBOX_URL, [3; 16], c))
+}
+
+#[test]
+fn credential_travels_inside_sas_channel() {
+    let mut v = v2();
+    v.a.repo().set_sync_home(mailbox_home(), NOW).unwrap();
+    let n = Keys::new(Id::new());
+    let credential = [0x5a; 32];
+    let (opened, _nc, ap, wire) =
+        mailbox_grant(&mut v, &n, Some(credential), |_| {}, Some(&own_ticket));
+    opened.unwrap();
+    assert_eq!(ap.newcomer_mailbox_credential(), Some(credential));
+    // No frame carries the key in clear.
+    for w in &wire {
+        assert!(
+            !w.windows(32).any(|x| x == credential),
+            "a frame carries the credential in clear"
+        );
+    }
+}
+
+#[test]
+fn grant_carries_home_and_ticket() {
+    let mut v = v2();
+    let set = v.a.repo().set_sync_home(mailbox_home(), NOW).unwrap();
+    let n = Keys::new(Id::new());
+    let credential = [7; 32];
+    let (opened, nc, _ap, _) =
+        mailbox_grant(&mut v, &n, Some(credential), |_| {}, Some(&own_ticket));
+    assert!(matches!(opened.unwrap(), Message::Grant(Grant::FullV2(_))));
+    let (home, ticket) = nc.mailbox_enrollment().expect("a mailbox to join");
+    assert_eq!(home, set);
+    let t: SignedEnrollTicket = onepass_mailbox_proto::decode(&ticket).unwrap();
+    assert_eq!(t.ticket.new_credential_pub, credential);
+    assert_eq!(t.ticket.mailbox_id, [3; 16]);
+    assert_eq!(nc.sync_home(), Some(&set));
+}
+
+#[test]
+fn cloudkit_account_gets_no_ticket() {
+    let mut v = v2();
+    v.a.repo()
+        .set_sync_home(SyncBackend::CloudKit, NOW)
+        .unwrap();
+    let n = Keys::new(Id::new());
+    let (opened, nc, _ap, _) = mailbox_grant(&mut v, &n, Some([7; 32]), |_| {}, Some(&own_ticket));
+    let Message::Grant(Grant::FullV2(g)) = opened.unwrap() else {
+        panic!("expected a FullV2");
+    };
+    assert!(g.enroll.is_none());
+    assert_eq!(nc.sync_home().unwrap().backend, SyncBackend::CloudKit);
+    // No mailbox to join: a one-time transfer (spec 5.5).
+    assert_eq!(nc.mailbox_enrollment(), None);
+
+    // And an account from before the mailbox: no home, no ticket.
+    let mut v = v2();
+    let (opened, nc, _ap, _) = mailbox_grant(&mut v, &n, Some([7; 32]), |_| {}, Some(&own_ticket));
+    let Message::Grant(Grant::FullV2(g)) = opened.unwrap() else {
+        panic!("expected a FullV2");
+    };
+    assert!(g.sync.is_none() && g.enroll.is_none());
+    assert_eq!(nc.sync_home(), None);
+}
+
+#[test]
+fn forged_home_refused() {
+    let mut v = v2();
+    v.a.repo().set_sync_home(mailbox_home(), NOW).unwrap();
+    // A home signed by another account's key, pointing elsewhere.
+    let (mut other, _) = Device::create();
+    other
+        .repo()
+        .set_sync_home(
+            SyncBackend::Mailbox {
+                url: MAILBOX_URL.into(),
+                mailbox_id: [9; 16],
+            },
+            NOW,
+        )
+        .unwrap();
+    let forged = other.repo().signed_sync_home().unwrap().unwrap();
+    let n = Keys::new(Id::new());
+    let (opened, nc, _ap, _) = mailbox_grant(
+        &mut v,
+        &n,
+        Some([7; 32]),
+        |g| {
+            g.sync = Some(forged.clone());
+            g.enroll = Some(ticket_for(MAILBOX_URL, [9; 16], [7; 32]));
+        },
+        Some(&own_ticket),
+    );
+    assert!(opened.is_err());
+    assert_eq!(nc.mailbox_enrollment(), None);
+    assert_eq!(nc.sync_home(), None);
+}
+
+#[test]
+fn ticket_for_other_key_refused() {
+    let mut v = v2();
+    v.a.repo().set_sync_home(mailbox_home(), NOW).unwrap();
+    let n = Keys::new(Id::new());
+    let other_key: &dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>> =
+        &|_| Ok(ticket_for(MAILBOX_URL, [3; 16], [8; 32]));
+    let (opened, nc, _, _) = mailbox_grant(&mut v, &n, Some([7; 32]), |_| {}, Some(other_key));
+    assert!(opened.is_err());
+    assert_eq!(nc.mailbox_enrollment(), None);
+    // Nor one for another mailbox or URL than the home names.
+    let n = Keys::new(Id::new());
+    let other_box: &dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>> =
+        &|c| Ok(ticket_for(MAILBOX_URL, [4; 16], c));
+    assert!(
+        mailbox_grant(&mut v, &n, Some([7; 32]), |_| {}, Some(other_box))
+            .0
+            .is_err()
+    );
+    let n = Keys::new(Id::new());
+    let other_url: &dyn Fn([u8; 32]) -> onepass_core::Result<Vec<u8>> = &|c| {
+        Ok(ticket_for(
+            "https://evil.example.org/functions/v1/mailbox",
+            [3; 16],
+            c,
+        ))
+    };
+    assert!(
+        mailbox_grant(&mut v, &n, Some([7; 32]), |_| {}, Some(other_url))
+            .0
+            .is_err()
+    );
+    // And a ticket the newcomer never asked for.
+    let n = Keys::new(Id::new());
+    let (opened, _, _, _) = mailbox_grant(
+        &mut v,
+        &n,
+        None,
+        |g| g.enroll = Some(ticket_for(MAILBOX_URL, [3; 16], [7; 32])),
+        None,
+    );
+    assert!(opened.is_err());
+}
+
+#[test]
+fn old_approver_still_pairs() {
+    // An approver without these fields: the grant pairs as the rotation
+    // plan says; the new device has no mailbox (the app says so).
+    let mut v = v2();
+    v.a.repo().set_sync_home(mailbox_home(), NOW).unwrap();
+    let n = Keys::new(Id::new());
+    let (opened, nc, ap, _) = mailbox_grant(
+        &mut v,
+        &n,
+        Some([7; 32]),
+        |g| {
+            g.sync = None;
+            g.enroll = None;
+        },
+        None,
+    );
+    assert!(matches!(opened.unwrap(), Message::Grant(Grant::FullV2(_))));
+    assert_eq!(nc.mailbox_enrollment(), None);
+    assert_eq!(nc.sync_home(), None);
+    assert_eq!(ap.newcomer_mailbox_credential(), Some([7; 32]));
+}
