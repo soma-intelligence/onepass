@@ -626,7 +626,26 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
                 .filter(|f| matches!(f.value, FieldValue::Passkey(_)))
                 .count(),
         ),
+        has_places: has_places(i),
     }
+}
+
+/// A placed point among the item's location fields and own locations: in range
+/// and not the editor's blank (0, 0), as `GeoPoint.isPlaced` on the Apple side.
+fn has_places(item: &Item) -> bool {
+    let placed = |lat: f64, lon: f64| {
+        lat.is_finite()
+            && lon.is_finite()
+            && (-90.0..=90.0).contains(&lat)
+            && (-180.0..=180.0).contains(&lon)
+            && !(lat == 0.0 && lon == 0.0)
+    };
+    item.locations.iter().any(|l| placed(l.lat, l.lon))
+        || item
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .any(|f| matches!(&f.value, FieldValue::Location(l) if placed(l.lat, l.lon)))
 }
 
 /// The card network of a credit card, from the BIN of its number.

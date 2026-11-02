@@ -841,6 +841,37 @@ fn summaries_have_no_secret_values() {
     assert!(!format!("{saved:?}").contains(password));
 }
 
+#[test]
+fn summaries_say_which_items_hold_a_place() {
+    let fx = fixture();
+    let place = |lat: f64, lon: f64| FfiLocation {
+        label: "Lieu".into(),
+        address: None,
+        lat,
+        lon,
+        radius_m: 100,
+        suggest_nearby: false,
+    };
+    let named = |title: &str| {
+        let mut item = login(&fx, title);
+        set_username(&mut item, "camille@exemple.fr");
+        item
+    };
+    let mut placed = named("Boulangerie");
+    placed.locations = vec![place(48.8566, 2.3522)];
+    let placed = fx.session.save_item(placed).unwrap();
+    // The editor's blank location (0, 0) is not a place.
+    let mut blank = named("Sans lieu");
+    blank.locations = vec![place(0.0, 0.0)];
+    let blank = fx.session.save_item(blank).unwrap();
+    let plain = fx.session.save_item(named("Banque")).unwrap();
+    let summaries = fx.session.item_summaries().unwrap();
+    let has = |id: &str| summaries.iter().find(|s| s.id == id).unwrap().has_places;
+    assert!(has(&placed.id));
+    assert!(!has(&blank.id));
+    assert!(!has(&plain.id));
+}
+
 // ---- sync -----------------------------------------------------------------
 
 #[test]

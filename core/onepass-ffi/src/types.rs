@@ -361,6 +361,11 @@ pub struct FfiItemSummary {
     /// filters on it.
     #[uniffi(default = 0)]
     pub passkey_count: u32,
+    /// The item holds at least one placed location (a location field, custom
+    /// ones included, or one of its own locations, never the blank 0, 0):
+    /// "À proximité" decrypts only these items for its index.
+    #[uniffi(default = false)]
+    pub has_places: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
