@@ -63,16 +63,12 @@ struct WatchtowerPage: View {
                 Text(summary(report)).font(.callout).foregroundStyle(.secondary)
             }
         case .analyzing:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Analyse des éléments…").font(.callout).foregroundStyle(.secondary)
-            }
+            ScanProgressBar(title: Text("Analyse des éléments"))
+                .frame(maxWidth: 420)
         case .checkingBreaches(let done, let total):
-            HStack(spacing: 8) {
-                ProgressView(value: Double(done), total: Double(max(total, 1)))
-                    .frame(width: 140)
-                Text("Vérification des fuites : \(done) sur \(total)").font(.callout).foregroundStyle(.secondary)
-            }
+            ScanProgressBar(
+                title: Text("Vérification des fuites"), detail: Text("\(done) sur \(total)"), done: done, total: total)
+                .frame(maxWidth: 420)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)

@@ -40,6 +40,7 @@ struct WatchtowerTab: View {
                     statusLine
                 }
                 .padding(.horizontal, 4)
+                scanCard
                 if let report = watchtower.report {
                     StrengthCard(levels: report.strength.map(Int.init))
                     let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
@@ -57,6 +58,7 @@ struct WatchtowerTab: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
+            .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
         }
         .background(PhoneBackground())
         .navigationTitle("Watchtower")
@@ -77,6 +79,28 @@ struct WatchtowerTab: View {
         !card.itemIDs(in: report).isEmpty
     }
 
+    /// While a scan runs: a card with its step and a slim bar (the analysis, then the breach check
+    /// with its figures).
+    @ViewBuilder private var scanCard: some View {
+        if watchtower.isRunning {
+            Group {
+                switch watchtower.phase {
+                case .checkingBreaches(let done, let total):
+                    ScanProgressBar(
+                        title: Text("Vérification des fuites"), detail: Text("\(done) sur \(total)"), done: done,
+                        total: total)
+                default:
+                    ScanProgressBar(title: Text("Analyse des éléments"))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .phoneCard()
+            .transition(.opacity)
+            .accessibilityIdentifier("watchtower.scan")
+        }
+    }
+
     @ViewBuilder private var statusLine: some View {
         switch watchtower.phase {
         case .idle, .ready:
@@ -86,16 +110,9 @@ struct WatchtowerTab: View {
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
-        case .analyzing:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Analyse des éléments…").font(.footnote).foregroundStyle(.secondary)
-            }
-        case .checkingBreaches(let done, let total):
-            HStack(spacing: 8) {
-                ProgressView(value: Double(done), total: Double(max(total, 1))).frame(width: 120)
-                Text("Vérification des fuites : \(done) sur \(total)").font(.footnote).foregroundStyle(.secondary)
-            }
+        case .analyzing, .checkingBreaches:
+            // The scan's own card says it (`scanCard`).
+            EmptyView()
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote)
