@@ -306,6 +306,14 @@ pub struct FfiItem {
     /// The files attached to the item (read only here: `Session::add_attachment`
     /// and `remove_attachment` change them).
     pub attachments: Vec<FfiAttachment>,
+    /// Leaves the device in Travel Mode even when its vault stays (the
+    /// reserved tag `onepass:travel-hidden`, never listed in `tags`).
+    #[uniffi(default = false)]
+    pub travel_hidden: bool,
+    /// Extra protection in Travel Mode (the reserved tag
+    /// `onepass:travel-guard`, never listed in `tags`).
+    #[uniffi(default = false)]
+    pub travel_guard: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -366,6 +374,12 @@ pub struct FfiItemSummary {
     /// "À proximité" decrypts only these items for its index.
     #[uniffi(default = false)]
     pub has_places: bool,
+    /// See `FfiItem::travel_hidden`.
+    #[uniffi(default = false)]
+    pub travel_hidden: bool,
+    /// See `FfiItem::travel_guard`.
+    #[uniffi(default = false)]
+    pub travel_guard: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

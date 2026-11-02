@@ -55,7 +55,7 @@ pub use remote::*;
 pub use rotation::*;
 pub use rules::{password_for_context, password_from_rules};
 pub use session::{Session, SyncStoreHandle};
-pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
+pub use travel::{FfiTravelItemEntry, FfiTravelItemPlan, FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
 pub use wallet_watch::*;
 

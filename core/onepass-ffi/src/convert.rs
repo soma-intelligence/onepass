@@ -7,7 +7,7 @@ use onepass_core::Id;
 use onepass_core::model::{
     Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, Item, ItemType, ItemUrl,
     Location, LoginMethod, MatchRule, PasskeyCredential, PasswordHistoryEntry, Provider, Section,
-    SshKeyValue,
+    SshKeyValue, TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG,
 };
 use onepass_core::vault::{Vault, VaultMeta};
 use time::{Date, Month, OffsetDateTime};
@@ -554,13 +554,21 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
+/// The tags the UI shows: the reserved Travel Mode tags are booleans.
+fn visible_tags(tags: &[String]) -> Vec<String> {
+    tags.iter()
+        .filter(|t| *t != TRAVEL_HIDDEN_TAG && *t != TRAVEL_GUARD_TAG)
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
     FfiItem {
         id: id_hex(i.id),
         vault_id: id_hex(i.vault_id),
         item_type: i.item_type.into(),
         title: i.title.clone(),
-        tags: i.tags.clone(),
+        tags: visible_tags(&i.tags),
         favorite: i.favorite,
         color: i.color.clone(),
         notes: i.notes.clone(),
@@ -591,6 +599,8 @@ pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
         password_history_count: count(i.password_history.len()),
         attachment_count: count(i.attachments.len()),
         attachments: i.attachments.iter().map(attachment_to_ffi).collect(),
+        travel_hidden: i.travel_hidden(),
+        travel_guard: i.travel_guarded(),
     }
 }
 
@@ -608,7 +618,7 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         title: i.title.clone(),
         subtitle: i.subtitle(),
         favorite: i.favorite,
-        tags: i.tags.clone(),
+        tags: visible_tags(&i.tags),
         primary_url: primary,
         archived: i.archived,
         trashed_at: i.trashed_at.map(ts),
@@ -627,6 +637,8 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
                 .count(),
         ),
         has_places: has_places(i),
+        travel_hidden: i.travel_hidden(),
+        travel_guard: i.travel_guarded(),
     }
 }
 
@@ -689,7 +701,7 @@ pub(crate) fn item_to_core(
         vault_id: parse_id(&f.vault_id)?,
         item_type: f.item_type.into(),
         title: f.title.clone(),
-        tags: f.tags.clone(),
+        tags: visible_tags(&f.tags),
         favorite: f.favorite,
         color: f.color.clone(),
         custom_icon: stored.and_then(|s| s.custom_icon.clone()),
@@ -738,6 +750,8 @@ pub(crate) fn item_to_core(
             .map(|s| s.usage_forgotten.clone())
             .unwrap_or_default(),
     };
+    item.set_travel_hidden(f.travel_hidden);
+    item.set_travel_guarded(f.travel_guard);
     if let Some(old) = stored.and_then(password_of)
         && !old.is_empty()
         && password_of(&item) != Some(old)

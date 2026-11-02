@@ -178,11 +178,19 @@ fn unix_now() -> i64 {
 }
 
 /// Every item of every vault but the excluded ones.
+/// The items of the vaults not in `excluded`. While travelling, an item
+/// behind extra protection is left out (spec 2026-11-02): AutoFill never
+/// offers it, only the app shows it, after password and biometrics.
 fn visible_items(repo: &mut Repo, excluded: &HashSet<Id>) -> Result<Vec<Item>, OnePassError> {
+    let guard = repo.travelling();
     let mut out = Vec::new();
     for v in repo.vaults()? {
         if !excluded.contains(&v.id) {
-            out.extend(repo.items(&v)?);
+            out.extend(
+                repo.items(&v)?
+                    .into_iter()
+                    .filter(|i| !(guard && i.travel_guarded())),
+            );
         }
     }
     Ok(out)
@@ -456,16 +464,24 @@ impl Session {
         })
     }
 
-    /// The items of any type hidden from AutoFill, as record ids
+    /// The items of any type hidden from AutoFill (and, while travelling,
+    /// those behind extra protection), as record ids
     /// `"<vault id>:<item id>"` (trashed and archived ones included). Text
     /// insertion lists every item but these (ruling X3: never offered).
     pub fn autofill_hidden_record_ids(&self) -> Result<Vec<String>, OnePassError> {
         self.with(|repo| {
-            Ok(visible_items(repo, &HashSet::new())?
-                .iter()
-                .filter(|i| i.hide_from_autofill)
-                .map(record_id)
-                .collect())
+            // Travel Mode: items behind extra protection are hidden too.
+            let guard = repo.travelling();
+            let mut out = Vec::new();
+            for v in repo.vaults()? {
+                out.extend(
+                    repo.items(&v)?
+                        .iter()
+                        .filter(|i| i.hide_from_autofill || (guard && i.travel_guarded()))
+                        .map(record_id),
+                );
+            }
+            Ok(out)
         })
     }
 

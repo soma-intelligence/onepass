@@ -218,6 +218,12 @@ fn on(ctx: &Ctx, upstream: &Path) -> Result<(), CliError> {
             Ok(s) => s,
             // The upstream lacks a vault or holds it differently: a usage
             // problem (push first), not tampering with the local store.
+            Err(Error::InvalidFormat("nothing leaves")) => {
+                return Err(CliError::usage(
+                    "nothing to hide: every vault is --travel-safe and no item is hidden or \
+                     guarded in travel",
+                ));
+            }
             Err(Error::InvalidFormat(m)) if m.starts_with("upstream") => {
                 return Err(CliError::usage(format!(
                     "{m}; run `onepass travel push` first, nothing was hidden"
@@ -340,14 +346,21 @@ fn status(ctx: &Ctx) -> Result<(), CliError> {
         });
     }
     let since = rfc3339(state.entered_at);
+    let items: usize = state.parked_items.values().map(|s| s.len()).sum();
     if ctx.json {
         crate::out!(
             "{}",
             serde_json::json!({
                 "travel": true,
                 "hidden": state.parked.len(),
+                "hidden_items": items,
                 "since": since,
             })
+        );
+    } else if items > 0 {
+        crate::out!(
+            "travel mode: on ({} vaults hidden since {since}, {items} items hidden)",
+            state.parked.len()
         );
     } else {
         crate::out!(

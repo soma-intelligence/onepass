@@ -350,13 +350,22 @@ impl VaultAccess for AppVault<'_> {
         let excluded = lock(&self.0.excluded).clone();
         self.session()?
             .with(|repo| {
+                // Travel Mode (spec 2026-11-02): an item behind extra
+                // protection is never served to the extension while
+                // travelling.
+                let guard = repo.travelling();
                 let mut out = Vec::new();
                 for v in repo.vaults()? {
                     if excluded.contains(&v.id) {
                         continue;
                     }
                     let info = Self::info(&v);
-                    out.extend(repo.items(&v)?.into_iter().map(|i| (info.clone(), i)));
+                    out.extend(
+                        repo.items(&v)?
+                            .into_iter()
+                            .filter(|i| !(guard && i.travel_guarded()))
+                            .map(|i| (info.clone(), i)),
+                    );
                 }
                 Ok(out)
             })
