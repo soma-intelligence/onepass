@@ -24,6 +24,7 @@ mod session;
 pub mod timeline;
 mod travel;
 mod types;
+mod wallet_watch;
 pub mod watchtower;
 
 use std::path::Path;
@@ -56,6 +57,7 @@ pub use rules::{password_for_context, password_from_rules};
 pub use session::{Session, SyncStoreHandle};
 pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
+pub use wallet_watch::*;
 
 uniffi::setup_scaffolding!();
 
