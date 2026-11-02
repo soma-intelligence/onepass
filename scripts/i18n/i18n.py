@@ -660,6 +660,42 @@ def area_of(path: str, dirs: list[str]) -> str:
     return name[:1].lower() + name[1:]
 
 
+# A literal is renamed only where Swift reads it as a localization key: the first argument of a
+# SwiftUI or AppIntents API that takes a LocalizedStringKey/Resource, or a value typed
+# LocalizedStringKey/Resource. Anything else (a path, an
+# identifier, a comment) is left alone, and a key with such a literal keeps its legacy name.
+LOCALIZED_CONTEXT = re.compile(
+    r"(?:\b(?:Text|Button|Label|Section|Toggle|Picker|Menu|TextField|SecureField|Link|LabeledContent|Stepper"
+    r"|GroupBox|DisclosureGroup|NavigationLink|Tab|ContentUnavailableView|ProgressView|ShareLink|Gauge|ControlGroup"
+    r"|LocalizedStringKey|LocalizedStringResource|IntentDescription|AppShortcut|DisplayRepresentation|TypeDisplayRepresentation"
+    r"|ControlWidgetButton|ControlWidgetToggle)\(\s*"
+    r"|\.(?:navigationTitle|navigationSubtitle|accessibilityLabel|accessibilityHint|accessibilityValue|help|widgetLabel"
+    r"|configurationDisplayName|displayName|description|badge|alert|confirmationDialog|searchable|navigationBarTitle)\(\s*"
+    r"|\blocalized:\s*"
+    r"|:\s*(?:LocalizedStringKey|LocalizedStringResource)\??\s*=\s*"
+    r")$"
+)
+
+
+def localized_labels(files: dict[str, str]) -> set[str]:
+    """Argument labels the target declares as LocalizedStringKey/Resource and never as String."""
+    loc = set(re.findall(r"\b(\w+)\s*:\s*(?:LocalizedStringKey|LocalizedStringResource)\b", "\n".join(files.values())))
+    plain = set(re.findall(r"\b(\w+)\s*:\s*(?:String|Substring|any StringProtocol)\b", "\n".join(files.values())))
+    return loc - plain
+
+
+def localized_context(text: str, start: int, labels: set[str] = frozenset()) -> bool | None:
+    """True: the literal at `start` is a localization key; None: in a comment (ignore); False: unknown."""
+    line_start = text.rfind("\n", 0, start) + 1
+    before = text[line_start:start]
+    if "//" in before and before.count('"') % 2 == 0:
+        return None
+    if LOCALIZED_CONTEXT.search(before):
+        return True
+    m = re.search(r"\b(\w+):\s*$", before)
+    return bool(m and m.group(1) in labels)
+
+
 def cmd_rekey(args) -> int:
     cfg = load_config()
     source = cfg["source"]
@@ -675,6 +711,10 @@ def cmd_rekey(args) -> int:
         only = set(args.only)
     else:
         only = None
+    labels = localized_labels(files)
+    # several files share a string: the target's name (common.* belongs to the glossary)
+    target_area = re.sub(r"[^A-Za-z0-9]", "", rel(catalog).split("/")[1])
+    target_area = target_area[:1].lower() + target_area[1:]
     used = set(cat["strings"])
     by_value = {(g["fr"], g["en"]): k for k, g in glossary.items()}
     plan = []
@@ -686,7 +726,19 @@ def cmd_rekey(args) -> int:
         if rx is None:
             skipped["positional or %%"] += 1
             continue
-        hits = [(p, m) for p, text in files.items() for m in rx.finditer(text)]
+        hits, unknown = [], []
+        for p, text in files.items():
+            for m in rx.finditer(text):
+                ctx = localized_context(text, m.start(), labels)
+                if ctx is None:
+                    continue
+                (hits if ctx else unknown).append((p, m))
+        if unknown:
+            skipped["literal outside a localized context"] += 1
+            if args.verbose:
+                for p, m in unknown:
+                    print(f"keep {key!r}: {rel(p)}:{files[p].count(chr(10), 0, m.start()) + 1}")
+            continue
         if only is not None and not any(area_of(p, dirs) in only for p, _ in hits):
             continue
         if not hits:
@@ -701,7 +753,7 @@ def cmd_rekey(args) -> int:
             base = g
         else:
             areas = {area_of(p, dirs) for p, _ in hits}
-            area = areas.pop() if len(areas) == 1 else "common"
+            area = areas.pop() if len(areas) == 1 else target_area
             base = f"{area}.{slug(en)}"
         new = base if not specs else base + " " + " ".join(specs)
         n = 2
@@ -774,6 +826,7 @@ def main(argv: list[str]) -> int:
     r.add_argument("catalog")
     r.add_argument("--only", nargs="*", help="areas (first directory under the target) to migrate")
     r.add_argument("--dry-run", action="store_true")
+    r.add_argument("-v", "--verbose", action="store_true", help="list the literals that keep a key legacy")
     r.set_defaults(func=cmd_rekey)
     args = ap.parse_args(argv)
     return args.func(args)

@@ -177,6 +177,31 @@ class Toy(unittest.TestCase):
         self.assertIn("common.cancel", cat)
         self.assertEqual(self.run_cmd("check")[0], 0)
 
+    def test_rekey_leaves_non_localized_literals(self):
+        self.catalog({
+            "Réglages": {"localizations": {"en": unit("Settings"), "es": unit("Ajustes"), "it": unit("Impostazioni")}},
+            "Coffre": {"localizations": {"en": unit("Vault"), "es": unit("Bóveda"), "it": unit("Cassaforte")}},
+            "Aide": {"localizations": {"en": unit("Help"), "es": unit("Ayuda"), "it": unit("Aiuto")}},
+        })
+        os.makedirs(os.path.join(self.root, "apple/App/Settings"))
+        src = os.path.join(self.root, "apple/App/Settings/SettingsView.swift")
+        with open(src, "w") as f:
+            f.write('// Text("Réglages") in a comment\n'
+                    'Text("Réglages")\n'
+                    'let dir = base.appending(path: "Coffre")\n'
+                    'Text("Coffre")\n'
+                    'struct Row { let caption: LocalizedStringKey }\n'
+                    'Row(caption: "Aide")\n')
+        code, out = self.run_cmd("rekey", "apple/App/Localizable.xcstrings")
+        self.assertEqual(code, 0, out)
+        with open(src) as f:
+            text = f.read()
+        self.assertIn('// Text("Réglages") in a comment', text)
+        self.assertIn('Text("settings.settings")', text)
+        self.assertIn('appending(path: "Coffre")', text)
+        self.assertIn('Text("Coffre")', text)  # a non-localized use keeps the whole key legacy
+        self.assertIn('Row(caption: "settings.help")', text)
+
     def test_dump_keeps_entry_order(self):
         obj = {"sourceLanguage": "fr", "strings": {"b": {}, "a": {}}, "version": "1.0"}
         text = i18n.dump_xcstrings(obj)
