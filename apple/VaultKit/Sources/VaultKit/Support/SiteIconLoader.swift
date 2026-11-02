@@ -87,6 +87,9 @@ public actor SiteIconLoader {
     private let resolver: any HostResolver
     private let enabled: @Sendable () -> Bool
     private var inFlight: [String: Task<Data?, Never>] = [:]
+    /// Icons already read or fetched, by host: a row shows its icon on its first frame, never the
+    /// placeholder first.
+    private let memory = Mutex<[String: Data]>([:])
 
     public init(
         cacheDirectory: URL, session: URLSession = .ephemeralNoCookies,
@@ -101,15 +104,8 @@ public actor SiteIconLoader {
 
     /// PNG bytes of the site's icon, or nil (disabled, not HTTPS, no icon, recently failed).
     public func icon(for url: String) async -> Data? {
-        guard enabled() else { return nil }
-        guard let components = URLComponents(string: url.trimmingCharacters(in: .whitespacesAndNewlines)),
-            components.scheme?.lowercased() == "https",
-            let host = components.host?.lowercased(), !host.isEmpty, Self.isFetchableHost(host)
-        else { return nil }
-
-        if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached) {
-            return cached
-        }
+        guard enabled(), let host = Self.fetchableHost(of: url) else { return nil }
+        if let cached = cachedIcon(host: host) { return cached }
         if let age = markerAge(host: host), age < Self.failureLifetime { return nil }
 
         if let task = inFlight[host] { return await task.value }
@@ -117,7 +113,55 @@ public actor SiteIconLoader {
         inFlight[host] = task
         let result = await task.value
         inFlight[host] = nil
+        if let result { memory.withLock { $0[host] = result } }
         return result
+    }
+
+    /// The icon already on this device (memory, else the disk cache), without waiting and without
+    /// any request: what a row shows on its first frame.
+    public nonisolated func cachedIcon(for url: String) -> Data? {
+        guard enabled(), let host = Self.fetchableHost(of: url) else { return nil }
+        return cachedIcon(host: host)
+    }
+
+    /// Loads the icons of `urls` in the background, a few hosts at a time (after an unlock), so
+    /// lists opened later find them cached.
+    public func prefetch(_ urls: [String]) async {
+        guard enabled() else { return }
+        var seen = Set<String>()
+        let hosts = urls.compactMap(Self.fetchableHost(of:)).filter { seen.insert($0).inserted }
+        let pending = hosts.filter { cachedIcon(host: $0) == nil }
+        await withTaskGroup(of: Void.self) { group in
+            var next = pending.makeIterator()
+            for _ in 0..<Self.prefetchWidth {
+                guard let host = next.next() else { break }
+                group.addTask { _ = await self.icon(for: "https://" + host) }
+            }
+            while await group.next() != nil {
+                if Task.isCancelled { group.cancelAll(); return }
+                guard let host = next.next() else { continue }
+                group.addTask { _ = await self.icon(for: "https://" + host) }
+            }
+        }
+    }
+
+    /// Hosts fetched at once by `prefetch`.
+    static let prefetchWidth = 4
+
+    private nonisolated func cachedIcon(host: String) -> Data? {
+        if let hit = memory.withLock({ $0[host] }) { return hit }
+        guard let disk = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(disk) else { return nil }
+        memory.withLock { $0[host] = disk }
+        return disk
+    }
+
+    /// The lowercased host of an HTTPS URL this loader may fetch, else nil.
+    nonisolated static func fetchableHost(of url: String) -> String? {
+        guard let components = URLComponents(string: url.trimmingCharacters(in: .whitespacesAndNewlines)),
+            components.scheme?.lowercased() == "https",
+            let host = components.host?.lowercased(), !host.isEmpty, isFetchableHost(host)
+        else { return nil }
+        return host
     }
 
     /// Suffixes of local network names (Bonjour, home routers, RFC 8375 `home.arpa`, ICANN `internal`,
@@ -687,7 +731,7 @@ public actor SiteIconLoader {
         return png.map { DecodedIcon(png: $0, sourcePixels: iconPixels) }
     }
 
-    private func isImage(_ data: Data) -> Bool {
+    private nonisolated func isImage(_ data: Data) -> Bool {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
         return CGImageSourceGetCount(source) > 0
     }
@@ -695,7 +739,7 @@ public actor SiteIconLoader {
     // MARK: Cache
 
     /// `<sha256 of host>.<version>.<ext>`; `versioned: false` names the files of the 128 px cache.
-    private func cacheFile(host: String, ext: String, versioned: Bool = true) -> URL {
+    private nonisolated func cacheFile(host: String, ext: String, versioned: Bool = true) -> URL {
         let digest = SHA256.hash(data: Data(host.lowercased().utf8))
         let name = digest.map { String(format: "%02x", $0) }.joined()
         let suffix = versioned ? Self.cacheVersion + "." + ext : ext

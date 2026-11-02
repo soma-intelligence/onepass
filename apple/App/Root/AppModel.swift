@@ -772,6 +772,9 @@ final class AppModel {
             // "Me prévenir": a report after each unlock, so new findings are notified even when the
             // Watchtower page stays closed. Off: Watchtower runs only when its page is shown.
             if watchtower.notify { watchtower.refreshIfNeeded(session) }
+            // Every item's site icon, in the background: lists never show a placeholder first.
+            let urls = session.summaries.compactMap(\.primaryUrl)
+            Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
         } else {
             resetNavigation()
         }

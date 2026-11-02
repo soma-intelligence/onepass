@@ -175,6 +175,27 @@ struct SiteIconLoaderTests {
         #expect(StubProtocol.requests(host: "touch.exemple.fr").count == count)
     }
 
+    /// A row's first frame: the icon on disk is there at once, with no request, and a fresh loader
+    /// (next launch) reads it too. Nothing cached, or disabled: nil, never a fetch.
+    @Test func cachedIconIsReadWithoutWaiting() async throws {
+        let (session, _) = Self.makeSession()
+        let directory = Self.tempDirectory()
+        StubProtocol.install(host: "cached.exemple.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: Self.pngData()) : .init(status: 404)
+        }
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
+        #expect(loader.cachedIcon(for: "https://cached.exemple.fr") == nil)
+        #expect(StubProtocol.requests(host: "cached.exemple.fr").isEmpty)
+        await loader.prefetch(["https://cached.exemple.fr/login", "https://CACHED.exemple.fr", "http://x.exemple.fr"])
+        let data = try #require(loader.cachedIcon(for: "https://cached.exemple.fr/other"))
+        #expect(CGImageSourceCreateWithData(data as CFData, nil) != nil)
+
+        let relaunched = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
+        #expect(relaunched.cachedIcon(for: "https://cached.exemple.fr") == data)
+        let disabled = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { false })
+        #expect(disabled.cachedIcon(for: "https://cached.exemple.fr") == nil)
+    }
+
     @Test func iconLoaderFallsBackToFaviconThenPageLink() async throws {
         let (session, _) = Self.makeSession()
         StubProtocol.install(host: "favicon.exemple.fr") { request in

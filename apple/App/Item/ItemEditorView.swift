@@ -210,7 +210,7 @@ struct ItemEditorView: View {
                 .tracking(0.6)
             #endif
             HStack(alignment: .center, spacing: 16) {
-                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon, size: 64, brand: item.cardBrandName)
+                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? primaryURL.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 64, brand: item.cardBrandName)
                     .favoriteBadge(item.favorite, iconSize: 64)
                     // Follows the website being typed: a new address loads its icon.
                     .task(id: primaryURL) {

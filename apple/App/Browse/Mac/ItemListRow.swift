@@ -27,9 +27,14 @@ struct ItemListRow: View {
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
+    /// The icon already on this device: shown on the first frame, before the task answers.
+    private var cachedIcon: Data? {
+        summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon, size: 34, brand: summary.cardBrand)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 34, brand: summary.cardBrand)
                 .favoriteBadge(summary.favorite, iconSize: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
