@@ -829,6 +829,7 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         device_keys,
     } = a;
     let chain = ChainState {
+        sync_home: None,
         params_epoch: account.params.epoch,
         device_list: None,
         vault_list: None,

@@ -499,6 +499,7 @@ impl<S: RecordStore> Repository<S> {
         let new_id = Id::new();
         let me = req.device_keys.public(new_id)?;
         let chain = ChainState {
+            sync_home: None,
             params_epoch: account.params.epoch,
             device_list: None,
             vault_list: None,

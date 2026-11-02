@@ -39,6 +39,8 @@ pub const MAX_DEVICE_NAME_CHARS: usize = 64;
 pub const DEFAULT_DEVICE_NAME: &str = "Appareil";
 
 /// The type of a device.
+///
+/// Appended variants only: the postcard encoding is the variant index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum DeviceKind {
     Phone,
@@ -46,6 +48,9 @@ pub enum DeviceKind {
     Mac,
     Vision,
     Other,
+    Android,
+    Windows,
+    Linux,
 }
 
 /// What a device may hold (architecture spec 4.10).

@@ -331,6 +331,7 @@ impl Repository<SyncStore> {
                 RecordKind::DeviceList => self.rebase_list::<DeviceEntry>(),
                 RecordKind::ApproverList => self.rebase_list::<ApproverEntry>(),
                 RecordKind::ContactBook => self.rebase_list::<ContactEntry>(),
+                RecordKind::SyncHome => self.rebase_sync_home(),
                 _ => self.rebase_list::<VaultListEntry>(),
             };
             if let Err(e) = result {

@@ -72,6 +72,10 @@ pub enum RecordKind {
     /// device_id)`, version = the head's generation. Immutable, display
     /// only.
     DeviceAck,
+    /// Where the account syncs (`crate::synchome`), signed and chained like
+    /// the lists: id = `account_record_id`, version = its seq. A deletion
+    /// from the server is ignored, like a list's.
+    SyncHome,
 }
 
 impl RecordKind {
@@ -103,6 +107,7 @@ impl RecordKind {
             Self::ShareInvite => 24,
             Self::Attachment => 25,
             Self::DeviceAck => 26,
+            Self::SyncHome => 27,
         }
     }
 
@@ -134,6 +139,7 @@ impl RecordKind {
             24 => Self::ShareInvite,
             25 => Self::Attachment,
             26 => Self::DeviceAck,
+            27 => Self::SyncHome,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -939,6 +945,7 @@ mod tests {
             RecordKind::ShareInvite,
             RecordKind::Attachment,
             RecordKind::DeviceAck,
+            RecordKind::SyncHome,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -969,6 +976,9 @@ mod tests {
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(RecordKind::ApproverList.code(), 13);
         assert_eq!(RecordKind::Attachment.code(), 25);
+        assert_eq!(RecordKind::SyncHome.code(), 27);
+        assert_eq!(RecordKind::from_code(27).unwrap(), RecordKind::SyncHome);
+        assert!(!RecordKind::SyncHome.is_immutable());
         assert!(RecordKind::Attachment.is_vault_prefixed());
         // Spec 6.8 (O6): code 13 went to the approver lists, the ack takes 26.
         assert_eq!(RecordKind::DeviceAck.code(), 26);

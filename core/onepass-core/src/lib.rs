@@ -36,6 +36,7 @@ pub mod share;
 pub mod site_password;
 pub mod store;
 pub mod sync;
+pub mod synchome;
 pub mod totp;
 pub mod trust;
 pub mod vault;

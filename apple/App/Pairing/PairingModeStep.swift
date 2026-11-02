@@ -141,6 +141,8 @@ enum DeviceKindText {
         case .mac: "laptopcomputer"
         case .vision: "visionpro"
         case .other: "desktopcomputer"
+        case .android: "candybarphone"
+        case .windows, .linux: "desktopcomputer"
         }
     }
 
@@ -151,6 +153,9 @@ enum DeviceKindText {
         case .mac: "Mac"
         case .vision: "Apple Vision Pro"
         case .other: String(localized: "Autre appareil")
+        case .android: "Android"
+        case .windows: "Windows"
+        case .linux: "Linux"
         }
     }
 

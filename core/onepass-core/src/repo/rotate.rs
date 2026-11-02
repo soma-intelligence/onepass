@@ -639,6 +639,7 @@ impl<S: RecordStore> Repository<S> {
         // lists start again (spec 6.6, 10.2); it replaces the stored one in
         // the same transaction, so no reopen pins the left identity's.
         let chain = ChainState {
+            sync_home: None,
             params_epoch: account.params.epoch,
             device_list: Some(device_seen),
             vault_list: Some(vault_seen),

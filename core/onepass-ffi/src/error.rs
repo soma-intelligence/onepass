@@ -117,6 +117,7 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::MembershipRollback => "membership_rollback",
         IntegrityError::MembershipFork => "membership_fork",
         IntegrityError::FamilyRollback => "family_rollback",
+        IntegrityError::SyncHomeRollback => "sync_home_rollback",
     }
 }
 

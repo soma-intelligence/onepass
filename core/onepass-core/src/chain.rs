@@ -17,17 +17,20 @@
 //! - `contact_book`: the last signed contact book accepted (sharing spec
 //!   5.4, version 3).
 //! - `device_id`: this device's id in the device list, once registered.
+//! - `sync_home`: the last signed `SyncHome` accepted (`crate::synchome`,
+//!   version 4).
 //!
 //! Postcard is not self-describing, so a new field is a new version: the
-//! encoding is always version 3; version 1 (no approver list) and version 2
-//! (no contact book) still decode, the fields they lack at `None`.
+//! encoding is always version 4; version 1 (no approver list), version 2
+//! (no contact book) and version 3 (no sync home) still decode, the fields
+//! they lack at `None`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Id, Result};
 
 /// Encoding version, the first byte of `ChainState::encode`.
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 /// The version 1 encoding, which `decode` still reads.
 const VERSION_1: u8 = 1;
@@ -35,6 +38,10 @@ const VERSION_1: u8 = 1;
 /// The version 2 encoding (approver list, no contact book), which `decode`
 /// still reads.
 const VERSION_2: u8 = 2;
+
+/// The version 3 encoding (contact book, no sync home), which `decode`
+/// still reads.
+const VERSION_3: u8 = 3;
 
 /// A signed list as last accepted: its sequence number and the hash of its
 /// signed body.
@@ -53,6 +60,7 @@ pub struct ChainState {
     pub device_id: Option<Id>,
     pub approver_list: Option<Seen>,
     pub contact_book: Option<Seen>,
+    pub sync_home: Option<Seen>,
 }
 
 /// `ChainState` as version 1 wrote it (before the approver list).
@@ -73,6 +81,7 @@ impl From<ChainStateV1> for ChainState {
             device_id: v.device_id,
             approver_list: None,
             contact_book: None,
+            sync_home: None,
         }
     }
 }
@@ -96,6 +105,32 @@ impl From<ChainStateV2> for ChainState {
             device_id: v.device_id,
             approver_list: v.approver_list,
             contact_book: None,
+            sync_home: None,
+        }
+    }
+}
+
+/// `ChainState` as version 3 wrote it (before the sync home).
+#[derive(Deserialize)]
+struct ChainStateV3 {
+    params_epoch: u64,
+    device_list: Option<Seen>,
+    vault_list: Option<Seen>,
+    device_id: Option<Id>,
+    approver_list: Option<Seen>,
+    contact_book: Option<Seen>,
+}
+
+impl From<ChainStateV3> for ChainState {
+    fn from(v: ChainStateV3) -> Self {
+        ChainState {
+            params_epoch: v.params_epoch,
+            device_list: v.device_list,
+            vault_list: v.vault_list,
+            device_id: v.device_id,
+            approver_list: v.approver_list,
+            contact_book: v.contact_book,
+            sync_home: None,
         }
     }
 }
@@ -124,6 +159,10 @@ impl ChainState {
                 _ => Err(bad),
             },
             Some((&VERSION_2, body)) => match postcard::take_from_bytes::<ChainStateV2>(body) {
+                Ok((state, [])) => Ok(state.into()),
+                _ => Err(bad),
+            },
+            Some((&VERSION_3, body)) => match postcard::take_from_bytes::<ChainStateV3>(body) {
                 Ok((state, [])) => Ok(state.into()),
                 _ => Err(bad),
             },
@@ -160,6 +199,10 @@ mod tests {
             contact_book: Some(Seen {
                 seq: 5,
                 hash: [4; 32],
+            }),
+            sync_home: Some(Seen {
+                seq: 2,
+                hash: [5; 32],
             }),
         }
     }
@@ -215,24 +258,39 @@ mod tests {
     }
 
     #[test]
-    fn chain_v3_round_trip() {
+    fn chain_v4_round_trip() {
         let s = full();
         let bytes = s.encode();
-        assert_eq!(bytes[0], 3);
+        assert_eq!(bytes[0], 4);
         let back = ChainState::decode(&bytes).unwrap();
         assert_eq!(back, s);
         assert!(back.approver_list.is_some());
         assert!(back.contact_book.is_some());
+        assert!(back.sync_home.is_some());
+    }
+
+    #[test]
+    fn chain_v3_decodes_without_sync_home() {
+        let mut s = full();
+        s.sync_home = None;
+        let mut bytes = vec![3];
+        bytes.extend(postcard::to_allocvec(&s).unwrap());
+        // Version 3 had no sync home field: drop its None byte.
+        bytes.pop();
+        let back = ChainState::decode(&bytes).unwrap();
+        assert_eq!(back, s);
     }
 
     #[test]
     fn chain_v2_decodes_without_contact_book() {
         let mut s = full();
         s.contact_book = None;
+        s.sync_home = None;
         let mut bytes = vec![2];
         bytes.extend(postcard::to_allocvec(&s).unwrap());
-        // Version 2 had no contact book field: drop its None byte.
-        bytes.pop();
+        // Version 2 had no contact book nor sync home field: drop their
+        // None bytes.
+        bytes.truncate(bytes.len() - 2);
         let back = ChainState::decode(&bytes).unwrap();
         assert_eq!(back, s);
     }
@@ -252,7 +310,7 @@ mod tests {
         let mut bytes = full().encode();
         assert_eq!(ChainState::decode(&[]), bad);
         // Unknown version.
-        bytes[0] = 4;
+        bytes[0] = 5;
         assert_eq!(ChainState::decode(&bytes), bad);
         // Trailing bytes.
         let mut bytes = full().encode();

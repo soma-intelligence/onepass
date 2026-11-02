@@ -414,6 +414,7 @@ fn keeps_ancestor(kind: RecordKind) -> bool {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     )
 }
 
@@ -498,7 +499,7 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
             "SELECT p.kind, p.id FROM pending p
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
-             WHERE p.kind IN (?1, ?2, ?3, ?4) AND p.data IS NOT NULL
+             WHERE p.kind IN (?1, ?2, ?3, ?4, ?5) AND p.data IS NOT NULL
                AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
@@ -508,7 +509,8 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
                 RecordKind::DeviceList.code(),
                 RecordKind::VaultList.code(),
                 RecordKind::ApproverList.code(),
-                RecordKind::ContactBook.code()
+                RecordKind::ContactBook.code(),
+                RecordKind::SyncHome.code()
             ],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
         )
@@ -1557,7 +1559,7 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5, ?6) AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7) AND {missing}"
                 ),
                 params![
                     RecordKind::Manifest.code(),
@@ -1565,7 +1567,8 @@ impl SyncStore {
                     RecordKind::DeviceList.code(),
                     RecordKind::VaultList.code(),
                     RecordKind::ApproverList.code(),
-                    RecordKind::ContactBook.code()
+                    RecordKind::ContactBook.code(),
+                    RecordKind::SyncHome.code()
                 ],
             )
             .map_err(store_err)?;
@@ -2821,6 +2824,7 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::MembershipRollback => 23,
         IntegrityError::MembershipFork => 24,
         IntegrityError::FamilyRollback => 25,
+        IntegrityError::SyncHomeRollback => 26,
     }
 }
 
@@ -2852,6 +2856,7 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         23 => IntegrityError::MembershipRollback,
         24 => IntegrityError::MembershipFork,
         25 => IntegrityError::FamilyRollback,
+        26 => IntegrityError::SyncHomeRollback,
         _ => return None,
     })
 }
@@ -3169,6 +3174,7 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -3221,8 +3227,8 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
 }
 
 /// A remote deletion `commit_remote` ignores: account params, keysets, the
-/// restore epoch and the signed device and vault lists and contact book
-/// (never deleted by a client), and the vault key, meta or manifest of a vault the device has
+/// restore epoch, the signed device and vault lists, contact book and sync
+/// home (never deleted by a client), and the vault key, meta or manifest of a vault the device has
 /// seen, unless the verified vault list marks that vault deleted
 /// (`deleted`, spec 4.5). A store that hides the epoch from a device with a
 /// fresh copy is caught by the repository (`EpochRollback`).
@@ -3248,7 +3254,8 @@ fn protected_from_remote_deletion(
         | RecordKind::DeviceIntro
         | RecordKind::KeyDelivery
         | RecordKind::ApproverList
-        | RecordKind::ContactBook => true,
+        | RecordKind::ContactBook
+        | RecordKind::SyncHome => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -3400,6 +3407,12 @@ pub(crate) fn merge_chain(
             force_lists,
             IntegrityError::ContactBookRollback,
         )?,
+        sync_home: seen(
+            mem.sync_home,
+            stored.sync_home,
+            force_lists,
+            IntegrityError::SyncHomeRollback,
+        )?,
     })
 }
 
@@ -3481,6 +3494,7 @@ fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -4353,6 +4367,7 @@ mod tests {
         let mut s = SyncStore::open_in_memory().unwrap();
         let me = Id::new();
         let stored = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: Some(Seen {
                 seq: 3,
@@ -6104,6 +6119,7 @@ mod tests {
         MembershipRollback,
         MembershipFork,
         FamilyRollback,
+        SyncHomeRollback,
     );
 
     #[test]
@@ -6169,7 +6185,7 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 26);
+        assert_eq!(ALL_CAUSES.len(), 27);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);
@@ -6332,6 +6348,7 @@ mod tests {
     fn chain_merge_never_rewinds_a_pin() {
         let id = Id::new();
         let older = ChainState {
+            sync_home: None,
             params_epoch: 1,
             device_list: seen_at(2, 1),
             vault_list: seen_at(5, 1),
@@ -6340,6 +6357,7 @@ mod tests {
             contact_book: seen_at(7, 1),
         };
         let newer = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(4, 2),
@@ -6348,6 +6366,7 @@ mod tests {
             contact_book: seen_at(6, 2),
         };
         let merged = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(5, 1),
@@ -6429,6 +6448,7 @@ mod tests {
         let mut s = SyncStore::open_in_memory().unwrap();
         let id = Id::new();
         let stored = ChainState {
+            sync_home: None,
             params_epoch: 3,
             device_list: seen_at(4, 1),
             vault_list: seen_at(6, 1),
@@ -6439,6 +6459,7 @@ mod tests {
         s.set_chain_state(&stored).unwrap();
         // A process that unlocked before those pins persists its own.
         let stale = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 9),
             vault_list: seen_at(5, 9),
