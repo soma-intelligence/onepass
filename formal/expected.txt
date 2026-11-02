@@ -402,3 +402,26 @@ recovery.pv | not event(CancelSeen(o_10,m_main,e_30)) | false
 recovery_autoenroll.pv | not attacker(ks_auto[]) | false
 # Sanité : l'inscription a lieu.
 recovery_autoenroll.pv | not event(Enrolled(m_auto,o_1,e_4)) | false
+
+# mailbox.pv : boîte aux lettres (spec multiplateforme 11). Serveur qui applique sa règle
+# d'accès, relais T-RDV à l'attaquant, appairage de bridge.pv abstrait par sa clé de session
+# (P10, P11), TLS entre appareil et serveur, QR hors bande.
+# M1 : sans identifiant inscrit dans la boîte, personne n'en obtient les enregistrements.
+mailbox.pv | not attacker(blob_access(mbx_h[])) | true
+# M2 : le serveur n'inscrit une clé dans la boîte qu'avec un ticket qu'un appareil inscrit a émis pour elle.
+mailbox.pv | event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4)) | true
+# M3 : un appareil ne change de lieu de synchronisation que pour un SyncHome signé par le compte.
+mailbox.pv | event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4)) | true
+# Sanité : un nouvel appareil est inscrit puis lit, un appareil existant suit le SyncHome.
+mailbox.pv | not event(Enrolled(mbx_h[],k_4)) | false
+mailbox.pv | not event(NewcomerRead(m_13)) | false
+mailbox.pv | not event(Switched(dev_d,h_4)) | false
+
+# mailbox_unsigned_ticket_broken.pv : témoin négatif, le serveur prend un ticket sans en vérifier
+# la signature. Attaque attendue : l'attaquant écrit un ticket pour sa propre clé au nom de A,
+# s'inscrit dans la boîte et la lit ; M3 ne dépend pas du ticket.
+mailbox_unsigned_ticket_broken.pv | not attacker(blob_access(mbx_h[])) | false
+mailbox_unsigned_ticket_broken.pv | event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4)) | false
+mailbox_unsigned_ticket_broken.pv | event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4)) | true
+# Sanité.
+mailbox_unsigned_ticket_broken.pv | not event(NewcomerRead(m_13)) | false

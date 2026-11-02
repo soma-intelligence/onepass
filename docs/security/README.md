@@ -740,3 +740,44 @@ Cette section décrit ce que fait la rotation des clés du compte (spec `docs/su
 **Ce qui reste hors de la couverture.** L'aléa interne d'aws-lc pendant une opération : l'encapsulation ML-KEM (l'éphémère X25519 de la même enveloppe, lui, est couvert, donc la moitié classique du KEM hybride l'est), les nonces ECDSA (aws-lc les dérive aussi de la clé et du condensé, héritage de BoringSSL), la génération RSA de l'agent SSH (préférer Ed25519). `onepass-guard` et `onepass-mailbox` ne dépendent pas du cœur : identifiants, nonces de requête et code d'approbation du terminal, aucun n'est une clé.
 
 **Garde-fou.** `core/onepass-core/tests/rng_guard.rs` (lancé par `cargo test --workspace`, donc `make -C core check`) parcourt les sources livrées de tous les crates Rust et le Swift d'`apple/` et échoue sur tout tirage direct du générateur du système ou génération de clé par la bibliothèque hors de la liste blanche, chaque entrée avec sa raison et son nombre exact de lignes. Tests de `random.rs` : valeur connue de la construction (calculée à part avec `hmac` de Python), sorties jamais répétées (10 000 tirages, générateur du système constant simulé), graine refusée si nulle ou de mauvaise taille.
+
+## 18. Boîte aux lettres
+
+Cette section décrit la synchronisation par la boîte aux lettres OnePass, pour les appareils hors Apple et pour les comptes qui quittent CloudKit (spec `docs/superpowers/specs/2026-10-30-cross-platform-clients-design.md`, code dans `mailbox/supabase/`, `core/onepass-mailbox-proto`, `core/onepass-mailbox`, `core/onepass-sync` et `core/onepass-ffi/src/mailbox.rs`). Le serveur est traité comme CloudKit : il stocke des blobs chiffrés de bout en bout, il peut être hostile, et rien de ce qu'il renvoie n'est cru sans vérification.
+
+### 18.1 Ce que voit le serveur
+
+Comme iCloud (10.5) : le nombre d'enregistrements par genre, leurs versions, la taille des corps (arrondie par le rembourrage du core), les numéros de séquence des manifestes, les dates et le rythme des écritures, les noms d'appareils de la liste signée. En plus : les adresses IP des clients (journaux de Supabase et de la fonction ; OnePass ne range aucune adresse, seulement une clé HMAC du jour pour le débit), les identifiants de boîte et leurs clés publiques, les jetons de notification, le `mailbox_id` et le sujet de réveil. Supabase, comme sous-traitant, voit la même chose que l'opérateur. En moins : aucun identifiant Apple. Le contenu des items, les clés des coffres, la Secret Key et le mot de passe ne quittent jamais l'appareil en clair.
+
+### 18.2 Requêtes signées
+
+Chaque requête (sauf `GET /v1/config`) est signée par l'identifiant de boîte de l'appareil, une clé Ed25519 créée sur l'appareil et rangée dans son stockage sûr (Keychain, Keystore, DPAPI ou trousseau du système). La signature couvre la méthode, le chemin, le hash SHA-256 du corps, l'heure et un nonce aléatoire (spec 4.7). Le serveur refuse une requête signée à plus de 300 s de son horloge (l'app affiche alors "L'heure de l'appareil est fausse", `ClockSkew`) et refuse un nonce déjà vu. Le client ne parle qu'en TLS 1.3, avec l'échange hybride X25519MLKEM768 en priorité ; un self-host peut ajouter son autorité en PEM. Les corps sont en postcard strict : tout champ en trop, toute longueur au-delà des bornes, tout ordre de pages faux est refusé avant d'être lu (`malformed`).
+
+### 18.3 Contrôle d'accès dans la base (RLS)
+
+Les tables de la boîte sont fermées par la sécurité au niveau des lignes de Postgres : les rôles `anon` et `authenticated` de Supabase n'y ont aucun accès direct. Seules les fonctions SQL de la boîte, appelées par la fonction edge après la vérification de la signature, lisent et écrivent, et chacune vérifie à nouveau que l'identifiant est inscrit dans cette boîte, non révoqué, avec le rôle qu'il faut. Le canal de réveil Realtime est public mais ne porte rien : il dit seulement "va chercher", et l'app ne lit jamais sa charge.
+
+### 18.4 Inscription par ticket
+
+Un appareil n'entre dans une boîte qu'avec un ticket signé par un appareil déjà inscrit (spec 4.12). Le ticket nomme la boîte, l'URL du serveur, la clé publique du nouvel identifiant et une date d'expiration (300 s), et il ne sert qu'une fois. L'approbateur ne l'émet que pour la clé que le nouvel appareil a envoyée dans le canal d'appairage, après le code court : un relais de rendez-vous ou un réseau hostile ne peut pas y glisser sa propre clé. Avant tout appel réseau, le nouvel appareil vérifie le ticket contre sa propre clé, contre la boîte et contre l'URL du `SyncHome` reçu dans la même autorisation.
+
+### 18.5 SyncHome
+
+Le lieu de synchronisation du compte (CloudKit, ou telle boîte sur tel serveur) est un enregistrement `SyncHome` signé par la clé de signature du compte, chaîné par un numéro de séquence et le hash du précédent, et épinglé sur chaque appareil (ChainState v4). Un appareil ne change de lieu que pour un `SyncHome` qui vérifie sous la clé du compte qu'il a épinglée ; un `SyncHome` plus ancien que celui épinglé est refusé (`sync_home_rollback`), un `SyncHome` qui nomme un autre lieu arrête la synchronisation (`HomeMoved`) et l'app demande à l'utilisateur avant de suivre. Un serveur ne peut donc ni détourner un appareil vers une autre boîte, ni le ramener vers un ancien lieu. Une rotation des clés écrit le `SyncHome` de la nouvelle identité en phase 1, avant l'enregistrement de lignée.
+
+### 18.6 Boîte hostile
+
+Le client et le pilote de synchronisation (`onepass-sync`) détectent ce qu'un serveur hostile peut faire, et la suite `core/onepass-sync/tests/hostile_mailbox.rs` le teste : une page rejouée ne change rien ; un enregistrement retenu fait passer le coffre en alerte après le seuil de la santé de synchronisation ; des pages dans le désordre sont refusées ; un enregistrement injecté échoue à la vérification des signatures du core ; une réponse de commit perdue se répare au tour suivant ; un lot appliqué en partie est détecté (l'appareil renvoie ce que le flux ne lui a jamais montré) ; une boîte remontée dans le temps (tête sous le curseur) et une autre boîte servie à la place sont détectées et relues depuis le début ; une incarnation changée remet la zone locale à zéro.
+
+### 18.7 Modèle formel
+
+`formal/proverif/mailbox.pv` (processus dans `mailbox_core.pvl`, résultats dans `docs/security/formal/results.md`) prouve, face à un relais de rendez-vous et un réseau contrôlés par l'attaquant : M1, sans identifiant inscrit personne n'obtient les enregistrements de la boîte ; M2, le serveur n'inscrit une clé qu'avec un ticket qu'un appareil inscrit a émis pour elle ; M3, un appareil ne change de lieu que pour un `SyncHome` signé par le compte. L'appairage est abstrait par la clé de session que `bridge.pv` prouve (P10, P11). Le témoin négatif `mailbox_unsigned_ticket_broken.pv`, où le serveur ne vérifie pas la signature du ticket, retrouve l'attaque : l'attaquant s'inscrit et lit la boîte. Ne sont pas modélisés : la chaîne de séquence du `SyncHome`, la durée de vie et l'usage unique du ticket, la fraîcheur des requêtes, le réveil, les quotas et Storage (couverts par les tests).
+
+### 18.8 Limites
+
+- **Métadonnées.** Le serveur voit ce que 18.1 décrit, adresses IP comprises ; un attaquant qui tient le serveur voit quand l'utilisateur écrit et combien.
+- **Déni de service.** Un serveur peut refuser, retenir ou effacer : les appareils le détectent (alerte de santé, `Retrying`, remise à zéro), aucun ne perd ses écritures locales, mais la synchronisation s'arrête tant que le serveur ne sert pas. La sortie est un autre serveur (nouveau `SyncHome` signé).
+- **Écritures perdues après un redémarrage.** Le pilote renvoie les écritures qu'un serveur a confirmées sans jamais les montrer dans le flux, mais cette liste vit en mémoire : un redémarrage de l'app l'oublie, et une écriture perdue ainsi attend la prochaine modification de l'item. Une suppression perdue n'est pas renvoyée.
+- **Un identifiant volé** (stockage sûr de l'appareil compromis) lit les blobs chiffrés et peut écrire des blobs que les autres appareils refusent (signatures du core). Il est révoqué depuis un autre appareil (`revoke_credential`) ; la révocation d'un appareil dans la liste signée ne suffit pas seule.
+- **Le genre des enregistrements reste visible** pour garder l'ordre "items avant manifeste" (spec 4.15, question 14), comme sur CloudKit.
+- **L'URL du serveur hébergé** est `mailbox.somalabs.me` ; un self-host choisit la sienne, et l'utilisateur fait confiance à l'autorité qu'il ajoute.

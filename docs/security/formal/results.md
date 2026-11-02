@@ -89,6 +89,16 @@
 | emergency_kit.pv | `not event(Pinned(restore_kit_lost,a,i))` | false | false |
 | emergency_kit.pv | `not event(ItemWritten(restore_kit_lost,v_42,m_14))` | false | false |
 | emergency_kit.pv | `not event(AukDerived(restore_no_keyset))` | false | false |
+| mailbox.pv | `not attacker(blob_access(mbx_h[]))` | true | true |
+| mailbox.pv | `event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4))` | true | true |
+| mailbox.pv | `event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4))` | true | true |
+| mailbox.pv | `not event(Enrolled(mbx_h[],k_4))` | false | false |
+| mailbox.pv | `not event(NewcomerRead(m_13))` | false | false |
+| mailbox.pv | `not event(Switched(dev_d,h_4))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `not attacker(blob_access(mbx_h[]))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4))` | true | true |
+| mailbox_unsigned_ticket_broken.pv | `not event(NewcomerRead(m_13))` | false | false |
 | manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2` | true | true |

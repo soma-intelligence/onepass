@@ -1,0 +1,26 @@
+(* formal-lib: mailbox_core.pvl *)
+(* OnePass formal model: the mailbox (cross-platform spec 11). Processes in
+   mailbox_core.pvl; the server checks every enroll ticket's signature.
+
+   M1: no party without a credential enrolled in the honest mailbox gets
+       its records from the server.
+   M2: the server enrolls a key in the honest mailbox only with a ticket an
+       enrolled device issued for that key.
+   M3: a device moves its sync only to a home the account signed. *)
+
+query attacker(blob_access(mbx_h)).
+
+query k: pkey;
+  event(Enrolled(mbx_h, k)) ==> event(TicketIssued(mbx_h, k)).
+
+query d: bitstring, h: bitstring, a: pkey;
+  event(Switched(d, h)) ==> event(HomeSigned(a, h)).
+
+(* Sanity (expected false): a newcomer is enrolled and reads; the newcomer
+   and D both move to a home. *)
+query k: pkey; event(Enrolled(mbx_h, k)).
+query m: bitstring; event(NewcomerRead(m)).
+query h: bitstring; event(Switched(dev_d, h)).
+
+process
+  Mailbox(ticket_checked)

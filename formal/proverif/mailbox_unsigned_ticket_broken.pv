@@ -1,0 +1,23 @@
+(* formal-lib: mailbox_core.pvl *)
+(* OnePass formal model: negative control of mailbox.pv. The server takes
+   an enroll ticket without checking the approver's signature (it still
+   checks the ticket's shape, the new key's proof of possession and that
+   the named approver is enrolled).
+
+   Expected: M2 and M1 are false. The attacker writes a ticket for its own
+   key, naming A's public credential, enrolls in the honest mailbox and
+   reads it. M3 does not depend on the ticket and stays true. *)
+
+query attacker(blob_access(mbx_h)).
+
+query k: pkey;
+  event(Enrolled(mbx_h, k)) ==> event(TicketIssued(mbx_h, k)).
+
+query d: bitstring, h: bitstring, a: pkey;
+  event(Switched(d, h)) ==> event(HomeSigned(a, h)).
+
+(* Sanity (expected false): a newcomer reads. *)
+query m: bitstring; event(NewcomerRead(m)).
+
+process
+  Mailbox(ticket_unchecked)

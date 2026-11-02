@@ -1,0 +1,221 @@
+(* OnePass formal model: the mailbox (cross-platform spec 4.7, 4.12, 5.3,
+   11), processes shared by mailbox.pv and its negative control.
+   Loaded after common.pvl by the line "formal-lib: mailbox_core.pvl".
+
+   Parties:
+   - the mailbox server, hostile for confidentiality and integrity of what
+     it stores (spec 4.15), but running the access rule it is given: a
+     request is served only when signed by a credential enrolled in the
+     mailbox; a credential is enrolled only with a ticket signed by an
+     enrolled credential of that mailbox (onepass_mailbox_commit, enroll).
+     The rule is the server's parameter `rule` (ticket_checked, or
+     ticket_unchecked for the negative control);
+   - the manager device A: its credential sk_a is enrolled in the honest
+     mailbox mbx_h at creation; it holds the account signing key sk_acct and
+     approves pairings;
+   - newcomer devices: each a fresh credential, paired with A over the
+     T-RDV relay, enrolled with the ticket A issues;
+   - an existing device D that reads the account's SyncHome from the server.
+
+   Channels: `c` is the network and the T-RDV relay (attacker-controlled:
+   reads, drops, replays, forges). `tls` is the TLS 1.3 link between an
+   honest device and the server (abstracted as private). `qr` is the
+   pairing QR code shown on the newcomer and scanned by A (out of band).
+
+   Pairing abstraction (compositional, as bridge_core.pvl): the pairing of
+   bridge.pv (key committed by the QR, hybrid KEM, SAS over the whole
+   transcript) is proved there to give both sides one secret key bound to
+   the session (P10, P11). It is modeled here by a fresh key `kp` carried
+   on the QR channel; every frame then crosses the attacker's relay sealed
+   under kp, so the relay sees and can replay or drop frames, never read or
+   forge them.
+
+   Not modeled: the seq chain of SyncHome and its rollback check (pinned
+   in ChainState v4, covered by tests and fuzzing), the 300 s lifetime and
+   single use of a ticket, request freshness (created, nonce), Realtime
+   wakes, rate limits, Storage. Encodings are injective tuples. *)
+
+(* ------------------------------------------------------------------ *)
+(* Labels                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* core/onepass-core/src/synchome.rs: SYNC_HOME_DOMAIN *)
+const dom_sync_home: bitstring.
+(* core/onepass-mailbox-proto/src/ticket.rs: ticket_signed_bytes domain *)
+const dom_ticket: bitstring.
+(* core/onepass-mailbox-proto/src/sig.rs: signature_base of a request *)
+const dom_request: bitstring.
+
+(* Routes (spec 4.6). *)
+const req_create: bitstring.
+const req_enroll: bitstring.
+const req_read: bitstring.
+
+(* Pairing frames (onepass-core pairing): the newcomer's
+   ConfirmedWithKey, the approver's FullGrantV2. *)
+const frame_confirm: bitstring.
+const frame_grant: bitstring.
+
+(* The server's rule for enroll tickets. *)
+const ticket_checked: bitstring.
+const ticket_unchecked: bitstring.
+
+(* Devices named in events. *)
+const dev_d: bitstring.
+
+fun pk2b(pkey): bitstring [data, typeConverter].
+
+(* ------------------------------------------------------------------ *)
+(* Public facts                                                        *)
+(* ------------------------------------------------------------------ *)
+
+(* The honest mailbox: its id and URL are not secret (they are in the
+   signed SyncHome the server stores). *)
+free mbx_h: bitstring.
+free url_h: bitstring.
+(* Another mailbox the account later moves to (a second signed home). *)
+free mbx_2: bitstring.
+
+(* What the server hands to a credential of mailbox m: its records. *)
+fun blob_access(bitstring): bitstring [private].
+
+(* Device to server (TLS) and the pairing QR (out of band). *)
+free tls: channel [private].
+free qr: channel [private].
+
+(* Secret keys: A's mailbox credential and the account signing key. *)
+free sk_a: skey [private].
+free sk_acct: skey [private].
+
+(* Credentials enrolled per mailbox. *)
+table enrolled(bitstring, pkey).
+(* The account's signed homes as A's store holds them (A grants the one it
+   holds; it never signs a home while pairing). *)
+table account_home(bitstring, bitstring).
+
+(* ------------------------------------------------------------------ *)
+(* Events                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* A (an enrolled credential) issued an enroll ticket for key k. *)
+event TicketIssued(bitstring, pkey).
+(* The server enrolled key k in mailbox m. *)
+event Enrolled(bitstring, pkey).
+(* The account signed home h (URL, mailbox). *)
+event HomeSigned(pkey, bitstring).
+(* A device moved its sync to home h. *)
+event Switched(bitstring, bitstring).
+(* A newcomer read its mailbox after enrolling. *)
+event NewcomerRead(bitstring).
+
+(* ------------------------------------------------------------------ *)
+(* Server                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* Signed request bodies (proof of possession of the credential). *)
+letfun request(sk: skey, body: bitstring) = sign_dom(sk, dom_request, body).
+
+let Enroll(ch: channel, rule: bitstring) =
+  in(ch, (=req_enroll, m: bitstring, t: bitstring, tsig: bitstring,
+          approver: pkey, newk: pkey, pop: bitstring));
+  (* The ticket names this mailbox, this key and this server. *)
+  let (=m, =pk2b(newk), =url_h) = t in
+  if verify_dom(newk, dom_request, (req_enroll, m, t), pop) then
+  get enrolled(=m, =approver) in
+  if rule = ticket_unchecked then (
+    event Enrolled(m, newk);
+    insert enrolled(m, newk);
+    out(ch, (req_enroll, m, newk))
+  ) else (
+    if verify_dom(approver, dom_ticket, t, tsig) then
+    event Enrolled(m, newk);
+    insert enrolled(m, newk);
+    out(ch, (req_enroll, m, newk))
+  ).
+
+let Read(ch: channel) =
+  in(ch, (=req_read, m: bitstring, k: pkey, s: bitstring));
+  if verify_dom(k, dom_request, (req_read, m), s) then
+  get enrolled(=m, =k) in
+  out(ch, blob_access(m)).
+
+(* Anyone may create a mailbox (open signup): a fresh id, managed by the
+   key that signed the request. *)
+let Create(ch: channel) =
+  in(ch, (=req_create, k: pkey, s: bitstring));
+  if verify_dom(k, dom_request, (req_create, pk2b(k)), s) then
+  new m: bitstring;
+  insert enrolled(m, k);
+  out(ch, m).
+
+let Server(rule: bitstring) =
+    (! Enroll(c, rule)) | (! Enroll(tls, rule))
+  | (! Read(c)) | (! Read(tls))
+  | (! Create(c)) | (! Create(tls)).
+
+(* ------------------------------------------------------------------ *)
+(* Devices                                                             *)
+(* ------------------------------------------------------------------ *)
+
+(* The account's signed homes, stored on the server (public). *)
+let Homes =
+  let h1 = (url_h, mbx_h) in
+  event HomeSigned(pk(sk_acct), h1);
+  let s1 = sign_dom(sk_acct, dom_sync_home, h1) in
+  insert account_home(h1, s1);
+  out(c, (h1, s1));
+  let h2 = (url_h, mbx_2) in
+  event HomeSigned(pk(sk_acct), h2);
+  out(c, (h2, sign_dom(sk_acct, dom_sync_home, h2))).
+
+(* A: approves one pairing per QR it scans. The grant carries the
+   account's signed home, the account key the newcomer verifies it with
+   (inside the granted trust snapshot), and the ticket for the newcomer's
+   credential key, which came inside the pairing channel. *)
+let Approver =
+  in(qr, kp: key);
+  in(c, x: bitstring);
+  let (=frame_confirm, nk: pkey) = aead_open(kp, frame_confirm, x) in
+  get account_home(h, hs) in
+  let (=url_h, =mbx_h) = h in
+  let t = (mbx_h, pk2b(nk), url_h) in
+  event TicketIssued(mbx_h, nk);
+  out(c, aead_seal(kp, frame_grant,
+      (frame_grant, h, hs, pk(sk_acct),
+       t, sign_dom(sk_a, dom_ticket, t), pk(sk_a)))).
+
+(* A newcomer: a fresh credential, the QR, its key over the relay; it
+   checks the grant's home against the account key and the ticket against
+   its own key and the home, moves to the home, enrolls, then reads. *)
+let Newcomer =
+  new sk_n: skey;
+  new kp: key;
+  out(qr, kp);
+  out(c, aead_seal(kp, frame_confirm, (frame_confirm, pk(sk_n))));
+  in(c, y: bitstring);
+  let (=frame_grant, h: bitstring, hs: bitstring, acct: pkey,
+       t: bitstring, ts: bitstring, approver: pkey) =
+    aead_open(kp, frame_grant, y) in
+  if verify_dom(acct, dom_sync_home, h, hs) then
+  let (u: bitstring, m: bitstring) = h in
+  let (=m, =pk2b(pk(sk_n)), =u) = t in
+  event Switched(pk2b(pk(sk_n)), h);
+  out(tls, (req_enroll, m, t, ts, approver, pk(sk_n),
+            request(sk_n, (req_enroll, m, t))));
+  in(tls, (=req_enroll, =m, =pk(sk_n)));
+  out(tls, (req_read, m, pk(sk_n), request(sk_n, (req_read, m))));
+  in(tls, =blob_access(m));
+  event NewcomerRead(m).
+
+(* D follows a home read from the hostile server only if the pinned
+   account key signed it. *)
+let Follower =
+  in(c, (h: bitstring, hs: bitstring));
+  if verify_dom(pk(sk_acct), dom_sync_home, h, hs) then
+  event Switched(dev_d, h).
+
+let Mailbox(rule: bitstring) =
+  insert enrolled(mbx_h, pk(sk_a));
+  out(c, pk(sk_a));
+  out(c, pk(sk_acct));
+  ( Server(rule) | Homes | (! Approver) | (! Newcomer) | (! Follower) ).
