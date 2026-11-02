@@ -1,0 +1,33 @@
+(* formal-lib: recovery_core.pvl *)
+(* OnePass formal model, negative control of recovery.pv (spec
+   2026-10-30-sharing-families-design.md, 11.4, attacks A9 and A10): the
+   enrollment is decided by the server (a family policy, an "auto-enroll"
+   flag) and wraps S_org for an organizer key the server serves, not the
+   key pinned at level Verified in the member's book.
+
+   Setting of recovery.pv's m_srv: the organizer org_h is honest, the
+   server reads the member's private base (iCloud without Advanced Data
+   Protection). With the pinned key that setting keeps the keyset secret
+   (recovery.pv); with the served key the server gets S_org too and opens
+   the keyset. Expected: the attack. *)
+
+const org_h: bitstring.
+const m_auto: bitstring.
+const id_auto: bitstring.
+
+free ks_auto: key [private].
+
+(* Expected false: the keyset falls to the server alone. *)
+query attacker(ks_auto).
+(* Sanity (expected false): the enrollment happens. *)
+query o: bitstring, e: nonce; event(Enrolled(m_auto, o, e)).
+
+process
+  new osk_h: skey; new okm_h: seed; new okx_h: seed;
+  out(c, (pk(osk_h), kem_pk_m(okm_h), kem_pk_x(okx_h)));
+  new isk_auto: skey; new sk_auto: key;
+  out(c, pk(isk_auto));
+  (* The organizer key is read from the server, not from the book. *)
+  in(c, (opkm: mlkem_pk, opkx: x25519_pk));
+  Enroll(m_auto, id_auto, isk_auto, ks_auto, org_h, opkm, opkx, c,
+         half_clear, sk_auto)

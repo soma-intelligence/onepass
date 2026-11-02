@@ -16,6 +16,9 @@ Modèles ProVerif 2.05 des constructions cryptographiques de OnePass. La documen
 - `proverif/sharing_no_rekey.pv` : témoin négatif, retrait sans nouvelle génération ; Carol lit ce qui est écrit après (attaque attendue).
 - `proverif/sharing_no_role_check.pv` : témoin négatif, lecteurs qui ne vérifient pas le rôle du signataire ; un manifeste signé par le lecteur Dave est accepté (attaque attendue).
 - `proverif/sharing_member_autofollow.pv` : témoin négatif, adoption d'une rotation de membre sans geste ; Bob enveloppe la clé pour l'identité de l'attaquant (attaque attendue).
+- `proverif/recovery_core.pvl` : aide à la récupération par l'organisateur (spec `2026-10-30-sharing-families-design.md`, 11.4 à 11.7) : RK dérivée de `S_org` et `S_store`, inscription signée qui lie l'enveloppe de `S_org`, demande, annulation, remise en face à face ; base privée du membre lisible ou non par l'attaquant, `S_store` en clair (iCloud) ou scellé sous la Secret Key (boîte).
+- `proverif/recovery.pv` : l'organisateur seul, le serveur seul, l'organisateur avec l'opérateur de la boîte n'obtiennent pas le keyset ; récupération seulement après inscription et remise ; organisateur et stockage alliés, ou organisateur et détenteur du kit, l'obtiennent (limite documentée, attaque attendue).
+- `proverif/recovery_autoenroll.pv` : témoin négatif, inscription vers une clé d'organisateur fournie par le serveur ; le keyset tombe (attaque attendue).
 - `expected.txt` : résultat attendu de chaque requête (`fichier.pv | requête telle qu'imprimée | true|false`).
 - `run.sh` : lance les modèles (300 s maximum par fichier), compare à `expected.txt`, écrit `docs/security/formal/results.md`.
 

@@ -1,0 +1,134 @@
+(* formal-lib: recovery_core.pvl *)
+(* OnePass formal model: organizer-assisted recovery (spec
+   2026-10-30-sharing-families-design.md, sections 11.4 to 11.7 and 17).
+   Processes Enroll, Cancel, Release and NewDevice come from
+   recovery_core.pvl.
+
+   Two organizers: org_h is honest; org_x is compromised from the start
+   (its signing and KEM secret keys are the attacker's). The server (c)
+   is hostile throughout. Six members, one per attacker set:
+   - m_main: organizer honest, private base private. Full flow:
+     enrollment, request, cancel by a live device, face to face release,
+     new device recovers;
+   - m_org: organizer alone (org_x), private base private (11.6);
+   - m_srv: server alone, it also reads the private base (iCloud without
+     Advanced Data Protection, or whoever took the Apple ID), organizer
+     honest; full flow, the new device reads the base from c (11.6);
+   - m_ally: organizer and storage allied (org_x, base on c, half in
+     clear): the documented limit (F-03 style, spec 11.6 and 20);
+   - m_box: account on the mailbox (11.7, decision 18): org_x and the
+     mailbox operator reading the private base, half sealed under the
+     Secret Key, which stays secret;
+   - m_kit: as m_box with the Emergency Kit lost (Secret Key public):
+     the documented limit of 11.7 ("organizer and whoever holds the kit").
+
+   Each member pins its organizer's honest keys, and each organizer the
+   member's identity and device key, through the contact channel of plan 1
+   (sharing_core.pvl, "Contacts"): process parameters, never read from c. *)
+
+const org_h: bitstring.
+const org_x: bitstring.
+const m_main: bitstring.
+const m_org: bitstring.
+const m_srv: bitstring.
+const m_ally: bitstring.
+const m_box: bitstring.
+const m_kit: bitstring.
+(* identity_id of each member (public). *)
+const id_main: bitstring.
+const id_org: bitstring.
+const id_srv: bitstring.
+const id_ally: bitstring.
+const id_box: bitstring.
+const id_kit: bitstring.
+
+(* The keysets. *)
+free ks_main: key [private].
+free ks_org: key [private].
+free ks_srv: key [private].
+free ks_ally: key [private].
+free ks_box: key [private].
+free ks_kit: key [private].
+
+(* Private bases (attacker cannot read) and face to face channels. *)
+free base_main: channel [private].
+free base_org: channel [private].
+free f2f_main: channel [private].
+free f2f_srv: channel [private].
+
+(* The organizer alone does not get the keyset (11.6): it lacks S_store. *)
+query attacker(ks_org).
+(* The server alone does not get it either, though it reads the private
+   base: it lacks S_org (11.6). *)
+query attacker(ks_srv).
+(* Honest organizer, private base private: the keyset stays secret through
+   the whole flow, including the face to face release. *)
+query attacker(ks_main).
+(* Mailbox account (11.7, decision 18): organizer and mailbox operator
+   allied still miss S_store, sealed under the Secret Key. *)
+query attacker(ks_box).
+(* A recovered keyset follows an enrollment by the member and a release
+   by the organizer the member enrolled with, for that enrollment. *)
+query m: bitstring, k: key, o: bitstring, e: nonce;
+  event(Recovered(m, k)) ==> event(Enrolled(m, o, e)) && event(Released(o, m, e)).
+(* The new device opens the member's own keyset only. *)
+query k: key; event(Recovered(m_main, k)) ==> k = ks_main.
+query k: key; event(Recovered(m_srv, k)) ==> k = ks_srv.
+(* The organizer stops only on a cancel a device of the member signed. *)
+query o: bitstring, m: bitstring, e: nonce;
+  event(CancelSeen(o, m, e)) ==> event(CancelSigned(m, e)).
+(* A release follows the organizer's own signed request. *)
+query o: bitstring, m: bitstring, e: nonce;
+  event(Released(o, m, e)) ==> event(RequestSigned(o, m, e)).
+
+(* Documented limits (expected false): organizer and storage allied open
+   the keyset (spec 11.6, 20); on the mailbox, organizer and whoever holds
+   the Emergency Kit (11.7). *)
+query attacker(ks_ally).
+query attacker(ks_kit).
+
+(* Sanity (expected false): both full flows recover, a cancel stops. *)
+query k: key; event(Recovered(m_main, k)).
+query k: key; event(Recovered(m_srv, k)).
+query o: bitstring, e: nonce; event(CancelSeen(o, m_main, e)).
+
+process
+  (* Organizers. *)
+  new osk_h: skey; new okm_h: seed; new okx_h: seed;
+  new osk_x: skey; new okm_x: seed; new okx_x: seed;
+  out(c, (pk(osk_h), kem_pk_m(okm_h), kem_pk_x(okx_h)));
+  out(c, (osk_x, okm_x, okx_x));
+  (* Members: identity key, one live device key, Secret Key. *)
+  new isk_main: skey; new dsk_main: skey; new sk_main: key;
+  new isk_org: skey; new sk_org: key;
+  new isk_srv: skey; new dsk_srv: skey; new sk_srv: key;
+  new isk_ally: skey; new sk_ally: key;
+  new isk_box: skey; new sk_box: key;
+  new isk_kit: skey; new sk_kit: key;
+  out(c, (pk(isk_main), pk(dsk_main), pk(isk_org), pk(isk_srv),
+          pk(dsk_srv), pk(isk_ally), pk(isk_box), pk(isk_kit)));
+  (* Emergency Kit of m_kit lost. *)
+  out(c, sk_kit);
+  ( Enroll(m_main, id_main, isk_main, ks_main, org_h, kem_pk_m(okm_h),
+           kem_pk_x(okx_h), base_main, half_clear, sk_main)
+  | ! Cancel(m_main, pk(osk_h), dsk_main)
+  | ! Release(org_h, osk_h, okm_h, okx_h, m_main, pk(isk_main), pk(dsk_main), f2f_main)
+  | ! NewDevice(m_main, id_main, base_main, f2f_main, half_clear, sk_main)
+
+  | Enroll(m_org, id_org, isk_org, ks_org, org_x, kem_pk_m(okm_x),
+           kem_pk_x(okx_x), base_org, half_clear, sk_org)
+
+  | Enroll(m_srv, id_srv, isk_srv, ks_srv, org_h, kem_pk_m(okm_h),
+           kem_pk_x(okx_h), c, half_clear, sk_srv)
+  | ! Cancel(m_srv, pk(osk_h), dsk_srv)
+  | ! Release(org_h, osk_h, okm_h, okx_h, m_srv, pk(isk_srv), pk(dsk_srv), f2f_srv)
+  | ! NewDevice(m_srv, id_srv, c, f2f_srv, half_clear, sk_srv)
+
+  | Enroll(m_ally, id_ally, isk_ally, ks_ally, org_x, kem_pk_m(okm_x),
+           kem_pk_x(okx_x), c, half_clear, sk_ally)
+
+  | Enroll(m_box, id_box, isk_box, ks_box, org_x, kem_pk_m(okm_x),
+           kem_pk_x(okx_x), c, half_sealed, sk_box)
+
+  | Enroll(m_kit, id_kit, isk_kit, ks_kit, org_x, kem_pk_m(okm_x),
+           kem_pk_x(okx_x), c, half_sealed, sk_kit) )
