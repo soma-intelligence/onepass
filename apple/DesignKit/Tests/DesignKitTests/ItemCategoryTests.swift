@@ -129,3 +129,71 @@ import VaultKit
         #expect(!d.shouldRemask(now: Date.distantFuture, after: 30))
     }
 }
+
+import CoreGraphics
+import SwiftUI
+
+/// Site icons on their tiles: artwork fills the tile, a mark loses its plain square and is read
+/// for its colors.
+@Suite struct SiteIconTreatmentTests {
+    /// `side` square: `background` (nil: transparent) with a centered square mark of `markColor`
+    /// covering `markFraction` of the side.
+    static func icon(
+        side: Int = 64, background: (Double, Double, Double)?, markColor: (Double, Double, Double), markFraction: Double = 0.4
+    ) -> CGImage {
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        if let background {
+            context.setFillColor(red: background.0, green: background.1, blue: background.2, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        }
+        let mark = Double(side) * markFraction
+        context.setFillColor(red: markColor.0, green: markColor.1, blue: markColor.2, alpha: 1)
+        context.fill(CGRect(x: (Double(side) - mark) / 2, y: (Double(side) - mark) / 2, width: mark, height: mark))
+        return context.makeImage()!
+    }
+
+    @Test func fullBleedArtworkFillsTheTile() {
+        // A brand color to the edges with a white mark inside: an app icon.
+        let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: (0.1, 0.4, 0.9), markColor: (1, 1, 1)))
+        #expect(treatment == .fullBleed)
+    }
+
+    @Test func blackMarkOnTransparentIsAOneColorMark() {
+        let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: nil, markColor: (0, 0, 0)))
+        guard case .mark(let monochrome, let luminance) = treatment else { Issue.record("not a mark"); return }
+        #expect(monochrome)
+        #expect(luminance < 0.05)
+    }
+
+    @Test func redMarkKeepsItsColors() {
+        let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: nil, markColor: (0.89, 0.1, 0.13)))
+        guard case .mark(let monochrome, _) = treatment else { Issue.record("not a mark"); return }
+        #expect(!monochrome)
+    }
+
+    @Test func plainWhiteSquareIsCleared() throws {
+        let (image, treatment) = SiteIconTreatment.prepare(Self.icon(background: (1, 1, 1), markColor: (0.05, 0.05, 0.3)))
+        guard case .mark(let monochrome, let luminance) = treatment else { Issue.record("not a mark"); return }
+        #expect(!monochrome || luminance < 0.2)
+        // The corners are transparent now, the mark is still there.
+        let bitmap = try #require(SiteIconTreatment.Bitmap(image))
+        #expect(bitmap.alpha(0) == 0)
+        #expect(bitmap.alpha(bitmap.width * bitmap.height / 2 + bitmap.width / 2) > 200)
+    }
+
+    @Test func whiteArtworkWithASmallDetailStaysArtwork() {
+        // Almost all white: clearing it would leave a speck. Kept as it is.
+        let (_, treatment) = SiteIconTreatment.prepare(
+            Self.icon(background: (1, 1, 1), markColor: (0.9, 0.2, 0.2), markFraction: 0.1))
+        #expect(treatment == .fullBleed)
+    }
+
+    @Test func tileBackgroundKeepsTheMarkReadable() {
+        // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile.
+        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.1, dark: true) == Color(white: 0.94))
+        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.9, dark: false) == Color(white: 0.19))
+        #expect(ItemIcon.markBackground(monochrome: false, luminance: 0.5, dark: false) == .white)
+    }
+}

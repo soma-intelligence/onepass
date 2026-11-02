@@ -9,6 +9,9 @@ public struct ItemIcon: View {
     private let title: String
     private let size: CGFloat
     private let image: CGImage?
+    private let treatment: SiteIconTreatment
+
+    @Environment(\.colorScheme) private var colorScheme
 
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
@@ -20,7 +23,9 @@ public struct ItemIcon: View {
         self.type = type
         self.title = title
         self.size = size
-        self.image = siteIcon.flatMap(Self.filled)
+        let prepared = siteIcon.flatMap(Self.prepared)
+        self.image = prepared?.image
+        self.treatment = prepared?.treatment ?? .fullBleed
         self.brand = type == .creditCard ? brand : nil
     }
 
@@ -39,7 +44,11 @@ public struct ItemIcon: View {
 
     private final class Box: @unchecked Sendable {
         let image: CGImage
-        init(_ image: CGImage) { self.image = image }
+        let treatment: SiteIconTreatment
+        init(_ image: CGImage, _ treatment: SiteIconTreatment) {
+            self.image = image
+            self.treatment = treatment
+        }
     }
 
     nonisolated(unsafe) private static let cache: NSCache<NSData, Box> = {
@@ -48,13 +57,30 @@ public struct ItemIcon: View {
         return cache
     }()
 
-    /// The site icon decoded, its plain margin trimmed (cached per icon: rows redraw often).
-    nonisolated static func filled(_ data: Data) -> CGImage? {
-        if let hit = cache.object(forKey: data as NSData) { return hit.image }
+    /// The site icon decoded, a plain white or black square around its mark cleared, its plain
+    /// margin trimmed, and how it sits on its tile (`SiteIconTreatment`). Cached per icon: rows
+    /// redraw often.
+    nonisolated static func prepared(_ data: Data) -> (image: CGImage, treatment: SiteIconTreatment)? {
+        if let hit = cache.object(forKey: data as NSData) { return (hit.image, hit.treatment) }
         guard let decoded = decode(data) else { return nil }
-        let result = trimmed(decoded) ?? decoded
-        cache.setObject(Box(result), forKey: data as NSData)
-        return result
+        let (cleared, treatment) = SiteIconTreatment.prepare(decoded)
+        let result = trimmed(cleared) ?? cleared
+        cache.setObject(Box(result, treatment), forKey: data as NSData)
+        return (result, treatment)
+    }
+
+    /// The decoded, trimmed image alone.
+    nonisolated static func filled(_ data: Data) -> CGImage? {
+        prepared(data)?.image
+    }
+
+    /// The tile behind a mark (`SiteIconTreatment.mark`): a neutral gray for a one color mark
+    /// (drawn in the text color), else white or near black, whichever keeps the mark readable in
+    /// this appearance.
+    static func markBackground(monochrome: Bool, luminance: Double, dark: Bool) -> Color {
+        if monochrome { return dark ? Color(white: 0.19) : Color(white: 0.955) }
+        if dark { return luminance < 0.3 ? Color(white: 0.94) : Color(white: 0.19) }
+        return luminance > 0.82 ? Color(white: 0.19) : .white
     }
 
     /// Many sites ship their mark small in the middle of a plain square (white or transparent):
@@ -130,6 +156,23 @@ public struct ItemIcon: View {
             if image == nil, let brand, let color = Self.brandColor(brand) {
                 BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
+            } else if let image, case .mark(let monochrome, let luminance) = treatment {
+                // A mark on its own: centered on a tile that suits it, never stretched past twice
+                // its pixels (a 32 px favicon stays crisp).
+                let mark = min(side * 0.62, CGFloat(max(image.width, image.height)) / 2)
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .renderingMode(monochrome ? .template : .original)
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .foregroundStyle(.primary)
+                    .frame(width: mark, height: mark)
+                    .frame(width: side, height: side)
+                    .background(Self.markBackground(monochrome: monochrome, luminance: luminance, dark: colorScheme == .dark))
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08)))
             } else if let image, Self.isLowResolution(image, side: side) {
                 // A small favicon is not stretched into a blur: it sits at its own size (one
                 // source pixel per screen pixel on Retina, at most 60% of the tile), crisp, on a
