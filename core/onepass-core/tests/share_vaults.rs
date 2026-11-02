@@ -481,12 +481,20 @@ impl Acct {
 /// Alice shares "Famille" (its zone has a home) and pins Bob at
 /// `level`; Bob pins Alice `Verified`; their contact zone exists.
 fn alice_and_bob(level: ContactLevel) -> (Zones, Acct, Acct, Id, Vec<Item>) {
+    alice_and_bob_seen(level, ContactLevel::Verified)
+}
+
+/// Alice holds Bob at `level`, Bob holds Alice at `seen`.
+fn alice_and_bob_seen(
+    level: ContactLevel,
+    seen: ContactLevel,
+) -> (Zones, Acct, Acct, Id, Vec<Item>) {
     let mut zs = Zones::default();
     let (dev, sk, fam, items) = with_family();
     let mut a = Acct::of(dev, sk);
     let mut b = Acct::new();
     pin(&mut a.dev, &mut b.dev, level);
-    pin(&mut b.dev, &mut a.dev, ContactLevel::Verified);
+    pin(&mut b.dev, &mut a.dev, seen);
     contact_zone(&mut a.dev, &mut b.dev);
     a.dev.repo().share_vault(&fam, NOW).unwrap();
     a.dev
@@ -1014,4 +1022,48 @@ fn contact_zone_requires_offer() {
         .set_zone_home(AccessTarget::Zone(zone), home(9))
         .unwrap();
     assert_eq!(a.dev.repo().contact_zone(bob).unwrap(), zone);
+}
+
+/// A manager Bob holds only at `Link` may give him a `Read` place, on
+/// every device, never a place where Bob writes (decision 1, A13).
+#[test]
+fn a13_unverified_manager_gives_read_only() {
+    let (mut zs, mut a, mut b, id, _) =
+        alice_and_bob_seen(ContactLevel::Verified, ContactLevel::Link);
+    let bob = account_id(&mut b.dev);
+    let mut b2 = Device::empty();
+    pull(&b.server, &mut b2);
+    b2.unlock(&b.sk);
+    a.dev
+        .repo()
+        .add_member(id, bob, Role::Write, NOW + 1)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    assert!(b.dev.repo().share_invites().unwrap().is_empty());
+    // The head names Bob a writer: no device of his joins from it.
+    b.sync(&mut zs);
+    zsync(&mut b.server, &mut zs, &mut b2);
+    assert!(b2.repo().join_from_head(id, NOW + 2).is_err());
+
+    let (mut zs, mut a, mut b, id, items) =
+        alice_and_bob_seen(ContactLevel::Verified, ContactLevel::Link);
+    let bob = account_id(&mut b.dev);
+    let mut b2 = Device::empty();
+    pull(&b.server, &mut b2);
+    b2.unlock(&b.sk);
+    a.dev
+        .repo()
+        .add_member(id, bob, Role::Read, NOW + 1)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let inv = b.dev.repo().share_invites().unwrap()[0].id;
+    let joined = b.dev.repo().accept_share_invite(inv, NOW + 2).unwrap();
+    assert_eq!(joined.role, Role::Read);
+    b.sync(&mut zs);
+    zsync(&mut b.server, &mut zs, &mut b2);
+    zsync(&mut b.server, &mut zs, &mut b2);
+    let info = b2.repo().join_from_head(id, NOW + 3).unwrap();
+    assert_eq!(info.role, Role::Read);
+    let v = shared(&mut b2, id);
+    assert_eq!(ids(&b2.repo().items(&v).unwrap()), ids(&items));
 }

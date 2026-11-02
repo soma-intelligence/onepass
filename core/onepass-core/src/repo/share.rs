@@ -1109,6 +1109,9 @@ impl<S: RecordStore> Repository<S> {
             })
             .ok_or_else(|| refused("invite", "not for my keys"))?
             .clone();
+        if !trusts_signer_for(c.level, mine.role) {
+            return Err(refused("invite", "signer not verified"));
+        }
         Ok((invite, head, c, mine))
     }
 
@@ -1237,8 +1240,11 @@ impl<S: RecordStore> Repository<S> {
     pub(crate) fn pin_head_from(&mut self, signed: &SignedMembership) -> Result<MembershipBody> {
         let me = self.me();
         let signer = signed.body.signer;
-        let key = if signer.account_id == me.account_id {
-            self.account.params.signing_pub.clone()
+        let (key, seen) = if signer.account_id == me.account_id {
+            (
+                self.account.params.signing_pub.clone(),
+                ContactLevel::Verified,
+            )
         } else {
             let c = self
                 .contact(signer.account_id)?
@@ -1248,17 +1254,29 @@ impl<S: RecordStore> Repository<S> {
             {
                 return Err(refused("membership", "unknown signer"));
             }
-            c.sign_pub.clone()
+            (c.sign_pub.clone(), c.level)
         };
         let head = accept_first(signed, &key)?;
         let p = &self.account.params;
-        head.member(me.account_id)
+        let mine = head
+            .member(me.account_id)
             .filter(|m| {
                 m.identity_id == me.identity_id
                     && m.sign_pub == p.signing_pub
                     && m.kem_pub == p.kem_pub
             })
             .ok_or_else(|| refused("membership", "not for my keys"))?;
+        if !trusts_signer_for(seen, mine.role) {
+            return Err(refused("membership", "signer not verified"));
+        }
         Ok(head)
     }
+}
+
+/// Decision 1 seen from the member's side: a manager I hold only at the
+/// `Link` level may have come through a link read in transit (A13), so I
+/// take from them a `Read` place only, never one where I would write my
+/// own secrets into a vault an impersonator manages.
+fn trusts_signer_for(seen: ContactLevel, my_role: Role) -> bool {
+    seen == ContactLevel::Verified || my_role == Role::Read
 }
