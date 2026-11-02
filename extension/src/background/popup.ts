@@ -16,6 +16,7 @@ import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupSuggestions } from 
 import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
+import type { FormGenerator, Generated } from "./generate";
 import type { PairingFlow } from "./pairing";
 import type { Handlers } from "./router";
 import { BgError, type Session } from "./session";
@@ -39,8 +40,16 @@ export interface PopupDeps {
   pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing">;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
-  /** A generated password was filled in `tabId` (feeds the save proposal, spec 8.8). */
-  onGenerated?: (tabId: number, origin: string, password: string) => void;
+  /**
+   * Makes the password for the form at fill time: the page's rules, quirks
+   * and `pattern` (the preview knew none). Without it, the preview is filled.
+   */
+  generator?: Pick<FormGenerator, "generateForForm">;
+  /**
+   * A generated password was filled into a form of kind `kind` at `t`
+   * (feeds the save proposal, spec 8.8, and the pending save of a signup).
+   */
+  onGenerated?: (t: FillTarget, kind: FormKind, generated: Generated) => void | Promise<void>;
   /** The host reported a locked vault (secrets held elsewhere must go too). */
   onLock?: () => void;
   /** The fill plan of the top frame of `tabId` (null: no plan, no context). */
@@ -262,9 +271,16 @@ export class PopupBackend {
   }
 
   async fillGenerated(password: string): Promise<{ domain: string }> {
-    const { t, host } = await this.target(["signup", "change_password"]);
-    await this.deps.filler.fillGenerated(t, password);
-    this.deps.onGenerated?.(t.tabId, t.origin, password);
+    const { t, host, kind } = await this.target(["signup", "change_password"]);
+    // Made again for this very form: the preview never saw the page's rules.
+    let generated: Generated = { password, report: null };
+    if (this.deps.generator) {
+      const g = await this.deps.generator.generateForForm(t, "popup");
+      if (g === null) throw new BgError("site_refused");
+      generated = g;
+    }
+    await this.deps.filler.fillGenerated(t, generated.password);
+    await this.deps.onGenerated?.(t, kind, generated);
     return { domain: host };
   }
 

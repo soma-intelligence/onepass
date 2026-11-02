@@ -182,6 +182,29 @@ describe("router", () => {
     });
   });
 
+  it("generate on a signup form saves the password pending, not on a change-password form", async () => {
+    const answer: Answer = (r) =>
+      r.op === "vaults"
+        ? { vaults: [{ id: "v1", name: "Perso", color: null }] }
+        : r.op === "save_login"
+          ? { item_id: "it_new" }
+          : r.op === "generate"
+            ? { password: "Gen-Pass-123", entropy_bits: 50, report: { weak_by_site: true } }
+            : defaultAnswer(r);
+    const { ext, client } = await setup(answer);
+    const token = await openMenu(ext, { formKind: "signup" });
+    expect(await ext.send({ type: "menu_generate", token }, uiSender(`menu.html#${token}`, 7))).toEqual({ ok: {} });
+    expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({
+      origin: SITE,
+      password: "Gen-Pass-123",
+      tags: ["onepass:pending", "onepass:weak-by-site"],
+    });
+    const other = await setup(answer);
+    const reset = await openMenu(other.ext, { formKind: "change_password" });
+    expect(await other.ext.send({ type: "menu_generate", token: reset }, uiSender(`menu.html#${reset}`, 7))).toEqual({ ok: {} });
+    expect(other.client.requests.filter((r) => r.op === "save_login")).toEqual([]);
+  });
+
   it("generate fills nothing when the page's pattern refuses every password", async () => {
     const { ext, client } = await setup();
     ext.tabReply = (_t, m) =>

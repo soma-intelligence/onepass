@@ -167,6 +167,29 @@ describe("popup background", () => {
     });
   });
 
+  it("generator Remplir makes the password for the form's rules and saves a signup pending", async () => {
+    const pending: Answer = (r) =>
+      r.op === "vaults" ? { vaults: [{ id: "v1", name: "Perso", color: null }] } : r.op === "save_login" ? { item_id: "it_new" } : answer(r);
+    const { send, reportForms, ext, client } = await setup(pending);
+    ext.tabReply = (_t, m) =>
+      (m as { type?: string }).type === "password_context" ? { ok: true, context: { rules: ["maxlength: 16;"], max_length: 16 }, has_pattern: false } : undefined;
+    await reportForms([{ ref: "f9", kind: "signup", fields: [{ ref: "e1", role: "new_password" }] }]);
+    expect(await send({ type: "popup_fill_generated", password: "preview-pw" })).toEqual({ ok: { domain: "atlas-cloud.test" } });
+    // The page's context went with the request, from the popup.
+    const gen = client.requests.find((r) => r.op === "generate");
+    expect(gen).toMatchObject({ ctx: "popup", origin: SITE, recipe: { kind: "smart", context: { rules: ["maxlength: 16;"], max_length: 16 } } });
+    // The fill holds the password made for the form, never the preview.
+    expect(ext.sentToTabs.at(-1)?.message).toMatchObject({ type: "fill", values: { new_password: "gen-smart" } });
+    expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({ password: "gen-smart", tags: ["onepass:pending"] });
+  });
+
+  it("generator Remplir on a change-password form saves nothing pending", async () => {
+    const { send, reportForms, client } = await setup();
+    await reportForms([{ ref: "f9", kind: "change_password", fields: [{ ref: "e1", role: "new_password" }] }]);
+    expect(await send({ type: "popup_fill_generated", password: "preview-pw" })).toEqual({ ok: { domain: "atlas-cloud.test" } });
+    expect(client.requests.filter((r) => r.op === "save_login" || r.op === "vaults")).toEqual([]);
+  });
+
   it("unpaired is reported even with a stored record the host no longer knows", async () => {
     const { send } = await setup(answer, { openError: new BridgeAppError("unknown_pairing", "gone") });
     expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });

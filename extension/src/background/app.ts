@@ -246,7 +246,12 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     filler,
     analyses,
     onLock: () => saveFlow.clearGenerated(),
-    onGenerated: (tabId, origin, password) => saveFlow.rememberGenerated(tabId, origin, password),
+    generator,
+    onGenerated: async (t, kind, g) => {
+      saveFlow.rememberGenerated(t.tabId, t.origin, g.password);
+      // A signup form: in the vault before it is sent (spec 7.1), as from the planner.
+      if (kind === "signup") await saveFlow.savePending(t.tabId, t.origin, g.password, { weak: g.report?.weak_by_site === true });
+    },
     plan: async (tabId, origin) => {
       const f = await frames.details(tabId, 0);
       if (!f || parseOrigin(f.url)?.origin !== origin) return null;
@@ -437,6 +442,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (g === null) throw new BgError("site_refused");
         await filler.fillGenerated(t, g.password);
         saveFlow.rememberGenerated(rec.tabId, rec.origin, g.password);
+        // A signup form: in the vault before it is sent (spec 7.1), as from the planner.
+        const intent = rec.planned?.intent ?? (rec.formKind === "signup" ? "signup" : undefined);
+        if (intent === "signup") await saveFlow.savePending(rec.tabId, rec.origin, g.password, { weak: g.report?.weak_by_site === true });
         return {};
       },
       menu_new_login: async (m, from) => {

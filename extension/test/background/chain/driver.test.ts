@@ -716,8 +716,9 @@ describe("save and link proposals (wired)", () => {
   it("menu_generate feeds the proposal of a submission without identifier", async () => {
     const t = await setup();
     t.ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    // A change-password form: no pending save, the proposal opens at the submission.
     const r = (await t.ext.send(
-      { type: "open_menu", fieldRef: "n1", formRef: "f9", formKind: "signup" },
+      { type: "open_menu", fieldRef: "n1", formRef: "f9", formKind: "change_password" },
       csSender(`${SITE}/signup`, 7, 0, { documentId: "doc-1" }),
     )) as { ok: { url: string } };
     const token = r.ok.url.slice(r.ok.url.indexOf("#") + 1);
