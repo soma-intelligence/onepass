@@ -38,7 +38,14 @@ final class AppModel {
     var signInNeedsAccountID = false
     /// The sync listeners of the added accounts, by slot.
     @ObservationIgnored var accountTasks: [String: [Task<Void, Never>]] = [:]
+    /// The iCloud coordinator, for an account that syncs with iCloud (nil on the mailbox).
     @ObservationIgnored let coordinator: SyncCoordinator?
+    /// The mailbox coordinator, for an account on a OnePass server (cross-platform spec D.3).
+    @ObservationIgnored let mailbox: MailboxSyncCoordinator?
+    /// What the session's sync goes through: the current coordinator of either kind.
+    @ObservationIgnored let router: SyncRouter?
+    /// "Serveur OnePass", the host of a self-host, or "iCloud" (Réglages > Sync).
+    let syncBackendName: String
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
@@ -219,6 +226,9 @@ final class AppModel {
         let isolated = false
         #endif
         var coordinator: SyncCoordinator?
+        var mailbox: MailboxSyncCoordinator?
+        var router: SyncRouter?
+        var syncBackendName = "iCloud"
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
@@ -228,7 +238,7 @@ final class AppModel {
         let remote: (any RemoteRecordStore)? = nil
         cloudKitEnabled = false
         #endif
-        let environment: VaultEnvironment
+        var environment: VaultEnvironment
         if let demo {
             // Demonstration store (Debug): temporary database, no sync.
             environment = demo
@@ -246,9 +256,9 @@ final class AppModel {
                 #else
                 let databaseURL = container.databaseURL
                 #endif
+                var store: SyncStoreHandle?
                 do {
-                    let store = try openSyncStore(dbPath: databaseURL.path)
-                    coordinator = SyncCoordinator(store: store, remote: isolated ? nil : remote)
+                    store = try openSyncStore(dbPath: databaseURL.path)
                 } catch {
                     Self.log.error("sync store not opened, sync disabled")
                 }
@@ -269,6 +279,31 @@ final class AppModel {
                 // `live` uses the same container as the sync store.
                 environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
                 #endif
+                if let store {
+                    let backend: SyncBackendState
+                    do {
+                        backend = try SyncBackendState.readNow(store: store)
+                    } catch {
+                        Self.log.error("sync backend unreadable, sync disabled")
+                        backend = .pendingSetup(.default)
+                    }
+                    syncBackendName = backend.displayName(hosted: MailboxEndpoints.hosted())
+                    switch backend {
+                    case .iCloud:
+                        let iCloud = SyncCoordinator(store: store, remote: isolated ? nil : remote)
+                        coordinator = iCloud
+                        router = SyncRouter(current: iCloud)
+                    case .mailbox(let home):
+                        mailbox = Self.openMailbox(
+                            home: home, databaseURL: databaseURL, keychain: environment.keychain,
+                            serverName: syncBackendName)
+                        router = mailbox.map { SyncRouter(current: $0) }
+                    case .pendingSetup:
+                        // The mailbox setup resumes at launch (X1b Task 6); nothing syncs until then.
+                        break
+                    }
+                    environment.sync = router ?? NoSync()
+                }
             } else {
                 // Split store: nothing is opened (no sync store), the session is refused below.
                 storeSplit = true
@@ -276,6 +311,9 @@ final class AppModel {
             }
         }
         self.coordinator = coordinator
+        self.mailbox = mailbox
+        self.router = router
+        self.syncBackendName = syncBackendName
         self.remote = remote
         let session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
@@ -439,20 +477,43 @@ final class AppModel {
         }
         #endif
         tasks.append(Task { [weak self] in await self?.refreshAutoFillStatus() })
-        guard let coordinator else { return }
+        guard let router else { return }
+        let coordinator = coordinator
         tasks.append(Task { [weak self] in
-            for await _ in await coordinator.remoteChanges() {
+            for await _ in await router.remoteChanges() {
                 await self?.primarySession.reload()
                 self?.remoteRevision &+= 1
             }
         })
         tasks.append(Task { [weak self] in
-            for await status in await coordinator.statusUpdates() {
+            for await status in await router.statusUpdates() {
                 self?.syncStatus = status
-                self?.ignoredDeletionCount = await coordinator.ignoredDeletionCount
+                if let coordinator { self?.ignoredDeletionCount = await coordinator.ignoredDeletionCount }
             }
         })
-        tasks.append(Task { await coordinator.syncNow() })
+        tasks.append(Task { await router.syncNow() })
+        if let mailbox { tasks.append(Task { await mailbox.enterForeground() }) }
+    }
+
+    /// The mailbox client of an account on a OnePass server, signed by this device's credential.
+    /// Without its seed (Keychain restored elsewhere, item deleted) nothing syncs and the log says so.
+    private static func openMailbox(
+        home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String
+    ) -> MailboxSyncCoordinator? {
+        do {
+            guard let seed = try MailboxCredentialStore(keychain: keychain).seed(mailboxID: home.mailboxID) else {
+                log.error("mailbox credential missing, sync disabled")
+                return nil
+            }
+            let sync = try seed.withData {
+                try MailboxSync.open(
+                    dbPath: databaseURL.path, endpoint: home.endpoint, mailboxId: home.mailboxID, credentialSeed: $0)
+            }
+            return MailboxSyncCoordinator(sync: FfiMailboxSyncAdapter(sync: sync), serverName: serverName)
+        } catch {
+            log.error("mailbox client not opened, sync disabled")
+            return nil
+        }
     }
 
     /// The app's aggregate scene phase (forwarded from `OnePassApp`), not a single window's.
@@ -467,7 +528,11 @@ final class AppModel {
             // An item saved by the AutoFill extension appears even if its store-changed notification
             // was lost (sent while the app was suspended).
             if session.state == .unlocked { Task { await session.reloadAfterExternalChange() } }
-            if let coordinator { Task { await coordinator.syncNow() } }
+            if let mailbox {
+                Task { await mailbox.enterForeground() }
+            } else if let router {
+                Task { await router.syncNow() }
+            }
             // The provider may have been turned on or off in the system settings meanwhile.
             Task { await refreshAutoFillStatus() }
             #if os(macOS)
@@ -484,6 +549,7 @@ final class AppModel {
             publicSession?.end()
             dropPendingOtpLink()
             accounts.scenePhaseChanged(.background)
+            if let mailbox { Task { await mailbox.enterBackground() } }
             #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()
             #endif

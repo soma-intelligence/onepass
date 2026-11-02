@@ -60,6 +60,9 @@ settings:
     # (scripts/check-update-key.sh). The release workflow passes the key on the command line.
     ONEPASS_UPDATE_FEED_URL: https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml
     ONEPASS_SPARKLE_PUBLIC_KEY: ""
+    # Base URL of the hosted OnePass server (Info.plist key `OnePassMailboxURL`, founder decision
+    # F2). Release builds accept https only; Debug builds also take the local Supabase stack.
+    ONEPASS_MAILBOX_URL: https://mailbox.somalabs.me/functions/v1/mailbox
 
 packages:
   VaultKit:
@@ -137,6 +140,7 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
@@ -256,6 +260,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
         NSExtension:

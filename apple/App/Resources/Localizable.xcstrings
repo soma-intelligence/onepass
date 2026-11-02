@@ -28635,6 +28635,35 @@
         }
       }
     },
+    "settings.sync.backend" : {
+      "comment" : "Settings > Sync: label of the row naming where the vault syncs (iCloud, OnePass Server, or a host).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synced With"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizado con"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisé avec"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizzato con"
+          }
+        }
+      }
+    },
     "settings.sync.footer" : {
       "comment" : "Réglages > Sync: footer",
       "localizations" : {

@@ -791,6 +791,8 @@ struct SyncStatusChip: View {
         case .accountChanged: (status.label, "person.crop.circle.badge.exclamationmark", .orange)
         // Discreet: a sync state, not an error (spec 3.1).
         case .waitingForServer: (status.label, "icloud.and.arrow.up", .secondary)
+        case .waitingForMailbox: (status.label, "arrow.up.circle", .secondary)
+        case .homeMoved: (status.label, "arrow.triangle.branch", .orange)
         default: nil
         }
     }

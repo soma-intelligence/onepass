@@ -9,11 +9,11 @@ struct SyncSettings: View {
 
     /// Status line and its symbol; nil last sync means a first round has not finished yet.
     private enum Line {
-        case disabled, offline, refused(String), error(String), syncing, idle(Date?), accountChanged, waiting
+        case disabled, offline, refused(String), error(String), syncing, idle(Date?), accountChanged, waiting(String)
     }
 
     private var line: Line {
-        guard model.cloudKitEnabled else { return .disabled }
+        guard model.cloudKitEnabled || model.mailbox != nil else { return .disabled }
         switch model.syncStatus {
         case .disabled: return .disabled
         case .offline: return .offline
@@ -22,7 +22,9 @@ struct SyncSettings: View {
         case .syncing: return .syncing
         case .idle(let last): return .idle(last)
         case .accountChanged: return .accountChanged
-        case .waitingForServer: return .waiting
+        case .waitingForServer: return .waiting(String(localized: "Synchronisation en attente d'iCloud"))
+        case .waitingForMailbox: return .waiting(model.syncStatus.label)
+        case .homeMoved: return .error(model.syncStatus.label)
         }
     }
 
@@ -32,12 +34,16 @@ struct SyncSettings: View {
         if case .disabled = line { return false }
         if case .syncing = line { return false }
         if case .accountChanged = line { return false }
-        return model.coordinator != nil && !syncing
+        return model.router != nil && !syncing
     }
 
     var body: some View {
         Form {
             Section {
+                if model.router != nil {
+                    LabeledContent("settings.sync.backend", value: model.syncBackendName)
+                        .accessibilityIdentifier("settings.sync.backend")
+                }
                 statusRow
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("settings.sync.status")
@@ -110,8 +116,8 @@ struct SyncSettings: View {
                 .foregroundStyle(.orange)
         case .syncing:
             Label("Synchronisation en cours", systemImage: "arrow.triangle.2.circlepath")
-        case .waiting:
-            Label("Synchronisation en attente d'iCloud", systemImage: "icloud.and.arrow.up")
+        case .waiting(let text):
+            Label(text, systemImage: "icloud.and.arrow.up")
                 .foregroundStyle(.secondary)
         case .idle(let last):
             if let last {
@@ -150,10 +156,10 @@ struct SyncSettings: View {
     }
 
     private func syncNow() {
-        guard let coordinator = model.coordinator, !syncing else { return }
+        guard let router = model.router, !syncing else { return }
         syncing = true
         Task {
-            await coordinator.syncNow()
+            await router.syncNow()
             syncing = false
         }
     }
