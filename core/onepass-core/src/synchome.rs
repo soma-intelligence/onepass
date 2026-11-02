@@ -308,17 +308,56 @@ impl<S: RecordStore> Repository<S> {
         Ok((rec, current.map(|(v, _)| v), body))
     }
 
-    /// Sign and write the next home (conditional on the version read: a
-    /// lost race is `Error::Conflict`), and pin it in the same transaction.
-    pub fn set_sync_home(&mut self, backend: SyncBackend, now: i64) -> Result<SyncHomeBody> {
+    /// The signed record of the home following the adopted one (seq 1 when
+    /// none), chained to it, without writing anything (spec D.5 step 2: a
+    /// migrating device claims the home elsewhere before adopting it). Two
+    /// calls without an adoption between them sign the same seq.
+    pub fn sign_sync_home(&self, backend: SyncBackend, now: i64) -> Result<Vec<u8>> {
+        Ok(self.sync_home_write(backend, now)?.0.data)
+    }
+
+    /// Verify `signed` against the account key and the pinned home, then
+    /// write it (conditional on the version read: a lost race is
+    /// `Error::Conflict`) and pin it in the same transaction. The home
+    /// already adopted is accepted again without a write; another body at
+    /// its seq, or an older one, is `SyncHomeRollback`.
+    pub fn adopt_sync_home(&mut self, signed: &[u8]) -> Result<SyncHomeBody> {
         self.writable()?;
-        let (rec, expected, body) = self.sync_home_write(backend, now)?;
+        let current = self.stored_sync_home()?;
+        let pinned = current
+            .as_ref()
+            .map(|(_, b)| b.seen())
+            .or(self.chain.sync_home);
+        let body = verify_sync_home(
+            signed,
+            &self.account.params.signing_pub,
+            self.account.params.account_id,
+            pinned.as_ref(),
+        )?;
+        if let Some((_, adopted)) = &current
+            && adopted.seq == body.seq
+        {
+            return Ok(body);
+        }
+        let rec = Record {
+            id: self.records_id,
+            kind: RecordKind::SyncHome,
+            version: body.seq,
+            data: signed.to_vec(),
+        };
         let mut chain = self.chain.clone();
         chain.sync_home = Some(body.seen());
         self.store
-            .put_all_if_version_with_chain(vec![(rec, expected)], &chain)?;
+            .put_all_if_version_with_chain(vec![(rec, current.map(|(v, _)| v))], &chain)?;
         self.chain = chain;
         Ok(body)
+    }
+
+    /// Sign and adopt the next home: `adopt_sync_home(sign_sync_home(..))`.
+    pub fn set_sync_home(&mut self, backend: SyncBackend, now: i64) -> Result<SyncHomeBody> {
+        self.writable()?;
+        let signed = self.sign_sync_home(backend, now)?;
+        self.adopt_sync_home(&signed)
     }
 }
 

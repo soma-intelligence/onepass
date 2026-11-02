@@ -78,6 +78,11 @@ pub enum RecordKind {
     SyncHome,
 }
 
+/// Code of the mailbox enroll request (`crate::enroll_request`), a side
+/// record the apps write in the frozen iCloud zone. Never a `RecordKind`:
+/// `RecordKind::from_code` refuses it, and no store holds it.
+pub const SIDE_KIND_MAILBOX_ENROLL_REQUEST: u8 = 28;
+
 impl RecordKind {
     pub fn code(self) -> u8 {
         match self {

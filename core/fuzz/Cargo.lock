@@ -808,6 +808,7 @@ dependencies = [
  "csv",
  "data-encoding",
  "libc",
+ "onepass-mailbox-proto",
  "postcard",
  "prost",
  "quick-xml",
