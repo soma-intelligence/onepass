@@ -1124,6 +1124,27 @@ impl Default for FakeMailbox {
     }
 }
 
+/// `_ed25519_key_refused` of the SQL: the eight small-order encodings, the
+/// two negative zeros, and every non-canonical encoding (y >= p). Points off
+/// the curve are refused by the edge function (WebCrypto import), not here.
+fn ed25519_key_refused(k: &[u8; 32]) -> bool {
+    const SMALL_ORDER: [&str; 10] = [
+        "0100000000000000000000000000000000000000000000000000000000000000",
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000080",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+        "0100000000000000000000000000000000000000000000000000000000000080",
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    ];
+    let hex = onepass_mailbox_proto::hex(k);
+    SMALL_ORDER.contains(&hex.as_str())
+        || (k[0] >= 0xed && k[1..31].iter().all(|b| *b == 0xff) && k[31] & 0x7f == 0x7f)
+}
+
 impl FakeMailbox {
     /// Open signup: every mailbox gets plan `selfhost` (`seed.sql`).
     pub fn new() -> FakeMailbox {
@@ -1724,6 +1745,9 @@ impl MailboxApi for FakeMailboxClient {
         self.open_mailbox()?;
         let req = grant_request(public_key, role, put_kinds, label)?;
         let (mut s, m) = self.signed()?;
+        if ed25519_key_refused(&req.public_key) {
+            return refused(ErrorCode::Malformed);
+        }
         s.grant(
             &self.credential.id(),
             &m,
@@ -1849,6 +1873,9 @@ impl MailboxApi for FakeMailboxClient {
         self.open_mailbox()?;
         let req = child_request(kind, owner_public_key, label)?;
         let (mut s, parent) = self.signed()?;
+        if ed25519_key_refused(&req.owner_public_key) {
+            return refused(ErrorCode::Malformed);
+        }
         // `api_create_child` after the shapes, in its order.
         if s.caller(&self.credential.id()).role != CredentialRole::Manage
             || s.mailboxes[&parent].kind != ACCOUNT

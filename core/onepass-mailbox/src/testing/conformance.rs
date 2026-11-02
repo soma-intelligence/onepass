@@ -80,6 +80,7 @@ pub const CASES: &[(&str, Case)] = &[
     ("rendezvous_round_trip", rendezvous_round_trip),
     ("rendezvous_written_once", rendezvous_written_once),
     ("grant_then_granted_key_reads", grant_then_granted_key_reads),
+    ("weak_keys_refused", weak_keys_refused),
     ("reader_commit_forbidden", reader_commit_forbidden),
     ("limited_writer_kinds", limited_writer_kinds),
     ("manager_changes_role", manager_changes_role),
@@ -895,6 +896,37 @@ fn grant_then_granted_key_reads(t: &mut dyn ConformanceTarget) {
         "a reader grants",
     );
     assert_eq!(usage(a.as_ref()).2, 2, "still two credentials");
+}
+
+/// Ed25519 keys no credential may have: a small-order point (the identity,
+/// order 1), its negative zero encoding, and a non-canonical encoding
+/// (y = p). With cofactorless verification anyone forges for them.
+const WEAK_KEYS: [[u8; 32]; 3] = {
+    let mut identity = [0u8; 32];
+    identity[0] = 1;
+    let mut negative_zero = identity;
+    negative_zero[31] = 0x80;
+    let mut y_is_p = [0xffu8; 32];
+    y_is_p[0] = 0xed;
+    y_is_p[31] = 0x7f;
+    [identity, negative_zero, y_is_p]
+};
+
+/// A grant or a child owner with a weak key is malformed, and nothing is
+/// enrolled.
+fn weak_keys_refused(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    for k in WEAK_KEYS {
+        match a.grant(k, CredentialRole::Read, None, b"weak") {
+            Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+            other => panic!("granting a weak key: {other:?}"),
+        }
+        match a.create_child(ChildKind::Shared, k, b"weak") {
+            Err(MailboxError::Server(ErrorCode::Malformed)) => {}
+            other => panic!("a child owned by a weak key: {other:?}"),
+        }
+    }
+    assert_eq!(usage(a.as_ref()).2, 1, "only the owner");
 }
 
 /// A reader commits nothing, uploads nothing and revokes no one but itself.
