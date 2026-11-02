@@ -1701,6 +1701,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "onepass-bench"
+version = "0.2.0"
+dependencies = [
+ "data-encoding",
+ "onepass-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tungstenite",
+]
+
+[[package]]
 name = "onepass-bridge"
 version = "0.2.0"
 dependencies = [

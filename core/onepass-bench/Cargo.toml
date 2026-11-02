@@ -1,0 +1,27 @@
+[package]
+name = "onepass-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# Real-site autofill bench (docs/superpowers/specs/2026-11-02-real-site-bench-and-retrain-design.md):
+# drives a real Chromium over the DevTools protocol, runs the extension's content-script probe
+# and the core fill_plan engine on public login and signup pages (or their pruned recordings),
+# and scores detection and fill. Never submits anything.
+
+[[bin]]
+name = "onepass-bench"
+path = "src/main.rs"
+
+[dependencies]
+onepass-core = { path = "../onepass-core" }
+serde.workspace = true
+serde_json.workspace = true
+data-encoding.workspace = true
+sha2 = "0.10"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+
+[dev-dependencies]
+tempfile = "3"
