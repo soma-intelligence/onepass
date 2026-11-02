@@ -1,0 +1,16 @@
+DEFINE SCHEMA
+
+    RECORD TYPE RemoteMessage (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        blob            BYTES,
+        expires_at      TIMESTAMP QUERYABLE SORTABLE,
+        "to"            STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

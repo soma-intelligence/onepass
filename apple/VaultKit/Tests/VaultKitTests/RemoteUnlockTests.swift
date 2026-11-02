@@ -418,6 +418,50 @@ struct RemoteUnlockTests {
         #expect(try await CoreThread.run { try agent.vaults() }.count == 1)
     }
 
+    /// The Mac wakes after its window ended in sleep: nothing reopens by itself, the gate holds the
+    /// socket again and the agent has to ask the phone again.
+    @Test func wakeAfterSleepDoesNotReopenWindow() async throws {
+        let f = try await RemoteUnlockFixture.make()
+        defer { f.cleanUp() }
+        await f.hosts.update({ $0.mcpEnabled = true }, session: f.vault)
+        try await f.openWindow()
+        f.center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        try await waitUntil { @MainActor in f.vault.agentWindowEndsAt == nil }
+        f.center.post(name: NSWorkspace.didWakeNotification, object: nil)
+        f.center.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        // The timer of the ended window firing late (a wake) must not do anything either.
+        f.timer.fire()
+        try await Task.sleep(for: .milliseconds(300))
+        await f.hosts.settle()
+        #expect(f.vault.agentSession == nil)
+        #expect(f.vault.agentWindowEndsAt == nil)
+        #expect(f.vault.state == .locked)
+        #expect(!f.hosts.mcpRunning)
+        #expect(f.hosts.gateRunning)
+    }
+
+    /// The Mac sleeps while the phone is still asked: the wait ends, no window opens and the request
+    /// to the phone is withdrawn, so nothing is left to answer after the wake.
+    @Test func sleepWhilePhoneIsAskedEndsTheWait() async throws {
+        let f = try await RemoteUnlockFixture.make(timeout: .seconds(20))
+        defer { f.cleanUp() }
+        _ = try await f.enroll()
+        await f.lockMac()
+        async let ok = f.coordinator.handleLockedRequest(client: f.client)
+        let phoneID = f.phone.id
+        try await waitUntil { f.channel.stored().contains { $0.to == phoneID } }
+
+        f.center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        #expect(await ok == false)
+        f.center.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await waitUntil { f.channel.stored().allSatisfy { $0.to != phoneID } }
+        try await Task.sleep(for: .milliseconds(300))
+        await f.hosts.settle()
+        #expect(f.vault.agentSession == nil)
+        #expect(f.vault.agentWindowEndsAt == nil)
+        #expect(!f.hosts.mcpRunning)
+    }
+
     /// The owner unlocks the Mac while the phone is asked: the wait ends at once and the agent goes
     /// to the full session (no failure reported, no window opened).
     @Test func fullUnlockDuringWaitHandsOver() async throws {
