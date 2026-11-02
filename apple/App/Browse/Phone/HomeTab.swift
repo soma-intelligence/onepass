@@ -528,15 +528,15 @@ struct PhoneItemRows: View {
 /// The surface of the iPhone cards: the grouped list's cell color, a hairline, rounded as the Mac
 /// cards.
 enum PhoneCard {
-    static let radius: CGFloat = 18
+    static let radius: CGFloat = Theme.cardRadius
 }
 
 extension View {
     func phoneCard() -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
-        return background(Color(uiColor: .secondarySystemGroupedBackground), in: shape)
+        return background(Theme.card, in: shape)
             .clipShape(shape)
-            .overlay { shape.strokeBorder(Color.primary.opacity(0.06)) }
+            .overlay { shape.strokeBorder(Theme.cardHairline) }
     }
 }
 
@@ -544,7 +544,7 @@ extension View {
 /// carry the depth; a tinted wash on top read as decoration.
 struct PhoneBackground: View {
     var body: some View {
-        Color(uiColor: .systemGroupedBackground)
+        Theme.page
             .ignoresSafeArea()
     }
 }

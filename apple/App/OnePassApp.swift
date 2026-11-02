@@ -79,9 +79,38 @@ struct OnePassApp: App {
         RootView()
             .environment(model)
             .tint(Theme.accent)
+            #if os(iOS)
+            .modifier(AppearanceOverride())
+            #endif
             .onAppear { appDelegate.model = model }
     }
 }
+
+#if os(iOS)
+/// Réglages > Général > Apparence on iPhone and iPad: the choice is set on every window of the app
+/// (`overrideUserInterfaceStyle`), so sheets, popovers, alerts and the keyboard follow it too.
+/// Automatique gives the system's appearance back.
+private struct AppearanceOverride: ViewModifier {
+    @AppStorage(Appearance.storageKey, store: AppModel.browseDefaults) private var stored = Appearance.system.rawValue
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: stored, initial: true) { apply() }
+            // A window created later (another scene, the privacy cover) picks the choice up here.
+            .onChange(of: scenePhase) { apply() }
+    }
+
+    private func apply() {
+        let style = Appearance(stored: stored).interfaceStyle
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows where window.overrideUserInterfaceStyle != style {
+                window.overrideUserInterfaceStyle = style
+            }
+        }
+    }
+}
+#endif
 
 /// Remote notifications (CloudKit database subscription) start a sync round.
 /// Registration only happens in the CloudKit build: the unsigned build has no push entitlement.
