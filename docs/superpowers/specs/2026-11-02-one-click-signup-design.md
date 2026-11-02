@@ -33,7 +33,7 @@ Un bouton dont le libellé parle de clé d'accès (`passkey`, `clé d'accès`, `
 
 ### 2.3 Action (extension)
 
-- Un plan d'inscription avec offre de clé d'accès ouvre le menu au lieu de remplir. En tête du menu, deux choix : « Créer le compte avec un mot de passe fort » (mis en avant) et « Créer une clé d'accès à la place ». Le reste du menu ne change pas.
+- Un plan d'inscription avec offre de clé d'accès ouvre le menu au lieu de remplir. En tête du menu, deux choix : « Créer le compte avec un mot de passe fort » (mis en avant) et « Créer une passkey à la place ». Le reste du menu ne change pas.
 - Mot de passe : le plan s'exécute comme avant (identité, mot de passe généré, Login en attente), sans envoi.
 - Clé d'accès : seuls les groupes identité s'exécutent (le nom et l'e-mail que le site enverra avec la création), aucun mot de passe n'est généré ni enregistré ; puis le travailleur arme la création de clé d'accès pour ce document, et le content script clique le bouton `passkey` du plan après avoir relu sa classe (un bouton relabellisé depuis le plan est refusé).
 - Armement : une seule création, dans les 15 s, pour cet onglet, ce cadre principal, ce document et ce site, compte comme faite sous activation. Il ne fait qu'ouvrir la fenêtre de choix OnePass : la création demande toujours un clic de confiance dans cette fenêtre, comme aujourd'hui. Sans armement ni activation, le navigateur garde la main (inchangé).
@@ -76,7 +76,7 @@ L'extension Safari sur iPhone, iPad et Mac a le plan complet, comme Chrome.
 
 ## 7. Sécurité
 
-- Aucun envoi automatique d'inscription : l'intention `Signup` n'en a jamais (moteur, `planner.ts`, content script). Le clic sur le bouton de clé d'accès suit le choix explicite « Créer une clé d'accès à la place » de l'utilisateur, nomme le bouton qu'il clique, et relit sa classe au moment du clic.
+- Aucun envoi automatique d'inscription : l'intention `Signup` n'en a jamais (moteur, `planner.ts`, content script). Le clic sur le bouton de clé d'accès suit le choix explicite « Créer une passkey à la place » de l'utilisateur, nomme le bouton qu'il clique, et relit sa classe au moment du clic.
 - L'armement de clé d'accès est à usage unique, borné à 15 s, au cadre principal, au document et au site du menu ; une navigation ou un nouveau menu l'efface. Il n'ouvre qu'une fenêtre de choix, jamais une signature.
 - `PageContext` reste une entrée hostile : la nouvelle classe de bouton ne change aucune borne ; la cible `plan_fill` du fuzz la couvre par la désérialisation.
 - La date de naissance et les parties d'adresse sont des valeurs de l'identité déjà remplissables : aucun nouveau secret ne circule.

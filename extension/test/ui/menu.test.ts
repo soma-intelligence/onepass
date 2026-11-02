@@ -294,7 +294,7 @@ describe("inline menu", () => {
     expect(opts[0]?.getAttribute("data-signup")).toBe("password");
     expect(opts[1]?.getAttribute("data-signup")).toBe("passkey");
     expect(says(opts[0]!)).toContain("Créer le compte avec un mot de passe fort");
-    expect(says(opts[1]!)).toContain("Créer une clé d'accès à la place");
+    expect(says(opts[1]!)).toContain("Créer une passkey à la place");
     clock.advance(300);
     (opts[1] as HTMLButtonElement).click();
     await Promise.resolve();
