@@ -66,7 +66,9 @@ struct Sidebar: View {
             // In a VStack the list asks for the height of all its rows as a minimum, which made the
             // split view taller than the window and pushed every column's top out of sight.
             // Rows scrolling up fade out under the account row instead of running behind it.
+            // The first row starts below the fade, so at rest its selection is never washed out.
             list
+                .contentMargins(.top, 12, for: .scrollContent)
                 .frame(minHeight: 0, maxHeight: .infinity)
                 .mask {
                     VStack(spacing: 0) {
