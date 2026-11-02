@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::context::{FieldRole, FormContext};
+use super::context::{ButtonClass, FieldRole, FormContext, FormKindHint};
 
 /// Sealed in `model::usage::SiteUsage`: postcard encodes variants by index,
 /// so new variants are only ever appended (pinned by `model::wire_tests`).
@@ -49,6 +49,23 @@ pub fn intent_of(form: &FormContext) -> Intent {
     if new_passwords >= 1 {
         return Intent::Signup;
     }
+    // 4 bis. No password and no code: an account being made all the same
+    // (e-mail, name, "Create account" or a passkey button). The detector's
+    // signup kind, or a create or passkey button with signup words, and
+    // something of the identity to fill. Never sent on its own either.
+    let secret = current >= 1 || roles.contains(&FieldRole::Otp);
+    let creates = form
+        .buttons
+        .iter()
+        .any(|b| matches!(b.class, ButtonClass::Create | ButtonClass::Passkey));
+    let signup_hint = form.intent_hints.kind == Some(FormKindHint::Signup)
+        || (creates && form.intent_hints.signup_words);
+    let identity = roles
+        .iter()
+        .any(|r| r.is_identifier() || r.is_identity_or_address());
+    if !secret && signup_hint && identity {
+        return Intent::Signup;
+    }
     // 5. A one-time code alone ("remember me" is not a fill target).
     let fillable: Vec<FieldRole> = roles
         .iter()
@@ -75,7 +92,7 @@ pub fn intent_of(form: &FormContext) -> Intent {
 
 #[cfg(test)]
 mod tests {
-    use super::super::context::{ButtonClass, ButtonContext, FieldContext, IntentHints, Prefilled};
+    use super::super::context::{ButtonContext, FieldContext, IntentHints, Prefilled};
     use super::*;
 
     fn form(roles: &[FieldRole]) -> FormContext {
@@ -221,5 +238,71 @@ mod tests {
     #[test]
     fn unknown_only_is_ignore() {
         assert_eq!(intent_of(&form(&[FieldRole::Unknown])), Intent::Ignore);
+    }
+
+    fn with_button(mut f: FormContext, class: ButtonClass) -> FormContext {
+        f.buttons.push(ButtonContext {
+            button_ref: format!("b{}", f.buttons.len()),
+            class,
+        });
+        f
+    }
+
+    #[test]
+    fn email_and_name_with_signup_kind_is_signup() {
+        let mut f = form(&[FieldRole::Email, FieldRole::GivenName]);
+        f.intent_hints.kind = Some(super::super::context::FormKindHint::Signup);
+        assert_eq!(intent_of(&f), Intent::Signup);
+    }
+
+    #[test]
+    fn create_button_and_signup_words_is_signup() {
+        let mut f = with_button(form(&[FieldRole::Email]), ButtonClass::Create);
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Signup);
+    }
+
+    #[test]
+    fn passkey_button_and_signup_words_is_signup() {
+        let mut f = with_button(
+            form(&[FieldRole::Email, FieldRole::FullName]),
+            ButtonClass::Passkey,
+        );
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Signup);
+    }
+
+    #[test]
+    fn create_button_without_signup_words_stays_login() {
+        // A sign-in form that also shows "Create account".
+        let f = with_button(
+            with_button(form(&[FieldRole::Email]), ButtonClass::Submit),
+            ButtonClass::Create,
+        );
+        assert_eq!(intent_of(&f), Intent::Login);
+    }
+
+    #[test]
+    fn login_with_create_link_and_password_stays_login() {
+        let mut f = with_button(
+            form(&[FieldRole::Username, FieldRole::CurrentPassword]),
+            ButtonClass::Create,
+        );
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Login);
+    }
+
+    #[test]
+    fn signup_words_alone_on_identifier_stay_login() {
+        let mut f = form(&[FieldRole::Email]);
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Login);
+    }
+
+    #[test]
+    fn signup_kind_with_otp_is_not_a_passwordless_signup() {
+        let mut f = form(&[FieldRole::Otp]);
+        f.intent_hints.kind = Some(super::super::context::FormKindHint::Signup);
+        assert_eq!(intent_of(&f), Intent::Otp);
     }
 }
