@@ -122,9 +122,29 @@ struct LockView: View {
 
     // MARK: - Account
 
+    /// The account to unlock; with several accounts on the device, a menu that switches to another
+    /// (each keeps its own lock and Secret Key, multi-account spec 2).
     @ViewBuilder private var account: some View {
-        let initials = model.initials
-        let name = model.settings.displayName
+        if model.accounts.hasSeveralAccounts {
+            Menu {
+                AccountsMenuItems()
+            } label: {
+                accountCapsule(chevron: true)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityIdentifier("lock.accounts")
+        } else {
+            accountCapsule(chevron: false)
+        }
+    }
+
+    @ViewBuilder private func accountCapsule(chevron: Bool) -> some View {
+        let profile = model.activeProfile
+        let initials = profile.map { $0.isPrimary ? model.initials : model.initials(of: $0) } ?? model.initials
+        let name = profile.flatMap { $0.label.isEmpty ? nil : $0.label } ?? model.settings.displayName
         HStack(spacing: 8) {
             // Round, so it sits concentric in the capsule (a squircle poked out of it).
             if let photo = model.profileImage {
@@ -136,7 +156,7 @@ struct LockView: View {
                     .overlay { Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5) }
             } else {
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(model.accountTint)
                     .frame(width: 26, height: 26)
                     .overlay {
                         if initials.isEmpty {
@@ -158,6 +178,11 @@ struct LockView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            if chevron {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.leading, 3)
         .padding(.trailing, 12)

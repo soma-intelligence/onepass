@@ -28,6 +28,11 @@ import UIKit
 ///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
 /// - `-OnePassDemoHostDevice YES` (Mac): opens "Configurer un appareil…" once the data is there.
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
+/// - `-OnePassDemoSecondAccount YES`: also a business account "Atelier Atlas" (orange, work domain
+///   `atlas.exemple.fr`, same demo password) next to the personal one, locked;
+///   `-OnePassDemoUnifiedSearch YES` turns the search over all accounts on;
+///   `-OnePassDemoShowWork YES` shows the business account (locked); `-OnePassDemoAddAccount YES`
+///   opens "Ajouter un compte".
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
@@ -209,6 +214,7 @@ extension AppModel {
                     try? await session.enrollBiometrics(password: DemoData.password)
                     DemoTrace.log("demo: biometrics %@", session.canUseBiometrics ? "on" : "off")
                 }
+                if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
                 if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
@@ -238,6 +244,24 @@ extension AppModel {
                 #endif
             }
         }
+    }
+}
+
+extension AppModel {
+    /// A second, business account on the same device: its own store, keyset and Secret Key.
+    fileprivate func seedSecondDemoAccount() async throws {
+        let slot = try accounts.beginAdding(kind: .business, label: "Atelier Atlas", color: .orange)
+        guard let work = accounts.session(for: slot) else { return }
+        _ = try await work.createAccount(
+            password: DemoData.password, displayName: DemoData.displayName, mode: .personal)
+        try accounts.finishAdding(slot)
+        try accounts.update(slot, label: "Atelier Atlas", color: .orange, workDomains: ["atlas.exemple.fr"])
+        try await DemoSeeder(session: work).runWork()
+        if UserDefaults.standard.bool(forKey: "OnePassDemoUnifiedSearch") { try accounts.setUnifiedSearch(true) }
+        accounts.lock(slot)
+        if UserDefaults.standard.bool(forKey: "OnePassDemoShowWork") { switchAccount(to: slot) }
+        showAddAccount = UserDefaults.standard.bool(forKey: "OnePassDemoAddAccount")
+        DemoTrace.log("demo: second account %@", slot)
     }
 }
 
@@ -434,6 +458,24 @@ private struct DemoSeeder {
 
     private func vaultID(_ name: String) -> String? {
         session.vaults.first { $0.meta.name == name }?.id
+    }
+
+    /// The business account's few items.
+    func runWork() async throws {
+        guard let vault = session.vaults.first?.id else { return }
+        try await add(.login, "Intranet Atlas", vault, [
+            "username": .text(value: "c.durand"),
+            "password": .password(value: "Brume-Falaise-Corde-42"),
+        ], urls: ["https://intranet.atlas.exemple.fr"], favorite: true)
+        try await add(.login, "Suivi des tickets", vault, [
+            "username": .text(value: "c.durand@atlas.exemple.fr"),
+            "password": .password(value: "Sable-Orme-Piste-09"),
+        ], urls: ["https://tickets.atlas.exemple.fr"])
+        try await add(.server, "Base de recette", vault, [
+            "host": .text(value: "recette.atlas.exemple.fr"),
+            "username": .text(value: "qa"),
+            "password": .password(value: "Lierre-Canal-Bise-64"),
+        ])
     }
 
     @discardableResult

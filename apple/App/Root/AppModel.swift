@@ -19,7 +19,18 @@ struct ItemRef: Hashable, Sendable {
 @MainActor
 @Observable
 final class AppModel {
-    let session: VaultSession
+    /// Every account of the device and their sessions (multi-account spec 6).
+    let accounts: AccountSessions
+    /// The session of the account shown. Process-wide services (widgets, watch, browser bridge, agents,
+    /// phone approvals) stay on the primary account (ruling P7).
+    var session: VaultSession { accounts.active }
+    /// The primary account's session.
+    var primarySession: VaultSession { accounts.primary }
+    @ObservationIgnored let accountLink: AccountModelLink
+    /// The account being added (its onboarding is on screen), nil otherwise.
+    var addingAccount: AddingAccount?
+    /// The sync listeners of the added accounts, by slot.
+    @ObservationIgnored var accountTasks: [String: [Task<Void, Never>]] = [:]
     @ObservationIgnored let coordinator: SyncCoordinator?
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
@@ -91,6 +102,10 @@ final class AppModel {
     var showNewItemPicker = false
     /// ⌘⇧I (Fichier > Importer…): the import sheet.
     var showImport = false
+    /// Account panel > Ajouter un compte: the sheet of a new account (multi-account spec 7).
+    var showAddAccount = false
+    /// Account panel > Rechercher dans tous les comptes (when the user chose the unified view).
+    var showAllAccountsSearch = false
     /// Mac account menu > Configurer un appareil…: the invite the new device scans.
     var showDeviceSetup = false
     #if DEBUG
@@ -110,7 +125,7 @@ final class AppModel {
     }
     /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
     /// editor) on it.
-    private(set) var remoteRevision = 0
+    var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
     private(set) var toast: Toast?
     /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
@@ -249,8 +264,16 @@ final class AppModel {
         }
         self.coordinator = coordinator
         self.remote = remote
-        session = VaultSession(environment: environment)
+        let session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
+        let accountLink = AccountModelLink()
+        self.accountLink = accountLink
+        accounts = AccountSessions(
+            store: AccountDirectoryStore(folder: environment.databaseURL.deletingLastPathComponent()),
+            primary: session, defaults: environment.settings.baseDefaults,
+            makeEnvironment: Self.accountEnvironment(
+                primary: environment, remote: storeSplit ? nil : remote,
+                containerIdentifier: Self.cloudKitContainer, link: accountLink))
         #if os(iOS)
         #if ONEPASS_CLOUDKIT
         let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel(containerIdentifier: Self.cloudKitContainer) : nil
@@ -297,6 +320,7 @@ final class AppModel {
             cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true),
             enabled: { settings.siteIconsEnabled })
         onboardingInProgress = session.state == .noAccount
+        accountLink.model = self
     }
 
     /// Read through the session's `profileRevision`: a view showing the name or photo redraws when
@@ -402,7 +426,7 @@ final class AppModel {
         guard let coordinator else { return }
         tasks.append(Task { [weak self] in
             for await _ in await coordinator.remoteChanges() {
-                await self?.session.reload()
+                await self?.primarySession.reload()
                 self?.remoteRevision &+= 1
             }
         })
@@ -420,7 +444,7 @@ final class AppModel {
         switch phase {
         case .active:
             autoBiometricsPending = true
-            session.scenePhaseChanged(.active)
+            accounts.scenePhaseChanged(.active)
             // A lock asked by a Control while the app was in the background or not notified.
             lockIfRequested()
             companion.sessionChanged()
@@ -431,12 +455,12 @@ final class AppModel {
             // The provider may have been turned on or off in the system settings meanwhile.
             Task { await refreshAutoFillStatus() }
         case .inactive:
-            session.scenePhaseChanged(.inactive)
+            accounts.scenePhaseChanged(.inactive)
         case .background:
             // A guest session never survives the app leaving the screen (ruling A7).
             publicSession?.end()
             dropPendingOtpLink()
-            session.scenePhaseChanged(.background)
+            accounts.scenePhaseChanged(.background)
             #if os(iOS) || os(visionOS)
             lockWhileBackgroundTimeLasts()
             #endif
@@ -454,15 +478,15 @@ final class AppModel {
     /// delay (shared mode, 1 minute) locks without waiting for the return to the foreground. Past
     /// that, a background wake (remote notification) or the return locks first.
     private func lockWhileBackgroundTimeLasts() {
-        guard session.state == .unlocked, backgroundLock == nil else { return }
+        guard accounts.anyUnlocked, backgroundLock == nil else { return }
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "OnePass auto-lock") { [weak self] in
             MainActor.assumeIsolated { self?.endBackgroundLock() }
         }
         backgroundLock = Task { [weak self] in
-            while let self, !Task.isCancelled, self.session.state == .unlocked,
+            while let self, !Task.isCancelled, self.accounts.anyUnlocked,
                 UIApplication.shared.applicationState == .background
             {
-                self.session.checkAutoLock()
+                self.accounts.checkAutoLock()
                 try? await Task.sleep(for: .seconds(1))
             }
             self?.endBackgroundLock()
@@ -617,7 +641,7 @@ final class AppModel {
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
     /// No CloudKit: always false.
     func remoteHasAccount() async throws -> Bool {
-        guard cloudKitEnabled, let coordinator else { return false }
+        guard cloudKitEnabled, let coordinator = await activeCoordinator(forSignIn: true) else { return false }
         let found = try await coordinator.remoteHasAccount()
         await session.reload()
         return found
@@ -626,7 +650,7 @@ final class AppModel {
     /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without its Secret Key:
     /// offered only when iCloud holds no account (always without sync).
     func newVaultOffer() async -> NewVaultOffer {
-        guard cloudKitEnabled, let coordinator else { return .offered }
+        guard cloudKitEnabled, let coordinator = await activeCoordinator() else { return .offered }
         let offer = await coordinator.newVaultOffer()
         await session.reload()
         return offer
@@ -634,7 +658,7 @@ final class AppModel {
 
     /// "Réessayer" on "Données refusées": a complete fetch from scratch, then the store is read again.
     func retryAfterFailure() async {
-        await coordinator?.refetchFromScratch()
+        await activeCoordinator()?.refetchFromScratch()
         await session.reload()
         if case .failed = session.state { await session.refresh() }
     }
@@ -732,7 +756,7 @@ final class AppModel {
     func lockIfRequested() {
         #if os(iOS)
         let request = lockSignal.lastRequest
-        guard session.state == .unlocked else {
+        guard accounts.anyUnlocked else {
             // Nothing to lock: this request is spent, the next unlock must not undo itself.
             if let request { spentLockRequest = max(spentLockRequest ?? request, request) }
             return
@@ -740,7 +764,7 @@ final class AppModel {
         let baseline = [lastUnlockAt, spentLockRequest].compactMap { $0 }.max()
         guard LockSignal.shouldLock(request: request, unlockedAt: baseline, launchedAt: launchedAt) else { return }
         Self.log.info("lock requested from a Control")
-        lock()
+        lockAll()
         #endif
     }
 
@@ -768,6 +792,8 @@ final class AppModel {
     /// refreshes the widgets.
     func sessionStateChanged(_ state: VaultSession.State) {
         if state == .unlocked {
+            // The account of a store is bound to its slot once known (M4, M5).
+            accounts.bindIfNeeded(accounts.activeSlot)
             consumePendingRoute()
             // "Me prévenir": a report after each unlock, so new findings are notified even when the
             // Watchtower page stays closed. Off: Watchtower runs only when its page is shown.
@@ -779,6 +805,12 @@ final class AppModel {
             resetNavigation()
         }
         companion.sessionChanged()
+    }
+
+    /// The primary account's state changed (root view): the services bound to it (ruling P7) follow,
+    /// whichever account is shown.
+    func primaryStateChanged(_ state: VaultSession.State) {
+        companion.sessionChanged()
         #if os(iOS)
         // The phone reads its agent requests only while the vault is open.
         if let phoneAgents { Task { await phoneAgents.sessionChanged() } }
@@ -786,8 +818,9 @@ final class AppModel {
         #if os(macOS)
         if approvalPanel == nil { approvalPanel = ApprovalPanelController(hosts: developer) }
         if state == .unlocked {
+            let primary = primarySession
             Task {
-                await developer.sessionUnlocked(session)
+                await developer.sessionUnlocked(primary)
                 // The panel races the iPhone again (the approver goes on every lock).
                 await phoneApprovals.sessionUnlocked()
             }
@@ -801,6 +834,10 @@ final class AppModel {
 
     /// A deep link (`onepass://`), from a widget, a Control or the system.
     func open(_ link: OnePassLink) {
+        // Widgets and Controls show the primary account's items (ruling P7).
+        if case .item = link, accounts.activeSlot != AccountDirectoryStore.primarySlot {
+            switchAccount(to: AccountDirectoryStore.primarySlot)
+        }
         handle(.link(link))
     }
 
@@ -827,7 +864,7 @@ final class AppModel {
 
     /// A verification code link waiting for the unlock holds its secret: dropped when the app
     /// locks or leaves the screen, and once expired.
-    private func dropPendingOtpLink() {
+    func dropPendingOtpLink() {
         guard case .otpLink = pendingRoute else { return }
         pendingRoute = nil
         pendingRouteExpiry?.cancel()
@@ -1084,6 +1121,12 @@ final class AppModel {
     /// What would replace an editor with unsaved changes.
     enum GuardedAction: Equatable {
         case lock
+        /// Every account of the device (multi-account spec M3).
+        case lockAll
+        /// Shows another account of the device.
+        case switchAccount(String)
+        /// A result of the "All accounts" search: its account, then the item.
+        case revealInAccount(String, ItemRef)
         case select(ItemRef?)
         case newItem(FfiItemType)
         /// A deep link to an item: shown in the full list (iPhone: the Éléments tab).
@@ -1114,6 +1157,13 @@ final class AppModel {
         switch action {
         case .lock:
             lock()
+        case .lockAll:
+            lockAll()
+        case .switchAccount(let slot):
+            switchAccount(to: slot)
+        case .revealInAccount(let slot, let ref):
+            switchAccount(to: slot)
+            if session.state == .unlocked { apply(.reveal(ref)) } else { pendingRoute = .link(.item(vaultID: ref.vaultID, itemID: ref.itemID)) }
         case .select(let ref):
             newItemDraft = nil
             if ref != selectedItem { editing = false }

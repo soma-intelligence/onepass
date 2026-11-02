@@ -16,7 +16,9 @@ struct AccountMenu: View {
             isOpen = true
         } label: {
             HStack(spacing: 4) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 32)
+                AccountBadgeAvatar(
+                    initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                    badge: model.accountBadge, size: 32)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -59,6 +61,7 @@ struct AccountMenu: View {
         case .importItems: model.showImport = true
         case .scanCode: model.showOtpScanner = true
         case .lock: model.perform(.lock)
+        case .account(let action): model.runAccountAction(action)
         }
     }
 }
@@ -66,10 +69,12 @@ struct AccountMenu: View {
 /// What a row of the account panel does.
 enum AccountPanelAction {
     case settings, newVault, importItems, scanCode, lock
+    /// The accounts section: switch, add, search all, lock all (multi-account spec 7).
+    case account(AccountsPanelAction)
 }
 
 /// The account panel: a glass popover under the account button. The accounts on this device on
-/// top (one today; profiles add theirs to `accounts`), then the actions, each with its colored
+/// top (with several, each switches on tap), then the actions, each with its colored
 /// tile as in the sidebar, and Verrouiller apart at the bottom.
 struct AccountPanel: View {
     @Environment(AppModel.self) private var model
@@ -83,6 +88,10 @@ struct AccountPanel: View {
                 .padding(.top, 14)
                 .padding(.bottom, 10)
             AccountPanelGroup {
+                AccountPanelRow(title: "accounts.add", symbol: "person.badge.plus", color: AccountPanelTint.accounts) {
+                    perform(.account(.add))
+                }
+                .accessibilityIdentifier("accounts.add")
                 AccountPanelRow(title: "Réglages", symbol: "gearshape.fill", color: AccountPanelTint.settings) {
                     perform(.settings)
                 }
@@ -107,6 +116,12 @@ struct AccountPanel: View {
                     perform(.lock)
                 }
                 .accessibilityIdentifier("account.lock")
+                if model.accounts.unlockedProfiles.count > 1 {
+                    AccountPanelRow(title: "accounts.lockAll", symbol: "lock.fill", color: .red, role: .destructive) {
+                        perform(.account(.lockAll))
+                    }
+                    .accessibilityIdentifier("accounts.lockAll")
+                }
             }
             .padding(.top, 8)
         }
@@ -115,11 +130,23 @@ struct AccountPanel: View {
         .frame(width: 296)
     }
 
-    /// The accounts of this device. One today: the signed in account, its kind of device. The
-    /// profiles work adds the others here, each switching on tap.
+    /// The accounts of this device. One: the signed in account, its kind of device. Several: each
+    /// with its color and kind, switching on tap, and the search over all of them when chosen.
     @ViewBuilder private var accounts: some View {
+        if model.accounts.hasSeveralAccounts {
+            AccountsPanelSection(showsAdd: false, showsLockAll: false) { perform(.account($0)) }
+                .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, -14)
+        } else {
+            currentAccount
+        }
+    }
+
+    private var currentAccount: some View {
         HStack(spacing: 12) {
-            AccountAvatar(initials: model.initials, photo: model.profileImage, size: 44)
+            AccountBadgeAvatar(
+                initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                badge: model.accountBadge, size: 44)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .font(.headline)
@@ -150,6 +177,7 @@ enum AccountPanelTint {
     static let settings = Color(red: 0.54, green: 0.55, blue: 0.58)
     static let importItems = Color(red: 0.13, green: 0.63, blue: 0.42)
     static let scan = Color(red: 0.0, green: 0.48, blue: 1.0)
+    static let accounts = Color(red: 0.35, green: 0.34, blue: 0.84)
 }
 
 /// Rows of the panel on one rounded card, a hairline between them, over the popover's glass.

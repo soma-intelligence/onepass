@@ -6,7 +6,7 @@ import VaultKit
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, vaults, devices, travel, developer, about
+    case general, security, autofill, sync, accounts, vaults, devices, travel, developer, about
 
     var id: String { rawValue }
 
@@ -16,6 +16,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: "Sécurité"
         case .autofill: "Remplissage automatique"
         case .sync: "Sync"
+        case .accounts: "accounts.title"
         case .vaults: "Coffres"
         case .devices: "Appareils"
         case .travel: "Travel Mode"
@@ -30,6 +31,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: "lock.shield.fill"
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
+        case .accounts: "person.2.fill"
         case .vaults: "square.stack.3d.up.fill"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
@@ -44,6 +46,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: Color(red: 0.88, green: 0.58, blue: 0.0)
         case .autofill: Color(red: 0.20, green: 0.47, blue: 0.96)
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
+        case .accounts: Color(red: 0.35, green: 0.34, blue: 0.84)
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
@@ -59,6 +62,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: SecuritySettings()
         case .autofill: AutoFillSettings()
         case .sync: SyncSettings()
+        case .accounts: AccountsSettings()
         case .vaults: VaultsSettings()
         case .devices: DevicesSettings()
         case .travel: TravelSettings()
@@ -112,6 +116,7 @@ struct SettingsView: View {
                     row(.sync)
                 }
                 Section {
+                    row(.accounts)
                     row(.vaults)
                     row(.devices)
                     row(.travel)
@@ -257,6 +262,7 @@ struct MacSettingsView: View {
                             ForEach([SettingsPage.general, .security, .autofill, .sync], id: \.self) { row($0) }
                         }
                         Section {
+                            row(.accounts)
                             row(.vaults)
                             row(.devices)
                             row(.travel)

@@ -65,7 +65,14 @@ struct RootView: View {
             }
             // A route kept during the onboarding (its account creation unlocks first).
             .onChange(of: model.onboardingInProgress) { _, inProgress in
-                if !inProgress { model.consumePendingRoute() }
+                guard !inProgress else { return }
+                // A new account's onboarding ended: its account is bound to its slot.
+                model.finishAddingAccountIfNeeded()
+                model.consumePendingRoute()
+            }
+            // The services bound to the primary account follow its state, whichever account shows.
+            .onChange(of: model.primarySession.state) { _, state in
+                model.primaryStateChanged(state)
             }
             // Passwords > Export Data to Another App > OnePass: the import sheet opens on what the
             // other app sends (passkeys included) once the vault is unlocked.
@@ -108,6 +115,17 @@ struct RootView: View {
                     .accessibilityIdentifier("biometricOffer.later")
             } message: { _ in
                 Text("La prochaine fois, \(OnboardingModel.biometryName) suffit pour ouvrir OnePass. Le mot de passe maître reste demandé tous les 14 jours et après un redémarrage.")
+            }
+            // Multi-account (spec 7): adding an account, from the account panel, the lock screen or
+            // Réglages > Comptes; the search over every unlocked account when the user chose it.
+            .sheet(isPresented: Binding(
+                get: { model.showAddAccount }, set: { model.showAddAccount = $0 })) {
+                AddAccountSheet()
+            }
+            .sheet(isPresented: Binding(
+                get: { model.showAllAccountsSearch && model.accounts.unifiedSearch },
+                set: { model.showAllAccountsSearch = $0 })) {
+                AllAccountsSearch()
             }
             #if os(macOS)
             .sheet(item: Binding(
@@ -189,18 +207,31 @@ struct RootView: View {
         switch route {
         case .onboarding:
             OnboardingFlow()
+                // A new account's sign up: the account shown before is one tap away.
+                .id(model.accounts.activeSlot)
+                .overlay(alignment: .topLeading) {
+                    if model.canCancelAddingAccount {
+                        Button("common.cancel") { model.cancelAddingAccount() }
+                            .buttonStyle(.glass)
+                            .padding()
+                            .accessibilityIdentifier("accounts.add.cancel")
+                    }
+                }
                 .transition(.opacity)
         case .lock, .unlocked:
             // One branch for both, so the lock screen can stay above the vault while the door
             // opens (the same `LockView`, never a second one: its automatic Face ID runs once).
+            // One view per account: nothing typed or shown for one account stays for another.
             ZStack {
                 if route == .unlocked || doorShowsVault {
                     BrowseRoot()
+                        .id(model.accounts.activeSlot)
                         .scaleEffect(vaultScale)
                         .transition(.opacity)
                 }
                 if route == .lock || doorKeepsLock {
                     LockView()
+                        .id(model.accounts.activeSlot)
                         // Under the door, the lock screen leaves at once: the panels are its picture.
                         .transition(doorKeepsLock ? .identity : .opacity)
                 }

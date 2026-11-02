@@ -55,6 +55,9 @@ public final class VaultSettings: @unchecked Sendable {
         self.defaults = ScopedDefaults(defaults, prefix: scope.map(ScopedDefaults.prefix(forSlot:)) ?? "")
     }
 
+    /// The suite the settings live in (an added account's scope is made in the same one).
+    public var baseDefaults: UserDefaults { defaults.base }
+
     /// The slot this instance reads, nil for the primary account.
     public var scope: String? {
         defaults.prefix.isEmpty ? nil : String(defaults.prefix.dropFirst("onepass.acct.".count).dropLast())

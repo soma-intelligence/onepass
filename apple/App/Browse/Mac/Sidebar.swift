@@ -385,7 +385,9 @@ struct AccountHeader: View {
 
     private func label(open: Bool) -> some View {
         HStack(spacing: 12) {
-            AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+            AccountBadgeAvatar(
+                initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                badge: model.accountBadge, size: 34)
             Text(name)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
@@ -408,6 +410,7 @@ struct AccountHeader: View {
     /// iPad and visionOS: the system menu.
     private var systemMenu: some View {
         Menu {
+            AccountsMenuItems()
             Section {
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
@@ -434,7 +437,9 @@ struct AccountHeader: View {
         } label: {
             // Photo, name, chevron: one full-width row, the photo's corners echoed by the hover.
             HStack(spacing: 12) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+                AccountBadgeAvatar(
+                initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                badge: model.accountBadge, size: 34)
                 Text(name)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -485,6 +490,27 @@ struct AccountMenuPanel: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
             divider
+            // The accounts of this Mac (multi-account spec 7): switch, add, search all when chosen.
+            ForEach(model.accounts.profiles) { profile in
+                MacAccountRow(profile: profile) {
+                    close()
+                    model.runAccountAction(.switchTo(profile.slot))
+                }
+                .accessibilityIdentifier("accounts.row.\(profile.isPrimary ? "primary" : profile.slot)")
+            }
+            AccountMenuRow(title: "accounts.add", symbol: "plus", shortcut: nil) {
+                close()
+                model.runAccountAction(.add)
+            }
+            .accessibilityIdentifier("accounts.add")
+            if model.accounts.unifiedSearch, model.accounts.hasSeveralAccounts {
+                AccountMenuRow(title: "accounts.searchAll", symbol: "magnifyingglass", shortcut: nil) {
+                    close()
+                    model.runAccountAction(.searchAll)
+                }
+                .accessibilityIdentifier("accounts.searchAll")
+            }
+            divider
             AccountMenuRow(title: "Nouveau coffre…", symbol: "plus.circle", shortcut: nil, action: newVault)
                 .accessibilityIdentifier("account.newVault")
             AccountMenuRow(title: "Importer…", symbol: "square.and.arrow.down", shortcut: "⇧⌘I") {
@@ -508,6 +534,13 @@ struct AccountMenuPanel: View {
                 model.perform(.lock)
             }
             .accessibilityIdentifier("account.lock")
+            if model.accounts.unlockedProfiles.count > 1 {
+                AccountMenuRow(title: "accounts.lockAll", symbol: "lock.fill", shortcut: nil, destructive: true) {
+                    close()
+                    model.runAccountAction(.lockAll)
+                }
+                .accessibilityIdentifier("accounts.lockAll")
+            }
         }
         .padding(5)
         // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
@@ -519,6 +552,41 @@ struct AccountMenuPanel: View {
 
     private var divider: some View {
         Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+    }
+}
+
+/// An account in the account panel: its avatar, name and a check on the account shown.
+private struct MacAccountRow: View {
+    @Environment(AppModel.self) private var model
+    let profile: AccountProfile
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let active = profile.slot == model.accounts.activeSlot
+        Button(action: action) {
+            HStack(spacing: 10) {
+                AccountBadgeAvatar(
+                    initials: model.initials(of: profile), photo: active ? model.profileImage : nil,
+                    color: AccountStyle.color(profile.color), badge: AccountStyle.badge(profile), size: 22)
+                Text(verbatim: model.displayName(of: profile)).font(.body).lineLimit(1)
+                Spacer(minLength: 12)
+                if active {
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+                } else if model.accounts.madeSession(profile.slot)?.state != .unlocked {
+                    Image(systemName: "lock.fill").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 10, style: .continuous))
+            .contentShape(.rect(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
@@ -563,6 +631,8 @@ struct AccountAvatar: View {
     let initials: String
     var photo: Image?
     var size: CGFloat = 28
+    /// The account's color (multi-account spec 7), the accent for the primary account.
+    var tint: Color = Theme.accent
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
@@ -574,7 +644,7 @@ struct AccountAvatar: View {
                     .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.accent.gradient)
+                    .background(tint.gradient)
             }
         }
         .frame(width: size, height: size)
