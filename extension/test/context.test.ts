@@ -210,6 +210,33 @@ describe("buildPageContext", () => {
   });
 });
 
+describe("passkey buttons (one-click signup)", () => {
+  it("passkey_button_class", () => {
+    for (const label of ["S'inscrire avec une clé d'accès", "Create a passkey", "Use a passkey instead", "Sign up with a passkey", "Créer une clé d’accès"]) {
+      expect(buttonClass(button(label))).toBe("passkey");
+    }
+  });
+
+  it("signing in with a passkey is not a passkey button", () => {
+    for (const label of ["Sign in with a passkey", "Se connecter avec une clé d'accès", "Log in with passkey"]) {
+      expect(buttonClass(button(label))).not.toBe("passkey");
+    }
+  });
+
+  it("the cap keeps a passkey button", () => {
+    const others = Array.from({ length: 40 }, (_, i) => `<button type="button">Option ${i}</button>`).join("");
+    const { ctx, refs } = page(`<form id="signup">
+      <input type="email" autocomplete="email">
+      <input type="password" autocomplete="new-password">
+      ${others}<button id="pk" type="button">Sign up with a passkey</button>
+      <button id="go" type="submit">Create account</button></form>`);
+    const buttons = ctx.forms[0]!.buttons;
+    expect(buttons).toHaveLength(32);
+    const pk = buttons.find((b) => b.class === "passkey");
+    expect(pk && refs.get(pk.button_ref)).toBe(document.getElementById("pk"));
+  });
+});
+
 describe("buttonClass", () => {
   it("pay_button_class", () => {
     for (const label of ["Pay", "Payer", "Place order"]) expect(buttonClass(button(label))).toBe("pay");

@@ -84,7 +84,8 @@ export const PAGE_CONTEXT_MAX_BUTTONS = 32;
 export type PageFrameKind = "top" | "same_origin_child";
 /** What the field held when the page was read: nothing, what the user typed, or what OnePass wrote. */
 export type Prefilled = "empty" | "typed" | "ours";
-export type ButtonClass = "submit" | "next" | "pay" | "create" | "other";
+/** `passkey`: makes a passkey (one-click signup offers it), never a sign-in with one. */
+export type ButtonClass = "submit" | "next" | "pay" | "create" | "other" | "passkey";
 
 export interface IntentHints {
   /** Rust `FormKindHint`: the same seven values as `FormKind`. */

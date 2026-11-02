@@ -208,6 +208,16 @@ describe("planner", () => {
     expect(calls.filler[0]?.[3]).toEqual(["totp"]);
   });
 
+  it("passkey_button_keeps_the_chain", async () => {
+    // "Use a passkey" beside a sign-in form: another way in, the chain still runs (ruling R3).
+    const { calls, outcome } = await planAndRun(
+      plan({ action: "open_chain", groups: [loginGroup()] }),
+      context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }, { button_ref: "b2", class: "passkey" }])]),
+    );
+    expect(outcome).toBe("chain");
+    expect(calls.chain).toHaveLength(1);
+  });
+
   it("show_menu_returns_menu", async () => {
     const { calls, outcome } = await planAndRun(plan({ action: "show_menu", confidence: "low", alternatives: [ITEM, CARD] }), context([form("f1", ["username"])]));
     expect(outcome).toBe("menu");

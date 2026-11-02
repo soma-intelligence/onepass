@@ -97,6 +97,8 @@ function payOrCreate(container: Element, button: Element | null, geometry: Geome
     if (!(b instanceof HTMLElement) || (b !== button && !isRendered(b, geometry))) continue;
     const c = buttonClass(b);
     if (c === "pay" || c === "create") return true;
+    // The control that would send the form makes a passkey: an account, not a sign-in.
+    if (c === "passkey" && b === button) return true;
   }
   return false;
 }

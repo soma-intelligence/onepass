@@ -191,7 +191,7 @@ describe("a plan's submit (planned)", () => {
   });
 
   it("refuses a button the page relabelled pay or create since the plan", () => {
-    for (const label of ["Pay now", "Create account"]) {
+    for (const label of ["Pay now", "Create account", "Sign up with a passkey"]) {
       setPage(LOGIN);
       s = start();
       const f = formById(s, "login");
@@ -203,6 +203,16 @@ describe("a plan's submit (planned)", () => {
       s.cs.stop();
     }
     s = null;
+  });
+
+  it("keeps a sign-in whose form also shows a passkey button", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    document.getElementById("login")!.insertAdjacentHTML("beforeend", '<button type="button">Use a passkey</button>');
+    const n = clicks();
+    expect(s.ext.deliver({ type: "submit", origin: ORIGIN, ref: f.ref, planned: true })).toEqual({ ok: true });
+    expect(n()).toBe(1);
   });
 
   it("refuses another pay button added to the form", () => {
