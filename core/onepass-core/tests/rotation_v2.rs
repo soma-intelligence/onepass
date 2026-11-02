@@ -259,6 +259,24 @@ fn rotate_refused_in_travel_mode() {
     assert_eq!(snapshot(&a.store()), before);
 }
 
+/// Guard-only travel parks nothing and still counts as travelling.
+#[test]
+fn rotate_refused_in_travel_mode_with_nothing_parked() {
+    let (mut a, f) = fixture();
+    a.repo().resume_travel(&TravelState {
+        parked: BTreeMap::new(),
+        entered_at: T0,
+        parked_items: Default::default(),
+    });
+    assert!(a.repo().travelling());
+    let before = snapshot(&a.store());
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    let r = a.repo.as_mut().unwrap().rotate(req);
+    assert!(is_validation(&r), "{r:?}");
+    assert_eq!(snapshot(&a.store()), before);
+}
+
 #[test]
 fn rotate_refused_when_vault_missing() {
     let (mut a, f) = fixture();

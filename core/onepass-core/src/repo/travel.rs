@@ -411,7 +411,11 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             };
             let manifest = self.read_manifest(vault, self.device.last_seen.get(vault_id))?;
-            for e in manifest.entries.iter().filter(|e| items.contains(&e.item_id)) {
+            for e in manifest
+                .entries
+                .iter()
+                .filter(|e| items.contains(&e.item_id))
+            {
                 let local = local_items
                     .iter()
                     .find(|r| item_of(r, *vault_id).is_some_and(|i| exact(e, &i)));

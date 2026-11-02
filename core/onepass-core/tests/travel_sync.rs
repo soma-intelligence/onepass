@@ -190,7 +190,10 @@ fn holds_item(dev: &Device, vault: Id, item: Id) -> bool {
         .any(|r| {
             let (prefix, body) = onepass_core::repo::split_item_record(&r.data).unwrap();
             prefix == vault
-                && onepass_core::vault::ItemRecord::decode(body).unwrap().item_id == item
+                && onepass_core::vault::ItemRecord::decode(body)
+                    .unwrap()
+                    .item_id
+                    == item
         })
 }
 
@@ -205,9 +208,7 @@ fn hidden_items_set_roundtrips_and_clears() {
     };
     store.set_travel_hidden_items(&set).unwrap();
     assert_eq!(store.travel_hidden_items().unwrap(), set);
-    store
-        .set_travel_hidden_items(&Default::default())
-        .unwrap();
+    store.set_travel_hidden_items(&Default::default()).unwrap();
     assert!(store.travel_hidden_items().unwrap().is_empty());
 }
 

@@ -400,9 +400,11 @@ fn live_items<S: RecordStore>(
         if excluded_vaults.contains(&vault.id) {
             continue;
         }
-        out.extend(repo.items(&vault)?.into_iter().filter(|i| {
-            is_live(i, excluded_vaults) && keep(i) && !(guard && i.travel_guarded())
-        }));
+        out.extend(
+            repo.items(&vault)?.into_iter().filter(|i| {
+                is_live(i, excluded_vaults) && keep(i) && !(guard && i.travel_guarded())
+            }),
+        );
     }
     out.sort_by(by_title);
     Ok(out)

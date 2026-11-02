@@ -152,9 +152,13 @@ fn fx() -> Fx {
             })
             .unwrap();
     }
-    let mut repo =
-        Repository::unlock(local.clone(), PASSWORD, &n.secret_key, DeviceState::default())
-            .unwrap();
+    let mut repo = Repository::unlock(
+        local.clone(),
+        PASSWORD,
+        &n.secret_key,
+        DeviceState::default(),
+    )
+    .unwrap();
     let voyage = repo.create_vault(meta("Voyage", true)).unwrap();
     let kept = login(voyage.id, "Kept");
     let mut secret = login(voyage.id, "Secret");
@@ -216,7 +220,10 @@ fn hidden_item_leaves_local_storage_and_comes_back_intact() {
 
     let state = f.repo.enter_travel(&f.upstream).unwrap();
     assert!(state.parked.is_empty());
-    assert_eq!(parked_items(&state, f.voyage.id), BTreeSet::from([f.secret]));
+    assert_eq!(
+        parked_items(&state, f.voyage.id),
+        BTreeSet::from([f.secret])
+    );
     assert!(f.repo.travelling());
     // Really gone from the store, not filtered.
     assert!(f.local.item_records(f.secret).is_empty());
@@ -298,7 +305,10 @@ fn a_parked_item_cannot_be_written_deleted_or_moved() {
         f.repo.save_item(&f.voyage, secret.clone()),
         Err(Error::NotFound)
     );
-    assert_eq!(f.repo.delete_item(&f.voyage, f.secret), Err(Error::NotFound));
+    assert_eq!(
+        f.repo.delete_item(&f.voyage, f.secret),
+        Err(Error::NotFound)
+    );
     assert_eq!(
         f.repo.move_item(f.secret, &f.voyage, &other),
         Err(Error::NotFound)
@@ -336,10 +346,7 @@ fn exit_refuses_when_the_upstream_dropped_the_item() {
         f.upstream.0.borrow_mut().delete(r.kind, r.id).unwrap();
     }
     let err = f.repo.exit_travel(&f.upstream, &state).unwrap_err();
-    assert_eq!(
-        err,
-        Error::Integrity(IntegrityError::ManifestMissingItem)
-    );
+    assert_eq!(err, Error::Integrity(IntegrityError::ManifestMissingItem));
     assert!(f.repo.travelling());
 }
 
@@ -362,7 +369,11 @@ fn an_item_deleted_by_another_device_is_forgotten_on_exit() {
     other.delete_item(&voyage, f.secret).unwrap();
     drop(other);
     // This device syncs the new manifest (the item records stay dropped).
-    let m = f.upstream.get(RecordKind::Manifest, f.voyage.id).unwrap().unwrap();
+    let m = f
+        .upstream
+        .get(RecordKind::Manifest, f.voyage.id)
+        .unwrap()
+        .unwrap();
     f.local.put_all(&[m]);
 
     f.repo.exit_travel(&f.upstream, &state).unwrap();
@@ -378,8 +389,7 @@ fn resumed_session_reads_the_vault_without_the_item() {
     let sealed = f.repo.seal_travel_state(&state).unwrap();
     let device = f.repo.device_state().clone();
     let n = account();
-    let mut again =
-        Repository::unlock(f.local.clone(), PASSWORD, &n.secret_key, device).unwrap();
+    let mut again = Repository::unlock(f.local.clone(), PASSWORD, &n.secret_key, device).unwrap();
     let vault = again.vaults().unwrap().pop().unwrap();
     // Without the state, the missing record is an integrity error.
     assert!(again.items(&vault).is_err());
@@ -394,7 +404,13 @@ fn resumed_session_reads_the_vault_without_the_item() {
 fn attachments_of_a_hidden_item_leave_and_come_back() {
     let mut f = fx();
     f.repo
-        .add_attachment(&f.voyage, f.secret, "scan.pdf", "application/pdf", b"passport scan")
+        .add_attachment(
+            &f.voyage,
+            f.secret,
+            "scan.pdf",
+            "application/pdf",
+            b"passport scan",
+        )
         .unwrap();
     assert_eq!(f.local.chunks().len(), 1);
     mirror(&f.local, &f.upstream);
@@ -420,7 +436,13 @@ fn attachments_of_a_hidden_item_leave_and_come_back() {
 fn entry_refused_when_the_upstream_lacks_a_chunk() {
     let mut f = fx();
     f.repo
-        .add_attachment(&f.voyage, f.secret, "scan.pdf", "application/pdf", b"passport scan")
+        .add_attachment(
+            &f.voyage,
+            f.secret,
+            "scan.pdf",
+            "application/pdf",
+            b"passport scan",
+        )
         .unwrap();
     mirror(&f.local, &f.upstream);
     for c in f.upstream.chunks() {
