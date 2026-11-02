@@ -74,7 +74,6 @@ pub enum ReasonCode {
     CreateButton,
     ChildFrame,
     MultipleForms,
-    PasskeyButton,
     PasskeyOffered,
 }
 
@@ -444,11 +443,6 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         }
         if buttons().any(|b| b.class == ButtonClass::Create) {
             push(&mut reasons, ReasonCode::CreateButton);
-            held = true;
-        }
-        // A passkey-creation button: an account is being made here.
-        if buttons().any(|b| b.class == ButtonClass::Passkey) {
-            push(&mut reasons, ReasonCode::PasskeyButton);
             held = true;
         }
         // Which form to send is ambiguous with more than one planned.

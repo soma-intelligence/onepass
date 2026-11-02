@@ -28,7 +28,7 @@ Un bouton dont le libellé parle de clé d'accès (`passkey`, `clé d'accès`, `
 ### 2.2 Décision (core)
 
 - `FillPlan` gagne `passkey: Option<PasskeyOffer { form_ref, button_ref }>`, rempli seulement pour l'intention `Signup`, avec le premier bouton `passkey` du premier formulaire planifié qui en a un, et la raison `PasskeyOffered`.
-- Un bouton `passkey` retient l'envoi automatique comme un bouton `create` (raison `PasskeyButton`), dans le moteur, dans `planner.ts` et au moment du clic (`payOrCreate`).
+- Un bouton `passkey` ne retient pas l'envoi automatique d'une connexion : « Utiliser une clé d'accès » à côté d'un formulaire de connexion est une autre façon d'entrer, pas un compte créé. Un formulaire d'inscription sans mot de passe qui montre ce bouton est une inscription (section 3), donc jamais envoyé seul.
 - L'action du plan ne change pas : `Fill` ou `ShowMenu`.
 
 ### 2.3 Action (extension)
@@ -85,7 +85,7 @@ L'extension Safari sur iPhone, iPad et Mac a le plan complet, comme Chrome.
 
 - R1 : clé d'accès proposée seulement quand le formulaire montre un bouton de création de clé d'accès. Le site détient le défi WebAuthn : OnePass ne peut pas appeler `create` à sa place, il doit déclencher le parcours du site. Coût si faux : les sites qui proposent la clé d'accès seulement après l'inscription n'ont pas l'offre (ils l'ont déjà par le relais à leur appel).
 - R2 : sur ces formulaires, le clic ouvre le choix au lieu de remplir : les deux chemins s'excluent (un Login en attente serait écrit pour rien). Coût si faux : un clic de plus sur ces sites seulement.
-- R3 : un bouton `passkey` retient l'envoi automatique d'une connexion comme `create`. « Se connecter avec une clé d'accès » n'est pas `passkey` (mots de connexion). Coût si faux : une connexion en deux étapes d'un site qui montre un bouton de création de clé d'accès dans son formulaire de connexion n'est plus envoyée seule.
+- R3 : un bouton `passkey` ne retient pas l'envoi automatique d'une connexion (beaucoup de pages de connexion montrent « Utiliser une clé d'accès ») ; « Se connecter avec une clé d'accès » n'est même pas `passkey` (mots de connexion). Les formulaires d'inscription qui le montrent sont des inscriptions (règle 4 ou 4 bis). Coût si faux : une inscription sans mot de passe ni mots d'inscription, lue comme connexion, pourrait être envoyée par la chaîne avec un Login du site.
 - R4 : armement de 15 s plutôt que l'activation propagée depuis le cadre du menu : l'appel de l'hôte (Touch ID) peut dépasser les 5 s d'activation. Coût si faux : aucun, l'armement ne fait qu'ouvrir la fenêtre qui demande un clic.
 - R5 : pas d'alias, l'e-mail de l'identité : aucun fournisseur d'alias n'est dans le code. Coût si faux : brancher l'alias au groupe identité quand la partie B existera.
 - R6 : la date de naissance est formatée dans le remplisseur, pas par de nouveaux rôles : le classifieur et le modèle appartiennent à un autre chantier. Coût si faux : des formulaires à trois champs sans indice lisible restent sans date.
@@ -93,6 +93,6 @@ L'extension Safari sur iPhone, iPad et Mac a le plan complet, comme Chrome.
 
 ## 9. Tests
 
-- Core : classe `passkey` lue et écrite ; offre seulement pour `Signup` ; retenue d'envoi par un bouton `passkey` ; règle 4 bis (inscription sans mot de passe, connexion avec lien d'inscription inchangée) ; `PlanOut` du pont porte `passkey`.
+- Core : classe `passkey` lue et écrite ; offre seulement pour `Signup` ; connexion en un clic gardée à côté d'un bouton `passkey` ; règle 4 bis (inscription sans mot de passe, connexion avec lien d'inscription inchangée) ; `PlanOut` du pont porte `passkey`.
 - Extension : `buttonClass` (fr, en, connexion par clé d'accès exclue) ; rang des boutons ; planner (identifiant du Login en attente, menu sur offre, garde) ; menu (deux choix, `menu_signup` mot de passe et clé d'accès) ; armement (usage unique, expiration, autre document) ; `click_passkey` relit la classe ; formats de date (type date, trois listes, motif, langue) ; e2e : inscription avec offre de clé d'accès, choix mot de passe puis choix clé d'accès jusqu'à la fenêtre OnePass, aucun envoi du formulaire hors du clic choisi.
 - Apple : ordre des éléments de l'insertion de texte ; date et parties d'adresse insérables (VaultKit, `AutoFillModelTests`).

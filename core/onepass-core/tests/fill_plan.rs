@@ -928,13 +928,14 @@ fn login_never_offers_passkey() {
 }
 
 #[test]
-fn passkey_button_holds_login_auto_submit() {
+fn passkey_button_keeps_login_one_click() {
+    // "Use a passkey" next to a sign-in form is another way in, not an
+    // account being made: the chain still runs (spec 8, R3).
     let mut f = login_form();
     f.buttons.push(button("pk", ButtonClass::Passkey));
     let p = plan(&page(vec![f]), logins(vec![login(1)])).unwrap();
     assert_eq!(p.confidence, Confidence::High);
-    assert_eq!(p.action, Action::Fill);
-    assert!(p.reasons.contains(&ReasonCode::PasskeyButton));
+    assert_eq!(p.action, Action::OpenChain);
 }
 
 #[test]
