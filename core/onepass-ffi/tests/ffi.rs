@@ -2075,3 +2075,39 @@ fn attachment_add_read_remove_through_the_session() {
             .is_err()
     );
 }
+
+#[test]
+fn profile_round_trips_and_stays_hidden() {
+    let fx = fixture();
+    assert_eq!(fx.session.profile().unwrap(), None);
+    let set = fx
+        .session
+        .set_profile("Camille Durand".into(), vec![9; 300])
+        .unwrap();
+    assert_eq!(set.name, "Camille Durand");
+    assert_eq!(fx.session.profile().unwrap(), Some(set));
+    assert!(fx.session.item_summaries().unwrap().is_empty());
+    assert_eq!(fx.session.vaults().unwrap()[0].item_count, 0);
+    assert!(matches!(
+        fx.session.set_profile("x".repeat(65), vec![]),
+        Err(OnePassError::Validation { .. })
+    ));
+    // A seed never replaces an existing profile.
+    let kept = fx.session.seed_profile("Ancien".into(), vec![]).unwrap();
+    assert_eq!(kept.unwrap().name, "Camille Durand");
+}
+
+#[test]
+fn seed_profile_publishes_when_none() {
+    let fx = fixture();
+    let seeded = fx
+        .session
+        .seed_profile("Camille".into(), vec![1, 2])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (seeded.name.as_str(), seeded.photo.as_slice()),
+        ("Camille", &[1u8, 2][..])
+    );
+    assert_eq!(seeded.updated_at, 0);
+}

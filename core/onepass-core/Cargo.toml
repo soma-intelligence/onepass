@@ -67,6 +67,10 @@ required-features = ["dev-fast-kdf"]
 name = "frozen_account"
 required-features = ["dev-fast-kdf"]
 
+[[test]]
+name = "profile_sync"
+required-features = ["dev-fast-kdf"]
+
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"

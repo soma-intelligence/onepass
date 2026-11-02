@@ -49,6 +49,13 @@ public final class VaultSession {
     /// Bumped each time the summaries are replaced (unlock, write, reload): "À proximité" asks
     /// `nearbyItems` again on it.
     public private(set) var summariesRevision = 0
+    /// Bumped when the account profile (name, photo) changes, here or from another device.
+    public internal(set) var profileRevision = 0
+    /// The profile write waiting or running (`VaultSession+Profile`): while it is there, the vault's
+    /// profile never replaces this device's copy.
+    @ObservationIgnored var profileTask: Task<Void, Never>?
+    /// How long an edit of the profile waits before its write (typing a name writes once).
+    @ObservationIgnored var profileWriteDelay: Duration = .milliseconds(800)
 
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
@@ -297,6 +304,8 @@ public final class VaultSession {
         }
         settings.accountID = nil
         settings.displayName = ""
+        settings.profilePhoto = nil
+        settings.profilePending = false
         settings.biometricsWanted = false
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
@@ -448,6 +457,9 @@ public final class VaultSession {
                 do {
                     if try account.session.vaults().isEmpty {
                         _ = try account.session.createVault(meta: Self.personalVault)
+                    }
+                    if !displayName.isEmpty {
+                        _ = try account.session.setProfile(name: displayName, photo: Data())
                     }
                     return Created(
                         session: account.session, secretKey: secretKey, accountID: account.accountId,
@@ -787,6 +799,9 @@ public final class VaultSession {
     /// request does not replace the system store again.
     public func lock(publishPending: Bool = true) {
         generation &+= 1
+        // A profile edit still waiting stays `profilePending`: written at the next unlock.
+        profileTask?.cancel()
+        profileTask = nil
         // A manual lock of the Mac ends an agents-only window too (spec 6.3).
         endAgentWindow()
         let wasOpen = session != nil || state == .unlocking || state == .unlocked
@@ -1504,6 +1519,7 @@ public final class VaultSession {
         var vaults: [FfiVault]
         var summaries: [FfiItemSummary]
         var purged: UInt32 = 0
+        var profile: FfiProfile?
     }
 
     private struct Opened: Sendable {
@@ -1545,7 +1561,9 @@ public final class VaultSession {
             }
         }
         let purged = purge ? try session.purgeTrash(olderThanDays: trashRetentionDays) : 0
-        return Snapshot(vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged)
+        return Snapshot(
+            vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged,
+            profile: try session.profile())
     }
 
     /// The core's default name of a device that listed itself (`devices::DEFAULT_DEVICE_NAME`).
@@ -1657,6 +1675,7 @@ public final class VaultSession {
         summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
+        syncProfile(snapshot.profile)
     }
 
     func checkLockout() throws {

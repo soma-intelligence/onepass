@@ -299,7 +299,12 @@ final class AppModel {
         onboardingInProgress = session.state == .noAccount
     }
 
-    var settings: VaultSettings { session.environment.settings }
+    /// Read through the session's `profileRevision`: a view showing the name or photo redraws when
+    /// the synced profile changes.
+    var settings: VaultSettings {
+        _ = session.profileRevision
+        return session.environment.settings
+    }
 
     /// The CloudKit container of this build: the `OnePassCloudKitContainer` Info.plist key
     /// (`ONEPASS_CLOUDKIT_CONTAINER`, `iCloud.me.somalabs.onepass` by default; a fork or a personal
@@ -1008,6 +1013,12 @@ final class AppModel {
     /// Changes a local setting and restarts the auto-lock clock (a new delay applies from now).
     func updateSettings(_ change: (VaultSettings) -> Void) {
         change(settings)
+        settingsChanged()
+    }
+
+    /// Changes the account profile on every device (`VaultSession.setProfile`), shown here at once.
+    func setProfile(name: String, photo: Data?) {
+        session.setProfile(name: name, photo: photo)
         settingsChanged()
     }
 

@@ -551,7 +551,7 @@ final class OnboardingModel {
         if !restoreOnly { session.setDeviceMode(mode) }
         #if os(macOS)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty { model.settings.displayName = name }
+        if !name.isEmpty { session.setProfile(name: name, photo: model.settings.profilePhoto) }
         #endif
         advance()
     }

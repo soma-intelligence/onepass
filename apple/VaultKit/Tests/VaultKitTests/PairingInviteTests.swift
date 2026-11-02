@@ -12,8 +12,10 @@ struct PairingInviteTests {
     @Test func aScannedInvitePairsAndUnlocks() async throws {
         let f = try await PairingFixture(server: false)
         defer { f.cleanUp() }
-        f.approverHarness.settings.displayName = "Camille Durand"
-        f.approverHarness.settings.profilePhoto = Data([0x89, 0x50, 0x4E, 0x47])
+        // The profile as the vault holds it: the newcomer reads it there after the pairing too.
+        f.approver.profileWriteDelay = .zero
+        f.approver.setProfile(name: "Camille Durand", photo: Data([0x89, 0x50, 0x4E, 0x47]))
+        await f.approver.profileTask?.value
         let a = PairingApproverFlow(vault: f.approver, connector: f.network)
         let inviting = Task { await a.invite(listener: f.network) }
         var code: String?

@@ -232,6 +232,35 @@ impl Session {
         })
     }
 
+    /// The account profile (display name and photo), synced through the
+    /// vault: `None` until a device sets one.
+    pub fn profile(&self) -> Result<Option<FfiProfile>, OnePassError> {
+        self.with(|repo| Ok(repo.profile()?.map(profile_to_ffi)))
+    }
+
+    /// Set the account profile for every device, dated now. A name over 64
+    /// characters or a photo over 256 KiB is `Validation`.
+    pub fn set_profile(&self, name: String, photo: Vec<u8>) -> Result<FfiProfile, OnePassError> {
+        self.with(|repo| {
+            let p = repo.set_profile(&name, &photo, time::OffsetDateTime::now_utc())?;
+            Ok(profile_to_ffi(p))
+        })
+    }
+
+    /// Publish a profile this device kept locally (from before the profile
+    /// synced) when the account has none: it loses to any real edit. The
+    /// account profile after the call.
+    pub fn seed_profile(
+        &self,
+        name: String,
+        photo: Vec<u8>,
+    ) -> Result<Option<FfiProfile>, OnePassError> {
+        self.with(|repo| {
+            repo.seed_profile(&name, &photo)?;
+            Ok(repo.profile()?.map(profile_to_ffi))
+        })
+    }
+
     /// Every item of every vault, trashed and archived ones included.
     pub fn item_summaries(&self) -> Result<Vec<FfiItemSummary>, OnePassError> {
         self.with(|repo| {
@@ -650,5 +679,13 @@ impl SyncStoreHandle {
     /// (deleted, or after a reset queued again). A no-op unless a begin ran. True when rows were deleted.
     pub fn finish_full_fetch(&self) -> Result<bool, OnePassError> {
         Ok(self.guard().finish_full_fetch()?)
+    }
+}
+
+fn profile_to_ffi(p: onepass_core::repo::profile::Profile) -> FfiProfile {
+    FfiProfile {
+        name: p.name,
+        photo: p.photo,
+        updated_at: p.updated_at.unix_timestamp(),
     }
 }

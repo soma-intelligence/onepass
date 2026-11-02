@@ -10078,12 +10078,12 @@
         }
       }
     },
-    "Reste sur cet appareil, sans ses métadonnées." : {
+    "Synchronisé sur tes appareils, sans ses métadonnées." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stays on this device, without its metadata."
+            "value" : "Synced across your devices, without its metadata."
           }
         }
       }

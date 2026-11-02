@@ -137,7 +137,7 @@ private struct ProfileSection: View {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("Nom", text: Binding(
                         get: { model.settings.displayName },
-                        set: { name in model.updateSettings { $0.displayName = name } }
+                        set: { name in model.setProfile(name: name, photo: model.settings.profilePhoto) }
                     ), prompt: Text("Ton nom"))
                     .labelsHidden()
                     .textFieldStyle(.plain)
@@ -167,7 +167,7 @@ private struct ProfileSection: View {
                         #endif
                         if model.settings.profilePhoto != nil {
                             Button("Retirer", role: .destructive) {
-                                model.updateSettings { $0.profilePhoto = nil }
+                                model.setProfile(name: model.settings.displayName, photo: nil)
                             }
                             .accessibilityIdentifier("settings.profile.removePhoto")
                         }
@@ -180,7 +180,7 @@ private struct ProfileSection: View {
         } footer: {
             Text(failed
                 ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
-                : "Reste sur cet appareil, sans ses métadonnées.")
+                : "Synchronisé sur tes appareils, sans ses métadonnées.")
         }
         .task {
             try? await Task.sleep(for: .milliseconds(50))
@@ -209,7 +209,7 @@ private struct ProfileSection: View {
             return false
         }
         failed = false
-        model.updateSettings { $0.profilePhoto = photo }
+        model.setProfile(name: model.settings.displayName, photo: photo)
         return true
     }
 }

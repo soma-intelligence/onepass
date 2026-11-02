@@ -317,6 +317,16 @@ pub struct FfiVaultMeta {
     pub mcp_access: bool,
 }
 
+/// The account profile every device shows (`Session::profile`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiProfile {
+    pub name: String,
+    /// JPEG bytes, empty for no photo.
+    pub photo: Vec<u8>,
+    /// Unix seconds of the last write, from any device.
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiVault {
     pub id: String,

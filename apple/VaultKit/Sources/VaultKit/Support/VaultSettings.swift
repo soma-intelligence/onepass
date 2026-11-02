@@ -65,6 +65,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let accountID = "onepass.accountID"
         static let displayName = "onepass.displayName"
         static let profilePhoto = "onepass.profilePhoto"
+        static let profilePending = "onepass.profilePending"
         static let quickType = "onepass.quickTypeSuggestions"
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
@@ -164,12 +165,20 @@ public final class VaultSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.displayName) }
     }
 
-    /// The account's photo: a small square JPEG (no metadata), on this device only.
+    /// The account's photo: a small square JPEG (no metadata). With `displayName`, this device's copy
+    /// of the account profile the vault syncs (`VaultSession.setProfile`), read while locked too.
     public var profilePhoto: Data? {
         get { defaults.data(forKey: Key.profilePhoto) }
         set {
             if let newValue { defaults.set(newValue, forKey: Key.profilePhoto) } else { defaults.removeObject(forKey: Key.profilePhoto) }
         }
+    }
+
+    /// The name or photo changed here and has not reached the vault yet: written at the next unlock,
+    /// before the vault's profile may replace this device's copy.
+    public var profilePending: Bool {
+        get { defaults.bool(forKey: Key.profilePending) }
+        set { defaults.set(newValue, forKey: Key.profilePending) }
     }
 
     /// Offer logins as QuickType suggestions in the keyboard bar (default on).

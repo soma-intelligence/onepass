@@ -77,6 +77,7 @@ pub mod kit;
 mod local;
 pub mod migrate;
 pub mod pairing;
+pub mod profile;
 pub mod replay;
 pub mod rotate;
 pub mod travel;
@@ -260,7 +261,7 @@ pub(crate) struct LocalCopy {
 pub(crate) struct Loaded {
     pub(crate) manifest: Manifest,
     /// Records matching the manifest, sorted by item id, with their blob ids.
-    records: Vec<(Id, ItemRecord)>,
+    pub(crate) records: Vec<(Id, ItemRecord)>,
     /// Records ignored on load, interrupted writes and stale leftovers:
     /// `(blob id, item id)`. Deleted when that item is written next.
     ignored: Vec<(Id, Id)>,
@@ -1283,7 +1284,9 @@ impl<S: RecordStore> Repository<S> {
     /// Delete a vault (spec 4.5, ruling B8). Refused while it holds a live
     /// or archived item (`InvalidFormat("vault not empty")`: the user
     /// empties it first), and for the last live vault of the account
-    /// (`InvalidFormat("last vault")`). A vault that is not among `vaults()`
+    /// (`InvalidFormat("last vault")`). The hidden account profile
+    /// (`profile`) does not count: it moves to another live vault first. A
+    /// vault that is not among `vaults()`
     /// (already deleted, or never there) is `NotFound`; `vaults()` and the
     /// verified load of the vault report their own faults first.
     ///
@@ -1317,9 +1320,21 @@ impl<S: RecordStore> Repository<S> {
             return Err(Error::InvalidFormat("last vault"));
         }
         let loaded = self.load(vault)?;
+        let mut profile = None;
         for (_, rec) in &loaded.records {
-            if vault.open_item(rec)?.trashed_at.is_none() {
+            let item = vault.open_item(rec)?;
+            if item.is_profile() {
+                profile = Some(item.id);
+            } else if item.trashed_at.is_none() {
                 return Err(Error::InvalidFormat("vault not empty"));
+            }
+        }
+        // The hidden account profile does not count, and moves to another
+        // live vault before this one goes.
+        if let Some(id) = profile {
+            let to = self.vaults()?.into_iter().find(|v| v.id != vault.id);
+            if let Some(to) = to {
+                self.move_item(id, vault, &to)?;
             }
         }
 
@@ -1436,18 +1451,12 @@ impl<S: RecordStore> Repository<S> {
     /// The items of a vault, sorted by id, after verifying the manifest
     /// against the last one seen and the records against the manifest. The
     /// manifest is then remembered as the last one seen.
+    ///
+    /// The account profile (`profile::Profile`), a hidden item, is never
+    /// listed.
     pub fn items(&mut self, vault: &Vault) -> Result<Vec<Item>> {
-        self.readable()?;
-        self.sync_epoch()?;
-        let loaded = self.served(vault, Use::Read)?;
-        let items = loaded
-            .records
-            .iter()
-            .map(|(_, r)| vault.open_item(r))
-            .collect::<Result<Vec<_>>>()?;
-        self.device
-            .last_seen
-            .insert(vault.id, seen(&loaded.manifest));
+        let mut items = self.all_items(vault)?;
+        items.retain(|i| !i.is_profile());
         Ok(items)
     }
 
