@@ -2,10 +2,12 @@ import Foundation
 
 /// Sidebar filters. Every filter except `archive` and `trash` leaves out archived and trashed items.
 /// `nearby` ("À proximité") needs the user's position: `matches` only keeps active items, the list
-/// comes from `VaultSession.nearbyItems(from:within:)`.
+/// comes from `VaultSession.nearbyItems(from:within:)`. `passkeys` keeps the items holding at
+/// least one passkey (created by a site or imported), whatever their type.
 public enum ItemFilter: Hashable, Sendable {
     case all, favorites
     case nearby
+    case passkeys
     case vault(String)
     case category(FfiItemType)
     case tag(String)
@@ -16,6 +18,7 @@ public enum ItemFilter: Hashable, Sendable {
         switch self {
         case .all, .nearby: return active
         case .favorites: return active && item.favorite
+        case .passkeys: return active && item.passkeyCount > 0
         case .vault(let id): return active && item.vaultId == id
         case .category(let type): return active && item.itemType == type
         case .tag(let tag): return active && item.tags.contains(tag)
@@ -48,6 +51,8 @@ public enum ItemSort: Hashable, Sendable {
 public struct ItemCounts: Equatable, Sendable {
     public var all = 0
     public var favorites = 0
+    /// Active items holding at least one passkey.
+    public var passkeys = 0
     public var archive = 0
     public var trash = 0
     public var byVault: [String: Int] = [:]
@@ -65,6 +70,7 @@ public struct ItemCounts: Equatable, Sendable {
             } else {
                 all += 1
                 if item.favorite { favorites += 1 }
+                if item.passkeyCount > 0 { passkeys += 1 }
                 byVault[item.vaultId, default: 0] += 1
                 byType[item.itemType, default: 0] += 1
                 for tag in Set(item.tags) { byTag[tag, default: 0] += 1 }
@@ -81,6 +87,8 @@ public enum EmptyListReason: Equatable, Sendable {
     case emptyCategory
     case emptyTag
     case noFavorites
+    /// "Passkeys": no item holds one yet (a site creates it, or an import brings it).
+    case noPasskeys
     /// "À proximité": no item with a place around the user.
     case noNearby
     case emptyArchive
@@ -96,6 +104,7 @@ public enum EmptyListReason: Equatable, Sendable {
         case .category: self = .emptyCategory
         case .tag: self = .emptyTag
         case .favorites: self = .noFavorites
+        case .passkeys: self = .noPasskeys
         case .nearby: self = .noNearby
         case .archive: self = .emptyArchive
         case .trash: self = .emptyTrash
