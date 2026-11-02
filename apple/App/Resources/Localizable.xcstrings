@@ -36492,6 +36492,180 @@
           }
         }
       }
+    },
+    "menu.app.checkForUpdates" : {
+      "comment" : "Mac app menu (OnePass), after About: checks GitHub for a newer version (Sparkle)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for Updates…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar actualizaciones…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher les mises à jour…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla aggiornamenti…"
+          }
+        }
+      }
+    },
+    "settings.about.updates.section" : {
+      "comment" : "Réglages > À propos (Mac): header of the updates section",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updates"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mises à jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornamenti"
+          }
+        }
+      }
+    },
+    "settings.about.updates.automatic" : {
+      "comment" : "Réglages > À propos (Mac): switch, check GitHub at launch and every 24 hours",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically Check for Updates"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar actualizaciones automáticamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher automatiquement les mises à jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla automaticamente gli aggiornamenti"
+          }
+        }
+      }
+    },
+    "settings.about.updates.checkNow" : {
+      "comment" : "Réglages > À propos (Mac): button, check for an update now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Now"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher maintenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla ora"
+          }
+        }
+      }
+    },
+    "settings.about.updates.lastCheck %@" : {
+      "comment" : "Réglages > À propos (Mac): date and time of the last update check",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last Checked: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última comprobación: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière vérification : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo controllo: %@"
+          }
+        }
+      }
+    },
+    "settings.about.updates.footer" : {
+      "comment" : "Réglages > À propos (Mac): footer of the updates section, what the check sends",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At launch and every 24 hours, OnePass reads the latest version published on GitHub. The request carries no identifier. An update installs only with your approval, and only if OnePass signed it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al abrirse y cada 24 horas, OnePass consulta la última versión publicada en GitHub. La solicitud no contiene ningún identificador. Una actualización solo se instala con tu permiso, y solo si OnePass la ha firmado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au lancement puis toutes les 24 heures, OnePass lit la dernière version publiée sur GitHub. La requête ne contient aucun identifiant. Une mise à jour ne s'installe qu'avec ton accord, et seulement si elle est signée par OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All'avvio e ogni 24 ore, OnePass legge l'ultima versione pubblicata su GitHub. La richiesta non contiene alcun identificativo. Un aggiornamento si installa solo con il tuo consenso, e solo se è firmato da OnePass."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

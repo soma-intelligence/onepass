@@ -54,6 +54,12 @@ settings:
     # `OnePassBrowserExtensions`, space separated; Safari is always served). Add the Chrome id
     # (Web Store, or the unpacked one while testing) here.
     ONEPASS_BROWSER_EXTENSIONS: onepass@somalabs.me
+    # Mac app updates (Sparkle, spec 2026-11-02-mac-updater-design.md): the signed appcast of the
+    # release GitHub marks Latest, and the base64 Ed25519 public key it must be signed with. Empty
+    # key = no updater (development builds); a Developer ID build without a valid key fails
+    # (scripts/check-update-key.sh). The release workflow passes the key on the command line.
+    ONEPASS_UPDATE_FEED_URL: https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml
+    ONEPASS_SPARKLE_PUBLIC_KEY: ""
 
 packages:
   VaultKit:
@@ -64,6 +70,8 @@ packages:
     path: CompanionKit
   SafariRelay:
     path: SafariExtension/SafariRelay
+  UpdateKit:
+    path: UpdateKit
 
 targets:
   OnePass:
@@ -98,12 +106,20 @@ targets:
       # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
       - target: OnePassSafari
         destinationFilters: [macOS]
+      # Updates from GitHub Releases (Sparkle): the Developer ID Mac app only.
+      - package: UpdateKit
+        product: UpdateKit
+        destinationFilters: [macOS]
     # Entitlements and code share ONEPASS_KEYCHAIN_GROUP and ONEPASS_APP_GROUP: a hardcoded group
     # fails the build.
     preBuildScripts:
       - name: Check signing groups
         basedOnDependencyAnalysis: false
         script: '"${PROJECT_DIR}/scripts/check-signing-groups.sh"'
+      # A Developer ID Mac build must carry the update key and an https feed.
+      - name: Check update key
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/check-update-key.sh"'
     # Chrome and Firefox native messaging host (Contents/Helpers/onepass-relay): signed Mac builds.
     postBuildScripts:
       - name: Embed browser relay
@@ -124,6 +140,19 @@ targets:
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
+        # Sparkle (Mac, Developer ID): signed feed and archive, verified before extraction, no
+        # system profile, a check every 24 hours, installs only after the user's yes, installer
+        # through Sparkle's XPC service (sandbox). Read by UpdateKit's UpdateConfiguration; the
+        # other platforms ignore them.
+        SUFeedURL: $(ONEPASS_UPDATE_FEED_URL)
+        SUPublicEDKey: $(ONEPASS_SPARKLE_PUBLIC_KEY)
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAllowsAutomaticUpdates: false
+        SUEnableSystemProfiling: false
+        SUEnableInstallerLauncherService: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The app ships its own cryptography; export compliance is settled before submission (README).

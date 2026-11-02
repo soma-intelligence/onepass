@@ -18,6 +18,7 @@ apple/
   VaultKit/                 paquet Swift : liaisons UniFFI et logique Apple
   DesignKit/                paquet Swift : couleurs, icônes de catégorie, composants
   CompanionKit/             paquet Swift : widgets (GlanceKit) et lien iPhone-montre (CompanionLink)
+  UpdateKit/                paquet Swift : mises à jour de l'app Mac par Sparkle (Developer ID seulement)
   App/                      cible unique iOS, iPadOS, macOS natif et visionOS (SwiftUI)
   AutoFill/                 extension OnePassAutoFill (fournisseur de remplissage automatique, SwiftUI)
   AutoFillHost/             app hôte de test de l'AutoFill (iOS, non livrée)

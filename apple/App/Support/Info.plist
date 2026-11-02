@@ -68,6 +68,24 @@
 	<string>$(ONEPASS_CLOUDKIT_CONTAINER)</string>
 	<key>OnePassKeychainGroup</key>
 	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>$(ONEPASS_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(ONEPASS_SPARKLE_PUBLIC_KEY)</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

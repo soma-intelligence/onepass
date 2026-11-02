@@ -2,6 +2,9 @@ import DesignKit
 import SwiftUI
 import UserNotifications
 import VaultKit
+#if os(macOS)
+import UpdateKit
+#endif
 
 @main
 struct OnePassApp: App {
@@ -11,6 +14,10 @@ struct OnePassApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
     @State private var model = AppModel()
+    #if os(macOS)
+    /// Updates from GitHub Releases (Sparkle): `nil` in builds without the update key.
+    @State private var updater = AppUpdater()
+    #endif
     /// Aggregate phase of every scene: drives auto-lock and sync, once for the whole app.
     @Environment(\.scenePhase) private var scenePhase
 
@@ -40,6 +47,12 @@ struct OnePassApp: App {
             BrowseCommands(model: model)
             // View > Show/Hide Sidebar (⌃⌘S): the toolbar has no sidebar button on the Mac.
             SidebarCommands()
+            // OnePass > Rechercher les mises à jour…, after À propos.
+            CommandGroup(after: .appInfo) {
+                if let updater {
+                    CheckForUpdatesButton(updater: updater)
+                }
+            }
         }
         // "Ouvrir dans une nouvelle fenêtre" of the item menu: one read-only detail per item.
         WindowGroup(id: ItemWindow.id, for: String.self) { $key in
@@ -49,6 +62,7 @@ struct OnePassApp: App {
         Settings {
             MacSettingsView()
                 .environment(model)
+                .environment(updater)
                 .tint(Theme.accent)
         }
         // Menu bar icon: opens the window from anywhere, and the app stays there once the window is
@@ -200,6 +214,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The menu bar icon keeps the app running; the closed window has already locked.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// OnePass > Rechercher les mises à jour…: Sparkle's window shows what it finds. A view, so the menu
+/// item follows `canCheckForUpdates` (disabled while a check or an install runs).
+struct CheckForUpdatesButton: View {
+    let updater: AppUpdater
+
+    var body: some View {
+        Button("menu.app.checkForUpdates") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
+    }
 }
 
 /// The menu of the menu bar icon: open the window, search, lock, settings, quit.

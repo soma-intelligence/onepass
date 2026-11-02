@@ -44,6 +44,7 @@
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
 		37B4C8CCA1F02D66CB98C113 /* DeveloperPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727D48838217D2195CC3694F /* DeveloperPage.swift */; };
+		38A6C409F0B1D7CF82704CB1 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 2E4420EF75378FA3F99DE790 /* UpdateKit */; };
 		3963C3EF4E51F8EE2A8BD086 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E9E954337A597A29939BD2F6 /* Localizable.xcstrings */; };
 		3966FEC30AD7CAC800F12F2C /* DemoWatchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */; };
 		399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AA66E7F67375CA2D6FA0 /* PublicSessionPicker.swift */; };
@@ -366,6 +367,7 @@
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7A6857D334917C685876DF29 /* PairingCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCodeView.swift; sourceTree = "<group>"; };
 		7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentBridge.swift; sourceTree = "<group>"; };
+		7C7335F1B42AC0A2907BFC30 /* UpdateKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = UpdateKit; path = UpdateKit; sourceTree = SOURCE_ROOT; };
 		7E2696615474BD4D50D1B25C /* ApproveDeviceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApproveDeviceSheet.swift; sourceTree = "<group>"; };
 		7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignKit; path = DesignKit; sourceTree = SOURCE_ROOT; };
 		815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserBridgeViews.swift; sourceTree = "<group>"; };
@@ -492,6 +494,7 @@
 				369F365C2C4F921040181B8B /* DesignKit in Frameworks */,
 				AF0461461E7B8ECC023C804A /* GlanceKit in Frameworks */,
 				A01A958E22C1E8ABA30D30A9 /* CompanionLink in Frameworks */,
+				38A6C409F0B1D7CF82704CB1 /* UpdateKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -704,6 +707,7 @@
 				D53F785E56AE55B95035986B /* CompanionKit */,
 				7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */,
 				EC2CBAB173BD8B63CA2B2BF2 /* SafariRelay */,
+				7C7335F1B42AC0A2907BFC30 /* UpdateKit */,
 				013A476F2676DCA4286E22C9 /* VaultKit */,
 			);
 			name = Packages;
@@ -992,6 +996,7 @@
 			buildConfigurationList = DD89F9C5EC914BA7155D6D09 /* Build configuration list for PBXNativeTarget "OnePass" */;
 			buildPhases = (
 				F31C3F0B7083790A3E174F40 /* Check signing groups */,
+				FC8C1A52F603A3B876C2DDD1 /* Check update key */,
 				9B2AC3F3A1BFE1D5A3C21C0F /* Sources */,
 				7F6FE6B9681652E855A4ED76 /* Resources */,
 				BEF0711806BF64102FB9DA30 /* Frameworks */,
@@ -1015,6 +1020,7 @@
 				1D108454111E28E82A0B04F6 /* DesignKit */,
 				3FCA6BEE85156D42B867CBF8 /* GlanceKit */,
 				1BEDA96F4982E21986971703 /* CompanionLink */,
+				2E4420EF75378FA3F99DE790 /* UpdateKit */,
 			);
 			productName = OnePass;
 			productReference = 64165D82E996859B750AAF94 /* OnePass.app */;
@@ -1200,6 +1206,7 @@
 				510B0CA8D60DE962F549B244 /* XCLocalSwiftPackageReference "CompanionKit" */,
 				817B225C6984734AD379E708 /* XCLocalSwiftPackageReference "DesignKit" */,
 				70AE7BA97676A404C610A1BC /* XCLocalSwiftPackageReference "SafariExtension/SafariRelay" */,
+				FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */,
 				8D3971B0AAA18958EA4D75EC /* XCLocalSwiftPackageReference "VaultKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1373,6 +1380,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PROJECT_DIR}/scripts/check-signing-groups.sh\"";
+		};
+		FC8C1A52F603A3B876C2DDD1 /* Check update key */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check update key";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/scripts/check-update-key.sh\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2181,6 +2207,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_SPARKLE_PUBLIC_KEY = "";
+				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -2463,6 +2491,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_SPARKLE_PUBLIC_KEY = "";
+				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -2576,6 +2606,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_SPARKLE_PUBLIC_KEY = "";
+				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -2800,6 +2832,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_SPARKLE_PUBLIC_KEY = "";
+				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -3044,6 +3078,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = VaultKit;
 		};
+		FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = UpdateKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -3054,6 +3092,10 @@
 		1D108454111E28E82A0B04F6 /* DesignKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DesignKit;
+		};
+		2E4420EF75378FA3F99DE790 /* UpdateKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = UpdateKit;
 		};
 		3FCA6BEE85156D42B867CBF8 /* GlanceKit */ = {
 			isa = XCSwiftPackageProductDependency;
