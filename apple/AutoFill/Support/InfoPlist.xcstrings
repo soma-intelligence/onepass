@@ -24,10 +24,22 @@
             "value" : "OnePass uses Face ID to fill your passwords without retyping your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa Face ID para rellenar tus contraseñas sin volver a escribir tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa Face ID per compilare le tue password senza digitare di nuovo la password principale."
           }
         }
       }

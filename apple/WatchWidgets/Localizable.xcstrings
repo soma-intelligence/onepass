@@ -8,6 +8,18 @@
             "state" : "translated",
             "value" : "OnePass"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
         }
       }
     },
@@ -17,6 +29,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre OnePass."
           }
         }
       }

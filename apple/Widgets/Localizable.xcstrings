@@ -8,6 +8,18 @@
             "state" : "translated",
             "value" : "+ %lld more"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld más"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ altri %lld"
+          }
         }
       }
     },
@@ -17,6 +29,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add a favorite with a code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade un favorito con un código"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un preferito con un codice"
           }
         }
       }
@@ -28,6 +52,18 @@
             "state" : "translated",
             "value" : "Add a favorite in OnePass"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade un favorito en OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un preferito in OnePass"
+          }
         }
       }
     },
@@ -37,6 +73,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Codes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Códigos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codici"
           }
         }
       }
@@ -48,6 +96,18 @@
             "state" : "translated",
             "value" : "Unlock your iPhone"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea tu iPhone"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca iPhone"
+          }
         }
       }
     },
@@ -57,6 +117,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorites"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preferiti"
           }
         }
       }
@@ -68,6 +140,18 @@
             "state" : "translated",
             "value" : "Generate Password"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generar una contraseña"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genera una password"
+          }
         }
       }
     },
@@ -77,6 +161,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "One-time codes from your favorites."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los códigos de un solo uso de tus favoritos."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I codici monouso dei tuoi preferiti."
           }
         }
       }
@@ -88,6 +184,18 @@
             "state" : "translated",
             "value" : "Open OnePass to refresh"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para actualizar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per aggiornare"
+          }
         }
       }
     },
@@ -97,6 +205,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens OnePass search."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la búsqueda de OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre la ricerca di OnePass."
           }
         }
       }
@@ -108,6 +228,18 @@
             "state" : "translated",
             "value" : "Opens the OnePass password generator."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre el generador de contraseñas de OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre il generatore di password di OnePass."
+          }
         }
       }
     },
@@ -117,6 +249,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens one of your favorites in OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre uno de tus favoritos en OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre uno dei tuoi preferiti in OnePass."
           }
         }
       }
@@ -128,6 +272,18 @@
             "state" : "translated",
             "value" : "Search OnePass"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca in OnePass"
+          }
         }
       }
     },
@@ -138,6 +294,18 @@
             "state" : "translated",
             "value" : "Locks OnePass on this device."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloquea OnePass en este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocca OnePass su questo dispositivo."
+          }
         }
       }
     },
@@ -147,6 +315,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lock OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloquear OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocca OnePass"
           }
         }
       }

@@ -8,6 +8,18 @@
             "state" : "translated",
             "value" : "%u"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u"
+          }
         }
       }
     },
@@ -17,6 +29,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%u seconds left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quedan %u segundos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%u secondi rimanenti"
           }
         }
       }
@@ -28,6 +52,18 @@
             "state" : "translated",
             "value" : "Set a passcode on your Apple Watch to use OnePass"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configura un código en tu Apple Watch para usar OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imposta un codice su Apple Watch per usare OnePass"
+          }
         }
       }
     },
@@ -37,6 +73,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice"
           }
         }
       }
@@ -48,6 +96,18 @@
             "state" : "translated",
             "value" : "Codes"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Códigos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codici"
+          }
         }
       }
     },
@@ -57,6 +117,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock your Apple Watch to open OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea tu Apple Watch para abrir OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca Apple Watch per aprire OnePass."
           }
         }
       }
@@ -68,6 +140,18 @@
             "state" : "translated",
             "value" : "Mark items “On Apple Watch” in OnePass on your iPhone."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marca elementos «En el Apple Watch» en OnePass en tu iPhone."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contrassegna elementi «Su Apple Watch» in OnePass su iPhone."
+          }
         }
       }
     },
@@ -78,12 +162,36 @@
             "state" : "translated",
             "value" : "Hidden"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oculto"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascosto"
+          }
         }
       }
     },
     "OnePass" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass"
@@ -98,6 +206,18 @@
             "state" : "translated",
             "value" : "Tap to hide"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toca para ocultar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca per nascondere"
+          }
         }
       }
     },
@@ -108,6 +228,18 @@
             "state" : "translated",
             "value" : "Tap to reveal"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toca para revelar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca per rivelare"
+          }
         }
       }
     },
@@ -117,6 +249,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elementos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elementi"
           }
         }
       }

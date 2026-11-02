@@ -8,6 +8,18 @@
             "state" : "translated",
             "value" : "%lld"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
         }
       }
     },
@@ -17,6 +29,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Large"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar en grande"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra in grande"
           }
         }
       }
@@ -28,6 +52,18 @@
             "state" : "translated",
             "value" : "Show Password"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar la contraseña"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra la password"
+          }
         }
       }
     },
@@ -37,6 +73,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show %lld More Items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los %lld elementos restantes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra gli altri %lld elementi"
           }
         }
       }
@@ -48,6 +96,18 @@
             "state" : "translated",
             "value" : "Add to %@"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi a %@"
+          }
         }
       }
     },
@@ -57,6 +117,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Integrity Alert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alerta de integridad"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviso di integrità"
           }
         }
       }
@@ -68,12 +140,36 @@
             "state" : "translated",
             "value" : "Cancel"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annulla"
+          }
         }
       }
     },
     "App" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "App"
@@ -88,6 +184,18 @@
             "state" : "translated",
             "value" : "None"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguno"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuno"
+          }
         }
       }
     },
@@ -97,6 +205,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This item has no fields to insert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este elemento no tiene campos que insertar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun campo da inserire in questo elemento."
           }
         }
       }
@@ -108,6 +228,18 @@
             "state" : "translated",
             "value" : "No results for this site."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay resultados para este sitio."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun risultato per questo sito."
+          }
         }
       }
     },
@@ -117,6 +249,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No results."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin resultados."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun risultato."
           }
         }
       }
@@ -128,6 +272,18 @@
             "state" : "translated",
             "value" : "No items for this site."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay elementos para este sitio."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun elemento per questo sito."
+          }
         }
       }
     },
@@ -137,6 +293,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No items."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay elementos."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun elemento."
           }
         }
       }
@@ -148,6 +316,18 @@
             "state" : "translated",
             "value" : "Other Items"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otros elementos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altri elementi"
+          }
         }
       }
     },
@@ -157,6 +337,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose a Field"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un campo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un campo"
           }
         }
       }
@@ -168,6 +360,18 @@
             "state" : "translated",
             "value" : "Choose an Account"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige una cuenta"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un account"
+          }
         }
       }
     },
@@ -177,6 +381,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose an Item"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un elemento"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un elemento"
           }
         }
       }
@@ -188,6 +404,18 @@
             "state" : "translated",
             "value" : "Code"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice"
+          }
         }
       }
     },
@@ -197,6 +425,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verification Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de verificación"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice di verifica"
           }
         }
       }
@@ -208,6 +448,18 @@
             "state" : "translated",
             "value" : "One-Time Code"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de un solo uso"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice monouso"
+          }
         }
       }
     },
@@ -217,6 +469,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verification Codes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Códigos de verificación"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codici di verifica"
           }
         }
       }
@@ -228,6 +492,18 @@
             "state" : "translated",
             "value" : "Vault"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóveda"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cassaforte"
+          }
         }
       }
     },
@@ -237,6 +513,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuenta de OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account OnePass"
           }
         }
       }
@@ -248,6 +536,18 @@
             "state" : "translated",
             "value" : "Copy"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia"
+          }
         }
       }
     },
@@ -257,6 +557,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Create or restore your account in the OnePass app, then come back here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea o restaura tu cuenta en la app OnePass y vuelve aquí."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea o ripristina il tuo account nell'app OnePass, poi torna qui."
           }
         }
       }
@@ -268,6 +580,18 @@
             "state" : "translated",
             "value" : "Data Refused"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos rechazados"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dati rifiutati"
+          }
         }
       }
     },
@@ -277,6 +601,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca OnePass"
           }
         }
       }
@@ -288,6 +624,18 @@
             "state" : "translated",
             "value" : "Unlock"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca"
+          }
         }
       }
     },
@@ -297,6 +645,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca OnePass"
           }
         }
       }
@@ -308,6 +668,18 @@
             "state" : "translated",
             "value" : "Unlock with %@"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear con %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca con %@"
+          }
         }
       }
     },
@@ -317,6 +689,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva"
           }
         }
       }
@@ -328,6 +712,18 @@
             "state" : "translated",
             "value" : "Save as New Item"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar como elemento nuevo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva come nuovo elemento"
+          }
         }
       }
     },
@@ -337,6 +733,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save in OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar en OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva in OnePass"
           }
         }
       }
@@ -348,6 +756,18 @@
             "state" : "translated",
             "value" : "Save Passkey"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar la llave de acceso"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva la passkey"
+          }
         }
       }
     },
@@ -357,6 +777,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save a Passkey for %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar una llave de acceso para %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva una passkey per %@"
           }
         }
       }
@@ -368,6 +800,18 @@
             "state" : "translated",
             "value" : "Close"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiudi"
+          }
         }
       }
     },
@@ -378,12 +822,36 @@
             "state" : "translated",
             "value" : "Password Strength"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguridad de la contraseña"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicurezza della password"
+          }
         }
       }
     },
     "Identifiant" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio de sesión"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Login"
@@ -398,6 +866,18 @@
             "state" : "translated",
             "value" : "The passkey stays in your OnePass vault, encrypted on your devices."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La llave de acceso se queda en tu bóveda de OnePass, cifrada en tus dispositivos."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La passkey resta nella tua cassaforte OnePass, cifrata sui tuoi dispositivi."
+          }
         }
       }
     },
@@ -407,6 +887,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The new password replaces the old one, which stays in the item's history."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La contraseña nueva sustituye a la antigua, que se queda en el historial del elemento."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nuova password sostituisce quella vecchia, che resta nella cronologia dell'elemento."
           }
         }
       }
@@ -418,6 +910,18 @@
             "state" : "translated",
             "value" : "Hide"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascondi"
+          }
         }
       }
     },
@@ -427,6 +931,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar la contraseña"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascondi la password"
           }
         }
       }
@@ -438,6 +954,18 @@
             "state" : "translated",
             "value" : "Update"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna"
+          }
         }
       }
     },
@@ -447,6 +975,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna %@"
           }
         }
       }
@@ -458,12 +998,36 @@
             "state" : "translated",
             "value" : "Update Existing Item"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar el elemento existente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna l'elemento esistente"
+          }
         }
       }
     },
     "Mot de passe" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Password"
@@ -478,6 +1042,18 @@
             "state" : "translated",
             "value" : "Wrong password (%lld attempts)."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña incorrecta (%lld intentos)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password errata (%lld tentativi)."
+          }
         }
       }
     },
@@ -487,6 +1063,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Incorrect password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña incorrecta."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password errata."
           }
         }
       }
@@ -498,6 +1086,18 @@
             "state" : "translated",
             "value" : "Master Password"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña maestra"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password principale"
+          }
         }
       }
     },
@@ -507,6 +1107,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New Item"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elemento nuevo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo elemento"
           }
         }
       }
@@ -518,12 +1130,36 @@
             "state" : "translated",
             "value" : "New passkey"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llave de acceso nueva"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuova passkey"
+          }
         }
       }
     },
     "OK" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -538,6 +1174,18 @@
             "state" : "translated",
             "value" : "OnePass"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass"
+          }
         }
       }
     },
@@ -547,6 +1195,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass Is Ready"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass está listo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass è pronto"
           }
         }
       }
@@ -558,6 +1218,18 @@
             "state" : "translated",
             "value" : "Open OnePass to set up your vault"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para configurar tu bóveda"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per configurare la tua cassaforte"
+          }
         }
       }
     },
@@ -567,6 +1239,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open OnePass to set up your vault and sign in."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para configurar tu bóveda e iniciar sesión."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per configurare la tua cassaforte e accedere."
           }
         }
       }
@@ -578,12 +1262,36 @@
             "state" : "translated",
             "value" : "Open OnePass to learn more."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para saber más."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per saperne di più."
+          }
         }
       }
     },
     "Passkey" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llave de acceso"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passkey"
@@ -598,6 +1306,18 @@
             "state" : "translated",
             "value" : "For This Site"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para este sitio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per questo sito"
+          }
         }
       }
     },
@@ -607,6 +1327,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca in OnePass"
           }
         }
       }
@@ -618,6 +1350,18 @@
             "state" : "translated",
             "value" : "Back"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atrás"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indietro"
+          }
         }
       }
     },
@@ -627,6 +1371,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reveal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revelar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rivela"
           }
         }
       }
@@ -638,6 +1394,18 @@
             "state" : "translated",
             "value" : "Enter your Secret Key in the OnePass app on this device, then come back here."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce tu Secret Key en la app OnePass de este dispositivo y vuelve aquí."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inserisci la tua Secret Key nell'app OnePass su questo dispositivo, poi torna qui."
+          }
         }
       }
     },
@@ -647,6 +1415,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Website"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio web"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sito web"
           }
         }
       }
@@ -658,6 +1438,18 @@
             "state" : "translated",
             "value" : "Your passwords, passkeys and verification codes are suggested above the keyboard and in the Passwords key."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus contraseñas, llaves de acceso y códigos de verificación se sugieren encima del teclado y en la tecla Contraseñas."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le tue password, passkey e codici di verifica vengono suggeriti sopra la tastiera e nel tasto Password."
+          }
         }
       }
     },
@@ -667,6 +1459,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Title"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Título"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titolo"
           }
         }
       }
@@ -678,6 +1482,18 @@
             "state" : "translated",
             "value" : "Too many attempts. Try again in %@."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiados intentos. Vuelve a intentarlo en %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppi tentativi. Riprova tra %@."
+          }
         }
       }
     },
@@ -687,6 +1503,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You can try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes volver a intentarlo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puoi riprovare."
           }
         }
       }
@@ -698,6 +1526,18 @@
             "state" : "translated",
             "value" : "Use %@"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa %@"
+          }
         }
       }
     },
@@ -708,12 +1548,36 @@
             "state" : "translated",
             "value" : "add to"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "añadir a"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aggiungi a"
+          }
         }
       }
     },
     "app" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "app"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "app"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "app"
@@ -728,6 +1592,18 @@
             "state" : "translated",
             "value" : "other items"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "otros elementos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "altri elementi"
+          }
         }
       }
     },
@@ -738,12 +1614,36 @@
             "state" : "translated",
             "value" : "field to insert"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "campo que insertar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "campo da inserire"
+          }
         }
       }
     },
     "connexion" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "login"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "inicio de sesión"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "login"
@@ -758,6 +1658,18 @@
             "state" : "translated",
             "value" : "%lld seconds left"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan %lld segundos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ancora %lld secondi"
+          }
         }
       }
     },
@@ -767,6 +1679,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "username"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usuario"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nome utente"
           }
         }
       }
@@ -778,12 +1702,36 @@
             "state" : "translated",
             "value" : "hidden"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "oculto"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nascosto"
+          }
         }
       }
     },
     "mot de passe" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "contraseña"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "password"
@@ -798,6 +1746,18 @@
             "state" : "translated",
             "value" : "new item"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "elemento nuevo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nuovo elemento"
+          }
         }
       }
     },
@@ -807,6 +1767,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "for %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "para %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "per %@"
           }
         }
       }
@@ -818,6 +1790,18 @@
             "state" : "translated",
             "value" : "for this site"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "para este sitio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "per questo sito"
+          }
         }
       }
     },
@@ -827,6 +1811,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "to fill %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "para rellenar %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "per compilare %@"
           }
         }
       }
@@ -838,6 +1834,18 @@
             "state" : "translated",
             "value" : "results"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "resultados"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "risultati"
+          }
         }
       }
     },
@@ -847,6 +1855,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "site"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sitio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sito"
           }
         }
       }
@@ -858,6 +1878,18 @@
             "state" : "translated",
             "value" : "title"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "título"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "titolo"
+          }
         }
       }
     },
@@ -867,6 +1899,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "all items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "todos los elementos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tutti gli elementi"
           }
         }
       }
@@ -878,6 +1922,18 @@
             "state" : "translated",
             "value" : "Existing Items"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elementos existentes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elementi esistenti"
+          }
         }
       }
     },
@@ -887,6 +1943,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "item updated"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "elemento actualizado"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "elemento aggiornato"
           }
         }
       }
