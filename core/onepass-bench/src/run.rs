@@ -146,6 +146,7 @@ pub fn rows_for(site: &Site, index: usize, analysis: &Value) -> Vec<Value> {
             ("framework", json!(framework)),
             ("traits", json!([])),
             ("target", json!(t.role)),
+            ("accept", json!(t.accept)),
             ("heuristic", json!(detected)),
             ("bench_id", json!(site.id)),
             ("kind", json!(site.kind)),
@@ -625,6 +626,7 @@ mod tests {
         );
         assert_eq!(rows[0]["target"], "username");
         assert_eq!(rows[0]["heuristic"], "email");
+        assert_eq!(rows[0]["accept"], json!(["email"]));
         assert_eq!(rows[0]["origin"], "ex.example");
         assert_eq!(rows[0]["site"], 7);
         assert_eq!(rows[0]["framework"], "react");

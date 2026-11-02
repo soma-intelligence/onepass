@@ -14,7 +14,11 @@ import sys
 import time
 from pathlib import Path
 
+from typing import Any
+
 import lightgbm as lgb
+import numpy as np
+import scipy.sparse as sp
 
 from .export import export_onnx
 from .features import load_matrix
@@ -33,7 +37,9 @@ def train_gbm(
     n_estimators: int = 300,
     learning_rate: float = 0.2,
     early_stopping_rounds: int = 10,
+    extra: tuple[Any, Any, float] | None = None,
 ) -> Path:
+    """`extra` = (X, y, weight): more training rows (the bench's bench_train), each weighted `weight`."""
     data, out = Path(data), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
@@ -53,7 +59,13 @@ def train_gbm(
         "deterministic": True,
         "force_row_wise": True,
     }
-    train = lgb.Dataset(X, label=y)
+    weights = None
+    if extra is not None:
+        Xe, ye, w = extra
+        if Xe.shape[0]:
+            weights = np.concatenate([np.ones(X.shape[0], dtype=np.float32), np.full(Xe.shape[0], w, dtype=np.float32)])
+            X, y = sp.vstack([X, Xe], format="csr"), np.concatenate([y, ye])
+    train = lgb.Dataset(X, label=y, weight=weights)
     valid = lgb.Dataset(Xv, label=yv, reference=train)
     booster = lgb.train(
         params, train, num_boost_round=n_estimators, valid_sets=[valid],
