@@ -61,5 +61,7 @@
 	<string>$(ONEPASS_APP_GROUP)</string>
 	<key>OnePassKeychainGroup</key>
 	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
+	<key>OnePassMailboxURL</key>
+	<string>$(ONEPASS_MAILBOX_URL)</string>
 </dict>
 </plist>

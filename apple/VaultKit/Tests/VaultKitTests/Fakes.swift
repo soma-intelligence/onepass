@@ -239,6 +239,7 @@ final class FakeMailboxSync: MailboxSyncing {
         var wakeStops = 0
         var calls: [String] = []
         var failGrant: Error?
+        var failLocator: Error?
         var locators: [Data] = []
         var grants: [(Data, FfiCredentialRole)] = []
         var pushes: [(FfiPushKind, Data)] = []
@@ -334,10 +335,16 @@ final class FakeMailboxSync: MailboxSyncing {
         return publicKey.prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
+    func failNextLocator(_ error: Error) { state.withLock { $0.failLocator = error } }
+
     func setLocator(_ locator: Data) async throws {
-        state.withLock {
-            $0.calls.append("locator")
-            $0.locators.append(locator)
+        try state.withLock { s in
+            s.calls.append("locator")
+            if let e = s.failLocator {
+                s.failLocator = nil
+                throw e
+            }
+            s.locators.append(locator)
         }
     }
 
@@ -348,5 +355,67 @@ final class FakeMailboxSync: MailboxSyncing {
     private struct Stopper: WakeStopping {
         let owner: FakeMailboxSync
         func stop() { owner.stopped() }
+    }
+}
+
+/// Scripted `MailboxProvisioning`: counts the calls, creates mailboxes with fresh ids, opens the
+/// one `FakeMailboxSync` for every mailbox.
+final class FakeMailboxProvisioning: MailboxProvisioning {
+    private struct State {
+        var calls: [String] = []
+        var created = 0
+        var failNext: [String: Error] = [:]
+        var openedSeeds: [Data] = []
+        var located: [String: [String]] = [:]
+    }
+    private let state = Mutex(State())
+    let sync = FakeMailboxSync()
+
+    var calls: [String] { state.withLock { $0.calls } }
+    var mailboxesCreated: Int { state.withLock { $0.created } }
+    var openedSeeds: [Data] { state.withLock { $0.openedSeeds } }
+
+    /// The next call named `call` ("check", "credential", "create", "open") throws `error`.
+    func failNext(_ call: String, _ error: Error) { state.withLock { $0.failNext[call] = error } }
+
+    private func enter(_ call: String) throws {
+        try state.withLock { s in
+            s.calls.append(call)
+            if let e = s.failNext.removeValue(forKey: call) { throw e }
+        }
+    }
+
+    func check(_ endpoint: FfiMailboxEndpoint) async throws -> FfiMailboxServerInfo {
+        try enter("check")
+        return FfiMailboxServerInfo(openSignup: true)
+    }
+
+    func generateCredential() async throws -> FfiMailboxCredential {
+        try enter("credential")
+        let seed = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
+        return FfiMailboxCredential(seed: seed, publicKey: Data(seed.reversed()), id: String(repeating: "c", count: 32))
+    }
+
+    func create(_ endpoint: FfiMailboxEndpoint, seed: Data, invite: String?) async throws -> FfiMailboxHome {
+        try enter("create")
+        let n = state.withLock { s -> Int in
+            s.created += 1
+            return s.created
+        }
+        return FfiMailboxHome(baseUrl: endpoint.baseUrl, mailboxId: String(format: "%032x", n), incarnation: 1)
+    }
+
+    func open(_ home: MailboxHome, seed: Data) async throws -> any MailboxSyncing {
+        try enter("open")
+        state.withLock { $0.openedSeeds.append(seed) }
+        return sync
+    }
+
+    /// `locate` on `baseURL` answers `ids`.
+    func register(_ ids: [String], at baseURL: URL) { state.withLock { $0.located[baseURL.absoluteString] = ids } }
+
+    func locate(_ endpoint: FfiMailboxEndpoint, locator: Data) async throws -> [String] {
+        try enter("locate \(endpoint.baseUrl)")
+        return state.withLock { $0.located[endpoint.baseUrl] ?? [] }
     }
 }

@@ -64,6 +64,7 @@ public actor SyncCoordinator: SyncTrigger {
 
     /// The rounds in progress (one after the other); `rerun` asks for one more.
     private var run: Task<Void, Never>?
+    private var stoppedForMigration = false
     private var rerun = false
     /// Store access is exclusive: rounds and `remoteHasAccount` take turns.
     private var busy = false
@@ -126,6 +127,18 @@ public actor SyncCoordinator: SyncTrigger {
         kick()
         await run?.value
     }
+
+    /// The account moves to a mailbox (spec D.5): the round in progress ends, then no round runs
+    /// again, so nothing more is sent to iCloud.
+    public func stopForMigration() async {
+        stoppedForMigration = true
+        debounceTask?.cancel()
+        debounceTask = nil
+        await run?.value
+    }
+
+    /// Tests: whether `stopForMigration` ran.
+    public var isStoppedForMigration: Bool { stoppedForMigration }
 
     /// "Réessayer" after "Données refusées": forgets the change token (an empty token is a cleared one),
     /// so the next round fetches everything from scratch through `beginFullFetch` and settles rows the
@@ -348,6 +361,7 @@ public actor SyncCoordinator: SyncTrigger {
     // MARK: - Rounds
 
     private func kick() {
+        guard !stoppedForMigration else { return }
         if run != nil {
             rerun = true
             return
@@ -359,9 +373,9 @@ public actor SyncCoordinator: SyncTrigger {
         repeat {
             rerun = false
             await acquire()
-            await round()
+            if !stoppedForMigration { await round() }
             release()
-        } while rerun
+        } while rerun && !stoppedForMigration
         run = nil
     }
 

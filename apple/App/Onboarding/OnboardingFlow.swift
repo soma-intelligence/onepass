@@ -87,6 +87,7 @@ final class OnboardingModel {
     func acceptScannedKit(_ text: String) -> String? {
         guard let scan = EmergencyKit.parseKit(text) else { return nil }
         if model.addingAccount?.signIn == true, let id = scan.accountID { model.signInAccountID = id }
+        restoreServer = scan.server
         return scan.secretKey
     }
 
@@ -179,6 +180,14 @@ final class OnboardingModel {
     }
 
     var session: VaultSession { model.session }
+    /// Where the new vault syncs (spec D.2): the OnePass server unless chosen otherwise. iCloud
+    /// while mailbox signup is off in this build.
+    var syncChoice: SyncChoice = .default
+    var showSyncChoice = false
+    var effectiveSyncChoice: SyncChoice { model.mailboxSignupEnabled ? syncChoice : .iCloud }
+    var mailboxSignupEnabled: Bool { model.mailboxSignupEnabled }
+    /// The server line of a self-host kit (scanned), or typed in "Mon serveur".
+    var restoreServer: URL?
     var cloudKitEnabled: Bool { model.cloudKitEnabled }
     var busy: Bool { busyMessage != nil }
 
@@ -453,26 +462,17 @@ final class OnboardingModel {
     // MARK: - Actions
 
     private func createAccount() async {
-        busyMessage = cloudKitEnabled ? String(localized: "Vérification de ton iCloud...") : String(localized: "Création du coffre...")
+        let choice = effectiveSyncChoice
+        let onICloud = choice == .iCloud
+        busyMessage = cloudKitEnabled && onICloud ? String(localized: "Vérification de ton iCloud...") : String(localized: "Création du coffre...")
         defer { busyMessage = nil }
         errorMessage = nil
         offerRestore = false
-        guard await model.iCloudAccountAvailable() else {
-            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
-            return
-        }
-        do {
-            if try await model.remoteHasAccount() {
-                fail(String(localized: "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit."), next: .restore)
-                offerRestore = true
-                return
-            }
-        } catch RemoteStoreError.accountUnavailable {
-            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
-            return
-        } catch {
-            fail(String(localized: "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie."), next: .retry)
-            return
+        if onICloud {
+            guard await checkICloudBeforeCreation() else { return }
+        } else {
+            // The new vault must never reach iCloud: the iCloud sync stops before it exists.
+            await model.prepareSync(for: choice)
         }
         busyMessage = String(localized: "Création du coffre...")
         // Submitted: both fields are emptied now, whatever the outcome. The password lives on in a
@@ -486,6 +486,11 @@ final class OnboardingModel {
             let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
             // The password is kept only when the biometric step follows.
             credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
+            if !onICloud, let bytes = credentials.secretKey {
+                // In the background: the account is usable at once, on this device (spec D.2, 3).
+                let copy = bytes.withData { SecretBytes(copying: $0) }
+                Task { await model.runMailboxSetup(secretKey: copy) }
+            }
             successPulse &+= 1
             advance()
         } catch {
@@ -495,6 +500,28 @@ final class OnboardingModel {
                 VaultError(error).localizedMessage + " " + String(localized: "Saisis à nouveau ton mot de passe pour réessayer."),
                 next: error is KeychainError ? .openSettings : nil)
         }
+    }
+
+    /// iCloud signed in and holding no OnePass account yet; false after saying what to do.
+    private func checkICloudBeforeCreation() async -> Bool {
+        guard await model.iCloudAccountAvailable() else {
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
+            return false
+        }
+        do {
+            if try await model.remoteHasAccount() {
+                fail(String(localized: "Un compte OnePass existe déjà dans ton iCloud, utilise ton Emergency Kit."), next: .restore)
+                offerRestore = true
+                return false
+            }
+        } catch RemoteStoreError.accountUnavailable {
+            fail(String(localized: "Connecte-toi à iCloud dans Réglages pour créer ton coffre."), next: .openSettings)
+            return false
+        } catch {
+            fail(String(localized: "Impossible de vérifier ton iCloud. Vérifie ta connexion puis réessaie."), next: .retry)
+            return false
+        }
+        return true
     }
 
     private func enrollBiometrics() async {
@@ -525,6 +552,25 @@ final class OnboardingModel {
         busyMessage = cloudKitEnabled ? String(localized: "Récupération de ton coffre dans iCloud...") : String(localized: "Recherche du compte...")
         defer { busyMessage = nil }
         errorMessage = nil
+        if mailboxSignupEnabled || restoreServer != nil,
+           let normalized = try? normalizeSecretKey(text: restoreKey) {
+            busyMessage = String(localized: "Recherche du compte...")
+            let key = SecretBytes(utf8: normalized)
+            defer { key.wipe() }
+            switch await model.locateAccount(secretKey: key, kitServer: restoreServer) {
+            case .mailbox(let home):
+                await restoreFromMailbox(home: home, secretKey: key)
+                return
+            case .iCloud:
+                break
+            case .notFound:
+                fail(String(localized: "onboarding.restore.notFound"), next: nil)
+                return
+            case .offline:
+                fail(String(localized: "onboarding.restore.offline"), next: .retry)
+                return
+            }
+        }
         guard await model.iCloudAccountAvailable() else {
             fail(String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre."), next: .openSettings)
             return
@@ -569,6 +615,26 @@ final class OnboardingModel {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { session.setProfile(name: name, photo: model.settings.profilePhoto) }
         #endif
+        advance()
+    }
+
+    /// The account is on a mailbox: fetched with the recovery credential, unlocked with the
+    /// password, then this device gets its own credential (spec D.4).
+    private func restoreFromMailbox(home: MailboxHome, secretKey: SecretBytes) async {
+        busyMessage = String(localized: "Déverrouillage...")
+        let typedPassword = credentials.submitRestore()
+        defer { typedPassword.wipe() }
+        let key = restoreKey
+        do {
+            try await model.restoreFromMailbox(home: home, secretKey: secretKey) { [session] in
+                try await session.restore(secretKey: key, password: typedPassword)
+            }
+        } catch {
+            errorMessage = VaultError(error).restoreMessage
+            return
+        }
+        credentials.restored(password: typedPassword, keepPasswordForBiometrics: biometricsOffered)
+        if !restoreOnly { session.setDeviceMode(mode) }
         advance()
     }
 
@@ -696,9 +762,11 @@ final class OnboardingModel {
     func prepareKit() {
         guard kitData == nil, let secretKey, let accountID = model.settings.accountID else { return }
         do {
+            var server: URL?
+            if case .selfHost(let url, _) = effectiveSyncChoice { server = url }
             kitData = try EmergencyKit.pdf(
                 secretKey: secretKey, accountID: accountID,
-                displayName: model.settings.displayName, createdAt: Date())
+                displayName: model.settings.displayName, createdAt: Date(), server: server)
         } catch {
             errorMessage = ErrorText.appending(error, to: String(localized: "L'Emergency Kit n'a pas pu être préparé."))
         }

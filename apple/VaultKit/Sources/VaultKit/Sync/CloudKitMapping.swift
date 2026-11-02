@@ -122,6 +122,8 @@ public enum CloudKitMapping {
     /// The kind of a follower's mailbox enroll request (cross-platform spec D.5), written in the
     /// frozen zone of a migrated account. Never a record kind: never handed to the core's store.
     public static let sideKindMailboxEnrollRequest: UInt8 = OnePassCore.sideKindMailboxEnrollRequest()
+    /// The account's signed home (`RecordKind::SyncHome`).
+    public static let syncHomeKind: UInt8 = 27
 
     /// Whether `record` is a side record.
     public static func isSideRecord(_ record: RemoteRecord) -> Bool {

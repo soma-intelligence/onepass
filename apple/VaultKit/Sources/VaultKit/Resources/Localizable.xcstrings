@@ -2311,6 +2311,35 @@
         }
       }
     },
+    "kit.server %@" : {
+      "comment" : "Emergency Kit PDF: the sync server of a self-hosted account (URL).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Servidor: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serveur : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server: %@"
+          }
+        }
+      }
+    },
     "L'appairage a été refusé. Recommence depuis le début." : {
       "localizations" : {
         "en" : {
@@ -3856,6 +3885,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Server OnePass"
+          }
+        }
+      }
+    },
+    "sync.setup.badURL" : {
+      "comment" : "Error: the self-hosted server URL is not a valid https address.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This server address isn't valid. It must start with https://."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta dirección de servidor no es válida. Debe empezar por https://."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette adresse de serveur n'est pas valide. Elle doit commencer par https://."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo indirizzo del server non è valido. Deve iniziare con https://."
+          }
+        }
+      }
+    },
+    "sync.setup.noHostedServer" : {
+      "comment" : "Error: this build has no OnePass server URL, the account stays on the device.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version of OnePass has no server set. Your vault stays on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión de OnePass no tiene servidor. Tu bóveda se queda en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette version de OnePass ne connaît pas de serveur. Ton coffre reste sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa versione di OnePass non ha un server. La tua cassaforte resta su questo dispositivo."
           }
         }
       }

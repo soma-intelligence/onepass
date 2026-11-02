@@ -23949,6 +23949,354 @@
         }
       }
     },
+    "onboarding.restore.notFound" : {
+      "comment" : "Restore: no account found for this Secret Key on the OnePass server, the kit's server or iCloud.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No account found for this Secret Key. Check it, or enter your server."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ninguna cuenta para esta Secret Key. Compruébala o indica tu servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte trouvé pour cette Secret Key. Vérifie-la, ou indique ton serveur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun account trovato per questa Secret Key. Controllala o indica il tuo server."
+          }
+        }
+      }
+    },
+    "onboarding.restore.offline" : {
+      "comment" : "Restore: no server could be reached while looking for the account.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't reach the server. Check your connection and try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre le serveur. Vérifie ta connexion puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile raggiungere il server. Controlla la connessione e riprova."
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.hosted.detail" : {
+      "comment" : "Sync choice sheet: detail of the OnePass server option.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hosted by Soma Labs, encrypted on your device before it's sent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alojado por Soma Labs, cifrado en tu dispositivo antes del envío"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hébergé par Soma Labs, chiffré sur ton appareil avant l'envoi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ospitato da Soma Labs, cifrato sul tuo dispositivo prima dell'invio"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.iCloud.detail" : {
+      "comment" : "Sync choice sheet: detail of the iCloud option.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your encrypted vault in your iCloud, on your Apple devices only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda cifrada en tu iCloud, solo en tus dispositivos Apple"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre chiffré dans ton iCloud, seulement sur tes appareils Apple"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte cifrata nel tuo iCloud, solo sui tuoi dispositivi Apple"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.invalidURL" : {
+      "comment" : "Sync choice sheet: the URL typed is not an https address.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The address must start with https://."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección debe empezar por https://."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'adresse doit commencer par https://."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'indirizzo deve iniziare con https://."
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.link" : {
+      "comment" : "Onboarding > Device: link under the choices that opens where the vault is kept; also the sheet title.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where Is My Vault Kept?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Dónde se guarda mi bóveda?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Où est rangé mon coffre ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dove è conservata la mia cassaforte?"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.selfHost.ca" : {
+      "comment" : "Sync choice sheet: placeholder of the optional certificate authority field (PEM).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificate authority in PEM (optional)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoridad de certificación en PEM (opcional)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorité de certification en PEM (facultatif)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorità di certificazione in PEM (facoltativo)"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.selfHost.title" : {
+      "comment" : "Sync choice sheet: the user's own server option.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mi servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mon serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il mio server"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.selfHost.url" : {
+      "comment" : "Sync choice sheet: placeholder of the self-hosted server base URL field.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Base URL (https://...)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL base (https://...)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL de base (https://...)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL di base (https://...)"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.test" : {
+      "comment" : "Sync choice sheet: button that checks the self-hosted server answers.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tester"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prova"
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.testFailed" : {
+      "comment" : "Sync choice sheet: the self-hosted server did not answer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server doesn't answer. Check the address."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no responde. Comprueba la dirección."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur ne répond pas. Vérifie l'adresse."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server non risponde. Controlla l'indirizzo."
+          }
+        }
+      }
+    },
+    "onboarding.syncChoice.testOK" : {
+      "comment" : "Sync choice sheet: the self-hosted server answered.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server answers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor responde."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur répond."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server risponde."
+          }
+        }
+      }
+    },
     "OnePass" : {
       "localizations" : {
         "en" : {
@@ -28776,6 +29124,296 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud ha una versione più vecchia. OnePass rimanda la sua, non devi fare nulla."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.blocked.locked" : {
+      "comment" : "Migration sheet: the vault must be unlocked first.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock your vault to continue."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea tu bóveda para continuar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouille ton coffre pour continuer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca la tua cassaforte per continuare."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.blocked.notSynced" : {
+      "comment" : "Migration sheet: iCloud must sync without error first.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync with iCloud without errors first, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincroniza primero con iCloud sin errores y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronise d'abord avec iCloud sans erreur, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizza prima con iCloud senza errori, poi riprova."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.blocked.offline" : {
+      "comment" : "Migration sheet: no connection.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection. Try again when you're online."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión. Inténtalo de nuevo cuando estés en línea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas de connexion. Réessaie quand tu seras en ligne."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna connessione. Riprova quando sei online."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.blocked.rotating" : {
+      "comment" : "Migration sheet: a key rotation waits for an answer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A key rotation is waiting for your answer. Finish it first."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una rotación de claves espera tu respuesta. Termínala primero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une rotation des clés attend ta réponse. Termine-la d'abord."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una rotazione delle chiavi attende la tua risposta. Completala prima."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.button" : {
+      "comment" : "Settings > Sync: button and sheet title that moves an iCloud account to the OnePass server.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to OnePass Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasar al servidor de OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer au serveur OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa al server OnePass"
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.done %@" : {
+      "comment" : "Migration sheet: done; the argument names the server.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your vault now syncs with %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda ahora se sincroniza con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre se synchronise maintenant avec %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte ora si sincronizza con %@"
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.explain" : {
+      "comment" : "Migration sheet: what the move does.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your encrypted vault leaves iCloud for the OnePass Server. Your other Apple devices will offer to follow. The iCloud copy stays until you erase it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda cifrada deja iCloud y pasa al servidor de OnePass. Tus otros dispositivos Apple te propondrán seguirla. La copia de iCloud se queda hasta que la borres."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre chiffré quitte iCloud pour le serveur OnePass. Tes autres appareils Apple te proposeront de suivre. La copie iCloud reste en place jusqu'à ce que tu l'effaces."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte cifrata lascia iCloud per il server OnePass. Gli altri tuoi dispositivi Apple ti proporranno di seguirla. La copia su iCloud resta finché non la cancelli."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.lostRace" : {
+      "comment" : "Migration sheet: another device of the account moved first; this one follows it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another of your devices already moved. This device follows it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro de tus dispositivos ya cambió de servidor. Este dispositivo lo sigue."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre de tes appareils a déjà changé de serveur. Cet appareil le suit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro tuo dispositivo ha già cambiato server. Questo dispositivo lo segue."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.unavailable" : {
+      "comment" : "Migration sheet: this account cannot move (no iCloud sync on this build).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account can't change servers on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta no puede cambiar de servidor en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte ne peut pas changer de serveur sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account non può cambiare server su questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.sync.migrate.uploading" : {
+      "comment" : "Migration sheet: the vault is being sent to the server.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending the encrypted vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando la bóveda cifrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi du coffre chiffré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invio della cassaforte cifrata"
           }
         }
       }

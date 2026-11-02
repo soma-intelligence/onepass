@@ -72,6 +72,10 @@
 	<string>$(ONEPASS_CLOUDKIT_CONTAINER)</string>
 	<key>OnePassKeychainGroup</key>
 	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
+	<key>OnePassMailboxSignup</key>
+	<string>$(ONEPASS_MAILBOX_SIGNUP)</string>
+	<key>OnePassMailboxURL</key>
+	<string>$(ONEPASS_MAILBOX_URL)</string>
 	<key>SUAllowsAutomaticUpdates</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>

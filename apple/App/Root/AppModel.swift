@@ -41,11 +41,16 @@ final class AppModel {
     /// The iCloud coordinator, for an account that syncs with iCloud (nil on the mailbox).
     @ObservationIgnored let coordinator: SyncCoordinator?
     /// The mailbox coordinator, for an account on a OnePass server (cross-platform spec D.3).
-    @ObservationIgnored let mailbox: MailboxSyncCoordinator?
+    @ObservationIgnored private(set) var mailbox: MailboxSyncCoordinator?
     /// What the session's sync goes through: the current coordinator of either kind.
     @ObservationIgnored let router: SyncRouter?
     /// "Serveur OnePass", the host of a self-host, or "iCloud" (Réglages > Sync).
-    let syncBackendName: String
+    private(set) var syncBackendName: String
+    /// The sync store and its database, for the mailbox setup.
+    @ObservationIgnored private let syncStore: SyncStoreHandle?
+    @ObservationIgnored private let syncDatabaseURL: URL?
+    /// The choice a new account's setup resumes with (`SyncBackendState.pendingSetup`).
+    @ObservationIgnored private var pendingSetupChoice: SyncChoice?
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
     @ObservationIgnored let iconLoader: SiteIconLoader
@@ -229,6 +234,9 @@ final class AppModel {
         var mailbox: MailboxSyncCoordinator?
         var router: SyncRouter?
         var syncBackendName = "iCloud"
+        var syncStore: SyncStoreHandle?
+        var syncDatabaseURL: URL?
+        var pendingSetupChoice: SyncChoice?
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
@@ -298,10 +306,13 @@ final class AppModel {
                             home: home, databaseURL: databaseURL, keychain: environment.keychain,
                             serverName: syncBackendName)
                         router = mailbox.map { SyncRouter(current: $0) }
-                    case .pendingSetup:
-                        // The mailbox setup resumes at launch (X1b Task 6); nothing syncs until then.
-                        break
+                    case .pendingSetup(let choice):
+                        // Nothing leaves the device until the setup, resumed by `start`, is done.
+                        pendingSetupChoice = choice
+                        router = SyncRouter(current: PendingSync())
                     }
+                    syncStore = store
+                    syncDatabaseURL = databaseURL
                     environment.sync = router ?? NoSync()
                 }
             } else {
@@ -314,6 +325,9 @@ final class AppModel {
         self.mailbox = mailbox
         self.router = router
         self.syncBackendName = syncBackendName
+        self.syncStore = syncStore
+        self.syncDatabaseURL = syncDatabaseURL
+        self.pendingSetupChoice = pendingSetupChoice
         self.remote = remote
         let session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
@@ -493,6 +507,160 @@ final class AppModel {
         })
         tasks.append(Task { await router.syncNow() })
         if let mailbox { tasks.append(Task { await mailbox.enterForeground() }) }
+    }
+
+    /// New accounts may go to a mailbox (X1b Task 6). Off until the founder opens the hosted
+    /// server: the build setting ONEPASS_MAILBOX_SIGNUP (Info.plist `OnePassMailboxSignup`).
+    var mailboxSignupEnabled: Bool {
+        (Bundle.main.object(forInfoDictionaryKey: "OnePassMailboxSignup") as? String) == "YES"
+            && syncStore != nil
+    }
+
+    /// Before a new account is created with `choice`: a mailbox choice stops the iCloud sync at
+    /// once, so the new vault never reaches iCloud.
+    func prepareSync(for choice: SyncChoice) async {
+        guard choice != .iCloud, let syncStore, let router else { return }
+        try? await SyncBackendState.write(.pendingSetup(choice), store: syncStore)
+        pendingSetupChoice = choice
+        await router.switchTo(PendingSync())
+        syncBackendName = SyncBackendState.pendingSetup(choice).displayName(hosted: MailboxEndpoints.hosted())
+    }
+
+    /// Where the account of `secretKey` lives (spec D.4): the kit's server, the OnePass server,
+    /// then iCloud.
+    func locateAccount(secretKey: SecretBytes, kitServer: URL?) async -> RestoreSource {
+        let restore = MailboxRestore(
+            provisioning: FfiMailboxProvisioning(databasePath: syncDatabaseURL?.path ?? ""),
+            credentials: MailboxCredentialStore(keychain: session.environment.keychain))
+        let cloudKit = cloudKitEnabled
+        return await restore.locate(secretKey: secretKey, kitServer: kitServer) { @MainActor [weak self] in
+            guard cloudKit, let self else { return false }
+            return (try? await self.remoteHasAccount()) ?? false
+        }
+    }
+
+    /// Restore an account kept on `home`: the iCloud sync stops first (the vault must not reach
+    /// it), the mailbox is fetched, `unlock` runs, then the router switches to this device's client.
+    func restoreFromMailbox(
+        home: MailboxHome, secretKey: SecretBytes, unlock: @escaping @MainActor () async throws -> Void
+    ) async throws {
+        guard let syncStore, let syncDatabaseURL, let router else { throw OnePassError.Store }
+        await router.switchTo(PendingSync())
+        let restore = MailboxRestore(
+            provisioning: FfiMailboxProvisioning(databasePath: syncDatabaseURL.path),
+            credentials: MailboxCredentialStore(keychain: session.environment.keychain))
+        let client = try await session.restoreMailbox(
+            restore, home: home, secretKey: secretKey, store: syncStore, unlock: unlock)
+        syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
+        let coordinator = MailboxSyncCoordinator(sync: client, serverName: syncBackendName)
+        mailbox = coordinator
+        await router.switchTo(coordinator)
+        await coordinator.enterForeground()
+    }
+
+    /// The migration of this iCloud account to a mailbox (spec D.5); nil for an account that is
+    /// not on iCloud with a remote.
+    func mailboxMigration() -> MailboxMigration? {
+        guard let coordinator, let remote, let syncStore, let syncDatabaseURL, let router else { return nil }
+        let keychain = session.environment.keychain
+        let credentials = MailboxCredentialStore(keychain: keychain)
+        let provisioning = FfiMailboxProvisioning(databasePath: syncDatabaseURL.path)
+        let parts = MailboxMigration.Parts(
+            setup: MailboxSetup(provisioning: provisioning, credentials: credentials, store: syncStore),
+            provisioning: provisioning, credentials: credentials, remote: remote, cloudKit: coordinator,
+            router: router,
+            makeCoordinator: { sync, home in
+                let name = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
+                return MailboxSyncCoordinator(sync: sync, serverName: name)
+            })
+        return MailboxMigration(store: syncStore, parts: parts)
+    }
+
+    /// "Passer au serveur OnePass": the migration of this account, on its gesture.
+    func migrateToMailbox(choice: SyncChoice) async -> MailboxMigration.Outcome {
+        guard let migration = mailboxMigration() else { return .failed(String(localized: "settings.sync.migrate.unavailable")) }
+        if let blocker = await session.migrationBlocker(migration, status: syncStatus) { return .blocked(blocker) }
+        guard let accountID = settings.accountID,
+              let key = try? SecretKeyVault(keychain: session.environment.keychain).loadBytes(accountID: accountID)
+        else { return .blocked(.locked) }
+        let outcome = await session.migrate(migration, choice: choice, secretKey: key)
+        if case .done(let home) = outcome {
+            syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
+            await adoptRouterMailbox()
+        }
+        return outcome
+    }
+
+    /// The mailbox coordinator the router switched to, for the scene phases and the wake.
+    /// The system gave an APNs token: an account on a mailbox registers it (once per token,
+    /// X1b Task 10). An iCloud account needs nothing (CloudKit pushes on its own).
+    func didRegisterPush(token: Data) {
+        guard let mailbox, let syncStore else { return }
+        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        Task { await push.didRegister(token: token) }
+    }
+
+    /// A background push (CloudKit or the mailbox's silent wake): one round through the router,
+    /// cut at the push budget.
+    func silentPush() async -> Bool {
+        guard let router, let syncStore, let mailbox else {
+            if let coordinator { await coordinator.syncNow() }
+            return coordinator != nil
+        }
+        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        return await push.didReceiveSilent { await router.syncNow() }
+    }
+
+    private func adoptRouterMailbox() async {
+        guard let router, let next = await router.coordinator as? MailboxSyncCoordinator else { return }
+        mailbox = next
+        await next.enterForeground()
+    }
+
+    /// At unlock: a migration cut after its claim finishes its upload.
+    private func resumeMigration() {
+        guard let migration = mailboxMigration() else { return }
+        Task {
+            if case .done(let home) = await session.resumeMigration(migration) {
+                syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
+                await adoptRouterMailbox()
+            }
+        }
+    }
+
+    /// A setup cut off (offline, app quit) resumes at the next unlock, with the Secret Key from
+    /// this device's keychain.
+    private func resumeMailboxSetup() {
+        guard pendingSetupChoice != nil, let accountID = settings.accountID else { return }
+        let vault = SecretKeyVault(keychain: session.environment.keychain)
+        guard let key = try? vault.loadBytes(accountID: accountID) else { return }
+        Task { await runMailboxSetup(secretKey: key) }
+    }
+
+    /// Run (or resume) the mailbox setup of the unlocked account. On success the router switches
+    /// to the mailbox coordinator; offline, the account stays on this device and the next launch
+    /// or unlock tries again.
+    @discardableResult
+    func runMailboxSetup(secretKey: SecretBytes) async -> MailboxSetupOutcome? {
+        guard let choice = pendingSetupChoice, let syncStore, let syncDatabaseURL, let router else { return nil }
+        let setup = MailboxSetup(
+            provisioning: FfiMailboxProvisioning(databasePath: syncDatabaseURL.path),
+            credentials: MailboxCredentialStore(keychain: session.environment.keychain), store: syncStore)
+        guard let outcome = await session.runMailboxSetup(setup, choice: choice, secretKey: secretKey) else {
+            return nil
+        }
+        if case .ready(let home) = outcome {
+            pendingSetupChoice = nil
+            syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
+            if let opened = Self.openMailbox(
+                home: home, databaseURL: syncDatabaseURL, keychain: session.environment.keychain,
+                serverName: syncBackendName) {
+                mailbox = opened
+                await router.switchTo(opened)
+                await opened.enterForeground()
+            }
+        }
+        return outcome
     }
 
     /// The mailbox client of an account on a OnePass server, signed by this device's credential.
@@ -912,6 +1080,8 @@ final class AppModel {
             // Every item's site icon, in the background: lists never show a placeholder first.
             let urls = session.summaries.compactMap(\.primaryUrl)
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
+            resumeMailboxSetup()
+            resumeMigration()
         } else {
             resetNavigation()
         }

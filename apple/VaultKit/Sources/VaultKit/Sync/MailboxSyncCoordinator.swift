@@ -63,6 +63,8 @@ public actor MailboxSyncCoordinator: SyncTrigger {
 
     /// The server this account syncs with, for the settings line.
     public nonisolated var server: String { serverName }
+    /// The mailbox client this coordinator rounds with (push token registration).
+    public nonisolated var client: any MailboxSyncing { sync }
 
     /// Whether the account's home moved: no round runs any more.
     public var homeMoved: Bool { moved }

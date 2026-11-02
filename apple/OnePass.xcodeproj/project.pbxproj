@@ -33,8 +33,10 @@
 		1C6456B832432BA0741D678C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2FFEBAA7199C92F167BD66F2 /* Localizable.xcstrings */; };
 		1FCDC473F5E86371EEA0641C /* ApprovalPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BC01A25495F3371464D130 /* ApprovalPanel.swift */; };
 		202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		22300EE0A3C12E327C3E2B41 /* SyncChoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
 		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
+		2370DDB10983D8E556FD40DB /* MigrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D982919CC9E366DCF914D57 /* MigrationSheet.swift */; };
 		238EB0035C1DB7402BA3DB8C /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = EABAE413D46D55DEEAFD8298 /* DesignKit */; };
 		2692DC6A6FE5F70B54C63E1F /* AutoFillHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DA50BEC5F27CE8D01F0A5D /* AutoFillHostApp.swift */; };
 		2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */; };
@@ -303,6 +305,7 @@
 		0CBA904F1F157D072B427852 /* ReadOnlyFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadOnlyFieldView.swift; sourceTree = "<group>"; };
 		0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTab.swift; sourceTree = "<group>"; };
 		0D64EBFE57E2DE8181340998 /* OnePassApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassApp.swift; sourceTree = "<group>"; };
+		0D982919CC9E366DCF914D57 /* MigrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationSheet.swift; sourceTree = "<group>"; };
 		0DD43A3A8A980B4F9C98E885 /* LockVaultIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockVaultIntent.swift; sourceTree = "<group>"; };
 		0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		1219B00FDE8D6A6B54AEC7ED /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -405,6 +408,7 @@
 		95190D978CCD258D8EDDE9FB /* KitShareController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitShareController.swift; sourceTree = "<group>"; };
 		9ABC26729FF5D1EFA4922176 /* PasskeyRegistrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyRegistrationView.swift; sourceTree = "<group>"; };
 		9BEF9C9CEA47684F68D72BDB /* PublicSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionView.swift; sourceTree = "<group>"; };
+		9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncChoiceSheet.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
 		A106C3614367687097B3B54C /* AllAccountsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllAccountsSearch.swift; sourceTree = "<group>"; };
@@ -794,6 +798,7 @@
 				214B39B3C661A8FF88275223 /* OnboardingSteps.swift */,
 				EDE8A47A5BA20B9A5392E7B7 /* SecretKeyCaptureGuard.swift */,
 				07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */,
+				9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -909,6 +914,7 @@
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
 				18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
+				0D982919CC9E366DCF914D57 /* MigrationSheet.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
 				3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */,
@@ -1584,6 +1590,7 @@
 				C2254D84DAD275D97FCC7692 /* LockVaultIntent.swift in Sources */,
 				E04761763662B47771A1A831 /* LockView.swift in Sources */,
 				0CC7CE12C087FB5B9DE37825 /* MenuFieldEditor.swift in Sources */,
+				2370DDB10983D8E556FD40DB /* MigrationSheet.swift in Sources */,
 				9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */,
 				EBFCF37147E4D615A6282172 /* MoveToVaultMenu.swift in Sources */,
 				C90860D5CEE2203B6ADB77C2 /* Nearby.swift in Sources */,
@@ -1619,6 +1626,7 @@
 				365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */,
 				9961C39F1CDB1708FB598A68 /* Snapshot.swift in Sources */,
 				AD29CFEF6D3AB96633FA488F /* SplitBrowseView.swift in Sources */,
+				22300EE0A3C12E327C3E2B41 /* SyncChoiceSheet.swift in Sources */,
 				88252B461F361E3E77E3BC1A /* SyncSettings.swift in Sources */,
 				E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */,
 				2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */,
@@ -2259,6 +2267,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_MAILBOX_SIGNUP = NO;
+				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				ONLY_ACTIVE_ARCH = YES;
@@ -2543,6 +2553,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_MAILBOX_SIGNUP = NO;
+				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2658,6 +2670,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_MAILBOX_SIGNUP = NO;
+				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2884,6 +2898,8 @@
 				ONEPASS_BUNDLE_ID_PREFIX = me.somalabs.onepass;
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
+				ONEPASS_MAILBOX_SIGNUP = NO;
+				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -128,3 +128,33 @@ public actor SyncRouter: SyncTrigger {
     private func dropStatus(_ id: UUID) { statusContinuations[id] = nil }
     private func dropChange(_ id: UUID) { changeContinuations[id] = nil }
 }
+
+/// The coordinator of an account whose mailbox setup has not finished: nothing leaves the device,
+/// the status says the server is awaited. The router switches to the mailbox coordinator once the
+/// setup is done.
+public actor PendingSync: RoutableSync {
+    private var continuations: [UUID: AsyncStream<SyncStatus>.Continuation] = [:]
+
+    public init() {}
+
+    public nonisolated var syncsWithServer: Bool { false }
+
+    public func statusUpdates() -> AsyncStream<SyncStatus> {
+        let (stream, continuation) = AsyncStream<SyncStatus>.makeStream()
+        continuation.yield(.waitingForMailbox)
+        let id = UUID()
+        continuations[id] = continuation
+        continuation.onTermination = { [weak self] _ in Task { await self?.drop(id) } }
+        return stream
+    }
+
+    public func remoteChanges() -> AsyncStream<Void> {
+        AsyncStream { _ in }
+    }
+
+    private func drop(_ id: UUID) { continuations[id] = nil }
+
+    public func localChangesWritten() async {}
+    public func sessionUnlocked(_ session: Session) async {}
+    public func sessionLocked() async {}
+}

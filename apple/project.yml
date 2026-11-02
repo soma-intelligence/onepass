@@ -63,6 +63,10 @@ settings:
     # Base URL of the hosted OnePass server (Info.plist key `OnePassMailboxURL`, founder decision
     # F2). Release builds accept https only; Debug builds also take the local Supabase stack.
     ONEPASS_MAILBOX_URL: https://mailbox.somalabs.me/functions/v1/mailbox
+    # New accounts on the mailbox (X1b Task 6): NO until the hosted server is live (custom domain
+    # and DNS deferred by the founder). YES shows "Où est rangé mon coffre ?" and makes the OnePass
+    # server the default of a new account.
+    ONEPASS_MAILBOX_SIGNUP: "NO"
 
 packages:
   VaultKit:
@@ -141,6 +145,7 @@ targets:
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
+        OnePassMailboxSignup: $(ONEPASS_MAILBOX_SIGNUP)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)

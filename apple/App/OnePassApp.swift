@@ -172,10 +172,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) async -> UIBackgroundFetchResult {
         // A background wake past the auto-lock delay drops the keys before anything else runs.
         model?.session.checkAutoLock()
-        guard let coordinator = model?.coordinator else { return .noData }
-        await coordinator.syncNow()
-        return .newData
+        guard let model else { return .noData }
+        return await model.silentPush() ? .newData : .noData
     }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        model?.didRegisterPush(token: deviceToken)
+    }
+
+    /// Refused or unavailable: the sync still runs at each opening and in the foreground.
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {}
 }
 #else
 @MainActor
@@ -210,9 +216,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
         Task { @MainActor in
-            guard let coordinator = self.model?.coordinator else { return }
-            await coordinator.syncNow()
+            _ = await self.model?.silentPush()
         }
+    }
+
+    func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        model?.didRegisterPush(token: deviceToken)
     }
 
     /// The menu bar icon keeps the app running; the closed window has already locked.

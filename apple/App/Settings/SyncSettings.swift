@@ -29,6 +29,7 @@ struct SyncSettings: View {
     }
 
     @State private var safeExitKind: String?
+    @State private var migrating = false
 
     private var canSync: Bool {
         if case .disabled = line { return false }
@@ -67,6 +68,12 @@ struct SyncSettings: View {
             } footer: {
                 footer
             }
+            if model.mailboxSignupEnabled, model.coordinator != nil, model.mailbox == nil {
+                Section {
+                    Button("settings.sync.migrate.button") { migrating = true }
+                        .accessibilityIdentifier("settings.sync.migrate")
+                }
+            }
             if model.ignoredDeletionCount > 0 {
                 Section {
                     NavigationLink {
@@ -89,6 +96,7 @@ struct SyncSettings: View {
             }
         }
         .settingsPage("Sync")
+        .sheet(isPresented: $migrating) { MigrationSheet() }
         .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
             SafeExitChooserSheet(kind: $0.kind)
         }

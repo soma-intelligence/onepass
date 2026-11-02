@@ -397,6 +397,15 @@ private struct DeviceStep: View {
                 .shared, "Il est partagé",
                 "Appareil de la famille ou du bureau. Pas de \(model.biometryName), verrouillage après 5 min, coffres visibles au choix.")
         }
+        if model.mailboxSignupEnabled {
+            Button("onboarding.syncChoice.link") { model.showSyncChoice = true }
+                .buttonStyle(.borderless)
+                .font(.footnote)
+                .accessibilityIdentifier("onboarding.syncChoice")
+                .sheet(isPresented: $model.showSyncChoice) {
+                    SyncChoiceSheet(choice: $model.syncChoice)
+                }
+        }
     }
 
     private func option(
