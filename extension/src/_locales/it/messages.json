@@ -1,0 +1,14 @@
+{
+  "extDescription": {
+    "message": "Compila login, carte e identità dall'app OnePass.",
+    "description": "Description of the extension in the store and the extensions page."
+  },
+  "fillSmartCommand": {
+    "message": "Compila la pagina con un clic con OnePass",
+    "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
+  },
+  "actionTitle": {
+    "message": "OnePass",
+    "description": "Tooltip of the toolbar button."
+  }
+}

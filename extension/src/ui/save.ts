@@ -26,7 +26,7 @@ import {
   tokenFromHash,
   wayArt,
 } from "./components";
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 import { parseEmpty, parsePassword, parseSaveInit } from "./parse";
 
 /** Asked for by the edit view: the content script clamps it to the frame's largest height. */
@@ -39,10 +39,10 @@ const MASK = "••••••••••••";
 const ACCENT_TILE = "#14532D";
 
 export const RULES: readonly { value: SaveEdits["rule"]; label: string }[] = [
-  { value: "domain", label: tr("Tout le domaine", "Whole domain") },
-  { value: "exact_host", label: tr("Sous-domaine exact", "Exact subdomain") },
-  { value: "exact_url", label: tr("URL exacte", "Exact URL") },
-  { value: "never", label: tr("Jamais remplir", "Never fill") },
+  { value: "domain", label: t("save.wholeDomain") },
+  { value: "exact_host", label: t("save.exactSubdomain") },
+  { value: "exact_url", label: t("save.exactUrl") },
+  { value: "never", label: t("save.neverFill") },
 ];
 
 export interface SaveHandle {
@@ -139,7 +139,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   const vaultName = () => init?.vaults.find((v) => v.id === draft?.vaultId)?.name ?? "";
 
   const vaultSelect = () => {
-    const sel = h("select", { class: "select", attrs: { "aria-label": tr("Coffre", "Vault") } });
+    const sel = h("select", { class: "select", attrs: { "aria-label": t("term.vault") } });
     for (const v of init?.vaults ?? []) {
       const o = h("option", { attrs: { value: v.id } }, v.name);
       if (v.id === draft?.vaultId) o.selected = true;
@@ -161,14 +161,14 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
 
   /** Vault choice and "Enregistrer"; with no vault, nothing can be saved. */
   const saveActions = (cls: string, err: HTMLElement, d: Draft) => {
-    const save = btn(tr("Enregistrer", "Save"), "btn btn-primary", () =>
-      void decide("save", err, () => renderSaved(tr(`${d.title} enregistré`, `${d.title} saved`), tr(`Dans ${vaultName()}`, `In ${vaultName()}`))),
+    const save = btn(t("common.save"), "btn btn-primary", () =>
+      void decide("save", err, () => renderSaved(t("save.titleSaved", { title: d.title }), t("save.inValue", { value: vaultName() }))),
     );
     saveBtn = save;
     updateSave(d);
     if ((init?.vaults.length ?? 0) > 0) return h("div", { class: cls }, vaultSelect(), save);
     save.disabled = true;
-    return h("div", { class: cls }, h("span", { class: "stack note no-vault" }, tr("Aucun coffre disponible", "No vault available")), save);
+    return h("div", { class: cls }, h("span", { class: "stack note no-vault" }, t("save.noVaultAvailable")), save);
   };
 
   const header = (title: string, withMore: boolean) =>
@@ -178,12 +178,12 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       mark("m"),
       h("h1", null, title),
       withMore
-        ? iconBtn(tr("Options", "Options"), "more", () => {
+        ? iconBtn(t("save.options"), "more", () => {
             more = !more;
             renderPrompt();
           })
         : null,
-      iconBtn(tr("Fermer", "Close"), "close", () => void decide("dismiss", errLine(), () => undefined)),
+      iconBtn(t("common.close"), "close", () => void decide("dismiss", errLine(), () => undefined)),
     );
 
   function renderSaved(title: string, sub: string): void {
@@ -194,7 +194,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         { class: "saved", attrs: { role: "status" } },
         h("span", { class: "saved-art" }, tile(init?.title.charAt(0) ?? "O", ACCENT_TILE, 52), h("span", { class: "ok-badge", attrs: { "aria-hidden": "true" } }, icon("check", 11))),
         h("span", { class: "stack" }, h("span", { class: "t1" }, title), h("span", { class: "t2" }, sub)),
-        btn(tr("Fermer", "Close"), "btn-link", () => {
+        btn(t("common.close"), "btn-link", () => {
           if (token) void call(deps.send, { type: "save_close", token }, parseEmpty);
         }),
       ),
@@ -205,7 +205,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   const never = () => {
     if (!init) return;
     const err = errLine();
-    void decide("never", err, () => renderSaved(tr("OnePass ne proposera plus rien ici", "OnePass won't offer anything here again"), tr("Réglable dans Réglages › Remplissage auto", "Change it in Settings › AutoFill")));
+    void decide("never", err, () => renderSaved(t("save.onepassWontOfferAnything"), t("save.changeItInSettings")));
   };
 
   /**
@@ -222,8 +222,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     show(
       h(
         "div",
-        { class: "save-body link", attrs: { role: "dialog", "aria-label": tr("Enregistrer le lien", "Save the link") } },
-        header(tr("Retenir ce lien ?", "Remember this link?"), true),
+        { class: "save-body link", attrs: { role: "dialog", "aria-label": t("save.saveLink") } },
+        header(t("save.rememberLink"), true),
         more ? moreMenu(i) : null,
         h(
           "div",
@@ -240,17 +240,17 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           "p",
           { class: "note" },
           p
-            ? tr(`La prochaine fois, OnePass se connectera avec ce compte ${name} en un clic.`, `Next time, OnePass signs in with this ${name} account in one click.`)
-            : tr("La prochaine fois, OnePass se connectera en un clic.", "Next time, OnePass signs in in one click."),
+            ? t("save.nextTimeOnepassSigns", { name })
+            : t("save.nextTimeOnepassSigns2"),
         ),
         h(
           "div",
           { class: "actions" },
           h("span", { class: "stack" }),
-          btn(tr("Pas maintenant", "Not now"), "btn", () => void decide("dismiss", err, () => undefined)),
-          btn(tr("Enregistrer", "Save"), "btn btn-primary", () =>
+          btn(t("save.notNow"), "btn", () => void decide("dismiss", err, () => undefined)),
+          btn(t("common.save"), "btn btn-primary", () =>
             void decide("save", err, () =>
-              renderSaved(tr("Lien enregistré", "Link saved"), p ? `${i.site} ↔ ${name} (${p.email})` : i.site),
+              renderSaved(t("save.linkSaved"), p ? `${i.site} ↔ ${name} (${p.email})` : i.site),
             ),
           ),
         ),
@@ -263,8 +263,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     h(
       "div",
       { class: "more", attrs: { role: "menu" } },
-      btn(tr(`Ne jamais proposer pour ${i.site}`, `Never offer for ${i.site}`), "", never, { role: "menuitem" }),
-      btn(tr("Pas maintenant", "Not now"), "", () => void decide("dismiss", errLine(), () => undefined), { role: "menuitem" }),
+      btn(t("save.neverOfferForSite", { site: i.site }), "", never, { role: "menuitem" }),
+      btn(t("save.notNow"), "", () => void decide("dismiss", errLine(), () => undefined), { role: "menuitem" }),
     );
 
   function renderPrompt(): void {
@@ -281,11 +281,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       ? h(
           "div",
           { class: "seg", attrs: { role: "tablist" } },
-          btn(tr("Nouvel élément", "New item"), "", () => {
+          btn(t("save.newItem"), "", () => {
             mode = "new";
             renderPrompt();
           }, { role: "tab", "aria-selected": String(mode === "new") }),
-          btn(tr("Mettre à jour (1)", "Update (1)"), "", () => {
+          btn(t("save.update1"), "", () => {
             mode = "update";
             renderPrompt();
           }, { role: "tab", "aria-selected": String(mode === "update") }),
@@ -300,7 +300,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         tile(i.update.title.charAt(0), ACCENT_TILE, "m"),
         h("span", { class: "stack" }, h("span", { class: "t1" }, i.update.title), h("span", { class: "t2" }, d.username)),
       );
-      note = tr("L'ancien mot de passe reste dans l'historique de l'élément.", "The old password stays in the item's history.");
+      note = t("save.oldPasswordStaysIn");
     } else {
       card = h(
         "div",
@@ -311,7 +311,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           "button",
           { class: "btn", attrs: { type: "button" }, on: { click: guard.wrap(() => renderEdit()) } },
           icon("edit", 13),
-          tr("Modifier", "Edit"),
+          t("common.edit"),
         ),
       );
     }
@@ -321,8 +321,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
             "div",
             { class: "actions" },
             h("span", { class: "stack" }),
-            btn(tr("Mettre à jour", "Update"), "btn btn-primary", () =>
-              void decide("update", err, () => renderSaved(tr(`${i.update?.title ?? d.title} mis à jour`, `${i.update?.title ?? d.title} updated`), d.username)),
+            btn(t("save.update"), "btn btn-primary", () =>
+              void decide("update", err, () => renderSaved(t("save.valueUpdated", { value: i.update?.title ?? d.title }), d.username)),
             ),
           )
         : saveActions("actions", err, d);
@@ -330,7 +330,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       h(
         "div",
         { class: "save-body", attrs: { role: "dialog", "aria-label": "Enregistrer le login" } },
-        header(tr("Enregistrer le login ?", "Save the login?"), true),
+        header(t("save.saveLogin"), true),
         more ? moreMenu(i) : null,
         seg,
         card,
@@ -346,12 +346,12 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     setFit(false);
     const i = init;
     const d = draft;
-    const t = token;
+    const tok = token;
     const err = errLine();
-    const title = h("input", { class: "title-input", attrs: { type: "text", "aria-label": tr("Titre", "Title"), maxlength: "256" } });
+    const title = h("input", { class: "title-input", attrs: { type: "text", "aria-label": t("save.title"), maxlength: "256" } });
     title.value = d.title;
     title.addEventListener("input", () => (d.title = title.value));
-    const user = h("input", { attrs: { type: "text", "aria-label": tr("nom d'utilisateur", "username"), maxlength: "1024" } });
+    const user = h("input", { attrs: { type: "text", "aria-label": t("save.username"), maxlength: "1024" } });
     user.value = d.username;
     user.addEventListener("input", () => (d.username = user.value));
     const fresh = i.view === "edit";
@@ -359,7 +359,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     if (fresh) {
       const input = h("input", {
         class: "field-value mono pwd-value",
-        attrs: { type: d.password !== null ? "text" : "password", "aria-label": tr("mot de passe", "password"), maxlength: "4096", autocomplete: "off" },
+        attrs: { type: d.password !== null ? "text" : "password", "aria-label": t("menu.password"), maxlength: "4096", autocomplete: "off" },
       });
       input.value = d.password ?? d.typed;
       input.addEventListener("input", () => {
@@ -372,14 +372,14 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     } else {
       pwd = h("span", { class: "field-value mono pwd-value" }, d.revealed && d.password !== null ? d.password : MASK);
     }
-    const reveal = btn(d.revealed ? tr("Masquer", "Hide") : tr("Afficher", "Show"), "btn-link", async () => {
+    const reveal = btn(d.revealed ? t("common.hide") : t("common.show"), "btn-link", async () => {
       if (d.revealed) {
         d.revealed = false;
         renderEdit();
         return;
       }
       if (d.password === null) {
-        const r = await call(deps.send, { type: "save_reveal", token: t }, parsePassword);
+        const r = await call(deps.send, { type: "save_reveal", token: tok }, parsePassword);
         if (!r.ok) {
           err.textContent = errorText(r.code);
           return;
@@ -389,8 +389,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       d.revealed = true;
       renderEdit();
     });
-    const generate = btn(tr("Générer", "Generate"), "btn-link", async () => {
-      const r = await call(deps.send, { type: "save_generate", token: t }, parsePassword);
+    const generate = btn(t("common.generate"), "btn-link", async () => {
+      const r = await call(deps.send, { type: "save_generate", token: tok }, parsePassword);
       if (!r.ok) {
         err.textContent = errorText(r.code);
         return;
@@ -401,23 +401,23 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       d.revealed = true;
       renderEdit();
     });
-    const rule = h("select", { class: "select", attrs: { "aria-label": tr("Correspondance", "Match") } });
+    const rule = h("select", { class: "select", attrs: { "aria-label": t("save.match") } });
     for (const x of RULES) {
       const o = h("option", { attrs: { value: x.value } }, x.label);
       if (x.value === d.rule) o.selected = true;
       rule.append(o);
     }
     rule.addEventListener("change", () => (d.rule = rule.value as SaveEdits["rule"]));
-    const tags = h("div", { class: tr("tags", "tags") });
+    const tags = h("div", { class: "tags" });
     for (const tag of d.tags) {
       tags.append(
         btn(tag, "tag", () => {
           d.tags = d.tags.filter((x) => x !== tag);
           renderEdit();
-        }, { "aria-label": tr(`Retirer le tag ${tag}`, `Remove tag ${tag}`) }),
+        }, { "aria-label": t("save.removeTagTag", { tag }) }),
       );
     }
-    const tagInput = h("input", { class: "tag-input", attrs: { type: "text", "aria-label": tr("Ajouter un tag", "Add a tag"), placeholder: tr("Ajouter un tag", "Add a tag"), maxlength: "64" } });
+    const tagInput = h("input", { class: "tag-input", attrs: { type: "text", "aria-label": t("save.addTag"), placeholder: t("save.addTag"), maxlength: "64" } });
     tagInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
@@ -430,13 +430,13 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     show(
       h(
         "div",
-        { class: "save-body edit-head", attrs: { role: "dialog", "aria-label": tr("Enregistrer l'élément", "Save the item") } },
+        { class: "save-body edit-head", attrs: { role: "dialog", "aria-label": t("save.saveItem") } },
         h(
           "div",
           { class: "save-head" },
           mark("m"),
-          h("h1", null, tr("Enregistrer l'élément", "Save the item")),
-          iconBtn(tr("Fermer", "Close"), "close", () => (fresh ? void decide("dismiss", errLine(), () => undefined) : renderPrompt())),
+          h("h1", null, t("save.saveItem")),
+          iconBtn(t("common.close"), "close", () => (fresh ? void decide("dismiss", errLine(), () => undefined) : renderPrompt())),
         ),
       ),
       h(
@@ -446,11 +446,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         h(
           "div",
           { class: "group" },
-          h("label", { class: "cell" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, tr("nom d'utilisateur", "username")), user)),
+          h("label", { class: "cell" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, t("save.username")), user)),
           h(
             "div",
             { class: "cell" },
-            h("span", { class: "stack" }, h("span", { class: "cell-label" }, tr("mot de passe", "password")), pwd),
+            h("span", { class: "stack" }, h("span", { class: "cell-label" }, t("menu.password")), pwd),
             fresh ? null : reveal,
             generate,
           ),
@@ -461,11 +461,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           h(
             "div",
             { class: "cell" },
-            h("span", { class: "stack" }, h("span", { class: "cell-label" }, tr("site web", "website")), h("span", { class: "field-value" }, i.origin)),
+            h("span", { class: "stack" }, h("span", { class: "cell-label" }, t("popup.website")), h("span", { class: "field-value" }, i.origin)),
             rule,
           ),
         ),
-        h("div", { class: "stack" }, h("span", { class: "cell-label" }, tr("tags", "tags")), tags),
+        h("div", { class: "stack" }, h("span", { class: "cell-label" }, t("save.tags")), tags),
         err,
       ),
       saveActions("actions save-foot", err, d),
@@ -479,7 +479,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     }
     const r = await call(deps.send, { type: "save_init", token }, parseSaveInit);
     if (!r.ok) {
-      show(messageBlock(r.code === "unpaired" ? tr("Appairer OnePass depuis la barre d'outils", "Pair OnePass from the toolbar") : errorText(r.code)));
+      show(messageBlock(r.code === "unpaired" ? t("menu.pairOnepassFromToolbar") : errorText(r.code)));
       return;
     }
     init = r.value;

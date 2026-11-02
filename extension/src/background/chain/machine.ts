@@ -21,7 +21,7 @@
 // chain does not recognize is planned again once (`replan` action, then
 // `planStep` with the plan's login group of the chain's item) before the
 // chain gives up with `unknown`.
-import { tr } from "../../shared/i18n";
+import { t } from "../../shared/i18n";
 import type { FillField, Summary } from "../../bridge/client";
 import { parseOrigin } from "../../shared/domain";
 import type { FieldRole, FillIntent, FillStep, FormInfo, PageAnalysis, ProviderId } from "../../shared/messages";
@@ -151,16 +151,16 @@ export interface StartParams {
 const USER_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["username", "email"]);
 
 const STOP_LABELS: Readonly<Record<StopReason, string>> = {
-  domain: tr("Domaine non autorisé", "Domain not allowed"),
-  captcha: tr("CAPTCHA détecté", "CAPTCHA detected"),
-  push: tr("Validation sur le téléphone", "Approval on the phone"),
-  otp: tr("Code demandé", "Code requested"),
-  unknown: tr("Étape inconnue", "Unknown step"),
-  timeout: tr("Délai dépassé", "Time limit reached"),
-  user: tr("Arrêté", "Stopped"),
-  locked: tr("OnePass verrouillé", "OnePass locked"),
-  repeat: tr("Étape répétée", "Step repeated"),
-  account: tr("Compte introuvable", "Account not found"),
+  domain: t("chain.domainNotAllowed"),
+  captcha: t("chain.captchaDetected"),
+  push: t("chain.approvalOnPhone"),
+  otp: t("chain.codeRequested"),
+  unknown: t("chain.unknownStep"),
+  timeout: t("chain.timeLimitReached"),
+  user: t("chain.stopped"),
+  locked: t("chain.onepassLocked"),
+  repeat: t("chain.stepRepeated"),
+  account: t("chain.accountNotFound"),
 };
 
 function providerName(id: ProviderId): string {
@@ -223,7 +223,7 @@ function stopped(s: ChainState, reason: StopReason, now: number, host?: string):
   if (host !== undefined) n.host = host;
   const st: Omit<ChainStep, "nav" | "at" | "sig"> = { kind: "stop", label: STOP_LABELS[reason], state: "stopped" };
   if (reason === "domain" && host) st.detail = host;
-  if (reason === "captcha") st.detail = tr("Jamais résolu automatiquement", "Never solved automatically");
+  if (reason === "captcha") st.detail = t("chain.neverSolvedAutomatically");
   if (reason === "account" && s.account) st.detail = s.account.email;
   end(n, now, reason === "user" ? "stopped" : "handoff", st);
   return { state: n, actions: [{ type: "stop", reason }] };
@@ -237,7 +237,7 @@ export function stopChain(s: ChainState, reason: StopReason, now: number): Chain
 
 function finished(s: ChainState, now: number): StepResult {
   const n = clone(s);
-  const label = n.provider ? tr(`Retour sur ${titleFromSite(n.site)}`, `Back on ${titleFromSite(n.site)}`) : tr("Connecté", "Signed in");
+  const label = n.provider ? t("chain.backOnValue", { value: titleFromSite(n.site) }) : t("chain.signedIn");
   const st: Omit<ChainStep, "nav" | "at" | "sig"> = { kind: "done", label, state: "done" };
   if (n.provider) st.detail = n.site;
   end(n, now, "done", st);
@@ -312,11 +312,11 @@ function signature(d: Exclude<Decision, { kind: "stop" }>, host: string, url: st
 function fillLabel(fields: FillField[], provider: string | null): string {
   const both = fields.includes("username") && fields.includes("password");
   if (provider) {
-    if (both) return tr(`Identifiant et mot de passe ${provider} remplis`, `${provider} username and password filled`);
-    return fields.includes("username") ? tr(`Identifiant ${provider} rempli`, `${provider} username filled`) : tr(`Mot de passe ${provider} rempli`, `${provider} password filled`);
+    if (both) return t("chain.providerUsernameAndPassword", { provider });
+    return fields.includes("username") ? t("chain.providerUsernameFilled", { provider }) : t("chain.providerPasswordFilled", { provider });
   }
-  if (both) return tr("Identifiant et mot de passe remplis", "Username and password filled");
-  return fields.includes("username") ? tr("Identifiant rempli", "Username filled") : tr("Mot de passe rempli", "Password filled");
+  if (both) return t("chain.usernameAndPasswordFilled");
+  return fields.includes("username") ? t("chain.usernameFilled") : t("chain.passwordFilled");
 }
 
 /**
@@ -384,16 +384,16 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   if (!onProvider) st.origin = w.origin;
   switch (d.kind) {
     case "provider_click":
-      st.label = tr(`Clic sur « Continuer avec ${providerName(n.provider ?? "google")} »`, `Clicked "Continue with ${providerName(n.provider ?? "google")}"`);
+      st.label = t("chain.clickedContinueWithValue", { value: providerName(n.provider ?? "google") });
       actions.push({ type: "click", ref: d.ref });
       break;
     case "account":
-      st.label = tr(`Compte choisi : ${d.email}`, `Account chosen: ${d.email}`);
-      st.detail = tr(`${host} · domaine officiel vérifié`, `${host} · official domain verified`);
+      st.label = t("chain.accountChosenEmail", { email: d.email });
+      st.detail = t("chain.hostOfficialDomainVerified", { host });
       actions.push({ type: "click", ref: d.ref });
       break;
     case "otp":
-      st.label = pname ? tr(`Code ${pname} rempli`, `${pname} code filled`) : tr("Code à usage unique rempli", "One-time code filled");
+      st.label = pname ? t("chain.pnameCodeFilled", { pname }) : t("chain.oneTimeCodeFilled");
       actions.push({ type: onProvider ? "fill_provider" : "fill", formRef: d.form.ref, fields: ["totp"] });
       break;
     case "fill":
@@ -463,7 +463,7 @@ export function planStep(s: ChainState, p: PlannedStep, url: string, pageOrigin:
   const st: ChainStep = { kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
   if (frameId !== 0) st.frameId = frameId;
   if (!w.onProvider) st.origin = w.origin;
-  if (kind === "otp") st.label = tr("Code à usage unique rempli", "One-time code filled");
+  if (kind === "otp") st.label = t("chain.oneTimeCodeFilled");
   else {
     st.label = fillLabel(fields, null);
     if (fields.includes("username") && n.username !== "") st.detail = n.username;

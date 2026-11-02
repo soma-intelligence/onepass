@@ -3,7 +3,7 @@
 // menu when the plan cannot choose) only when the browser vouches for it
 // (`isTrusted`): a page cannot start a fill nor open the menu with a
 // synthetic click (S2).
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry } from "./detect/visibility";
@@ -93,7 +93,7 @@ export function createIcons(opts: IconsOptions): Icons {
     const icon = doc.createElement("div");
     icon.className = "icon";
     icon.setAttribute("role", "button");
-    icon.setAttribute("aria-label", tr("Ouvrir le menu OnePass", "Open the OnePass menu"));
+    icon.setAttribute("aria-label", t("icon.openOnepassMenu"));
     icon.appendChild(glyph(doc));
     // Keep the focus in the field.
     icon.addEventListener("mousedown", (e) => e.preventDefault());

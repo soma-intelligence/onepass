@@ -7,7 +7,7 @@
 // past the click guard (300 ms after the content appeared or the window came
 // back into view). The page never sees a key: the worker signs through the host.
 import { ext } from "../shared/browser";
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 import type { PasskeyAccount, PasskeyInit } from "../shared/messages";
 import {
   ClickGuard,
@@ -126,8 +126,8 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
     return b;
   };
 
-  const other = () => btn(tr("Autre appareil", "Other device"), "btn", () => void act({ type: "passkey_other", token: token ?? "" }));
-  const cancel = () => btn(tr("Annuler", "Cancel"), "btn", () => void act({ type: "passkey_cancel", token: token ?? "" }));
+  const other = () => btn(t("passkey.otherDevice"), "btn", () => void act({ type: "passkey_other", token: token ?? "" }));
+  const cancel = () => btn(t("common.cancel"), "btn", () => void act({ type: "passkey_cancel", token: token ?? "" }));
 
   // The rpId the passkey is for, and the exact origin asking (the browser's, from the worker).
   const header = (title: string, i: PasskeyInit) =>
@@ -140,7 +140,7 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
         { class: "stack" },
         h("h1", null, title),
         h("span", { class: "pk-site" }, icon("lock", 11), h("span", null, i.rpId)),
-        h("span", { class: "pk-origin", attrs: { title: i.origin } }, tr(`Demandé par ${i.origin}`, `Asked by ${i.origin}`)),
+        h("span", { class: "pk-origin", attrs: { title: i.origin } }, t("passkey.askedByOrigin", { origin: i.origin })),
       ),
     );
 
@@ -156,7 +156,7 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
         "button",
         {
           class: "row pk-row",
-          attrs: { type: "button", "aria-label": tr(`Se connecter en tant que ${name}`, `Sign in as ${name}`) },
+          attrs: { type: "button", "aria-label": t("passkey.signInAsName", { name }) },
           on: { click: guard.wrap(() => void act({ type: "passkey_pick", token: token ?? "", itemId: a.itemId, credentialId: a.credentialId })) },
         },
         tile(initial(a.title), TILE, "m"),
@@ -169,9 +169,9 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
     show(
       h(
         "div",
-        { class: "pk-body", attrs: { role: "dialog", "aria-label": tr("Passkey", "Passkey") } },
-        header(tr("Se connecter avec une passkey", "Sign in with a passkey"), i),
-        h("p", { class: "pk-lead" }, tr("Choisis le compte. OnePass signe pour ce site, sans mot de passe.", "Choose the account. OnePass signs for this site, no password.")),
+        { class: "pk-body", attrs: { role: "dialog", "aria-label": t("term.passkey") } },
+        header(t("passkey.signInWithPasskey"), i),
+        h("p", { class: "pk-lead" }, t("passkey.chooseAccountOnepassSigns")),
         h("div", { class: "pk-list", attrs: { role: "list" } }, ...rows),
         errLine,
         h("footer", { class: "pk-actions" }, other(), h("span", { class: "pk-gap" }), cancel()),
@@ -182,12 +182,12 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
   function renderCreate(i: PasskeyInit): void {
     const vaults = i.vaults ?? [];
     let vaultId = vaults[0]?.id;
-    const sel = h("select", { class: "select", attrs: { "aria-label": tr("Coffre", "Vault") } });
+    const sel = h("select", { class: "select", attrs: { "aria-label": t("term.vault") } });
     for (const v of vaults) sel.append(h("option", { attrs: { value: v.id } }, v.name));
     sel.addEventListener("change", () => {
       vaultId = sel.value;
     });
-    const save = btn(tr("Enregistrer", "Save"), "btn btn-primary", () => {
+    const save = btn(t("common.save"), "btn btn-primary", () => {
       const msg: { type: "passkey_save"; token: string; vaultId?: string } = { type: "passkey_save", token: token ?? "" };
       if (vaultId !== undefined) msg.vaultId = vaultId;
       void act(msg);
@@ -197,8 +197,8 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
     show(
       h(
         "div",
-        { class: "pk-body", attrs: { role: "dialog", "aria-label": tr("Passkey", "Passkey") } },
-        header(tr("Enregistrer une passkey", "Save a passkey"), i),
+        { class: "pk-body", attrs: { role: "dialog", "aria-label": t("term.passkey") } },
+        header(t("passkey.savePasskey"), i),
         h(
           "div",
           { class: "pk-card" },
@@ -208,9 +208,9 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
         h(
           "p",
           { class: "pk-lead" },
-          tr("La clé privée reste dans OnePass. Le site ne reçoit que la clé publique.", "The private key stays in OnePass. The site only gets the public key."),
+          t("passkey.privateKeyStaysIn"),
         ),
-        vaults.length > 1 ? h("label", { class: "pk-field" }, h("span", { class: "t2" }, tr("Coffre", "Vault")), sel) : null,
+        vaults.length > 1 ? h("label", { class: "pk-field" }, h("span", { class: "t2" }, t("term.vault")), sel) : null,
         errLine,
         h("footer", { class: "pk-actions" }, other(), h("span", { class: "pk-gap" }), cancelButton, save),
       ),

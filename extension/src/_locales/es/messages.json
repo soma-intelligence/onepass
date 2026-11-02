@@ -1,0 +1,14 @@
+{
+  "extDescription": {
+    "message": "Rellena tus inicios de sesión, tarjetas e identidades desde la app OnePass.",
+    "description": "Description of the extension in the store and the extensions page."
+  },
+  "fillSmartCommand": {
+    "message": "Rellenar la página con un clic con OnePass",
+    "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
+  },
+  "actionTitle": {
+    "message": "OnePass",
+    "description": "Tooltip of the toolbar button."
+  }
+}

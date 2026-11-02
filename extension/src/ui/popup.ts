@@ -6,7 +6,7 @@
 // active tab in one line with its Fill (alternatives listed first below it),
 // and "Oublier mes choix sur ce site".
 import { ext } from "../shared/browser";
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 import {
   CUSTOM_MAX_LENGTH,
   CUSTOM_MIN_LENGTH,
@@ -63,9 +63,9 @@ export interface PopupDeps {
 
 /** Choices of the profile used on pages (the worker reads it, generate.ts). */
 export const PROFILE_CHOICES: readonly { value: "strong" | "readable" | "custom"; label: string }[] = [
-  { value: "strong", label: tr("Fort", "Strong") },
-  { value: "readable", label: tr("Lisible", "Readable") },
-  { value: "custom", label: tr("Personnalisé", "Custom") },
+  { value: "strong", label: t("popup.strong") },
+  { value: "readable", label: t("popup.readable") },
+  { value: "custom", label: t("popup.custom") },
 ];
 
 export interface PopupHandle {
@@ -84,23 +84,23 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 export const GENERATOR_TYPES: readonly { kind: GeneratorKind; label: string; help: string }[] = [
   {
     kind: "smart",
-    label: tr("Intelligent", "Smart"),
-    help: tr("Un mot de passe fort, lisible et facile à saisir.", "A strong password that is easy to read and type."),
+    label: t("popup.smart"),
+    help: t("popup.strongPasswordEasyTo"),
   },
   {
     kind: "random",
-    label: tr("Aléatoire", "Random"),
-    help: tr("Caractères tirés au hasard par le générateur sécurisé du système.", "Characters drawn by the system's secure generator."),
+    label: t("popup.random"),
+    help: t("popup.charactersDrawnBySystems"),
   },
   {
     kind: "memorable",
-    label: tr("Mémorisable", "Memorable"),
-    help: tr("Des mots faciles à taper, difficiles à deviner.", "Words that are easy to type and hard to guess."),
+    label: t("popup.memorable"),
+    help: t("popup.wordsEasyToType"),
   },
   {
     kind: "pin",
-    label: tr("Code PIN", "PIN code"),
-    help: tr("Des chiffres seulement, pour les codes et les cadenas.", "Digits only, for codes and locks."),
+    label: t("popup.pinCode"),
+    help: t("popup.digitsOnlyForCodes"),
   },
 ];
 
@@ -111,25 +111,25 @@ export function planText(p: PopupPlanLine): string {
     case "login":
       if (p.mode === "fill") {
         // Fills this page, sends nothing: no promise of a sign-in.
-        if (p.steps > 1) return who === "" ? tr("Remplir l'identifiant", "Fill the username") : tr(`Remplir l'identifiant de ${who}`, `Fill the username of ${who}`);
+        if (p.steps > 1) return who === "" ? t("popup.fillUsername") : t("popup.fillUsernameOfWho", { who });
         return who === ""
-          ? tr("Remplir l'identifiant et le mot de passe", "Fill the username and password")
-          : tr(`Remplir l'identifiant et le mot de passe de ${who}`, `Fill the username and password of ${who}`);
+          ? t("popup.fillUsernameAndPassword")
+          : t("popup.fillUsernameAndPassword2", { who });
       }
-      if (who === "") return tr("Se connecter", "Sign in");
+      if (who === "") return t("popup.signIn");
       return p.steps > 1
-        ? tr(`Se connecter en tant que ${who} en ${p.steps} étapes`, `Sign in as ${who} in ${p.steps} steps`)
-        : tr(`Se connecter en tant que ${who}`, `Sign in as ${who}`);
+        ? t("popup.signInAsWho", { who, steps: p.steps })
+        : t("popup.signInAsWho2", { who });
     case "otp":
-      return tr("Remplir le code à usage unique", "Fill the one-time code");
+      return t("popup.fillOneTimeCode");
     case "signup":
-      return tr("Créer le compte avec un mot de passe généré", "Create the account with a generated password");
+      return t("popup.createAccountWithGenerated");
     case "reset":
-      return who === "" ? tr("Changer le mot de passe", "Change the password") : tr(`Changer le mot de passe de ${who}`, `Change the password of ${who}`);
+      return who === "" ? t("popup.changePassword") : t("popup.changePasswordOfWho", { who });
     case "checkout":
-      return who === "" ? tr("Remplir le paiement", "Fill the payment") : tr(`Remplir le paiement avec ${who}`, `Fill the payment with ${who}`);
+      return who === "" ? t("popup.fillPayment") : t("popup.fillPaymentWithWho", { who });
     case "address":
-      return who === "" ? tr("Remplir l'adresse", "Fill the address") : tr(`Remplir l'adresse avec ${who}`, `Fill the address with ${who}`);
+      return who === "" ? t("popup.fillAddress") : t("popup.fillAddressWithWho", { who });
   }
 }
 
@@ -147,10 +147,10 @@ function initials(account: string): string {
 
 /** Strength in words from the generator's entropy. */
 function strengthText(bits: number): string {
-  if (bits < 40) return tr("Faible", "Weak");
-  if (bits < 60) return tr("Correct", "Fair");
-  if (bits < 80) return tr("Fort", "Strong");
-  return tr("Très fort", "Very strong");
+  if (bits < 40) return t("popup.weak");
+  if (bits < 60) return t("popup.fair");
+  if (bits < 80) return t("popup.strong");
+  return t("popup.veryStrong");
 }
 
 /** Countdown ring of a one-time code (the app's TotpCountdown). */
@@ -216,7 +216,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   const copy = (value: string, done: string) =>
     copyText(value).then(
       () => toast(done),
-      () => toast(tr("Copie impossible", "Could not copy"), "error"),
+      () => toast(t("popup.couldNotCopy"), "error"),
     );
 
   const button = (label: string, cls: string, fn: () => void, attrs: Record<string, string> = {}) =>
@@ -236,16 +236,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   function renderUnpaired(err?: string): void {
     center(
       mark("l"),
-      h("h1", null, tr("OnePass n'est pas appairé", "OnePass is not paired")),
+      h("h1", null, t("popup.onepassNotPaired")),
       h(
         "p",
         null,
-        tr(
-          "Relie cette extension à l'app OnePass de cet ordinateur pour remplir tes logins.",
-          "Link this extension to the OnePass app on this computer to fill your logins.",
-        ),
+        t("popup.linkExtensionToOnepass"),
       ),
-      h("div", { class: "actions" }, button(tr("Appairer avec OnePass", "Pair with OnePass"), "btn btn-primary", () => void track(startPairing()))),
+      h("div", { class: "actions" }, button(t("popup.pairWithOnepass"), "btn btn-primary", () => void track(startPairing()))),
       err ? h("p", { class: "error-line", attrs: { role: "alert" } }, err) : null,
     );
   }
@@ -253,8 +250,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   async function startPairing(): Promise<void> {
     center(
       mark("l"),
-      h("h1", null, tr("Appairage…", "Pairing…")),
-      h("p", null, tr("Ouvre l'app OnePass si elle ne l'est pas.", "Open the OnePass app if it is not open.")),
+      h("h1", null, t("popup.pairing")),
+      h("p", null, t("popup.openOnepassAppIf")),
     );
     const r = await call(deps.send, { type: "popup_pair_start" }, parseSas);
     if (!r.ok) {
@@ -264,17 +261,17 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     }
     center(
       mark("l"),
-      h("h1", null, tr("Compare les codes", "Compare the codes")),
-      h("p", null, tr("Le même code doit s'afficher dans l'app OnePass.", "The OnePass app must show the same code.")),
-      h("div", { class: "sas", attrs: { "aria-label": tr("Code d'appairage", "Pairing code") } }, r.value.sas),
+      h("h1", null, t("popup.compareCodes")),
+      h("p", null, t("popup.onepassAppMustShow")),
+      h("div", { class: "sas", attrs: { "aria-label": t("popup.pairingCode") } }, r.value.sas),
       h(
         "div",
         { class: "actions" },
-        button(tr("Annuler", "Cancel"), "btn", () => {
+        button(t("common.cancel"), "btn", () => {
           void call(deps.send, { type: "popup_pair_cancel" }, parseEmpty);
           renderUnpaired();
         }),
-        button(tr("Les codes sont identiques", "The codes match"), "btn btn-primary", () => void track(approve())),
+        button(t("popup.codesMatch"), "btn btn-primary", () => void track(approve())),
       ),
     );
   }
@@ -283,14 +280,11 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     // Approving in the app closes this popup in Safari: the pairing goes on without it.
     center(
       mark("l"),
-      h("h1", null, tr("Approuve dans l'app OnePass", "Approve in the OnePass app")),
+      h("h1", null, t("popup.approveInOnepassApp")),
       h(
         "p",
         null,
-        tr(
-          "Clique sur « Approuver » dans OnePass et confirme avec Touch ID. Tu peux fermer cette fenêtre.",
-          "Click Approve in OnePass and confirm with Touch ID. You can close this window.",
-        ),
+        t("popup.clickApproveInOnepass"),
       ),
     );
     const r = await call(deps.send, { type: "popup_pair_approve" }, parseEmpty);
@@ -301,20 +295,20 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     await load();
   }
 
-  const forgetButton = () => button(tr("Oublier cet appairage", "Forget this pairing"), "btn-link", () => confirmForget());
+  const forgetButton = () => button(t("popup.forgetPairing"), "btn-link", () => confirmForget());
 
   /** Confirmation step; "Annuler" goes back to the current state. */
   function confirmForget(): void {
     stopTotp();
     center(
       mark("l"),
-      h("h1", null, tr("Oublier cet appairage ?", "Forget this pairing?")),
-      h("p", null, tr("Il faudra appairer à nouveau.", "You will have to pair again.")),
+      h("h1", null, t("popup.forgetPairing2")),
+      h("p", null, t("popup.willHaveToPair")),
       h(
         "div",
         { class: "actions" },
-        button(tr("Annuler", "Cancel"), "btn", () => void track(load())),
-        button(tr("Oublier", "Forget"), "btn btn-primary", () => void track(forget())),
+        button(t("common.cancel"), "btn", () => void track(load())),
+        button(t("popup.forget"), "btn btn-primary", () => void track(forget())),
       ),
     );
   }
@@ -332,12 +326,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   function renderLocked(): void {
     center(
       mark("l"),
-      h("h1", null, tr("OnePass est verrouillé", "OnePass is locked")),
-      h("p", null, tr("Déverrouille l'app pour voir et remplir tes logins.", "Unlock the app to see and fill your logins.")),
+      h("h1", null, t("ui.onepassLocked")),
+      h("p", null, t("popup.unlockAppToSee")),
       h(
         "div",
         { class: "actions" },
-        button(tr("Déverrouiller dans OnePass", "Unlock in OnePass"), "btn btn-primary", () =>
+        button(t("menu.unlockInOnepass"), "btn btn-primary", () =>
           void track(
             call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
               if (r.ok && !r.value.locked) return load();
@@ -354,9 +348,9 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   function renderHostMissing(): void {
     center(
       mark("l"),
-      h("h1", null, tr("App OnePass introuvable", "OnePass app not found")),
-      h("p", null, tr("Installe ou ouvre l'app OnePass sur cet ordinateur, puis réessaie.", "Install or open the OnePass app on this computer, then try again.")),
-      h("div", { class: "actions" }, button(tr("Réessayer", "Try again"), "btn btn-primary", () => void track(load()))),
+      h("h1", null, t("ui.onepassAppNotFound")),
+      h("p", null, t("popup.installOrOpenOnepass")),
+      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
     );
   }
 
@@ -364,7 +358,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     center(
       mark("l"),
       h("h1", null, errorText(code)),
-      h("div", { class: "actions" }, button(tr("Réessayer", "Try again"), "btn btn-primary", () => void track(load()))),
+      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
     );
   }
 
@@ -387,7 +381,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   };
 
   function renderMain(): void {
-    const placeholder = tr("Rechercher dans OnePass", "Search OnePass");
+    const placeholder = t("popup.searchOnepass");
     const input = h("input", {
       attrs: { type: "search", placeholder, "aria-label": placeholder, maxlength: "256" },
     });
@@ -396,7 +390,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       const q = input.value;
       searchTimer = timers.setTimeout(() => void track(search(q)), SEARCH_DEBOUNCE_MS);
     });
-    const genLabel = tr("Générateur de mot de passe", "Password generator");
+    const genLabel = t("popup.passwordGenerator");
     const genBtn = h(
       "button",
       {
@@ -422,7 +416,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
           { class: "account", attrs: { type: "button", title: account }, on: { click: () => confirmForget() } },
           h("span", { class: "avatar", attrs: { "aria-hidden": "true" } }, initials(account)),
           h("span", null, account),
-          srOnly(tr("Oublier cet appairage", "Forget this pairing")),
+          srOnly(t("popup.forgetPairing")),
         ),
       ),
       h("div", { class: "pp-body" }, side, main),
@@ -437,8 +431,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "center" },
-        h("h2", null, tr("Choisis un élément", "Pick an item")),
-        h("p", null, tr("Ou ouvre le générateur pour créer un mot de passe.", "Or open the generator to make a password.")),
+        h("h2", null, t("popup.pickItem")),
+        h("p", null, t("popup.orOpenGeneratorTo")),
       ),
     );
   }
@@ -448,14 +442,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     let title: string;
     let empty: string | null = null;
     if (results) {
-      title = tr("Résultats", "Results");
-      if (items.length === 0) empty = tr("Aucun résultat", "No results");
+      title = t("popup.results");
+      if (items.length === 0) empty = t("popup.noResults");
     } else if (domain) {
-      title = tr(`Suggestions pour ${domain}`, `Suggestions for ${domain}`);
-      if (items.length === 0) empty = tr(`Aucun login pour ${domain}`, `No login for ${domain}`);
+      title = t("popup.suggestionsForDomain", { domain });
+      if (items.length === 0) empty = t("popup.noLoginForDomain", { domain });
     } else {
-      title = tr("Suggestions", "Suggestions");
-      empty = tr("Cette page n'est pas un site HTTPS.", "This page is not an HTTPS site.");
+      title = t("popup.suggestions");
+      empty = t("popup.pageNotHttpsSite");
     }
     const list = h("div", { class: "pp-list", attrs: { role: "listbox", "aria-label": title } });
     // What one click does on this page, then its alternatives (listed first by the worker).
@@ -463,9 +457,9 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       plan && !results
         ? h(
             "div",
-            { class: "plan-line glass", attrs: { role: "group", "aria-label": tr("Remplissage en un clic", "One-click fill") } },
+            { class: "plan-line glass", attrs: { role: "group", "aria-label": t("popup.oneClickFill") } },
             h("span", { class: "plan-text" }, planText(plan)),
-            button(tr("Remplir", "Fill"), "btn btn-primary", () => void track(smartFill())),
+            button(t("common.fill"), "btn btn-primary", () => void track(smartFill())),
           )
         : null;
     for (const it of items) {
@@ -493,7 +487,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         ? h(
             "div",
             { class: "pp-foot" },
-            button(tr("Oublier mes choix sur ce site", "Forget my choices on this site"), "btn-link", () => void track(forgetSite())),
+            button(t("popup.forgetMyChoicesOn"), "btn-link", () => void track(forgetSite())),
           )
         : null,
     );
@@ -502,13 +496,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   async function smartFill(): Promise<void> {
     const r = await call(deps.send, { type: "popup_smart_fill" }, parseFilled);
     if (!r.ok) return handleError(r.code);
-    toast(tr(`Remplissage lancé sur ${r.value.domain}`, `Filling on ${r.value.domain}`));
+    toast(t("popup.fillingOnDomain", { domain: r.value.domain }));
   }
 
   async function forgetSite(): Promise<void> {
     const r = await call(deps.send, { type: "popup_forget_site" }, parseForgotSite);
     if (!r.ok) return handleError(r.code);
-    toast(tr(`Choix oubliés pour ${r.value.domain}`, `Choices forgotten for ${r.value.domain}`));
+    toast(t("popup.choicesForgottenForDomain", { domain: r.value.domain }));
   }
 
   /** Only the reply to the latest query is shown (replies may cross). */
@@ -553,14 +547,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     const { summary: s, website } = r.value;
     const card = h("div", { class: "card" });
     const firstLabel =
-      s.kind === "login" ? tr("nom d’utilisateur", "username") : s.kind === "card" ? tr("carte", "card") : tr("identité", "identity");
+      s.kind === "login" ? t("popup.username") : s.kind === "card" ? t("popup.card") : t("popup.identity");
     card.append(
       fieldRow(
         firstLabel,
         s.subtitle,
         s.kind === "login" && s.subtitle !== ""
-          ? iconButton(tr("Copier le nom d’utilisateur", "Copy username"), "copy", () =>
-              void track(copy(s.subtitle, tr("Nom d’utilisateur copié", "Username copied"))),
+          ? iconButton(t("popup.copyUsername"), "copy", () =>
+              void track(copy(s.subtitle, t("popup.usernameCopied"))),
             )
           : null,
       ),
@@ -568,7 +562,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (s.kind === "login" && s.has_password) {
       const value = h("span", { class: "field-value mono pwd-value" }, MASK);
       let shown: string | null = null;
-      const label = { show: tr("Afficher", "Show"), hide: tr("Masquer", "Hide") };
+      const label = { show: t("common.show"), hide: t("common.hide") };
       const toggle: HTMLButtonElement = button(label.show, "btn btn-link", () =>
         void track(
           (async () => {
@@ -588,7 +582,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       );
       // Copy asks the app for the value at the click, like "Afficher"; it is
       // never kept once the row is gone.
-      const copyPwd = iconButton(tr("Copier le mot de passe", "Copy password"), "copy", () =>
+      const copyPwd = iconButton(t("popup.copyPassword"), "copy", () =>
         void track(
           (async () => {
             let secret = shown;
@@ -597,11 +591,11 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
               if (!v.ok) return handleError(v.code);
               secret = v.value.value;
             }
-            await copy(secret, tr("Mot de passe copié", "Password copied"));
+            await copy(secret, t("popup.passwordCopied"));
           })(),
         ),
       );
-      card.append(fieldRow(tr("mot de passe", "password"), value, toggle, copyPwd));
+      card.append(fieldRow(t("menu.password"), value, toggle, copyPwd));
     }
     if (s.kind === "login" && s.has_totp) {
       const code = h("span", { class: "field-value mono totp-code" }, "··· ···");
@@ -614,12 +608,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         left.textContent = `${remaining} s`;
         countdown.set(remaining);
         pill.classList.toggle("low", remaining <= 5);
-        pill.setAttribute("aria-label", tr(`encore ${remaining} secondes`, `${remaining} seconds left`));
+        pill.setAttribute("aria-label", t("popup.remainingSecondsLeft", { remaining }));
       };
-      const copyCode = iconButton(tr("Copier le code", "Copy code"), "copy", () => {
-        if (current !== "") void track(copy(current, tr("Code copié", "Code copied")));
+      const copyCode = iconButton(t("popup.copyCode"), "copy", () => {
+        if (current !== "") void track(copy(current, t("popup.codeCopied")));
       });
-      card.append(fieldRow(tr("code à usage unique", "one-time code"), code, pill, copyCode));
+      card.append(fieldRow(t("popup.oneTimeCode"), code, pill, copyCode));
       // One request at a time: ticks during a slow refresh do not stack.
       let inFlight = false;
       const refresh = async () => {
@@ -648,12 +642,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       }, 1000);
     }
     if (website) {
-      card.append(h("div", { class: "field-row website" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, tr("site web", "website")), h("span", { class: "field-value" }, website))));
+      card.append(h("div", { class: "field-row website" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, t("popup.website")), h("span", { class: "field-value" }, website))));
     }
-    const fill = button(tr("Remplir", "Fill"), "btn btn-primary", () =>
+    const fill = button(t("common.fill"), "btn btn-primary", () =>
       void track(
         call(deps.send, { type: "popup_fill", itemId }, parseFilled).then((f) => {
-          if (f.ok) toast(tr(`Rempli sur ${f.value.domain}`, `Filled on ${f.value.domain}`));
+          if (f.ok) toast(t("popup.filledOnDomain", { domain: f.value.domain }));
           else handleError(f.code);
         }),
       ),
@@ -701,12 +695,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   /** The length slider (8 to 64), its value shown beside it. */
   function lengthLine(value: number, onChange: (n: number) => void): HTMLElement {
     const range = h("input", {
-      attrs: { type: "range", min: String(CUSTOM_MIN_LENGTH), max: String(CUSTOM_MAX_LENGTH), value: String(value), "aria-label": tr("Longueur", "Length") },
+      attrs: { type: "range", min: String(CUSTOM_MIN_LENGTH), max: String(CUSTOM_MAX_LENGTH), value: String(value), "aria-label": t("popup.length") },
     });
     const shown = h("span", { class: "field-note" }, String(value));
     range.addEventListener("input", () => (shown.textContent = range.value));
     range.addEventListener("change", () => onChange(Number(range.value)));
-    return h("label", { class: "gen-line" }, tr("Longueur", "Length"), range, shown);
+    return h("label", { class: "gen-line" }, t("popup.length"), range, shown);
   }
 
   async function generate(): Promise<void> {
@@ -732,7 +726,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   function colored(pw: string): HTMLElement {
-    const out = h("div", { class: "gen-out", attrs: { "aria-label": tr("Mot de passe généré", "Generated password") } });
+    const out = h("div", { class: "gen-out", attrs: { "aria-label": t("popup.generatedPassword") } });
     for (const ch of pw) {
       const cls = /[0-9]/.test(ch) ? "ch-digit" : /\p{L}/u.test(ch) ? "" : "ch-symbol";
       out.append(cls ? h("span", { class: cls }, ch) : ch);
@@ -741,7 +735,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   async function renderGenerator(): Promise<void> {
-    const select = h("select", { class: "select", attrs: { "aria-label": tr("Type de mot de passe", "Password type") } });
+    const select = h("select", { class: "select", attrs: { "aria-label": t("popup.passwordType") } });
     for (const t of GENERATOR_TYPES) {
       const o = h("option", { attrs: { value: t.kind } }, t.label);
       if (t.kind === genKind) o.selected = true;
@@ -754,7 +748,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         void track(generate());
       }
     });
-    const settings = h("div", { class: "card" }, h("label", { class: "gen-line" }, tr("Type", "Type"), select));
+    const settings = h("div", { class: "card" }, h("label", { class: "gen-line" }, t("popup.type"), select));
     if (genKind === "random") {
       settings.append(
         lengthLine(genLength, (n) => {
@@ -766,7 +760,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (genKind === "smart") {
       // The profile the extension generates with on sites (menu, fill, save prompt).
       const current = typeof profile === "string" ? profile : "custom";
-      const pick = h("select", { class: "select", attrs: { "aria-label": tr("Profil sur les sites", "Profile on sites") } });
+      const pick = h("select", { class: "select", attrs: { "aria-label": t("popup.profileOnSites") } });
       for (const c of PROFILE_CHOICES) {
         const o = h("option", { attrs: { value: c.value } }, c.label);
         if (c.value === current) o.selected = true;
@@ -777,14 +771,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         if (v === "strong" || v === "readable") void track(saveProfile(v));
         else if (v === "custom") void track(saveProfile({ kind: "custom", length: Math.min(CUSTOM_MAX_LENGTH, Math.max(CUSTOM_MIN_LENGTH, genLength)), symbols: true }));
       });
-      settings.append(h("label", { class: "gen-line" }, tr("Sur les sites", "On sites"), pick));
+      settings.append(h("label", { class: "gen-line" }, t("popup.onSites"), pick));
       if (typeof profile === "object") {
         const custom = profile;
         settings.append(lengthLine(custom.length, (n) => void track(saveProfile({ ...custom, length: n }))));
-        const symbols = h("input", { attrs: { type: "checkbox", "aria-label": tr("Symboles", "Symbols") } });
+        const symbols = h("input", { attrs: { type: "checkbox", "aria-label": t("popup.symbols") } });
         symbols.checked = custom.symbols;
         symbols.addEventListener("change", () => void track(saveProfile({ ...custom, symbols: symbols.checked })));
-        settings.append(h("label", { class: "gen-line" }, tr("Symboles", "Symbols"), symbols));
+        settings.append(h("label", { class: "gen-line" }, t("popup.symbols"), symbols));
       }
     }
     let historyList: HTMLElement | null = null;
@@ -793,7 +787,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       const entries: GeneratorEntry[] = r.ok ? r.value.entries : [];
       historyList = h("ul", { class: "history-list" });
       for (const e of entries) historyList.append(h("li", null, e.password));
-      if (entries.length === 0) historyList.append(h("li", null, tr("Aucun mot de passe généré", "No generated password")));
+      if (entries.length === 0) historyList.append(h("li", null, t("popup.noGeneratedPassword")));
     }
     const strength = h("div", { class: "strength" }, h("div"));
     (strength.firstChild as HTMLElement).style.width = `${Math.min(100, Math.round((genEntropy / 100) * 100))}%`;
@@ -802,12 +796,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "gen-head" },
-        h("h2", null, tr("Générateur de mot de passe", "Password generator")),
+        h("h2", null, t("popup.passwordGenerator")),
         h(
           "button",
           {
             class: "btn-icon",
-            attrs: { type: "button", "aria-label": tr("Fermer le générateur", "Close the generator") },
+            attrs: { type: "button", "aria-label": t("popup.closeGenerator") },
             on: {
               click: () => {
                 view = "none";
@@ -828,26 +822,26 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
           { class: "strength-line" },
           strength,
           h("span", { class: "strength-label" }, strengthText(genEntropy)),
-          srOnly(tr(`Entropie : ${Math.round(genEntropy)} bits`, `Entropy: ${Math.round(genEntropy)} bits`)),
+          srOnly(t("popup.entropyValueBits", { value: Math.round(genEntropy) })),
         ),
         h(
           "div",
           { class: "actions" },
-          button(tr("Copier", "Copy"), "btn", () => void track(copy(genPassword, tr("Copié", "Copied")))),
+          button(t("common.copy"), "btn", () => void track(copy(genPassword, t("common.copied")))),
           h(
             "button",
             {
               class: "btn-icon",
-              attrs: { type: "button", "aria-label": tr("Générer un autre", "Generate another"), title: tr("Générer un autre", "Generate another") },
+              attrs: { type: "button", "aria-label": t("popup.generateAnother"), title: t("popup.generateAnother") },
               on: { click: () => void track(generate()) },
             },
             icon("refresh", 16),
           ),
           h("span", { class: "stack" }),
-          button(tr("Remplir", "Fill"), "btn btn-primary", () =>
+          button(t("common.fill"), "btn btn-primary", () =>
             void track(
               call(deps.send, { type: "popup_fill_generated", password: genPassword }, parseFilled).then((f) => {
-                if (f.ok) toast(tr(`Rempli sur ${f.value.domain}`, `Filled on ${f.value.domain}`));
+                if (f.ok) toast(t("popup.filledOnDomain", { domain: f.value.domain }));
                 else handleError(f.code);
               }),
             ),
@@ -868,7 +862,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             },
           },
           icon("history", 16),
-          h("span", { class: "stack" }, tr("Historique du générateur", "Generator history")),
+          h("span", { class: "stack" }, t("popup.generatorHistory")),
           icon("chevron", 10),
         ),
         historyList,

@@ -2,7 +2,7 @@
 // raised object (darker band under it, flat face, light top edge) drawn in a
 // 100 x 100 box. Original drawings in the app's palette; shapes are constants
 // of this file, the only data used is one monogram letter set as text.
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -108,15 +108,15 @@ export function artLabel(kind: ArtKind): string {
     case "login":
       return "Login";
     case "password":
-      return tr("Mot de passe", "Password");
+      return t("term.password");
     case "card":
-      return tr("Carte bancaire", "Credit card");
+      return t("art.creditCard");
     case "identity":
-      return tr("Identité", "Identity");
+      return t("art.identity");
     case "note":
-      return tr("Note sécurisée", "Secure note");
+      return t("art.secureNote");
     default:
-      return tr("Élément", "Item");
+      return t("term.item");
   }
 }
 

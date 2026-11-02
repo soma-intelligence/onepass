@@ -12,7 +12,7 @@
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
 import type { MenuKey, ProviderId, UiToBg } from "../shared/messages";
-import { tr } from "../shared/i18n";
+import { t } from "../shared/i18n";
 import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
 import {
   ClickGuard,
@@ -45,15 +45,15 @@ const LOGIN_FORMS = new Set(["login", "signup", "change_password", "otp"]);
 const NEW_PASSWORD_FORMS = new Set(["signup", "change_password"]);
 
 function emptyText(init: MenuInit): string {
-  if (init.formKind === "card") return tr("Aucune carte dans OnePass", "No card in OnePass");
-  if (init.formKind === "identity" || init.formKind === "address") return tr("Aucune identité dans OnePass", "No identity in OnePass");
-  return tr(`Aucun login pour ${hostOf(init.origin)}`, `No login for ${hostOf(init.origin)}`);
+  if (init.formKind === "card") return t("menu.noCardInOnepass");
+  if (init.formKind === "identity" || init.formKind === "address") return t("menu.noIdentityInOnepass");
+  return t("menu.noLoginForHost", { host: hostOf(init.origin) });
 }
 
 /** How a password login signs in, after its username. */
 function methodOf(it: Summary): string {
   if (it.kind !== "login") return "";
-  return it.has_totp ? tr("mot de passe et code", "password and code") : tr("mot de passe", "password");
+  return it.has_totp ? t("menu.passwordAndCode") : t("menu.password");
 }
 
 /** An empty `menu_keys` answer sooner than this: ask again only after it. */
@@ -211,15 +211,15 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             }),
           },
         },
-        tr("Déverrouiller dans OnePass", "Unlock in OnePass"),
+        t("menu.unlockInOnepass"),
       );
-      body = messageBlock(tr("OnePass est verrouillé", "OnePass is locked"), undefined, btn);
+      body = messageBlock(t("ui.onepassLocked"), undefined, btn);
     } else if (code === "unpaired") {
-      body = messageBlock(tr("Appairer OnePass depuis la barre d'outils", "Pair OnePass from the toolbar"));
+      body = messageBlock(t("menu.pairOnepassFromToolbar"));
     } else if (code === "host_missing") {
       body = messageBlock(
-        tr("App OnePass introuvable", "OnePass app not found"),
-        tr("Ouvre l'app OnePass sur cet ordinateur, puis réessaie.", "Open the OnePass app on this computer, then try again."),
+        t("ui.onepassAppNotFound"),
+        t("menu.openOnepassAppOn"),
       );
     } else {
       body = messageBlock(errorText(code));
@@ -255,7 +255,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // On a provider's chooser: the account linked to the site comes first.
     const linked = init.linked;
     const items = linked ? [...init.items].sort((a, b) => Number(b.item_id === linked.itemId) - Number(a.item_id === linked.itemId)) : init.items;
-    const fill = tr("Remplir", "Fill");
+    const fill = t("common.fill");
     for (const it of items) {
       const providerOnly = it.kind === "login" && !it.has_password && it.methods.length > 0;
       if (!providerOnly) {
@@ -267,7 +267,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             sub: it.subtitle,
             ...(post ? { post: ` · ${post}` } : {}),
             lead: wayArt(it, undefined),
-            act: isLinked ? tr(`Utilisé pour ${linked.site}`, `Used for ${linked.site}`) : fill,
+            act: isLinked ? t("menu.usedForSite", { site: linked.site }) : fill,
             // The best item of a plan that could not choose (listed first by the worker).
             accent: isLinked || init.best === it.item_id,
             run: pick(it.item_id),
@@ -282,10 +282,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         list.append(
           option({
             label: it.title,
-            pre: tr(`Avec ${name} · `, `With ${name} · `),
+            pre: t("menu.withName", { name }),
             sub: def?.email ?? m.account_email,
             lead: wayArt(it, m.provider),
-            act: tr("Continuer", "Continue"),
+            act: t("common.continue"),
             attrs: { "data-provider": m.provider },
             run: signin(it.item_id, m.provider, def?.itemId),
           }),
@@ -318,7 +318,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
-          label: tr("Générer un mot de passe", "Generate a password"),
+          label: t("menu.generatePassword"),
           lead: glyphTile("key", 16),
           run: async () => {
             if (!token) return;
@@ -333,7 +333,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       if (extras.length === 0) extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
-          label: tr("Enregistrer un nouveau login", "Save a new login"),
+          label: t("menu.saveNewLogin"),
           lead: glyphTile("plus", 12),
           cls: "row-quiet",
           run: async () => {
@@ -347,7 +347,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // Only options (and decorative separators) inside the listbox.
     const listbox =
       list.childElementCount + extras.length > 0
-        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": tr("Suggestions OnePass", "OnePass suggestions") } }, list, ...extras)
+        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, list, ...extras)
         : null;
     mount(container, header(init.origin), empty, listbox, errLine);
     active = -1;
@@ -362,7 +362,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       pre: `${name} · `,
       sub: a.title,
       lead: h("span", { class: "way-glyph", attrs: { "aria-hidden": "true" } }, providerGlyph(p, 14)),
-      act: tr("Continuer", "Continue"),
+      act: t("common.continue"),
       cls: "row-sub",
       attrs: { "data-provider": p, "data-account": a.itemId },
       run,

@@ -8,7 +8,7 @@
 //   never listens to `message` events;
 // - every reply is validated (parse.ts) before anything is rendered.
 import type { ProviderId, UiToBg } from "../shared/messages";
-import { tr } from "../shared/i18n";
+import { t, tn } from "../shared/i18n";
 import { PROVIDERS } from "../shared/providers";
 import { type ArtKind, art } from "./art";
 
@@ -234,7 +234,7 @@ export function providerLabel(id: ProviderId): string {
 
 /** "Autre compte Google", or "Autres comptes Google" when there are several. */
 export function otherAccounts(name: string, n: number): string {
-  return n > 1 ? tr(`Autres comptes ${name}`, `Other ${name} accounts`) : tr(`Autre compte ${name}`, `Another ${name} account`);
+  return tn("ui.otherAccounts", n, { name });
 }
 
 /** The provider's mark as a neutral monochrome glyph (currentColor). */
@@ -360,47 +360,44 @@ export async function call<T>(send: Send, msg: UiToBg, parse: (v: unknown) => T 
 export function errorText(code: string): string {
   switch (code) {
     case "version":
-      return tr("L'extension et l'app OnePass ne sont pas à la même version.", "The extension and the OnePass app are not on the same version.");
+      return t("ui.extensionAndOnepassApp");
     case "bad_mac":
     case "bad_frame":
-      return tr("Échange avec l'app OnePass refusé. Réessaie.", "Exchange with the OnePass app refused. Try again.");
+      return t("ui.exchangeWithOnepassApp");
     case "locked":
-      return tr("OnePass est verrouillé", "OnePass is locked");
+      return t("ui.onepassLocked");
     case "not_found":
-      return tr("Élément introuvable.", "Item not found.");
+      return t("ui.itemNotFound");
     case "origin_mismatch":
-      return tr("La page a changé : remplissage annulé.", "The page changed: fill cancelled.");
+      return t("ui.pageChangedFillCancelled");
     case "insecure_origin":
-      return tr("Page non sécurisée (HTTP) : remplissage refusé.", "Insecure page (HTTP): fill refused.");
+      return t("ui.insecurePageHttpFill");
     case "cross_site_frame":
-      return tr("Cadre d'un autre site : remplissage refusé.", "Frame from another site: fill refused.");
+      return t("ui.frameFromAnotherSite");
     case "not_allowed":
-      return tr("Action non permise ici.", "Action not allowed here.");
+      return t("ui.actionNotAllowedHere");
     case "reprompt_required":
-      return tr("Confirme dans l'app OnePass pour cet élément.", "Confirm this item in the OnePass app.");
+      return t("ui.confirmItemInOnepass");
     case "rate_limited":
-      return tr("Trop de demandes. Réessaie dans une minute.", "Too many requests. Try again in a minute.");
+      return t("ui.tooManyRequestsTry");
     case "invalid":
-      return tr("Demande refusée.", "Request refused.");
+      return t("ui.requestRefused");
     case "unpaired":
-      return tr("OnePass n'est pas appairé.", "OnePass is not paired.");
+      return t("ui.onepassNotPaired");
     case "host_missing":
-      return tr("App OnePass introuvable", "OnePass app not found");
+      return t("ui.onepassAppNotFound");
     case "timeout":
-      return tr("L'app OnePass ne répond pas.", "The OnePass app is not responding.");
+      return t("ui.onepassAppNotResponding");
     case "refused":
-      return tr(
-        "Appairage refusé dans l'app OnePass. Elle demande Touch ID : active-le dans OnePass (Réglages > Sécurité), puis recommence.",
-        "Pairing refused in the OnePass app. It asks for Touch ID: turn it on in OnePass (Settings > Security), then try again.",
-      );
+      return t("ui.pairingRefusedInOnepass");
     case "expired":
-      return tr("Le code a expiré. Recommence l'appairage.", "The code expired. Start pairing again.");
+      return t("ui.codeExpiredStartPairing");
     case "no_form":
-      return tr("Aucun formulaire à remplir sur cette page.", "No form to fill on this page.");
+      return t("ui.noFormToFill");
     case "site_refused":
-      return tr("Ce site refuse le mot de passe généré", "This site refuses the generated password");
+      return t("ui.siteRefusesGeneratedPassword");
     default:
-      return tr("Erreur interne de OnePass.", "OnePass internal error.");
+      return t("ui.onepassInternalError");
   }
 }
 
