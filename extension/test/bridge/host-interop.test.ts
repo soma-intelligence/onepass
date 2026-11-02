@@ -5,7 +5,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BridgeError } from "../../src/bridge/bytes";
@@ -14,7 +14,10 @@ import { type PairingRecord, recordFromJson, recordToJson } from "../../src/brid
 import { NodeTransport } from "./node-transport";
 
 const CORE = fileURLToPath(new URL("../../../core/", import.meta.url));
-const BIN = join(CORE, "target/debug/onepass-native-host");
+// Where `cargo build` below puts the binary: a CARGO_TARGET_DIR in the
+// environment moves it, and a stale copy under core/target must not run.
+const TARGET = process.env.CARGO_TARGET_DIR ? resolve(CORE, process.env.CARGO_TARGET_DIR) : join(CORE, "target");
+const BIN = join(TARGET, "debug/onepass-native-host");
 const FIXTURE = join(CORE, "onepass-native-host/fixtures/e2e.json");
 const ATLAS = "https://atlas-cloud.test";
 const PATH = `${join(homedir(), ".cargo/bin")}:${process.env.PATH ?? ""}`;
@@ -56,7 +59,16 @@ describe.skipIf(!hasCargo)("interop with onepass-native-host", () => {
         reprompt: "deny",
       }),
     );
-  }, 600_000);
+    // Build the fixture vault now: the first connection of a fresh data
+    // directory would otherwise sign the fixture account (seconds of CPU in
+    // a debug build, far more on a loaded machine) while the first request
+    // waits on its 30 s timeout.
+    execFileSync(BIN, ["prepare"], {
+      env: { ...process.env, ONEPASS_NATIVE_HOST_CONFIG: config },
+      stdio: "pipe",
+      timeout: 600_000,
+    });
+  }, 1_200_000);
 
   afterAll(async () => {
     for (const t of transports) t.close();

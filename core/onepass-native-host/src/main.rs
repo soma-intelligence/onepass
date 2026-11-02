@@ -3,6 +3,8 @@
 //! `onepass-native-host [--config <path>] [<caller-origin-or-manifest> [<extension-id>]]`
 //! serves one browser connection over stdio. `onepass-native-host approve
 //! <code> [--config <path>]` approves a pending pairing (`file` mode).
+//! `onepass-native-host prepare [--config <path>]` builds the fixture
+//! vault cache ahead of the first connection.
 
 mod config;
 mod fixture;
@@ -30,6 +32,8 @@ struct Args {
     config: Option<PathBuf>,
     /// `approve <code>`.
     approve: Option<String>,
+    /// `prepare`.
+    prepare: bool,
     /// Caller arguments given by the browser.
     positional: Vec<String>,
 }
@@ -61,9 +65,11 @@ fn parse_args(raw: Vec<String>) -> Result<Args, HostError> {
     } else {
         None
     };
+    let prepare = positional.first().map(String::as_str) == Some("prepare");
     Ok(Args {
         config,
         approve,
+        prepare,
         positional,
     })
 }
@@ -74,6 +80,21 @@ fn approve(cfg: &Config, code: &str) -> Result<(), HostError> {
         .map_err(|e| HostError::new(format!("data directory: {}", e.kind())))?;
     write_atomic(&cfg.data_dir.join(APPROVED_FILE), code.trim().as_bytes())
         .map_err(|e| HostError::new(format!("cannot write {APPROVED_FILE}: {}", e.kind())))
+}
+
+/// `prepare`: build the fixture vault cache now, so that the first
+/// connection reopens it instead of signing the fixture account while the
+/// extension's first request waits. Nothing to do for the dev source.
+fn prepare(cfg: &Config) -> Result<(), HostError> {
+    check_build(cfg, !cfg!(debug_assertions))?;
+    match &cfg.source {
+        Source::Fixture { path } => {
+            ensure_dir(&cfg.data_dir)
+                .map_err(|e| HostError::new(format!("data directory: {}", e.kind())))?;
+            fixture::load_fixture_cached(path, &cfg.data_dir.join(FIXTURE_CACHE)).map(|_| ())
+        }
+        Source::Dev { .. } => Ok(()),
+    }
 }
 
 /// Serve the connection, the vault loading on its own thread meanwhile.
@@ -166,6 +187,7 @@ fn main() -> ExitCode {
         let cfg = Config::load(&Config::locate(args.config)?)?;
         match args.approve {
             Some(code) => approve(&cfg, &code),
+            None if args.prepare => prepare(&cfg),
             None => run_host(&cfg, &args.positional),
         }
     });
@@ -203,6 +225,36 @@ mod tests {
 
         assert!(parse_args(args(&["approve"])).is_err());
         assert!(parse_args(args(&["--config"])).is_err());
+
+        let a = parse_args(args(&["prepare", "--config", "/c.json"])).unwrap();
+        assert!(a.prepare);
+        assert_eq!(a.approve, None);
+        assert!(!parse_args(args(&["chrome-extension://x/"])).unwrap().prepare);
+    }
+
+    #[test]
+    fn prepare_builds_the_fixture_cache_once() {
+        // The first connection of a fresh data directory otherwise builds
+        // the fixture vault (one SLH-DSA signature, seconds of CPU in a
+        // debug build) while the extension's first request waits.
+        let dir = std::env::temp_dir().join(format!("onepass-prepare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/e2e.json");
+        let json = format!(
+            r#"{{"data_dir":{},"allowed_extensions":["x"],"source":{{"kind":"fixture","path":{}}},"approval":"auto"}}"#,
+            serde_json::to_string(&dir).unwrap(),
+            serde_json::to_string(&fixture).unwrap()
+        );
+        let cfg = Config::parse(json.as_bytes()).unwrap();
+        prepare(&cfg).unwrap();
+        let cache = dir.join(FIXTURE_CACHE);
+        let first = std::fs::read(&cache).unwrap();
+        // A second run reopens the cache instead of rebuilding it.
+        prepare(&cfg).unwrap();
+        assert_eq!(std::fs::read(&cache).unwrap(), first);
+        // Nothing to prepare for the dev source.
+        assert!(prepare(&config(DEV, "auto")).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn config(source: &str, approval: &str) -> Config {
