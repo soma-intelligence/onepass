@@ -77,11 +77,15 @@ extension VaultSession {
 
     // MARK: - Devices
 
-    /// Reads the signed device list and this device's id again.
+    /// Reads the signed device list, this device's id and the rotation acknowledgments again. The
+    /// acknowledgments are display only: one that cannot be read shows nothing, never an error.
     public func refreshDevices() async throws {
-        let (list, me) = try await read { session in (try session.devices(), session.thisDeviceId()) }
+        let (list, me, acks) = try await read { session in
+            (try session.devices(), session.thisDeviceId(), (try? session.rotationAcks()) ?? [])
+        }
         devices = list
         thisDeviceID = me
+        rotationAcks = Dictionary(acks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         devicesRefreshed?(list)
     }
 

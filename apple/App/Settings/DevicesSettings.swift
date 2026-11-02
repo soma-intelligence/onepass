@@ -43,14 +43,19 @@ struct DevicesSettings: View {
         Form {
             Section {
                 ForEach(active, id: \.id) { device in
-                    DeviceRow(device: device, isThisDevice: isThisDevice(device)) {
+                    DeviceRow(device: device, isThisDevice: isThisDevice(device), ack: session.rotationAcks[device.id]) {
                         deviceMenu(device)
                     }
                 }
             } header: {
                 Text("Sur ton compte")
             } footer: {
-                Text("settings.devices.list.footer")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("settings.devices.list.footer")
+                    if !session.rotationAcks.isEmpty {
+                        Text("settings.devices.ack.footer")
+                    }
+                }
             }
             #if os(macOS)
             if let bridge = model.browserBridge {
@@ -96,7 +101,7 @@ struct DevicesSettings: View {
             if !revoked.isEmpty {
                 Section("Retirés") {
                     ForEach(revoked, id: \.id) { device in
-                        DeviceRow(device: device, isThisDevice: false) { EmptyView() }
+                        DeviceRow(device: device, isThisDevice: false, ack: nil) { EmptyView() }
                     }
                 }
             }
@@ -232,10 +237,12 @@ struct DevicesSettings: View {
 }
 
 /// A device of the list: its kind, name, mode and date; "Cet appareil" for this one; a revoked one
-/// greyed with its revocation date.
+/// greyed with its revocation date. After a key rotation, "À jour" or "En attente" from the device's
+/// signed acknowledgment (spec 6.8, O6; display only).
 private struct DeviceRow<Actions: View>: View {
     let device: FfiDevice
     let isThisDevice: Bool
+    let ack: FfiDeviceAck?
     @ViewBuilder let actions: () -> Actions
 
     private var revokedAt: Date? { device.revokedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
@@ -275,6 +282,10 @@ private struct DeviceRow<Actions: View>: View {
                 Text(detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if revokedAt == nil, let ack {
+                    AckLabel(acknowledged: ack.acknowledged)
+                        .accessibilityIdentifier("settings.devices.ack.\(device.id)")
+                }
             }
             Spacer(minLength: 0)
             if revokedAt == nil { actions() }
@@ -282,6 +293,21 @@ private struct DeviceRow<Actions: View>: View {
         .opacity(revokedAt == nil ? 1 : 0.55)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("settings.devices.row.\(device.id)")
+    }
+}
+
+/// "À jour" (the device confirmed the current keys) or "En attente" (spec 6.8, 9).
+private struct AckLabel: View {
+    let acknowledged: Bool
+
+    var body: some View {
+        Label {
+            Text(acknowledged ? "settings.devices.ack.upToDate" : "settings.devices.ack.pending")
+        } icon: {
+            Image(systemName: acknowledged ? "checkmark.circle.fill" : "clock")
+        }
+        .font(.caption)
+        .foregroundStyle(acknowledged ? Color.green : Color.secondary)
     }
 }
 

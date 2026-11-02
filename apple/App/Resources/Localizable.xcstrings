@@ -24477,6 +24477,93 @@
         }
       }
     },
+    "settings.devices.ack.footer" : {
+      "comment" : "Réglages > Appareils: list footer line shown after a key rotation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since the last key change: “Up to Date” if the device confirmed the new keys, “Pending” otherwise."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde el último cambio de claves: «Al día» si el dispositivo confirmó las nuevas claves, «Pendiente» si no."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis le dernier changement de clés : « À jour » si l'appareil a confirmé les nouvelles clés, « En attente » sinon."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dall'ultimo cambio delle chiavi: «Aggiornato» se il dispositivo ha confermato le nuove chiavi, «In attesa» altrimenti."
+          }
+        }
+      }
+    },
+    "settings.devices.ack.pending" : {
+      "comment" : "Réglages > Appareils: device row status, the device has not confirmed the new keys",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pending"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pendiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa"
+          }
+        }
+      }
+    },
+    "settings.devices.ack.upToDate" : {
+      "comment" : "Réglages > Appareils: device row status, the device confirmed the new keys",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to Date"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornato"
+          }
+        }
+      }
+    },
     "settings.devices.add.footer" : {
       "comment" : "Réglages > Appareils: how to add, iPhone",
       "localizations" : {

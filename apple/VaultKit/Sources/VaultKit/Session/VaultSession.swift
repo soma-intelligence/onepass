@@ -35,6 +35,10 @@ public final class VaultSession {
     public internal(set) var devices: [FfiDevice] = []
     /// This device's id in the device list, once known (`refreshDevices`).
     public internal(set) var thisDeviceID: String?
+    /// After a key rotation, each device's signed acknowledgment of this device's current head, by
+    /// device id (spec 6.8, O6: "à jour" or "en attente"). Empty before the first rotation, on a
+    /// legacy device and when it cannot be read: display only, never a trust decision. Emptied on lock.
+    public internal(set) var rotationAcks: [String: FfiDeviceAck] = [:]
     /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
     /// the revoked screen must not say "effacées". `refresh` tries again.
     public private(set) var revokedEraseFailed = false
@@ -830,6 +834,7 @@ public final class VaultSession {
 
     private func clearMemory() {
         devices = []
+        rotationAcks = [:]
         summaries = []
         allVaults = []
         recents = []
