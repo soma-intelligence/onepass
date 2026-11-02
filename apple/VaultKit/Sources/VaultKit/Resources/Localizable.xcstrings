@@ -9,10 +9,22 @@
             "value" : "%lld sign-in accounts are exposed."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cuentas de inicio de sesión están expuestas."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld comptes de connexion sont exposés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld account di accesso sono esposti."
           }
         }
       }
@@ -25,10 +37,22 @@
             "value" : "%lld passwords appear in breaches."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld contraseñas aparecen en filtraciones."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld mots de passe apparaissent dans des fuites."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld password compaiono in violazioni."
           }
         }
       }
@@ -41,10 +65,22 @@
             "value" : "%lld sites were breached since you last changed your password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sitios han sufrido una filtración desde tu último cambio de contraseña."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld sites ont été piratés depuis ton dernier changement de mot de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld siti sono stati violati dopo l'ultima modifica della password."
           }
         }
       }
@@ -57,10 +93,22 @@
             "value" : "%lld items expire soon."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld elementos caducan pronto."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld éléments expirent bientôt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld elementi scadono presto."
           }
         }
       }
@@ -73,10 +121,22 @@
             "value" : "%lld items have expired."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld elementos han caducado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld éléments ont expiré."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld elementi sono scaduti."
           }
         }
       }
@@ -89,10 +149,22 @@
             "value" : "1 sign-in account is exposed."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 cuenta de inicio de sesión está expuesta."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 compte de connexion est exposé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 account di accesso è esposto."
           }
         }
       }
@@ -105,10 +177,22 @@
             "value" : "1 hour"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 hora"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 heure"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 ora"
           }
         }
       }
@@ -121,10 +205,22 @@
             "value" : "1 minute"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minuto"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 minute"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 minuto"
           }
         }
       }
@@ -137,10 +233,22 @@
             "value" : "1 password appears in a breach."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 contraseña aparece en una filtración."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 mot de passe apparaît dans une fuite."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 password compare in una violazione."
           }
         }
       }
@@ -153,10 +261,22 @@
             "value" : "1 site was breached since you last changed your password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 sitio ha sufrido una filtración desde tu último cambio de contraseña."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 site a été piraté depuis ton dernier changement de mot de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 sito è stato violato dopo l'ultima modifica della password."
           }
         }
       }
@@ -169,10 +289,22 @@
             "value" : "1 item has expired."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 elemento ha caducado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 élément a expiré."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 elemento è scaduto."
           }
         }
       }
@@ -185,10 +317,22 @@
             "value" : "1 item expires soon."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 elemento caduca pronto."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 élément expire bientôt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 elemento scade presto."
           }
         }
       }
@@ -201,10 +345,22 @@
             "value" : "15 minutes"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutos"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minutes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minuti"
           }
         }
       }
@@ -217,22 +373,29 @@
             "value" : "5 minutes"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutos"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "5 minutes"
           }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minuti"
+          }
         }
       }
     },
     "accounts.error.alreadyOnDevice" : {
+      "comment" : "Add account: the account signed in is already on this device in another slot.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce compte est déjà sur cet appareil."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -245,23 +408,23 @@
             "value" : "Esta cuenta ya está en este dispositivo."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte est déjà sur cet appareil."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questo account è già su questo dispositivo."
           }
         }
-      },
-      "comment" : "Add account: the account signed in is already on this device in another slot."
+      }
     },
     "accounts.error.primaryAccount" : {
+      "comment" : "Settings > Accounts: the first account cannot be removed, only reset.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise OnePass."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -274,23 +437,23 @@
             "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece OnePass."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise OnePass."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta OnePass."
           }
         }
-      },
-      "comment" : "Settings > Accounts: the first account cannot be removed, only reset."
+      }
     },
     "accounts.error.serverUnavailable" : {
+      "comment" : "Add account sheet: a managed (organisation) account cannot be created yet.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce compte se connecte au serveur de ton organisation, qui n'est pas encore disponible dans cette version."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -303,23 +466,23 @@
             "value" : "Esta cuenta se conecta al servidor de tu organización, que aún no está disponible en esta versión."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce compte se connecte au serveur de ton organisation, qui n'est pas encore disponible dans cette version."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questo account si collega al server della tua organizzazione, che non è ancora disponibile in questa versione."
           }
         }
-      },
-      "comment" : "Add account sheet: a managed (organisation) account cannot be created yet."
+      }
     },
     "accounts.error.storeMismatch" : {
+      "comment" : "Data refused screen: the store file of an account holds another account.",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les données de ce compte ne correspondent pas au compte attendu. Rien n'est ouvert. Retire ce compte de l'appareil puis connecte-toi à nouveau."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -332,14 +495,19 @@
             "value" : "Los datos de esta cuenta no coinciden con la cuenta esperada. No se abre nada. Quita esta cuenta del dispositivo y vuelve a iniciar sesión."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de ce compte ne correspondent pas au compte attendu. Rien n'est ouvert. Retire ce compte de l'appareil puis connecte-toi à nouveau."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "I dati di questo account non corrispondono all'account previsto. Non viene aperto nulla. Rimuovi questo account dal dispositivo, poi accedi di nuovo."
           }
         }
-      },
-      "comment" : "Data refused screen: the store file of an account holds another account."
+      }
     },
     "Ajouter un appareil à ton compte" : {
       "localizations" : {
@@ -349,10 +517,22 @@
             "value" : "Add a device to your account"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir un dispositivo a tu cuenta"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajouter un appareil à ton compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un dispositivo al tuo account"
           }
         }
       }
@@ -365,10 +545,22 @@
             "value" : "An old version was replayed."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha reproducido una versión antigua."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ancienne version rejouée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproposta una vecchia versione."
           }
         }
       }
@@ -381,10 +573,22 @@
             "value" : "Pairing cancelled. Nothing was sent."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlace cancelado. No se ha enviado nada."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Appairage annulé. Rien n'a été envoyé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbinamento annullato. Non è stato inviato niente."
           }
         }
       }
@@ -395,6 +599,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pair %@ with OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlazar %@ con OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbina %@ a OnePass"
           }
         }
       }
@@ -407,10 +623,22 @@
             "value" : "Pair %@ with OnePass"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asociar %@ a OnePass"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Associer %@ à OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Associa %@ a OnePass"
           }
         }
       }
@@ -423,10 +651,22 @@
             "value" : "No device is showing this code. Check the code, bring the two devices closer and make sure they are on the same Wi-Fi."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún dispositivo muestra este código. Comprueba el código, acerca los dos dispositivos y asegúrate de que están en la misma Wi-Fi."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun appareil n'affiche ce code. Vérifie le code, rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun dispositivo mostra questo codice. Controlla il codice, avvicina i due dispositivi e verifica che siano sulla stessa Wi-Fi."
           }
         }
       }
@@ -439,10 +679,22 @@
             "value" : "No iCloud account is available."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna cuenta de iCloud disponible."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun compte iCloud n'est disponible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun account iCloud disponibile."
           }
         }
       }
@@ -453,6 +705,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unknown permission."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permiso desconocido."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorizzazione sconosciuta."
           }
         }
       }
@@ -465,10 +729,22 @@
             "value" : "This is an encrypted OnePass archive. It can't be imported here."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es un archivo cifrado de OnePass: no se puede importar aquí."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "C'est une archive OnePass chiffrée : elle ne s'importe pas ici."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È un archivio OnePass cifrato: non si può importare qui."
           }
         }
       }
@@ -481,10 +757,22 @@
             "value" : "This code is not valid. Check it: 8 characters, for example K7QM-4XPR."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este código no es válido. Compruébalo: 8 caracteres, por ejemplo K7QM-4XPR."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce code n'est pas valide. Vérifie-le : 8 caractères, par exemple K7QM-4XPR."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo codice non è valido. Controllalo: 8 caratteri, per esempio K7QM-4XPR."
           }
         }
       }
@@ -497,10 +785,22 @@
             "value" : "This account already has a OnePass passkey for this site."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta ya tiene una llave de acceso de OnePass para este sitio."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce compte a déjà une passkey OnePass pour ce site."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account ha già una passkey OnePass per questo sito."
           }
         }
       }
@@ -513,10 +813,22 @@
             "value" : "This account is too large to copy by pairing."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta es demasiado grande para copiarla por enlace."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce compte est trop gros pour être copié par appairage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account è troppo grande per essere copiato tramite abbinamento."
           }
         }
       }
@@ -529,10 +841,22 @@
             "value" : "This iCloud account already holds another OnePass vault. Switch back to the original iCloud account to sync."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta cuenta de iCloud ya contiene otra bóveda de OnePass. Vuelve a la cuenta de iCloud original para sincronizar."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo account iCloud contiene già un'altra cassaforte OnePass. Torna all'account iCloud originale per sincronizzare."
           }
         }
       }
@@ -545,10 +869,22 @@
             "value" : "This file is too large to import."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo es demasiado grande para importarlo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier est trop gros pour être importé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file è troppo grande per essere importato."
           }
         }
       }
@@ -561,10 +897,22 @@
             "value" : "This file is not a OnePass backup."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo no es una copia de seguridad de OnePass."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier n'est pas une sauvegarde OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file non è un backup OnePass."
           }
         }
       }
@@ -577,10 +925,22 @@
             "value" : "This file doesn't match the chosen format, or it's damaged."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo no coincide con el formato elegido, o está dañado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier ne correspond pas au format choisi, ou il est abîmé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file non corrisponde al formato scelto, oppure è danneggiato."
           }
         }
       }
@@ -593,10 +953,22 @@
             "value" : "This kit plus your master password give full access to your vault. Print it and keep the sheet offline. Never take a photo of it and never store it in the cloud."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este kit y tu contraseña maestra dan acceso completo a tu bóveda. Imprímelo y guarda la hoja sin conexión. Nunca le hagas una foto ni lo guardes en la nube."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo kit più la password principale danno accesso completo alla tua cassaforte. Stampalo e conserva il foglio offline. Non fotografarlo mai e non salvarlo mai nel cloud."
           }
         }
       }
@@ -607,6 +979,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This SSH key type is not supported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este tipo de clave SSH no es compatible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo tipo di chiave SSH non è supportato."
           }
         }
       }
@@ -619,10 +1003,22 @@
             "value" : "This device was removed from your OnePass account."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se ha quitado de tu cuenta de OnePass."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet appareil a été retiré de ton compte OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo dispositivo è stato rimosso dal tuo account OnePass."
           }
         }
       }
@@ -635,10 +1031,22 @@
             "value" : "This device cannot remove itself."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no puede quitarse a sí mismo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet appareil ne peut pas se retirer lui-même."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo dispositivo non può rimuovere se stesso."
           }
         }
       }
@@ -651,10 +1059,22 @@
             "value" : "This Bitwarden export is encrypted. Export again as unencrypted JSON (or CSV), then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta exportación de Bitwarden está cifrada. Vuelve a exportar como JSON sin cifrar (o CSV) e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa esportazione di Bitwarden è cifrata. Esporta di nuovo in JSON non cifrato (o CSV), poi riprova."
           }
         }
       }
@@ -667,10 +1087,22 @@
             "value" : "This Dashlane export is encrypted. Export again as CSV, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta exportación de Dashlane está cifrada. Vuelve a exportar como CSV e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet export Dashlane est chiffré. Refais l'export en CSV, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa esportazione di Dashlane è cifrata. Esporta di nuovo in CSV, poi riprova."
           }
         }
       }
@@ -683,10 +1115,22 @@
             "value" : "This Secret Key has a typo. Check each character against your Emergency Kit."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta Secret Key tiene una errata: comprueba cada carácter con tu Emergency Kit."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette Secret Key contient une faute de frappe : vérifie chaque caractère sur ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa Secret Key contiene un errore di battitura: controlla ogni carattere sul tuo Emergency Kit."
           }
         }
       }
@@ -699,10 +1143,22 @@
             "value" : "This Secret Key doesn't match this account, or the password is wrong."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta Secret Key no corresponde a esta cuenta, o la contraseña es incorrecta."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette Secret Key ne correspond pas à ce compte, ou le mot de passe est faux."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa Secret Key non corrisponde a questo account, oppure la password è errata."
           }
         }
       }
@@ -715,10 +1171,22 @@
             "value" : "This is only possible when the account is gone from storage or its Secret Key is missing."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo es posible cuando la cuenta ha desaparecido del almacenamiento o falta su Secret Key."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È possibile solo quando l'account è scomparso dall'archivio o manca la sua Secret Key."
           }
         }
       }
@@ -729,6 +1197,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This key is encrypted: enter its passphrase."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta clave está cifrada: introduce su frase de contraseña."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa chiave è cifrata: inserisci la sua passphrase."
           }
         }
       }
@@ -741,10 +1221,22 @@
             "value" : "This key works with your master password to protect your vault. It's stored on your devices and never sent to anyone."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta clave se suma a tu contraseña maestra para proteger tu bóveda. Se guarda en tus dispositivos y nunca se envía a nadie."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette clé s'ajoute à ton mot de passe maître pour protéger ton coffre. Elle est stockée sur tes appareils et n'est jamais envoyée à personne."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa chiave si aggiunge alla password principale per proteggere la tua cassaforte. È salvata sui tuoi dispositivi e non viene mai inviata a nessuno."
           }
         }
       }
@@ -757,10 +1249,22 @@
             "value" : "This backup was changed or damaged: its signature or its content does not match. Nothing was restored."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de seguridad se ha modificado o dañado: su firma o su contenido no coinciden. No se ha restaurado nada."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo backup è stato modificato o danneggiato: la firma o il contenuto non corrispondono. Non è stato ripristinato niente."
           }
         }
       }
@@ -773,10 +1277,22 @@
             "value" : "This backup belongs to another account and has no passphrase: it opens only with that account."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de seguridad pertenece a otra cuenta y no tiene frase de contraseña: solo se abre con esa cuenta."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo backup appartiene a un altro account e non ha una passphrase: si apre solo con quell'account."
           }
         }
       }
@@ -789,10 +1305,22 @@
             "value" : "This backup comes from another account: enter its passphrase."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de seguridad viene de otra cuenta: introduce su frase de contraseña."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo backup proviene da un altro account: inserisci la sua passphrase."
           }
         }
       }
@@ -805,10 +1333,22 @@
             "value" : "This backup comes from a newer version of OnePass. Update the app, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de seguridad viene de una versión más reciente de OnePass. Actualiza la app e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo backup proviene da una versione più recente di OnePass. Aggiorna l'app, poi riprova."
           }
         }
       }
@@ -821,10 +1361,22 @@
             "value" : "Hidden field"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo oculto"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Champ masqué"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo nascosto"
           }
         }
       }
@@ -837,10 +1389,22 @@
             "value" : "Required field"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo obligatorio"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Champ obligatoire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo obbligatorio"
           }
         }
       }
@@ -851,6 +1415,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unreadable SSH key."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave SSH ilegible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiave SSH illeggibile."
           }
         }
       }
@@ -863,10 +1439,22 @@
             "value" : "Unknown passkey."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llave de acceso desconocida."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clé d'accès inconnue."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey sconosciuta."
           }
         }
       }
@@ -879,10 +1467,22 @@
             "value" : "Account: %@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuenta: %@"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compte : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account: %@"
           }
         }
       }
@@ -895,10 +1495,22 @@
             "value" : "Created %@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creado el %@"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Créé le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creato il %@"
           }
         }
       }
@@ -911,10 +1523,22 @@
             "value" : "Date"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fecha"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Date"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data"
           }
         }
       }
@@ -927,10 +1551,22 @@
             "value" : "Invalid date."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fecha no válida."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Date invalide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data non valida."
           }
         }
       }
@@ -943,10 +1579,22 @@
             "value" : "Encrypted data was modified."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se han modificado datos cifrados."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Des données chiffrées ont été modifiées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alcuni dati cifrati sono stati modificati."
           }
         }
       }
@@ -957,6 +1605,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Some changes to these vaults are not in iCloud yet. Sync, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunos cambios de estas bóvedas aún no están en iCloud. Sincroniza e inténtalo de nuevo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alcune modifiche a queste casseforti non sono ancora in iCloud. Sincronizza, poi riprova."
           }
         }
       }
@@ -969,10 +1629,22 @@
             "value" : "Data refused: %@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos rechazados: %@"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Données refusées : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dati rifiutati: %@"
           }
         }
       }
@@ -985,10 +1657,22 @@
             "value" : "Unlock OnePass"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear OnePass"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Déverrouiller OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca OnePass"
           }
         }
       }
@@ -1001,7 +1685,19 @@
             "value" : "Email"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correo electrónico"
+          }
+        },
         "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Email"
@@ -1017,10 +1713,22 @@
             "value" : "OnePass Emergency Kit"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit de OnePass"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Emergency Kit OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit di OnePass"
           }
         }
       }
@@ -1033,10 +1741,22 @@
             "value" : "If you lose them"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si los pierdes"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "En cas de perte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se li perdi"
           }
         }
       }
@@ -1049,10 +1769,22 @@
             "value" : "Not enough iCloud storage."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay suficiente espacio en iCloud."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Espace iCloud insuffisant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spazio iCloud insufficiente."
           }
         }
       }
@@ -1065,10 +1797,22 @@
             "value" : "Unknown import format."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato de importación desconocido."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Format d'import inconnu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato di importazione sconosciuto."
           }
         }
       }
@@ -1081,10 +1825,22 @@
             "value" : "Incorrect Secret Key format: 53 characters expected (letters and digits)."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato de Secret Key incorrecto: se esperan 53 caracteres (letras y números)."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Format de Secret Key incorrect : 53 caractères attendus (lettres et chiffres)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato della Secret Key errato: sono attesi 53 caratteri (lettere e cifre)."
           }
         }
       }
@@ -1097,10 +1853,22 @@
             "value" : "Offline"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hors ligne"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
           }
         }
       }
@@ -1113,10 +1881,22 @@
             "value" : "Invalid IBAN"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IBAN no válido"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "IBAN invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IBAN non valido"
           }
         }
       }
@@ -1129,10 +1909,22 @@
             "value" : "Account ID: %@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID de la cuenta: %@"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Identifiant du compte : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID dell'account: %@"
           }
         }
       }
@@ -1145,10 +1937,22 @@
             "value" : "It is not printed on this kit. If you choose to keep it on paper, write it by hand on the line below, never in a file or a photo."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No está impresa en este kit. Si decides guardarla en papel, escríbela a mano en la línea de abajo, nunca en un archivo ni en una foto."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è stampata su questo kit. Se scegli di conservarla su carta, scrivila a mano sulla riga qui sotto, mai in un file o in una foto."
           }
         }
       }
@@ -1161,10 +1965,22 @@
             "value" : "Immediately"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inmediatamente"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Immédiatement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subito"
           }
         }
       }
@@ -1175,6 +1991,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The socket could not be opened."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido abrir el socket."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile aprire il socket."
           }
         }
       }
@@ -1187,10 +2015,22 @@
             "value" : "Can't read this iCloud account. Check your connection, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer esta cuenta de iCloud. Comprueba tu conexión e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere questo account iCloud. Controlla la connessione, poi riprova."
           }
         }
       }
@@ -1203,10 +2043,22 @@
             "value" : "The Secret Key couldn't be stored in this device's keychain. Sign-in was canceled."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido guardar la Secret Key en el llavero de este dispositivo. Se ha cancelado el inicio de sesión."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile salvare la Secret Key nel portachiavi di questo dispositivo. L'accesso è stato annullato."
           }
         }
       }
@@ -1219,10 +2071,22 @@
             "value" : "The Secret Key couldn't be stored in this device's keychain. The vault was not created."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido guardar la Secret Key en el llavero de este dispositivo. No se ha creado la bóveda."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile salvare la Secret Key nel portachiavi di questo dispositivo. La cassaforte non è stata creata."
           }
         }
       }
@@ -1233,6 +2097,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The signature of this program could not be checked."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido comprobar la firma de este programa."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile verificare la firma di questo programma."
           }
         }
       }
@@ -1245,10 +2121,22 @@
             "value" : "Print this kit and keep the sheet offline, somewhere safe (a safe, a locked drawer). Never take a photo of it and never store it in the cloud (iCloud Drive, Photos, messaging apps)."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprime este kit y guarda la hoja sin conexión, en un lugar seguro (una caja fuerte, un cajón con llave). Nunca le hagas una foto ni lo guardes en la nube (iCloud Drive, Fotos, apps de mensajería)."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stampa questo kit e conserva il foglio offline, in un luogo sicuro (una cassaforte, un cassetto chiuso a chiave). Non fotografarlo mai e non salvarlo mai nel cloud (iCloud Drive, Foto, app di messaggistica)."
           }
         }
       }
@@ -1261,10 +2149,22 @@
             "value" : "Never"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamais"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mai"
           }
         }
       }
@@ -1277,10 +2177,22 @@
             "value" : "The pairing was refused. Start again from the beginning."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha rechazado el enlace. Empieza de nuevo desde el principio."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'appairage a été refusé. Recommence depuis le début."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'abbinamento è stato rifiutato. Ricomincia dall'inizio."
           }
         }
       }
@@ -1293,10 +2205,22 @@
             "value" : "The other device cancelled the pairing."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El otro dispositivo ha cancelado el enlace."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'autre appareil a annulé l'appairage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'altro dispositivo ha annullato l'abbinamento."
           }
         }
       }
@@ -1309,10 +2233,22 @@
             "value" : "The item changed in the meantime. Try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El elemento ha cambiado mientras tanto. Vuelve a intentarlo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'élément a changé entre-temps. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'elemento è cambiato nel frattempo. Riprova."
           }
         }
       }
@@ -1325,10 +2261,22 @@
             "value" : "This account's Secret Key isn't on this device. Use your Emergency Kit."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La Secret Key de esta cuenta no está en este dispositivo: usa tu Emergency Kit."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La Secret Key di questo account non è su questo dispositivo: usa il tuo Emergency Kit."
           }
         }
       }
@@ -1341,10 +2289,22 @@
             "value" : "Biometrics changed. Enter your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometría ha cambiado: introduce tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La biométrie a changé : saisis ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometria è cambiata: inserisci la password principale."
           }
         }
       }
@@ -1357,10 +2317,22 @@
             "value" : "Biometrics are temporarily locked. Enter your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometría está bloqueada temporalmente: introduce tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La biométrie est temporairement bloquée : saisis ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometria è temporaneamente bloccata: inserisci la password principale."
           }
         }
       }
@@ -1373,10 +2345,22 @@
             "value" : "Biometrics aren't available on this device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometría no está disponible en este dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La biométrie n'est pas disponible sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biometria non è disponibile su questo dispositivo."
           }
         }
       }
@@ -1389,10 +2373,22 @@
             "value" : "The connection with the other device was lost."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha perdido la conexión con el otro dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La connexion avec l'autre appareil a été coupée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La connessione con l'altro dispositivo si è interrotta."
           }
         }
       }
@@ -1405,10 +2401,22 @@
             "value" : "Sync didn't complete. Trying again soon."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sincronización no se ha completado. Se reintentará pronto."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "La synchronisation n'a pas abouti, nouvel essai bientôt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sincronizzazione non è riuscita, nuovo tentativo a breve."
           }
         }
       }
@@ -1420,6 +2428,18 @@
             "state" : "translated",
             "value" : "Travel Mode is already on."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode ya está activado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode è già attivo."
+          }
         }
       }
     },
@@ -1430,6 +2450,18 @@
             "state" : "translated",
             "value" : "Travel Mode is not on."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode no está activado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode non è attivo."
+          }
         }
       }
     },
@@ -1439,6 +2471,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The socket path is too long for macOS."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ruta del socket es demasiado larga para macOS."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il percorso del socket è troppo lungo per macOS."
           }
         }
       }
@@ -1451,10 +2495,22 @@
             "value" : "The code expired. A new one is shown."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El código ha caducado. Se muestra uno nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le code a expiré. Un nouveau s'affiche."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il codice è scaduto. Ne compare uno nuovo."
           }
         }
       }
@@ -1465,6 +2521,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The key comment must not contain control characters."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El comentario de la clave no debe contener caracteres de control."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il commento della chiave non deve contenere caratteri di controllo."
           }
         }
       }
@@ -1477,10 +2545,22 @@
             "value" : "The account disappeared from storage."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cuenta ha desaparecido del almacenamiento."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le compte a disparu du stockage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'account è scomparso dall'archivio."
           }
         }
       }
@@ -1493,10 +2573,22 @@
             "value" : "The iCloud account changed"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cuenta de iCloud ha cambiado"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le compte iCloud a changé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'account iCloud è cambiato"
           }
         }
       }
@@ -1509,10 +2601,22 @@
             "value" : "The last vault cannot be deleted."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La última bóveda no se puede eliminar."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le dernier coffre ne peut pas être supprimé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'ultima cassaforte non può essere eliminata."
           }
         }
       }
@@ -1525,10 +2629,22 @@
             "value" : "Time is up. The received account was erased from this device: start the pairing again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha agotado el tiempo. La cuenta recibida se ha borrado de este dispositivo: empieza el enlace de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tempo scaduto. L'account ricevuto è stato cancellato da questo dispositivo: ricomincia l'abbinamento."
           }
         }
       }
@@ -1541,10 +2657,22 @@
             "value" : "Your master password is required after a restart."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra se pide tras un reinicio."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le mot de passe maître est demandé après un redémarrage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La password principale viene chiesta dopo un riavvio."
           }
         }
       }
@@ -1557,10 +2685,22 @@
             "value" : "Your master password is required from time to time."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra se pide de vez en cuando."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le mot de passe maître est demandé régulièrement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La password principale viene chiesta di tanto in tanto."
           }
         }
       }
@@ -1573,10 +2713,22 @@
             "value" : "The new device did not confirm in time. Start the pairing again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nuevo dispositivo no ha confirmado a tiempo. Empieza el enlace de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le nouvel appareil n'a pas confirmé à temps. Recommence l'appairage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il nuovo dispositivo non ha confermato in tempo. Ricomincia l'abbinamento."
           }
         }
       }
@@ -1589,10 +2741,22 @@
             "value" : "The server is temporarily unavailable. Trying again soon."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no está disponible por el momento. Se reintentará pronto."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur est momentanément indisponible, nouvel essai bientôt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server è momentaneamente non disponibile, nuovo tentativo a breve."
           }
         }
       }
@@ -1605,10 +2769,22 @@
             "value" : "Storage doesn't match what was expected."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El almacenamiento no coincide con lo esperado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le stockage ne correspond pas à ce qui était attendu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'archivio non corrisponde a quanto previsto."
           }
         }
       }
@@ -1621,10 +2797,22 @@
             "value" : "The keychain didn't keep the data."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El llavero no ha conservado el dato."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau n'a pas conservé la donnée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi non ha conservato il dato."
           }
         }
       }
@@ -1637,10 +2825,22 @@
             "value" : "KeePass databases (.kdbx) can't be read directly. Export it as KeePass 2 XML, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las bases de datos de KeePass (.kdbx) no se pueden leer directamente. Expórtala como XML de KeePass 2 e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les bases KeePass (.kdbx) ne se lisent pas directement. Exporte-la en XML KeePass 2, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I database KeePass (.kdbx) non si leggono direttamente. Esportalo in XML KeePass 2, poi riprova."
           }
         }
       }
@@ -1653,10 +2853,22 @@
             "value" : "The account's security settings were weakened."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los ajustes de seguridad de la cuenta se han debilitado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les paramètres de sécurité du compte ont été affaiblis."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le impostazioni di sicurezza dell'account sono state indebolite."
           }
         }
       }
@@ -1669,10 +2881,22 @@
             "value" : "Place"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lugar"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lieu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luogo"
           }
         }
       }
@@ -1685,10 +2909,22 @@
             "value" : "Batch too large for iCloud"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lote demasiado grande para iCloud"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lot trop volumineux pour iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lotto troppo grande per iCloud"
           }
         }
       }
@@ -1701,10 +2937,22 @@
             "value" : "Batch too large for the server."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lote demasiado grande para el servidor."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lot trop volumineux pour le serveur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lotto troppo grande per il server."
           }
         }
       }
@@ -1717,10 +2965,22 @@
             "value" : "Password"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mot de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
           }
         }
       }
@@ -1733,10 +2993,22 @@
             "value" : "Incorrect password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña incorrecta."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mot de passe incorrect."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password errata."
           }
         }
       }
@@ -1749,10 +3021,22 @@
             "value" : "Can't be empty"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No puede estar vacío"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ne peut pas être vide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non può essere vuoto"
           }
         }
       }
@@ -1765,10 +3049,22 @@
             "value" : "Invalid card number"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número de tarjeta no válido"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Numéro de carte invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numero di carta non valido"
           }
         }
       }
@@ -1781,10 +3077,22 @@
             "value" : "Invalid number"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número no válido"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Numéro invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numero non valido"
           }
         }
       }
@@ -1797,10 +3105,22 @@
             "value" : "OnePass unencrypted export %@.csv"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass exportación sin cifrar %@.csv"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass export non chiffré %@.csv"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass esportazione non cifrata %@.csv"
           }
         }
       }
@@ -1813,10 +3133,22 @@
             "value" : "OnePass backup %1$@.%2$@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass copia de seguridad %1$@.%2$@"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass sauvegarde %1$@.%2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass backup %1$@.%2$@"
           }
         }
       }
@@ -1829,10 +3161,22 @@
             "value" : "Unreadable passphrase."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase de contraseña ilegible."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phrase de passe illisible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passphrase illeggibile."
           }
         }
       }
@@ -1845,10 +3189,22 @@
             "value" : "Wrong passphrase."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase de contraseña incorrecta."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phrase de passe incorrecte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passphrase errata."
           }
         }
       }
@@ -1861,10 +3217,22 @@
             "value" : "Invalid recovery phrase"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase de recuperación no válida"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phrase de récupération invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase di recupero non valida"
           }
         }
       }
@@ -1877,10 +3245,22 @@
             "value" : "To add a new device, open OnePass, choose “I have my Emergency Kit”, then type or scan the Secret Key and enter your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para añadir un dispositivo nuevo, abre OnePass, elige «Tengo mi Emergency Kit», escribe o escanea la Secret Key e introduce tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per aggiungere un nuovo dispositivo, apri OnePass, scegli «Ho il mio Emergency Kit», poi digita o scansiona la Secret Key e inserisci la password principale."
           }
         }
       }
@@ -1893,10 +3273,22 @@
             "value" : "Bring both devices closer and check they are on the same Wi-Fi."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca los dos dispositivos y comprueba que están en la misma Wi-Fi."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvicina i due dispositivi e verifica che siano sulla stessa Wi-Fi."
           }
         }
       }
@@ -1909,10 +3301,22 @@
             "value" : "Fill a protected item"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar un elemento protegido"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remplir un élément protégé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compila un elemento protetto"
           }
         }
       }
@@ -1925,10 +3329,22 @@
             "value" : "Remove this device from your account"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar este dispositivo de tu cuenta"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retirer cet appareil de ton compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi questo dispositivo dal tuo account"
           }
         }
       }
@@ -1941,10 +3357,22 @@
             "value" : "Invalid generator settings."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes del generador no válidos."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Réglages du générateur invalides."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostazioni del generatore non valide."
           }
         }
       }
@@ -1957,10 +3385,22 @@
             "value" : "Enter your master password."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce tu contraseña maestra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saisis ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inserisci la password principale."
           }
         }
       }
@@ -1973,10 +3413,22 @@
             "value" : "Without your master password and your Secret Key, nobody can open your vault, not even us. There's no way to recover them."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin tu contraseña maestra y tu Secret Key, nadie puede abrir tu bóveda, ni siquiera nosotros. No hay forma de recuperarlas."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sans ton mot de passe maître et ta Secret Key, personne ne peut ouvrir ton coffre, pas même nous. Il n'existe aucun moyen de les récupérer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senza la password principale e la Secret Key, nessuno può aprire la tua cassaforte, nemmeno noi. Non esiste alcun modo per recuperarle."
           }
         }
       }
@@ -1989,10 +3441,22 @@
             "value" : "Scan this QR code with OnePass on your iPhone or iPad to add a device. On a Mac, type the Secret Key by hand."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea este código QR con OnePass en tu iPhone o iPad para añadir un dispositivo. En un Mac, escribe la Secret Key a mano."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scanne ce QR code avec OnePass sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansiona questo codice QR con OnePass su iPhone o iPad per aggiungere un dispositivo. Su un Mac, digita la Secret Key a mano."
           }
         }
       }
@@ -2005,10 +3469,22 @@
             "value" : "If you think someone else has seen this page, create a new account and move your data."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si crees que otra persona ha visto esta página, crea una cuenta nueva y traslada tus datos."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Si tu penses que cette page a été vue par quelqu'un d'autre, crée un nouveau compte et déplace tes données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se pensi che qualcun altro abbia visto questa pagina, crea un nuovo account e sposta i tuoi dati."
           }
         }
       }
@@ -2021,10 +3497,22 @@
             "value" : "Website"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio web"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Site web"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sito web"
           }
         }
       }
@@ -2037,10 +3525,22 @@
             "value" : "Sync off"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización desactivada"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronisation désactivée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizzazione disattivata"
           }
         }
       }
@@ -2053,10 +3553,22 @@
             "value" : "Sync waiting for iCloud"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización esperando a iCloud"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronisation en attente d'iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizzazione in attesa di iCloud"
           }
         }
       }
@@ -2069,10 +3581,22 @@
             "value" : "Syncing"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizando"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronisation en cours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizzazione in corso"
           }
         }
       }
@@ -2085,10 +3609,22 @@
             "value" : "Sync this device first."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincroniza primero este dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronise d'abord cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizza prima questo dispositivo."
           }
         }
       }
@@ -2101,10 +3637,22 @@
             "value" : "Your Secret Key"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Secret Key"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ta Secret Key"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua Secret Key"
           }
         }
       }
@@ -2117,10 +3665,22 @@
             "value" : "Text"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Texte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testo"
           }
         }
       }
@@ -2133,10 +3693,22 @@
             "value" : "Your master password"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ton mot de passe maître"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua password principale"
           }
         }
       }
@@ -2147,6 +3719,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All your vaults are marked safe for travel: none would leave this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas tus bóvedas están marcadas como seguras para viajar: ninguna saldría de este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutte le tue casseforti sono contrassegnate come sicure in viaggio: nessuna lascerebbe questo dispositivo."
           }
         }
       }
@@ -2159,10 +3743,22 @@
             "value" : "Too many attempts. The received account was erased from this device: start the pairing again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiados intentos. La cuenta recibida se ha borrado de este dispositivo: empieza el enlace de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trop d'essais. Le compte reçu a été effacé de cet appareil : recommence l'appairage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppi tentativi. L'account ricevuto è stato cancellato da questo dispositivo: ricomincia l'abbinamento."
           }
         }
       }
@@ -2175,10 +3771,22 @@
             "value" : "Too many attempts. Try again after %@."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiados intentos. Vuelve a intentarlo después de %@."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trop d'essais. Réessaie après %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppi tentativi. Riprova dopo %@."
           }
         }
       }
@@ -2191,10 +3799,22 @@
             "value" : "Too easy to guess: make it longer or add words."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiado fácil de adivinar: alárgala o añade palabras."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trop facile à deviner : allonge-la ou ajoute des mots."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppo facile da indovinare: allungala o aggiungi parole."
           }
         }
       }
@@ -2207,10 +3827,22 @@
             "value" : "Phone"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teléfono"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Téléphone"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telefono"
           }
         }
       }
@@ -2221,6 +3853,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Another SSH agent already uses this socket."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro agente SSH ya usa este socket."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro agente SSH usa già questo socket."
           }
         }
       }
@@ -2233,10 +3877,22 @@
             "value" : "A OnePass account already exists on this device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya existe una cuenta de OnePass en este dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un compte OnePass existe déjà sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esiste già un account OnePass su questo dispositivo."
           }
         }
       }
@@ -2249,10 +3905,22 @@
             "value" : "A record was moved or swapped."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un registro se ha movido o sustituido."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un enregistrement a été déplacé ou substitué."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un record è stato spostato o sostituito."
           }
         }
       }
@@ -2265,10 +3933,22 @@
             "value" : "An iCloud record still can't be read, so sync is blocked. OnePass will try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un registro de iCloud sigue sin poder leerse, así que la sincronización está bloqueada. OnePass lo volverá a intentar."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un record iCloud resta illeggibile, quindi la sincronizzazione è bloccata. OnePass riproverà."
           }
         }
       }
@@ -2279,6 +3959,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A host is one word, without spaces or quotes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un host es una sola palabra, sin espacios ni comillas."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un host è una sola parola, senza spazi né virgolette."
           }
         }
       }
@@ -2291,10 +3983,22 @@
             "value" : "A vault disappeared from storage."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una bóveda ha desaparecido del almacenamiento."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un vault a disparu du stockage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una cassaforte è scomparsa dall'archivio."
           }
         }
       }
@@ -2307,10 +4011,22 @@
             "value" : "An item was held back or removed from storage."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento se ha retenido o eliminado del almacenamiento."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un élément a été retenu ou supprimé du stockage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento è stato trattenuto o rimosso dall'archivio."
           }
         }
       }
@@ -2323,10 +4039,22 @@
             "value" : "An unknown item was added to storage."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha añadido un elemento desconocido al almacenamiento."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un élément inconnu a été ajouté au stockage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento sconosciuto è stato aggiunto all'archivio."
           }
         }
       }
@@ -2339,10 +4067,22 @@
             "value" : "An item doesn't match the vault's signed list."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento no coincide con la lista firmada de la bóveda."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un élément ne correspond pas à la liste signée du vault."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un elemento non corrisponde all'elenco firmato della cassaforte."
           }
         }
       }
@@ -2355,10 +4095,22 @@
             "value" : "An old restore of the vault was replayed."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha reproducido una restauración antigua de la bóveda."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une ancienne restauration du coffre a été rejouée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È stato riproposto un vecchio ripristino della cassaforte."
           }
         }
       }
@@ -2371,10 +4123,22 @@
             "value" : "A signature is invalid."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una firma no es válida."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une signature est invalide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una firma non è valida."
           }
         }
       }
@@ -2387,10 +4151,22 @@
             "value" : "A password check is already in progress."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay una comprobación de la contraseña en curso."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une vérification du mot de passe est déjà en cours."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È già in corso una verifica della password."
           }
         }
       }
@@ -2403,10 +4179,22 @@
             "value" : "Use the master password"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar la contraseña maestra"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Utiliser le mot de passe maître"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa la password principale"
           }
         }
       }
@@ -2419,10 +4207,22 @@
             "value" : "Invalid value"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valor no válido"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valeur invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valore non valido"
           }
         }
       }
@@ -2435,10 +4235,22 @@
             "value" : "Invalid value."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valor no válido."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valeur invalide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valore non valido."
           }
         }
       }
@@ -2451,10 +4263,22 @@
             "value" : "Empty this vault before deleting it."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vacía esta bóveda antes de eliminarla."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vide ce coffre avant de le supprimer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svuota questa cassaforte prima di eliminarla."
           }
         }
       }
@@ -2465,6 +4289,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud does not hold a full copy of these vaults yet. Sync, then try again: nothing was removed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud aún no tiene una copia completa de estas bóvedas. Sincroniza e inténtalo de nuevo: no se ha quitado nada."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud non ha ancora una copia completa di queste casseforti. Sincronizza, poi riprova: non è stato rimosso niente."
           }
         }
       }
@@ -2477,10 +4313,22 @@
             "value" : "Up to date"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizado"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "À jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornato"
           }
         }
       }
@@ -2493,10 +4341,22 @@
             "value" : "Item not found."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elemento no encontrado."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Élément introuvable."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elemento non trovato."
           }
         }
       }
@@ -2509,10 +4369,22 @@
             "value" : "%@ km away"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a %@ km"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "à %@ km"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a %@ km"
           }
         }
       }
@@ -2525,10 +4397,22 @@
             "value" : "%lld m away"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a %lld m"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "à %lld m"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a %lld m"
           }
         }
       }
@@ -2540,6 +4424,18 @@
             "state" : "translated",
             "value" : "Turn on unlocking from your iPhone"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar el desbloqueo desde tu iPhone"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva lo sblocco da iPhone"
+          }
         }
       }
     },
@@ -2549,6 +4445,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turn on remote unlock for this Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar el desbloqueo remoto de este Mac"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva lo sblocco remoto di questo Mac"
           }
         }
       }
@@ -2560,6 +4468,18 @@
             "state" : "translated",
             "value" : "Approved on %@"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobado en %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approvato su %@"
+          }
         }
       }
     },
@@ -2569,6 +4489,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Approved on this Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobado en este Mac"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approvato su questo Mac"
           }
         }
       }
@@ -2580,6 +4512,18 @@
             "state" : "translated",
             "value" : "No iPhone enrolled."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún iPhone registrado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun iPhone registrato."
+          }
         }
       }
     },
@@ -2589,6 +4533,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allowed for 5 min"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitido 5 min"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consentito per 5 min"
           }
         }
       }
@@ -2600,6 +4556,18 @@
             "state" : "translated",
             "value" : "Allowed once"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitido una vez"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consentito una volta"
+          }
         }
       }
     },
@@ -2609,6 +4577,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Mac"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo Mac"
           }
         }
       }
@@ -2620,6 +4600,18 @@
             "state" : "translated",
             "value" : "This request expired."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta solicitud ha caducado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa richiesta è scaduta."
+          }
         }
       }
     },
@@ -2629,6 +4621,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This request is no longer available."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta solicitud ya no está disponible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa richiesta non è più disponibile."
           }
         }
       }
@@ -2640,6 +4644,18 @@
             "state" : "translated",
             "value" : "That answer is not allowed for this request."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa respuesta no está permitida para esta solicitud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa risposta non è consentita per questa richiesta."
+          }
         }
       }
     },
@@ -2649,6 +4665,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock refused on the iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloqueo rechazado en el iPhone."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocco rifiutato su iPhone."
           }
         }
       }
@@ -2660,6 +4688,18 @@
             "state" : "translated",
             "value" : "Remote unlock turned on"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloqueo remoto activado"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocco remoto attivato"
+          }
         }
       }
     },
@@ -2669,6 +4709,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sent to %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviado a %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inviato a %@"
           }
         }
       }
@@ -2680,6 +4732,18 @@
             "state" : "translated",
             "value" : "Face ID changed: turn Face ID back on in Settings > Agents."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID ha cambiado: vuelve a activar Face ID en Ajustes > Agentes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID è cambiato: riattiva Face ID in Impostazioni > Agenti."
+          }
         }
       }
     },
@@ -2689,6 +4753,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Face ID is required to answer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita Face ID para responder."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID è necessario per rispondere."
           }
         }
       }
@@ -2700,6 +4776,18 @@
             "state" : "translated",
             "value" : "Identifier"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identificador"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identificativo"
+          }
         }
       }
     },
@@ -2709,6 +4797,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The iPhone did not answer in time."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El iPhone no ha respondido a tiempo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone non ha risposto in tempo."
           }
         }
       }
@@ -2720,6 +4820,18 @@
             "state" : "translated",
             "value" : "The Mac can't be reached right now. Try again."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede contactar con el Mac en este momento. Vuelve a intentarlo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il Mac non è raggiungibile al momento. Riprova."
+          }
         }
       }
     },
@@ -2729,6 +4841,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remote unlock for this Mac is not active on this iPhone: turn it on again from the Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El desbloqueo remoto de este Mac no está activo en este iPhone: vuelve a activarlo desde el Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo sblocco remoto di questo Mac non è attivo su questo iPhone: riattivalo dal Mac."
           }
         }
       }
@@ -2740,6 +4864,18 @@
             "state" : "translated",
             "value" : "Denied"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechazado"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rifiutato"
+          }
         }
       }
     },
@@ -2749,6 +4885,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Denied on %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechazado en %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rifiutato su %@"
           }
         }
       }
@@ -2760,6 +4908,18 @@
             "state" : "translated",
             "value" : "Turn Face ID back on for agent requests"
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a activar Face ID para las solicitudes de los agentes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riattiva Face ID per le richieste degli agenti"
+          }
         }
       }
     },
@@ -2769,6 +4929,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Answer the agent's request"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Responder a la solicitud del agente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rispondi alla richiesta dell'agente"
           }
         }
       }
@@ -2780,6 +4952,18 @@
             "state" : "translated",
             "value" : "Your master password changed: turn on unlocking from your iPhone again."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra ha cambiado: vuelve a activar el desbloqueo desde tu iPhone."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La password principale è cambiata: riattiva lo sblocco da iPhone."
+          }
         }
       }
     },
@@ -2789,6 +4973,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Too many unlock requests: try again later."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiadas solicitudes de desbloqueo: vuelve a intentarlo más tarde."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppe richieste di sblocco: riprova più tardi."
           }
         }
       }
@@ -2800,6 +4996,18 @@
             "state" : "translated",
             "value" : "Check your iPhone's time: it does not match your Mac's."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprueba la hora de tu iPhone: no coincide con la de tu Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla l'ora di iPhone: non corrisponde a quella del Mac."
+          }
         }
       }
     },
@@ -2809,6 +5017,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iPhone unavailable: approve here"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone no disponible: aprueba aquí"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone non disponibile: approva qui"
           }
         }
       }
@@ -2820,6 +5040,18 @@
             "state" : "translated",
             "value" : "iPhone unreachable: unlock the app on this Mac."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede contactar con el iPhone: desbloquea la app en este Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone non raggiungibile: sblocca l'app su questo Mac."
+          }
         }
       }
     },
@@ -2829,6 +5061,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file is damaged: it can't be opened."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo está dañado: no se puede abrir."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file è danneggiato: non si può aprire."
           }
         }
       }
@@ -2841,10 +5085,22 @@
             "value" : "(code %@: %@)"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(código %@: %@)"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "(code %@ : %@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(codice %@: %@)"
           }
         }
       }
@@ -2857,10 +5113,22 @@
             "value" : "(code %@)"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(código %@)"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "(code %@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(codice %@)"
           }
         }
       }
@@ -2873,10 +5141,22 @@
             "value" : "No iCloud account is available. Sign in to iCloud in Settings, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna cuenta de iCloud disponible. Inicia sesión en iCloud en Ajustes e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun compte iCloud n'est disponible. Connecte-toi à iCloud dans Réglages, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun account iCloud disponibile. Accedi a iCloud in Impostazioni, poi riprova."
           }
         }
       }
@@ -2889,10 +5169,22 @@
             "value" : "This file is damaged or isn't in the expected format. Choose another file."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo está dañado o no tiene el formato esperado. Elige otro archivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier est abîmé ou n'a pas le format attendu. Choisis un autre fichier."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file è danneggiato o non ha il formato previsto. Scegli un altro file."
           }
         }
       }
@@ -2905,10 +5197,22 @@
             "value" : "This file is too large to open. Choose a smaller file."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo es demasiado grande para abrirlo. Elige un archivo más pequeño."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier est trop gros pour être ouvert. Choisis un fichier plus petit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file è troppo grande per essere aperto. Scegli un file più piccolo."
           }
         }
       }
@@ -2921,10 +5225,22 @@
             "value" : "This file couldn't be saved. Try again, or pick another location."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido guardar este archivo. Vuelve a intentarlo o elige otra ubicación."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier n'a pas pu être enregistré. Réessaie, ou choisis un autre emplacement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile salvare questo file. Riprova, o scegli un'altra posizione."
           }
         }
       }
@@ -2937,10 +5253,22 @@
             "value" : "This file couldn't be read. Try again, or choose another one."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer este archivo. Vuelve a intentarlo o elige otro."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce fichier n'a pas pu être lu. Réessaie, ou choisis-en un autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere questo file. Riprova, o scegline un altro."
           }
         }
       }
@@ -2953,10 +5281,22 @@
             "value" : "This file name isn't allowed. Pick a shorter name, without \"/\" or \":\"."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este nombre de archivo no está permitido. Elige un nombre más corto, sin «/» ni «:»."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce nom de fichier n'est pas accepté. Choisis un nom plus court, sans « / » ni « : »."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo nome di file non è consentito. Scegli un nome più breve, senza «/» né «:»."
           }
         }
       }
@@ -2969,10 +5309,22 @@
             "value" : "This location is read-only. Pick another one."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta ubicación es de solo lectura. Elige otra."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cet emplacement est en lecture seule. Choisis-en un autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa posizione è di sola lettura. Scegline un'altra."
           }
         }
       }
@@ -2985,10 +5337,22 @@
             "value" : "This entry already exists in the keychain. Try again. If it happens again, restart the device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dato ya existe en el llavero. Vuelve a intentarlo. Si vuelve a ocurrir, reinicia el dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette donnée existe déjà dans le trousseau. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo dato esiste già nel portachiavi. Riprova. Se succede di nuovo, riavvia il dispositivo."
           }
         }
       }
@@ -3001,10 +5365,22 @@
             "value" : "This version of OnePass is too old for iCloud. Update OnePass."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión de OnePass es demasiado antigua para iCloud. Actualiza OnePass."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette version de OnePass est trop ancienne pour iCloud. Mets à jour OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa versione di OnePass è troppo vecchia per iCloud. Aggiorna OnePass."
           }
         }
       }
@@ -3017,10 +5393,22 @@
             "value" : "This copy of OnePass can't use the device keychain. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de OnePass no puede usar el llavero del dispositivo. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette version de OnePass n'a pas accès au trousseau de l'appareil. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa copia di OnePass non può usare il portachiavi del dispositivo. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         }
       }
@@ -3033,10 +5421,22 @@
             "value" : "This copy of OnePass isn't set up for iCloud. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta copia de OnePass no está configurada para iCloud. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cette version de OnePass n'est pas configurée pour iCloud. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa copia di OnePass non è configurata per iCloud. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         }
       }
@@ -3049,10 +5449,22 @@
             "value" : "Folder not found. It may have been moved or deleted: pick another location."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carpeta no encontrada. Puede que se haya movido o eliminado: elige otra ubicación."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dossier introuvable. Il a peut-être été déplacé ou supprimé : choisis un autre emplacement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cartella non trovata. Potrebbe essere stata spostata o eliminata: scegli un'altra posizione."
           }
         }
       }
@@ -3065,10 +5477,22 @@
             "value" : "File not found. It may have been moved or deleted: choose it again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivo no encontrado. Puede que se haya movido o eliminado: vuelve a elegirlo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fichier introuvable. Il a peut-être été déplacé ou supprimé : choisis-le à nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File non trovato. Potrebbe essere stato spostato o eliminato: sceglilo di nuovo."
           }
         }
       }
@@ -3081,10 +5505,22 @@
             "value" : "Can't reach the network. Check your connection, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder a la red. Comprueba tu conexión e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossible de joindre le réseau. Vérifie ta connexion, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile raggiungere la rete. Controlla la connessione, poi riprova."
           }
         }
       }
@@ -3097,10 +5533,22 @@
             "value" : "The device couldn't read or write the data. Try again. If it happens again, restart the device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo no ha podido leer ni escribir el dato. Vuelve a intentarlo. Si vuelve a ocurrir, reinicia el dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'appareil n'a pas pu lire ou écrire la donnée. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il dispositivo non è riuscito a leggere o scrivere il dato. Riprova. Se succede di nuovo, riavvia il dispositivo."
           }
         }
       }
@@ -3113,10 +5561,22 @@
             "value" : "The device is out of space. Free up some room, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo no tiene espacio libre. Libera espacio e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "L'appareil n'a plus d'espace libre. Libère de la place, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il dispositivo ha esaurito lo spazio. Libera spazio, poi riprova."
           }
         }
       }
@@ -3129,10 +5589,22 @@
             "value" : "OnePass's local storage can't be read. Quit and reopen OnePass. If it happens again, restore your account with your Emergency Kit."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer el almacenamiento local de OnePass. Sal de OnePass y vuelve a abrirlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'archivio locale di OnePass è illeggibile. Esci da OnePass e riaprilo. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
           }
         }
       }
@@ -3145,10 +5617,22 @@
             "value" : "The system refused the operation. Try again. If it happens again, restart the device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El sistema ha rechazado la operación. Vuelve a intentarlo. Si vuelve a ocurrir, reinicia el dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le système a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il sistema ha rifiutato l'operazione. Riprova. Se succede di nuovo, riavvia il dispositivo."
           }
         }
       }
@@ -3161,10 +5645,22 @@
             "value" : "This file's text can't be read (unknown encoding). Save it as UTF-8, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer el texto de este archivo (codificación desconocida). Guárdalo en UTF-8 e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le texte de ce fichier est illisible (encodage inconnu). Enregistre-le en UTF-8, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il testo di questo file è illeggibile (codifica sconosciuta). Salvalo in UTF-8, poi riprova."
           }
         }
       }
@@ -3177,10 +5673,22 @@
             "value" : "The keychain refused the authentication. Check the device passcode or your biometrics, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El llavero ha rechazado la autenticación. Comprueba el código del dispositivo o tu biometría e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau a refusé l'authentification. Vérifie le code de l'appareil ou ta biométrie, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi ha rifiutato l'autenticazione. Controlla il codice del dispositivo o la biometria, poi riprova."
           }
         }
       }
@@ -3193,10 +5701,22 @@
             "value" : "The keychain refused the operation. Try again. If it happens again, restart the device."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El llavero ha rechazado la operación. Vuelve a intentarlo. Si vuelve a ocurrir, reinicia el dispositivo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi ha rifiutato l'operazione. Riprova. Se succede di nuovo, riavvia il dispositivo."
           }
         }
       }
@@ -3209,10 +5729,22 @@
             "value" : "Your session's keychain is missing or damaged. Restart the device, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta el llavero de tu sesión o está dañado. Reinicia el dispositivo e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau de ta session est introuvable ou abîmé. Redémarre l'appareil, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi della sessione manca o è danneggiato. Riavvia il dispositivo, poi riprova."
           }
         }
       }
@@ -3225,10 +5757,22 @@
             "value" : "The keychain isn't available right now. Restart the device, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El llavero no está disponible en este momento. Reinicia el dispositivo e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau n'est pas disponible pour le moment. Redémarre l'appareil, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi non è disponibile al momento. Riavvia il dispositivo, poi riprova."
           }
         }
       }
@@ -3241,10 +5785,22 @@
             "value" : "The keychain stays closed while the device is locked. Unlock the device, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El llavero permanece cerrado mientras el dispositivo está bloqueado. Desbloquea el dispositivo e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le trousseau reste fermé tant que l'appareil est verrouillé. Déverrouille l'appareil, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il portachiavi resta chiuso finché il dispositivo è bloccato. Sblocca il dispositivo, poi riprova."
           }
         }
       }
@@ -3257,10 +5813,22 @@
             "value" : "OnePass made a request the system refused. Update OnePass. If it happens again, contact support."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass ha hecho una solicitud que el sistema rechaza. Actualiza OnePass. Si vuelve a ocurrir, contacta con el soporte."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass a fait une demande que le système refuse. Mets à jour OnePass. Si l'erreur revient, contacte le support."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass ha fatto una richiesta che il sistema rifiuta. Aggiorna OnePass. Se succede di nuovo, contatta l'assistenza."
           }
         }
       }
@@ -3273,10 +5841,22 @@
             "value" : "OnePass isn't allowed to access this location. Pick another one, or give OnePass access in Settings."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass no tiene permiso para acceder a esta ubicación. Elige otra o da acceso a OnePass en Ajustes."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à OnePass dans Réglages."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass non ha il permesso di accedere a questa posizione. Scegline un'altra, o dai l'accesso a OnePass in Impostazioni."
           }
         }
       }
@@ -3289,10 +5869,22 @@
             "value" : "OnePass isn't allowed to read this keychain entry. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass no tiene permiso para leer este dato del llavero. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass n'a pas le droit de lire cette donnée du trousseau. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass non ha il permesso di leggere questo dato del portachiavi. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         }
       }
@@ -3305,10 +5897,22 @@
             "value" : "OnePass couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen OnePass."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass no ha podido cifrar ni descifrar este dato. Vuelve a intentarlo. Si vuelve a ocurrir, sal de OnePass y vuelve a abrirlo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass non è riuscito a cifrare o decifrare questo dato. Riprova. Se succede di nuovo, esci da OnePass e riaprilo."
           }
         }
       }
@@ -3321,10 +5925,22 @@
             "value" : "Cancelled. Start again whenever you like."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelado. Empieza de nuevo cuando quieras."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opération annulée. Recommence quand tu veux."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Operazione annullata. Ricomincia quando vuoi."
           }
         }
       }
@@ -3337,10 +5953,22 @@
             "value" : "Your iCloud storage is full. Free up space in iCloud, then sync again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu almacenamiento de iCloud está lleno. Libera espacio en iCloud y vuelve a sincronizar."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ton stockage iCloud est plein. Libère de l'espace dans iCloud, puis synchronise à nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo spazio iCloud è pieno. Libera spazio in iCloud, poi sincronizza di nuovo."
           }
         }
       }
@@ -3353,10 +5981,22 @@
             "value" : "A file with this name already exists. Pick another name."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya existe un archivo con este nombre. Elige otro nombre."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un fichier porte déjà ce nom. Choisis un autre nom."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esiste già un file con questo nome. Scegli un altro nome."
           }
         }
       }
@@ -3369,10 +6009,22 @@
             "value" : "Another app is using this file. Close it, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra app está usando este archivo. Ciérrala e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une autre app utilise ce fichier. Ferme-la, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un'altra app sta usando questo file. Chiudila, poi riprova."
           }
         }
       }
@@ -3385,10 +6037,22 @@
             "value" : "A OnePass entry is missing from the device keychain. Enter your master password. If you reinstalled OnePass, restore your account with your Emergency Kit."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta un dato de OnePass en el llavero del dispositivo. Introduce tu contraseña maestra. Si has reinstalado OnePass, restaura tu cuenta con tu Emergency Kit."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une donnée de OnePass manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé OnePass, restaure ton compte avec ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manca un dato di OnePass nel portachiavi del dispositivo. Inserisci la password principale. Se hai reinstallato OnePass, ripristina il tuo account con il tuo Emergency Kit."
           }
         }
       }
@@ -3401,10 +6065,22 @@
             "value" : "A keychain entry can't be read. Try again. If it happens again, restore your account with your Emergency Kit."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer un dato del llavero. Vuelve a intentarlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une donnée du trousseau est illisible. Réessaie. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dato del portachiavi è illeggibile. Riprova. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
           }
         }
       }
@@ -3417,10 +6093,22 @@
             "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen OnePass."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha producido un error inesperado. Vuelve a intentarlo. Si vuelve a ocurrir, sal de OnePass y vuelve a abrirlo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si è verificato un errore imprevisto. Riprova. Se succede di nuovo, esci da OnePass e riaprilo."
           }
         }
       }
@@ -3433,10 +6121,22 @@
             "value" : "iCloud refused to sync. Try again later. If it happens again, check your iCloud account in Settings."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud ha rechazado la sincronización. Vuelve a intentarlo más tarde. Si vuelve a ocurrir, comprueba tu cuenta de iCloud en Ajustes."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud a refusé la synchronisation. Réessaie plus tard. Si l'erreur revient, vérifie ton compte iCloud dans Réglages."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud ha rifiutato la sincronizzazione. Riprova più tardi. Se succede di nuovo, controlla il tuo account iCloud in Impostazioni."
           }
         }
       }
@@ -3449,10 +6149,22 @@
             "value" : "iCloud isn't responding right now. OnePass will try again on its own."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud no responde en este momento. OnePass lo volverá a intentar solo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud ne répond pas pour le moment. OnePass réessaiera tout seul."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud non risponde al momento. OnePass riproverà da solo."
           }
         }
       }
@@ -3465,10 +6177,22 @@
             "value" : "iCloud denies OnePass access. Check in Settings that iCloud is on for OnePass, then try again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud deniega el acceso a OnePass. Comprueba en Ajustes que iCloud está activado para OnePass e inténtalo de nuevo."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud refuse l'accès à OnePass. Vérifie dans Réglages qu'iCloud est activé pour OnePass, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud nega l'accesso a OnePass. Controlla in Impostazioni che iCloud sia attivo per OnePass, poi riprova."
           }
         }
       }
@@ -3481,10 +6205,22 @@
             "value" : "Verification code"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de verificación"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Code de vérification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice di verifica"
           }
         }
       }
@@ -3497,10 +6233,22 @@
             "value" : "The code can only be added to a Login item."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El código solo se puede añadir a un inicio de sesión."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le code ne peut être ajouté qu'à un élément Login."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il codice si può aggiungere solo a un login."
           }
         }
       }
@@ -3513,10 +6261,22 @@
             "value" : "Previous code"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código anterior"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ancien code"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice precedente"
           }
         }
       }
@@ -3529,10 +6289,22 @@
             "value" : "Confirm it's you first to change this item."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirma primero que eres tú para modificar este elemento."
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirme d'abord ton identité pour modifier cet élément."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conferma prima la tua identità per modificare questo elemento."
           }
         }
       }
