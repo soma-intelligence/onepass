@@ -16,6 +16,10 @@ struct SplitBrowseView: View {
                     sidebar
                 } content: {
                     ItemListColumn()
+                        #if os(iOS)
+                        // iPad: the list column fades under its bar like every iPhone screen.
+                        .headerFade(color: Color(uiColor: .systemBackground))
+                        #endif
                         .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
                 } detail: {
                     DetailColumn()
@@ -66,6 +70,9 @@ struct PageColumn: View {
                 case .items: EmptyView()
                 }
             }
+            #if os(iOS)
+            .headerFade(color: Color(uiColor: .systemBackground))
+            #endif
             #if os(macOS)
             .toolbar(removing: .title)
             .toolbar {
@@ -95,8 +102,14 @@ struct DetailColumn: View {
                     model.finishNewItem(saved)
                 }
                 .id(draft.item.id)
+                #if os(iOS)
+                .headerFade()
+                #endif
             } else if let ref = model.selectedItem {
                 ItemDetailView(ref: ref).id(ref)
+                    #if os(iOS)
+                    .headerFade()
+                    #endif
             } else {
                 // The vault picture alone carries the empty state; the words stay for VoiceOver.
                 VaultIllustration(size: 340, tint: Theme.accent)

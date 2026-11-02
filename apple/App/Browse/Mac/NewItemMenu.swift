@@ -62,6 +62,8 @@ struct NewItemSheet: View {
     /// The pointer over "Plus de catégories": its fan of tiles opens a little wider.
     @State private var hoveringMore = false
     @FocusState private var searchFocused: Bool
+    /// iPhone: height of the floating header, where the scrolled tiles fade out.
+    @State private var headerHeight: CGFloat = 160
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
     private let inPhoneSheet: Bool
@@ -120,6 +122,50 @@ struct NewItemSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(iOS)
+            // iPhone: the title and the search field float over the tiles, which scroll up under them
+            // and fade out there as under every other header of the app.
+            scrollContent
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    header
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+                }
+                .headerFade(color: Color(uiColor: .systemBackground), header: headerHeight)
+            #else
+            header
+            scrollContent
+            #endif
+
+            Divider().padding(.horizontal, Self.sideInset)
+            Button {
+                close()
+                if inPhoneSheet {
+                    // The import sheet comes once this one has gone.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        model.showImport = true
+                    }
+                } else {
+                    model.showImport = true
+                }
+            } label: {
+                Label("Importer depuis un autre gestionnaire", systemImage: "square.and.arrow.down")
+                    .font(.body.weight(.medium))
+            }
+            .buttonStyle(.borderless)
+            .padding(.vertical, 16)
+            .accessibilityIdentifier("newItem.import")
+        }
+        #if os(macOS)
+        .frame(width: 600, height: 620)
+        #endif
+        // iPhone: the grid first, the keyboard only once the field is touched.
+        .onAppear { if !inPhoneSheet { searchFocused = true } }
+    }
+
+    /// The close button, "Que veux-tu ajouter ?" and the search field.
+    private var header: some View {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button {
@@ -148,66 +194,44 @@ struct NewItemSheet: View {
             searchField
                 .padding(.horizontal, Self.searchInset)
                 .padding(.bottom, 22)
+        }
+    }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if trimmed.isEmpty {
-                        LazyVGrid(columns: Self.columns, spacing: 12) {
-                            ForEach(Self.featured, id: \.self) { type in
-                                BigTypeTile(type: type) { pick(type) }
-                            }
-                        }
-                        moreCategories
-                        if showAll {
-                            allCategories
-                                .transition(revealTransition)
-                        }
-                    } else {
-                        if let website {
-                            WebsiteTile(title: website.title, host: website.url) { pickWebsite(website) }
-                            signInChips(website)
-                        }
-                        if groups.isEmpty, website == nil {
-                            ContentUnavailableView.search(text: query).padding(.top, 20)
-                        } else {
-                            allCategories
+    /// The tiles, the categories, or what the search found.
+    private var scrollContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if trimmed.isEmpty {
+                    LazyVGrid(columns: Self.columns, spacing: 12) {
+                        ForEach(Self.featured, id: \.self) { type in
+                            BigTypeTile(type: type) { pick(type) }
                         }
                     }
-                }
-                .padding(.horizontal, Self.sideInset)
-                .padding(.bottom, 16)
-            }
-            .scrollDismissesKeyboard(.immediately)
-            // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
-            // with the trackpad or wheel, the bar stays out of the animation.
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-
-            Divider().padding(.horizontal, Self.sideInset)
-            Button {
-                close()
-                if inPhoneSheet {
-                    // The import sheet comes once this one has gone.
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(450))
-                        model.showImport = true
+                    moreCategories
+                    if showAll {
+                        allCategories
+                            .transition(revealTransition)
                     }
                 } else {
-                    model.showImport = true
+                    if let website {
+                        WebsiteTile(title: website.title, host: website.url) { pickWebsite(website) }
+                        signInChips(website)
+                    }
+                    if groups.isEmpty, website == nil {
+                        ContentUnavailableView.search(text: query).padding(.top, 20)
+                    } else {
+                        allCategories
+                    }
                 }
-            } label: {
-                Label("Importer depuis un autre gestionnaire", systemImage: "square.and.arrow.down")
-                    .font(.body.weight(.medium))
             }
-            .buttonStyle(.borderless)
-            .padding(.vertical, 16)
-            .accessibilityIdentifier("newItem.import")
+            .padding(.horizontal, Self.sideInset)
+            .padding(.bottom, 16)
         }
-        #if os(macOS)
-        .frame(width: 600, height: 620)
-        #endif
-        // iPhone: the grid first, the keyboard only once the field is touched.
-        .onAppear { if !inPhoneSheet { searchFocused = true } }
+        .scrollDismissesKeyboard(.immediately)
+        // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
+        // with the trackpad or wheel, the bar stays out of the animation.
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)

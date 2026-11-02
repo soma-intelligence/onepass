@@ -80,7 +80,7 @@ struct PhoneTabsView: View {
         // search field of the tab bar (a `searchable` inside the tab showed no field at all).
         // Toolbar placement and search tab activation: the search tab is the separate round
         // button on the right of the three tabs, and its field opens at the bottom.
-        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Titre, site, identifiant, tag"))
+        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Rechercher dans tes éléments"))
         .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
         // A search is only ever shown on its own tab, whatever presented it.
@@ -138,19 +138,24 @@ struct PhoneTabsView: View {
 
     private func stack<Root: View>(_ which: PhoneTab, @ViewBuilder root: () -> Root) -> some View {
         NavigationStack(path: path(which)) {
+            // Every screen of the stack, the root and each one pushed, fades under its header the
+            // same way (one shared modifier, never a copy per screen).
             root()
-                .topBlurFade()
+                .headerFade()
                 .navigationDestination(for: PhoneRoute.self) { route in
-                    switch route {
-                    case .list(let filter):
-                        CategoryListView(filter: filter)
-                    case .watchtower(let title, let itemIDs):
-                        WatchtowerItemsList(title: title, itemIDs: itemIDs)
-                    case .item(let ref):
-                        ItemDetailView(ref: ref)
-                            .id(ref)
-                            .toolbar(model.isEditing ? .hidden : .visible, for: .tabBar)
+                    Group {
+                        switch route {
+                        case .list(let filter):
+                            CategoryListView(filter: filter)
+                        case .watchtower(let title, let itemIDs):
+                            WatchtowerItemsList(title: title, itemIDs: itemIDs)
+                        case .item(let ref):
+                            ItemDetailView(ref: ref)
+                                .id(ref)
+                                .toolbar(model.isEditing ? .hidden : .visible, for: .tabBar)
+                        }
                     }
+                    .headerFade()
                 }
         }
     }
@@ -261,6 +266,7 @@ struct PhoneNewItemSheet: View {
                         model.finishNewItem(saved)
                     }
                     .id(draft.item.id)
+                    .headerFade()
                     .transition(stepTransition)
                 } else {
                     // "Que veux-tu ajouter ?", as on the Mac: the editor then takes its place here.
@@ -278,50 +284,6 @@ struct PhoneNewItemSheet: View {
     private var stepTransition: AnyTransition {
         reduceMotion ? .opacity : .push(from: .trailing)
     }
-}
-
-/// Content scrolling up under the status bar and the navigation bar fades out softly: the system's
-/// soft scroll edge effect blurs it, and a wash of the screen's background, nearly opaque at the
-/// top edge, eases to nothing a little below the bar. One continuous fade, no band, no seam.
-///
-/// No material here: a material under the bar sits inside the scroll edge effect's own backdrop,
-/// and the nested blur renders flat up to the bar's bottom, then drops to the material's real
-/// opacity there (the hard edge). A plain color gradient blurs cleanly. The wash also ends past
-/// the bar's bottom so no edge lines up with it. Over the content, under the bar's own controls
-/// (the large title stays sharp); never takes a touch.
-private struct TopBlurFade: ViewModifier {
-    @MainActor static var statusBarHeight: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
-        return scene?.keyWindow?.safeAreaInsets.top ?? 59
-    }
-
-    /// Opacity along the wash, eased (smoothstep-like) so neither end shows a line.
-    private static let stops: [Gradient.Stop] = [
-        (0.00, 0.90), (0.20, 0.86), (0.38, 0.74), (0.52, 0.56),
-        (0.66, 0.36), (0.78, 0.19), (0.89, 0.07), (1.00, 0.00),
-    ].map { location, opacity in
-        Gradient.Stop(color: Color(uiColor: .systemGroupedBackground).opacity(opacity), location: location)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .overlay(alignment: .top) {
-                GeometryReader { _ in
-                    // The status bar, the compact navigation bar (about 52 pt), then some room to
-                    // fade out below it.
-                    LinearGradient(stops: Self.stops, startPoint: .top, endPoint: .bottom)
-                        .frame(height: Self.statusBarHeight + 100)
-                        .ignoresSafeArea(edges: .top)
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-    }
-}
-
-extension View {
-    fileprivate func topBlurFade() -> some View { modifier(TopBlurFade()) }
 }
 
 // MARK: - Unfolded iPhone
