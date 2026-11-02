@@ -138,6 +138,16 @@ required-features = ["dev-fast-kdf"]
 name = "contact_vectors"
 required-features = ["dev-fast-kdf"]
 
+# Contact verification sessions and invite links over fast-KDF test
+# accounts, pinned through the dev-only helper: needs the dev floor.
+[[test]]
+name = "contact_session"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "contact_invite"
+required-features = ["dev-fast-kdf"]
+
 # Spec 12 attack regressions of key rotation v2: needs the dev floor.
 [[test]]
 name = "rotation_v2_attacks"

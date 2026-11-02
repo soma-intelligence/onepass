@@ -394,6 +394,11 @@ impl<S: RecordStore> Repository<S> {
     /// contact pinned at the same head is merged (a higher level wins, the
     /// local name and a `KeysChanged` state stay). A lost race is
     /// `Conflict`.
+    ///
+    /// The verification flows pin through `pin_with` (zone.rs), which
+    /// adds the contact zone's access in the same transaction; this form
+    /// stays for the integration tests only.
+    #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
     pub(crate) fn pin_contact(
         &mut self,
         card: &SignedContactCard,
