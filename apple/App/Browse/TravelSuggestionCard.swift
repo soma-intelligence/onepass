@@ -14,8 +14,8 @@ struct TravelSuggestionCard: View {
         switch model.travel.suggestion {
         case .suggest:
             card(
-                title: "Tu voyages ?",
-                detail: "Tu sembles loin de chez toi. Le Travel Mode retire de cet appareil ce que tu ne veux pas montrer.",
+                title: "travel.suggest.title",
+                detail: "travel.suggest.body",
                 symbol: "airplane.departure"
             ) {
                 Button("Oui") {
@@ -24,7 +24,7 @@ struct TravelSuggestionCard: View {
                 }
                 .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("travel.suggest.yes")
-                Button("Non") { withAnimation(.snappy) { model.travel.answerNo() } }
+                Button("travel.suggest.no") { withAnimation(.snappy) { model.travel.answerNo() } }
                     .buttonStyle(.glass)
                     .accessibilityIdentifier("travel.suggest.no")
                 Button("Plus tard") { withAnimation(.snappy) { model.travel.answerNotNow() } }
@@ -35,11 +35,11 @@ struct TravelSuggestionCard: View {
             .accessibilityIdentifier("travel.suggest")
         case .welcomeBack:
             card(
-                title: "De retour ?",
-                detail: "Le Travel Mode est toujours activé sur cet appareil.",
+                title: "travel.welcome.title",
+                detail: "travel.welcome.body",
                 symbol: "airplane.arrival"
             ) {
-                Button("Désactiver") { model.travelSheet = .exit }
+                Button("travel.welcome.turnOff") { model.travelSheet = .exit }
                     .buttonStyle(.glassProminent)
                     .accessibilityIdentifier("travel.welcome.exit")
                 Button("Plus tard") { withAnimation(.snappy) { model.travel.dismissWelcome() } }
@@ -59,7 +59,10 @@ struct TravelSuggestionCard: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
             HStack(alignment: .center, spacing: 10) {
-                SymbolTile(symbol: symbol, color: Theme.accent, size: compact ? 26 : 30)
+                Image(systemName: symbol)
+                    .font(compact ? .body : .title3)
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(compact ? .subheadline.weight(.semibold) : .headline)
                 Spacer(minLength: 0)

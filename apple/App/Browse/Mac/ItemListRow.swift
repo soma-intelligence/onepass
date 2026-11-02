@@ -51,8 +51,8 @@ struct ItemListRow: View {
                 Image(systemName: summary.travelHidden ? "airplane" : "lock.shield")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help(summary.travelHidden ? "Caché en voyage" : "Protection renforcée en voyage")
-                    .accessibilityLabel(summary.travelHidden ? Text("Caché en voyage") : Text("Protection renforcée en voyage"))
+                    .help(summary.travelHidden ? "item.travel.hidden" : "item.travel.guard")
+                    .accessibilityLabel(summary.travelHidden ? Text("item.travel.hidden") : Text("item.travel.guard"))
             }
         }
         .padding(.vertical, 3)

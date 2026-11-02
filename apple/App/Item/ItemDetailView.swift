@@ -387,7 +387,7 @@ struct ItemDetailView: View {
                     .font(.system(size: 36))
                     .foregroundStyle(.tint)
                 Text(travelGuarded(item)
-                    ? "Protégé en voyage : mot de passe maître et Face ID."
+                    ? "item.travel.guard.locked"
                     : "Cet élément demande une confirmation avant d'afficher son contenu.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -451,7 +451,7 @@ struct ItemDetailView: View {
                     askPassword = false
                     await confirmPresence()
                     if !presencePassed {
-                        repromptError = String(localized: "Confirme aussi avec Face ID ou Touch ID.")
+                        repromptError = String(localized: "item.travel.guard.needBiometrics")
                     }
                 } else {
                     unlockReprompt()

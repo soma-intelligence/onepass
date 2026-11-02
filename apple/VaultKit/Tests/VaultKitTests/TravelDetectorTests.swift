@@ -95,7 +95,7 @@ struct TravelDetectorTests {
         TravelDetector.observe(&places, cell: paris, day: 1 + TravelDetector.windowDays)
         #expect(places.seen[lyon] == nil)
         for i in 0..<(TravelDetector.maxCells + 5) {
-            TravelDetector.observe(&places, cell: "c\(i)", day: 200 + i)
+            TravelDetector.observe(&places, cell: "c\(i)", day: 200 + i / 2)
         }
         #expect(places.seen.count == TravelDetector.maxCells)
         #expect(places.seen["c0"] == nil)

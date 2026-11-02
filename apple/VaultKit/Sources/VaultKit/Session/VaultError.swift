@@ -174,7 +174,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "upstream does not hold the vault":
             return String(localized: "iCloud n'a pas encore une copie complète de ces coffres. Synchronise, puis réessaie : rien n'a été retiré.", bundle: VaultKitStrings.bundle)
         case "no vault leaves", "nothing leaves":
-            return String(localized: "Rien ne quitterait cet appareil : tous tes coffres sont sûrs en voyage et aucun élément n'est caché ni protégé.", bundle: VaultKitStrings.bundle)
+            return String(localized: "travel.error.nothingLeaves", bundle: VaultKitStrings.bundle)
         case "travel mode already on":
             return String(localized: "Le Travel Mode est déjà activé.", bundle: VaultKitStrings.bundle)
         case "travel mode off":

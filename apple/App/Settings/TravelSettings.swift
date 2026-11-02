@@ -66,13 +66,13 @@ struct TravelSettings: View {
             if autoConfirm, status?.active == false, !nothingLeaves { confirming = true }
         }
         .confirmationDialog(
-            "Oublier les lieux appris ?", isPresented: $confirmForget, titleVisibility: .visible
+            "settings.travel.forget.title", isPresented: $confirmForget, titleVisibility: .visible
         ) {
             Button("Oublier", role: .destructive) { model.travel.forgetPlaces() }
                 .accessibilityIdentifier("settings.travel.forget.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("OnePass réapprendra où tu vis d'habitude.")
+            Text("settings.travel.forget.message")
         }
         .confirmationDialog(
             "Activer le Travel Mode ?", isPresented: $confirming, titleVisibility: .visible
@@ -103,17 +103,13 @@ struct TravelSettings: View {
         }
         let hidden = hiddenItems.count
         if hidden > 0 {
-            parts.append(hidden == 1
-                ? String(localized: "1 élément caché part aussi.")
-                : String(localized: "\(hidden) éléments cachés partent aussi."))
+            parts.append(String(localized: "settings.travel.leaving.hiddenItems \(hidden)"))
         }
         let guarded = guardedItems.count
         if guarded > 0 {
-            parts.append(guarded == 1
-                ? String(localized: "1 élément reste, protégé par mot de passe et Face ID.")
-                : String(localized: "\(guarded) éléments restent, protégés par mot de passe et Face ID."))
+            parts.append(String(localized: "settings.travel.leaving.guardedItems \(guarded)"))
         }
-        if parts.isEmpty { return String(localized: "Rien ne quitterait cet appareil.") }
+        if parts.isEmpty { return String(localized: "settings.travel.leaving.nothing") }
         return parts.joined(separator: " ")
     }
 
@@ -122,7 +118,7 @@ struct TravelSettings: View {
         if !hiddenItems.isEmpty || !guardedItems.isEmpty || (status?.hiddenItemCount ?? 0) > 0 {
             Section {
                 if status?.active == true, let n = status?.hiddenItemCount, n > 0 {
-                    Label(n == 1 ? String(localized: "1 élément hors de cet appareil") : String(localized: "\(n) éléments hors de cet appareil"), systemImage: "eye.slash")
+                    Label(String(localized: "settings.travel.hiddenItems \(Int(n))"), systemImage: "eye.slash")
                         .accessibilityIdentifier("settings.travel.hiddenItems")
                 } else {
                     ForEach(hiddenItems, id: \.itemId) { entry in
@@ -135,7 +131,7 @@ struct TravelSettings: View {
             } header: {
                 Text("Éléments")
             } footer: {
-                Text("Se règle dans chaque élément : Caché en voyage, ou Protection renforcée.")
+                Text("settings.travel.items.footer")
             }
         }
     }
@@ -151,17 +147,17 @@ struct TravelSettings: View {
     private var detectionSection: some View {
         @Bindable var travel = model.travel
         return Section {
-            Toggle("Proposer le Travel Mode", isOn: $travel.enabled)
+            Toggle("settings.travel.suggest", isOn: $travel.enabled)
                 .accessibilityIdentifier("settings.travel.suggest")
             if travel.enabled || travel.usualCount > 0 {
-                Button("Oublier les lieux appris", role: .destructive) { confirmForget = true }
+                Button("settings.travel.forget.button", role: .destructive) { confirmForget = true }
                     .disabled(travel.usualCount == 0)
                     .accessibilityIdentifier("settings.travel.forget")
             }
         } header: {
-            Text("Détection")
+            Text("settings.travel.detection.header")
         } footer: {
-            Text("Quand tu sembles en voyage, OnePass te le propose. Tes lieux restent sur cet appareil.")
+            Text("settings.travel.detection.footer")
         }
     }
 
@@ -269,7 +265,7 @@ struct TravelSettings: View {
             status = try await model.session.finishTravelExit()
             model.travel.travelChanged(active: false)
             await reload()
-            model.showToast(String(localized: "De retour sur cet appareil"))
+            model.showToast(String(localized: "travel.toast.back"))
         } catch {
             errorMessage = VaultError(error).localizedMessage
             await reload()

@@ -485,20 +485,20 @@ struct ItemEditorView: View {
                     .accessibilityIdentifier("editor.reprompt")
             }
             // Travel Mode per item (spec 2026-11-02): hidden leaves the device, extra protection asks
-            // for the password and Face ID while travelling.
+            // for the password and biometrics while travelling.
             EditorCard {
-                OptionToggle(title: "Caché en voyage", isOn: $editor.draft.item.travelHidden)
-                    .help("Quitte cet appareil en Travel Mode, revient au retour.")
+                OptionToggle(title: "item.travel.hidden", isOn: $editor.draft.item.travelHidden)
+                    .help("item.travel.hidden.help")
                     .accessibilityIdentifier("editor.travelHidden")
                 CardDivider()
-                OptionToggle(title: "Protection renforcée en voyage", isOn: $editor.draft.item.travelGuard)
-                    .help("En Travel Mode : mot de passe maître et Face ID pour l'afficher, jamais proposé ailleurs.")
+                OptionToggle(title: "item.travel.guard", isOn: $editor.draft.item.travelGuard)
+                    .help("item.travel.guard.help")
                     .disabled(editor.draft.item.travelHidden)
                     .accessibilityIdentifier("editor.travelGuard")
             }
             Text(editor.draft.item.travelHidden
-                ? "Quitte cet appareil en Travel Mode et revient vérifié au retour."
-                : "En Travel Mode, « Caché » le retire de l'appareil ; « Protection renforcée » demande mot de passe et Face ID.")
+                ? "item.travel.footer.hidden"
+                : "item.travel.footer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16)

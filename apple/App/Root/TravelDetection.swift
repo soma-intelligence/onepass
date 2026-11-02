@@ -227,8 +227,8 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
             else { return }
             let content = UNMutableNotificationContent()
-            content.title = String(localized: "Tu voyages ?")
-            content.body = String(localized: "Active le Travel Mode avant la frontière.")
+            content.title = String(localized: "travel.suggest.title")
+            content.body = String(localized: "travel.suggest.notificationBody")
             content.interruptionLevel = .passive
             content.relevanceScore = 0.3
             let request = UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil)

@@ -6538,6 +6538,36 @@
           }
         }
       }
+    },
+    "travel.error.nothingLeaves" : {
+      "comment" : "Error when Travel Mode would remove nothing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien ne quitterait cet appareil : tous tes coffres sont sûrs en voyage et aucun élément n'est caché ni protégé."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing would leave this device: all your vaults are safe for travel and no item is hidden or protected."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada saldría de este dispositivo: todas tus bóvedas son seguras para viajar y ningún elemento está oculto ni protegido."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niente lascerebbe questo dispositivo: tutte le tue casseforti sono sicure in viaggio e nessun elemento è nascosto o protetto."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

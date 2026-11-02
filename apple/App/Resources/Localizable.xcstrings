@@ -40415,6 +40415,960 @@
           }
         }
       }
+    },
+    "travel.suggest.title" : {
+      "comment" : "Card and notification when the device seems far from its usual places.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu voyages ?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Are You Travelling?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Estás de viaje?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sei in viaggio?"
+          }
+        }
+      }
+    },
+    "travel.suggest.body" : {
+      "comment" : "Body of the travel suggestion card.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu sembles loin de chez toi. Le Travel Mode retire de cet appareil ce que tu ne veux pas montrer."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You seem far from home. Travel Mode removes from this device what you don't want to show."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parece que estás lejos de casa. Travel Mode quita de este dispositivo lo que no quieres mostrar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sembri lontano da casa. Travel Mode rimuove da questo dispositivo ciò che non vuoi mostrare."
+          }
+        }
+      }
+    },
+    "travel.suggest.no" : {
+      "comment" : "Travel suggestion card: not travelling, learn this place.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        }
+      }
+    },
+    "travel.suggest.notificationBody" : {
+      "comment" : "Notification body when the device seems abroad.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active le Travel Mode avant la frontière."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Travel Mode before the border."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa Travel Mode antes de la frontera."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva Travel Mode prima della frontiera."
+          }
+        }
+      }
+    },
+    "travel.welcome.title" : {
+      "comment" : "Card when Travel Mode is on and the device is home again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De retour ?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back Home?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿De vuelta en casa?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di nuovo a casa?"
+          }
+        }
+      }
+    },
+    "travel.welcome.body" : {
+      "comment" : "Body of the back home card.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le Travel Mode est toujours activé sur cet appareil."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode is still on for this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode sigue activado en este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode è ancora attivo su questo dispositivo."
+          }
+        }
+      }
+    },
+    "travel.welcome.turnOff" : {
+      "comment" : "Back home card button: opens the Travel Mode exit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva"
+          }
+        }
+      }
+    },
+    "travel.toast.back" : {
+      "comment" : "Toast after Travel Mode ends and vaults and items are restored.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De retour sur cet appareil"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back on This Device"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De vuelta en este dispositivo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di nuovo su questo dispositivo"
+          }
+        }
+      }
+    },
+    "item.travel.hidden" : {
+      "comment" : "Item editor toggle and list badge: the item leaves the device in Travel Mode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caché en voyage"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden in Travel Mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oculto en Travel Mode"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascosto in Travel Mode"
+          }
+        }
+      }
+    },
+    "item.travel.guard" : {
+      "comment" : "Item editor toggle and list badge: revealing needs password and biometrics in Travel Mode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protection renforcée en voyage"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra Protection in Travel Mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protección reforzada en Travel Mode"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protezione rafforzata in Travel Mode"
+          }
+        }
+      }
+    },
+    "item.travel.hidden.help" : {
+      "comment" : "Help of the hidden in Travel Mode toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitte cet appareil en Travel Mode, revient au retour."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaves this device in Travel Mode, comes back when you return."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sale de este dispositivo en Travel Mode y vuelve a tu regreso."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lascia questo dispositivo in Travel Mode e torna al tuo rientro."
+          }
+        }
+      }
+    },
+    "item.travel.guard.help" : {
+      "comment" : "Help of the extra protection toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Travel Mode : mot de passe maître et Face ID ou Touch ID pour l'afficher, jamais proposé ailleurs."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Travel Mode: master password and Face ID or Touch ID to show it, never offered elsewhere."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Travel Mode: contraseña maestra y Face ID o Touch ID para mostrarlo, nunca se ofrece en otro sitio."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Travel Mode: password principale e Face ID o Touch ID per mostrarlo, mai proposto altrove."
+          }
+        }
+      }
+    },
+    "item.travel.footer.hidden" : {
+      "comment" : "Item editor footnote when the item is hidden in Travel Mode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitte cet appareil en Travel Mode et revient vérifié au retour."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaves this device in Travel Mode and comes back verified when you return."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sale de este dispositivo en Travel Mode y vuelve verificado a tu regreso."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lascia questo dispositivo in Travel Mode e torna verificato al tuo rientro."
+          }
+        }
+      }
+    },
+    "item.travel.footer" : {
+      "comment" : "Item editor footnote of the travel section.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Travel Mode, Caché le retire de l'appareil et Protection renforcée demande le mot de passe maître et Face ID ou Touch ID."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Travel Mode, Hidden removes it from the device and Extra Protection asks for the master password and Face ID or Touch ID."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Travel Mode, Oculto lo quita del dispositivo y Protección reforzada pide la contraseña maestra y Face ID o Touch ID."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Travel Mode, Nascosto lo rimuove dal dispositivo e Protezione rafforzata chiede la password principale e Face ID o Touch ID."
+          }
+        }
+      }
+    },
+    "item.travel.guard.locked" : {
+      "comment" : "Item detail while travelling, on an item with extra protection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protégé en voyage : mot de passe maître et Face ID ou Touch ID."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protected while travelling: master password and Face ID or Touch ID."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protegido en viaje: contraseña maestra y Face ID o Touch ID."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protetto in viaggio: password principale e Face ID o Touch ID."
+          }
+        }
+      }
+    },
+    "item.travel.guard.needBiometrics" : {
+      "comment" : "Item detail error: the password was right, biometrics still needed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirme aussi avec Face ID ou Touch ID."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm with Face ID or Touch ID too."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirma también con Face ID o Touch ID."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conferma anche con Face ID o Touch ID."
+          }
+        }
+      }
+    },
+    "settings.travel.forget.title" : {
+      "comment" : "Confirmation title before forgetting the learned places.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier les lieux appris ?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget Learned Places?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Olvidar los lugares aprendidos?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dimenticare i luoghi appresi?"
+          }
+        }
+      }
+    },
+    "settings.travel.forget.message" : {
+      "comment" : "Confirmation message before forgetting the learned places.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass réapprendra où tu vis d'habitude."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass will learn again where you usually are."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass volverá a aprender dónde sueles estar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass imparerà di nuovo dove ti trovi di solito."
+          }
+        }
+      }
+    },
+    "settings.travel.forget.button" : {
+      "comment" : "Settings > Travel Mode: wipes the learned places.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier les lieux appris"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget Learned Places"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Olvidar los lugares aprendidos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dimentica i luoghi appresi"
+          }
+        }
+      }
+    },
+    "settings.travel.suggest" : {
+      "comment" : "Settings > Travel Mode switch, off by default.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proposer le Travel Mode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggest Travel Mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerir Travel Mode"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggerisci Travel Mode"
+          }
+        }
+      }
+    },
+    "settings.travel.detection.header" : {
+      "comment" : "Settings > Travel Mode section header.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détection"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detection"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detección"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rilevamento"
+          }
+        }
+      }
+    },
+    "settings.travel.detection.footer" : {
+      "comment" : "Settings > Travel Mode, one line under the suggestion switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand tu sembles en voyage, OnePass te le propose. Tes lieux restent sur cet appareil."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you seem to be travelling, OnePass suggests it. Your places stay on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando parece que viajas, OnePass te lo sugiere. Tus lugares se quedan en este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quando sembri in viaggio, OnePass te lo suggerisce. I tuoi luoghi restano su questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.travel.items.footer" : {
+      "comment" : "Settings > Travel Mode, under the items section.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ajusta en cada elemento: Oculto en Travel Mode o Protección reforzada en Travel Mode."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si imposta in ogni elemento: Nascosto in Travel Mode o Protezione rafforzata in Travel Mode."
+          }
+        }
+      }
+    },
+    "settings.travel.leaving.nothing" : {
+      "comment" : "Travel Mode confirmation when nothing would leave.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien ne quitterait cet appareil."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing would leave this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada saldría de este dispositivo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niente lascerebbe questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.travel.leaving.hiddenItems %lld" : {
+      "comment" : "Travel Mode confirmation: count of hidden items that leave too.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément caché part aussi."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments cachés partent aussi."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hidden item leaves too."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hidden items leave too."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento oculto también sale."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos ocultos también salen."
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Anche %lld elemento nascosto se ne va."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Anche %lld elementi nascosti se ne vanno."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings.travel.leaving.guardedItems %lld" : {
+      "comment" : "Travel Mode confirmation: count of items that stay with extra protection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément reste, protégé par mot de passe maître et Face ID ou Touch ID."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments restent, protégés par mot de passe maître et Face ID ou Touch ID."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item stays, protected by master password and Face ID or Touch ID."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items stay, protected by master password and Face ID or Touch ID."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento se queda, protegido por contraseña maestra y Face ID o Touch ID."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos se quedan, protegidos por contraseña maestra y Face ID o Touch ID."
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento resta, protetto da password principale e Face ID o Touch ID."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementi restano, protetti da password principale e Face ID o Touch ID."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings.travel.hiddenItems %lld" : {
+      "comment" : "Settings > Travel Mode while travelling: count of items off this device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément hors de cet appareil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments hors de cet appareil"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item off this device"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items off this device"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento fuera de este dispositivo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos fuera de este dispositivo"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento fuori da questo dispositivo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementi fuori da questo dispositivo"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
