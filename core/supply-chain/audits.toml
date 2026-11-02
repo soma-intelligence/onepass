@@ -164,6 +164,13 @@ start = "2023-02-05"
 end = "2027-04-28"
 notes = "Publisher trust, not a code review: cuviper is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
 
+[[trusted.ff]]
+criteria = "safe-to-deploy"
+user-id = 6289 # Jack Grigg (str4d)
+start = "2021-08-11"
+end = "2027-11-02"
+notes = "Publisher trust, not a code review: str4d is trusted by zcash and ariel-os (cargo vet suggest on 2026-11-02). Field traits under k256, watch-only crypto balances (spec 2026-11-02-crypto-watch). Re-decide at expiry."
+
 [[trusted.find-msvc-tools]]
 criteria = "safe-to-deploy"
 user-id = 539 # Josh Stone (cuviper)
@@ -177,6 +184,13 @@ user-id = 55123 # rust-lang-owner
 start = "2023-01-06"
 end = "2027-04-28"
 notes = "Publisher trust, not a code review: rust-lang-owner is trusted by isrg, mozilla, ariel-os, and 1 other (imported audit sets, cargo vet suggest on 2026-10-28). Re-decide at expiry."
+
+[[trusted.group]]
+criteria = "safe-to-deploy"
+user-id = 1244 # Sean Bowe (ebfull)
+start = "2019-10-08"
+end = "2027-11-02"
+notes = "Publisher trust, not a code review: ebfull is trusted by zcash (cargo vet suggest on 2026-11-02). Group traits under k256, watch-only crypto balances (spec 2026-11-02-crypto-watch). Re-decide at expiry."
 
 [[trusted.hashbrown]]
 criteria = "safe-to-deploy"

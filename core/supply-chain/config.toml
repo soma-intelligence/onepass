@@ -64,6 +64,11 @@ version = "0.46.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.base16ct]]
+version = "0.2.0"
+criteria = "safe-to-deploy"
+notes = "Constant-time hex of sec1, under k256 (secp256k1 public derivation of the watch-only crypto balances, spec 2026-11-02-crypto-watch, wallet_watch::bip32). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.base16ct]]
 version = "1.0.0"
 criteria = "safe-to-deploy"
 
@@ -125,6 +130,11 @@ version = "0.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
+version = "0.9.6"
+criteria = "safe-to-deploy"
+notes = "OID constants of der 0.7, under k256 through sec1 (watch-only crypto balances, spec 2026-11-02-crypto-watch). Version 0.10 is already in the lockfile. Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.const-oid]]
 version = "0.10.2"
 criteria = "safe-to-deploy"
 notes = "OID constants, now shipped through digest 0.11 (feature oid) under sha1 0.11, the WebSocket handshake hash of tungstenite (mailbox wake listener, onepass-mailbox). Was safe-to-run for dev-dependencies only. Not audited here: exemption until an audit is imported or recorded."
@@ -152,6 +162,11 @@ criteria = "safe-to-deploy"
 [[exemptions.crc32fast]]
 version = "1.5.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.crypto-bigint]]
+version = "0.5.5"
+criteria = "safe-to-deploy"
+notes = "Constant-time big integers of elliptic-curve, under k256 (secp256k1 for BIP32 public derivation, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.crypto-bigint]]
 version = "0.7.10"
@@ -197,6 +212,11 @@ criteria = "safe-to-deploy"
 [[exemptions.displaydoc]]
 version = "0.2.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.elliptic-curve]]
+version = "0.13.8"
+criteria = "safe-to-deploy"
+notes = "RustCrypto curve traits under k256 (secp256k1 for BIP32 public derivation and the explicit phrase-to-public derivation, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.fancy-regex]]
 version = "0.18.0"
@@ -330,6 +350,11 @@ criteria = "safe-to-deploy"
 [[exemptions.js-sys]]
 version = "0.3.106"
 criteria = "safe-to-deploy"
+
+[[exemptions.k256]]
+version = "0.13.4"
+criteria = "safe-to-deploy"
+notes = "secp256k1 arithmetic (feature arithmetic only, no ECDSA, no signing): BIP32 CKDpub of xpub watch-only addresses and the public key of the explicit phrase-to-public derivation (spec 2026-11-02-crypto-watch). aws-lc-rs has no secp256k1. Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.keccak]]
 version = "0.2.2"
@@ -496,6 +521,11 @@ version = "0.17.14"
 criteria = "safe-to-deploy"
 notes = "Optional backend of rustls-webpki, in the lockfile only: the mailbox client uses aws-lc-rs and does not compile ring. Not audited here: exemption until an audit is imported or recorded."
 
+[[exemptions.ripemd]]
+version = "0.1.3"
+criteria = "safe-to-deploy"
+notes = "RIPEMD-160 of HASH160, the Bitcoin address of a public key (watch-only crypto balances, spec 2026-11-02-crypto-watch). Hashes public keys only. Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.rpassword]]
 version = "7.5.4"
 criteria = "safe-to-deploy"
@@ -547,6 +577,11 @@ criteria = "safe-to-deploy"
 [[exemptions.scroll_derive]]
 version = "0.12.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.sec1]]
+version = "0.7.3"
+criteria = "safe-to-deploy"
+notes = "SEC1 point encoding under k256 (compressed public keys of BIP32, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.security-framework]]
 version = "3.7.0"
