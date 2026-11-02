@@ -22,6 +22,8 @@ public final class VaultSession {
     public private(set) var allVaults: [FfiVault] = []
     /// Every item summary, archived and trashed ones included. Use `items(filter:query:sort:)` for lists.
     public private(set) var summaries: [FfiItemSummary] = []
+    /// Travel Mode is on in this session (entered or resumed), refreshed with every list reload.
+    public private(set) var isTravelling = false
     /// Recently opened item ids, newest first. Memory only, emptied on lock.
     public private(set) var recents: [String] = []
     /// Searches typed in this session, newest first (`RecentSearches`). Memory only, emptied on lock.
@@ -841,6 +843,7 @@ public final class VaultSession {
         allVaults = []
         recents = []
         recentSearches = []
+        isTravelling = false
         locationIndex = LocationIndex()
         autoLockTimer?.cancel()
         autoLockTimer = nil
@@ -1546,6 +1549,9 @@ public final class VaultSession {
         var summaries: [FfiItemSummary]
         var purged: UInt32 = 0
         var profile: FfiProfile?
+        /// Travel Mode is on in this session (spec 2026-11-02): items behind extra protection lock
+        /// harder.
+        var travelling = false
     }
 
     private struct Opened: Sendable {
@@ -1589,7 +1595,7 @@ public final class VaultSession {
         let purged = purge ? try session.purgeTrash(olderThanDays: trashRetentionDays) : 0
         return Snapshot(
             vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged,
-            profile: try session.profile())
+            profile: try session.profile(), travelling: (try? session.travelling()) ?? false)
     }
 
     /// The core's default name of a device that listed itself (`devices::DEFAULT_DEVICE_NAME`).
@@ -1698,6 +1704,7 @@ public final class VaultSession {
     private func apply(_ snapshot: Snapshot) {
         allVaults = snapshot.vaults
         summaries = snapshot.summaries
+        isTravelling = snapshot.travelling
         summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
