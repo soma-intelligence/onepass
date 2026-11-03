@@ -50,7 +50,13 @@ use crate::lineage::{
 };
 use crate::lists::{AccountList, ListBody, sign};
 use crate::manifest::{SeenManifest, sign_manifest};
-use crate::store::{Record, RecordKind, RecordStore, RotationPush, VaultEvent, account_record_id};
+use crate::share::{
+    MemberLineageRecord, MemberRef, PendingIdentity, RekeyReason, RekeyRequest, ShareState,
+    SignedZoneAccess, ZONE_ACCESS_KIND, wrap_member_key,
+};
+use crate::store::{
+    Record, RecordKind, RecordStore, RotationPush, VaultEvent, Zone, account_record_id,
+};
 use crate::synchome::{SYNC_HOME_DOMAIN, SignedSyncHome, SyncBackend, SyncHomeBody};
 use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
 use crate::vault::Vault;
@@ -628,6 +634,22 @@ impl<S: RecordStore> Repository<S> {
             None,
         ));
 
+        // Sharing plan 2 Task 13 (spec 12.2 step 3 bis): in each shared
+        // vault I belong to, an envelope of the current generation for the
+        // new identity, my new lineage record in every shared and contact
+        // zone, a rekey request when devices are revoked, the share state
+        // marked `identity_pending`; every zone access signed again under
+        // the new identity, its seed wrapped for the new KEM key. All in the
+        // rotation's transaction.
+        let (zoned, shares) = self.rotation_share_writes(
+            &account,
+            new_id,
+            &record,
+            req.reason == RotationReason::Revoke,
+            at,
+            &mut writes,
+        )?;
+
         // The trust state of the new head.
         let mut next: TrustState = trust.clone();
         next.head = LineageHead {
@@ -699,7 +721,7 @@ impl<S: RecordStore> Repository<S> {
         // on the trust state read above: a follow or a rejection saved
         // meanwhile (another connection) is a `Conflict`, nothing written.
         self.store
-            .put_rotation(writes, chain.clone(), &trust, &next, &push)?;
+            .put_rotation(writes, chain.clone(), &trust, &next, &push, zoned, &shares)?;
 
         // Committed: from here on nothing may fail (K12), or a caller
         // following the contract would discard the new Secret Key of an
@@ -731,5 +753,140 @@ impl<S: RecordStore> Repository<S> {
             code: rotation_code(&head),
             head,
         })
+    }
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// The shared side of a rotation (sharing plan 2 Task 13): what goes
+    /// in the shared and contact zones, the share states to write, and the
+    /// zone accesses signed again (added to `writes`). Read with the
+    /// identity being left, written for `account`, the new one.
+    fn rotation_share_writes(
+        &self,
+        account: &Account,
+        new_id: Id,
+        record: &LineageRecord,
+        revoke: bool,
+        at: i64,
+        writes: &mut Vec<(Record, Option<u64>)>,
+    ) -> Result<(Vec<(Zone, Record, Option<u64>)>, Vec<ShareState>)> {
+        let old = self.me();
+        let new = MemberRef {
+            account_id: old.account_id,
+            identity_id: new_id,
+        };
+        let lineage = MemberLineageRecord::Lineage(record.clone());
+        let lineage_id = lineage.id();
+        let lineage_data = lineage.encode();
+        let head = record.hash();
+        let mut zoned = Vec::new();
+        let mut shares = Vec::new();
+        let publish = |zone: Zone, zoned: &mut Vec<(Zone, Record, Option<u64>)>| -> Result<()> {
+            if self
+                .store
+                .get_in(zone, RecordKind::MemberLineage, lineage_id)?
+                .is_none()
+            {
+                zoned.push((
+                    zone,
+                    Record {
+                        kind: RecordKind::MemberLineage,
+                        id: lineage_id,
+                        version: 1,
+                        data: lineage_data.clone(),
+                    },
+                    None,
+                ));
+            }
+            Ok(())
+        };
+        for mut state in self.store.share_states()? {
+            if state
+                .head
+                .member(old.account_id)
+                .is_none_or(|m| m.identity_id != old.identity_id)
+            {
+                continue;
+            }
+            // A vault I cannot open (refused, never keyed) gets nothing.
+            let Ok(vault) = self.open_shared(state.vault_id) else {
+                continue;
+            };
+            let zone = state.zone;
+            let g = state.head.generation;
+            let mk = wrap_member_key(&account.params.kem_pub, vault.key(), vault.id, g, &new)?;
+            zoned.push((
+                zone,
+                Record {
+                    kind: RecordKind::MemberKey,
+                    id: mk.id(),
+                    version: 1,
+                    data: mk.encode(),
+                },
+                self.store
+                    .get_in(zone, RecordKind::MemberKey, mk.id())?
+                    .map(|r| r.version),
+            ));
+            publish(zone, &mut zoned)?;
+            if revoke {
+                let req = RekeyRequest::sign(
+                    vault.id,
+                    Some(head),
+                    RekeyReason::MemberRotation,
+                    g,
+                    old,
+                    &self.account.keyset().signing,
+                )?;
+                zoned.push((
+                    zone,
+                    Record {
+                        kind: RecordKind::RekeyRequest,
+                        id: req.id(),
+                        version: 1,
+                        data: req.encode(),
+                    },
+                    self.store
+                        .get_in(zone, RecordKind::RekeyRequest, req.id())?
+                        .map(|r| r.version),
+                ));
+            }
+            state.identity_pending = Some(PendingIdentity {
+                new_identity: new,
+                since: at,
+            });
+            shares.push(state);
+        }
+        for zone in self.contact_zones()? {
+            publish(zone, &mut zoned)?;
+        }
+        for access in self.zone_accesses()? {
+            let Some((_, seed)) = self.zone_access(access.target)? else {
+                continue;
+            };
+            let id = access.target.record_id()?;
+            let expected = self.store.get(ZONE_ACCESS_KIND, id)?.map(|r| r.version);
+            let signed = SignedZoneAccess::seal(
+                account.params.account_id,
+                &account.params.kem_pub,
+                &account.keyset().signing,
+                access.target,
+                access.home,
+                &seed,
+            )?;
+            let version = expected.map_or(Ok(1), |v| {
+                v.checked_add(1)
+                    .ok_or(Error::InvalidFormat("zone access version"))
+            })?;
+            writes.push((
+                Record {
+                    kind: ZONE_ACCESS_KIND,
+                    id,
+                    version,
+                    data: signed.encode(),
+                },
+                expected,
+            ));
+        }
+        Ok((zoned, shares))
     }
 }

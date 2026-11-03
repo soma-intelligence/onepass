@@ -25,7 +25,8 @@ use onepass_core::manifest::{SeenManifest, SignedManifest, verify_manifest};
 use onepass_core::repo::rotate::open_key_delivery;
 use onepass_core::repo::travel::TravelState;
 use onepass_core::repo::{RotateRequest, RotationOutcome};
-use onepass_core::store::{RotationPush, VaultEvent, account_record_id};
+use onepass_core::share::ShareState;
+use onepass_core::store::{RotationPush, VaultEvent, Zone, account_record_id};
 use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use onepass_core::vaultlist::VaultListEntry;
@@ -544,6 +545,8 @@ impl RecordStore for Faulty {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         self.ok()?;
         if self.fail_commit {
@@ -551,7 +554,7 @@ impl RecordStore for Faulty {
         }
         self.race()?;
         self.inner
-            .put_rotation(writes, chain, expected, trust, rotation)?;
+            .put_rotation(writes, chain, expected, trust, rotation, zoned, shares)?;
         self.broken.set(true);
         Ok(())
     }

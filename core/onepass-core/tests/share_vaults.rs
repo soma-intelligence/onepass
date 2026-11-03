@@ -7,16 +7,18 @@ use common::*;
 use onepass_core::contact::{ContactLevel, pair_id};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::lineage::RotationReason;
 use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
 };
 use onepass_core::repo::rekey::AccessRefusal;
+use onepass_core::repo::rotate::RotateRequest;
 use onepass_core::share::{
-    AccessTarget, InviteRecord, MEMBERSHIP_FORMAT, Member, MemberKey, MemberRef, MembershipBody,
-    MembershipReason, RekeyReason, RekeyRequest, Role, ShareAction, ShareInvite, SignedMembership,
-    ZONE_ACCESS_KIND, ZoneHome, ZoneMailboxKind, ZoneRole, ZoneSeed, identity_pub_hash,
-    member_key_id, open_member_key, open_zone_credential, server_role, sign_membership,
-    wrap_zone_credential,
+    AccessTarget, InviteRecord, MEMBERSHIP_FORMAT, Member, MemberKey, MemberLineageRecord,
+    MemberRef, MembershipBody, MembershipReason, RekeyReason, RekeyRequest, Role, ShareAction,
+    ShareInvite, SignedMembership, ZONE_ACCESS_KIND, ZoneHome, ZoneMailboxKind, ZoneRole, ZoneSeed,
+    identity_pub_hash, member_key_id, open_member_key, open_zone_credential, server_role,
+    sign_membership, wrap_zone_credential,
 };
 use onepass_core::store::{MemoryStore, RecordStore, Zone};
 use onepass_core::sync::PhaseOutcome;
@@ -406,6 +408,11 @@ struct Acct {
     server: Server,
     dev: Device,
     sk: SecretKey,
+    /// The device keys the trust state pins (a rotation signs with them).
+    keys: DeviceKeys,
+    /// A second roster device, never paired here: one a rotation can
+    /// revoke.
+    spare: Option<Id>,
 }
 
 fn entry_of(p: &DevicePublic) -> RosterEntry {
@@ -428,7 +435,12 @@ impl Acct {
 
     /// `dev` synced once, then given a lineage genesis and a trust state
     /// (as `contact_invite.rs`), so that it has a contact card.
-    fn of(mut dev: Device, sk: SecretKey) -> Acct {
+    fn of(dev: Device, sk: SecretKey) -> Acct {
+        Acct::of_with(dev, sk, false)
+    }
+
+    /// `of`, with a spare roster device when `spare`.
+    fn of_with(mut dev: Device, sk: SecretKey, spare: bool) -> Acct {
         let mut server = Server::default();
         sync(&mut server, &mut dev).unwrap();
         let keys = DeviceKeys::generate_software().unwrap();
@@ -462,6 +474,13 @@ impl Acct {
             DeviceLineageState::Current,
         );
         trust.levels.insert(me.device_id, TrustLevel::Verified);
+        let spare = spare.then(|| {
+            let other = DeviceKeys::generate_software().unwrap();
+            let p = other.public(Id::new()).unwrap();
+            trust.roster.push(entry_of(&p));
+            trust.levels.insert(p.device_id, TrustLevel::Verified);
+            p.device_id
+        });
         let record = Record {
             id: genesis.record_id(),
             kind: RecordKind::Lineage,
@@ -473,7 +492,42 @@ impl Acct {
             .put_all_if_version_with_trust(vec![(record, None)], vec![], None, &trust)
             .unwrap();
         sync(&mut server, &mut dev).unwrap();
-        Acct { server, dev, sk }
+        Acct {
+            server,
+            dev,
+            sk,
+            keys,
+            spare,
+        }
+    }
+
+    /// Rotate this account's keys (`revoke`: the spare device).
+    fn rotate(&mut self, revoke: bool) -> SecretKey {
+        let new_sk = SecretKey::generate().unwrap();
+        let revoked: Vec<Id> = if revoke {
+            vec![self.spare.expect("a spare device")]
+        } else {
+            vec![]
+        };
+        let reason = if revoke {
+            RotationReason::Revoke
+        } else {
+            RotationReason::Rotate
+        };
+        self.dev
+            .repo()
+            .rotate(RotateRequest {
+                revoke: revoked,
+                new_password: None,
+                password: PASSWORD,
+                secret_key: &self.sk,
+                new_secret_key: &new_sk,
+                device_keys: &self.keys,
+                reason,
+                keep_tofu: &[],
+            })
+            .unwrap();
+        new_sk
     }
 
     /// One sync, then the shared heads followed, as the app does after
@@ -2080,4 +2134,135 @@ fn stop_sharing_returns_personal_vault() {
     a.dev.repo().share_action_done(&delete).unwrap();
     assert!(a.dev.store().share_state(id).unwrap().is_none());
     assert!(a.dev.repo().shared_vaults().unwrap().is_empty());
+}
+
+// Task 13: a rotation carries the member's shared vault keys and lineage
+// (spec 12.2 step 3 bis, S3, A12).
+
+/// Alice (owner, with a spare device) shares "Famille" with Bob (Write).
+fn rotating_alice() -> (Zones, Acct, Acct, Id, Vec<Item>) {
+    let mut zs = Zones::default();
+    let (dev, sk, fam, items) = with_family();
+    let mut a = Acct::of_with(dev, sk, true);
+    let mut b = Acct::new();
+    pin(&mut a.dev, &mut b.dev, ContactLevel::Verified);
+    pin(&mut b.dev, &mut a.dev, ContactLevel::Verified);
+    contact_zone(&mut a.dev, &mut b.dev);
+    a.dev.repo().share_vault(&fam, NOW).unwrap();
+    a.dev
+        .repo()
+        .set_zone_home(AccessTarget::Zone(Zone::Vault(fam.id)), home(1))
+        .unwrap();
+    let bob = account_id(&mut b.dev);
+    a.dev
+        .repo()
+        .add_member(fam.id, bob, Role::Write, NOW + 1)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let inv = b.dev.repo().share_invites().unwrap()[0].id;
+    b.dev.repo().accept_share_invite(inv, NOW + 2).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    (zs, a, b, fam.id, items)
+}
+
+#[test]
+fn rotator_still_reads_shared_vault() {
+    let (_zs, mut a, _b, id, items) = rotating_alice();
+    let old = me(&mut a.dev);
+    a.rotate(false);
+    let new = me(&mut a.dev);
+    assert_ne!(old.identity_id, new.identity_id);
+    let va = shared(&mut a.dev, id);
+    assert_eq!(ids(&a.dev.repo().items(&va).unwrap()), ids(&items));
+    let st = a.dev.store().share_state(id).unwrap().unwrap();
+    assert_eq!(st.identity_pending.unwrap().new_identity, new);
+    // The envelope for the new identity waits in the zone, at the head's
+    // generation.
+    let g = st.head.generation;
+    assert!(
+        a.dev
+            .store()
+            .get_in(
+                Zone::Vault(id),
+                RecordKind::MemberKey,
+                member_key_id(id, g, &new)
+            )
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn lineage_published_to_shared_and_contact_zones() {
+    let (_zs, mut a, mut b, id, _) = rotating_alice();
+    a.rotate(false);
+    let cz = Zone::Contact(pair_id(account_id(&mut a.dev), account_id(&mut b.dev)));
+    for zone in [Zone::Vault(id), cz] {
+        let rows = a
+            .dev
+            .store()
+            .list_in(zone, RecordKind::MemberLineage)
+            .unwrap();
+        assert_eq!(rows.len(), 1, "{zone:?}");
+        let rec = MemberLineageRecord::decode(&rows[0].data).unwrap();
+        assert_eq!(rec.id(), rows[0].id);
+        assert!(matches!(rec, MemberLineageRecord::Lineage(_)));
+    }
+}
+
+#[test]
+fn rotate_without_revoke_requests_nothing() {
+    let (_zs, mut a, _b, id, _) = rotating_alice();
+    a.rotate(false);
+    assert!(
+        a.dev
+            .store()
+            .list_in(Zone::Vault(id), RecordKind::RekeyRequest)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn revoke_requests_rekey() {
+    let (mut zs, mut a, mut b, id, _) = rotating_alice();
+    let old = me(&mut a.dev);
+    a.rotate(true);
+    let rows = a
+        .dev
+        .store()
+        .list_in(Zone::Vault(id), RecordKind::RekeyRequest)
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    let req = RekeyRequest::decode(&rows[0].data).unwrap();
+    assert_eq!(req.reason, RekeyReason::MemberRotation);
+    assert_eq!(req.signer, old);
+    assert!(req.lineage_hash.is_some());
+    // Bob, a manager? No: Alice is the only manager; the request waits for
+    // her own pass after she is confirmed. It reached the zone.
+    zsync(&mut a.server, &mut zs, &mut a.dev);
+    zsync(&mut b.server, &mut zs, &mut b.dev);
+    assert!(
+        zs.server(Zone::Vault(id))
+            .live(RecordKind::RekeyRequest, req.id())
+            .is_some()
+    );
+}
+
+#[test]
+fn zone_access_resigned_on_rotation() {
+    let (_zs, mut a, _b, id, _) = rotating_alice();
+    let before = a.dev.repo().zone_accesses().unwrap();
+    assert!(!before.is_empty());
+    a.rotate(false);
+    let after = a.dev.repo().zone_accesses().unwrap();
+    assert_eq!(after.len(), before.len());
+    for access in &after {
+        assert!(a.dev.repo().zone_access(access.target).unwrap().is_some());
+    }
+    assert!(
+        after
+            .iter()
+            .any(|x| x.target == AccessTarget::Zone(Zone::Vault(id)))
+    );
 }

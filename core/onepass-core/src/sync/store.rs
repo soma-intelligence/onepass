@@ -62,6 +62,14 @@ use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
 
+/// What a rotation writes besides the private zone (sharing plan 2 Task
+/// 13): the push it keeps, the zoned records and the share states.
+type RotationWrite<'a> = (
+    &'a RotationPush,
+    &'a [(Zone, Record, Option<u64>)],
+    &'a [ShareState],
+);
+
 const DEVICE_STATE_KEY: &str = "device_state";
 /// The restore epoch mark (`RecordStore::restore_epoch_mark`): epoch
 /// (8 bytes, big endian) then the SHA-256 of its record data.
@@ -1116,7 +1124,7 @@ impl SyncStore {
         chain: Option<ChainState>,
         guard: TrustGuard<'_>,
         trust: &TrustState,
-        rotation: Option<&RotationPush>,
+        rotation: Option<RotationWrite<'_>>,
     ) -> Result<()> {
         for (r, _) in &writes {
             check_size(&r.data)?;
@@ -1144,8 +1152,14 @@ impl SyncStore {
             set_meta_in(&tx, CHAIN_STATE_KEY, &chain.encode())?;
         }
         set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
-        if let Some(rotation) = rotation {
+        if let Some((rotation, zoned, shares)) = rotation {
             set_meta_in(&tx, ROTATION_PUSH_KEY, &rotation.encode())?;
+            for (zone, r, expected) in zoned {
+                zones::put_zoned_in(&tx, *zone, r, *expected)?;
+            }
+            for s in shares {
+                set_meta_in(&tx, &zones::share_state_key(s.vault_id), &s.encode())?;
+            }
         }
         tx.commit()
     }
@@ -3899,6 +3913,8 @@ impl RecordStore for SyncStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         self.put_with_trust(
             writes,
@@ -3906,7 +3922,7 @@ impl RecordStore for SyncStore {
             Some(chain),
             TrustGuard::Is(expected),
             trust,
-            Some(rotation),
+            Some((rotation, &zoned, shares)),
         )
     }
 

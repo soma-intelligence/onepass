@@ -641,9 +641,11 @@ pub trait RecordStore {
     /// the chain state of the new identity (it replaces the stored one) and
     /// the trust state in state `Rotating { phase: 1 }`, conditional on the
     /// stored trust state being `expected` (`put_with_trust_cas`), plus
-    /// what the push phases need (`rotation`), all or nothing. The default
-    /// is `put_with_trust_cas` (a store that pushes nothing has no phases
-    /// to drive).
+    /// what the push phases need (`rotation`), the shared and contact zone
+    /// records (`zoned`) and the share states (`shares`) of sharing plan 2
+    /// Task 13, all or nothing. The default is `put_with_trust_cas` (a
+    /// store that pushes nothing has no phases to drive) and holds the
+    /// private zone only.
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
@@ -651,8 +653,13 @@ pub trait RecordStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         let _ = rotation;
+        if !zoned.is_empty() || !shares.is_empty() {
+            return Err(zones_unsupported());
+        }
         self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)
     }
 

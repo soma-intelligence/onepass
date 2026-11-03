@@ -219,7 +219,7 @@ pub(super) fn drop_zone_in(conn: &Connection, zone: Zone) -> Result<()> {
 /// Meta key prefix of a shared vault's local state (never synced).
 const SHARE_STATE_PREFIX: &str = "share_state/";
 
-fn share_state_key(vault: Id) -> String {
+pub(super) fn share_state_key(vault: Id) -> String {
     let hex: String = vault.0.iter().map(|b| format!("{b:02x}")).collect();
     format!("{SHARE_STATE_PREFIX}{hex}")
 }
@@ -337,7 +337,12 @@ pub(super) fn drop_pending_rows(
 }
 
 /// One zoned write in `tx`: conditional on the version the caller read.
-fn put_zoned_in(conn: &Connection, zone: Zone, r: &Record, expected: Option<u64>) -> Result<()> {
+pub(super) fn put_zoned_in(
+    conn: &Connection,
+    zone: Zone,
+    r: &Record,
+    expected: Option<u64>,
+) -> Result<()> {
     check_size(&r.data)?;
     match zone {
         Zone::Private => {

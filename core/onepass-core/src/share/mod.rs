@@ -42,7 +42,9 @@ pub use action::{MemberView, ShareAction, SharedVaultInfo, ZoneMailboxKind};
 
 pub use rekey::{RekeyNotice, RekeyReason, RekeyRequest};
 
-pub use invite::{CredentialRenewal, InviteRecord, ShareInvite, ShareInviteView};
+pub use invite::{
+    CredentialRenewal, InviteRecord, MemberLineageRecord, ShareInvite, ShareInviteView,
+};
 
 pub use key::{
     MAX_MEMBER_KEY_ENVELOPE, MemberKey, key_commit, key_context, member_key_id, open_member_key,

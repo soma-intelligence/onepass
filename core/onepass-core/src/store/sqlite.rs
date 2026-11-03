@@ -358,7 +358,13 @@ impl RecordStore for SqliteStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(crate::store::Zone, Record, Option<u64>)>,
+        shares: &[crate::share::ShareState],
     ) -> Result<()> {
+        // No shared zone here (a local store, no server).
+        if !zoned.is_empty() || !shares.is_empty() {
+            return Err(Error::Store("zones unsupported".into()));
+        }
         let mut settled = trust.clone();
         settled.state = DeviceLineageState::Current;
         let collect = rotation
@@ -826,6 +832,8 @@ mod tests {
             &after,
             &after,
             &push,
+            vec![],
+            &[],
         );
         assert_eq!(r, Err(Error::Conflict), "the expected state must match");
         s.put_rotation(
@@ -834,6 +842,8 @@ mod tests {
             &before,
             &after,
             &push,
+            vec![],
+            &[],
         )
         .unwrap();
         let stored = s.trust_state().unwrap().unwrap();

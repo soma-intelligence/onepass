@@ -190,3 +190,33 @@ pub struct ShareInviteView {
     pub role: super::Role,
     pub server_host: String,
 }
+
+/// A member's lineage record copied into the zones it shares with others
+/// (sharing spec 12.2, Task 13): its rotation, or an intro, so that the
+/// other members can follow its identity. `RecordKind::MemberLineage`,
+/// immutable, id `MemberLineageRecord::id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemberLineageRecord {
+    Lineage(crate::lineage::LineageRecord),
+    Intro(crate::lineage::SignedIntro),
+}
+
+impl MemberLineageRecord {
+    /// The lineage record's own id, or the intro's.
+    pub fn id(&self) -> Id {
+        match self {
+            MemberLineageRecord::Lineage(r) => r.record_id(),
+            MemberLineageRecord::Intro(i) => crate::lineage::intro_id(&i.body),
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("member lineage encodes")
+    }
+
+    /// Strict decoding; signatures are checked against the member's
+    /// pinned lineage by the reader.
+    pub fn decode(b: &[u8]) -> Result<MemberLineageRecord> {
+        decode_strict_with(b, Error::InvalidFormat("member lineage"))
+    }
+}
