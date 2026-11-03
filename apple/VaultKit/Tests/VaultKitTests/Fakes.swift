@@ -419,3 +419,100 @@ final class FakeMailboxProvisioning: MailboxProvisioning {
         return state.withLock { $0.located[endpoint.baseUrl] ?? [] }
     }
 }
+
+/// Scripted `ZoneSyncing` (sharing plan 4, Task 5): each zone round answers the next scripted report
+/// (then an empty one), records the order of calls against a shared log, and keeps the wake
+/// listeners and push targets it was given.
+final class FakeZoneSync: ZoneSyncing {
+    private struct State {
+        var reports: [FfiZoneRoundReport] = []
+        var rounds = 0
+        var sessions: [Bool] = []
+        var topics: [FfiZoneWake] = []
+        var wakes: [String: @Sendable () -> Void] = [:]
+        var targets: [(String, Data, Data)] = []
+        var failTarget: Set<String> = []
+    }
+    private let state = Mutex(State())
+    /// Runs at the start of each zone round (tests check what ran before it).
+    private let onRound: (@Sendable () -> Void)?
+
+    init(onRound: (@Sendable () -> Void)? = nil) {
+        self.onRound = onRound
+    }
+
+    static func zone(_ kind: FfiZoneKind, _ byte: UInt8 = 1) -> FfiZone {
+        FfiZone(kind: kind, id: kind == .private ? nil : String(repeating: String(format: "%02x", byte), count: 16))
+    }
+
+    static func report(
+        zones: [(FfiZone, FfiRoundStatus)] = [], refusals: [FfiZoneRefusal] = [], quotaFull: [FfiZone] = [],
+        changed: Bool = false, retryAfter: UInt32? = nil, rerun: Bool = false, actions: UInt32 = 0
+    ) -> FfiZoneRoundReport {
+        FfiZoneRoundReport(
+            zones: zones.map { FfiZoneStatus(zone: $0.0, status: $0.1) }, actionsDone: actions,
+            refusals: refusals, quotaFull: quotaFull, changed: changed, retryAfterSeconds: retryAfter, rerun: rerun)
+    }
+
+    static func wake(_ mailboxByte: UInt8, zone: FfiZone) -> FfiZoneWake {
+        FfiZoneWake(
+            zone: zone, mailboxId: String(repeating: String(format: "%02x", mailboxByte), count: 16),
+            wake: FfiWakeInfo(realtimeUrl: "wss://localhost/realtime/v1", publishableKey: "pk",
+                              topic: String(repeating: String(format: "%02x", mailboxByte), count: 16)))
+    }
+
+    func script(_ reports: [FfiZoneRoundReport]) { state.withLock { $0.reports += reports } }
+    func setTopics(_ topics: [FfiZoneWake]) { state.withLock { $0.topics = topics } }
+    func failTarget(mailbox: String) { state.withLock { _ = $0.failTarget.insert(mailbox) } }
+
+    var rounds: Int { state.withLock { $0.rounds } }
+    var sessions: [Bool] { state.withLock { $0.sessions } }
+    var wakeListeners: Int { state.withLock { $0.wakes.count } }
+    /// Push targets set: mailbox id, tag, token.
+    var targets: [(String, Data, Data)] { state.withLock { $0.targets } }
+
+    /// Fires the wake listener of one mailbox.
+    func wake(mailbox: String) {
+        state.withLock { $0.wakes[mailbox] }?()
+    }
+
+    func runRound(session: Session?, now: Int64) async -> FfiZoneRoundReport {
+        onRound?()
+        return state.withLock { s in
+            s.rounds += 1
+            s.sessions.append(session != nil)
+            return s.reports.isEmpty ? Self.report() : s.reports.removeFirst()
+        }
+    }
+
+    func wakeTopics() async -> [FfiZoneWake] { state.withLock { $0.topics } }
+
+    func startWake(_ info: FfiWakeInfo, onWake: @escaping @Sendable () -> Void) async throws -> any WakeStopping {
+        state.withLock { $0.wakes[info.topic] = onWake }
+        return Stopper(owner: self, topic: info.topic)
+    }
+
+    fileprivate func stopped(_ topic: String) {
+        state.withLock { _ = $0.wakes.removeValue(forKey: topic) }
+    }
+
+    func setPushTarget(mailboxID: String, tag: Data, kind: FfiPushKind, token: Data) async throws {
+        try state.withLock { s in
+            if s.failTarget.contains(mailboxID) { throw OnePassError.MailboxUnavailable(reason: "offline") }
+            s.targets.append((mailboxID, tag, token))
+        }
+    }
+
+    private struct Stopper: WakeStopping {
+        let owner: FakeZoneSync
+        let topic: String
+        func stop() { owner.stopped(topic) }
+    }
+}
+
+/// An ordered log of calls shared by several fakes.
+final class CallLog: Sendable {
+    private let entries = Mutex<[String]>([])
+    func append(_ entry: String) { entries.withLock { $0.append(entry) } }
+    var all: [String] { entries.withLock { $0 } }
+}

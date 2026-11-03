@@ -56,6 +56,9 @@ public actor SyncCoordinator: SyncTrigger {
     private let retryDelays: [Duration]
     private let sleep: @Sendable (Duration) async throws -> Void
     private let now: @Sendable () -> Date
+    /// The zone rounds (shared vaults, contacts, family) that follow each private round. An iCloud
+    /// account's zones live on mailboxes under its anchor (sharing spec 13.2).
+    public nonisolated let zoneRounds: ZoneRoundScheduler?
 
     public private(set) var status: SyncStatus
     private var session: Session?
@@ -105,9 +108,11 @@ public actor SyncCoordinator: SyncTrigger {
         store: SyncStoreHandle, remote: (any RemoteRecordStore)?, debounce: Duration = .seconds(2),
         retryDelays: [Duration] = SyncCoordinator.retryDelays,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        zones: (any ZoneSyncing)? = nil
     ) {
         self.store = store
+        zoneRounds = zones.map { ZoneRoundScheduler(zones: $0, sleep: sleep, now: now) }
         self.remote = remote
         self.debounce = debounce
         self.retryDelays = retryDelays.isEmpty ? SyncCoordinator.retryDelays : retryDelays
@@ -340,12 +345,23 @@ public actor SyncCoordinator: SyncTrigger {
     /// Keeps the session for rebases and starts a round (held vaults can be rebased now).
     public func sessionUnlocked(_ session: Session) async {
         self.session = session
+        await zoneRounds?.sessionUnlocked(session)
         guard remote != nil else { return }
         kick()
     }
 
     public func sessionLocked() async {
         session = nil
+        await zoneRounds?.sessionLocked()
+    }
+
+    /// The app came to the foreground: the zones' wake channels and their 15-minute rounds.
+    public func enterForeground() async {
+        await zoneRounds?.enterForeground()
+    }
+
+    public func enterBackground() async {
+        await zoneRounds?.enterBackground()
     }
 
     /// The session issued a safe exit's epoch: follow it (see the type doc) and run a round now.
@@ -375,6 +391,8 @@ public actor SyncCoordinator: SyncTrigger {
             await acquire()
             if !stoppedForMigration { await round() }
             release()
+            // The zones follow the private round, in the same run (one at a time).
+            if !stoppedForMigration, let zoneRounds { await zoneRounds.afterPrivateRound() }
         } while rerun && !stoppedForMigration
         run = nil
     }

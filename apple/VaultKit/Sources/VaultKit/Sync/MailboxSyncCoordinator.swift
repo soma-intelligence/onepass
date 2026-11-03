@@ -20,6 +20,8 @@ public actor MailboxSyncCoordinator: SyncTrigger {
     private let retryDelays: [Duration]
     private let sleep: @Sendable (Duration) async throws -> Void
     private let now: @Sendable () -> Date
+    /// The zone rounds (shared vaults, contacts, family) that follow each private round.
+    public nonisolated let zoneRounds: ZoneRoundScheduler?
 
     public private(set) var status: SyncStatus = .idle(lastSync: nil)
     private var session: Session?
@@ -47,9 +49,11 @@ public actor MailboxSyncCoordinator: SyncTrigger {
         sync: any MailboxSyncing, serverName: String, debounce: Duration = .seconds(2),
         retryDelays: [Duration] = SyncCoordinator.retryDelays,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        zones: (any ZoneSyncing)? = nil
     ) {
         self.sync = sync
+        zoneRounds = zones.map { ZoneRoundScheduler(zones: $0, sleep: sleep, now: now) }
         self.serverName = serverName
         self.debounce = debounce
         self.retryDelays = retryDelays.isEmpty ? SyncCoordinator.retryDelays : retryDelays
@@ -103,12 +107,14 @@ public actor MailboxSyncCoordinator: SyncTrigger {
         foreground = true
         kick()
         await startWake()
+        await zoneRounds?.enterForeground()
     }
 
     /// The app left the foreground: stop listening (APNs wakes it from now on).
-    public func enterBackground() {
+    public func enterBackground() async {
         foreground = false
         stopWake()
+        await zoneRounds?.enterBackground()
     }
 
     // MARK: - SyncTrigger
@@ -126,11 +132,13 @@ public actor MailboxSyncCoordinator: SyncTrigger {
 
     public func sessionUnlocked(_ session: Session) async {
         self.session = session
+        await zoneRounds?.sessionUnlocked(session)
         kick()
     }
 
     public func sessionLocked() async {
         session = nil
+        await zoneRounds?.sessionLocked()
     }
 
     // MARK: - Rounds
@@ -178,6 +186,8 @@ public actor MailboxSyncCoordinator: SyncTrigger {
         running -= 1
         if report.changed || !report.rebased.isEmpty { emitRemoteChange() }
         apply(report)
+        // The zones follow the private round, in the same run (one at a time).
+        if !moved, let zoneRounds { await zoneRounds.afterPrivateRound() }
     }
 
     private func apply(_ report: FfiRoundReport) {

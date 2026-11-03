@@ -57,6 +57,15 @@ public enum VaultError: Error, Equatable, Sendable {
                 self = .other(MailboxSyncCoordinator.retryingMessage)
             case .Forbidden:
                 self = .other(String(localized: "sync.mailbox.forbidden", bundle: VaultKitStrings.bundle))
+            // Sharing (sharing spec 7, 9, 12): refusals the screens tell apart.
+            case .ReadOnlyRole:
+                self = .other(String(localized: "sharing.error.readOnlyRole", bundle: VaultKitStrings.bundle))
+            case .ContactNotVerified:
+                self = .other(String(localized: "sharing.error.contactNotVerified", bundle: VaultKitStrings.bundle))
+            case .MembershipFork:
+                self = .integrity(kind: "membership_fork")
+            case .IdentityPending:
+                self = .other(String(localized: "sharing.error.identityPending", bundle: VaultKitStrings.bundle))
             }
         case let error as BiometricError:
             switch error {
@@ -246,6 +255,7 @@ public enum VaultError: Error, Equatable, Sendable {
         case "params_downgrade": String(localized: "session.accountsSecuritySettingsWere", bundle: VaultKitStrings.bundle)
         case "wrong_kind", "wrong_context": String(localized: "session.recordWasMovedOr", bundle: VaultKitStrings.bundle)
         case "epoch_rollback": String(localized: "session.oldRestoreOfVault", bundle: VaultKitStrings.bundle)
+        case "membership_fork": String(localized: "sharing.error.membershipFork", bundle: VaultKitStrings.bundle)
         default: String(localized: "session.storageDoesntMatchWhat", bundle: VaultKitStrings.bundle)
         }
     }

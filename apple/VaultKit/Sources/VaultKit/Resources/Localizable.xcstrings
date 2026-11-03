@@ -6204,6 +6204,122 @@
         }
       }
     },
+    "sharing.error.contactNotVerified" : {
+      "comment" : "Error: this action needs a contact verified in person or by a compared safety number.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify this contact in person or with their safety number first."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primero verifica este contacto en persona o con su número de seguridad."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifie d'abord ce contact en personne ou avec son numéro de sécurité."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prima verifica questo contatto di persona o con il suo numero di sicurezza."
+          }
+        }
+      }
+    },
+    "sharing.error.identityPending" : {
+      "comment" : "Error: this account's new keys wait for a vault manager's confirmation; the shared vault reads but does not write yet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A vault manager must confirm your new keys before you can make changes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un administrador de la bóveda debe confirmar tus nuevas claves antes de que puedas hacer cambios."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un gestionnaire du coffre doit confirmer tes nouvelles clés avant que tu puisses modifier."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un gestore della cassaforte deve confermare le tue nuove chiavi prima che tu possa apportare modifiche."
+          }
+        }
+      }
+    },
+    "sharing.error.membershipFork" : {
+      "comment" : "Integrity label: the server showed two different member lists of a shared vault.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server showed two different member lists."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor mostró dos listas de miembros diferentes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a montré deux listes de membres différentes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server ha mostrato due elenchi di membri diversi."
+          }
+        }
+      }
+    },
+    "sharing.error.readOnlyRole" : {
+      "comment" : "Error: this account can only read this shared vault.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can only view this vault."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo puedes ver esta bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu peux seulement consulter ce coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puoi solo visualizzare questa cassaforte."
+          }
+        }
+      }
+    },
     "sync.batchTooLargeFor" : {
       "extractionState" : "manual",
       "localizations" : {

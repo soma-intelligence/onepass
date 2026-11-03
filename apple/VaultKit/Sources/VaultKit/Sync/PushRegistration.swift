@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 
 /// Silent APNs wakes for an account on a mailbox (cross-platform spec 4.10). The app never asks for
 /// the visible-notification permission: `registerForRemoteNotifications` only. A token goes to the
@@ -11,27 +12,71 @@ public actor PushRegistration {
     /// Time a silent push may take (the system gives about 30 s).
     public static let budget: Duration = .seconds(25)
 
-    private let sync: any MailboxSyncing
+    /// Store meta keys of a zone mailbox's push target (sharing spec 13.7): the tag drawn once by
+    /// this device for that mailbox, and the SHA-256 of the token last registered there.
+    static func zoneTagKey(_ mailboxID: String) -> String { "push.zone.tag.\(mailboxID)" }
+    static func zoneTokenKey(_ mailboxID: String) -> String { "push.zone.sha256.\(mailboxID)" }
+
+    private let sync: (any MailboxSyncing)?
+    private let zones: (any ZoneSyncing)?
     private let store: SyncStoreHandle
     private let budget: Duration
 
-    public init(sync: any MailboxSyncing, store: SyncStoreHandle, budget: Duration = PushRegistration.budget) {
+    /// `sync`: the account's mailbox (nil for an iCloud account); `zones`: its zone mailboxes.
+    public init(
+        sync: (any MailboxSyncing)?, store: SyncStoreHandle, zones: (any ZoneSyncing)? = nil,
+        budget: Duration = PushRegistration.budget
+    ) {
         self.sync = sync
+        self.zones = zones
         self.store = store
         self.budget = budget
     }
 
-    /// The system gave a device token.
+    /// The system gave a device token: the account mailbox, then one target per zone mailbox.
     public func didRegister(token: Data) async {
         let digest = Data(SHA256.hash(data: token))
         let store = store
-        let known = try? await CoreThread.run { try store.meta(key: Self.metaKey) }
-        if known == digest { return }
-        do {
-            try await sync.setPushToken(kind: .apns, token: token)
-            try await CoreThread.run { try store.setMeta(key: Self.metaKey, value: digest) }
-        } catch {
-            // Sent again at the next registration (each launch).
+        if let sync {
+            let known = try? await CoreThread.run { try store.meta(key: Self.metaKey) }
+            if known != digest {
+                do {
+                    try await sync.setPushToken(kind: .apns, token: token)
+                    try await CoreThread.run { try store.setMeta(key: Self.metaKey, value: digest) }
+                } catch {
+                    // Sent again at the next registration (each launch).
+                }
+            }
+        }
+        await registerZones(token: token, digest: digest)
+    }
+
+    /// One push target per zone mailbox under a tag drawn at random by this device for that mailbox
+    /// (the server never links two mailboxes of one device). A zone already registered with this
+    /// token is skipped; a failure is retried at the next registration.
+    private func registerZones(token: Data, digest: Data) async {
+        guard let zones else { return }
+        let store = store
+        for wake in await zones.wakeTopics() {
+            let mailbox = wake.mailboxId
+            let known = try? await CoreThread.run { try store.meta(key: Self.zoneTokenKey(mailbox)) }
+            if known == digest { continue }
+            do {
+                let tag = try await CoreThread.run { () throws -> Data in
+                    if let tag = try store.meta(key: Self.zoneTagKey(mailbox)), tag.count == 16 { return tag }
+                    var bytes = Data(count: 16)
+                    let status = bytes.withUnsafeMutableBytes {
+                        SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+                    }
+                    guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+                    try store.setMeta(key: Self.zoneTagKey(mailbox), value: bytes)
+                    return bytes
+                }
+                try await zones.setPushTarget(mailboxID: mailbox, tag: tag, kind: .apns, token: token)
+                try await CoreThread.run { try store.setMeta(key: Self.zoneTokenKey(mailbox), value: digest) }
+            } catch {
+                // Registered again at the next launch.
+            }
         }
     }
 
