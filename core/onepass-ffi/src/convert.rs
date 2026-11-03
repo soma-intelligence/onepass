@@ -554,10 +554,16 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The tags the UI shows: the reserved Travel Mode tags are booleans.
+/// The tags the UI shows: the reserved Travel Mode tags are booleans, the
+/// "not a duplicate of" markers (`duplicates::DISTINCT_TAG_PREFIX`) are
+/// kept by the core across an edit.
 fn visible_tags(tags: &[String]) -> Vec<String> {
     tags.iter()
-        .filter(|t| *t != TRAVEL_HIDDEN_TAG && *t != TRAVEL_GUARD_TAG)
+        .filter(|t| {
+            *t != TRAVEL_HIDDEN_TAG
+                && *t != TRAVEL_GUARD_TAG
+                && !onepass_core::duplicates::is_distinct_tag(t)
+        })
         .cloned()
         .collect()
 }
@@ -752,6 +758,14 @@ pub(crate) fn item_to_core(
     };
     item.set_travel_hidden(f.travel_hidden);
     item.set_travel_guarded(f.travel_guard);
+    if let Some(s) = stored {
+        item.tags.extend(
+            s.tags
+                .iter()
+                .filter(|t| onepass_core::duplicates::is_distinct_tag(t))
+                .cloned(),
+        );
+    }
     if let Some(old) = stored.and_then(password_of)
         && !old.is_empty()
         && password_of(&item) != Some(old)
