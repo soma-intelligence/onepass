@@ -55,16 +55,16 @@ pub enum AdoptionProof {
 
 /// What the zones hold about one account's lineage.
 #[derive(Default)]
-struct Published {
-    records: Vec<LineageRecord>,
-    intros: Vec<SignedIntro>,
-    params: Vec<Vec<u8>>,
+pub(crate) struct Published {
+    pub(crate) records: Vec<LineageRecord>,
+    pub(crate) intros: Vec<SignedIntro>,
+    pub(crate) params: Vec<Vec<u8>>,
 }
 
 impl<S: RecordStore> Repository<S> {
     /// Every `MemberLineage` record of the shared and contact zones, by
     /// account.
-    fn published_lineage(&self) -> Result<BTreeMap<Id, Published>> {
+    pub(crate) fn published_lineage(&self) -> Result<BTreeMap<Id, Published>> {
         let mut zones: Vec<Zone> = self
             .store
             .share_states()?

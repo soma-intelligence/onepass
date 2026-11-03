@@ -182,3 +182,7 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "item_send"
 required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "recovery"
+required-features = ["dev-fast-kdf"]

@@ -80,6 +80,7 @@ pub mod members;
 pub mod migrate;
 pub mod pairing;
 pub mod profile;
+pub mod recovery;
 pub mod rekey;
 pub mod replay;
 mod reseal;

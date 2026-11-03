@@ -150,6 +150,14 @@ pub enum ContactMessage {
     /// The creator's signed offer of the pair's mailbox
     /// (`SignedContactZoneOffer`, sharing spec 13.5), after both cards.
     ZoneOffer(Vec<u8>),
+    /// The organizer's half of an organizer-assisted recovery (sharing
+    /// spec 11.5 step 4), sent face to face once the organizer confirmed
+    /// the SAS; only a recovery session (`ContactResponder::new_for_recovery`)
+    /// takes it.
+    RecoveryShare {
+        enrollment_id: Id,
+        s_org: Zeroizing<[u8; 32]>,
+    },
 }
 
 impl ContactMessage {
@@ -253,6 +261,12 @@ struct Session {
     /// This side sent its zone offer, or received the peer's: one offer
     /// per session, from one side.
     offer_seen: bool,
+    /// A recovery session: no card goes either way, and the only payload
+    /// is one `RecoveryShare` from the initiator.
+    recovery: bool,
+    /// The local user confirmed the SAS of a recovery session.
+    sas_confirmed: bool,
+    share_done: bool,
     failed: bool,
 }
 
@@ -268,6 +282,9 @@ impl Session {
             pinned_sent: false,
             peer_pinned: false,
             offer_seen: false,
+            recovery: false,
+            sas_confirmed: false,
+            share_done: false,
             failed: false,
         }
     }
@@ -294,7 +311,7 @@ impl Session {
         now: i64,
     ) -> Result<Vec<u8>> {
         self.live()?;
-        if self.confirmed {
+        if self.confirmed || self.recovery {
             return Err(refused("already confirmed"));
         }
         let device = keys.public(me)?;
@@ -338,7 +355,7 @@ impl Session {
     fn take(&mut self, frame: &[u8], now: i64) -> Result<ContactOutcome> {
         let plain = self.channel.open_bytes_at(frame, now)?;
         match ContactMessage::decode(&plain)? {
-            ContactMessage::Card { card, device, pop } if self.peer.is_none() => {
+            ContactMessage::Card { card, device, pop } if self.peer.is_none() && !self.recovery => {
                 check_card(&card, &device, &pop, &self.transcript)?;
                 if self.own_account == Some(card.card.account_id) {
                     return Err(refused("own account"));
@@ -413,6 +430,67 @@ impl Session {
             .seal_bytes_at(&ContactMessage::End.encode()?, true, now)
     }
 
+    /// The local user confirmed the SAS of a recovery session (no card).
+    fn confirm_sas_for_recovery(&mut self) -> Result<()> {
+        self.live()?;
+        if self.confirmed || self.peer.is_some() {
+            return Err(refused("not a recovery session"));
+        }
+        self.recovery = true;
+        self.sas_confirmed = true;
+        Ok(())
+    }
+
+    /// The `RecoveryShare` frame, once, after `confirm_sas_for_recovery`.
+    fn send_recovery_share(
+        &mut self,
+        enrollment_id: Id,
+        s_org: &Zeroizing<[u8; 32]>,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        self.live()?;
+        if !self.recovery || !self.sas_confirmed || self.share_done {
+            return Err(refused("sas not confirmed"));
+        }
+        let msg = ContactMessage::RecoveryShare {
+            enrollment_id,
+            s_org: s_org.clone(),
+        }
+        .encode()?;
+        let frame = self.channel.seal_bytes_at(&msg, false, now)?;
+        self.share_done = true;
+        Ok(frame)
+    }
+
+    /// Open the initiator's `RecoveryShare` (recovery responder only, once).
+    /// Anything else closes the session.
+    fn take_recovery_share(&mut self, frame: &[u8], now: i64) -> Result<(Id, Zeroizing<[u8; 32]>)> {
+        self.live()?;
+        let r = (|| {
+            if !self.recovery || self.share_done {
+                return Err(refused("unexpected message"));
+            }
+            let plain = self.channel.open_bytes_at(frame, now)?;
+            match ContactMessage::decode(&plain)? {
+                ContactMessage::RecoveryShare {
+                    enrollment_id,
+                    s_org,
+                } => Ok((enrollment_id, s_org)),
+                _ => Err(refused("unexpected message")),
+            }
+        })();
+        match r {
+            Ok(v) => {
+                self.share_done = true;
+                Ok(v)
+            }
+            Err(e) => {
+                self.fail();
+                Err(e)
+            }
+        }
+    }
+
     #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
     fn test_seal(&mut self, msg: &ContactMessage, now: i64) -> Result<Vec<u8>> {
         self.channel
@@ -467,6 +545,8 @@ pub struct ContactResponder {
     expires_at: i64,
     transcript: [u8; 32],
     session: Option<Session>,
+    /// Made by `new_for_recovery`.
+    recovery: bool,
 }
 
 impl ContactResponder {
@@ -493,8 +573,27 @@ impl ContactResponder {
             expires_at: qr.expires_at,
             transcript: transcript(&qr.to_text(), &hello),
             session: None,
+            recovery: false,
         };
         Ok((responder, qr, hello))
+    }
+
+    /// The member's new device in an organizer-assisted recovery (sharing
+    /// spec 11.5 step 4): a session that sends no card and takes only the
+    /// organizer's `RecoveryShare` (`recover_with_share`).
+    pub fn new_for_recovery(now: i64) -> Result<(ContactResponder, PairingQr, Vec<u8>)> {
+        let (mut r, qr, hello) = ContactResponder::new(now)?;
+        r.recovery = true;
+        Ok((r, qr, hello))
+    }
+
+    /// See `Session::take_recovery_share`.
+    pub(crate) fn take_recovery_share(
+        &mut self,
+        frame: &[u8],
+        now: i64,
+    ) -> Result<(Id, Zeroizing<[u8; 32]>)> {
+        self.session()?.take_recovery_share(frame, now)
     }
 
     /// Take the session key from the initiator's KeyExchange and return the
@@ -517,7 +616,9 @@ impl ContactResponder {
             now.checked_add(CONTACT_SESSION_SECS)
                 .ok_or(refused("time"))?,
         );
-        self.session = Some(Session::new(channel, self.transcript));
+        let mut session = Session::new(channel, self.transcript);
+        session.recovery = self.recovery;
+        self.session = Some(session);
         Ok(code)
     }
 
@@ -654,6 +755,23 @@ impl ContactInitiator {
     /// See `ContactResponder::on_frame`.
     pub fn on_frame(&mut self, frame: &[u8], now: i64) -> Result<ContactOutcome> {
         self.session.on_frame(frame, now)
+    }
+
+    /// The organizer compared the SAS with the member's new device, face
+    /// to face, in a recovery session: no card goes either way after it
+    /// (`Repository::release_recovery_share`).
+    pub fn confirm_sas_for_recovery(&mut self) -> Result<()> {
+        self.session.confirm_sas_for_recovery()
+    }
+
+    /// See `Session::send_recovery_share`.
+    pub(crate) fn send_recovery_share(
+        &mut self,
+        enrollment_id: Id,
+        s_org: &Zeroizing<[u8; 32]>,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        self.session.send_recovery_share(enrollment_id, s_org, now)
     }
 
     /// The peer's checked card, once the local user confirmed: what
