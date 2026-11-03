@@ -26,7 +26,7 @@ use onepass_core::repo::rotate::open_key_delivery;
 use onepass_core::repo::travel::TravelState;
 use onepass_core::repo::{RotateRequest, RotationOutcome};
 use onepass_core::share::ShareState;
-use onepass_core::store::{RotationPush, VaultEvent, Zone, account_record_id};
+use onepass_core::store::{ErasedNotice, RotationPush, VaultEvent, Zone, account_record_id};
 use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use onepass_core::vaultlist::VaultListEntry;
@@ -4643,7 +4643,7 @@ fn answers_before_the_first_tick() {
     let mut other = stale.clone();
     other.ignore([0xAB; 32]);
     let before = records(&c);
-    assert_eq!(c.store().erase_device(&other), Err(Error::Conflict));
+    assert_eq!(c.store().erase_device(&other, None), Err(Error::Conflict));
     assert_eq!(records(&c), before);
     quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
         .unwrap()
@@ -4657,7 +4657,7 @@ fn answers_before_the_first_tick() {
             .contains(&f.me.id())
     );
     // The stale trust state no longer erases.
-    assert_eq!(c.store().erase_device(&stale), Err(Error::Conflict));
+    assert_eq!(c.store().erase_device(&stale, None), Err(Error::Conflict));
     assert_eq!(records(&c), before);
 
     let (_server, _a, c, _f, _out) = c_revoked();
@@ -6389,6 +6389,11 @@ fn recover_quarantine_erases_after_seven_days() {
     assert!(!matches!(state(&r.a), DeviceLineageState::Legacy));
     assert_eq!(tick(&r.a, T + Q), QuarantineTick::Erased);
     assert_erased(&r.a);
+    // The erase says why, for the app's erased screen.
+    assert_eq!(
+        r.a.store().erased_notice().unwrap(),
+        Some(ErasedNotice::Recovered)
+    );
     // The recovered device keeps everything.
     assert_eq!(state(&r.n), DeviceLineageState::Current);
 }

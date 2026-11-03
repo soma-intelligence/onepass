@@ -1834,6 +1834,23 @@ impl SyncStore {
     }
 
     /// Remove a local meta value; a missing key is not an error.
+    /// The notice the quarantine left when it erased this device
+    /// (`RecordStore::erase_device`), until the app showed it
+    /// (`clear_erased_notice`). An unknown code reads as none.
+    pub fn erased_notice(&self) -> Result<Option<crate::store::ErasedNotice>> {
+        Ok(self
+            .meta(crate::store::ERASED_NOTICE_KEY)?
+            .and_then(|v| match v.as_slice() {
+                [code] => crate::store::ErasedNotice::from_code(*code),
+                _ => None,
+            }))
+    }
+
+    /// Forget the erase notice once the app showed it.
+    pub fn clear_erased_notice(&mut self) -> Result<()> {
+        self.delete_meta(crate::store::ERASED_NOTICE_KEY)
+    }
+
     pub fn delete_meta(&mut self, key: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM meta WHERE key = ?1", params![key])
@@ -3881,7 +3898,11 @@ impl RecordStore for SyncStore {
     /// state, trust, chain and device state), the trust state compared with
     /// `expected` inside it; then the file is compacted (best effort), so
     /// the rows do not linger in free pages or in the WAL.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+    fn erase_device(
+        &mut self,
+        expected: &TrustState,
+        notice: Option<crate::store::ErasedNotice>,
+    ) -> Result<()> {
         let tx = self.write_tx()?;
         if meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode()) {
             return Err(Error::Conflict);
@@ -3901,6 +3922,9 @@ impl RecordStore for SyncStore {
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
+        }
+        if let Some(notice) = notice {
+            set_meta_in(&tx, crate::store::ERASED_NOTICE_KEY, &[notice.code()])?;
         }
         tx.commit()?;
         let _ = self.compact();

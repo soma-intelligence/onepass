@@ -29,7 +29,7 @@ use onepass_core::repo::kit::{KitRestore, KitRestored};
 use onepass_core::repo::migrate::Migration;
 use onepass_core::repo::replay::ReplayReport;
 use onepass_core::repo::{LineageLock, Repository, RotateRequest, RotationOutcome, RotationPrompt};
-use onepass_core::store::RecordStore;
+use onepass_core::store::{ErasedNotice, RecordStore};
 use onepass_core::sync::SyncStore;
 use onepass_core::trust::{DeviceLineageState, TrustLevel, TrustState};
 use onepass_core::{Error, Id};
@@ -1064,6 +1064,37 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;
     Ok(tick_to_ffi(follow::quarantine_tick(&mut store, now)?))
+}
+
+/// Why the quarantine erased this device (`FfiQuarantineTick::Erased`):
+/// what the "This device was erased" screen says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiErasedNotice {
+    /// 7 days after the account was recovered on another device.
+    Recovered,
+    /// 7 days after another device of the account removed this one.
+    Removed,
+    /// Another device of the account marked this one stolen.
+    Stolen,
+}
+
+/// The notice the quarantine left when it erased this device, also when
+/// the erase ran inside a sync commit (`commit_remote_checked`) or the app
+/// was killed right after: the app forgets the account's Keychain items,
+/// shows the erased screen, then `clear_erased_notice`. `None` otherwise.
+#[uniffi::export]
+pub fn erased_notice(db_path: String) -> Result<Option<FfiErasedNotice>, OnePassError> {
+    Ok(open(&db_path)?.erased_notice()?.map(|n| match n {
+        ErasedNotice::Recovered => FfiErasedNotice::Recovered,
+        ErasedNotice::Removed => FfiErasedNotice::Removed,
+        ErasedNotice::Stolen => FfiErasedNotice::Stolen,
+    }))
+}
+
+/// Forget the erase notice once the erased screen was shown.
+#[uniffi::export]
+pub fn clear_erased_notice(db_path: String) -> Result<(), OnePassError> {
+    Ok(open(&db_path)?.clear_erased_notice()?)
 }
 
 /// The user's answer on the quarantine or orphaned screen.

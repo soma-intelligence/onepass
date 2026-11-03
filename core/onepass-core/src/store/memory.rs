@@ -326,7 +326,13 @@ impl RecordStore for MemoryStore {
     }
 
     /// Everything goes if the trust state is `expected`.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+    /// The memory store keeps no notice (`notice` is dropped).
+    fn erase_device(
+        &mut self,
+        expected: &TrustState,
+        notice: Option<super::ErasedNotice>,
+    ) -> Result<()> {
+        let _ = notice;
         if self.trust.as_ref() != Some(expected) {
             return Err(Error::Conflict);
         }
@@ -353,9 +359,9 @@ mod tests {
             .unwrap();
         let mut other = trust.clone();
         other.ignore([0xAB; 32]);
-        assert_eq!(s.erase_device(&other), Err(Error::Conflict));
+        assert_eq!(s.erase_device(&other, None), Err(Error::Conflict));
         assert_eq!(s.get(rec.kind, rec.id).unwrap(), Some(rec.clone()));
-        s.erase_device(&trust).unwrap();
+        s.erase_device(&trust, None).unwrap();
         assert_eq!(s.get(rec.kind, rec.id).unwrap(), None);
         assert_eq!(s.trust_state().unwrap(), None);
     }

@@ -627,6 +627,14 @@ fn quarantine_erases_only_after_seven_days() {
         FfiQuarantineTick::Erased
     );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+    // The erase leaves its reason for the erased screen, until cleared.
+    assert_eq!(
+        erased_notice(b.path.clone()).unwrap(),
+        Some(FfiErasedNotice::Removed)
+    );
+    clear_erased_notice(b.path.clone()).unwrap();
+    assert_eq!(erased_notice(b.path.clone()).unwrap(), None);
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
 }
 
 /// "Marquer comme volé" (founder decision 2026-11-03): A removes B by
@@ -659,6 +667,10 @@ fn stolen_device_erases_at_its_next_fetch() {
     push(&mut server, &a.path);
     assert_eq!(pull(&server, &b).quarantine, FfiQuarantineTick::Erased);
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+    assert_eq!(
+        erased_notice(b.path.clone()).unwrap(),
+        Some(FfiErasedNotice::Stolen)
+    );
     // Another device of the account only reads the order: nothing erased.
     let _ = pull(&server, &c);
     assert_eq!(store_state(c.path.clone()).unwrap(), FfiStoreState::Account);

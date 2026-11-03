@@ -56,7 +56,7 @@ use crate::lineage::resolve::{Completeness, Decision, Prompt, PromptKind, resolv
 use crate::lineage::{
     LineageRecord, RotationBody, RotationReason, delivery_id, identity_id, rotation_code, wipe,
 };
-use crate::store::{Record, RecordKind, RecordStore, account_record_id};
+use crate::store::{ErasedNotice, Record, RecordKind, RecordStore, account_record_id};
 use crate::trust::{
     DeviceLineageState, LineageHead, QuarantineClock, RetiredIdentity, TrustLevel, TrustState,
 };
@@ -1339,13 +1339,13 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
         .iter()
         .any(|w| wipe::orders_me(w, &trust, &rotations))
     {
-        store.erase_device(&trust)?;
+        store.erase_device(&trust, Some(ErasedNotice::Stolen))?;
         return Ok(QuarantineTick::Erased);
     }
     let mut clock = clock_of(&trust, now);
     clock.advance(now);
     if clock.elapsed >= QUARANTINE_ERASE_AFTER_SECS {
-        store.erase_device(&trust)?;
+        store.erase_device(&trust, Some(clock_erase_notice(&trust, &records)))?;
         return Ok(QuarantineTick::Erased);
     }
     if trust.quarantine_clock != Some(clock) {
@@ -1356,6 +1356,18 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
     Ok(QuarantineTick::Waiting {
         erase_at: now.saturating_add(QUARANTINE_ERASE_AFTER_SECS - clock.elapsed),
     })
+}
+
+/// Why the clock erased the quarantine `trust` records: a `Recover`
+/// removal (the account was recovered on another device) or any other.
+fn clock_erase_notice(trust: &TrustState, records: &[LineageRecord]) -> ErasedNotice {
+    let DeviceLineageState::Quarantined { by, .. } = &trust.state else {
+        return ErasedNotice::Removed;
+    };
+    match rotations(records).get(by) {
+        Some(b) if b.reason == RotationReason::Recover => ErasedNotice::Recovered,
+        _ => ErasedNotice::Removed,
+    }
 }
 
 /// The erase clock of the quarantine `trust` records: the stored one when
@@ -1473,7 +1485,7 @@ pub fn quarantine_resolve<S: RecordStore>(
             if !matches!(lock, LineageLock::Quarantine { .. }) {
                 return Err(refused("device", "not quarantined"));
             }
-            store.erase_device(&trust)?;
+            store.erase_device(&trust, None)?;
             Ok(None)
         }
         QuarantineChoice::NotMe {

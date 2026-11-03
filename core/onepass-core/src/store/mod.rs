@@ -16,6 +16,47 @@ use crate::share::ShareState;
 use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
 
+/// Store meta key of the notice an erase by the quarantine leaves behind
+/// (`ErasedNotice`, one byte). The only row left after `erase_device`.
+pub const ERASED_NOTICE_KEY: &str = "erased";
+
+/// Why the quarantine of key rotation v2 erased this device (founder
+/// decision 2026-11-03, recover-wipe): written by `RecordStore::erase_device`
+/// in the erase transaction, so the app can tell the user once, even when
+/// the erase ran inside a sync commit or the app was killed right after.
+/// It names no account and holds no secret. The user's own "Effacer cet
+/// appareil" leaves none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErasedNotice {
+    /// 7 days after the account was recovered on another device (a
+    /// `Recover` rotation removed every old device).
+    Recovered,
+    /// 7 days after another device of the account removed this one.
+    Removed,
+    /// Another device of the account marked this one stolen (wipe order).
+    Stolen,
+}
+
+impl ErasedNotice {
+    pub fn code(self) -> u8 {
+        match self {
+            ErasedNotice::Recovered => 1,
+            ErasedNotice::Removed => 2,
+            ErasedNotice::Stolen => 3,
+        }
+    }
+
+    /// `None` for an unknown code (a newer build's notice).
+    pub fn from_code(code: u8) -> Option<ErasedNotice> {
+        match code {
+            1 => Some(ErasedNotice::Recovered),
+            2 => Some(ErasedNotice::Removed),
+            3 => Some(ErasedNotice::Stolen),
+            _ => None,
+        }
+    }
+}
+
 /// What a record holds. The numeric codes are the on-disk encoding: append
 /// only, never renumber.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -679,9 +720,12 @@ pub trait RecordStore {
     /// rotation v2 (`crate::repo::follow::quarantine_tick` 7 days after a
     /// valid lineage record revoked this device, or the user's "Effacer cet
     /// appareil", spec 8.4, R8, O1). A store that keeps no trust state
-    /// refuses and erases nothing.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
-        let _ = expected;
+    /// refuses and erases nothing. `notice`: the erase by the quarantine
+    /// clock or a wipe order keeps it under `ERASED_NOTICE_KEY` in the same
+    /// transaction (the CLI's `SqliteStore` and the memory store drop it);
+    /// `None` for the user's own erase.
+    fn erase_device(&mut self, expected: &TrustState, notice: Option<ErasedNotice>) -> Result<()> {
+        let _ = (expected, notice);
         Err(Error::Store("trust state unsupported".into()))
     }
 

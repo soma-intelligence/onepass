@@ -449,7 +449,13 @@ impl RecordStore for SqliteStore {
     /// Both tables emptied in one transaction, the trust row compared with
     /// `expected` inside it; then the file is compacted (best effort), so
     /// the rows do not linger in free pages or in the WAL.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+    fn erase_device(
+        &mut self,
+        expected: &TrustState,
+        notice: Option<super::ErasedNotice>,
+    ) -> Result<()> {
+        // The CLI tells the user itself and never reads a notice: none kept.
+        let _ = notice;
         let tx = self.conn.transaction().map_err(store_err)?;
         let stored: Option<Vec<u8>> = tx
             .query_row(
