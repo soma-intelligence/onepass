@@ -89,6 +89,10 @@ targets:
         excludes:
           - "Support/Info.plist"
           - "Support/*.entitlements"
+      # Site icon pack (docs/icon-pack.md), shipped once in the app: the AutoFill extension reads it
+      # from the containing app, or from the copy the app puts in the App Group.
+      - path: IconPack/onepass-icons.bin
+        buildPhase: resources
     dependencies:
       - package: VaultKit
         product: VaultKit

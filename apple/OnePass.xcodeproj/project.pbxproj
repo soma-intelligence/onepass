@@ -182,6 +182,7 @@
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
+		D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */ = {isa = PBXBuildFile; fileRef = E364C6482B7E724032103715 /* onepass-icons.bin */; };
 		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
@@ -511,6 +512,7 @@
 		DE732F4D473E8768C899CD4A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnePassWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1C5D9F63AB4E2FAD9DE9780 /* WatchtowerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerModel.swift; sourceTree = "<group>"; };
+		E364C6482B7E724032103715 /* onepass-icons.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "onepass-icons.bin"; sourceTree = "<group>"; };
 		E41252F90FFDB8A0F0C5E4E3 /* SharingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingSupport.swift; sourceTree = "<group>"; };
 		E4F2C8E0964CF60998372520 /* AutoFillTipCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillTipCard.swift; sourceTree = "<group>"; };
 		E51EA5D5ECD9582330AC16CA /* PairingModeStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingModeStep.swift; sourceTree = "<group>"; };
@@ -706,6 +708,7 @@
 				61037CBF9FBBBB926778B242 /* AppUITests */,
 				10FE93B2BCB525F38987ACE9 /* AutoFill */,
 				E360FE5D44681DC22538DB7C /* AutoFillHost */,
+				51B3CC1327885B63344CE9EE /* IconPack */,
 				1BED4344A4AEAF8C1EBD5F94 /* NotificationService */,
 				6EFD3AF6EFDA445E47D0BC4C /* Packages */,
 				44509439EFA49F75D0DD1D1C /* SafariExtension */,
@@ -753,6 +756,14 @@
 				430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */,
 			);
 			path = Crypto;
+			sourceTree = "<group>";
+		};
+		51B3CC1327885B63344CE9EE /* IconPack */ = {
+			isa = PBXGroup;
+			children = (
+				E364C6482B7E724032103715 /* onepass-icons.bin */,
+			);
+			path = IconPack;
 			sourceTree = "<group>";
 		};
 		57AA33CDE0188B85E19CDD66 /* Resources */ = {
@@ -1480,6 +1491,7 @@
 				FB411F7806F39B54F7C84C1D /* Assets.xcassets in Resources */,
 				6632869371D8005F4FA8616D /* InfoPlist.xcstrings in Resources */,
 				45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */,
+				D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

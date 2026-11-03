@@ -1,0 +1,30 @@
+{
+  "created": "2026-11-03T19:09:14+00:00",
+  "domains": 4919,
+  "format": 1,
+  "icons": 4168,
+  "pack": {
+    "file": "onepass-icons-2026110303.bin",
+    "sha256": "d0b2c14ce5419bbc7a9b79618e698218e018fb7445a33cbd8ffcd4cc8f4bb991",
+    "size": 10809096
+  },
+  "pixels": 256,
+  "sources": {
+    "2fa-directory": {
+      "commit": "9b39477ccf259f022f694b4f14ed79c529b1039d",
+      "license": "MIT",
+      "repository": "2factorauth/twofactorauth"
+    },
+    "logos": {
+      "commit": "22f03ffc4a652309d1fea4ade70f46e9e1d6602c",
+      "license": "CC0-1.0",
+      "repository": "gilbarbara/logos"
+    },
+    "simple-icons": {
+      "commit": "b45ca1f11d9d013a7c462944d90a049bc613ad4f",
+      "license": "CC0-1.0",
+      "repository": "simple-icons/simple-icons"
+    }
+  },
+  "version": 2026110303
+}
