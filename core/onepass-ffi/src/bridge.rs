@@ -105,6 +105,12 @@ pub trait BridgeDelegate: Send + Sync {
     fn note(&self, message: String);
 }
 
+/// The extension id of a Safari connection (`onepass_relay::SAFARI_EXTENSION_ID`
+/// on the Mac, where the relay crate exists).
+const SAFARI_EXTENSION_ID: &str = "safari";
+/// The browser a Safari pairing is vouched as.
+const SAFARI_BROWSER: &str = "Safari";
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -656,6 +662,32 @@ impl BridgeServer {
     /// Forget a pairing: its next session gets `unknown_pairing`.
     pub fn forget_pairing(&self, pairing_id: String) {
         lock(&self.shared.pairings).retain(|p| p.pairing_id != pairing_id);
+    }
+
+    /// iPhone and iPad (spec 2026-11-03-ios-safari-autofill, ruling I1):
+    /// serve one Safari extension connection inside this process, over a
+    /// socket pair, and return the caller's end as a file descriptor (the
+    /// caller owns and closes it). No app listens on iOS: the Safari Web
+    /// Extension handler serves the bridge itself. Safari routes native
+    /// messages only to the handler of the bundle that holds the extension,
+    /// so the connection is admitted as Safari and may pair without a code
+    /// (ruling I2), unless the user revoked it.
+    pub fn connect_in_process(&self) -> Result<i32, OnePassError> {
+        use std::os::fd::IntoRawFd;
+
+        let (ours, theirs) = UnixStream::pair().map_err(|_| invalid("socket pair"))?;
+        let shared = self.shared.clone();
+        let blocked = lock(&shared.blocked_auto).contains(&SAFARI_EXTENSION_ID.to_owned());
+        let vouched = (!blocked).then(|| SAFARI_BROWSER.to_owned());
+        std::thread::Builder::new()
+            .name("onepass-bridge-safari".into())
+            // SLH-DSA signing needs a deep stack (spec P-14).
+            .stack_size(16 << 20)
+            .spawn(move || {
+                serve_stream(&shared, ours, SAFARI_EXTENSION_ID.to_owned(), true, vouched);
+            })
+            .map_err(|_| invalid("bridge thread"))?;
+        Ok(theirs.into_raw_fd())
     }
 
     /// Current pairings, without their keys' bytes (for the settings list).

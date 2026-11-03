@@ -522,3 +522,81 @@ fn revoked_extension_stays_out_until_a_code_pairing() {
     auto_pair(&mut ext).unwrap();
     ext.end();
 }
+
+/// The extension's end of an in-process connection (iOS Safari handler).
+fn in_process(rig: &Rig) -> UnixStream {
+    use std::os::fd::FromRawFd;
+    let fd = rig.server.connect_in_process().unwrap();
+    // SAFETY: `connect_in_process` hands over a fresh descriptor we now own.
+    let s = unsafe { UnixStream::from_raw_fd(fd) };
+    s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+    s
+}
+
+/// `auto_pair` on any stream, for the in-process connection.
+fn auto_pair_on(s: &mut UnixStream) -> Result<PairingRecord, String> {
+    let send = |s: &mut UnixStream, env: &Envelope| write_frame(s, &wire::to_bytes(env)).unwrap();
+    let recv = |s: &mut UnixStream| wire::parse(&read_frame(s).unwrap().unwrap()).unwrap();
+    let (mut p, mut hello) = ExtPairing::start("OnePass", "Safari", 1).unwrap();
+    hello.auto = true;
+    send(s, &Envelope::PairHello(hello));
+    let offer = match recv(s) {
+        Envelope::PairOffer(o) => o,
+        Envelope::Error(e) => return Err(e.code),
+        other => panic!("{other:?}"),
+    };
+    let (reveal, _) = p.on_offer(offer).unwrap();
+    send(s, &Envelope::PairReveal(reveal));
+    assert_eq!(recv(s), Envelope::PairAuto);
+    let Envelope::PairDone(done) = recv(s) else {
+        panic!("done")
+    };
+    p.on_done(done, 1).unwrap();
+    let (confirm, record) = p.confirm(1).unwrap();
+    send(s, &Envelope::PairConfirm(confirm));
+    assert_eq!(recv(s), Envelope::PairOk);
+    Ok(record)
+}
+
+#[test]
+fn in_process_safari_pairs_without_a_code_and_serves_the_vault() {
+    let rig = rig();
+    let mut s = in_process(&rig);
+    let record = auto_pair_on(&mut s).unwrap();
+    let Event::Stored(_, ext_id, verified) = next(&rig.events) else {
+        panic!("stored")
+    };
+    assert_eq!((ext_id.as_str(), verified.as_str()), ("safari", "Safari"));
+    drop(s);
+
+    // A new connection opens a session with the stored pairing.
+    let s = in_process(&rig);
+    let mut ext = Ext {
+        s,
+        done: thread::spawn(|| {}),
+    };
+    let mut ch = ext.open(&record);
+    let st = ext.request(&mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(st["ok"]["locked"], false, "{st}");
+    rig.session.lock();
+    let st = ext.request(&mut ch, json!({"id": 2, "op": "status"}));
+    assert_eq!(st["ok"]["locked"], true, "{st}");
+    ext.end();
+    assert!(
+        rig.events
+            .try_iter()
+            .all(|e| !matches!(e, Event::Requested(_))),
+        "no pairing sheet"
+    );
+}
+
+#[test]
+fn in_process_safari_revoked_is_refused_silently() {
+    let rig = rig();
+    rig.server.set_blocked_auto(vec!["safari".into()]);
+    let mut s = in_process(&rig);
+    assert_eq!(auto_pair_on(&mut s).unwrap_err(), "not_allowed");
+    drop(s);
+    assert!(rig.events.try_recv().is_err());
+    assert_eq!(rig.server.pairings().len(), 1);
+}
