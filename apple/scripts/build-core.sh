@@ -8,9 +8,10 @@
 #                           xros-arm64-simulator
 #                           -> apple/build/OnePassFFI.xcframework
 #   build-core.sh dev       debug profile, no dev-fast-kdf, macos-arm64 +
-#                           ios-arm64-simulator only: minutes instead of the
-#                           shipped hour, for Mac and iOS Simulator app builds
-#                           (device, Watch and visionOS builds need shipped)
+#                           ios-arm64-simulator + watchos-arm64-simulator:
+#                           minutes instead of the shipped hour, for Mac and
+#                           Simulator app builds (device and visionOS builds
+#                           need shipped)
 #                           -> apple/build/OnePassFFI.xcframework
 #   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf
 #                           -> apple/build/test/OnePassFFI.xcframework
@@ -55,7 +56,7 @@ if [ "$MODE" = shipped ]; then
   CARGO_ARGS=(--release)
 elif [ "$MODE" = dev ]; then
   OUT_DIR="$APPLE_DIR/build"
-  TARGETS=(aarch64-apple-darwin aarch64-apple-ios-sim)
+  TARGETS=(aarch64-apple-darwin aarch64-apple-ios-sim aarch64-apple-watchos-sim)
   PROFILE_DIR=debug
   CARGO_ARGS=()
 else

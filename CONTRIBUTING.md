@@ -21,8 +21,9 @@ For the edit and test loop, use the fast path and keep the full checks for the e
 - `. scripts/dev-env.sh` once per shell: a shared compile cache (`brew install sccache`) and 4 build jobs.
 - `make -C core quick`: only the crates changed since `origin/main`, through `cargo-nextest`
   (`brew install cargo-nextest`), which kills a test still running after 5 minutes.
-- `apple/scripts/build-core.sh dev`: the core for Mac and iOS Simulator builds in a few minutes. Device, Watch
-  and visionOS builds need `apple/scripts/build-core.sh shipped`.
+- `apple/scripts/build-core.sh dev`: the core for Mac, iOS Simulator and watchOS Simulator builds in a few
+  minutes, so the iOS app builds with its Watch app as is. Device and visionOS builds need
+  `apple/scripts/build-core.sh shipped`.
 
 ## Strings and translations
 
