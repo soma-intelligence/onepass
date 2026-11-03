@@ -84,6 +84,7 @@ pub mod rekey;
 pub mod replay;
 mod reseal;
 pub mod rotate;
+pub mod send;
 pub mod share;
 pub mod transfer;
 pub mod travel;

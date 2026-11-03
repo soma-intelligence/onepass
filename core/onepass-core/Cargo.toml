@@ -177,3 +177,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "family"
 required-features = ["dev-fast-kdf"]
+
+# Item sends between contacts (sharing plan 3, Task 7).
+[[test]]
+name = "item_send"
+required-features = ["dev-fast-kdf"]
