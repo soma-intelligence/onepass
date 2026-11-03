@@ -749,7 +749,7 @@ use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{LineageRecord, RosterEntry, RotationReason};
 use onepass_core::repo::{DeviceState, Repository, RotateRequest};
 use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
-use onepass_core::trust::{DeviceLineageState, TrustLevel, TrustState};
+use onepass_core::trust::{DeviceLineageState, QuarantineClock, TrustLevel, TrustState};
 use onepass_core::{Id, crypto::SecretKey};
 
 /// A copy of the template account with its own secret store.
@@ -1412,7 +1412,9 @@ fn a_quarantined_cli_erases_itself_after_seven_days() {
     else {
         panic!("expected a quarantine");
     };
-    // A clock moved to 6 days: still waiting.
+    // 6 days of forward clock time counted: still waiting. The clock is the
+    // stored one (`quarantine_clock`, trust state v5), not `since`: once
+    // the first tick ran, only forward moves of the device clock count.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1423,18 +1425,21 @@ fn a_quarantined_cli_erases_itself_after_seven_days() {
         since: now - 6 * 86_400,
         resume,
     };
+    t.quarantine_clock = Some(QuarantineClock::start(by, now, 6 * 86_400));
     rot.set_trust(&t);
     let out = rot.run(&["vault", "list"]);
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("erases itself on"), "{}", out.stderr);
     assert!(rot.data().join("device.bin").exists());
-    // 8 days: it erases itself, and the secrets go with it.
+    // 8 days counted: it erases itself, and the secrets go with it.
+    let mut t = rot.trust();
     t.state = DeviceLineageState::Quarantined {
         by,
         rotator,
         since: now - 8 * 86_400,
         resume,
     };
+    t.quarantine_clock = Some(QuarantineClock::start(by, now, 8 * 86_400));
     rot.set_trust(&t);
     let out = rot.run(&["vault", "list"]);
     assert_eq!(out.code, 1);
@@ -1477,6 +1482,8 @@ fn a_late_not_me_does_not_save_an_expired_quarantine() {
         since: now - 8 * 86_400,
         resume,
     };
+    // The first tick stored the clock: 8 days of forward time counted.
+    t.quarantine_clock = Some(QuarantineClock::start(by, now, 8 * 86_400));
     rot.set_trust(&t);
     let out = rot.run(&["account", "not-me"]);
     assert_eq!(out.code, 1);
