@@ -110,9 +110,12 @@ targets:
       # AutoFill credential provider: iPhone, iPad and Mac (no visionOS slice).
       - target: OnePassAutoFill
         destinationFilters: [iOS, macOS]
-      # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
+      # Safari Web Extension: the Mac one relays to the app's bridge (R-17); the iPhone and iPad
+      # one serves the bridge in its own process (spec 2026-11-03-ios-safari-autofill).
       - target: OnePassSafari
         destinationFilters: [macOS]
+      - target: OnePassSafariMobile
+        destinationFilters: [iOS]
       # Updates from GitHub Releases (Sparkle): the Developer ID Mac app only.
       - package: UpdateKit
         product: UpdateKit
@@ -336,7 +339,9 @@ targets:
         excludes:
           - "SafariRelay/**"
           - "scripts/**"
+          - "iOS/**"
           - "Support/Info.plist"
+          - "Support/Info-iOS.plist"
           - "Support/*.entitlements"
     dependencies:
       - package: SafariRelay
@@ -390,6 +395,68 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
           CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-macOS-Signed.entitlements
+
+  # Safari Web Extension on iPhone and iPad (spec 2026-11-03-ios-safari-autofill), embedded in
+  # OnePass.app/PlugIns. Same web extension as the Mac (extension/dist/safari), its own handler:
+  # iOS has no app listening on a socket, so the handler opens the vault on the shared store (App
+  # Group, shared keychain group) and serves the bridge in process (ruling I1). Face ID for the
+  # unlock sheet (NSFaceIDUsageDescription). Same bundle id suffix as the Mac one: one App ID per
+  # platform (founder action, spec section 9).
+  OnePassSafariMobile:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SafariExtension/iOS
+    dependencies:
+      - package: SafariRelay
+        product: SafariRelay
+      - package: VaultKit
+        product: VaultKit
+    info:
+      path: SafariExtension/Support/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: en
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    postBuildScripts:
+      - name: Copy web extension
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/SafariExtension/scripts/copy-web-extension.sh"'
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).safari
+        PRODUCT_NAME: OnePassSafari
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-iOS.entitlements
+      configs:
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
 
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.

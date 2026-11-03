@@ -89,6 +89,7 @@
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		5ED861184AA47805C66DBFDF /* RemoveMemberSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */; };
 		608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */; };
+		6152162EB5A9365200634C97 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34E15535E75AEAA562AE1539 /* VaultKit */; };
 		61DBC2193C4956098FF9B60B /* CopyTotpIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A88DEF8B8258DC7244DA0F /* CopyTotpIntent.swift */; };
 		62967AA1FC28124AC8A3C425 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F88A3A848FCA950CFDDC39A4 /* Localizable.xcstrings */; };
 		63E48896A87A4F5F744D086B /* PairingQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA88FD32124721CCD59CA2F /* PairingQRView.swift */; };
@@ -156,6 +157,7 @@
 		B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */ = {isa = PBXBuildFile; productRef = 451A77F800231FE2450B58B4 /* OnePassCore */; };
 		B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 958DAB1110F5AA509D48EAC7 /* CompanionLink */; };
 		BBD33D1A14745D3CC8C23455 /* CryptoCoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */; };
+		BDC6718A358BAB7355968523 /* OnePassSafariMobile.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BE69DB8D079C669C419DE219 /* SafariRelay in Frameworks */ = {isa = PBXBuildFile; productRef = BF0ADEA62603ADADE306FF9B /* SafariRelay */; };
 		BE7707277AD5D3747CCFCD88 /* PageComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF35143E318DDE2E8D4F84CE /* PageComponents.swift */; };
 		BED4FFF5015AA471247306D8 /* KitPrinter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9344AE02FE1EBBF9E0E47FE0 /* KitPrinter.swift */; };
@@ -179,6 +181,7 @@
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
+		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
@@ -190,6 +193,7 @@
 		E77957147DC095431387EEE3 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03A96E28FD859133D56AB58 /* SettingsUITests.swift */; };
 		E8122ACC00023E338E4E02A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 782CA900B64928632D2B1890 /* Assets.xcassets */; };
 		E942ADD634FAABA304BA92FC /* WatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */; };
+		EA06C844DB1A8420671BC449 /* SafariRelay in Frameworks */ = {isa = PBXBuildFile; productRef = AD1A61B5663FF933B99BD1FF /* SafariRelay */; };
 		EA07B44113E734D26177B114 /* ContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74B4BE394EB0A39B876CC0C /* ContactDetailView.swift */; };
 		EA6C3BE88D8E24B9C48CDC9F /* SaveSheetWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */; };
 		EB3A9494DA4CEFDC07BAD179 /* AuditLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8903B2CB9AEB2C38323B4CE /* AuditLogView.swift */; };
@@ -235,6 +239,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 9612434974A2C09A66EEA302;
 			remoteInfo = OnePassWidgets;
+		};
+		48CDF5D516555865E6E7E63F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 74DB3A33583C800708CB1B24;
+			remoteInfo = OnePassSafariMobile;
 		};
 		5DDFE54C05C165799925891D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -295,6 +306,7 @@
 				0C3A47427E3A471666F650B4 /* OnePassNotifications.appex in Embed Foundation Extensions */,
 				51CFFB68BE02A31F4AB753F5 /* OnePassAutoFill.appex in Embed Foundation Extensions */,
 				F268114812895105C25070A9 /* OnePassSafari.appex in Embed Foundation Extensions */,
+				BDC6718A358BAB7355968523 /* OnePassSafariMobile.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -378,6 +390,7 @@
 		49841660587A002A57EE289D /* PublicSessionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionMonitor.swift; sourceTree = "<group>"; };
 		4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPasswordStep.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
+		4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassSafariMobile.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FAA14239035AEBB97155D9B /* DevicesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesSettings.swift; sourceTree = "<group>"; };
 		4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		50075C70047E88FB1380617E /* RecoveryAlertView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryAlertView.swift; sourceTree = "<group>"; };
@@ -442,6 +455,7 @@
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
 		A106C3614367687097B3B54C /* AllAccountsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllAccountsSearch.swift; sourceTree = "<group>"; };
+		A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAndItemUITests.swift; sourceTree = "<group>"; };
 		A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorSheet.swift; sourceTree = "<group>"; };
 		A401A3C3163FAA3E4DF40689 /* DuplicatesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicatesViews.swift; sourceTree = "<group>"; };
@@ -540,6 +554,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				BE69DB8D079C669C419DE219 /* SafariRelay in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7069EBCA0BABC93DDE15E2DF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA06C844DB1A8420671BC449 /* SafariRelay in Frameworks */,
+				6152162EB5A9365200634C97 /* VaultKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -701,6 +724,7 @@
 			isa = PBXGroup;
 			children = (
 				02B28FC9527D8A0F0A4AEE28 /* Handler */,
+				F3E8B17B4EB9208936EAD9E4 /* iOS */,
 			);
 			path = SafariExtension;
 			sourceTree = "<group>";
@@ -893,6 +917,7 @@
 				B19AE94E6DFF90D6CABA8FD0 /* OnePassAutoFillUITests.xctest */,
 				BC80221CE7ABDFFC4E080905 /* OnePassNotifications.appex */,
 				B7437BA2319C70755833CE44 /* OnePassSafari.appex */,
+				4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */,
 				15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */,
 				B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */,
 				DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */,
@@ -1063,6 +1088,14 @@
 			path = Item;
 			sourceTree = "<group>";
 		};
+		F3E8B17B4EB9208936EAD9E4 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1122,6 +1155,27 @@
 			productReference = 8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		74DB3A33583C800708CB1B24 /* OnePassSafariMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3EDB3F013DC4719482F0EC3 /* Build configuration list for PBXNativeTarget "OnePassSafariMobile" */;
+			buildPhases = (
+				0A8BC12EABBC9D2B29653BD3 /* Sources */,
+				7069EBCA0BABC93DDE15E2DF /* Frameworks */,
+				1D76E2224611922A87B55903 /* Copy web extension */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OnePassSafariMobile;
+			packageProductDependencies = (
+				AD1A61B5663FF933B99BD1FF /* SafariRelay */,
+				34E15535E75AEAA562AE1539 /* VaultKit */,
+			);
+			productName = OnePassSafariMobile;
+			productReference = 4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		8393ECD4BFF4D241F435C84D /* OnePass */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DD89F9C5EC914BA7155D6D09 /* Build configuration list for PBXNativeTarget "OnePass" */;
@@ -1144,6 +1198,7 @@
 				45514B2BAC22BB45294E7B17 /* PBXTargetDependency */,
 				34E244DFC00BFFCE146EAA5B /* PBXTargetDependency */,
 				1101739EB7CAFA224086E1B8 /* PBXTargetDependency */,
+				397FBABF89BC63B5D51F157D /* PBXTargetDependency */,
 			);
 			name = OnePass;
 			packageProductDependencies = (
@@ -1294,6 +1349,9 @@
 					50A6ADA693D0CEE73E56B534 = {
 						DevelopmentTeam = "";
 					};
+					74DB3A33583C800708CB1B24 = {
+						DevelopmentTeam = "";
+					};
 					8393ECD4BFF4D241F435C84D = {
 						DevelopmentTeam = "";
 					};
@@ -1348,6 +1406,7 @@
 				8393ECD4BFF4D241F435C84D /* OnePass */,
 				50A6ADA693D0CEE73E56B534 /* OnePassAutoFill */,
 				C02B2BEE69A8FA35B4285E4E /* OnePassSafari */,
+				74DB3A33583C800708CB1B24 /* OnePassSafariMobile */,
 				431DF0836D408CF1857678B4 /* AutoFillHost */,
 				E7921CD4F6414DD4FA0B5EFF /* OnePassUITests */,
 				A939BCC0FC42F4841AE98589 /* OnePassWatch */,
@@ -1434,6 +1493,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PROJECT_DIR}/scripts/embed-relay.sh\"";
+		};
+		1D76E2224611922A87B55903 /* Copy web extension */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy web extension";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/SafariExtension/scripts/copy-web-extension.sh\"";
 		};
 		51A7AA45F26DF02D4A697CDB /* Embed MCP relay */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1534,6 +1613,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0A8BC12EABBC9D2B29653BD3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		18986777FE5195B1082095F4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1809,6 +1896,14 @@
 			target = 50A6ADA693D0CEE73E56B534 /* OnePassAutoFill */;
 			targetProxy = 008746023CC32B8A8A359C3F /* PBXContainerItemProxy */;
 		};
+		397FBABF89BC63B5D51F157D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				ios,
+			);
+			target = 74DB3A33583C800708CB1B24 /* OnePassSafariMobile */;
+			targetProxy = 48CDF5D516555865E6E7E63F /* PBXContainerItemProxy */;
+		};
 		45514B2BAC22BB45294E7B17 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			platformFilters = (
@@ -1877,6 +1972,31 @@
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 			};
 			name = "Release-Signed";
+		};
+		1BCE715638A3EC5C36A37F06 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/Support/OnePassSafari-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SafariExtension/Support/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
+				PRODUCT_NAME = OnePassSafari;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 		1C12E9A7D4A720ABE938BB61 /* Release-Signed */ = {
 			isa = XCBuildConfiguration;
@@ -2013,6 +2133,32 @@
 				TEST_TARGET_NAME = AutoFillHost;
 			};
 			name = Debug;
+		};
+		38A056A74A79BA65A6BE1B20 /* Release-CloudKit */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/Support/OnePassSafari-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SafariExtension/Support/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
+				PRODUCT_NAME = OnePassSafari;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ONEPASS_CLOUDKIT";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-CloudKit";
 		};
 		481305E7992E755F934F78E7 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -2213,6 +2359,31 @@
 				TARGETED_DEVICE_FAMILY = 4;
 			};
 			name = "Release-CloudKit";
+		};
+		906B6DA6582492B237CFC864 /* Release-Signed */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/Support/OnePassSafari-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SafariExtension/Support/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
+				PRODUCT_NAME = OnePassSafari;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-Signed";
 		};
 		9B58FC22790964226DA5D44F /* Release-Signed */ = {
 			isa = XCBuildConfiguration;
@@ -2929,6 +3100,31 @@
 			};
 			name = "Release-CloudKit";
 		};
+		F343E883132A838BCF0493B9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/Support/OnePassSafari-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "SafariExtension/Support/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
+				PRODUCT_NAME = OnePassSafari;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		F34B2CAEDED1F9339C242BBC /* Release-CloudKit */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -3247,6 +3443,17 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		F3EDB3F013DC4719482F0EC3 /* Build configuration list for PBXNativeTarget "OnePassSafariMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F343E883132A838BCF0493B9 /* Debug */,
+				1BCE715638A3EC5C36A37F06 /* Release */,
+				38A056A74A79BA65A6BE1B20 /* Release-CloudKit */,
+				906B6DA6582492B237CFC864 /* Release-Signed */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -3285,6 +3492,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = UpdateKit;
 		};
+		34E15535E75AEAA562AE1539 /* VaultKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VaultKit;
+		};
 		3FCA6BEE85156D42B867CBF8 /* GlanceKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = GlanceKit;
@@ -3308,6 +3519,10 @@
 		958DAB1110F5AA509D48EAC7 /* CompanionLink */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CompanionLink;
+		};
+		AD1A61B5663FF933B99BD1FF /* SafariRelay */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SafariRelay;
 		};
 		BF0ADEA62603ADADE306FF9B /* SafariRelay */ = {
 			isa = XCSwiftPackageProductDependency;
