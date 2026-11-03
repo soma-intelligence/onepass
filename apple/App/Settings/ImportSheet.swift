@@ -140,6 +140,9 @@ struct ImportSheet: View {
     /// Items of the export already in the chosen vault from an earlier import: updated, not added.
     /// What importing into the chosen vault would do (`previewImportInto`): nil until counted.
     @State private var into: FfiImportSummary?
+    /// Merge, skip or import for each item of the export that looks like one already in the chosen
+    /// vault (`into.duplicates`), the core's suggestion until the user changes it.
+    @State private var duplicateChoices = ImportDuplicateChoices()
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
@@ -497,6 +500,13 @@ struct ImportSheet: View {
                             .padding(.horizontal, 4)
                             .accessibilityIdentifier("import.outcome")
                     }
+                    if d.merged + d.skippedDuplicates + d.separate > 0 {
+                        Label(Self.duplicatesDoneLine(d), systemImage: "square.on.square")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .accessibilityIdentifier("import.duplicates.done")
+                    }
                     contentSection(d, done: true)
                 }
                 .padding(20)
@@ -537,6 +547,9 @@ struct ImportSheet: View {
                             .padding(.horizontal, 4)
                             .accessibilityIdentifier("import.updates")
                     }
+                    if !duplicateChoices.isEmpty {
+                        duplicatesSection
+                    }
                 }
                 .padding(20)
             }
@@ -550,6 +563,119 @@ struct ImportSheet: View {
             Divider()
             footerBar(p)
         }
+    }
+
+    // MARK: Possible duplicates
+
+    /// "3 doublons possibles": each item of the export that matches one of the chosen vault (same
+    /// site and username, same TOTP, same card or document number), with what differs and a
+    /// Merge / Skip / Import choice; bulk buttons set every row at once.
+    private var duplicatesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("duplicates.banner.title \(duplicateChoices.count)")
+            Text("import.duplicates.subtitle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+            HStack(spacing: 8) {
+                Button("import.duplicates.mergeAll", systemImage: "arrow.triangle.merge") {
+                    duplicateChoices.setAll(.merge)
+                }
+                .disabled(duplicateChoices.all(.merge))
+                .accessibilityIdentifier("import.duplicates.mergeAll")
+                Button("import.duplicates.skipAll", systemImage: "arrow.uturn.right") {
+                    duplicateChoices.setAll(.skip)
+                }
+                .disabled(duplicateChoices.all(.skip))
+                .accessibilityIdentifier("import.duplicates.skipAll")
+                Spacer(minLength: 0)
+                if !duplicateChoices.decisions.isEmpty {
+                    Button("import.duplicates.suggested") { duplicateChoices.resetToSuggested() }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("import.duplicates.suggested")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .font(.subheadline)
+            EditorCard {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(duplicateChoices.rows.enumerated()), id: \.element.index) { n, row in
+                        if n > 0 { CardDivider() }
+                        duplicateRow(row)
+                    }
+                }
+            }
+            .accessibilityIdentifier("import.duplicates")
+            Text(Self.duplicatesPlanLine(duplicateChoices))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .accessibilityIdentifier("import.duplicates.plan")
+        }
+    }
+
+    /// The file's item, the vault item it matches, what differs, and the choice.
+    private func duplicateRow(_ row: FfiImportDuplicate) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                CategoryTile(category: .of(row.incoming.itemType), size: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.incoming.title.isEmpty ? row.existing.title : row.incoming.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if !row.incoming.subtitle.isEmpty {
+                        Text(row.incoming.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Label {
+                        Text("import.duplicates.inVault \(Self.vaultLine(row.existing))")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } icon: {
+                        Image(systemName: "arrow.turn.down.right")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if row.exact {
+                    Text("import.duplicates.exact")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.14), in: .capsule)
+                }
+            }
+            if !row.differences.isEmpty {
+                Text(Self.differencesLine(row.differences))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("import.duplicates.choice", selection: choiceBinding(row.index)) {
+                Text("import.choice.merge").tag(FfiImportChoice.merge)
+                Text("import.choice.skip").tag(FfiImportChoice.skip)
+                Text("import.choice.import").tag(FfiImportChoice.import)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("import.duplicates.choice.\(row.index)")
+        }
+        .editorRowPadding()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("import.duplicates.row.\(row.index)")
+    }
+
+    private func choiceBinding(_ index: UInt32) -> Binding<FfiImportChoice> {
+        Binding(
+            get: { duplicateChoices.choice(for: index) },
+            set: { duplicateChoices.set($0, for: index) })
     }
 
     private func fileCard(format: String) -> some View {
@@ -726,6 +852,8 @@ struct ImportSheet: View {
     private func reset() {
         buffer.wipe()
         preview = nil
+        into = nil
+        duplicateChoices = ImportDuplicateChoices()
         format = nil
         fileName = ""
         errorMessage = nil
@@ -841,6 +969,7 @@ struct ImportSheet: View {
         }
         let summary = try? await model.session.previewImport(format: format, data: buffer.data, vaultID: vaultID)
         into = summary
+        duplicateChoices.update(summary?.duplicates ?? [])
     }
 
     private func runImport() async {
@@ -849,7 +978,8 @@ struct ImportSheet: View {
         defer { busy = false }
         let vaultName = model.session.vaults.first { $0.id == vaultID }?.meta.name ?? ""
         do {
-            let written = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
+            let written = try await model.session.importItems(
+                format: format, data: buffer.data, vaultID: vaultID, decisions: duplicateChoices.decisions)
             buffer.wipe()
             model.showToast(written.updated > 0 || written.archivedDuplicates > 0
                 ? Self.outcomeLine(written)
@@ -928,6 +1058,26 @@ struct ImportSheet: View {
     /// same export made are updated in place, never duplicated; nothing is deleted.
     private static func outcomeLine(_ s: FfiImportSummary) -> String {
         String(localized: "settings.importDryRun \(Int(s.fixed)) \(Int(s.added)) \(Int(s.converted)) \(Int(s.archivedDuplicates)) \(Int(s.unchanged))")
+    }
+
+    /// "Gmail, alice@example.com": the vault item a file item matches.
+    private static func vaultLine(_ s: FfiItemSummary) -> String {
+        s.subtitle.isEmpty ? s.title : "\(s.title), \(s.subtitle)"
+    }
+
+    /// "Diffère : mot de passe, sites".
+    private static func differencesLine(_ aspects: [FfiDuplicateAspect]) -> String {
+        let list = aspects.map(DuplicatesText.aspect).formatted(.list(type: .and, width: .narrow))
+        return String(localized: "duplicates.copy.differs \(list)")
+    }
+
+    /// "2 à fusionner, 1 à ignorer, 0 gardés à part".
+    private static func duplicatesPlanLine(_ c: ImportDuplicateChoices) -> String {
+        String(localized: "import.duplicates.plan \(c.count(of: .merge)) \(c.count(of: .skip)) \(c.count(of: .import))")
+    }
+
+    private static func duplicatesDoneLine(_ s: FfiImportSummary) -> String {
+        String(localized: "import.duplicates.done \(Int(s.merged)) \(Int(s.skippedDuplicates)) \(Int(s.separate))")
     }
 
     private static func pdfMessage(_ e: PDFImportError) -> String {
