@@ -521,7 +521,7 @@ Please report security issues privately through [GitHub Security Advisories](htt
 
 OnePass is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). You can use, study, change and share it. If you distribute a modified version, or run one as a network service, you must publish its source under the same license.
 
-For a commercial license without the AGPL terms, write to security@somalabs.me with "License" in the subject. Third-party word lists keep their own licenses, listed in [`core/onepass-core/data/LICENSES.md`](core/onepass-core/data/LICENSES.md).
+For a commercial license without the AGPL terms, write to security@somalabs.me with "License" in the subject. Third-party word lists keep their own licenses, listed in [`core/onepass-core/data/LICENSES.md`](core/onepass-core/data/LICENSES.md). Site icons come from a pack built from Simple Icons (CC0), gilbarbara/logos (CC0) and 2FA Directory (MIT), downloaded whole and never site by site: see [`docs/icon-pack.md`](docs/icon-pack.md) and [`NOTICE`](NOTICE). Logos remain trademarks of their owners.
 
 ---
 
