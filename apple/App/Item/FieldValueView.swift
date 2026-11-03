@@ -7,13 +7,9 @@ import SwiftUI
 import VaultKit
 
 extension String {
-    /// Field labels read like the editor's: "Mot de passe" gives "mot de passe". An acronym first
-    /// ("PIN", "URL") stays as is.
-    var detailLabelCase: String {
-        guard let first, first.isUppercase else { return self }
-        if let second = dropFirst().first, second.isUppercase { return self }
-        return first.lowercased() + dropFirst()
-    }
+    /// Field labels read like the editor's: lowercase in French ("mot de passe"), a capital first in
+    /// English, Spanish and Italian (`LabelCase`). An acronym first ("PIN", "URL") stays as is.
+    var detailLabelCase: String { LabelCase.detail(self) }
 }
 
 /// One non-empty field in the detail view, drawn for its kind as rows of a card. Secrets are masked

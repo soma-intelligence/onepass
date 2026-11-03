@@ -148,11 +148,8 @@ struct TextFieldsView: View {
         }
     }
 
-    /// "Mot de passe" gives "mot de passe", as the app's labels; an acronym ("PIN") stays.
-    private static func labelCase(_ label: String) -> String {
-        guard let first = label.first, !(label.dropFirst().first?.isUppercase ?? false) else { return label }
-        return first.lowercased() + label.dropFirst()
-    }
+    /// As the app's labels: lowercase in French, a capital first elsewhere (`LabelCase`).
+    private static func labelCase(_ label: String) -> String { LabelCase.detail(label) }
 
     private static func isSecret(_ field: FfiField) -> Bool {
         switch field.kind {

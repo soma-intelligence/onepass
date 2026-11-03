@@ -1546,19 +1546,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "add to"
+            "value" : "Add to"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "añadir a"
+            "value" : "Añadir a"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "aggiungi a"
+            "value" : "Aggiungi a"
           }
         }
       }
@@ -1568,19 +1568,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "app"
+            "value" : "App"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "app"
+            "value" : "App"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "app"
+            "value" : "App"
           }
         }
       }
@@ -1590,19 +1590,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "other items"
+            "value" : "Other items"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "otros elementos"
+            "value" : "Otros elementos"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "altri elementi"
+            "value" : "Altri elementi"
           }
         }
       }
@@ -1612,19 +1612,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "field to insert"
+            "value" : "Field to insert"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "campo que insertar"
+            "value" : "Campo que insertar"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "campo da inserire"
+            "value" : "Campo da inserire"
           }
         }
       }
@@ -1634,19 +1634,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "login"
+            "value" : "Login"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "inicio de sesión"
+            "value" : "Inicio de sesión"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "login"
+            "value" : "Login"
           }
         }
       }
@@ -1678,19 +1678,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "username"
+            "value" : "Username"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "usuario"
+            "value" : "Usuario"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "nome utente"
+            "value" : "Nome utente"
           }
         }
       }
@@ -1722,19 +1722,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "password"
+            "value" : "Password"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "contraseña"
+            "value" : "Contraseña"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "password"
+            "value" : "Password"
           }
         }
       }
@@ -1744,19 +1744,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "new item"
+            "value" : "New item"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "elemento nuevo"
+            "value" : "Elemento nuevo"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "nuovo elemento"
+            "value" : "Nuovo elemento"
           }
         }
       }
@@ -1766,19 +1766,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "for %@"
+            "value" : "For %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "para %@"
+            "value" : "Para %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "per %@"
+            "value" : "Per %@"
           }
         }
       }
@@ -1788,19 +1788,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "for this site"
+            "value" : "For this site"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "para este sitio"
+            "value" : "Para este sitio"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "per questo sito"
+            "value" : "Per questo sito"
           }
         }
       }
@@ -1832,19 +1832,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "results"
+            "value" : "Results"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "resultados"
+            "value" : "Resultados"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "risultati"
+            "value" : "Risultati"
           }
         }
       }
@@ -1854,19 +1854,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "site"
+            "value" : "Site"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sitio"
+            "value" : "Sitio"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sito"
+            "value" : "Sito"
           }
         }
       }
@@ -1876,19 +1876,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "title"
+            "value" : "Title"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "título"
+            "value" : "Título"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "titolo"
+            "value" : "Titolo"
           }
         }
       }
@@ -1898,19 +1898,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "all items"
+            "value" : "All items"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "todos los elementos"
+            "value" : "Todos los elementos"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "tutti gli elementi"
+            "value" : "Tutti gli elementi"
           }
         }
       }
@@ -1942,19 +1942,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "item updated"
+            "value" : "Item updated"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "elemento actualizado"
+            "value" : "Elemento actualizado"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "elemento aggiornato"
+            "value" : "Elemento aggiornato"
           }
         }
       }

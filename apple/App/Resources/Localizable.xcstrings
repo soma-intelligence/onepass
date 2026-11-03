@@ -23868,6 +23868,36 @@
         }
       }
     },
+    "item.notes" : {
+      "comment" : "Label above an item's notes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "notes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note"
+          }
+        }
+      }
+    },
     "item.tags" : {
       "comment" : "Label above an item's tags (lowercase like the other field labels).",
       "extractionState" : "manual",
@@ -23875,13 +23905,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "tags"
+            "value" : "Tags"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "etiquetas"
+            "value" : "Etiquetas"
           }
         },
         "fr" : {
@@ -23893,7 +23923,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "tag"
+            "value" : "Tag"
           }
         }
       }
@@ -33035,19 +33065,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "signs in with"
+            "value" : "Signs in with"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "inicia sesión con"
+            "value" : "Inicia sesión con"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "accede con"
+            "value" : "Accede con"
           }
         }
       }
@@ -33079,19 +33109,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "website"
+            "value" : "Website"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sitio web"
+            "value" : "Sitio web"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sito web"
+            "value" : "Sito web"
           }
         }
       }
@@ -33101,19 +33131,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "primary website"
+            "value" : "Primary website"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sitio web principal"
+            "value" : "Sitio web principal"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "sito web principale"
+            "value" : "Sito web principale"
           }
         }
       }
@@ -33145,19 +33175,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "file size"
+            "value" : "File size"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "tamaño del archivo"
+            "value" : "Tamaño del archivo"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "dimensione del file"
+            "value" : "Dimensione del file"
           }
         }
       }

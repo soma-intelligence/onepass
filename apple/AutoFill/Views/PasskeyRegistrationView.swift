@@ -146,14 +146,17 @@ struct VaultPicker: View {
             Text("Coffre")
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
+            // A menu picker draws its closed label from the row's icon when the icon is a custom view:
+            // the badge alone (an initial, "P") stood for the vault. The rows carry the name only; the
+            // badge of the chosen vault sits next to the menu.
+            if let current {
+                VaultBadge(name: current.meta.name, colorName: current.meta.color, size: 20)
+                    .accessibilityHidden(true)
+            }
             Picker("Coffre", selection: $selection) {
                 ForEach(vaults, id: \.id) { vault in
-                    Label {
-                        Text(verbatim: vault.meta.name)
-                    } icon: {
-                        VaultBadge(name: vault.meta.name, colorName: vault.meta.color, size: 20)
-                    }
-                    .tag(vault.id)
+                    Text(verbatim: vault.meta.name)
+                        .tag(vault.id)
                 }
             }
             .labelsHidden()

@@ -442,7 +442,7 @@ struct ItemEditorView: View {
     private var notesCard: some View {
         EditorCard {
             VStack(alignment: .leading, spacing: 4) {
-                EditorLabel("notes")
+                EditorLabel(String(localized: "item.notes"))
                 // No inner box: the note reads as part of its card.
                 TextEditor(text: $editor.draft.item.notes)
                     .scrollContentBackground(.hidden)

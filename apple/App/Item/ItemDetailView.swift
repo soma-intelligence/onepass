@@ -263,7 +263,7 @@ struct ItemDetailView: View {
         if !item.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             EditorCard {
                 VStack(alignment: .leading, spacing: 3) {
-                    EditorLabel("notes")
+                    EditorLabel(String(localized: "item.notes"))
                     Text(Self.markdown(item.notes))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
