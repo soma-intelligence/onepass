@@ -104,6 +104,9 @@ pub struct ShareState {
     /// I signed a `Leave` (spec 9.4): the vault is erased here once the
     /// body and the rekey request are sent and my credential revoked.
     pub leaving: bool,
+    /// I am copying this vault to a new one under my mailbox (Task 12):
+    /// its id. Writes to this one are refused meanwhile.
+    pub moving_to: Option<Id>,
 }
 
 impl ShareState {
@@ -126,6 +129,7 @@ impl ShareState {
             exposures: Vec::new(),
             name: String::new(),
             leaving: false,
+            moving_to: None,
         }
     }
 

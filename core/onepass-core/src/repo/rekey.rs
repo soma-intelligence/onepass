@@ -358,6 +358,9 @@ impl<S: RecordStore> Repository<S> {
         if state.leaving {
             return self.finish_leave(vault_id);
         }
+        if state.head.moved_to.is_some() {
+            return self.follow_move(vault_id, state.head.issued_at);
+        }
         let Some(rec) = self
             .store
             .get_in(state.zone, RecordKind::Membership, vault_id)?
@@ -383,9 +386,15 @@ impl<S: RecordStore> Repository<S> {
                 if m.role > before && m.role > Role::Read && !self.verified_signer(&next.signer)? {
                     return Ok(());
                 }
+                let moved = next.moved_to.is_some();
+                let at = next.issued_at;
                 state.advance(next);
                 self.store
-                    .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))
+                    .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+                if moved {
+                    self.follow_move(vault_id, at)?;
+                }
+                Ok(())
             }
             _ if removes(&next, &me) => self.erase_shared(&state),
             _ => Ok(()),
@@ -574,7 +583,7 @@ impl<S: RecordStore> Repository<S> {
     /// The pinned state of `vault_id` for a manager's change: followed to
     /// the newest body, I manage it, nothing pending that a change would
     /// race (a resealing, a refused access, my departure).
-    fn manager_state(&mut self, vault_id: Id) -> Result<ShareState> {
+    pub(crate) fn manager_state(&mut self, vault_id: Id) -> Result<ShareState> {
         self.writable()?;
         self.follow_head(vault_id)?;
         let state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
@@ -763,10 +772,7 @@ impl<S: RecordStore> Repository<S> {
         };
         if !state.leaving
             || !self.store.zone_pending(state.zone)?.is_empty()
-            || state
-                .actions
-                .iter()
-                .any(|a| matches!(a, crate::share::ShareAction::RevokeCredential { .. }))
+            || state.waits_for_mailbox()
         {
             return Ok(());
         }

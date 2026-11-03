@@ -183,9 +183,13 @@ impl<S: RecordStore> Repository<S> {
         match &access.home {
             Some(h) if *h == home => Ok(()),
             Some(_) => Err(refused("zone", "home already set")),
-            None => self
-                .write_zone_access(target, Some(home), &seed)
-                .map(|_| ()),
+            None => {
+                self.write_zone_access(target, Some(home), &seed)?;
+                if let AccessTarget::Zone(Zone::Vault(id)) = target {
+                    self.finish_transfer(id, crate::devices::now())?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -551,6 +555,10 @@ impl<S: RecordStore> Repository<S> {
         self.follow_heads()?;
         let mut out = Vec::new();
         for mut state in self.store.share_states()? {
+            // On its way out: erased once its last steps ran.
+            if state.leaving {
+                continue;
+            }
             let name = self
                 .open_shared_with(&state)
                 .map(|v| v.meta.name)
@@ -744,6 +752,9 @@ impl<S: RecordStore> Repository<S> {
         }
         if state.leaving {
             return Err(refused("vault", "leaving"));
+        }
+        if state.moving_to.is_some() || state.head.moved_to.is_some() {
+            return Err(refused("vault", "moved"));
         }
         self.require_role(&state, Role::Write)?;
         // The vault must be open under the head's generation (a rekey
@@ -1084,7 +1095,7 @@ impl<S: RecordStore> Repository<S> {
     /// book keys sign it, the signer `Manage` in the body with those keys,
     /// and me a member of the body under my current keys. Returns the
     /// invite, the pinned first body, the contact and my member entry.
-    fn checked_invite(
+    pub(crate) fn checked_invite(
         &mut self,
         zone: Zone,
         rec: &Record,

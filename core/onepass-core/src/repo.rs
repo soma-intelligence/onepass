@@ -83,6 +83,7 @@ pub mod replay;
 mod reseal;
 pub mod rotate;
 pub mod share;
+pub mod transfer;
 pub mod travel;
 
 pub use follow::{LineageLock, PromptChoice, RotationPrompt};

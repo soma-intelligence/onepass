@@ -1909,3 +1909,175 @@ converge_cases! {
     converge_role_vs_role: CarolRole(Role::Write), CarolRole(Role::Read);
     converge_role_vs_add: CarolRole(Role::Read), AddDan;
 }
+
+// Task 12: transfer by copy, stop sharing (spec 9.5, S9, decision 7).
+
+/// `trio(Role::Read)` with Bob raised to manager and holding Carol in his
+/// book (contact zone included).
+fn transfer_cast() -> (Zones, Acct, Acct, Acct, Id, Vec<Item>) {
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let bob = account_id(&mut b.dev);
+    a.dev
+        .repo()
+        .set_role(id, bob, Role::Manage, NOW + 3)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    pin(&mut b.dev, &mut c.dev, ContactLevel::Verified);
+    pin(&mut c.dev, &mut b.dev, ContactLevel::Verified);
+    contact_zone(&mut b.dev, &mut c.dev);
+    (zs, a, b, c, id, items)
+}
+
+/// Bob copies the vault and the transport gives the new zone its home.
+fn transfer(zs: &mut Zones, b: &mut Acct, id: Id) -> Id {
+    let info = b.dev.repo().transfer_by_copy(id, NOW + 4).unwrap();
+    assert_ne!(info.vault_id, id);
+    assert!(info.owner);
+    b.dev
+        .repo()
+        .set_zone_home(AccessTarget::Zone(Zone::Vault(info.vault_id)), home(2))
+        .unwrap();
+    b.sync(zs);
+    info.vault_id
+}
+
+#[test]
+fn transfer_keeps_items_and_members() {
+    let (mut zs, mut a, mut b, mut c, id, items) = transfer_cast();
+    let alice = account_id(&mut a.dev);
+    let carol = account_id(&mut c.dev);
+    let bob = account_id(&mut b.dev);
+    let new_id = transfer(&mut zs, &mut b, id);
+    let members = head_members(&mut b.dev, new_id);
+    assert!(members.contains(&(bob, Role::Manage)));
+    assert!(members.contains(&(alice, Role::Manage)));
+    assert!(members.contains(&(carol, Role::Read)));
+    let st = b.dev.store().share_state(new_id).unwrap().unwrap();
+    assert_eq!(st.head.owner().unwrap().account_id, bob);
+    let vb = shared(&mut b.dev, new_id);
+    assert_eq!(ids(&b.dev.repo().items(&vb).unwrap()), ids(&items));
+    // The old zone ends on a Rekey body pointing at the new home.
+    let old = &zs.server(Zone::Vault(id));
+    let rec = old.live(RecordKind::Membership, id).unwrap();
+    let body = SignedMembership::decode(&rec.record.as_ref().unwrap().data)
+        .unwrap()
+        .body;
+    assert_eq!(body.reason, MembershipReason::Rekey);
+    assert_eq!(body.moved_to.unwrap().home, home(2));
+    // Bob's copy of the old zone is gone once the last body was sent.
+    assert!(b.dev.store().share_state(id).unwrap().is_none());
+}
+
+#[test]
+fn members_follow_moved_to() {
+    let (mut zs, mut a, mut b, mut c, id, items) = transfer_cast();
+    let new_id = transfer(&mut zs, &mut b, id);
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    // Carol joined the new vault and dropped the old one.
+    assert!(c.dev.store().share_state(id).unwrap().is_none());
+    let vc = shared(&mut c.dev, new_id);
+    assert_eq!(ids(&c.dev.repo().items(&vc).unwrap()), ids(&items));
+    // Alice, the old owner, joined too and deletes the old mailbox first.
+    let va = shared(&mut a.dev, new_id);
+    assert_eq!(ids(&a.dev.repo().items(&va).unwrap()), ids(&items));
+    let delete = ShareAction::DeleteZoneMailbox {
+        zone: Zone::Vault(id),
+    };
+    assert!(
+        a.dev
+            .repo()
+            .pending_share_actions()
+            .unwrap()
+            .contains(&delete)
+    );
+    assert!(a.dev.store().share_state(id).unwrap().is_some());
+    a.dev.repo().share_action_done(&delete).unwrap();
+    assert!(a.dev.store().share_state(id).unwrap().is_none());
+    // The vault lists show the new vault only.
+    let listed: Vec<Id> = a
+        .dev
+        .repo()
+        .shared_vaults()
+        .unwrap()
+        .iter()
+        .map(|v| v.vault_id)
+        .collect();
+    assert_eq!(listed, vec![new_id]);
+}
+
+#[test]
+fn moved_to_from_non_manager_ignored() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let carol = me(&mut c.dev);
+    let head = c.dev.store().share_state(id).unwrap().unwrap().head;
+    let seq_before = a.dev.store().share_state(id).unwrap().unwrap().head.seq;
+    assert_eq!(head.seq, seq_before);
+    let mut body = head.next(carol, MembershipReason::Rekey, NOW + 4).unwrap();
+    body.moved_to = Some(onepass_core::share::MovedTo {
+        owner: carol,
+        home: home(7),
+    });
+    let signed = sign_membership(body, &c.dev.repo().account().keyset().signing).unwrap();
+    a.dev
+        .repo()
+        .store_mut()
+        .put_all_zoned(
+            vec![(
+                Zone::Vault(id),
+                Record {
+                    kind: RecordKind::Membership,
+                    id,
+                    version: signed.body.seq,
+                    data: signed.encode(),
+                },
+                Some(seq_before),
+            )],
+            vec![],
+            None,
+            &[],
+        )
+        .unwrap();
+    a.dev.repo().shared_vaults().unwrap();
+    let st = a.dev.store().share_state(id).unwrap().unwrap();
+    assert_eq!(st.head.seq, seq_before);
+    assert!(st.head.moved_to.is_none());
+    assert!(!st.leaving);
+}
+
+#[test]
+fn stop_sharing_requires_sole_member() {
+    let (_zs, mut a, _b, _c, id, _) = trio(Role::Read);
+    let e = a.dev.repo().stop_sharing(id, NOW + 4).unwrap_err();
+    assert_eq!(validation(e), ("vault".into(), "other members"));
+}
+
+#[test]
+fn stop_sharing_returns_personal_vault() {
+    let (mut zs, mut a, _b, id, items) = alice_and_bob(ContactLevel::Verified);
+    a.sync(&mut zs);
+    let personal = a.dev.repo().stop_sharing(id, NOW + 4).unwrap();
+    assert!(!personal.zone().is_shared());
+    assert_eq!(ids(&a.dev.repo().items(&personal).unwrap()), ids(&items));
+    assert!(
+        a.dev
+            .repo()
+            .vaults()
+            .unwrap()
+            .iter()
+            .any(|v| v.id == personal.id)
+    );
+    let delete = ShareAction::DeleteZoneMailbox {
+        zone: Zone::Vault(id),
+    };
+    assert!(
+        a.dev
+            .repo()
+            .pending_share_actions()
+            .unwrap()
+            .contains(&delete)
+    );
+    a.dev.repo().share_action_done(&delete).unwrap();
+    assert!(a.dev.store().share_state(id).unwrap().is_none());
+    assert!(a.dev.repo().shared_vaults().unwrap().is_empty());
+}
