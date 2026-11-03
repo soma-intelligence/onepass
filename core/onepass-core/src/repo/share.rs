@@ -816,13 +816,27 @@ impl<S: RecordStore> Repository<S> {
     pub(crate) fn shared_delete_item(&mut self, vault: &Vault, item_id: Id) -> Result<()> {
         let state = self.writer_state(vault)?;
         let loaded = self.shared_served(vault, Use::Write)?;
-        let (blob, _) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let (blob, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let mut deletes = vec![(state.zone, RecordKind::Item, *blob)];
         deletes.extend(
             loaded
                 .ignored_of(item_id)
                 .map(|b| (state.zone, RecordKind::Item, b)),
         );
+        // Its attachments' chunks go in the same transaction.
+        if let Ok(item) = vault.open_item(rec) {
+            for r in &item.attachments {
+                for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
+                    if self
+                        .store
+                        .get_in(state.zone, RecordKind::Attachment, id)?
+                        .is_some()
+                    {
+                        deletes.push((state.zone, RecordKind::Attachment, id));
+                    }
+                }
+            }
+        }
         let entries = loaded.entries_without(item_id);
         self.shared_commit(vault, &state, &loaded, entries, vec![], deletes)
     }
@@ -840,6 +854,25 @@ impl<S: RecordStore> Repository<S> {
         writes.push((to.zone(), item_record(to.id, &moved)?, None));
         if let Some((b, _)) = dst.listed(item_id) {
             deletes.push((to.zone(), RecordKind::Item, *b));
+        }
+        // The attachments' chunks change zone with the item, re-wrapped
+        // for `to`, in the same transaction.
+        if let Ok(item) = from.open_item(&rec) {
+            for r in &item.attachments {
+                for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
+                    let Some(chunk) = self.store.get_in(from.zone(), RecordKind::Attachment, id)?
+                    else {
+                        continue;
+                    };
+                    let moved = crate::attachment::rewrap(from, to, &chunk)?;
+                    let expected = self
+                        .store
+                        .get_in(to.zone(), RecordKind::Attachment, id)?
+                        .map(|r| r.version);
+                    writes.push((to.zone(), moved, expected));
+                    deletes.push((from.zone(), RecordKind::Attachment, id));
+                }
+            }
         }
         let mut to_entries = dst.entries_without(item_id);
         to_entries.push(entry(&moved));
