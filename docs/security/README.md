@@ -781,3 +781,68 @@ Le client et le pilote de synchronisation (`onepass-sync`) détectent ce qu'un s
 - **Un identifiant volé** (stockage sûr de l'appareil compromis) lit les blobs chiffrés et peut écrire des blobs que les autres appareils refusent (signatures du core). Il est révoqué depuis un autre appareil (`revoke_credential`) ; la révocation d'un appareil dans la liste signée ne suffit pas seule.
 - **Le genre des enregistrements reste visible** pour garder l'ordre "items avant manifeste" (spec 4.15, question 14), comme sur CloudKit.
 - **L'URL du serveur hébergé** est `mailbox.somalabs.me` ; un self-host choisit la sienne, et l'utilisateur fait confiance à l'autorité qu'il ajoute.
+
+## 19. Partage et familles
+
+Spec : `docs/superpowers/specs/2026-10-30-sharing-families-design.md` (citée "spec partage n"). Plans 1 (contacts et coffres partagés), 2 (zones, rotation des membres) et 3 (famille, aide à la récupération, envoi d'un item). Tout passe par la boîte aux lettres (section 18) : une zone par coffre partagé, une zone de famille, une zone par paire de contacts.
+
+### 19.1 Modèle de menace
+
+- **T1, un appareil retiré d'un membre plus le serveur** : il garde ce que la rotation v2 lui laisse (section 16) et les clés des coffres partagés que ce membre lisait. Une rotation du membre déclenche une `RekeyRequest` ; le gestionnaire fait tourner chaque coffre (A12).
+- **T2, le serveur seul** : lit, retient, retarde, rejoue, réordonne et forge tout enregistrement, propose n'importe quelle clé publique pour n'importe quel compte. Il voit quels comptes partagent une zone.
+- **T3, un ancien membre** retiré d'un coffre ou de la famille : il garde ce qu'il a lu et les clés de génération reçues, fait tourner un client modifié, peut s'allier au serveur.
+- **T4, un membre malveillant toujours membre** : un lecteur qui veut écrire, un rédacteur qui veut gérer, un gestionnaire qui veut lire les coffres privés des autres.
+- **T5, l'organisateur de la famille** : il gère la famille mais ne lit jamais un coffre privé d'un membre, et ne prend son compte qu'avec l'inscription du membre, un délai visible sur ses appareils et une remise en face à face.
+
+De confiance : les appareils de chaque membre, la comparaison du code (SAS) en face à face, la mémoire de l'utilisateur. Hors périmètre : un appareil compromis au niveau système, ce qu'un membre a lu avant son retrait, le déni de service par le serveur, l'analyse de trafic.
+
+### 19.2 Clés et domaines
+
+Chaque usage du KEM passe par `wrap_key_labeled` sous son label, avec un contexte lié (compte, identité, coffre, génération ou inscription). Chaque signature a son domaine. Labels du partage présents dans le code (`rg -F 'onepass/' core/onepass-core/src`) :
+
+| Label | Sorte | Porte sur |
+| --- | --- | --- |
+| `onepass/contact/v1` | `wrap_key_labeled`, éphémère | clé de canal de la vérification en face à face, réponse à l'invitation à distance |
+| `onepass/contact-card/v1` | domaine de signature (identité) | carte de contact |
+| `onepass/contact-book/v1` | domaine de liste signée | carnet de contacts |
+| `onepass/contact-fpr/v1`, `onepass/contact-safety/v1`, `onepass/contact-pair/v1` | préfixes de hash | empreinte d'un compte, numéro de sécurité, id de la paire |
+| `onepass/contact-invite/v1`, `onepass/invite-rdv/v1` | info HKDF, label KEM, préfixe | invitation à distance et son rendez-vous |
+| `onepass/contact-zone/v1` | domaine de signature | offre de la zone d'une paire |
+| `onepass/share/vault-key/v1` | `wrap_key_labeled`, KEM du membre | clé d'un coffre partagé de génération `g` |
+| `onepass/member-key-id/v1`, `onepass/member-params-id/v1` | préfixes de hash | ids d'enveloppe et de paramètres publiés |
+| `onepass/vault-key-commit/v1` | HMAC | engagement de génération (A15) |
+| `onepass/recreated-vault-key/v1` | préfixe | coffre recréé dans une zone neuve |
+| `onepass/membership/v1`, `onepass/shared-manifest/v1` | domaines de signature | liste des membres, manifeste partagé |
+| `onepass/share-invite/v1` | domaine de signature | invitation à un coffre |
+| `onepass/rekey-request/v1`, `onepass/rekey-request-id/v1` | domaine, préfixe | demande de rotation d'un coffre après la rotation d'un membre |
+| `onepass/share/zone-credential/v1` | `wrap_key_labeled`, KEM épinglée du membre | graine de son identifiant dans la boîte d'une zone |
+| `onepass/zone-access/v1`, `onepass/zone-access-seed/v1`, `onepass/zone-access-id/v1` | domaine, label KEM (soi), préfixe | accès d'un compte à ses zones |
+| `onepass/family/v1`, `onepass/family-invite/v1` | domaines de signature (organisateur) | corps de la famille, invitation |
+| `onepass/recovery/rk/v1` | info HKDF | RK |
+| `onepass/recovery/share/v1` | `wrap_key_labeled`, KEM de l'organisateur | `S_org` |
+| `onepass/recovery/store-seal/v1` | info HKDF, Secret Key du membre | `K_store` (compte sur la boîte) |
+| `onepass/recovery/enroll/v1`, `.../request/v1`, `.../cancel/v1`, `.../release/v1` | domaines de signature | inscription (membre), demande et remise (organisateur), annulation (appareil du membre) |
+| `onepass/share/item-send/v1`, `onepass/item-send/v1` | `wrap_key_labeled` (KEM du destinataire), domaine de signature | `K_send`, envoi d'une copie d'item |
+
+`onepass/recovery/release/v1` a été ajouté par le plan 3 (Task 6) : la note signée que l'organisateur a remis sa moitié, une seule fois par inscription. Aucun nouveau code de `RecordKind` : la note est une variante de `RecoveryMessage`, ajoutée en fin d'enum.
+
+### 19.3 Aide à la récupération
+
+- **Inscription** (spec partage 11.4) : seulement depuis l'écran du membre, après son mot de passe et sa Secret Key (A9). L'organisateur doit être un contact `Verified` et organisateur de la famille ; `S_org` est enveloppé pour sa clé KEM épinglée dans le carnet du membre (A10). Délai choisi par le membre entre 24 h et 7 jours (72 h par défaut).
+- **Clés** : `RK = HKDF-SHA256(S_org || S_store, "onepass/recovery/rk/v1" || postcard((compte, identité, inscription)))`. Le `RecoverySlot` scelle le keyset sous RK. La `RecoveryHalf` garde `S_store` en clair sur iCloud, scellé sous `K_store = HKDF(Secret Key, "onepass/recovery/store-seal/v1" || inscription)` sur la boîte (11.7).
+- **Demande** : signée par l'organisateur ; elle s'affiche sur les appareils du membre sans déverrouillage. Un appareil du roster du membre l'annule, sans mot de passe. Une nouvelle inscription annule une demande en cours. Le délai court sur l'horloge de l'organisateur.
+- **Remise** : en face à face seulement (question 4 de la spec). Le nouvel appareil du membre montre un QR de session sans carte (`ContactResponder::new_for_recovery`) ; l'organisateur compare le code puis remet `S_org` dans le canal, une seule fois par inscription.
+- **Récupération** : le nouvel appareil lit la moitié et le slot de la base privée synchronisée, dérive RK, ouvre le keyset et fait tout de suite une rotation de raison `Recover` : nouvelle identité, nouvelle Secret Key, nouveau mot de passe, tous les anciens appareils retirés. Les anciens appareils passent en quarantaine sans compte à rebours d'effacement (le rotateur n'est pas `Verified` chez eux, règle I1) ; ils se réparent par un nouvel appairage. Slot et moitié sont effacés après la rotation.
+
+### 19.4 Tests d'attaque
+
+`tests/recovery.rs` : `a9_no_auto_enrollment`, `a10_enrollment_to_pinned_key`, `a18_organizer_alone`, `a22_withheld_cancel_is_a_limit`, `server_alone_cannot_recover`, `mailbox_operator_and_organizer_cannot_recover`, `wrong_enrollment_share_refused`, `release_refused_*`, `second_release_refused`. `tests/family_attacks.rs` : `organizer_rotates_during_enrollment`, `family_removal_cuts_every_vault`. `tests/sharing_attacks.rs` couvre A1 à A8, A11 à A13, A15 à A17, A19 à A21. `tests/rotation_v2.rs` couvre la rotation `Recover` (`recover_rotate_end_to_end`, `old_devices_quarantined_then_repair`, `recover_without_identity_intro_invalid`, `contact_sees_recover_as_identity_change`).
+
+### 19.5 Limites
+
+- **Organisateur et stockage alliés** (11.6) : l'organisateur a `S_org`, le stockage a `S_store` et le slot. Ensemble, ils ouvrent le keyset. C'est écrit au membre à l'inscription. Sur la boîte, il leur faut en plus la Secret Key du membre (11.7).
+- **A22, annulation retenue** : un serveur qui retient l'annulation laisse courir le délai ; l'organisateur ne la voit pas. Le test `a22_withheld_cancel_is_a_limit` fixe ce comportement pour qu'un changement se voie.
+- **A14, lien d'invitation expiré** : l'hébergeur d'un lien peut le garder au-delà de son expiration ; la clé vit dans le fragment, jamais envoyée à l'hébergeur.
+- **Un détenteur de la clé d'identité** (Emergency Kit ou keyset récupéré) peut faire une rotation `Recover` qui retire tous les appareils du compte. C'est le but de la récupération ; c'est aussi ce que donnerait un kit volé.
+- **Après une remise**, une annulation ne change plus rien : `S_org` est déjà sur le nouvel appareil.
+- Ce qu'un membre a lu avant son retrait reste à lui. L'opérateur de la boîte voit quels comptes partagent une zone, combien d'items et quand chacun écrit, jamais rien de déchiffré. Le niveau Lien fait confiance au canal qui a porté le lien. Après la rotation d'un membre, il faut un geste humain par coffre. Un rédacteur malveillant peut supprimer des enregistrements d'une zone (détecté, réparable). Un nouveau membre ne vérifie pas l'histoire de la liste d'avant son arrivée.
