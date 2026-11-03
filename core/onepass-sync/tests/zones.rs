@@ -570,3 +570,126 @@ fn transfer_moves_zone_and_deletes_old() {
     );
     assert!(a.seeds.get(old.mailbox_id).is_none(), "seed forgotten");
 }
+
+/// Two members edit one shared item at once: the loser's conflict is
+/// staged in the vault's zone (not the private one) and the next round
+/// settles both on the same copy.
+#[test]
+fn concurrent_edit_in_shared_zone_settles() {
+    let fake = FakeMailbox::new();
+    let net = Net::with(&fake);
+    let (mut a, mut b, fam) = shared_pair(&net, Role::Write);
+    let va = shared(&mut a.acct.dev, fam);
+    let item = login(fam, "first", NOW + 10);
+    a.acct.dev.repo().save_item(&va, item.clone()).unwrap();
+    a.round();
+    b.round();
+    let vb = shared(&mut b.acct.dev, fam);
+    a.acct
+        .dev
+        .repo()
+        .save_item(&va, edited(&item, "alice-edit", NOW + 20))
+        .unwrap();
+    b.acct
+        .dev
+        .repo()
+        .save_item(&vb, edited(&item, "bob-edit", NOW + 21))
+        .unwrap();
+    let ra = a.round();
+    assert_eq!(status_of(&ra, Zone::Vault(fam)), Some(RoundStatus::Idle));
+    for _ in 0..3 {
+        b.round();
+        a.round();
+    }
+    let rb = b.round();
+    assert_eq!(status_of(&rb, Zone::Vault(fam)), Some(RoundStatus::Idle));
+    assert!(
+        b.acct
+            .dev
+            .store()
+            .zone_pending(Zone::Vault(fam))
+            .unwrap()
+            .is_empty()
+    );
+    let users = |d: &mut Device| -> Vec<String> {
+        let v = shared(d, fam);
+        let mut u: Vec<String> = d
+            .repo()
+            .items(&v)
+            .unwrap()
+            .iter()
+            .filter_map(|i| match &i.field("username")?.value {
+                FieldValue::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        u.sort();
+        u
+    };
+    let (ua, ub) = (users(&mut a.acct.dev), users(&mut b.acct.dev));
+    assert_eq!(ua, ub);
+    assert!(ua.iter().any(|u| u == "bob-edit"), "{ua:?}");
+}
+
+/// A reader rotates its keys; the manager confirms with the code: the
+/// renewed credential reaches the reader and its zones sync again with a
+/// transport rebuilt on the new credential.
+#[test]
+fn reader_rotation_adopted_then_syncs() {
+    let fake = FakeMailbox::new();
+    let net = Net::with(&fake);
+    let (mut a, mut b, fam) = shared_pair(&net, Role::Read);
+    b.acct.rotate(false);
+    for _ in 0..2 {
+        b.round();
+        a.round();
+    }
+    let child = b.acct.dev.store().trust_state().unwrap().unwrap().head.hash;
+    let bob = b.id();
+    let changes = a
+        .acct
+        .dev
+        .repo()
+        .refresh_member_identities(NOW + 5)
+        .unwrap();
+    assert_eq!(changes.len(), 1);
+    a.acct
+        .dev
+        .repo()
+        .adopt_member_identity(
+            bob,
+            child,
+            onepass_core::repo::members::AdoptionProof::Code(onepass_core::lineage::rotation_code(
+                &child,
+            )),
+            NOW + 6,
+        )
+        .unwrap();
+    let mut last = None;
+    for _ in 0..4 {
+        a.round();
+        last = Some(b.round());
+    }
+    let r = last.unwrap();
+    // Bob follows the IdentityUpdate body with the renewed credential.
+    let st = b.acct.dev.store().share_state(fam).unwrap().unwrap();
+    let (_, seed) = b
+        .acct
+        .dev
+        .repo()
+        .zone_access(AccessTarget::Zone(Zone::Vault(fam)))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        st.head.member(bob).unwrap().credential_id,
+        seed.credential_id()
+    );
+    assert!(st.identity_pending.is_none());
+    assert!(st.access_refused.is_none());
+    // Not asserted: the vault zone Idle. A reader's own lineage copies are
+    // above the 16 KiB inline cap and a put_kinds credential may not
+    // upload blobs (server rule), so they stay pending (ledger, Task 3).
+
+    assert!(r.refusals.is_empty(), "{r:?}");
+    assert!(!item_ids(&mut b.acct.dev, fam).is_empty());
+}

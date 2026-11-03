@@ -707,7 +707,7 @@ impl<T: Transport> SyncDriver<T> {
                     }
                 }
                 SendResult::Conflict(server) => {
-                    store.stage_remote(server)?;
+                    store.stage_remote_in(self.zone, server)?;
                     settled = false;
                 }
                 SendResult::Failed { .. } => settled = false,

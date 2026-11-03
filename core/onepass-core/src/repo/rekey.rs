@@ -49,6 +49,9 @@ pub enum AccessRefusal {
     Removed,
     /// No signed removal: the vault stays here read-only, nothing erased.
     Unconfirmed,
+    /// A manager renewed my credential (my new identity adopted): my
+    /// access holds the new one, the next round fetches with it.
+    Renewed,
 }
 
 /// The name of the personal vault that keeps the unsent writes of a vault
@@ -507,8 +510,10 @@ impl<S: RecordStore> Repository<S> {
     /// The transport got `revoked_credential` on `zone` (spec 13.8): look
     /// for the signed body that removes me, in the zone or as a copy in a
     /// contact zone. Found and valid: the vault is erased here
-    /// (`Removed`). Otherwise the vault stays read-only, nothing erased and
-    /// nothing sent (`Unconfirmed`). Not a shared vault I hold: `NotFound`.
+    /// (`Removed`). A credential renewal for my new identity, signed by a
+    /// manager of my head: my access takes it (`Renewed`). Otherwise the
+    /// vault stays read-only, nothing erased and nothing sent
+    /// (`Unconfirmed`). Not a shared vault I hold: `NotFound`.
     pub fn zone_access_refused(&mut self, zone: Zone, now: i64) -> Result<AccessRefusal> {
         let Zone::Vault(vault_id) = zone else {
             return Err(Error::NotFound);
@@ -533,6 +538,13 @@ impl<S: RecordStore> Repository<S> {
                     return Ok(AccessRefusal::Removed);
                 }
             }
+        }
+        if self.renewal_after_refusal(&state)? {
+            if state.access_refused.take().is_some() {
+                self.store
+                    .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+            }
+            return Ok(AccessRefusal::Renewed);
         }
         if state.access_refused.is_none() {
             state.access_refused = Some(now);

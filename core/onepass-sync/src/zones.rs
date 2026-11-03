@@ -244,6 +244,9 @@ pub struct ZoneRoundReport {
 
 struct ZoneDriver<A: MailboxApi> {
     home: ZoneHome,
+    /// The credential the transport signs with: a renewed one (a member's
+    /// new identity, spec 12.3) needs a new transport.
+    credential_id: [u8; 16],
     driver: SyncDriver<MailboxTransport<A>>,
 }
 
@@ -321,7 +324,15 @@ impl<C: Connect> ZoneSync<C> {
         if let Some(h) = hooks.as_deref_mut() {
             self.run_actions(h, &mut report);
         }
-        let targets = self.targets(&mut hooks, store);
+        let mut targets = self.targets(&mut hooks, store);
+        // Contact zones first: they carry the copies a vault zone's
+        // refusal looks for (a removal, a renewed credential), so a renewal
+        // lands before the vault zone is tried with the revoked credential.
+        targets.sort_by_key(|(z, _, _)| match z {
+            Zone::Contact(_) => 0,
+            Zone::Family(_) => 1,
+            _ => 2,
+        });
         let wanted: BTreeSet<Zone> = targets.iter().map(|(z, _, _)| *z).collect();
         self.drivers.retain(|z, _| wanted.contains(z));
         for (zone, home, seed) in targets {
@@ -381,7 +392,12 @@ impl<C: Connect> ZoneSync<C> {
         now: i64,
         report: &mut ZoneRoundReport,
     ) -> RoundStatus {
-        if self.drivers.get(&zone).is_none_or(|d| d.home != home) {
+        let credential_id = ZoneSeed::from_bytes(*seed).credential_id();
+        if self
+            .drivers
+            .get(&zone)
+            .is_none_or(|d| d.home != home || d.credential_id != credential_id)
+        {
             let api = match self.connect_zone(&home, seed) {
                 Ok(api) => api,
                 Err(e) => {
@@ -395,6 +411,7 @@ impl<C: Connect> ZoneSync<C> {
                 zone,
                 ZoneDriver {
                     home: home.clone(),
+                    credential_id,
                     driver: SyncDriver::for_zone(MailboxTransport::new(api), zone),
                 },
             );
@@ -417,7 +434,13 @@ impl<C: Connect> ZoneSync<C> {
                     && matches!(zone, Zone::Vault(_))
                     && let Ok(refusal) = h.zone_access_refused(zone, now)
                 {
-                    report.refusals.push((zone, refusal));
+                    if refusal == AccessRefusal::Renewed {
+                        // The access holds a renewed credential: the next
+                        // round fetches with it (a new transport).
+                        report.rerun = true;
+                    } else {
+                        report.refusals.push((zone, refusal));
+                    }
                     report.changed = true;
                 }
             }

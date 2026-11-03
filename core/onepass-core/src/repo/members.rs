@@ -12,7 +12,7 @@ use crate::lineage::{LineageRecord, SignedIntro, identity_id, rotation_code};
 use crate::manifest::meta_hash;
 use crate::share::{
     AccessTarget, CredentialRenewal, InviteRecord, MemberLineageRecord, MemberRef,
-    MembershipReason, Role, ShareAction, SharedVaultInfo, ZoneSeed, accept_next,
+    MembershipReason, Role, ShareAction, ShareState, SharedVaultInfo, ZoneSeed, accept_next,
     accept_self_update, identity_pub_hash, open_zone_credential, server_role, sign_membership,
     wrap_member_key, wrap_zone_credential,
 };
@@ -478,6 +478,60 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         Ok(())
+    }
+
+    /// The server refused my credential on `state`'s zone and my head
+    /// still names my old identity: a manager adopted my new one and
+    /// revoked the old credential before I could fetch the new body.
+    /// Take the renewal it left in our contact zone (signed by a manager of
+    /// the head I hold, sealed to my current identity) and write my access
+    /// with it, so the next round fetches the new body. True when the
+    /// access changed.
+    pub(crate) fn renewal_after_refusal(&mut self, state: &ShareState) -> Result<bool> {
+        let me = self.me();
+        if state.head.member(me.account_id).is_none() {
+            return Ok(false);
+        }
+        let target = AccessTarget::Zone(state.zone);
+        let Some((access, seed)) = self.zone_access(target)? else {
+            return Ok(false);
+        };
+        let vault_id = state.vault_id;
+        for cz in self.contact_zones()? {
+            for rec in self.store.list_in(cz, RecordKind::ShareInvite)? {
+                let Ok(InviteRecord::Credential(r)) = InviteRecord::decode(&rec.data) else {
+                    continue;
+                };
+                if r.vault_id != vault_id {
+                    continue;
+                }
+                let Some(signer) = state
+                    .head
+                    .member(r.signer.account_id)
+                    .filter(|m| m.identity_id == r.signer.identity_id && m.role == Role::Manage)
+                else {
+                    continue;
+                };
+                if r.verify(&signer.sign_pub).is_err() {
+                    continue;
+                }
+                let Ok(fresh) = open_zone_credential(
+                    self.account.keyset(),
+                    &r.credential,
+                    state.zone,
+                    r.home.mailbox_id,
+                    &me,
+                ) else {
+                    continue;
+                };
+                if fresh.credential_id() == seed.credential_id() {
+                    continue;
+                }
+                self.write_zone_access(target, access.home.clone().or(Some(r.home)), &fresh)?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// My keys rotated and I manage vault `vault_id` (spec 12.4, Task 15):
