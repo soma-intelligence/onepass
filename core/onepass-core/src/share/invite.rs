@@ -46,6 +46,8 @@ pub enum InviteRecord {
     /// The signed body that removed the recipient (Task 9).
     Removed(SignedMembership),
     Credential(CredentialRenewal),
+    /// An organizer's family invitation (plan 3 Task 1, arbitrage B-5).
+    Family(crate::family::FamilyInvite),
 }
 
 fn invite_message(
@@ -170,6 +172,7 @@ impl InviteRecord {
                 c.home.check()?;
                 check_credential(&c.credential)?;
             }
+            InviteRecord::Family(f) => f.check()?,
         }
         Ok(r)
     }

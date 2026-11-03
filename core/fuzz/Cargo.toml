@@ -278,3 +278,10 @@ path = "fuzz_targets/enroll_request.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "family"
+path = "fuzz_targets/family.rs"
+test = false
+doc = false
+bench = false

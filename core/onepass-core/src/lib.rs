@@ -17,6 +17,7 @@ pub mod enroll_request;
 pub mod epoch;
 pub mod error;
 pub mod export;
+pub mod family;
 pub mod fill_plan;
 pub mod format;
 pub mod generator;

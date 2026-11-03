@@ -172,3 +172,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "sharing_attacks"
 required-features = ["dev-fast-kdf"]
+
+# The family (sharing plan 3, Tasks 1 and 2).
+[[test]]
+name = "family"
+required-features = ["dev-fast-kdf"]
