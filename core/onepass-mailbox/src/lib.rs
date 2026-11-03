@@ -35,7 +35,10 @@ pub const RETRY_AFTER_MAX: u32 = 3600;
 pub use api::MailboxApi;
 pub use client::{ChangeFeed, FeedPage, MailboxClient, locate};
 pub use credential::{Credential, CredentialKey};
-pub use drops::{DROP_LIFE_SECS, DROP_MAX, DROP_SLOTS, drop_delete, drop_get, drop_put};
+pub use drops::{
+    DROP_LIFE_SECS, DROP_MAX, DROP_SLOTS, INVITE_DROP_MAX, InvitePart, drop_delete, drop_get,
+    drop_put, invite_delete, invite_drop_id, invite_get, invite_put,
+};
 pub use http::{Endpoint, tls_client_config};
 pub use onepass_mailbox_proto::ErrorCode;
 pub use rendezvous::{RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, Rendezvous};
