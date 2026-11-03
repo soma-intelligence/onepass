@@ -23,7 +23,7 @@ use crate::error::{OnePassError, invalid};
 use crate::rotation::{FfiPqDeviceHalf, device_keys};
 use crate::session::{Repo, Session, account_id_of};
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -337,7 +337,7 @@ impl FfiContactResponder {
 /// The side that scans the QR (`contact_initiator_begin`).
 #[derive(uniffi::Object)]
 pub struct FfiContactInitiator {
-    inner: Mutex<ContactInitiator>,
+    pub(crate) inner: Mutex<ContactInitiator>,
 }
 
 /// A new initiator, the KeyExchange to send and the SAS to show.
@@ -379,6 +379,13 @@ impl FfiContactInitiator {
         let (card, me) = card_and_keys(&session, &my_name, now)?;
         let keys = device_keys(&classical, pq)?;
         Ok(lock(&self.inner).confirm_and_send_card(&card, &keys, me, now)?)
+    }
+
+    /// An organizer-assisted recovery (spec 11.5 step 4): the organizer
+    /// read the same SAS as the member's new device. No card is sent; the
+    /// next call is `Session::release_recovery_share`.
+    pub fn confirm_sas_for_recovery(&self) -> Result<(), OnePassError> {
+        Ok(lock(&self.inner).confirm_sas_for_recovery()?)
     }
 
     pub fn on_frame(&self, frame: Vec<u8>, now: i64) -> Result<FfiContactOutcome, OnePassError> {
