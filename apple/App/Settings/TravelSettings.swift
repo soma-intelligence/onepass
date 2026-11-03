@@ -12,6 +12,8 @@ struct TravelSettings: View {
     @State private var status: FfiTravelStatus?
     /// Items of vaults that stay, hidden or guarded (spec 2026-11-02).
     @State private var itemPlan: FfiTravelItemPlan?
+    /// The personal vaults (the core's travel plan): shared vaults stay out of Travel Mode.
+    @State private var personalVaultIDs: Set<String>?
     @State private var confirmForget = false
     @State private var working = false
     @State private var confirming = false
@@ -38,7 +40,7 @@ struct TravelSettings: View {
             detectionSection
             if status?.active != true {
                 Section {
-                    ForEach(model.session.allVaults, id: \.id) { vault in
+                    ForEach(travelVaults, id: \.id) { vault in
                         Toggle(isOn: safeBinding(vault)) {
                             HStack(spacing: 12) {
                                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 28)
@@ -86,7 +88,7 @@ struct TravelSettings: View {
     }
 
     private var leavingNames: [String] {
-        model.session.allVaults.filter { !$0.meta.travelSafe }.map(\.meta.name)
+        travelVaults.filter { !$0.meta.travelSafe }.map(\.meta.name)
     }
 
     private var hiddenItems: [FfiTravelItemEntry] { itemPlan?.hidden ?? [] }
@@ -228,8 +230,13 @@ struct TravelSettings: View {
         }
     }
 
+    private var travelVaults: [FfiVault] {
+        model.session.allVaults.filter { personalVaultIDs?.contains($0.id) ?? true }
+    }
+
     private func reload() async {
         status = try? await model.session.travelStatus()
+        if let plan = try? await model.session.travelPlan() { personalVaultIDs = Set(plan.map(\.vaultId)) }
         if status?.active != true { itemPlan = try? await model.session.travelItemPlan() }
     }
 

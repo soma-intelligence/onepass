@@ -151,7 +151,7 @@ fn item_records_of(
     repo: &Repo,
     parked: &BTreeMap<Id, BTreeSet<Id>>,
 ) -> Result<Vec<Record>, OnePassError> {
-    let vaults = repo.vaults()?;
+    let vaults = repo.personal_vaults()?;
     let mut out = Vec::new();
     for r in repo.store().list(RecordKind::Item)? {
         let Ok((prefix, body)) = split_item_record(&r.data) else {
@@ -184,7 +184,7 @@ fn item_records_of(
     Ok(out)
 }
 
-/// Every item of the vaults that stay, read once: the hidden and guarded
+/// Every item of the personal vaults that stay, read once: the hidden and guarded
 /// ones, with their vault's id and name.
 struct MarkedVault {
     id: Id,
@@ -193,7 +193,7 @@ struct MarkedVault {
 
 fn marked_items(repo: &mut Repo) -> Result<Vec<(MarkedVault, Item)>, OnePassError> {
     let mut out = Vec::new();
-    for v in repo.vaults()? {
+    for v in repo.personal_vaults()? {
         if !v.meta.travel_safe {
             continue;
         }
@@ -225,11 +225,12 @@ impl Session {
         self.with(|repo| status_of(repo))
     }
 
-    /// Every vault on the device and whether it would leave.
+    /// Every personal vault on the device and whether it would leave (shared
+    /// vaults stay out of Travel Mode).
     pub fn travel_plan(&self) -> Result<Vec<FfiTravelPlanEntry>, OnePassError> {
         self.with(|repo| {
             Ok(repo
-                .vaults()?
+                .personal_vaults()?
                 .into_iter()
                 .map(|v| FfiTravelPlanEntry {
                     vault_id: id_hex(v.id),
@@ -275,7 +276,7 @@ impl Session {
                 return Err(invalid("travel mode already on"));
             }
             let leaving: BTreeSet<Id> = repo
-                .vaults()?
+                .personal_vaults()?
                 .into_iter()
                 .filter(|v| !v.meta.travel_safe)
                 .map(|v| v.id)
