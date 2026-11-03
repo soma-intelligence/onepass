@@ -33,20 +33,20 @@ struct PasskeyRegistrationView: View {
     }
 
     var body: some View {
-        AutoFillScaffold(title: Text("Nouvelle passkey"), model: model) {
+        AutoFillScaffold(title: Text("views.newPasskey"), model: model) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     AutoFillHeader(
                         type: .login, iconTitle: registration.rpID, url: "https://\(registration.rpID)",
-                        title: Text("Enregistrer une passkey pour \(registration.rpID)"),
+                        title: Text("views.savePasskeyFor \(registration.rpID)"),
                         subtitle: registration.userName)
                         .padding(.bottom, 14)
-                    AutoFillLabel("ajouter à")
+                    AutoFillLabel("views.addTo")
                     AutoFillCardRows {
                         ForEach(suggestions, id: \.key) { candidate in
                             choice(.item(vaultID: candidate.vaultId, itemID: candidate.itemId)) {
                                 AutoFillRow(
-                                    type: .login, title: String(localized: "Ajouter à \(candidate.title)"),
+                                    type: .login, title: String(localized: "views.addTo \(candidate.title)"),
                                     detail: candidate.user, url: candidate.url
                                 ) {
                                     AutoFillChoiceMark(selected: target == .item(vaultID: candidate.vaultId, itemID: candidate.itemId))
@@ -61,7 +61,7 @@ struct PasskeyRegistrationView: View {
                                     .foregroundStyle(Theme.accent)
                                     .frame(width: 36, height: 36)
                                     .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
-                                Text("Nouvel élément")
+                                Text("views.newItem")
                                     .font(.body.weight(.semibold))
                                     .foregroundStyle(.primary)
                                 Spacer(minLength: 4)
@@ -76,7 +76,7 @@ struct PasskeyRegistrationView: View {
                             VaultPicker(vaults: session.vaults, selection: $vaultID)
                         }
                     }
-                    Text("La passkey reste dans ton coffre OnePass, chiffrée sur tes appareils.")
+                    Text("views.passkeyStaysInOnepass")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
@@ -86,7 +86,7 @@ struct PasskeyRegistrationView: View {
                     AutoFillPrimaryButton {
                         register()
                     } label: {
-                        if busy { ProgressView() } else { Text("Enregistrer la passkey") }
+                        if busy { ProgressView() } else { Text("views.savePasskey") }
                     }
                     .disabled(busy || !canRegister)
                     .padding(.top, 14)
@@ -143,7 +143,7 @@ struct VaultPicker: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("Coffre")
+            Text("term.vault")
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             // A menu picker draws its closed label from the row's icon when the icon is a custom view:
@@ -153,7 +153,7 @@ struct VaultPicker: View {
                 VaultBadge(name: current.meta.name, colorName: current.meta.color, size: 20)
                     .accessibilityHidden(true)
             }
-            Picker("Coffre", selection: $selection) {
+            Picker("term.vault", selection: $selection) {
                 ForEach(vaults, id: \.id) { vault in
                     Text(verbatim: vault.meta.name)
                         .tag(vault.id)

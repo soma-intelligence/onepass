@@ -24,7 +24,7 @@ struct CandidateListView: View {
     #endif
 
     var body: some View {
-        AutoFillScaffold(title: oneTimeCode ? Text("Codes de vérification") : Text("Choisis un compte"), model: model) {
+        AutoFillScaffold(title: oneTimeCode ? Text("views.verificationCodes") : Text("views.chooseAccount"), model: model) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     SessionErrorText(session: session)
@@ -40,7 +40,7 @@ struct CandidateListView: View {
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.immediately)
-            .searchable(text: $query, prompt: Text("Rechercher dans OnePass"))
+            .searchable(text: $query, prompt: Text("views.searchOnepass"))
             .disabled(busy)
         }
     }
@@ -49,9 +49,9 @@ struct CandidateListView: View {
 
     @ViewBuilder private var matchesSection: some View {
         if let site {
-            AutoFillLabel("pour \(site)")
+            AutoFillLabel("views.forSite \(site)")
         } else {
-            AutoFillLabel("pour ce site")
+            AutoFillLabel("views.forThisSite")
         }
         if shownMatches.isEmpty {
             HStack(spacing: 12) {
@@ -60,7 +60,7 @@ struct CandidateListView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 36, height: 36)
                     .background(Color.primary.opacity(0.06), in: .rect(cornerRadius: 9, style: .continuous))
-                Text(query.isEmpty ? "Aucun élément pour ce site." : "Aucun résultat pour ce site.")
+                Text(query.isEmpty ? "views.noItemsForSite" : "views.noResultsForSite")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -78,10 +78,10 @@ struct CandidateListView: View {
     }
 
     @ViewBuilder private var othersSection: some View {
-        AutoFillLabel("autres éléments")
+        AutoFillLabel("views.otherItems")
         if othersVisible {
             if shownOthers.isEmpty {
-                Text("Aucun résultat.")
+                Text("views.noResults")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(14)
@@ -112,7 +112,7 @@ struct CandidateListView: View {
                         .foregroundStyle(Theme.accent)
                         .frame(width: 36, height: 36)
                         .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
-                    Text("Afficher les \(others.count) autres éléments")
+                    Text("views.showMoreItems \(others.count)")
                         .font(.body.weight(.medium))
                         .foregroundStyle(Theme.accent)
                     Spacer(minLength: 0)
@@ -165,17 +165,17 @@ struct CandidateListView: View {
         ) {
             switch badge {
             case .code:
-                Label("Code", systemImage: "number")
+                Label("views.code", systemImage: "number")
                     .labelStyle(.iconOnly)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.readableAccent)
                     .frame(width: 28, height: 28)
                     .background(Theme.accent.opacity(0.12), in: Circle())
-                    .accessibilityLabel(Text("Code de vérification"))
+                    .accessibilityLabel(Text("views.verificationCode"))
             case .passkey:
                 HStack(spacing: 4) {
                     Image(systemName: "person.badge.key.fill")
-                    Text("Passkey")
+                    Text("term.passkey")
                 }
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.readableAccent)
@@ -183,7 +183,7 @@ struct CandidateListView: View {
                 .padding(.vertical, 4)
                 .background(Theme.accent.opacity(0.12), in: Capsule())
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("Passkey"))
+                .accessibilityLabel(Text("term.passkey"))
             case nil:
                 EmptyView()
             }

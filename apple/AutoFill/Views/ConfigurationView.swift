@@ -20,22 +20,22 @@ struct ConfigurationView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     AppGlyph(size: 72)
-                    Text("OnePass est prêt")
+                    Text("views.onepassReady")
                         .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("autofill.configuration.title")
-                    Text("Tes mots de passe, passkeys et codes de vérification sont proposés au-dessus du clavier et dans la touche Mots de passe.")
+                    Text("views.passwordsPasskeysAndVerification")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                     if needsApp {
-                        Text("Ouvre OnePass pour configurer ton coffre et te connecter.")
+                        Text("views.openOnepassToSet2")
                             .font(.callout.weight(.medium))
                             .multilineTextAlignment(.center)
                     }
                     AutoFillPrimaryButton {
                         model.cancel()
                     } label: {
-                        Text("OK")
+                        Text("common.ok")
                     }
                     .keyboardShortcut(.defaultAction)
                     .padding(.top, 8)

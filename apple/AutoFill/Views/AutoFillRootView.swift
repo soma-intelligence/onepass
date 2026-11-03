@@ -42,15 +42,15 @@ struct AutoFillRootView: View {
         case .noAccount:
             MessageView(
                 model: model,
-                title: String(localized: "Ouvre OnePass pour configurer ton coffre"),
+                title: String(localized: "views.openOnepassToSet"),
                 systemImage: "lock.shield",
-                message: String(localized: "Crée ou restaure ton compte dans l'app OnePass, puis reviens ici."))
+                message: String(localized: "views.createOrRestoreAccount"))
         case .needsSecretKey:
             MessageView(
                 model: model,
-                title: String(localized: "Ouvre OnePass pour configurer ton coffre"),
+                title: String(localized: "views.openOnepassToSet"),
                 systemImage: "key",
-                message: String(localized: "Saisis ta Secret Key dans l'app OnePass sur cet appareil, puis reviens ici."))
+                message: String(localized: "views.enterSecretKeyIn"))
         case .integrityFailure(let failure):
             IntegrityView(model: model, failure: failure)
         case .list(let matches, let others):
@@ -128,12 +128,12 @@ struct AutoFillScaffold<Content: View>: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Annuler") { model.cancel() }
+                        Button("common.cancel") { model.cancel() }
                             .accessibilityIdentifier("autofill.cancel")
                     }
                     if let back {
                         ToolbarItem(placement: .navigation) {
-                            Button("Retour", systemImage: "chevron.backward", action: back)
+                            Button("common.back", systemImage: "chevron.backward", action: back)
                                 .accessibilityIdentifier("autofill.back")
                         }
                     }
@@ -342,14 +342,14 @@ private struct IntegrityView: View {
     let failure: VaultError
 
     var body: some View {
-        AutoFillScaffold(title: Text("Données refusées"), model: model) {
+        AutoFillScaffold(title: Text("views.dataRefused"), model: model) {
             VStack(spacing: 16) {
                 if case .integrity(let kind) = failure {
                     IntegrityBanner(kind: kind)
                 } else {
                     Text(failure.localizedMessage)
                 }
-                Text("Ouvre OnePass pour en savoir plus.")
+                Text("views.openOnepassToLearn")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
