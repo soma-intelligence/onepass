@@ -107,6 +107,13 @@ pub struct ShareState {
     /// I am copying this vault to a new one under my mailbox (Task 12):
     /// its id. Writes to this one are refused meanwhile.
     pub moving_to: Option<Id>,
+    /// New identities of managers adopted on this device without a body
+    /// signed by another manager (spec 12.4, Task 15): the member entry
+    /// their own `IdentityUpdate` must carry.
+    pub adopted_managers: Vec<super::Member>,
+    /// My own `IdentityUpdate` as the vault's sole manager (Task 15): its
+    /// seq, and the members whose manifests have since named it.
+    pub self_update: Option<(u64, Vec<Id>)>,
 }
 
 impl ShareState {
@@ -130,6 +137,8 @@ impl ShareState {
             name: String::new(),
             leaving: false,
             moving_to: None,
+            adopted_managers: Vec::new(),
+            self_update: None,
         }
     }
 

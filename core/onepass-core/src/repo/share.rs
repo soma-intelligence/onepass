@@ -705,7 +705,22 @@ impl<S: RecordStore> Repository<S> {
             hash: manifest_hash(&manifest),
         };
         let meta = manifest.ext.as_ref().and_then(|e| e.meta_hash);
-        if state.last_manifest.as_ref() != Some(&seen) || state.last_meta != meta {
+        // Ruling A-13: a member whose manifest names my IdentityUpdate (or
+        // a later body) follows my new identity.
+        let mut confirmed = false;
+        if let Some((seq, list)) = &mut state.self_update
+            && sm.signer.account_id != self.me().account_id
+            && manifest
+                .ext
+                .as_ref()
+                .and_then(|e| e.membership.as_ref())
+                .is_some_and(|m| m.seq >= *seq)
+            && !list.contains(&sm.signer.account_id)
+        {
+            list.push(sm.signer.account_id);
+            confirmed = true;
+        }
+        if confirmed || state.last_manifest.as_ref() != Some(&seen) || state.last_meta != meta {
             state.last_manifest = Some(seen);
             state.last_meta = meta;
             self.store

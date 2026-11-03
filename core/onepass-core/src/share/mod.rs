@@ -27,7 +27,7 @@ pub use access::{
 pub use membership::{
     MEMBERSHIP_FORMAT, MEMBERSHIP_HISTORY, Member, MembershipBody, MembershipReason,
     MembershipSeen, MovedTo, Removed, SignedMembership, accept_first, accept_next,
-    identity_pub_hash, merge_concurrent, merge_removed, sign_membership,
+    accept_self_update, identity_pub_hash, merge_concurrent, merge_removed, sign_membership,
 };
 
 pub use manifest::{

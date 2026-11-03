@@ -373,8 +373,28 @@ impl<S: RecordStore> Repository<S> {
         let Ok(signed) = SignedMembership::decode(&rec.data) else {
             return Ok(());
         };
-        let Ok(next) = accept_next(&state.head, &signed) else {
-            return Ok(());
+        let next = match accept_next(&state.head, &signed) {
+            Ok(next) => next,
+            Err(_) => {
+                // Spec 12.4: a manager's own IdentityUpdate under an
+                // identity this device adopted.
+                let Some(adopted) = state
+                    .adopted_managers
+                    .iter()
+                    .find(|m| m.member_ref() == signed.body.signer)
+                    .cloned()
+                else {
+                    return Ok(());
+                };
+                let Ok(next) = crate::share::accept_self_update(&state.head, &signed, &adopted)
+                else {
+                    return Ok(());
+                };
+                state
+                    .adopted_managers
+                    .retain(|m| m.account_id != adopted.account_id);
+                next
+            }
         };
         // Ruling A-12: an identity seen to rotate signs no later body.
         if state.retired_signers.contains_key(&next.signer) {

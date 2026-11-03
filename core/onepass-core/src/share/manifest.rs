@@ -4,11 +4,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{MemberRef, MembershipBody, Role, SHARED_MANIFEST_DOMAIN};
+use super::{MemberRef, MembershipBody, MembershipReason, Role, SHARED_MANIFEST_DOMAIN};
 use crate::crypto::{BlobKind, HybridSignature, HybridSigningKey, HybridVerifyingKey, open, seal};
 use crate::lineage::decode_strict_with;
 use crate::manifest::{
     Manifest, SeenManifest, aad, check_history, check_shape, decode_manifest, encode_manifest,
+    manifest_hash,
 };
 use crate::vault::Vault;
 use crate::{Error, IntegrityError, Result, ValidationError};
@@ -156,10 +157,36 @@ pub fn verify_shared_manifest(
     if member.role < Role::Write {
         return Err(refused("signer", "reader cannot write"));
     }
+    // The manifest this device already accepted stays readable after its
+    // signer moved to a new identity (`IdentityUpdate`, sharing spec 9.4):
+    // nothing new is accepted, the next write is signed by the new keys.
+    let already_seen = last_seen.is_some_and(|l| l.seq == m.seq && l.hash == manifest_hash(&m));
+    let mut replaced = false;
     for later in view.bodies().filter(|b| b.seq > pointed.seq) {
+        if replaced {
+            match later
+                .members
+                .iter()
+                .find(|x| x.account_id == sm.signer.account_id)
+            {
+                Some(x) if x.role == member.role => continue,
+                Some(_) => return Err(refused("signer", "role changed since the named body")),
+                None => return Err(refused("signer", "no longer a member")),
+            }
+        }
         match later.members.iter().find(|x| x.member_ref() == sm.signer) {
             Some(x) if x.role == member.role => {}
             Some(_) => return Err(refused("signer", "role changed since the named body")),
+            None if already_seen
+                && later.reason == MembershipReason::IdentityUpdate
+                && later
+                    .members
+                    .iter()
+                    .any(|x| x.account_id == sm.signer.account_id && x.role == member.role) =>
+            {
+                replaced = true;
+                continue;
+            }
             None => return Err(refused("signer", "no longer a member")),
         }
         if later.generation != pointed.generation {

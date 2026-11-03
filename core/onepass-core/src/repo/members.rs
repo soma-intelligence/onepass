@@ -12,8 +12,9 @@ use crate::lineage::{LineageRecord, SignedIntro, identity_id, rotation_code};
 use crate::manifest::meta_hash;
 use crate::share::{
     AccessTarget, CredentialRenewal, InviteRecord, MemberLineageRecord, MemberRef,
-    MembershipReason, Role, ShareAction, SharedVaultInfo, ZoneSeed, accept_next, identity_pub_hash,
-    open_zone_credential, server_role, sign_membership, wrap_member_key, wrap_zone_credential,
+    MembershipReason, Role, ShareAction, SharedVaultInfo, ZoneSeed, accept_next,
+    accept_self_update, identity_pub_hash, open_zone_credential, server_role, sign_membership,
+    wrap_member_key, wrap_zone_credential,
 };
 use crate::store::{Record, RecordKind, RecordStore, Zone};
 use crate::trust::LineageHead;
@@ -290,6 +291,27 @@ impl<S: RecordStore> Repository<S> {
         for state in states {
             let vault_id = state.vault_id;
             let Ok(state) = self.manager_state(vault_id) else {
+                // Spec 12.4: a manager I cannot replace by a body of my
+                // own is adopted here only; its own IdentityUpdate is then
+                // accepted on this device.
+                let mut state = state;
+                if let Some(old) = state.head.member(account_id).cloned()
+                    && old.role == Role::Manage
+                    && old.identity_id != new_ref.identity_id
+                {
+                    let mut adopted = old;
+                    adopted.identity_id = new_ref.identity_id;
+                    adopted.identity_pub_hash = identity_pub_hash(&identity_pub);
+                    adopted.sign_pub = sign_pub.clone();
+                    adopted.kem_pub = kem_pub.clone();
+                    state
+                        .adopted_managers
+                        .retain(|m| m.account_id != account_id);
+                    state.adopted_managers.push(adopted);
+                    self.store
+                        .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+                    self.follow_head(vault_id)?;
+                }
                 continue;
             };
             let Some(old) = state.head.member(account_id).cloned() else {
@@ -456,5 +478,80 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         Ok(())
+    }
+
+    /// My keys rotated and I manage vault `vault_id` (spec 12.4, Task 15):
+    /// my first body under the new identity, an `IdentityUpdate` signed by
+    /// it that replaces my own entry (role, owner flag and credential
+    /// kept), with the next manifest. A member accepts it once it adopted
+    /// my new identity (`adopt_member_identity`, in person); until then it
+    /// keeps the last body my old identity signed. Refused: no new
+    /// identity waiting here, not a manager.
+    pub fn publish_own_identity(&mut self, vault_id: Id, now: i64) -> Result<SharedVaultInfo> {
+        self.writable()?;
+        let mut state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        let me = self.me();
+        if state.identity_pending.is_none() {
+            return Err(refused("identity", "not pending"));
+        }
+        let old = state
+            .head
+            .member(me.account_id)
+            .cloned()
+            .ok_or_else(|| refused("role", "not a member"))?;
+        if old.role != Role::Manage {
+            return Err(refused("role", "manager only"));
+        }
+        let p = &self.account.params;
+        let mut mine = old.clone();
+        mine.identity_id = me.identity_id;
+        mine.identity_pub_hash = identity_pub_hash(&p.identity_pub);
+        mine.sign_pub = p.signing_pub.clone();
+        mine.kem_pub = p.kem_pub.clone();
+        let mut body = state.head.next(me, MembershipReason::IdentityUpdate, now)?;
+        for m in &mut body.members {
+            if m.account_id == me.account_id {
+                *m = mine.clone();
+            }
+        }
+        let signed = sign_membership(body, &self.account.keyset().signing)?;
+        let next = accept_self_update(&state.head, &signed, &mine)?;
+        let vault = self.open_shared(vault_id)?;
+        let zone = state.zone;
+        let writes = vec![(
+            zone,
+            Record {
+                kind: RecordKind::Membership,
+                id: vault_id,
+                version: next.seq,
+                data: signed.encode(),
+            },
+            Some(state.head.seq),
+        )];
+        let seq = next.seq;
+        state.advance(next);
+        state.identity_pending = None;
+        state.self_update = Some((seq, Vec::new()));
+        self.store
+            .put_all_zoned(writes, vec![], None, std::slice::from_ref(&state))?;
+        self.shared_info(&state, &vault.meta.name)
+    }
+
+    /// The members who have not yet shown they follow my `IdentityUpdate`
+    /// (`publish_own_identity`, ruling A-13): none of their manifests
+    /// names a body at or after it yet.
+    pub fn members_not_confirmed(&mut self, vault_id: Id) -> Result<Vec<Id>> {
+        let state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        let Some((_, confirmed)) = &state.self_update else {
+            return Ok(Vec::new());
+        };
+        let me = self.me();
+        Ok(state
+            .head
+            .members
+            .iter()
+            .map(|m| m.account_id)
+            .filter(|a| *a != me.account_id && !confirmed.contains(a))
+            .collect())
     }
 }

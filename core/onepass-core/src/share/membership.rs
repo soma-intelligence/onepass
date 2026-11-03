@@ -439,6 +439,55 @@ fn check_generation(pinned: &MembershipBody, n: &MembershipBody) -> Result<()> {
     Ok(())
 }
 
+/// A manager's own `IdentityUpdate` under a new identity this device
+/// adopted locally (spec 12.4, plan 2 Task 15): chained to `pinned`, the
+/// signer is `adopted` (an identity of a manager of `pinned`), its
+/// signature verifies under `adopted.sign_pub`, and the body only replaces
+/// that manager's entry by `adopted` (same role, owner flag and
+/// credential); nothing else changes, generation and key included.
+pub fn accept_self_update(
+    pinned: &MembershipBody,
+    next: &SignedMembership,
+    adopted: &Member,
+) -> Result<MembershipBody> {
+    let n = &next.body;
+    n.check()?;
+    let bad = || -> Error { refused("membership", "not a self update") };
+    if n.vault_id != pinned.vault_id
+        || n.seq != pinned.seq + 1
+        || n.prev_hash != pinned.hash()
+        || n.reason != MembershipReason::IdentityUpdate
+        || n.signer != adopted.member_ref()
+        || n.generation != pinned.generation
+        || n.key_commit != pinned.key_commit
+        || n.removed != pinned.removed
+        || n.moved_to.is_some()
+    {
+        return Err(bad());
+    }
+    let old = pinned
+        .member(adopted.account_id)
+        .filter(|m| m.role == Role::Manage)
+        .ok_or_else(bad)?;
+    if adopted.role != old.role
+        || adopted.owner != old.owner
+        || adopted.credential_id != old.credential_id
+    {
+        return Err(bad());
+    }
+    let mut expected = pinned.members.clone();
+    for m in &mut expected {
+        if m.account_id == adopted.account_id {
+            *m = adopted.clone();
+        }
+    }
+    if n.members != expected {
+        return Err(bad());
+    }
+    next.verify_with(&adopted.sign_pub)?;
+    Ok(n.clone())
+}
+
 /// `Leave`: the signer leaves, nothing else changes (rule 2 exception).
 fn accept_leave(pinned: &MembershipBody, n: &MembershipBody) -> Result<MembershipBody> {
     let me = n.signer;

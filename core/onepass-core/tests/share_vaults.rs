@@ -2498,3 +2498,163 @@ fn writes_refused_while_identity_pending() {
         .unwrap_err();
     assert_eq!(validation(e), ("vault".into(), "identity pending"));
 }
+
+// Task 15: a sole manager's rotation (spec 12.4, S25, ruling A-13).
+
+/// `x` met `y` again face to face: the book pins `y`'s current card
+/// `Verified` with transcript `[1; 32]` (removed first: a pin never moves
+/// an entry to another head).
+fn repin_in_person(x: &mut Device, y: &mut Device) {
+    let yid = account_id(y);
+    x.repo().remove_contact(yid, NOW).unwrap();
+    pin(x, y, ContactLevel::Verified);
+}
+
+fn head_of(d: &Device, id: Id) -> MembershipBody {
+    d.store().share_state(id).unwrap().unwrap().head
+}
+
+#[test]
+fn sole_manager_rotation_blocks_membership_changes_until_confirmed() {
+    let (mut zs, mut a, mut b, id, _) = rotating_alice();
+    let bob = account_id(&mut b.dev);
+    let seq = head_of(&b.dev, id).seq;
+    a.rotate(false);
+    let e = a
+        .dev
+        .repo()
+        .set_role(id, bob, Role::Read, NOW + 5)
+        .unwrap_err();
+    assert!(matches!(e, Error::Validation(_)));
+    a.dev.repo().publish_own_identity(id, NOW + 5).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    // Bob keeps the last body Alice's old identity signed, and reads.
+    b.dev.repo().refresh_member_identities(NOW + 6).unwrap();
+    b.sync(&mut zs);
+    assert_eq!(head_of(&b.dev, id).seq, seq);
+    let vb = shared(&mut b.dev, id);
+    assert!(!b.dev.repo().items(&vb).unwrap().is_empty());
+}
+
+#[test]
+fn member_confirms_locally_then_accepts_new_bodies() {
+    let (mut zs, mut a, mut b, id, _) = rotating_alice();
+    let alice = account_id(&mut a.dev);
+    let bob = account_id(&mut b.dev);
+    a.rotate(false);
+    let child = a.dev.store().trust_state().unwrap().unwrap().head.hash;
+    let new_alice = me(&mut a.dev);
+    a.dev.repo().publish_own_identity(id, NOW + 5).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    b.dev.repo().refresh_member_identities(NOW + 6).unwrap();
+    // A code is not enough for a manager.
+    let e = b
+        .dev
+        .repo()
+        .adopt_member_identity(
+            alice,
+            child,
+            AdoptionProof::Code(rotation_code(&child)),
+            NOW + 6,
+        )
+        .unwrap_err();
+    assert_eq!(validation(e), ("proof".into(), "in person required"));
+    repin_in_person(&mut b.dev, &mut a.dev);
+    b.dev
+        .repo()
+        .adopt_member_identity(
+            alice,
+            child,
+            AdoptionProof::InPerson {
+                transcript_hash: [1; 32],
+            },
+            NOW + 7,
+        )
+        .unwrap();
+    let head = head_of(&b.dev, id);
+    assert_eq!(head.reason, MembershipReason::IdentityUpdate);
+    assert_eq!(
+        head.member(alice).unwrap().identity_id,
+        new_alice.identity_id
+    );
+    // Alice manages again, and Bob follows her new bodies.
+    a.dev.repo().set_role(id, bob, Role::Read, NOW + 8).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    assert_eq!(role_of(&mut b.dev, id, bob), Some(Role::Read));
+}
+
+#[test]
+fn two_managers_one_confirms_the_other() {
+    let (mut zs, mut a, mut b, mut c, _d, id) = two_managers(Role::Read);
+    let bob = account_id(&mut b.dev);
+    b.rotate(false);
+    let child = b.dev.store().trust_state().unwrap().unwrap().head.hash;
+    let new_bob = me(&mut b.dev);
+    b.sync(&mut zs);
+    a.sync(&mut zs);
+    a.dev.repo().refresh_member_identities(NOW + 6).unwrap();
+    repin_in_person(&mut a.dev, &mut b.dev);
+    let infos = a
+        .dev
+        .repo()
+        .adopt_member_identity(
+            bob,
+            child,
+            AdoptionProof::InPerson {
+                transcript_hash: [1; 32],
+            },
+            NOW + 7,
+        )
+        .unwrap();
+    assert_eq!(infos.len(), 1);
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    // Carol follows the body Alice signed, without a gesture of her own.
+    for x in [&mut a, &mut b, &mut c] {
+        let head = head_of(&x.dev, id);
+        assert_eq!(head.member(bob).unwrap().identity_id, new_bob.identity_id);
+    }
+    assert!(
+        b.dev
+            .store()
+            .share_state(id)
+            .unwrap()
+            .unwrap()
+            .identity_pending
+            .is_none()
+    );
+}
+
+#[test]
+fn not_confirmed_list_shrinks_when_member_writes() {
+    let (mut zs, mut a, mut b, id, _) = rotating_alice();
+    let alice = account_id(&mut a.dev);
+    let bob = account_id(&mut b.dev);
+    // Bob opened the vault once: the manifest Alice's old keys signed is
+    // the one he already accepted.
+    let vb = shared(&mut b.dev, id);
+    b.dev.repo().items(&vb).unwrap();
+    a.rotate(false);
+    let child = a.dev.store().trust_state().unwrap().unwrap().head.hash;
+    a.dev.repo().publish_own_identity(id, NOW + 5).unwrap();
+    assert_eq!(a.dev.repo().members_not_confirmed(id).unwrap(), vec![bob]);
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    b.dev.repo().refresh_member_identities(NOW + 6).unwrap();
+    repin_in_person(&mut b.dev, &mut a.dev);
+    b.dev
+        .repo()
+        .adopt_member_identity(
+            alice,
+            child,
+            AdoptionProof::InPerson {
+                transcript_hash: [1; 32],
+            },
+            NOW + 7,
+        )
+        .unwrap();
+    let vb = shared(&mut b.dev, id);
+    b.dev.repo().save_item(&vb, login(id, "bob", 800)).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let va = shared(&mut a.dev, id);
+    assert!(users(&a.dev.repo().items(&va).unwrap()).contains(&"bob".to_string()));
+    assert!(a.dev.repo().members_not_confirmed(id).unwrap().is_empty());
+}
