@@ -908,7 +908,7 @@ private struct RestoreStep: View {
             .buttonStyle(.glass)
             .accessibilityIdentifier("onboarding.scan")
             .sheet(isPresented: $scanning) {
-                SecretKeyScannerSheet { key in
+                SecretKeyScannerSheet(accept: model.acceptScannedKit) { key in
                     model.restoreKey = key
                     scanning = false
                 }
@@ -922,6 +922,15 @@ private struct RestoreStep: View {
                 text: $model.displayName, identifier: "onboarding.name")
         }
         #endif
+        if model.needsAccountID {
+            // Several accounts of this iCloud are not on this device: the kit names which one.
+            OnboardingField(
+                label: "onboarding.restore.accountID", prompt: "onboarding.restore.accountID.prompt",
+                text: $model.restoreAccountID, monospaced: true, identifier: "onboarding.restoreAccountID")
+            Text("onboarding.restore.accountID.footer")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
         OnboardingField(
             label: "Mot de passe maître", prompt: "Mot de passe maître", text: $model.restorePassword,
             secure: true, identifier: "onboarding.restorePassword")

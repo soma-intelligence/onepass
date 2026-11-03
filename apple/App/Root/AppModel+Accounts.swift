@@ -77,19 +77,43 @@ extension AppModel {
     }
 
     /// The sync coordinator of the account shown. An added account has one once its account is known;
-    /// `forSignIn` while signing in to an account on a new device: the first iCloud zone of an account
-    /// this device does not have yet (ruling P8).
-    func activeCoordinator(forSignIn: Bool = false) async -> SyncCoordinator? {
+    /// `forSignIn` while signing in to an account on a new device: the iCloud zone of the account the
+    /// Emergency Kit names (`signInAccountID`), or the only zone of an account this device does not
+    /// have yet. Two such zones and no account id: `needsAccountID`, never a guess (ruling P8).
+    func activeCoordinator(forSignIn: Bool = false) async throws(AccountsError) -> SyncCoordinator? {
         let slot = accounts.activeSlot
         if slot == AccountDirectoryStore.primarySlot { return coordinator }
         guard let sync = accountLink.syncs[slot] else { return nil }
-        if let current = await sync.current { return current }
-        guard forSignIn, addingAccount?.slot == slot, addingAccount?.signIn == true else { return nil }
+        let signingIn = forSignIn && addingAccount?.slot == slot && addingAccount?.signIn == true
+        if let current = await sync.current {
+            // A kit of another account than the zone already fetched: start the add again.
+            if signingIn, let wanted = signInAccountID.flatMap(SignInZone.accountID),
+                await sync.accountID != wanted
+            {
+                throw .needsAccountID
+            }
+            return current
+        }
+        guard signingIn else { return nil }
         let known = Set(accounts.profiles.compactMap(\.accountID))
-        guard let zones = try? await CloudKitRemote.accountZones(containerIdentifier: Self.cloudKitContainer),
-            let candidate = zones.first(where: { !known.contains($0) })
-        else { return nil }
-        return await sync.attach(accountID: candidate)
+        let zones: [String]
+        do {
+            zones = try await CloudKitRemote.accountZones(containerIdentifier: Self.cloudKitContainer)
+        } catch {
+            return nil
+        }
+        signInNeedsAccountID = false
+        switch SignInZone.choose(zones: zones, known: known, kitAccountID: signInAccountID) {
+        case .zone(let id):
+            return await sync.attach(accountID: id)
+        case .needsAccountID:
+            signInNeedsAccountID = true
+            throw .needsAccountID
+        case .alreadyOnDevice:
+            throw .alreadyOnDevice
+        case .notFound:
+            throw .notInICloud
+        }
     }
 
     // MARK: - Switching and locking

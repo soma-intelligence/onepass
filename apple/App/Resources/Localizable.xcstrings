@@ -20634,6 +20634,93 @@
         }
       }
     },
+    "onboarding.restore.accountID" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifiant du compte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account ID"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identificador de cuenta"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identificativo dell'account"
+          }
+        }
+      },
+      "comment" : "Restore step, signing in to an added account: field for the account ID printed on the Emergency Kit."
+    },
+    "onboarding.restore.accountID.footer" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plusieurs comptes de ton iCloud ne sont pas encore sur cet appareil. L'identifiant imprimé sur le kit dit lequel ouvrir."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Several accounts in your iCloud aren't on this device yet. The ID printed on the kit says which one to open."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varias cuentas de tu iCloud aún no están en este dispositivo. El identificador impreso en el kit indica cuál abrir."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diversi account del tuo iCloud non sono ancora su questo dispositivo. L'identificativo stampato sul kit indica quale aprire."
+          }
+        }
+      },
+      "comment" : "Restore step: why the account ID is asked."
+    },
+    "onboarding.restore.accountID.prompt" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "32 caractères"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "32 characters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "32 caracteres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "32 caratteri"
+          }
+        }
+      },
+      "comment" : "Placeholder of the account ID field (32 characters)."
+    },
     "OnePass" : {
       "localizations" : {
         "en" : {

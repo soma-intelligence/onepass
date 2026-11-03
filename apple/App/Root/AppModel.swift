@@ -28,7 +28,14 @@ final class AppModel {
     var primarySession: VaultSession { accounts.primary }
     @ObservationIgnored let accountLink: AccountModelLink
     /// The account being added (its onboarding is on screen), nil otherwise.
-    var addingAccount: AddingAccount?
+    var addingAccount: AddingAccount? {
+        didSet { if addingAccount == nil { signInAccountID = nil; signInNeedsAccountID = false } }
+    }
+    /// Signing in to an added account: the account id of its Emergency Kit (scanned from a version 2
+    /// QR code, or typed from the printed kit), which names its iCloud zone (ruling P8).
+    var signInAccountID: String?
+    /// Several accounts of this iCloud are missing from this device: the restore step asks the id.
+    var signInNeedsAccountID = false
     /// The sync listeners of the added accounts, by slot.
     @ObservationIgnored var accountTasks: [String: [Task<Void, Never>]] = [:]
     @ObservationIgnored let coordinator: SyncCoordinator?
@@ -641,7 +648,7 @@ final class AppModel {
     /// Spec 7: the creation is refused when this iCloud already holds an account (ruling R13).
     /// No CloudKit: always false.
     func remoteHasAccount() async throws -> Bool {
-        guard cloudKitEnabled, let coordinator = await activeCoordinator(forSignIn: true) else { return false }
+        guard cloudKitEnabled, let coordinator = try await activeCoordinator(forSignIn: true) else { return false }
         let found = try await coordinator.remoteHasAccount()
         await session.reload()
         return found
@@ -650,7 +657,7 @@ final class AppModel {
     /// "Créer un nouveau coffre" on the Emergency Kit screen of a device without its Secret Key:
     /// offered only when iCloud holds no account (always without sync).
     func newVaultOffer() async -> NewVaultOffer {
-        guard cloudKitEnabled, let coordinator = await activeCoordinator() else { return .offered }
+        guard cloudKitEnabled, let coordinator = try? await activeCoordinator() else { return .offered }
         let offer = await coordinator.newVaultOffer()
         await session.reload()
         return offer
@@ -658,7 +665,7 @@ final class AppModel {
 
     /// "Réessayer" on "Données refusées": a complete fetch from scratch, then the store is read again.
     func retryAfterFailure() async {
-        await activeCoordinator()?.refetchFromScratch()
+        await (try? activeCoordinator())?.refetchFromScratch()
         await session.reload()
         if case .failed = session.state { await session.refresh() }
     }

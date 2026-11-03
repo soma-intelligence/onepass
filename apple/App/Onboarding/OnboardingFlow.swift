@@ -76,6 +76,19 @@ final class OnboardingModel {
         get { credentials.restorePassword }
         set { credentials.restorePassword = newValue }
     }
+    /// Signing in to an added account whose iCloud zone is ambiguous: the account id printed on the
+    /// Emergency Kit is asked (multi-account ruling P8).
+    var needsAccountID: Bool { model.signInNeedsAccountID }
+    var restoreAccountID: String {
+        get { model.signInAccountID ?? "" }
+        set { model.signInAccountID = newValue.isEmpty ? nil : newValue }
+    }
+    /// A scanned kit: its Secret Key, and the account id of a version 2 kit while adding an account.
+    func acceptScannedKit(_ text: String) -> String? {
+        guard let scan = EmergencyKit.parseKit(text) else { return nil }
+        if model.addingAccount?.signIn == true, let id = scan.accountID { model.signInAccountID = id }
+        return scan.secretKey
+    }
 
     private(set) var busyMessage: String?
     var errorMessage: String? {
@@ -530,6 +543,9 @@ final class OnboardingModel {
             }
         } catch RemoteStoreError.accountUnavailable {
             fail(String(localized: "Connecte-toi à iCloud dans Réglages pour retrouver ton coffre."), next: .openSettings)
+            return
+        } catch let error as AccountsError {
+            fail(error.message, next: .retry)
             return
         } catch {
             fail(String(localized: "Impossible de joindre iCloud. Vérifie ta connexion puis réessaie."), next: .retry)
