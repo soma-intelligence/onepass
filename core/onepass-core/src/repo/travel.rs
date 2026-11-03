@@ -180,8 +180,17 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             }
             let loaded = self.load(&vault)?;
+            let mut chunks = Vec::new();
             for (_, r) in &loaded.records {
-                vault.open_item(r)?;
+                let item = vault.open_item(r)?;
+                // The chunks leave too: the server must hold each one.
+                for a in &item.attachments {
+                    for id in crate::attachment::chunk_ids(a)? {
+                        if let Some(chunk) = self.store.get(RecordKind::Attachment, id)? {
+                            chunks.push(chunk);
+                        }
+                    }
+                }
             }
             let mut required = Vec::new();
             for kind in VAULT_KINDS {
@@ -195,6 +204,7 @@ impl<S: RecordStore> Repository<S> {
                         .ok_or(Error::NotFound)?,
                 );
             }
+            required.extend(chunks);
             for r in &required {
                 match upstream.get(r.kind, r.id)? {
                     Some(u) if same(&u, r) => {}

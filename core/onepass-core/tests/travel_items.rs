@@ -524,3 +524,25 @@ fn a_schema_one_state_still_opens() {
     let sealed = f.repo.seal_travel_state_v1_for_tests(&v1).unwrap();
     assert_eq!(f.repo.open_travel_state(&sealed).unwrap(), v1);
 }
+
+/// A vault that leaves takes its attachment chunks with it: the server must
+/// hold each one byte for byte first, as for the vault's other records.
+#[test]
+fn a_leaving_vault_is_refused_when_the_upstream_lacks_a_chunk() {
+    let mut f = fx();
+    let work = f.repo.create_vault(meta("Travail", false)).unwrap();
+    let doc = login(work.id, "Contrat");
+    let doc_id = doc.id;
+    f.repo.save_item(&work, doc).unwrap();
+    f.repo
+        .add_attachment(&work, doc_id, "contrat.pdf", "application/pdf", b"signed")
+        .unwrap();
+    mirror(&f.local, &f.upstream);
+    for c in f.upstream.chunks() {
+        f.upstream.0.borrow_mut().delete(c.kind, c.id).unwrap();
+    }
+    let records = f.local.all();
+    assert!(f.repo.enter_travel(&f.upstream).is_err());
+    assert_eq!(f.local.all(), records);
+    assert!(!f.repo.travelling());
+}
