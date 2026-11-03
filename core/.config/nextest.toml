@@ -21,6 +21,12 @@ final-status-level = "fail"
 filter = "test(/slh_dsa|identity_key|rotation_v2|share_vaults/)"
 slow-timeout = { period = "120s", terminate-after = 5 }
 
+# Two exhaustive sharing tests need 6 to 7 minutes alone in a debug build
+# (413 s and 345 s measured): 15 minutes before they are killed.
+[[profile.default.overrides]]
+filter = "test(/race_8_3_all_orders|oversized_full_grant_lists_nothing/)"
+slow-timeout = { period = "180s", terminate-after = 5 }
+
 [profile.ci]
 test-threads = "num-cpus"
 fail-fast = false
