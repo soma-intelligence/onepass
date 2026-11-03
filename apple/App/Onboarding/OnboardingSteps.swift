@@ -186,9 +186,16 @@ struct OnboardingField: View {
     /// Secret Key entry: no autocorrection, ASCII keyboard, capitals, hidden from screen captures.
     var secretKey = false
     var identifier: String
-    /// Focus chaining: the step's focus state and this field's place in it.
-    var focus: FocusState<OnboardingFocus?>.Binding?
+    /// Focus chaining (secure fields): the step's focused field and this field's place in it. A
+    /// plain binding, not `@FocusState`: the UIKit secure field is not a SwiftUI focusable view,
+    /// so a focus state pointing at it would be reset.
+    var focus: Binding<OnboardingFocus?>?
     var focusValue: OnboardingFocus?
+    /// Return of a secure field: passed to the field itself, since it is UIKit on iOS and SwiftUI's
+    /// `.onSubmit` and `.focused` never reach it (Return used to do nothing there). Text fields
+    /// keep their callers' `.onSubmit`.
+    var submitNext = false
+    var onSubmit: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -196,13 +203,14 @@ struct OnboardingField: View {
             Group {
                 if secure {
                     // Emptied as it leaves the screen: iOS never offers to save the master password.
-                    SecretInputField(title: String(localized: prompt), text: $text, identifier: identifier)
+                    SecretInputField(
+                        title: String(localized: prompt), text: $text, focused: secureFocus,
+                        submitNext: submitNext, onSubmit: onSubmit, identifier: identifier)
                 } else {
                     TextField(text: $text, prompt: Text(prompt)) { Text(label) }
                 }
             }
             .labelsHidden()
-            .modifier(OnboardingFocusModifier(focus: focus, value: focusValue))
             .textFieldStyle(.plain)
             .font(monospaced ? .system(.body, design: .monospaced) : .body)
             .autocorrectionDisabled()
@@ -243,16 +251,19 @@ struct OnboardingField: View {
     }
 }
 
-private struct OnboardingFocusModifier: ViewModifier {
-    let focus: FocusState<OnboardingFocus?>.Binding?
-    let value: OnboardingFocus?
-
-    func body(content: Content) -> some View {
-        if let focus, let value {
-            content.focused(focus, equals: value)
-        } else {
-            content
-        }
+extension OnboardingField {
+    /// The step's focus seen from one secure field: on when the focus is this field's value.
+    private var secureFocus: Binding<Bool>? {
+        guard let focus, let focusValue else { return nil }
+        return Binding(
+            get: { focus.wrappedValue == focusValue },
+            set: { on in
+                if on {
+                    focus.wrappedValue = focusValue
+                } else if focus.wrappedValue == focusValue {
+                    focus.wrappedValue = nil
+                }
+            })
     }
 }
 
@@ -443,7 +454,7 @@ private struct DeviceStep: View {
 
 private struct PasswordStep: View {
     @Bindable var model: OnboardingModel
-    @FocusState private var focus: OnboardingFocus?
+    @State private var focus: OnboardingFocus?
 
     var body: some View {
         StepTitle(
@@ -461,9 +472,7 @@ private struct PasswordStep: View {
                 label: "Mot de passe maître",
                 prompt: Platform.isMac ? "Cinq mots tirés au hasard marchent bien" : "Cinq mots tirés au hasard",
                 text: $model.password, secure: true, identifier: "onboarding.password",
-                focus: $focus, focusValue: .password)
-            .submitLabel(.next)
-            .onSubmit { focus = .confirm }
+                focus: $focus, focusValue: .password, submitNext: true, onSubmit: { focus = .confirm })
             MasterStrengthMeter(password: model.password, bits: model.passwordBits)
         }
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -487,9 +496,8 @@ private struct PasswordStep: View {
             OnboardingField(
                 label: "Confirme-le", prompt: "", text: $model.confirmation, secure: true,
                 mismatch: model.confirmationMismatch, valid: model.confirmationMatches,
-                identifier: "onboarding.confirm", focus: $focus, focusValue: .confirm)
-            .submitLabel(.continue)
-            .onSubmit { Task { await model.primary() } }
+                identifier: "onboarding.confirm", focus: $focus, focusValue: .confirm,
+                onSubmit: { Task { await model.primary() } })
             if model.confirmationMismatch {
                 Label("Les deux saisies sont différentes.", systemImage: "xmark")
                     .font(.footnote.weight(.medium))
