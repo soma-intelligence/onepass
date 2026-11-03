@@ -27,6 +27,7 @@ import UIKit
 ///   it off; `-OnePassDemoNoAutoBiometrics YES` skips the automatic attempt of the lock screen
 ///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
 /// - `-OnePassDemoHostDevice YES` (Mac): opens "Configurer un appareil…" once the data is there.
+/// - `-OnePassDemoCrypto YES`: crypto wallets with watch data and recorded balances (DemoCrypto).
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
 /// - `-OnePassDemoSecondAccount YES`: also a business account "Atelier Atlas" (orange, work domain
 ///   `atlas.exemple.fr`, same demo password) next to the personal one, locked;
@@ -350,10 +351,12 @@ private struct DemoSeeder {
             "holder": .text(value: "Camille Durand"),
             "iban": .text(value: "FR76 3000 6000 0112 3456 7890 189"),
         ], tags: ["Finance"])
-        try await add(.cryptoWallet, "Portefeuille de test", personal, [
+        let wallet = try await add(.cryptoWallet, "Portefeuille de test", personal, [
             "name": .text(value: "Portefeuille de test"),
             "recovery_phrase": .mnemonic(value: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"),
         ], tags: ["Finance"])
+        // `-OnePassDemoCrypto YES`: the wallets' public addresses and a watch-only one.
+        try await DemoCrypto.seed(session, vaultID: personal, phraseWallet: wallet)
         try await add(.subscription, "Musique Exemple", family, [
             "service": .text(value: "Musique Exemple"),
             "price": .money(minorUnits: 1099, currency: "EUR"),

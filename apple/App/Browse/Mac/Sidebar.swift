@@ -129,6 +129,8 @@ struct Sidebar: View {
                     filter: .passkeys, id: "library.passkeys")
                 pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
+                pageRow("crypto.title", symbol: "bitcoinsign", color: CoinIcon.color("bitcoin"), page: .crypto,
+                    id: "sidebar.crypto")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
                     page: .developer, id: "sidebar.developer")
                 // No count: it depends on where the user is, asked only once the row is opened.

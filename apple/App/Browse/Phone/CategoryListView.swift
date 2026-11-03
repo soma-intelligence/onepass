@@ -23,6 +23,15 @@ struct CategoryListView: View {
             ? ItemSearch.filter(nearby.summaries, query: query) : session.items(filter: filter, query: query, sort: .title)
         let showVault = showsVaultName
         List {
+            // Crypto wallets: the way to the watch-only balances (spec 2026-11-02-crypto-watch).
+            if filter == .category(.cryptoWallet), query.isEmpty, !items.isEmpty {
+                Section {
+                    NavigationLink(value: PhoneRoute.crypto) {
+                        Label("crypto.category.link", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityIdentifier("category.crypto.open")
+                }
+            }
             ForEach(items, id: \.id) { summary in
                 let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
                 NavigationLink(value: PhoneRoute.item(ref)) {

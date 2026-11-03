@@ -87,6 +87,8 @@ final class AppModel {
     var watchtowerFilter: WatchtowerListFilter?
     /// Watchtower report, computed off the main actor and kept until the data changes.
     let watchtower = WatchtowerModel()
+    /// Watch-only crypto balances of this account (spec 2026-11-02-crypto-watch). Emptied on lock.
+    let cryptoWatch = CryptoWatch()
     var selectedItem: ItemRef?
     var editing = false
     /// A new item's editor, shown in place of the detail until saved or cancelled.
@@ -398,6 +400,7 @@ final class AppModel {
         switch UserDefaults.standard.string(forKey: "OnePassDemoPage") {
         case "watchtower": page = .watchtower
         case "developer": page = .developer
+        case "crypto": page = .crypto
         default: break
         }
         #endif
@@ -1056,6 +1059,7 @@ final class AppModel {
         selectedItem = nil
         watchtowerFilter = nil
         watchtower.clear()
+        cryptoWatch.clear()
         editing = false
         newItemDraft = nil
         editorDirty = false
@@ -1449,7 +1453,7 @@ struct BiometricOffer: Identifiable {
 
 /// The full pages of the main window besides the items (sidebar rows above the vaults).
 enum BrowsePage: Hashable {
-    case items, watchtower, developer
+    case items, watchtower, crypto, developer
 }
 
 /// The items a Watchtower card shows in the list, under the card's title.
@@ -1457,3 +1461,17 @@ struct WatchtowerListFilter: Equatable {
     var title: String
     var itemIDs: Set<String>
 }
+
+extension AppModel {
+    /// Opens the account's encrypted watch file and reads the wallets' public data from the core.
+    /// No network: a refresh is the Crypto screen's to ask for.
+    func prepareCryptoWatch() async {
+        guard session.state == .unlocked, let store = session.cryptoWatchStore else { return }
+        cryptoWatch.open(store: store)
+        #if DEBUG
+        DemoCrypto.installIfRequested(cryptoWatch)
+        #endif
+        await cryptoWatch.loadTargets(from: session)
+    }
+}
+

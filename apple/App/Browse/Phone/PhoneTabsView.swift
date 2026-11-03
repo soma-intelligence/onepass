@@ -10,6 +10,9 @@ enum PhoneRoute: Hashable {
     case item(ItemRef)
     /// The items flagged by a Watchtower card.
     case watchtower(title: String, itemIDs: Set<String>)
+    /// The Crypto screen (watch-only balances) and one coin of it.
+    case crypto
+    case cryptoCoin(String)
 
     var itemRef: ItemRef? {
         if case .item(let ref) = self { return ref }
@@ -149,6 +152,10 @@ struct PhoneTabsView: View {
                             CategoryListView(filter: filter)
                         case .watchtower(let title, let itemIDs):
                             WatchtowerItemsList(title: title, itemIDs: itemIDs)
+                        case .crypto:
+                            CryptoPortfolioView()
+                        case .cryptoCoin(let coin):
+                            CryptoCoinView(coin: coin)
                         case .item(let ref):
                             ItemDetailView(ref: ref)
                                 .id(ref)

@@ -47,6 +47,7 @@ struct WatchtowerTab: View {
                     ForEach(flagged) { card in
                         PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
                     }
+                    CryptoPhraseAlertCard()
                     let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
                     if !clear.isEmpty {
                         ClearChecksCard(

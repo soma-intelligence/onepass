@@ -20,6 +20,8 @@ struct HomeTab: View {
     @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
+    // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
+    @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
 
     private var session: VaultSession { model.session }
 
@@ -43,6 +45,7 @@ struct HomeTab: View {
                                 .phoneCard()
                         }
                         if showsNearby { HomeNearbyCard() }
+                        if showsCrypto { HomeCryptoCard() }
                         if showsProfile, let profile { HomeProfileCard(summary: profile) }
                         if showsFavorites {
                             HomeListCard(
@@ -73,6 +76,7 @@ struct HomeTab: View {
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
                     Toggle("Récents", systemImage: "clock", isOn: $showsRecents)
+                    Toggle("crypto.title", systemImage: "bitcoinsign", isOn: $showsCrypto)
                 }
             }
         }
@@ -605,6 +609,55 @@ struct SyncRefusalSection: View {
         }
     }
 }
+/// Accueil's way to the Crypto screen: the cached total (no request from here) and its change, or
+/// "Désactivé" while the watch is off. Hidden until a crypto wallet carries an address or an xpub.
+private struct HomeCryptoCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let watch = model.cryptoWatch
+        let watched = watch.wallets.contains { !$0.addresses.isEmpty || $0.xpub != nil }
+        Group {
+            if watched {
+                NavigationLink(value: PhoneRoute.crypto) {
+                    HStack(spacing: 12) {
+                        SymbolTile(symbol: "bitcoinsign", color: .orange, size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("crypto.title").font(.headline)
+                            if let p = watch.isEnabled ? watch.portfolio() : nil, !p.holdings.isEmpty {
+                                ChangeLabel(change: p.changePercent)
+                            } else {
+                                Text(watch.isEnabled ? "crypto.home.tapToRefresh" : "crypto.home.off")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if watch.isEnabled, let p = watch.portfolio(), !p.holdings.isEmpty {
+                            Text(verbatim: CryptoFormat.money(p.total, currency: p.currency))
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        Image(systemName: "chevron.forward")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .phoneCard()
+                    .contentShape(.rect(cornerRadius: PhoneCard.radius))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("home.crypto")
+            }
+        }
+        .task { await model.prepareCryptoWatch() }
+    }
+}
+
 /// One of the four tiles of Accueil: the Mac sidebar's colored tile, the figure on the right, the
 /// name below.
 private struct HomeTile<Value: View>: View {

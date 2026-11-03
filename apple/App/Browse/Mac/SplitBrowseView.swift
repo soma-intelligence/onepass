@@ -66,6 +66,7 @@ struct PageColumn: View {
             Group {
                 switch page {
                 case .watchtower: WatchtowerPage()
+                case .crypto: CryptoSplitPage()
                 case .developer: DeveloperPage()
                 case .items: EmptyView()
                 }

@@ -250,6 +250,10 @@ struct ItemDetailView: View {
             WifiQRCard(item: item, ssid: WifiQR.ssid(of: item), payload: payload)
                 .frame(maxWidth: .infinity)
         }
+        // Watch-only balances: what the Crypto screen watches of this wallet, and the derivation.
+        if item.itemType == .cryptoWallet, !standalone {
+            CryptoWalletWatchCard(item: item) { self.item = $0 }
+        }
         if !item.urls.isEmpty {
             // A card like the fields and the notes around it, rows split by hairlines.
             EditorCard {
