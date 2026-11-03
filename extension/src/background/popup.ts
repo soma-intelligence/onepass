@@ -17,6 +17,7 @@ import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
 import type { FormGenerator, Generated } from "./generate";
+import type { AutofillHistory } from "./history";
 import type { PairingFlow } from "./pairing";
 import type { Handlers } from "./router";
 import { BgError, type Session } from "./session";
@@ -63,10 +64,14 @@ export interface PopupDeps {
   smartFill?: (tabId: number) => Promise<void>;
   /** The site memory of `origin`'s site was forgotten (the penalty goes too). */
   onForgetSite?: (origin: string) => Promise<void>;
+  /** The on-device autofill history: suggestions shown, the one filled (history.ts). */
+  history?: Pick<AutofillHistory, "shown" | "picked">;
   now?: () => number;
 }
 
 const LOGIN_KINDS: readonly FormKind[] = ["login", "otp", "change_password", "signup"];
+/** The popup's suggestion list in the autofill history. */
+const POPUP_LIST = "popup";
 
 /** Fields of a login item disclosed for each form kind (least disclosure). */
 export function loginFields(kind: FormKind): FillField[] {
@@ -213,10 +218,10 @@ export class PopupBackend {
       // No content script, a locked vault: the suggestions alone.
       plan = null;
     }
-    if (!plan) return { domain: tab.host, items };
-    const out: PopupSuggestions = { domain: tab.host, items: alternativesFirst(items, rankedIds(plan)) };
-    const line = planLine(plan, items);
+    const out: PopupSuggestions = { domain: tab.host, items: plan ? alternativesFirst(items, rankedIds(plan)) : items };
+    const line = plan ? planLine(plan, items) : null;
     if (line) out.plan = line;
+    void this.deps.history?.shown(POPUP_LIST, "popup", tab.origin, out.items.map((x) => x.item_id));
     return out;
   }
 
@@ -260,6 +265,8 @@ export class PopupBackend {
 
   async fill(itemId: string): Promise<{ domain: string }> {
     const { summary } = this.item(itemId);
+    // A suggestion chosen (its rank in the list shown), for the ranking.
+    void this.deps.history?.picked(POPUP_LIST, itemId);
     if (summary.kind === "card") {
       const { t, host } = await this.target(["card"]);
       await this.deps.filler.fillCard(t, itemId, "popup");

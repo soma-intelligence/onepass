@@ -210,6 +210,24 @@ export interface NoteFillRequest {
   steps: FillStep[];
 }
 
+/** Bridge request `client_info`: the browser and this profile's opaque id (once per session). */
+export interface ClientInfoRequest {
+  browser: "unknown" | "safari" | "chrome" | "edge" | "brave" | "firefox" | "arc" | "opera" | "vivaldi" | "chromium";
+  profile_id?: string;
+  profile_name?: string;
+}
+
+/** Bridge request `note_autofill`: one event of the on-device autofill history. */
+export interface NoteAutofillRequest {
+  ctx: "menu" | "popup" | "overlay" | "chain";
+  origin: string;
+  action: "shown" | "picked" | "filled" | "submitted" | "dismissed" | "picked_other";
+  item_id?: string;
+  rank?: number;
+  /** `shown`: item ids, best first, at most 8. */
+  shown?: string[];
+}
+
 /** Bridge reply of `note_fill`: an empty object. */
 export type NoteFillResponse = Record<string, never>;
 

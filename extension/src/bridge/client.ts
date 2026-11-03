@@ -8,7 +8,16 @@
 // reused, even after a timeout. Any protocol failure (bad frame, bad MAC,
 // replayed or skipped counter, host error frame, transport closed) fails
 // every pending request and closes the transport.
-import type { NoteFillRequest, NoteFillResponse, PlanFillRequest, PlanFillResponse, ProviderId, WirePasswordContext } from "../shared/messages";
+import type {
+  ClientInfoRequest,
+  NoteAutofillRequest,
+  NoteFillRequest,
+  NoteFillResponse,
+  PlanFillRequest,
+  PlanFillResponse,
+  ProviderId,
+  WirePasswordContext,
+} from "../shared/messages";
 import { BridgeError, utf8, wipe } from "./bytes";
 import type { Channel } from "./channel";
 import { ExtPairing, PAIRING_TIMEOUT_MS, type PairingOptions, type PairingRecord } from "./pairing";
@@ -233,6 +242,10 @@ interface Ops {
   note_fill: { req: NoteFillRequest; res: NoteFillResponse };
   /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
   forget_site: { req: { ctx: Ctx; site: string }; res: { items: number } };
+  /** This session's browser and opaque profile id, for the app's on-device autofill history. */
+  client_info: { req: ClientInfoRequest; res: Record<string, never> };
+  /** One autofill history event (a list shown, a pick, a dismissal, a fill); item ids only, never a value. */
+  note_autofill: { req: NoteAutofillRequest; res: Record<string, never> };
   /**
    * Passkeys of `rp_id` for the browser's `origin` (ctx `passkey` or `chain`). The host checks
    * `rp_id` against `origin` (host or registrable parent, never a public suffix).

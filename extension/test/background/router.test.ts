@@ -141,6 +141,27 @@ describe("router", () => {
         options: { documentId: "doc-1" },
       },
     ]);
+    // The autofill history: the browser profile once, the list, the pick at its rank. Ids only.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(client.history[0]).toEqual(expect.objectContaining({ op: "client_info", browser: expect.any(String) }));
+    const notes = client.history.filter((r) => r.op === "note_autofill");
+    expect(notes.map((r) => r.action)).toEqual(["shown", "picked"]);
+    expect(notes[1]).toEqual({ op: "note_autofill", ctx: "menu", origin: SITE, action: "picked", item_id: "it_01", rank: 0 });
+    expect(JSON.stringify(client.history)).not.toContain("pw-1");
+  });
+
+  it("a menu closed without a pick is a dismissal of its first entry", async () => {
+    const { ext, client } = await setup();
+    const token = await openMenu(ext);
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await ext.send({ type: "menu_init", token }, ui);
+    await ext.send({ type: "menu_close", token }, ui);
+    await new Promise((r) => setTimeout(r, 0));
+    const notes = client.history.filter((r) => r.op === "note_autofill");
+    expect(notes.map((r) => [r.action, r.item_id ?? null])).toEqual([
+      ["shown", null],
+      ["dismissed", "it_01"],
+    ]);
   });
 
   it("a pick outside the offered items, or from another tab, is refused", async () => {

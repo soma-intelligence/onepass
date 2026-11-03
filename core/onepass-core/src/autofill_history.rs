@@ -199,11 +199,13 @@ impl AutofillEvent {
         Ok(self)
     }
 
-    /// A positive choice of `item_id`: picked, filled or submitted.
+    /// A choice of `item_id` by the user: picked, or a fill that worked.
+    /// `Filled` is not one: a plan may fill on its own, and a pick is
+    /// followed by its fill (kept for a trained model, not counted twice).
     pub fn is_choice(&self) -> bool {
         matches!(
             self.action,
-            AutofillAction::Picked | AutofillAction::Filled | AutofillAction::Submitted
+            AutofillAction::Picked | AutofillAction::Submitted
         )
     }
 }

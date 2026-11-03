@@ -21,6 +21,7 @@ import type { ChainDriver, StartOptions } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { FormGenerator } from "./generate";
+import { AutofillHistory, type BrowserKind, browserKind } from "./history";
 import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
 import { openApp as openAppNative, openTransport } from "./native";
@@ -49,6 +50,15 @@ export interface BackgroundOptions {
   chain?: ChainDriver;
   /** Brings the app forward for "Déverrouiller dans OnePass"; `openApp` of native.ts by default. */
   openApp?: () => Promise<boolean>;
+  /** Browser kind for the autofill history; from `navigator` by default. */
+  browserKind?: BrowserKind;
+}
+
+/** The browser kind from the worker's `navigator` ("unknown" without one). */
+function navigatorKind(): BrowserKind {
+  const nav = (globalThis as { navigator?: { userAgent?: string; brave?: unknown; userAgentData?: { brands?: { brand: string }[] } } }).navigator;
+  if (!nav || typeof nav.userAgent !== "string") return "unknown";
+  return browserKind({ userAgent: nav.userAgent, brave: nav.brave, brands: nav.userAgentData?.brands ?? [] });
 }
 
 /** The command of manifests/base.json that runs smart fill in the active tab. */
@@ -60,6 +70,11 @@ export const PLAN_MENU_MS = 30_000;
 const SIGN_IN_FORMS: ReadonlySet<string> = new Set(["login", "signup", "change_password", "otp"]);
 /** Forms where the menu offers to generate a password, items or not. */
 const NEW_PASSWORD_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
+
+/** The autofill history's key of the menu of a frame. */
+function menuList(tabId: number, frameId: number): string {
+  return `menu:${tabId}:${frameId}`;
+}
 
 function targetOf(rec: MenuRecord): FillTarget {
   const t: FillTarget = { tabId: rec.tabId, frameId: rec.frameId, origin: rec.origin, formRef: rec.formRef };
@@ -100,6 +115,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   const frames = new Frames(ext.webNavigation);
+  // The on-device autofill history of the app (history.ts): reports only.
+  const history = new AutofillHistory({ session, area: ext.storage.local, browser: opts.browserKind ?? navigatorKind() });
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const keys = new KeyRelay();
   const filler = new Filler(ext.tabs, frames, session);
@@ -187,6 +204,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     penalized: (origin) => hasPenalty(store.session, origin),
     onGenerateRefused: (t) => void refusedRuns.add(`${t.tabId}:${t.frameId}`),
     onFilled: async (t, note) => notes.filled(t.tabId, t.origin, note, (await frames.details(t.tabId, 0))?.url ?? null),
+    beforePlan: () => history.ensureClient(),
   });
   plannerRef.current = planner;
   /** Smart fill origins of a content script frame; null for a cross-origin child (or an unknown top). */
@@ -279,6 +297,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       return (await planWithoutGesture(cs))?.plan ?? null;
     },
     smartFill: smartFillTab,
+    history,
     onForgetSite: async (origin) => {
       // The computed site and the raw host: whichever key the chain filed the penalty under.
       const keys = new Set<string>();
@@ -338,6 +357,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
       },
       close_menu: async (_m, from) => {
+        void history.dismissed(menuList(from.tabId, from.frameId));
         await menus.revokeFrame(from.tabId, from.frameId);
       },
       submitted_credentials: async (m, from) => {
@@ -439,6 +459,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           methods[it.item_id] = it.methods.map((x) => x.provider);
         }
         await menus.setOffered(m.token, offered, methods, accounts);
+        void history.shown(menuList(rec.tabId, rec.frameId), "menu", rec.origin, items.map((x) => x.item_id));
         return out;
       },
       menu_pick: async (m, from) => {
@@ -446,6 +467,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // Only an item the menu showed; its kind comes from the host.
         const kind = rec.offered && Object.hasOwn(rec.offered, m.itemId) ? rec.offered[m.itemId] : undefined;
         const t = targetOf(rec);
+        // The choice and its rank, before the fill (a close racing it is no dismissal).
+        if (kind !== undefined) void history.picked(menuList(rec.tabId, rec.frameId), m.itemId);
         let written: number;
         if (kind === "login") written = await filler.fillLogin(t, m.itemId, loginFields(rec.formKind));
         else if (kind === "card") written = await filler.fillCard(t, m.itemId);
@@ -536,6 +559,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_close: async (m, from) => {
         const rec = await menuRecord(m.token, from);
+        void history.dismissed(menuList(rec.tabId, rec.frameId));
         keys.drop(m.token);
         await menus.revokeFrame(rec.tabId, rec.frameId);
         await removeFrame(ext.tabs, rec, "menu");

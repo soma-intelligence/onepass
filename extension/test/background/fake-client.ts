@@ -6,10 +6,15 @@ import type { BridgeLike } from "../../src/background/session";
 
 export type Answer = (req: Record<string, unknown>) => unknown;
 
+/** Reports of the autofill history (history.ts): answered `{}`, recorded in `history`. */
+const HISTORY_OPS: ReadonlySet<string> = new Set(["client_info", "note_autofill"]);
+
 export class FakeClient implements BridgeLike {
   open_ = false;
   closed = false;
   readonly requests: Record<string, unknown>[] = [];
+  /** The autofill history reports (`client_info`, `note_autofill`), kept apart from `requests`. */
+  readonly history: Record<string, unknown>[] = [];
   openCalls = 0;
   /** Opened with this pairing id (hex of the first bytes). */
   openedWith: PairingRecord | undefined;
@@ -44,6 +49,10 @@ export class FakeClient implements BridgeLike {
 
   async request<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>> {
     if (!this.isOpen) throw new BridgeError("closed");
+    if (HISTORY_OPS.has(req.op)) {
+      this.history.push(req as Record<string, unknown>);
+      return {} as ResponseFor<O>;
+    }
     this.requests.push(req as Record<string, unknown>);
     const r = this.answer(req as Record<string, unknown>);
     if (r instanceof Error) throw r;

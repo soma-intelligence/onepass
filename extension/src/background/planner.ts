@@ -82,6 +82,8 @@ export interface PlannerHooks {
   onFilled?: (t: FillTarget, note: FilledNote) => void | Promise<void>;
   /** The page's `pattern` refused every generated password: the run answers "menu" (spec 6.3). */
   onGenerateRefused?: (t: FillTarget) => void;
+  /** Before each `plan_fill`: the session's browser profile for the ranking (history.ts). Never throws. */
+  beforePlan?: () => Promise<void>;
 }
 
 export interface RunOptions {
@@ -130,6 +132,7 @@ export class Planner {
     else throw new BgError("cross_site_frame");
     // A same-origin child's top is at its very origin.
     const context: PageContext = { ...ctx, origin: t.origin, top_origin: t.origin, frame_kind: frame };
+    await this.hooks.beforePlan?.();
     const reply = await this.session.request({ op: "plan_fill", ctx: "menu", origin: t.origin, context });
     // A refused password on this site: no auto-submit, no chain, until a chain gets through.
     const plan = (await this.isPenalized(t.origin)) ? penalized(reply.plan) : reply.plan;
