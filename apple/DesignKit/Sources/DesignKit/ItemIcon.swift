@@ -74,14 +74,14 @@ public struct ItemIcon: View {
         prepared(data)?.image
     }
 
-    /// The tile behind a mark (`SiteIconTreatment.mark`): a neutral gray for a one color mark
-    /// (drawn in the text color), else white or near black, whichever keeps the mark readable in
-    /// this appearance: white in light mode unless the mark is almost all white, near black in dark
-    /// mode unless the mark is mostly black.
-    static func markBackground(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Color {
-        if monochrome { return darkMode ? Color(white: 0.19) : Color(white: 0.955) }
-        if darkMode { return darkShare > 0.5 ? Color(white: 0.94) : Color(white: 0.19) }
-        return pale > 0.85 ? Color(white: 0.19) : .white
+    /// The tile behind a mark (`SiteIconTreatment.mark`), or nil: a mark sits bare on the list,
+    /// with no square around it, unless it would vanish into the background. A one color mark is
+    /// drawn in the text color and never needs one. A colored mark gets a tile only when it is
+    /// mostly black in dark mode (light tile) or almost all white in light mode (dark tile).
+    static func markBackground(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Color? {
+        if monochrome { return nil }
+        if darkMode { return darkShare > 0.5 ? Color(white: 0.94) : nil }
+        return pale > 0.85 ? Color(white: 0.19) : nil
     }
 
     /// Many sites ship their mark small in the middle of a plain square (white or transparent):
@@ -158,9 +158,10 @@ public struct ItemIcon: View {
                 BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
             } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment {
-                // A mark on its own: centered on a tile that suits it, stretched at most to 1.5
-                // points per 2 pixels (a 32 px favicon stays crisp, at 21 points).
-                let mark = min(side * 0.62, CGFloat(max(image.width, image.height)) / 1.5)
+                let tile = Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark)
+                // A bare mark nearly fills the icon's square; on a tile it keeps a margin. Stretched at
+                // most to one point per source pixel, so a small favicon does not blur.
+                let mark = min(side * (tile == nil ? 0.86 : 0.7), CGFloat(max(image.width, image.height)))
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .renderingMode(monochrome ? .template : .original)
@@ -169,37 +170,27 @@ public struct ItemIcon: View {
                     .foregroundStyle(.primary)
                     .frame(width: mark, height: mark)
                     .frame(width: side, height: side)
-                    .background(Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark))
-                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08)))
+                    .background {
+                        if let tile {
+                            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(tile)
+                        }
+                    }
             } else if let image, Self.isLowResolution(image, side: side) {
-                // A small favicon is not stretched into a blur: it sits at its own size (one
-                // source pixel per screen pixel on Retina, at most 60% of the tile), crisp, on a
-                // neutral tile.
-                Image(decorative: image, scale: 2)
+                // A small favicon, bare: at most one point per source pixel and 85% of the square.
+                Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: min(side * 0.6, CGFloat(image.width) / 2), height: min(side * 0.6, CGFloat(image.height) / 2))
+                    .frame(width: min(side * 0.85, CGFloat(image.width)), height: min(side * 0.85, CGFloat(image.height)))
                     .frame(width: side, height: side)
-                    .background(Color.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08)))
             } else if let image {
+                // Edge to edge artwork, rounded like an app icon, no border.
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: side, height: side)
-                    .background(Color.primary.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08)))
             } else {
                 CategoryArtwork(type: type, size: side, monogram: type == .login ? title : nil)
             }

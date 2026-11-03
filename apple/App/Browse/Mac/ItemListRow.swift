@@ -34,8 +34,8 @@ struct ItemListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 34, brand: summary.cardBrand)
-                .favoriteBadge(summary.favorite, iconSize: 34)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 40, brand: summary.cardBrand)
+                .favoriteBadge(summary.favorite, iconSize: 40)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
                     .font(.body.weight(.semibold))

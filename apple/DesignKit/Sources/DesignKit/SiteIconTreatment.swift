@@ -136,24 +136,74 @@ public enum SiteIconTreatment: Equatable, Sendable {
         }
         // Background under a third of the square: artwork on white, not a mark on a square.
         guard count >= total / 3, count <= total * 97 / 100 else { return false }
+        // Holes: a wide, round patch of the background color enclosed by the mark (the loops of
+        // Meta's infinity, the counter of an "o") is background too. A thin shape stays (the white
+        // check of a shield, a star): it is part of the mark.
+        var seen = cleared
+        for start in 0..<total where !seen[start] && matches(start) {
+            var region: [Int] = []
+            var queue = [start]
+            seen[start] = true
+            var minX = bitmap.width, maxX = 0, minY = bitmap.height, maxY = 0
+            while let i = queue.popLast() {
+                region.append(i)
+                let x = i % bitmap.width, y = i / bitmap.width
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+                for j in [x > 0 ? i - 1 : -1, x < bitmap.width - 1 ? i + 1 : -1,
+                    y > 0 ? i - bitmap.width : -1, y < bitmap.height - 1 ? i + bitmap.width : -1]
+                where j >= 0 && !seen[j] && matches(j) {
+                    seen[j] = true
+                    queue.append(j)
+                }
+            }
+            let boxWidth = maxX - minX + 1, boxHeight = maxY - minY + 1
+            let wide = region.count >= total / 100 && min(boxWidth, boxHeight) >= bitmap.width * 6 / 100
+            let round = Double(region.count) / Double(boxWidth * boxHeight) >= 0.55
+            if wide && round {
+                for i in region { cleared[i] = true }
+            }
+        }
+        // Distance (in pixels, up to `rim`) of each kept pixel to the cleared background: the
+        // antialiased rim of the mark, part background, spans a few pixels.
+        let rim = 3
+        var distance = [Int](repeating: Int.max, count: total)
+        var frontier: [Int] = []
+        for i in 0..<total where cleared[i] {
+            distance[i] = 0
+            frontier.append(i)
+        }
+        for step in 1...rim {
+            var next: [Int] = []
+            for i in frontier {
+                let x = i % bitmap.width, y = i / bitmap.width
+                for j in [x > 0 ? i - 1 : -1, x < bitmap.width - 1 ? i + 1 : -1,
+                    y > 0 ? i - bitmap.width : -1, y < bitmap.height - 1 ? i + bitmap.width : -1]
+                where j >= 0 && distance[j] == Int.max {
+                    distance[j] = step
+                    next.append(j)
+                }
+            }
+            frontier = next
+        }
         var pixels = bitmap.pixels
         for i in 0..<total {
             if cleared[i] {
                 pixels[i * 4] = 0; pixels[i * 4 + 1] = 0; pixels[i * 4 + 2] = 0; pixels[i * 4 + 3] = 0
-            } else if !matches(i) {
-                // The antialiased rim of the mark, half background: keep it, softened toward clear
-                // where it touches cleared pixels (no white halo on a dark tile).
-                let x = i % bitmap.width, y = i / bitmap.width
-                let touches = (x > 0 && cleared[i - 1]) || (x < bitmap.width - 1 && cleared[i + 1])
-                    || (y > 0 && cleared[i - bitmap.width]) || (y < bitmap.height - 1 && cleared[i + bitmap.width])
-                if touches {
-                    let c = bitmap.color(i)
-                    // How far this pixel is from the background: 0 is background, 1 is the mark.
-                    let distance = min(1, (abs(c.r - color.r) + abs(c.g - color.g) + abs(c.b - color.b)) / 1.2)
-                    let a = Double(pixels[i * 4 + 3]) * distance
-                    for k in 0..<4 { pixels[i * 4 + k] = UInt8((Double(pixels[i * 4 + k]) * distance).rounded()) }
-                    pixels[i * 4 + 3] = UInt8(min(255, a.rounded()))
+            } else if distance[i] <= rim {
+                // Color to alpha: the rim pixel is read as the mark's color over the background,
+                // and the background's share is taken out (a white halo would show on a dark list).
+                let c = bitmap.color(i)
+                let channels = [(c.r, color.r), (c.g, color.g), (c.b, color.b)]
+                let share = channels.map { value, back in
+                    back > 0.5 ? (back - value) / back : (value - back) / max(1 - back, 0.001)
+                }.max() ?? 1
+                let coverage = min(1, max(0, share))
+                let alpha = Double(pixels[i * 4 + 3]) / 255
+                for (k, (value, back)) in channels.enumerated() {
+                    let foreground = coverage > 0 ? (value - (1 - coverage) * back) / coverage : 0
+                    pixels[i * 4 + k] = UInt8((min(1, max(0, foreground)) * coverage * alpha * 255).rounded())
                 }
+                pixels[i * 4 + 3] = UInt8((coverage * alpha * 255).rounded())
             }
         }
         bitmap.pixels = pixels

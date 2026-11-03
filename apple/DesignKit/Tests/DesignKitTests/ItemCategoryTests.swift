@@ -155,6 +155,42 @@ import SwiftUI
         return context.makeImage()!
     }
 
+    /// White square, colored disc, and inside it a white shape: a round hole or a thin bar.
+    static func discWithInside(hole: Bool) -> CGImage {
+        let side = 128
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        context.setFillColor(red: 0.05, green: 0.45, blue: 0.95, alpha: 1)
+        context.fillEllipse(in: CGRect(x: 24, y: 24, width: 80, height: 80))
+        context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        if hole {
+            context.fillEllipse(in: CGRect(x: 44, y: 44, width: 40, height: 40))
+        } else {
+            context.fill(CGRect(x: 40, y: 61, width: 48, height: 6))
+        }
+        return context.makeImage()!
+    }
+
+    static func alphaAtCenter(_ image: CGImage) -> UInt8 {
+        let bitmap = SiteIconTreatment.Bitmap(image)!
+        return UInt8(bitmap.alpha((bitmap.height / 2) * bitmap.width + bitmap.width / 2))
+    }
+
+    @Test func roundHoleInAMarkIsCleared() {
+        // The loops of an infinity on a white square: background, not a white part of the mark.
+        let (image, _) = SiteIconTreatment.prepare(Self.discWithInside(hole: true))
+        #expect(Self.alphaAtCenter(image) == 0)
+    }
+
+    @Test func thinWhiteShapeInAMarkStays() {
+        // A white check or bar inside a colored badge is the mark's own white.
+        let (image, _) = SiteIconTreatment.prepare(Self.discWithInside(hole: false))
+        #expect(Self.alphaAtCenter(image) == 255)
+    }
+
     @Test func fullBleedArtworkFillsTheTile() {
         // A brand color to the edges with a white mark inside: an app icon.
         let (_, treatment) = SiteIconTreatment.prepare(Self.icon(background: (0.1, 0.4, 0.9), markColor: (1, 1, 1)))
@@ -192,12 +228,13 @@ import SwiftUI
     }
 
     @Test func tileBackgroundKeepsTheMarkReadable() {
-        // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile. A colored mark
-        // on a white disc (half pale) keeps white in light mode.
+        // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile. Any other mark,
+        // and every one color mark, sits bare with no tile.
+        #expect(ItemIcon.markBackground(monochrome: true, pale: 0, dark: 1, darkMode: true) == nil)
         #expect(ItemIcon.markBackground(monochrome: false, pale: 0, dark: 0.8, darkMode: true) == Color(white: 0.94))
         #expect(ItemIcon.markBackground(monochrome: false, pale: 0.95, dark: 0, darkMode: false) == Color(white: 0.19))
-        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.7, dark: 0, darkMode: false) == .white)
-        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.5, dark: 0, darkMode: true) == Color(white: 0.19))
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.7, dark: 0, darkMode: false) == nil)
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.5, dark: 0, darkMode: true) == nil)
     }
 }
 
