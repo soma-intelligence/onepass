@@ -228,7 +228,9 @@ struct NewItemSheet: View {
             .padding(.horizontal, Self.sideInset)
             .padding(.bottom, 16)
         }
+        #if !os(visionOS)
         .scrollDismissesKeyboard(.immediately)
+        #endif
         // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
         // with the trackpad or wheel, the bar stays out of the animation.
         .scrollIndicators(.hidden)

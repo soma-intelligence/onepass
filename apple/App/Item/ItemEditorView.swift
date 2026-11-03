@@ -88,7 +88,9 @@ struct ItemEditorView: View {
                 .textFieldStyle(.plain)
                 #endif
             }
+            #if !os(visionOS)
             .scrollDismissesKeyboard(.interactively)
+            #endif
             #if os(macOS)
             // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
             // Enregistrer (they float without glass of their own).

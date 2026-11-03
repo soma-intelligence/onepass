@@ -86,13 +86,10 @@ struct DevicesSettings: View {
                 }
                 .accessibilityIdentifier("settings.devices.invite")
                 #else
-                Button {
-                    errorMessage = nil
-                    hosting = true
-                } label: {
-                    Label("Configurer un appareil…", systemImage: "qrcode")
-                }
-                .accessibilityIdentifier("settings.devices.host")
+                // Vision Pro neither scans nor hosts (ruling A2): an iPhone or an iPad approves it.
+                Label("Utilise ton iPhone ou ton iPad pour approuver un nouvel appareil.", systemImage: "iphone")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("settings.devices.useIPhone")
                 #endif
             } footer: {
                 #if os(iOS)
