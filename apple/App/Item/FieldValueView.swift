@@ -51,7 +51,7 @@ struct FieldValueView: View {
             }
         case .concealed(let value) where itemType == .creditCard && field.id == "number":
             // The network is read from the number's prefix; the badge itself shows no digit.
-            row(value, secret: true, monospaced: true) {
+            row(value, secret: true, monospaced: true, hiddenText: CardMask.text(forNumber: value)) {
                 CardNetworkBadge(network: .detect(number: value))
                     .accessibilityLabel(Text(CardNetworkBadge.CardNetwork.detect(number: value).name))
             }
@@ -108,7 +108,7 @@ struct FieldValueView: View {
 
     private func row<Accessory: View>(
         _ value: String, secret: Bool, monospaced: Bool, label: String? = nil, copyIdentifier: String? = nil,
-        allowsLarge: Bool? = nil, @ViewBuilder accessory: () -> Accessory
+        allowsLarge: Bool? = nil, hiddenText: String? = nil, @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         let session = session
         let onReveal: ((Bool) -> Void)? = secret ? { _ in session.noteActivity() } : nil
@@ -117,7 +117,7 @@ struct FieldValueView: View {
             copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
             // "Afficher en grand" for passwords (barcodes have their own row).
             allowsLarge: allowsLarge ?? (field.kind == .password),
-            concealToken: session.concealGeneration, captured: captured,
+            concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
             onCopy: { copy(value, concealed: secret) },
             onReveal: onReveal,
             accessory: accessory)
@@ -408,6 +408,8 @@ struct ValueRow<Accessory: View>: View {
     let onCopy: () -> Void
     let onReveal: ((Bool) -> Void)?
     let accessory: Accessory
+    /// Drawn instead of the bullets while hidden (a card number shows "•••• 4242").
+    let hiddenText: String?
 
     private let autoHideAfter: TimeInterval = 30
     @State private var revealed = false
@@ -424,10 +426,11 @@ struct ValueRow<Accessory: View>: View {
 
     init(
         label: String, value: String, isSecret: Bool, monospaced: Bool, copyIdentifier: String?,
-        allowsLarge: Bool, concealToken: Int = 0, captured: Bool = false,
+        allowsLarge: Bool, concealToken: Int = 0, captured: Bool = false, hiddenText: String? = nil,
         onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?,
         @ViewBuilder accessory: () -> Accessory
     ) {
+        self.hiddenText = hiddenText
         self.label = label
         self.value = value
         self.isSecret = isSecret
@@ -478,7 +481,7 @@ struct ValueRow<Accessory: View>: View {
         DetailRow(
             label: label, copyIdentifier: copyIdentifier, onCopy: onCopy, showsMenu: isSecret || allowsLarge
         ) {
-            Text(hidden ? FieldRow.mask : value)
+            Text(hidden ? (hiddenText ?? FieldRow.mask) : value)
                 .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
                     : monospaced ? .body.monospaced() : .body)
                 .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)

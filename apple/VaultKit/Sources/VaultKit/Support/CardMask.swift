@@ -8,6 +8,14 @@ public enum CardMask {
     public static func text(_ last4: String) -> String {
         "\u{2022}\u{2022}\u{2022}\u{2022} \(last4)"
     }
+
+    /// "•••• 4242" for a full card number (spaces and dashes ignored), nil when it is not one: the
+    /// same rule as the core's `card_last4` (digits only, at least 8 of them).
+    public static func text(forNumber number: String) -> String? {
+        let kept = number.filter { $0 != " " && $0 != "-" }
+        guard kept.count >= 8, kept.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return text(String(kept.suffix(4)))
+    }
 }
 
 extension FfiItemSummary {

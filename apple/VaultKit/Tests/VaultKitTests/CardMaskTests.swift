@@ -27,4 +27,12 @@ struct CardMaskTests {
         #expect(card("4242", subtitle: "Camille Durand").listSubtitle == "Camille Durand")
         #expect(summary("Atlas", subtitle: "camille@exemple.fr").listSubtitle == "camille@exemple.fr")
     }
+
+    @Test func numberFieldShowsTheLastFourWhileHidden() {
+        #expect(CardMask.text(forNumber: "4242 4242 4242 4242") == "•••• 4242")
+        #expect(CardMask.text(forNumber: "3782-822463-10005") == "•••• 0005")
+        #expect(CardMask.text(forNumber: "1234567") == nil)
+        #expect(CardMask.text(forNumber: "4242 abcd 4242 4242") == nil)
+        #expect(CardMask.text(forNumber: "") == nil)
+    }
 }
