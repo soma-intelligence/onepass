@@ -856,6 +856,26 @@ impl Session {
     pub fn claim_only_device(&self) -> Result<(), OnePassError> {
         self.with(|repo| Ok(repo.claim_only_device()?))
     }
+
+    /// "Marquer comme volé" (founder decision 2026-11-03): a wipe order for
+    /// `id` (32 hex characters), a device the lineage removed already (by
+    /// a rotation that revoked it, or a `Recover`), signed by this
+    /// device's current identity. Once synced, that device erases its local
+    /// copy at its next tick, with no 7-day wait. The app confirms with the
+    /// user and asks for presence first, as for a removal. `now`: Unix
+    /// seconds, informative. Refused: a device still in the roster
+    /// (`Validation("device", "not removed")`: remove it first), this
+    /// device, a legacy account or a device not `Current`.
+    pub fn mark_stolen(&self, id: String, now: i64) -> Result<(), OnePassError> {
+        let id = parse_id(&id)?;
+        self.with(|repo| Ok(repo.mark_stolen(id, now)?))
+    }
+
+    /// The devices this account marked stolen (32 hex characters each),
+    /// for the device list.
+    pub fn stolen_devices(&self) -> Result<Vec<String>, OnePassError> {
+        self.with(|repo| Ok(repo.stolen_devices()?.into_iter().map(id_hex).collect()))
+    }
 }
 
 // ---- prompt -------------------------------------------------------------------
@@ -1014,10 +1034,13 @@ pub enum FfiQuarantineTick {
     },
     /// Locked with no erase clock: the removal, or a record on its path,
     /// was not signed by a device this one verified (final review I1). The quarantine screen offers
-    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date.
+    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date. A
+    /// `Recover` removal runs the clock (founder decision 2026-11-03).
     Locked,
-    /// The store was erased: the app deletes what it keeps for the account
-    /// in the Keychain (Secret Key, Account Unlock Key, device keys).
+    /// The store was erased (the 7 days ran out, or a valid "Marquer comme
+    /// volé" order named this device): the app deletes what it keeps for
+    /// the account in the Keychain (Secret Key, Account Unlock Key, device
+    /// keys).
     Erased,
 }
 
@@ -1031,10 +1054,12 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 }
 
 /// The quarantine clock (spec 8.4, R8, O1) with the app's clock `now`
-/// (Unix seconds): at launch and on the quarantine screen. Erases only
-/// 7 days after a valid lineage record revoking this device was first
-/// read, and only when every signer on its path is verified here
-/// (`Locked` otherwise); a clock moved back only delays it.
+/// (Unix seconds): at launch and on the quarantine screen. Erases 7 days
+/// of forward clock time after a valid lineage record revoking this device
+/// was first read (a clock set back counts nothing but never stops the
+/// count), or at once on a valid wipe order for this device, and only when
+/// every signer on its path is verified here or the removal is a
+/// `Recover` (`Locked` otherwise).
 #[uniffi::export]
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;

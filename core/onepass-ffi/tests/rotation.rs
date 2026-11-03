@@ -598,28 +598,70 @@ fn quarantine_erases_only_after_seven_days() {
         OnePassError::Quarantined
     );
 
-    // Not before the 7 days, whatever the clock says before them.
+    // Not before the 7 days.
     assert_eq!(
         quarantine_tick(b.path.clone(), since + WEEK - 1).unwrap(),
         FfiQuarantineTick::Waiting { erase_at }
     );
-    assert_eq!(
-        quarantine_tick(b.path.clone(), since - 3600).unwrap(),
-        FfiQuarantineTick::Waiting { erase_at }
-    );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
-    // A later fetch is taken and keeps `since`.
+    // A later fetch is taken and keeps the count.
     let h = open_sync_store(b.path.clone()).unwrap();
     h.stage_remote(server.rows[0].clone()).unwrap();
     assert_eq!(
-        h.commit_remote_checked(since + 60).unwrap().quarantine,
+        h.commit_remote_checked(since + WEEK - 1)
+            .unwrap()
+            .quarantine,
         FfiQuarantineTick::Waiting { erase_at }
     );
+    // A clock set back an hour counts nothing, and never stops the count:
+    // the second left runs from the new reading.
     assert_eq!(
-        quarantine_tick(b.path.clone(), since + WEEK).unwrap(),
+        quarantine_tick(b.path.clone(), since - 3600).unwrap(),
+        FfiQuarantineTick::Waiting {
+            erase_at: since - 3599
+        }
+    );
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
+    assert_eq!(
+        quarantine_tick(b.path.clone(), since - 3599).unwrap(),
         FfiQuarantineTick::Erased
     );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+}
+
+/// "Marquer comme volé" (founder decision 2026-11-03): A removes B by
+/// rotation, then marks it stolen; B's next fetch erases it at once, with
+/// no 7-day wait. A device still in the roster cannot be marked.
+#[test]
+fn stolen_device_erases_at_its_next_fetch() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    let c = pair_v2(&mut server, &a, "Mac de Camille");
+    let b_id = this_id(&b);
+    assert!(a.session.mark_stolen(b_id.clone(), now()).is_err());
+    rotate(&a, vec![b_id.clone()], vec![]);
+    push(&mut server, &a.path);
+    assert_eq!(
+        pull(&server, &b).quarantine,
+        FfiQuarantineTick::Waiting {
+            erase_at: match lineage_status(b.path.clone()).unwrap().state {
+                FfiLineageState::Quarantined {
+                    erase_at: Some(at), ..
+                } => at,
+                other => panic!("quarantined, got {other:?}"),
+            }
+        }
+    );
+
+    a.session.mark_stolen(b_id.clone(), now()).unwrap();
+    assert_eq!(a.session.stolen_devices().unwrap(), vec![b_id.clone()]);
+    push(&mut server, &a.path);
+    assert_eq!(pull(&server, &b).quarantine, FfiQuarantineTick::Erased);
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+    // Another device of the account only reads the order: nothing erased.
+    let _ = pull(&server, &c);
+    assert_eq!(store_state(c.path.clone()).unwrap(), FfiStoreState::Account);
 }
 
 /// "Ce n'était pas moi" on the prompt: the record rejected, the device
