@@ -302,7 +302,14 @@ pub struct FfiWakeInfo {
 /// A fresh mailbox credential (Ed25519). Nothing is kept on the Rust side.
 #[uniffi::export]
 pub fn mailbox_generate_credential() -> Result<FfiMailboxCredential, OnePassError> {
-    Ok(credential_record(&Credential::generate()?))
+    Ok(credential_record(&fresh_credential()?))
+}
+
+/// A new Ed25519 credential from a seed of the core's hedged generator
+/// (`fill_random`, security README section 17), never the OS one alone.
+fn fresh_credential() -> Result<Credential, OnePassError> {
+    let seed = Zeroizing::new(onepass_core::crypto::random_array::<32>()?);
+    Credential::from_seed(&seed[..]).map_err(|_| invalid("credential seed"))
 }
 
 fn credential_record(c: &Credential) -> FfiMailboxCredential {
@@ -364,7 +371,7 @@ pub fn mailbox_server_check(
     endpoint: FfiMailboxEndpoint,
 ) -> Result<FfiMailboxServerInfo, OnePassError> {
     // The route is unsigned: a throwaway credential only builds the client.
-    let client = MailboxClient::new(endpoint.into(), Credential::generate()?)?;
+    let client = MailboxClient::new(endpoint.into(), fresh_credential()?)?;
     let config = client.server_config()?;
     Ok(FfiMailboxServerInfo {
         open_signup: config.open_signup,
