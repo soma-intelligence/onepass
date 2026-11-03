@@ -1,22 +1,102 @@
 //! Import of other password managers' exports: detection, a preview that
 //! only counts, and the import into one vault of the session.
 //!
-//! Nothing here returns or logs a value of the file: summaries hold counts
-//! and static warning codes. The bytes handed over by Swift are wiped when
-//! the call returns.
+//! Nothing here returns or logs a secret of the file: summaries hold counts
+//! and static warning codes, and, inside an unlocked session, the list of
+//! possible duplicates (titles and subtitles, as the item list shows them,
+//! and what differs, never a value). The bytes handed over by Swift are
+//! wiped when the call returns.
 
 use std::collections::BTreeMap;
 
 use onepass_core::Id;
-use onepass_core::import::reimport::{self, Outcome};
+use onepass_core::import::reimport::{self, Choice, Choices, Outcome};
 use onepass_core::import::{self, Format, Import};
 use onepass_core::model::{Item, ItemType};
 use zeroize::Zeroizing;
 
-use crate::convert::parse_id;
+use crate::convert::{parse_id, summary as item_summary};
+use crate::duplicates::{FfiDuplicateAspect, FfiDuplicateSignal, aspect, signal};
 use crate::error::{OnePassError, invalid};
 use crate::session::{Session, find_vault};
-use crate::types::FfiItemType;
+use crate::types::{FfiItemSummary, FfiItemType};
+
+/// What an import does with an item that is a possible duplicate of a
+/// vault item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiImportChoice {
+    /// Fold it into the vault item (duplicates merge rules, nothing lost).
+    Merge,
+    /// Leave it out.
+    Skip,
+    /// Add it as a separate item.
+    Import,
+}
+
+/// The user's choice for one possible duplicate, by its `index`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct FfiImportDecision {
+    pub index: u32,
+    pub choice: FfiImportChoice,
+}
+
+/// An item of the export that matches a vault item by the duplicates
+/// rules (not by its source: a re-import of the same item updates it
+/// without asking).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiImportDuplicate {
+    /// Position of the item in the export: the key of its decision, stable
+    /// for the same file.
+    pub index: u32,
+    /// The item of the export (its id means nothing yet).
+    pub incoming: FfiItemSummary,
+    /// The vault item it matches.
+    pub existing: FfiItemSummary,
+    pub signals: Vec<FfiDuplicateSignal>,
+    /// What differs in the export's item. Never a value.
+    pub differences: Vec<FfiDuplicateAspect>,
+    /// Merging would change nothing (same secret, same content).
+    pub exact: bool,
+    /// Skip for an exact duplicate, merge for a near one.
+    pub suggested: FfiImportChoice,
+    /// The choice applied in these counts.
+    pub choice: FfiImportChoice,
+}
+
+fn choice_to_ffi(c: Choice) -> FfiImportChoice {
+    match c {
+        Choice::Merge => FfiImportChoice::Merge,
+        Choice::Skip => FfiImportChoice::Skip,
+        Choice::Import => FfiImportChoice::Import,
+    }
+}
+
+fn choices(decisions: &[FfiImportDecision]) -> Choices {
+    decisions
+        .iter()
+        .map(|d| {
+            let c = match d.choice {
+                FfiImportChoice::Merge => Choice::Merge,
+                FfiImportChoice::Skip => Choice::Skip,
+                FfiImportChoice::Import => Choice::Import,
+            };
+            (d.index as usize, c)
+        })
+        .collect()
+}
+
+fn duplicate_to_ffi(d: &reimport::Duplicate) -> FfiImportDuplicate {
+    FfiImportDuplicate {
+        index: count(d.index),
+        incoming: item_summary(&d.incoming),
+        existing: item_summary(&d.existing),
+        signals: d.signals.iter().copied().map(signal).collect(),
+        differences: d.differences.iter().copied().map(aspect).collect(),
+        exact: d.exact,
+        suggested: choice_to_ffi(d.suggested()),
+        choice: choice_to_ffi(d.choice),
+    }
+}
 
 /// How many items of one type an import holds.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -64,6 +144,17 @@ pub struct FfiImportSummary {
     pub archived_duplicates: u32,
     /// Vault items that already hold everything: not written.
     pub unchanged: u32,
+    /// Items of the export that are possible duplicates of a vault item,
+    /// in export order, each with the choice these counts apply
+    /// (`Session::preview_import_into` and `Session::import_items`; empty
+    /// in `preview_import`).
+    pub duplicates: Vec<FfiImportDuplicate>,
+    /// Possible duplicates merged into their vault item.
+    pub merged: u32,
+    /// Possible duplicates left out.
+    pub skipped_duplicates: u32,
+    /// Possible duplicates imported as separate items (also in `added`).
+    pub separate: u32,
 }
 
 fn count(n: usize) -> u32 {
@@ -113,6 +204,10 @@ fn summary(format: Format, import: &Import) -> FfiImportSummary {
         converted: 0,
         unchanged: 0,
         archived_duplicates: 0,
+        duplicates: Vec::new(),
+        merged: 0,
+        skipped_duplicates: 0,
+        separate: 0,
     }
 }
 
@@ -167,6 +262,7 @@ struct Prepared {
     items: Vec<Item>,
     archived: Vec<Item>,
     counts: reimport::Counts,
+    duplicates: Vec<FfiImportDuplicate>,
 }
 
 /// The items of an import ready for `vault`, matched against `existing`
@@ -174,18 +270,21 @@ struct Prepared {
 /// same source made is updated in place (same id), a fallback secure note
 /// becomes the login it stood for (the note archived as it was), exact
 /// duplicates fold into one (the others archived), and an item holding
-/// nothing new is left out. Nothing is ever deleted. Every item to write is
-/// validated before the first write, so an invalid one refuses the whole
-/// import.
+/// nothing new is left out. A possible duplicate of a vault item (any
+/// format) is merged, skipped or added as `decisions` say, else as
+/// suggested. Nothing is ever deleted. Every item to write is validated
+/// before the first write, so an invalid one refuses the whole import.
 fn prepared(
     format: Format,
     import: Import,
     vault: Id,
     existing: &[Item],
+    decisions: &[FfiImportDecision],
 ) -> Result<Prepared, OnePassError> {
     let now = time::OffsetDateTime::now_utc();
-    let plan = reimport::reconcile(format, import, vault, existing, now);
+    let plan = reimport::reconcile_with(format, import, vault, existing, now, &choices(decisions));
     let counts = plan.counts();
+    let duplicates = plan.duplicates.iter().map(duplicate_to_ffi).collect();
     let valid = |item: Item| Ok(crate::validate_for_save(item)?);
     let items = plan
         .items
@@ -203,12 +302,21 @@ fn prepared(
         items,
         archived,
         counts,
+        duplicates,
     })
 }
 
 /// Fills the outcome counts of a summary: the dry run shown before
 /// writing, and the result after.
-fn with_counts(mut s: FfiImportSummary, c: reimport::Counts) -> FfiImportSummary {
+fn with_counts(
+    mut s: FfiImportSummary,
+    c: reimport::Counts,
+    duplicates: Vec<FfiImportDuplicate>,
+) -> FfiImportSummary {
+    s.duplicates = duplicates;
+    s.merged = c.merged;
+    s.skipped_duplicates = c.skipped;
+    s.separate = c.separate;
     s.added = c.added;
     s.fixed = c.fixed;
     s.converted = c.converted;
@@ -225,7 +333,9 @@ fn with_counts(mut s: FfiImportSummary, c: reimport::Counts) -> FfiImportSummary
 impl Session {
     /// Counts what importing the export into `vault_id` would do, like
     /// `preview_import`, plus how many items would replace their copy from
-    /// an earlier import of the same source (`updated`). Writes nothing.
+    /// an earlier import of the same source (`updated`), and lists the
+    /// possible duplicates of vault items with their suggested choice.
+    /// Writes nothing.
     pub fn preview_import_into(
         &self,
         format: String,
@@ -239,21 +349,25 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             Ok(repo.items(&vault)?)
         })?;
-        let counts = prepared(format, import, vault_id, &existing)?.counts;
-        Ok(with_counts(out, counts))
+        let p = prepared(format, import, vault_id, &existing, &[])?;
+        Ok(with_counts(out, p.counts, p.duplicates))
     }
 
     /// Imports an export into the vault `vault_id`. An item that an earlier
     /// import of the same source already made is updated in place (same
     /// id, `import::reimport`); every other item gets a new id. The source
-    /// folder becomes a tag. Nothing is written when one item does not
-    /// validate. Returns the counts: `items` handled (written or already
-    /// up to date), and how many were added, fixed or unchanged.
+    /// folder becomes a tag. A possible duplicate of a vault item is merged,
+    /// skipped or added as `decisions` say (by `FfiImportDuplicate::index`),
+    /// else as suggested (`preview_import_into`). Nothing is written when
+    /// one item does not validate. Returns the counts: `items` handled
+    /// (written, merged or already up to date), and how many were added,
+    /// fixed, merged, skipped or unchanged.
     pub fn import_items(
         &self,
         format: String,
         bytes: Vec<u8>,
         vault_id: String,
+        decisions: Vec<FfiImportDecision>,
     ) -> Result<FfiImportSummary, OnePassError> {
         let vault_id = parse_id(&vault_id)?;
         let (format, import) = parse(&format, bytes)?;
@@ -266,8 +380,9 @@ impl Session {
             items,
             archived,
             counts,
-        } = prepared(format, import, vault_id, &existing)?;
-        done = with_counts(done, counts);
+            duplicates,
+        } = prepared(format, import, vault_id, &existing, &decisions)?;
+        done = with_counts(done, counts, duplicates);
         let imported = items.len();
         let items: Vec<Item> = items.into_iter().chain(archived).collect();
         // `with` runs the closure again after a conflict: it resumes after
@@ -295,7 +410,8 @@ impl Session {
             .added
             .saturating_add(counts.fixed)
             .saturating_add(counts.converted)
-            .saturating_add(counts.unchanged);
+            .saturating_add(counts.unchanged)
+            .saturating_add(counts.merged);
         Ok(done)
     }
 }
@@ -384,7 +500,8 @@ mod tests {
             items,
             archived,
             counts,
-        } = prepared(Format::OnePasswordPux, import, vault, &existing).unwrap();
+            ..
+        } = prepared(Format::OnePasswordPux, import, vault, &existing, &[]).unwrap();
         assert_eq!(
             (counts.added, counts.converted, counts.unchanged),
             (1, 1, 0),
@@ -408,7 +525,7 @@ mod tests {
             ..Import::default()
         };
         assert_eq!(
-            prepared(Format::ChromeCsv, csv, vault, &existing)
+            prepared(Format::ChromeCsv, csv, vault, &existing, &[])
                 .unwrap()
                 .counts
                 .added,

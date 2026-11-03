@@ -407,6 +407,67 @@ pub fn find(cands: &[Candidate<'_>]) -> Vec<Group> {
     out
 }
 
+/// Items bucketed by the detection keys of `find`, to match an item that
+/// is not among them (an item an import brings) with the same rules.
+pub struct Index {
+    buckets: HashMap<(Signal, String), Vec<usize>>,
+    ids: Vec<Id>,
+}
+
+impl Index {
+    /// Index of `items`; the ones that never take part (archived, trashed,
+    /// pending, profile) are left out.
+    pub fn new<'a>(items: impl IntoIterator<Item = &'a Item>) -> Self {
+        let mut buckets: HashMap<(Signal, String), Vec<usize>> = HashMap::new();
+        let mut ids = Vec::new();
+        for (i, item) in items.into_iter().enumerate() {
+            ids.push(item.id);
+            if !eligible(item) {
+                continue;
+            }
+            for k in keys(item) {
+                let list = buckets.entry(k).or_default();
+                if !list.contains(&i) {
+                    list.push(i);
+                }
+            }
+        }
+        Self { buckets, ids }
+    }
+
+    /// The indexed items `item` is a possible duplicate of, with the
+    /// signals, best match first: the strongest signal, then the most
+    /// signals, then the lowest index. Empty when `item` would not take
+    /// part in detection, and never the same id.
+    pub fn matches(&self, item: &Item) -> Vec<(usize, Vec<Signal>)> {
+        if !eligible(item) {
+            return Vec::new();
+        }
+        let mut found: std::collections::BTreeMap<usize, BTreeSet<Signal>> =
+            std::collections::BTreeMap::new();
+        for k in keys(item) {
+            let signal = k.0;
+            for &i in self.buckets.get(&k).into_iter().flatten() {
+                if self.ids.get(i) == Some(&item.id) {
+                    continue;
+                }
+                found.entry(i).or_default().insert(signal);
+            }
+        }
+        let mut out: Vec<(usize, Vec<Signal>)> = found
+            .into_iter()
+            .map(|(i, s)| (i, s.into_iter().collect()))
+            .collect();
+        out.sort_by(|a, b| {
+            a.1.first()
+                .cmp(&b.1.first())
+                .then_with(|| b.1.len().cmp(&a.1.len()))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        out
+    }
+}
+
 fn is_blank(v: &FieldValue) -> bool {
     match v {
         FieldValue::Empty => true,
@@ -938,6 +999,59 @@ mod tests {
         let g = groups(&[a, b]);
         assert_eq!(g.len(), 1);
         assert_eq!(g[0].signals, vec![Signal::SameTotp]);
+    }
+
+    #[test]
+    fn index_matches_an_item_from_outside_with_the_same_rules() {
+        let vault = vec![
+            login("Shop", "Bob", "a", "https://shop.example.com"),
+            login("Mail", "bob", "b", "https://mail-invented.org"),
+            login("Shop", "alice", "c", "https://shop.example.com"),
+        ];
+        let mut archived = login("Shop old", "bob", "d", "https://shop.example.com");
+        archived.archived = true;
+        let mut items = vault.clone();
+        items.push(archived);
+        let index = Index::new(&items);
+        let incoming = login(
+            "Shop again",
+            " BOB ",
+            "z",
+            "https://www.shop.example.com/login",
+        );
+        let found = index.matches(&incoming);
+        assert_eq!(
+            found,
+            vec![(0, vec![Signal::SameLogin])],
+            "archived never matches"
+        );
+        // The same id is a move, never a duplicate.
+        let mut same = incoming.clone();
+        same.id = items[0].id;
+        assert!(index.matches(&same).is_empty());
+        // Strongest signal first.
+        let mut a = login("A", "x", "p", "");
+        set(
+            &mut a,
+            "totp",
+            FieldValue::Otp(Zeroizing::new("JBSWY3DPEHPK3PXP".to_owned())),
+        );
+        let b = login("B", "y", "p", "");
+        let c = login("Other", "x", "p", "");
+        let index = Index::new(&[c.clone(), b, a.clone()]);
+        let mut inc = login("A", "x", "q", "");
+        set(
+            &mut inc,
+            "totp",
+            FieldValue::Otp(Zeroizing::new("JBSWY3DPEHPK3PXP".to_owned())),
+        );
+        let found = index.matches(&inc);
+        assert_eq!(found.first().map(|f| f.0), Some(2));
+        assert_eq!(
+            found[0].1,
+            vec![Signal::SameTotp, Signal::SameTitleAndUsername]
+        );
+        assert!(found.iter().all(|f| f.0 != 0), "another title, no website");
     }
 
     #[test]

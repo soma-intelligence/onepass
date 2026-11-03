@@ -96,7 +96,7 @@ pub struct FfiMergePreview {
     pub read_only_left: u32,
 }
 
-fn signal(s: Signal) -> FfiDuplicateSignal {
+pub(crate) fn signal(s: Signal) -> FfiDuplicateSignal {
     match s {
         Signal::SameTotp => FfiDuplicateSignal::SameTotp,
         Signal::SameCardNumber => FfiDuplicateSignal::SameCardNumber,
@@ -106,7 +106,7 @@ fn signal(s: Signal) -> FfiDuplicateSignal {
     }
 }
 
-fn aspect(a: Aspect) -> FfiDuplicateAspect {
+pub(crate) fn aspect(a: Aspect) -> FfiDuplicateAspect {
     match a {
         Aspect::Title => FfiDuplicateAspect::Title,
         Aspect::Username => FfiDuplicateAspect::Username,
