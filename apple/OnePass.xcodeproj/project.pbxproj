@@ -98,6 +98,7 @@
 		67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */; };
 		6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */; };
 		6863F79DFC524523114A633C /* Controls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B2F5C85FF2EA36E6C4863A /* Controls.swift */; };
+		68A53B4FCA932213EDBD5890 /* SafariAutofillUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */; };
 		68FC4A9B4F59EDDA983F6311 /* TravelDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */; };
 		6A373D25175955A17E5FA4D5 /* CredentialProviderViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD00F838E547B9C5D469BC6D /* CredentialProviderViewController.swift */; };
 		6D1E31391256D47556236B57 /* GlanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC8BC0D910001EC096242B /* GlanceProvider.swift */; };
@@ -260,6 +261,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = C02B2BEE69A8FA35B4285E4E;
 			remoteInfo = OnePassSafari;
+		};
+		73136ED5C59996CF92DDC348 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 431DF0836D408CF1857678B4;
+			remoteInfo = AutoFillHost;
 		};
 		B809F9AFD99060FD44AD25E3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -451,6 +459,7 @@
 		9BEF9C9CEA47684F68D72BDB /* PublicSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionView.swift; sourceTree = "<group>"; };
 		9C620AB29D8AD99FA48847C5 /* ReceivedItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedItemsView.swift; sourceTree = "<group>"; };
 		9D2E7145A55971E67D14F50E /* SharingBanners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingBanners.swift; sourceTree = "<group>"; };
+		9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariAutofillUITests.swift; sourceTree = "<group>"; };
 		9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncChoiceSheet.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -479,6 +488,7 @@
 		C1B99E34B1CA7214163402DD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchWidgets.swift; sourceTree = "<group>"; };
 		C50C7FBA0DC3ED271077D28C /* JoinCodeSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinCodeSteps.swift; sourceTree = "<group>"; };
+		C6B5E824B2A8B23D5B4AA316 /* OnePassSafariUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassSafariUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveMemberSheet.swift; sourceTree = "<group>"; };
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
@@ -778,6 +788,7 @@
 				DBF81D20C93E4B1F689F36D2 /* NoSaveSheetUITests.swift */,
 				A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */,
 				5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */,
+				9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */,
 				52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */,
 				9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */,
 				C03A96E28FD859133D56AB58 /* SettingsUITests.swift */,
@@ -918,6 +929,7 @@
 				BC80221CE7ABDFFC4E080905 /* OnePassNotifications.appex */,
 				B7437BA2319C70755833CE44 /* OnePassSafari.appex */,
 				4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */,
+				C6B5E824B2A8B23D5B4AA316 /* OnePassSafariUITests.xctest */,
 				15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */,
 				B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */,
 				DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */,
@@ -1155,6 +1167,24 @@
 			productReference = 8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		6C27BA3D8D468C25C2D72E8A /* OnePassSafariUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8BA1678FFA0F6E6B5BDF6C5D /* Build configuration list for PBXNativeTarget "OnePassSafariUITests" */;
+			buildPhases = (
+				A7F476AB14FAC924207FE1B5 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A0D322B0EB9DA119B1D197CE /* PBXTargetDependency */,
+			);
+			name = OnePassSafariUITests;
+			packageProductDependencies = (
+			);
+			productName = OnePassSafariUITests;
+			productReference = C6B5E824B2A8B23D5B4AA316 /* OnePassSafariUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		74DB3A33583C800708CB1B24 /* OnePassSafariMobile */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F3EDB3F013DC4719482F0EC3 /* Build configuration list for PBXNativeTarget "OnePassSafariMobile" */;
@@ -1349,6 +1379,11 @@
 					50A6ADA693D0CEE73E56B534 = {
 						DevelopmentTeam = "";
 					};
+					6C27BA3D8D468C25C2D72E8A = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+						TestTargetID = 431DF0836D408CF1857678B4;
+					};
 					74DB3A33583C800708CB1B24 = {
 						DevelopmentTeam = "";
 					};
@@ -1413,6 +1448,7 @@
 				E03D05702AF6113E6F23D2DA /* OnePassWatchWidgets */,
 				9612434974A2C09A66EEA302 /* OnePassWidgets */,
 				45A738517097E5E1BBC076FA /* OnePassNotifications */,
+				6C27BA3D8D468C25C2D72E8A /* OnePassSafariUITests */,
 				DF2FADE069F80D923D61CAE9 /* OnePassAutoFillUITests */,
 			);
 		};
@@ -1837,6 +1873,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7F476AB14FAC924207FE1B5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				68A53B4FCA932213EDBD5890 /* SafariAutofillUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BFA3956E105751800392EF07 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1922,6 +1966,11 @@
 			target = E03D05702AF6113E6F23D2DA /* OnePassWatchWidgets */;
 			targetProxy = 5DDFE54C05C165799925891D /* PBXContainerItemProxy */;
 		};
+		A0D322B0EB9DA119B1D197CE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 431DF0836D408CF1857678B4 /* AutoFillHost */;
+			targetProxy = 73136ED5C59996CF92DDC348 /* PBXContainerItemProxy */;
+		};
 		A4A820DF26E2B04758270D0E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			platformFilters = (
@@ -1938,6 +1987,26 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0C14F2A31FAA6AC2D7976724 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safariuitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AutoFillHost;
+			};
+			name = Release;
+		};
 		195FEF4F28591EC30C24A9A6 /* Release-Signed */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1989,7 +2058,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
-				PRODUCT_NAME = OnePassSafari;
+				PRODUCT_NAME = OnePassSafariMobile;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -2150,7 +2219,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
-				PRODUCT_NAME = OnePassSafari;
+				PRODUCT_NAME = OnePassSafariMobile;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -2260,6 +2329,26 @@
 				TARGETED_DEVICE_FAMILY = 4;
 			};
 			name = "Release-CloudKit";
+		};
+		650BD88E76F85F2BFBE9375C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safariuitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AutoFillHost;
+			};
+			name = Debug;
 		};
 		804AE56B3AEB55D7B4354EF8 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -2376,7 +2465,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
-				PRODUCT_NAME = OnePassSafari;
+				PRODUCT_NAME = OnePassSafariMobile;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -2758,6 +2847,26 @@
 			};
 			name = "Release-Signed";
 		};
+		C0BC625D736901A080EEBB3F /* Release-Signed */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safariuitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AutoFillHost;
+			};
+			name = "Release-Signed";
+		};
 		C8980B47576B8B33C0F4B7EC /* Release-Signed */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2892,6 +3001,26 @@
 					"@loader_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.autofilluitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AutoFillHost;
+			};
+			name = "Release-CloudKit";
+		};
+		DA7213F5ABFC368B2A6F99A1 /* Release-CloudKit */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.safariuitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AutoFillHost;
@@ -3116,7 +3245,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX).safari";
-				PRODUCT_NAME = OnePassSafari;
+				PRODUCT_NAME = OnePassSafariMobile;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -3384,6 +3513,17 @@
 				F11F122E476D01049ED3388C /* Release */,
 				D02B4F1FD34FFD6553ECC557 /* Release-CloudKit */,
 				B5598B3250DA53BE67F2D07C /* Release-Signed */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8BA1678FFA0F6E6B5BDF6C5D /* Build configuration list for PBXNativeTarget "OnePassSafariUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				650BD88E76F85F2BFBE9375C /* Debug */,
+				0C14F2A31FAA6AC2D7976724 /* Release */,
+				DA7213F5ABFC368B2A6F99A1 /* Release-CloudKit */,
+				C0BC625D736901A080EEBB3F /* Release-Signed */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

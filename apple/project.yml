@@ -436,7 +436,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).safari
-        PRODUCT_NAME: OnePassSafari
+        PRODUCT_NAME: OnePassSafariMobile
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
@@ -488,6 +488,7 @@ targets:
       - path: AppUITests
         excludes:
           - "AutoFillUITests.swift"
+          - "SafariAutofillUITests.swift"
     dependencies:
       - target: OnePass
     settings:
@@ -678,6 +679,26 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
 
+  # Safari autofill on iPhone end to end (spec 2026-11-03-ios-safari-autofill): OnePass account and
+  # Login, the Safari extension turned on, then a local test sign-in page (identifier, password,
+  # code) filled from the page. Needs the local HTTPS page scripts/safari-test-site.py; test data only.
+  OnePassSafariUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests/SafariAutofillUITests.swift
+    dependencies:
+      - target: AutoFillHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.safariuitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: AutoFillHost
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
   # XCUITest of the AutoFill extension on `OnePass M3 iPhone` (`make -C apple uitest-autofill`):
   # drives AutoFillHost; OnePass (with its extension) is installed beside it by the Makefile.
   OnePassAutoFillUITests:
@@ -738,6 +759,19 @@ schemes:
         "-OnePassWatchDemo YES": false
     archive:
       config: Release
+
+  # Builds OnePass (with its Safari extension) and runs the Safari autofill UI test.
+  OnePassSafariUI:
+    build:
+      targets:
+        OnePass: all
+        AutoFillHost: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OnePassSafariUITests
 
   # Builds OnePass (with its AutoFill extension) and AutoFillHost, tests the AutoFill UI.
   OnePassAutoFill:
