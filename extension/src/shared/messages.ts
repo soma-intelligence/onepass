@@ -309,6 +309,14 @@ export type UiToBg =
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
   | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
+  /**
+   * iOS (spec 2026-11-03-ios-safari-autofill 4): the unlock sheet in the menu. `menu_vault` reads
+   * the native vault (refused with "unsupported" where there is none, macOS and the other
+   * browsers); the two others unlock it with Face ID or Touch ID, or the master password.
+   */
+  | { type: "menu_vault"; token: string }
+  | { type: "menu_unlock_biometric"; token: string }
+  | { type: "menu_unlock_password"; token: string; password: string }
   | { type: "menu_close"; token: string }
   /** The page's content height: the frame is sized to it (clamped by the content script). */
   | { type: "menu_resize"; token: string; height: number }

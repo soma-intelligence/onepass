@@ -280,6 +280,8 @@ describe("inline menu", () => {
     let locked = true;
     const { r, handle, worker, clock } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      // No native vault (macOS, other browsers): the app button.
+      if (m.type === "menu_vault") return { err: "invalid" };
       if (m.type === "menu_unlock") {
         locked = false;
         return ok({ locked: false });
@@ -287,11 +289,12 @@ describe("inline menu", () => {
       return ok();
     });
     await handle.ready;
+    await flush();
     expect(text(r)).toContain("OnePass est verrouillé");
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
     await new Promise((res) => setTimeout(res, 0));
-    expect(worker.types()).toEqual(["menu_init", "menu_unlock", "menu_init"]);
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
   });
 
@@ -299,10 +302,12 @@ describe("inline menu", () => {
     let locked = true;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return { err: "invalid" };
       if (m.type === "menu_unlock") return ok({ locked: true });
       return ok();
     });
     await handle.ready;
+    await flush();
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
     await flush();
@@ -320,10 +325,12 @@ describe("inline menu", () => {
   it("locked: after a minute without unlock, the button comes back", async () => {
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return { err: "invalid" };
       if (m.type === "menu_unlock") return ok({ locked: true });
       return ok();
     });
     await handle.ready;
+    await flush();
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
     await flush();
@@ -334,6 +341,76 @@ describe("inline menu", () => {
     expect(text(r)).toContain("OnePass est verrouillé");
     expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
     expect(worker.types().filter((t) => t === "menu_init").length).toBeLessThanOrEqual(62);
+  });
+
+  it("iOS: the unlock sheet runs Face ID once by itself, then loads the menu", async () => {
+    let locked = true;
+    const { r, handle, worker } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") {
+        locked = false;
+        return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      }
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("iOS: a cancelled Face ID never runs again by itself; the button and the password stay", async () => {
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") return ok({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 5; i++) await flush();
+    expect(worker.types().filter((t) => t === "menu_unlock_biometric")).toHaveLength(1);
+    expect(text(r)).toContain("Camille");
+    expect(r.querySelector("input[type=password]")).not.toBeNull();
+    clock.advance(300);
+    button(r, "Déverrouiller avec Face ID").click();
+    for (let i = 0; i < 5; i++) await flush();
+    expect(worker.types().filter((t) => t === "menu_unlock_biometric")).toHaveLength(2);
+  });
+
+  it("iOS: the policy asks the password (no Face ID offered), a wrong one says so, the right one opens", async () => {
+    let locked = true;
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "none" });
+      if (m.type === "menu_unlock_password") {
+        if (m.password !== "bon-mot-de-passe") return ok({ locked: true, account: "Camille", biometry: "none", error: "wrong_password" });
+        locked = false;
+        return ok({ locked: false, account: "Camille", biometry: "none" });
+      }
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    expect(worker.types()).not.toContain("menu_unlock_biometric");
+    expect(r.querySelector(".unlock-bio")).toBeNull();
+    const submit = (pw: string) => {
+      const input = r.querySelector<HTMLInputElement>("input[type=password]")!;
+      input.value = pw;
+      r.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    };
+    clock.advance(300);
+    submit("faux");
+    await flush();
+    expect(text(r)).toContain("Mot de passe incorrect.");
+    // The field never keeps the typed password.
+    expect(r.querySelector<HTMLInputElement>("input[type=password]")!.value).toBe("");
+    submit("bon-mot-de-passe");
+    await flush();
+    await flush();
+    expect(text(r)).toContain("Atlas Cloud");
+    expect(worker.types().filter((t) => t === "menu_unlock_password")).toHaveLength(2);
   });
 
   it("unpaired, host missing and malformed replies", async () => {

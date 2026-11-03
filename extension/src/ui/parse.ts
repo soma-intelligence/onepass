@@ -219,6 +219,31 @@ export const parseKeys = (v: unknown): { keys: ("down" | "up" | "enter")[] } | n
 
 export const parseEmpty = (v: unknown): object | null => guard(() => obj(v));
 
+/** The iOS native vault for the unlock sheet (background/safari.ts `NativeVault`). */
+export interface NativeVaultState {
+  locked: boolean;
+  account: string;
+  biometry: "faceID" | "touchID" | "opticID" | "none";
+  error?: "password_required" | "wrong_password" | "cancelled" | "locked_out" | "no_account" | "failed";
+  message?: string;
+}
+
+const BIOMETRY_KINDS = ["faceID", "touchID", "opticID", "none"];
+const VAULT_ERRORS = ["password_required", "wrong_password", "cancelled", "locked_out", "no_account", "failed"];
+
+export const parseNativeVaultState = (v: unknown): NativeVaultState | null =>
+  guard(() => {
+    const o = obj(v);
+    const s: NativeVaultState = {
+      locked: bool(o.locked),
+      account: str(o.account, 320),
+      biometry: oneOf<NativeVaultState["biometry"]>(o.biometry, BIOMETRY_KINDS),
+    };
+    if (o.error !== undefined) s.error = oneOf<NonNullable<NativeVaultState["error"]>>(o.error, VAULT_ERRORS);
+    if (o.message !== undefined) s.message = str(o.message, 512);
+    return s;
+  });
+
 export const parseLocked = (v: unknown): { locked: boolean } | null => guard(() => ({ locked: bool(obj(v).locked) }));
 
 export const parseStatus = (v: unknown): PopupStatus | null =>

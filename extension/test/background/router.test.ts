@@ -376,7 +376,17 @@ describe("message validation", () => {
       provider: "x",
     });
     expect(parseUiToBg({ type: "overlay_start", token, itemId: "it_01", provider: 3 })).toBeNull();
-    for (const type of ["menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
+    // iOS unlock sheet: the master password is text of 1 to 1024 UTF-8 bytes, nothing else.
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "mot de passe" })).toEqual({
+      type: "menu_unlock_password",
+      token,
+      password: "mot de passe",
+    });
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: 3 })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "é".repeat(513) })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token: "short", password: "x" })).toBeNull();
+    for (const type of ["menu_vault", "menu_unlock_biometric", "menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
       expect(parseUiToBg({ type, token, password: "x" })).toEqual({ type, token });
       expect(parseUiToBg({ type, token: "short" })).toBeNull();
     }

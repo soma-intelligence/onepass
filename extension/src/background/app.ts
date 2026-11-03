@@ -24,7 +24,8 @@ import { FormGenerator } from "./generate";
 import { AutofillHistory, type BrowserKind, browserKind } from "./history";
 import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
-import { openApp as openAppNative, openTransport } from "./native";
+import { isSafari, openApp as openAppNative, openTransport } from "./native";
+import { type NativeVault, type NativeVaultCall, nativeVault } from "./safari";
 import { NeverSave } from "./never-save";
 import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
@@ -52,6 +53,11 @@ export interface BackgroundOptions {
   openApp?: () => Promise<boolean>;
   /** Browser kind for the autofill history; from `navigator` by default. */
   browserKind?: BrowserKind;
+  /**
+   * The native vault of the iOS Safari handler (unlock sheet); `nativeVault` of safari.ts in
+   * Safari by default, none elsewhere. Null: no native vault (macOS, other browsers).
+   */
+  nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>;
 }
 
 /** The browser kind from the worker's `navigator` ("unknown" without one). */
@@ -101,6 +107,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
   const openApp = opts.openApp ?? (() => openAppNative(ext.runtime));
+  const vaultOf: (call: NativeVaultCall) => Promise<NativeVault | null> =
+    opts.nativeVault ??
+    ((call) => {
+      const send = ext.runtime.sendNativeMessage;
+      if (typeof send !== "function" || !isSafari(ext.runtime)) return Promise.resolve(null);
+      return nativeVault({ sendNativeMessage: (app, msg) => send.call(ext.runtime, app, msg) }, call);
+    });
+  /** A native vault call for the unlock sheet; "invalid" where there is no native vault. */
+  const vaultCall = async (call: NativeVaultCall): Promise<NativeVault> => {
+    const v = await vaultOf(call);
+    if (!v) throw new BgError("invalid");
+    return v;
+  };
   // Without a pairing, the session first asks the app to pair without a code
   // (spec 2026-11-02-browser-auto-pairing).
   const session: Session = new Session({
@@ -569,6 +588,18 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         await menuRecord(m.token, from);
         await openApp();
         return session.request({ op: "unlock" });
+      },
+      menu_vault: async (m, from) => {
+        await menuRecord(m.token, from);
+        return vaultCall({ op: "vault_state" });
+      },
+      menu_unlock_biometric: async (m, from) => {
+        await menuRecord(m.token, from);
+        return vaultCall({ op: "unlock_biometric" });
+      },
+      menu_unlock_password: async (m, from) => {
+        await menuRecord(m.token, from);
+        return vaultCall({ op: "unlock_password", password: m.password });
       },
       menu_keys: async (m, from) => {
         await menuRecord(m.token, from);

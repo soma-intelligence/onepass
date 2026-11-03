@@ -79,6 +79,14 @@ const ICONS = {
     "M67.5 24a9 9 0 0118 0v52a9 9 0 01-18 0z",
   ],
   alert: ["M7 1.8l5.6 9.7H1.4z", "M7 5.6v2.6", "M7 10h.01"],
+  // Face ID: four corners, eyes, nose and smile (unlock sheet).
+  faceid: [
+    "M1.5 5V3.2a1.7 1.7 0 011.7-1.7H5", "M11 1.5h1.8a1.7 1.7 0 011.7 1.7V5",
+    "M14.5 11v1.8a1.7 1.7 0 01-1.7 1.7H11", "M5 14.5H3.2a1.7 1.7 0 01-1.7-1.7V11",
+    "M5.5 5.5v1.2", "M10.5 5.5v1.2", "M8 5.5v3.2H7.2", "M5.6 10.8c1.3 1.1 3.5 1.1 4.8 0",
+  ],
+  // Touch ID: three arcs.
+  touchid: ["M3.5 9a4.5 4.5 0 019 0v1", "M5.5 9a2.5 2.5 0 015 0v3", "M8 9v4.5", "M2.5 6a6.5 6.5 0 0111 0"],
   // Provider marks, drawn here as plain monochrome strokes in the UI's own
   // line style (never the providers' artwork or colours).
   p_google: ["M12.2 4.5A5.5 5.5 0 1 0 13.5 8H8.5"],

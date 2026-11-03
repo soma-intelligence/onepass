@@ -266,5 +266,15 @@
   },
   "overlay.stepCode": "Verification code",
   "overlay.stepUser": "Username",
-  "overlay.stepsDetails": "Details"
+  "overlay.stepsDetails": "Details",
+  "unlock.masterPassword": "Master password",
+  "unlock.unlock": "Unlock",
+  "unlock.withFaceId": "Unlock with Face ID",
+  "unlock.withTouchId": "Unlock with Touch ID",
+  "unlock.withOpticId": "Unlock with Optic ID",
+  "unlock.wrongPassword": "Wrong password.",
+  "unlock.lockedOut": "Too many tries. Try again later.",
+  "unlock.passwordRequired": "Enter your master password.",
+  "unlock.noAccount": "Open the OnePass app to create your account.",
+  "icon.tooltip": "OnePass"
 }

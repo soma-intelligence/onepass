@@ -382,6 +382,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_generate":
       case "menu_new_login":
       case "menu_unlock":
+      case "menu_vault":
+      case "menu_unlock_biometric":
       case "menu_close":
       case "menu_keys":
       case "overlay_init":
@@ -395,6 +397,13 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+      case "menu_unlock_password": {
+        // The master password from the iOS unlock sheet: text, 1 to 1024 UTF-8 bytes.
+        if (typeof o.password !== "string") return null;
+        const n = new TextEncoder().encode(o.password).length;
+        if (n === 0 || n > 1024) return null;
+        return { type: o.type, token: token(o.token), password: o.password };
+      }
       case "menu_signup":
         return { type: o.type, token: token(o.token), mode: member<SignupMode>(o.mode, SIGNUP_MODES) };
       case "menu_signin": {

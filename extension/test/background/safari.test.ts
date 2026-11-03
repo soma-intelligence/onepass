@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NATIVE_HOST, isSafari, openApp, openTransport } from "../../src/background/native";
-import { SAFARI_APP, randomConnId, safariTransport } from "../../src/background/safari";
+import { SAFARI_APP, nativeVault, parseNativeVault, randomConnId, safariTransport } from "../../src/background/safari";
 import { FakeExt } from "./fake-ext";
 
 const CONN = "0123456789abcdef0123456789abcdef";
@@ -232,5 +232,36 @@ describe("openApp", () => {
     expect(await openApp({ ...ext.runtime, sendNativeMessage: async () => Promise.reject(new Error("no host")) })).toBe(false);
     expect(await openApp({ ...ext.runtime, sendNativeMessage: async () => ({ ok: false, error: "unavailable" }) })).toBe(false);
     expect(await openApp({ ...ext.runtime, sendNativeMessage: undefined })).toBe(false);
+  });
+});
+
+describe("native vault (iOS unlock sheet)", () => {
+  it("sends the plain ops and reads the vault reply strictly", async () => {
+    const sent: unknown[] = [];
+    const rt = {
+      sendNativeMessage: async (_app: string, msg: unknown) => {
+        sent.push(msg);
+        return { ok: true, vault: { locked: true, account: "Camille", biometry: "faceID", error: "cancelled" } };
+      },
+    };
+    expect(await nativeVault(rt, { op: "vault_state" })).toEqual({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+    await nativeVault(rt, { op: "unlock_password", password: "pw" });
+    expect(sent).toEqual([
+      { onepass: 1, op: "vault_state" },
+      { onepass: 1, op: "unlock_password", password: "pw" },
+    ]);
+    // Too long or empty: never sent.
+    expect(await nativeVault(rt, { op: "unlock_password", password: "" })).toBeNull();
+    expect(await nativeVault(rt, { op: "unlock_password", password: "x".repeat(1025) })).toBeNull();
+    expect(sent).toHaveLength(2);
+  });
+
+  it("macOS answers bad_request: no native vault", async () => {
+    expect(parseNativeVault({ ok: false, error: "bad_request" })).toBeNull();
+    expect(parseNativeVault({ ok: true, frames: [], closed: false })).toBeNull();
+    expect(parseNativeVault({ ok: true, vault: { locked: true, account: "a", biometry: "retina" } })).toBeNull();
+    expect(parseNativeVault({ ok: true, vault: { locked: true, account: "a", biometry: "none", error: "boom" } })).toBeNull();
+    const rejecting = { sendNativeMessage: async () => Promise.reject(new Error("no handler")) };
+    expect(await nativeVault(rejecting, { op: "unlock_biometric" })).toBeNull();
   });
 });

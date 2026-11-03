@@ -7,6 +7,7 @@ import {
   FRAME_MIN_HEIGHT,
   MOVE_GUARD_MS,
   REVEAL_TIMEOUT_MS,
+  SHEET_HEIGHT,
   type Shell,
 } from "../../src/content/frames";
 import { testGeometry } from "../detect/helpers";
@@ -108,6 +109,24 @@ describe("shell placement", () => {
     // A `title` shows as a "OnePass" tooltip over the frame's corner: named for assistive tech only.
     expect(iframe.hasAttribute("title")).toBe(false);
     expect(iframe.getAttribute("aria-label")).toBe("OnePass");
+    frames.destroy();
+  });
+
+  it("touch screen: the menu is a bottom sheet across the screen, tall enough for the unlock sheet", () => {
+    setPage(`<input id="f" data-test-rect="10,10,200,30">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, touch: true });
+    frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, document.getElementById("f"));
+    const iframe = shell.root.querySelector("iframe")!;
+    frames.resize("menu", 500);
+    expect(iframe.classList.contains("sheet")).toBe(true);
+    expect(iframe.style.left).toBe("0px");
+    expect(iframe.style.width).toBe(`${window.innerWidth}px`);
+    expect(iframe.style.height).toBe(`${Math.min(500, SHEET_HEIGHT)}px`);
+    expect(iframe.style.top).toBe(`${Math.max(0, window.innerHeight - 500)}px`);
+    // The save prompt and the overlay keep their places.
+    frames.showFrame("save", `${CHROME}save.html#${TOKEN}`);
+    expect(shell.root.querySelectorAll("iframe.sheet")).toHaveLength(1);
     frames.destroy();
   });
 

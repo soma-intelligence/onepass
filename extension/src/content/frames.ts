@@ -22,6 +22,8 @@ export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, ov
  * message vouched by the worker) and scrolls inside past these.
  */
 export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520 };
+/** On a touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
+export const SHEET_HEIGHT = 560;
 /** Smallest height a page may ask for. */
 export const FRAME_MIN_HEIGHT = 44;
 /**
@@ -80,6 +82,23 @@ const STYLE = `
 .icon:hover { background: #6765E2; transform: scale(1.08); }
 .icon:active { transform: scale(.94); }
 .icon[hidden] { display: none; }
+/* Touch screens: a finger-sized icon, and the label above the focused field's icon. */
+.icon.touch { width: 28px; height: 28px; border-radius: 8px; }
+.icon.touch svg { width: 15px; height: 15px; }
+.tip {
+  all: initial;
+  position: fixed;
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgba(28,28,30,.92);
+  color: #FFFFFF;
+  font: 600 12px/1.3 -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.tip[hidden] { display: none; }
 .icon svg { display: block; width: 12px; height: 12px; }
 .ring {
   all: initial;
@@ -115,6 +134,9 @@ iframe.bare { border-radius: 0; box-shadow: none; }
 iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
 iframe.top-center.shown { transform: none; }
 iframe.shown { opacity: 1; transform: none; }
+/* Touch screens: the menu rises from the bottom edge as a sheet. */
+iframe.sheet { border-radius: 16px 16px 0 0; transform-origin: bottom center; transform: translateY(24px); box-shadow: 0 -8px 32px rgba(0,0,0,.28); }
+iframe.sheet.shown { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   iframe { transform: none; transition: opacity 120ms ease; }
 }
@@ -203,6 +225,17 @@ export interface FramesOptions {
   shell: Shell;
   doc: Document;
   geometry: Geometry;
+  /** Touch screen (iPhone, iPad): the menu is a bottom sheet. From `(pointer: coarse)` by default. */
+  touch?: boolean;
+}
+
+/** True on a touch-first screen (`(pointer: coarse)`), the iOS case. */
+export function isTouchScreen(doc: Document): boolean {
+  try {
+    return doc.defaultView?.matchMedia?.("(pointer: coarse)").matches === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Clicks into a frame are ignored this long after it moved (spec 8.3). */
@@ -232,6 +265,9 @@ export interface Frames {
 
 export function createFrames(opts: FramesOptions): Frames {
   const { shell, doc, geometry } = opts;
+  const touch = opts.touch ?? isTouchScreen(doc);
+  const sheet = (kind: FrameKind) => touch && kind === "menu";
+  const maxHeight = (kind: FrameKind) => (sheet(kind) ? SHEET_HEIGHT : FRAME_HEIGHT[kind]);
   const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
@@ -287,7 +323,13 @@ export function createFrames(opts: FramesOptions): Frames {
     const width = Math.min(FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
-    if (kind === "overlay") {
+    let width2 = width;
+    if (sheet(kind)) {
+      // A bottom sheet across the screen; it does not follow the field.
+      width2 = w;
+      left = 0;
+      top = Math.max(0, vh - height);
+    } else if (kind === "overlay") {
       // The one-click offer and its progress sit centered at the top of the page.
       left = Math.max(EDGE, Math.round((w - width) / 2));
     } else if (anchor && kind !== "save") {
@@ -299,10 +341,11 @@ export function createFrames(opts: FramesOptions): Frames {
     }
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
-    iframe.classList.toggle("corner", kind !== "overlay" && !(anchor && kind !== "save"));
+    iframe.classList.toggle("sheet", sheet(kind));
+    iframe.classList.toggle("corner", !sheet(kind) && kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
-    const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width}px`, `${height}px`];
+    const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width2}px`, `${height}px`];
     const props = ["left", "top", "width", "height"];
     const changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
@@ -333,7 +376,7 @@ export function createFrames(opts: FramesOptions): Frames {
       // Named for assistive technologies only: a `title` shows as a tooltip over the frame.
       iframe.setAttribute("aria-label", "OnePass");
       iframe.setAttribute("src", url);
-      const height = FRAME_HEIGHT[kind];
+      const height = maxHeight(kind);
       place(kind, iframe, anchor, height);
       shell.layer.appendChild(iframe);
       const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
@@ -355,7 +398,7 @@ export function createFrames(opts: FramesOptions): Frames {
     resize(kind, height) {
       const f = frames.get(kind);
       if (!f || !Number.isFinite(height)) return;
-      f.height = Math.round(Math.min(FRAME_HEIGHT[kind], Math.max(FRAME_MIN_HEIGHT, height)));
+      f.height = Math.round(Math.min(maxHeight(kind), Math.max(FRAME_MIN_HEIGHT, height)));
       const moved = place(kind, f.iframe, f.anchor, f.height);
       if (f.iframe.classList.contains("shown")) {
         if (moved) guard(f.iframe);

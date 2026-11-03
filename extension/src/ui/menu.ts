@@ -38,7 +38,7 @@ import {
   wayArt,
   wayTile,
 } from "./components";
-import { parseEmpty, parseKeys, parseLocked, parseMenuInit } from "./parse";
+import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, type NativeVaultState } from "./parse";
 
 export interface MenuHandle {
   /** Resolves once the first render is done. */
@@ -242,9 +242,126 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     timers.setTimeout(check, UNLOCK_POLL_MS);
   }
 
+  /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
+  let autoBiometricDone = false;
+  /** A biometric or password unlock is running: the buttons wait. */
+  let unlocking = false;
+
+  /**
+   * iOS (spec 2026-11-03-ios-safari-autofill 5): the menu turns into the unlock sheet. Face ID
+   * (or Touch ID) runs once by itself when the policy allows it, the explicit button after;
+   * the master password always works. Unlocked, the menu loads and the fill goes on.
+   */
+  function renderUnlock(v: NativeVaultState, origin: string | null): void {
+    const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    const reason = v.error ? unlockErrorText(v) : "";
+    if (reason) errLine.textContent = reason;
+    const after = (r: Awaited<ReturnType<typeof callVault>>): void => {
+      unlocking = false;
+      if (!r.ok) {
+        renderState(r.code === "locked" ? "locked_plain" : r.code, origin);
+        return;
+      }
+      if (!r.value.locked) {
+        void load();
+        return;
+      }
+      renderUnlock(r.value, origin);
+    };
+    const biometric = (): void => {
+      if (unlocking || !token) return;
+      unlocking = true;
+      void callVault({ type: "menu_unlock_biometric", token }).then(after);
+    };
+    const input = h("input", {
+      class: "input unlock-input",
+      attrs: {
+        type: "password",
+        autocomplete: "off",
+        autocapitalize: "off",
+        spellcheck: "false",
+        enterkeyhint: "go",
+        "aria-label": t("unlock.masterPassword"),
+        placeholder: t("unlock.masterPassword"),
+      },
+    });
+    const submit = (e?: Event): void => {
+      e?.preventDefault();
+      if (unlocking || !token || input.value.length === 0) return;
+      unlocking = true;
+      const password = input.value;
+      input.value = "";
+      void callVault({ type: "menu_unlock_password", token, password }).then(after);
+    };
+    const kind = v.biometry === "none" ? null : v.biometry;
+    const bioButton = kind
+      ? h(
+          "button",
+          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: guard.wrap(biometric) } },
+          icon(kind === "touchID" ? "touchid" : "faceid", 18),
+          t(kind === "touchID" ? "unlock.withTouchId" : kind === "opticID" ? "unlock.withOpticId" : "unlock.withFaceId"),
+        )
+      : null;
+    const form = h(
+      "form",
+      { class: "unlock-form", on: { submit } },
+      input,
+      h("button", { class: kind ? "btn" : "btn btn-primary", attrs: { type: "submit" } }, t("unlock.unlock")),
+    );
+    const body = h(
+      "div",
+      { class: "unlock-sheet" },
+      h("span", { class: "unlock-mark" }, mark("l")),
+      h("p", { class: "message-title" }, t("ui.onepassLocked")),
+      v.account ? h("p", { class: "message-detail unlock-account" }, v.account) : null,
+      bioButton,
+      form,
+      v.message && v.error === "password_required" ? h("p", { class: "message-detail" }, v.message) : null,
+      errLine,
+    );
+    mount(container, header(origin), body);
+    active = -1;
+    guard.reset();
+    remeasure();
+    // One automatic try per menu, and never after the policy asked for the password.
+    if (kind && !autoBiometricDone && !v.error) {
+      autoBiometricDone = true;
+      biometric();
+    } else if (!kind) input.focus();
+  }
+
+  const callVault = (m: UiToBg) => call(deps.send, m, parseNativeVaultState);
+
+  function unlockErrorText(v: NativeVaultState): string {
+    switch (v.error) {
+      case "wrong_password":
+        return t("unlock.wrongPassword");
+      case "locked_out":
+        return v.message ?? t("unlock.lockedOut");
+      case "password_required":
+        return t("unlock.passwordRequired");
+      case "no_account":
+        return t("unlock.noAccount");
+      case "failed":
+        return v.message ?? errorText("internal");
+      default:
+        return "";
+    }
+  }
+
   function renderState(code: string, origin: string | null): void {
     let body: HTMLElement;
-    if (code === "locked") {
+    if (code === "locked" && token) {
+      // iOS has a native vault: the sheet. Elsewhere "unsupported" brings the app button.
+      const asked = token;
+      void callVault({ type: "menu_vault", token: asked }).then((r) => {
+        if (r.ok && r.value.locked) renderUnlock(r.value, origin);
+        else if (r.ok) void load();
+        else renderState("locked_plain", origin);
+      });
+      return;
+    }
+    if (code === "locked" || code === "locked_plain") {
       const btn = h(
         "button",
         {

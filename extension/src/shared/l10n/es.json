@@ -266,5 +266,15 @@
   },
   "overlay.stepCode": "Código de verificación",
   "overlay.stepUser": "Usuario",
-  "overlay.stepsDetails": "Detalles"
+  "overlay.stepsDetails": "Detalles",
+  "unlock.masterPassword": "Contraseña maestra",
+  "unlock.unlock": "Desbloquear",
+  "unlock.withFaceId": "Desbloquear con Face ID",
+  "unlock.withTouchId": "Desbloquear con Touch ID",
+  "unlock.withOpticId": "Desbloquear con Optic ID",
+  "unlock.wrongPassword": "Contraseña incorrecta.",
+  "unlock.lockedOut": "Demasiados intentos. Vuelve a intentarlo más tarde.",
+  "unlock.passwordRequired": "Introduce tu contraseña maestra.",
+  "unlock.noAccount": "Abre la app OnePass para crear tu cuenta.",
+  "icon.tooltip": "OnePass"
 }

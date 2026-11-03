@@ -715,3 +715,20 @@ button.account:hover { background: var(--glass); }
 .link-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-m); background: var(--glass); border: 1px solid var(--hair); }
 .link-card .t1 { white-space: normal; overflow-wrap: anywhere; }
 .save.fit .save-body { flex-grow: 0; overflow: visible; }
+
+/* iOS unlock sheet (spec 2026-11-03-ios-safari-autofill 5): the menu turned into the lock screen. */
+.unlock-sheet { padding: 20px 16px 18px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.unlock-sheet p { margin: 0; }
+.unlock-mark { color: var(--accent); margin-bottom: 4px; }
+.unlock-account { margin-top: -6px; }
+.unlock-bio { width: 100%; height: 44px; font-size: 15px; gap: 8px; margin-top: 6px; }
+.unlock-form { width: 100%; display: flex; gap: 8px; }
+.unlock-input { flex: 1; height: 44px; font-size: 16px; }
+.unlock-form .btn { height: 44px; }
+.unlock-sheet .error-line:empty { display: none; }
+
+/* Touch screens: rows and buttons sized for a finger. */
+@media (pointer: coarse) {
+  .row { min-height: 52px; }
+  .btn { height: 40px; font-size: 15px; }
+}

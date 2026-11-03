@@ -1,5 +1,6 @@
 // Background handlers of the in-page extension pages: menu extras, overlay
 // and save prompt.
+import type { NativeVault, NativeVaultCall } from "../../src/background/safari";
 import { describe, expect, it, vi } from "vitest";
 import { createBackground } from "../../src/background/app";
 import type { ChainDriver } from "../../src/background/chain/types";
@@ -85,7 +86,7 @@ class FakeChain implements ChainDriver {
   }
 }
 
-async function setup(clock = { t: 1_000_000 }) {
+async function setup(clock = { t: 1_000_000 }, nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
   await new Store(ext, pairings).setPairing(record());
@@ -102,6 +103,7 @@ async function setup(clock = { t: 1_000_000 }) {
       opened.n++;
       return true;
     },
+    ...(nativeVault ? { nativeVault } : {}),
   });
   bg.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
@@ -231,6 +233,31 @@ describe("menu extras", () => {
       err: "invalid",
     });
     expect(chain.calls).toEqual([]);
+  });
+
+  it("iOS: the menu reads and unlocks the native vault with its token, nowhere else", async () => {
+    const calls: NativeVaultCall[] = [];
+    const vault = async (call: NativeVaultCall): Promise<NativeVault | null> => {
+      calls.push(call);
+      return { locked: call.op === "vault_state", account: "Camille", biometry: "faceID" };
+    };
+    const { ext } = await setup(undefined, vault);
+    const { token, ui } = await menu(ext);
+    expect(await ext.send({ type: "menu_vault", token }, ui)).toEqual({ ok: { locked: true, account: "Camille", biometry: "faceID" } });
+    expect(await ext.send({ type: "menu_unlock_biometric", token }, ui)).toEqual({ ok: { locked: false, account: "Camille", biometry: "faceID" } });
+    expect(await ext.send({ type: "menu_unlock_password", token, password: "pw" }, ui)).toEqual({
+      ok: { locked: false, account: "Camille", biometry: "faceID" },
+    });
+    expect(calls).toEqual([{ op: "vault_state" }, { op: "unlock_biometric" }, { op: "unlock_password", password: "pw" }]);
+    // A wrong token reaches nothing.
+    expect(await ext.send({ type: "menu_unlock_biometric", token: "A".repeat(22) }, ui)).toHaveProperty("err");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("no native vault (macOS, other browsers): menu_vault is refused", async () => {
+    const { ext } = await setup(undefined, async () => null);
+    const { token, ui } = await menu(ext);
+    expect(await ext.send({ type: "menu_vault", token }, ui)).toEqual({ err: "invalid" });
   });
 
   it("menu_unlock asks the host, menu_close removes the frame", async () => {
