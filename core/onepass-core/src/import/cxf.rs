@@ -21,7 +21,7 @@ use crate::model::{FieldValue, ItemType, PasskeyCredential};
 use super::build::{Draft, otpauth_from_parts};
 use super::json::{Lenient, Slots};
 use super::limits::{MAX_INPUT, MAX_RECORDS};
-use super::{Import, Warning};
+use super::{Import, SOURCE_TAG_PREFIX, Warning};
 
 /// Text of a scalar JSON value; an object gives its `value` member.
 fn scalar(v: Value) -> Option<Zeroizing<String>> {
@@ -90,6 +90,8 @@ struct Account {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawItem {
+    /// The exporter's item id: kept as the item's source tag.
+    id: F,
     title: F,
     favorite: F,
     #[serde(rename = "creationAt")]
@@ -155,7 +157,7 @@ struct Cred {
 }
 
 /// Base64url or base64, with or without padding.
-fn b64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64(s: &str) -> Option<Vec<u8>> {
     let t = s.trim().trim_end_matches('=');
     BASE64URL_NOPAD
         .decode(t.as_bytes())
@@ -380,6 +382,9 @@ fn item(raw: &RawItem, entry: u32, out: &mut Import) {
     for t in &raw.tags {
         d.tag(t.get());
     }
+    if !raw.id.get().trim().is_empty() {
+        d.tag(&format!("{SOURCE_TAG_PREFIX}cxf:{}", raw.id.get().trim()));
+    }
     date(&mut d, "Date de création", &raw.creation_at, Draft::created);
     date(
         &mut d,
@@ -499,7 +504,7 @@ mod tests {
         assert_eq!(item.item_type, ItemType::Login);
         assert_eq!(item.title, "Example Login");
         assert!(item.favorite);
-        assert_eq!(item.tags, ["work", "demo"]);
+        assert_eq!(item.tags, ["work", "demo", "onepass:src:cxf:i1"]);
         assert_eq!(item.urls.len(), 2);
         assert_eq!(item.urls[0].url, "https://example.com/login");
         assert!(item.urls[0].primary);

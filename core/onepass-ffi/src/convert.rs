@@ -555,14 +555,16 @@ fn count(n: usize) -> u32 {
 }
 
 /// The tags the UI shows: the reserved Travel Mode tags are booleans, the
-/// "not a duplicate of" markers (`duplicates::DISTINCT_TAG_PREFIX`) are
-/// kept by the core across an edit.
+/// "not a duplicate of" markers (`duplicates::DISTINCT_TAG_PREFIX`) and the
+/// import source (`import::SOURCE_TAG_PREFIX`) are kept by the core across
+/// an edit.
 fn visible_tags(tags: &[String]) -> Vec<String> {
     tags.iter()
         .filter(|t| {
             *t != TRAVEL_HIDDEN_TAG
                 && *t != TRAVEL_GUARD_TAG
                 && !onepass_core::duplicates::is_distinct_tag(t)
+                && !onepass_core::import::is_source_tag(t)
         })
         .cloned()
         .collect()
@@ -762,7 +764,10 @@ pub(crate) fn item_to_core(
         item.tags.extend(
             s.tags
                 .iter()
-                .filter(|t| onepass_core::duplicates::is_distinct_tag(t))
+                .filter(|t| {
+                    onepass_core::duplicates::is_distinct_tag(t)
+                        || onepass_core::import::is_source_tag(t)
+                })
                 .cloned(),
         );
     }

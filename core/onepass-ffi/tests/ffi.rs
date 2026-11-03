@@ -1998,7 +1998,14 @@ fn reimport_1pux_updates_instead_of_duplicating() {
         .import_items(format.clone(), bytes.clone(), fx.vault_id.clone())
         .unwrap();
     assert_eq!((done.items, done.updated), (2, 0));
+    assert_eq!((done.added, done.fixed, done.unchanged), (2, 0, 0));
     let first = fx.session.item_summaries().unwrap();
+    // The import source is a reserved tag: never shown.
+    assert!(
+        first
+            .iter()
+            .all(|s| s.tags.iter().all(|t| !t.starts_with("onepass:")))
+    );
     assert_eq!(first.len(), before + 2);
 
     // "Sign in with" points at the account item, by its final id.
@@ -2024,11 +2031,13 @@ fn reimport_1pux_updates_instead_of_duplicating() {
         .preview_import_into(format.clone(), bytes.clone(), fx.vault_id.clone())
         .unwrap();
     assert_eq!((preview.items, preview.updated), (2, 2));
+    assert_eq!(preview.unchanged, 2);
     let again = fx
         .session
         .import_items(format, bytes, fx.vault_id.clone())
         .unwrap();
     assert_eq!((again.items, again.updated), (2, 2));
+    assert_eq!((again.added, again.fixed, again.unchanged), (0, 0, 2));
     let second = fx.session.item_summaries().unwrap();
     assert_eq!(second.len(), before + 2, "a re-import never duplicates");
     let ids = |list: &[FfiItemSummary]| {

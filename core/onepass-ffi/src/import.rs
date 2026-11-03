@@ -5,11 +5,12 @@
 //! and static warning codes. The bytes handed over by Swift are wiped when
 //! the call returns.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 use onepass_core::Id;
+use onepass_core::import::reimport::{self, Outcome};
 use onepass_core::import::{self, Format, Import};
-use onepass_core::model::{Item, ItemType, LoginMethod};
+use onepass_core::model::{Item, ItemType};
 use zeroize::Zeroizing;
 
 use crate::convert::parse_id;
@@ -45,11 +46,19 @@ pub struct FfiImportSummary {
     pub warnings: Vec<FfiImportWarningCount>,
     /// Blank rows, folder rows, trashed and unsupported entries.
     pub skipped: u32,
-    /// Items that replace one already in the vault from an earlier import
-    /// of the same source (counted by `Session::preview_import_into` and
-    /// `Session::import_items`; 0 in `preview_import`). `items - updated`
-    /// are new.
+    /// Items that stand for one already in the vault from an earlier import
+    /// of the same source: `fixed + unchanged` (counted by
+    /// `Session::preview_import_into` and `Session::import_items`; 0 in
+    /// `preview_import`). `items - updated` are new.
     pub updated: u32,
+    /// Items new in the vault (all of them in `preview_import`).
+    pub added: u32,
+    /// Vault items the import updates in place: a secure note an older
+    /// import left converted back into its login, or a passkey, a sign-in
+    /// method, a blank field added.
+    pub fixed: u32,
+    /// Vault items that already hold everything: not written.
+    pub unchanged: u32,
 }
 
 fn count(n: usize) -> u32 {
@@ -94,6 +103,9 @@ fn summary(format: Format, import: &Import) -> FfiImportSummary {
             .collect(),
         skipped: import.skipped,
         updated: 0,
+        added: count(import.items.len()),
+        fixed: 0,
+        unchanged: 0,
     }
 }
 
@@ -142,104 +154,42 @@ pub fn preview_import(format: String, bytes: Vec<u8>) -> Result<FfiImportSummary
     Ok(summary(format, &import))
 }
 
-/// Formats whose items carry their source creation time, so a re-import
-/// finds the copies an earlier import made.
-fn dedupes(format: Format) -> bool {
-    matches!(format, Format::OnePasswordPux)
-}
+/// Items added, fixed and unchanged by an import.
+type Counts = (u32, u32, u32);
 
-/// The item of the vault that an earlier import of the same source item
-/// made: same title, same creation time (imports keep the source's), the
-/// source folder among its tags, and the same type, or a type the older
-/// importer fell back to (secure note, password) for that item. Trashed
-/// items and items already claimed are left out.
-fn earlier_copy<'a>(
-    item: &Item,
-    folder: Option<&str>,
-    existing: &'a [Item],
-    claimed: &HashSet<Id>,
-) -> Option<&'a Item> {
-    existing.iter().find(|e| {
-        e.trashed_at.is_none()
-            && !claimed.contains(&e.id)
-            && e.title == item.title
-            && e.created_at.unix_timestamp() == item.created_at.unix_timestamp()
-            && folder.is_none_or(|f| e.tags.iter().any(|t| t == f))
-            && (e.item_type == item.item_type
-                || e.item_type == ItemType::SecureNote
-                || (e.item_type == ItemType::Password && item.item_type == ItemType::Login))
-    })
-}
-
-/// The items of an import ready for `vault`, and how many of them replace
-/// an earlier import of the same source item (`existing`: the vault's
-/// items). A new item gets a new id; a replacing one takes the id, the
-/// timeline and the tags of the item it replaces, so a second import of the
-/// same export updates instead of duplicating. The source folder is kept as
-/// a tag, and "sign in with" methods point at the final id of their account
-/// item. Only formats that keep each source item's creation time are
-/// matched this way (`dedupes`): elsewhere a second import adds. Every item
-/// is validated before the first write, so an invalid one refuses the whole
-/// import.
+/// The items of an import ready for `vault`, matched against `existing`
+/// (the vault's items, `import::reimport`): an item an earlier import of the
+/// same source made is updated in place (same id), a fallback secure note
+/// becomes the login it stood for, and an item holding nothing new is left
+/// out. Returns the items to write and the counts (added, fixed, unchanged).
+/// Every item to write is validated before the first write, so an invalid
+/// one refuses the whole import.
 fn prepared(
     format: Format,
     import: Import,
     vault: Id,
     existing: &[Item],
-) -> Result<(Vec<Item>, u32), OnePassError> {
-    let existing = if dedupes(format) { existing } else { &[] };
-    let mut claimed: HashSet<Id> = HashSet::new();
-    let mut ids: HashMap<Id, Id> = HashMap::new();
-    let mut updated = 0u32;
-    let mut items: Vec<Item> = Vec::with_capacity(import.items.len());
-    for it in import.items {
-        let mut item = it.item;
-        let folder = it
-            .folder
-            .as_deref()
-            .map(str::trim)
-            .filter(|f| !f.is_empty());
-        let earlier = earlier_copy(&item, folder, existing, &claimed);
-        let id = match earlier {
-            Some(e) => {
-                claimed.insert(e.id);
-                updated += 1;
-                item.events.clone_from(&e.events);
-                for tag in &e.tags {
-                    if !item.tags.contains(tag) {
-                        item.tags.push(tag.clone());
-                    }
-                }
-                e.id
-            }
-            None => Id::new(),
-        };
-        if item.id != Id([0; 16]) {
-            ids.insert(item.id, id);
-        }
-        item.id = id;
-        item.vault_id = vault;
-        if let Some(folder) = folder
-            && !item.tags.iter().any(|t| t == folder)
-        {
-            item.tags.push(folder.to_owned());
-        }
-        items.push(item);
-    }
-    for item in &mut items {
-        for m in &mut item.login_methods {
-            if let LoginMethod::Provider { account, .. } = m
-                && let Some(final_id) = ids.get(account)
-            {
-                *account = *final_id;
-            }
-        }
-    }
-    let items = items
+) -> Result<(Vec<Item>, Counts), OnePassError> {
+    let plan = reimport::reconcile(format, import, vault, existing);
+    let counts = reimport::counts(&plan);
+    let items = plan
         .into_iter()
-        .map(|item| Ok(crate::validate_for_save(item)?))
+        .filter(|p| p.outcome != Outcome::Unchanged)
+        .map(|p| Ok(crate::validate_for_save(p.item)?))
         .collect::<Result<Vec<_>, OnePassError>>()?;
-    Ok((items, updated))
+    Ok((items, counts))
+}
+
+/// Fills the outcome counts of a summary.
+fn with_counts(
+    mut s: FfiImportSummary,
+    (added, fixed, unchanged): (u32, u32, u32),
+) -> FfiImportSummary {
+    s.added = added;
+    s.fixed = fixed;
+    s.unchanged = unchanged;
+    s.updated = fixed.saturating_add(unchanged);
+    s
 }
 
 #[uniffi::export]
@@ -255,20 +205,21 @@ impl Session {
     ) -> Result<FfiImportSummary, OnePassError> {
         let vault_id = parse_id(&vault_id)?;
         let (format, import) = parse(&format, bytes)?;
-        let mut out = summary(format, &import);
+        let out = summary(format, &import);
         let existing = self.with(|repo| {
             let vault = find_vault(repo, vault_id)?;
             Ok(repo.items(&vault)?)
         })?;
-        out.updated = prepared(format, import, vault_id, &existing)?.1;
-        Ok(out)
+        let counts = prepared(format, import, vault_id, &existing)?.1;
+        Ok(with_counts(out, counts))
     }
 
     /// Imports an export into the vault `vault_id`. An item that an earlier
     /// import of the same source already made is updated in place (same
-    /// id); every other item gets a new id. The source folder becomes a
-    /// tag. Nothing is written when one item does not validate. Returns the
-    /// counts of what was written.
+    /// id, `import::reimport`); every other item gets a new id. The source
+    /// folder becomes a tag. Nothing is written when one item does not
+    /// validate. Returns the counts: `items` handled (written or already
+    /// up to date), and how many were added, fixed or unchanged.
     pub fn import_items(
         &self,
         format: String,
@@ -282,8 +233,8 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             Ok(repo.items(&vault)?)
         })?;
-        let (items, updated) = prepared(format, import, vault_id, &existing)?;
-        done.updated = updated;
+        let (items, counts) = prepared(format, import, vault_id, &existing)?;
+        done = with_counts(done, counts);
         // `with` runs the closure again after a conflict: it resumes after
         // the last item written instead of writing the first ones twice.
         let mut next = 0usize;
@@ -303,7 +254,7 @@ impl Session {
             }
             Ok(())
         })?;
-        done.items = count(next);
+        done.items = count(next).saturating_add(done.unchanged);
         Ok(done)
     }
 }
@@ -388,8 +339,8 @@ mod tests {
                 .collect(),
             ..Import::default()
         };
-        let (items, updated) = prepared(Format::OnePasswordPux, import, vault, &existing).unwrap();
-        assert_eq!(updated, 1, "one source item claims one copy");
+        let (items, counts) = prepared(Format::OnePasswordPux, import, vault, &existing).unwrap();
+        assert_eq!(counts, (1, 1, 0), "one source item claims one copy");
         assert_eq!(items[0].id, old.id);
         assert_eq!(items[0].item_type, ItemType::Login);
         assert_eq!(
@@ -407,7 +358,7 @@ mod tests {
             prepared(Format::ChromeCsv, csv, vault, &existing)
                 .unwrap()
                 .1,
-            0
+            (1, 0, 0)
         );
     }
 
