@@ -1202,10 +1202,15 @@ impl Repository<SyncStore> {
         let Some((_, _, version, _)) = pending else {
             return Ok(false);
         };
-        let base = self
+        // No confirmed manifest yet: the first one of the zone (its version
+        // continues the personal vault's seq), nothing to lose to. Found by
+        // the plan 4 transport, which rebases before its first push.
+        let Some(base) = self
             .store
             .zone_base_version(zone, RecordKind::Manifest, vault_id)?
-            .unwrap_or(0);
+        else {
+            return Ok(false);
+        };
         Ok(base.checked_add(1) != Some(version))
     }
 
