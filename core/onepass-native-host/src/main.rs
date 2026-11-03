@@ -229,7 +229,11 @@ mod tests {
         let a = parse_args(args(&["prepare", "--config", "/c.json"])).unwrap();
         assert!(a.prepare);
         assert_eq!(a.approve, None);
-        assert!(!parse_args(args(&["chrome-extension://x/"])).unwrap().prepare);
+        assert!(
+            !parse_args(args(&["chrome-extension://x/"]))
+                .unwrap()
+                .prepare
+        );
     }
 
     #[test]

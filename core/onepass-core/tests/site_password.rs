@@ -440,7 +440,11 @@ fn repeated_rule_strings_require_each_class_once() {
 fn required_digit_alone_gives_digits_only() {
     // Apple semantics (ruled kept): `allowed` is the union of the named
     // classes, so `required: digit` alone means digits only (PIN quirks).
-    let (p, r) = run(&rules(&["required: digit; minlength: 4; maxlength: 8;"]), &Profile::Strong, 0);
+    let (p, r) = run(
+        &rules(&["required: digit; minlength: 4; maxlength: 8;"]),
+        &Profile::Strong,
+        0,
+    );
     assert!(!r.fallback);
     assert!(p.chars().all(|c| c.is_ascii_digit()), "{p}");
 }
