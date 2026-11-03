@@ -117,6 +117,19 @@ pub fn card_brand(number: &str) -> CardBrand {
     CardBrand::Unknown
 }
 
+/// The last four digits of a card number, for telling cards apart in a
+/// list: digits only, spaces and hyphens ignored. `None` when any other
+/// character is present or the number has fewer than 8 digits (a partial or
+/// placeholder value, where four digits would be most of it). Never more
+/// than four digits of the number.
+pub fn card_last4(number: &str) -> Option<String> {
+    let d = Zeroizing::new(digits_only(number)?);
+    if d.len() < 8 {
+        return None;
+    }
+    Some(d[d.len() - 4..].iter().map(|x| char::from(b'0' + x)).collect())
+}
+
 /// IBAN total length by country code (SWIFT registry).
 const IBAN_LENGTHS: &[(&str, usize)] = &[
     ("NO", 15),
@@ -424,6 +437,23 @@ mod tests {
         assert!(!luhn_valid(""));
         assert!(!luhn_valid("0"));
         assert!(!luhn_valid("4111a11111111111"));
+    }
+
+    #[test]
+    fn last4_of_card_numbers() {
+        assert_eq!(card_last4("4242424242424242").as_deref(), Some("4242"));
+        assert_eq!(card_last4("4242 4242 4242 1234").as_deref(), Some("1234"));
+        assert_eq!(card_last4("5555-5555-5555-4444").as_deref(), Some("4444"));
+        // Amex, 15 digits in its 4-6-5 grouping.
+        assert_eq!(card_last4("3782 822463 10005").as_deref(), Some("0005"));
+        // Exactly 8 digits is the floor.
+        assert_eq!(card_last4("12345678").as_deref(), Some("5678"));
+        assert_eq!(card_last4("1234567"), None);
+        assert_eq!(card_last4("4242"), None);
+        assert_eq!(card_last4(""), None);
+        assert_eq!(card_last4("   "), None);
+        assert_eq!(card_last4("4242 4242 abcd 4242"), None);
+        assert_eq!(card_last4("4242.4242.4242.4242"), None);
     }
 
     #[test]

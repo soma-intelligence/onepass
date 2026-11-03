@@ -2233,3 +2233,45 @@ fn seed_profile_publishes_when_none() {
     );
     assert_eq!(seeded.updated_at, 0);
 }
+
+#[test]
+fn card_summary_carries_last4_never_the_number() {
+    let fx = fixture();
+    let mut card = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::CreditCard,
+            "Amex Platinum".into(),
+        )
+        .unwrap();
+    fill(&mut card);
+    for f in card.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "number" {
+            f.value = text("3782 822463 10005");
+        }
+    }
+    fx.session.save_item(card).unwrap();
+    let mut note = fx
+        .session
+        .new_item(fx.vault_id.clone(), FfiItemType::SecureNote, "Note".into())
+        .unwrap();
+    fill(&mut note);
+    fx.session.save_item(note).unwrap();
+
+    let summaries = fx.session.item_summaries().unwrap();
+    let card = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::CreditCard)
+        .unwrap();
+    assert_eq!(card.card_last4.as_deref(), Some("0005"));
+    assert_eq!(card.card_brand.as_deref(), Some("amex"));
+    let shown = format!("{card:?}");
+    assert!(!shown.contains("378282246310005"), "{shown}");
+    assert!(!shown.contains("822463"), "{shown}");
+    let note = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::SecureNote)
+        .unwrap();
+    assert_eq!(note.card_last4, None);
+}

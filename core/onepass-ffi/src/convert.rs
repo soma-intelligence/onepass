@@ -642,6 +642,7 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
             _ => None,
         }),
         card_brand: card_brand_of(i),
+        card_last4: card_number_of(i).and_then(onepass_core::model::checks::card_last4),
         passkey_count: count(
             i.sections
                 .iter()
@@ -673,16 +674,21 @@ fn has_places(item: &Item) -> bool {
             .any(|f| matches!(&f.value, FieldValue::Location(l) if placed(l.lat, l.lon)))
 }
 
-/// The card network of a credit card, from the BIN of its number.
-fn card_brand_of(item: &Item) -> Option<String> {
+/// The number of a credit card, `None` for any other type.
+fn card_number_of(item: &Item) -> Option<&str> {
     if item.item_type != ItemType::CreditCard {
         return None;
     }
-    let number = match item.field("number").map(|f| &f.value) {
-        Some(FieldValue::Concealed(n)) => n.as_str(),
-        Some(FieldValue::Text(n)) => n.as_str(),
-        _ => return None,
-    };
+    match item.field("number").map(|f| &f.value) {
+        Some(FieldValue::Concealed(n)) => Some(n.as_str()),
+        Some(FieldValue::Text(n)) => Some(n.as_str()),
+        _ => None,
+    }
+}
+
+/// The card network of a credit card, from the BIN of its number.
+fn card_brand_of(item: &Item) -> Option<String> {
+    let number = card_number_of(item)?;
     match onepass_core::model::checks::card_brand(number) {
         onepass_core::model::checks::CardBrand::Unknown => None,
         brand => Some(crate::brand_name(brand).to_owned()),

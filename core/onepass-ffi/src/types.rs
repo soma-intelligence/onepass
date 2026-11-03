@@ -367,6 +367,11 @@ pub struct FfiItemSummary {
     /// "amex"... as `card_brand`). `None` for other types or an unknown brand.
     #[uniffi(default = None)]
     pub card_brand: Option<String>,
+    /// Last four digits of a credit card's number (`checks::card_last4`), so a
+    /// list can tell cards apart. Never more of the number. `None` for other
+    /// types, an empty number or one of fewer than 8 digits.
+    #[uniffi(default = None)]
+    pub card_last4: Option<String>,
     /// Passkeys stored in the item (`Passkey` field values): the "Passkeys" list counts and
     /// filters on it.
     #[uniffi(default = 0)]
