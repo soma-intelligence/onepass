@@ -13,7 +13,7 @@
 //! manifest the CLI or another host process accepted meanwhile is never
 //! regressed, as with the CLI.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::account::Auk;
+use onepass_core::autofill_history::{AutofillEvent, ClientContext};
 use onepass_core::crypto::SecretKey;
 use onepass_core::model::Item;
 use onepass_core::model::usage::SiteUsage;
@@ -387,6 +388,36 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         };
         self.persist_after_save()?;
         Ok(rewritten)
+    }
+
+    fn record_autofill_event(&mut self, ev: AutofillEvent) -> onepass_bridge::Result<bool> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        match repo.record_autofill_event(ev) {
+            Ok(kept) => Ok(kept),
+            Err(Error::Validation(_)) => Err(BridgeError::App(AppErrorCode::Invalid)),
+            Err(e) => Err(self.core_fail("autofill history", e)),
+        }
+    }
+
+    fn autofill_affinity(
+        &mut self,
+        site: &str,
+        client: &ClientContext,
+        now: OffsetDateTime,
+    ) -> onepass_bridge::Result<BTreeMap<Id, i64>> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        match repo.autofill_affinity(site, client, now) {
+            Ok(m) => Ok(m),
+            Err(e) => Err(self.core_fail("autofill history", e)),
+        }
     }
 }
 

@@ -1231,6 +1231,118 @@ fn note_fill_then_plan_prefers_last_used() {
     assert!(reasons.contains(&json!("same_shape")), "{plan}");
 }
 
+// Autofill history: client_info, note_autofill, the learned order.
+
+fn client(profile: &str) -> Value {
+    json!({"op":"client_info","browser":"chrome","profile_id":profile,"profile_name":"Work"})
+}
+
+fn note_ev(action: &str, item: Option<Id>, rank: Option<u8>, shown: &[Id]) -> Value {
+    let mut v = json!({"op":"note_autofill","ctx":"menu","origin":TWIN,"action":action,
+                       "shown": shown.iter().map(|i| id(*i)).collect::<Vec<_>>()});
+    if let Some(i) = item {
+        v["item_id"] = json!(id(i));
+    }
+    if let Some(r) = rank {
+        v["rank"] = json!(r);
+    }
+    v
+}
+
+#[test]
+fn picks_in_a_profile_lead_its_plans_and_carry_no_value() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    let lead = |h: &mut H| -> Value {
+        let v = h.call_at(plan_req(TWIN, page(TWIN, None)), NOW + 120);
+        ok(&v)["plan"]["groups"][0]["item_id"].clone()
+    };
+    // Work profile: the user picks a (b listed first), and signs in with it.
+    assert_eq!(ok(&h.call(client("work-1"))), &json!({}));
+    for _ in 0..2 {
+        assert_eq!(
+            ok(&h.call(note_ev("shown", None, None, &[b, a]))),
+            &json!({})
+        );
+        assert_eq!(
+            ok(&h.call(note_ev("picked", Some(a), Some(1), &[]))),
+            &json!({})
+        );
+        assert_eq!(
+            ok(&h.call(note_ev("picked_other", Some(b), Some(0), &[]))),
+            &json!({})
+        );
+    }
+    assert_eq!(ok(&h.call(note(a, TWIN))), &json!({}));
+    // Home profile: b signs in last, so the synced memory has b last here.
+    assert_eq!(ok(&h.call(client("home-2"))), &json!({}));
+    assert_eq!(ok(&h.call_at(note(b, TWIN), NOW + 60)), &json!({}));
+    assert!(
+        h.vault().item(b).site_last_at("twin.test") > h.vault().item(a).site_last_at("twin.test")
+    );
+    assert_eq!(lead(&mut h), json!(id(b)));
+    // Back in the work profile, a leads; at home, b.
+    ok(&h.call(client("work-1")));
+    assert_eq!(lead(&mut h), json!(id(a)));
+    ok(&h.call(client("home-2")));
+    assert_eq!(lead(&mut h), json!(id(b)));
+    // Events name the session's profile, the site and item ids; never a value.
+    let hist = &h.vault().history;
+    assert_eq!(hist.len(), 8);
+    assert!(hist.iter().all(|e| e.site == "twin.test"));
+    assert_eq!(hist[0].shown, vec![b, a]);
+    assert_eq!(hist[1].client.profile_id.as_deref(), Some("work-1"));
+    assert_eq!(hist[1].client.profile_name.as_deref(), Some("Work"));
+    assert_eq!(hist[6].item_id, Some(a));
+    assert_eq!(hist[7].client.profile_id.as_deref(), Some("home-2"));
+    let dump = format!("{hist:?}");
+    assert!(!dump.contains("tom@example.com") && !dump.contains("alex@twin.test"));
+}
+
+#[test]
+fn note_autofill_checks_items_ctx_and_client() {
+    let mut h = H::new();
+    let (a, _) = twins(&mut h);
+    let atlas = h.ids.atlas;
+    // A login of another site: not this page's.
+    assert_eq!(
+        err(&h.call(note_ev("picked", Some(atlas), Some(0), &[]))),
+        "not_found"
+    );
+    // A pick names its item.
+    assert_eq!(
+        err(&h.call(note_ev("picked", None, Some(0), &[]))),
+        "invalid"
+    );
+    // A shown list keeps only this page's items.
+    assert_eq!(
+        ok(&h.call(note_ev("shown", None, None, &[atlas, a]))),
+        &json!({})
+    );
+    assert_eq!(h.vault().history[0].shown, vec![a]);
+    // Too many shown, or a context the history does not take.
+    let many: Vec<Id> = (0..9).map(|_| a).collect();
+    assert_eq!(err(&h.call(note_ev("shown", None, None, &many))), "invalid");
+    let mut v = note_ev("picked", Some(a), Some(0), &[]);
+    v["ctx"] = json!("save_prompt");
+    assert_eq!(err(&h.call(v)), "not_allowed");
+    // An http page, a profile id that is not opaque, the system's own kind.
+    let mut v = note_ev("picked", Some(a), Some(0), &[]);
+    v["origin"] = json!("http://twin.test");
+    assert_eq!(err(&h.call(v)), "insecure_origin");
+    assert_eq!(err(&h.call(client("has space"))), "invalid");
+    assert_eq!(
+        err(&h.call(json!({"op":"client_info","browser":"system_auto_fill"}))),
+        "invalid"
+    );
+    // Unknown fields are refused, as for every op.
+    assert_eq!(
+        err(&h.call(json!({"op":"client_info","browser":"chrome","email":"x@y.z"}))),
+        "invalid"
+    );
+    assert_eq!(h.vault().history.len(), 1);
+}
+
 #[test]
 fn note_fill_rejects_item_of_other_site() {
     let mut h = H::new();

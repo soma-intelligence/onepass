@@ -8,6 +8,7 @@
 
 use std::fmt;
 
+use onepass_core::autofill_history::{AutofillAction, BrowserKind};
 use onepass_core::fill_plan::context::{FieldRole, PageContext};
 use onepass_core::fill_plan::intent::Intent;
 use onepass_core::fill_plan::score::Confidence;
@@ -347,6 +348,34 @@ pub enum Request {
         ctx: Ctx,
         site: String,
     },
+    /// The browser and browser profile of this session, for the device's
+    /// autofill history (`onepass_core::autofill_history`). `profile_id`:
+    /// an opaque id the extension drew and keeps in its own storage;
+    /// `profile_name` only when the browser exposes one.
+    ClientInfo {
+        id: u64,
+        browser: BrowserKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_name: Option<String>,
+    },
+    /// One autofill history event of the frame `origin`: a list shown
+    /// (`shown`, best first), a pick of `item_id` at `rank`, a dismissal
+    /// (`item_id`: the first entry), a first offer passed over, a fill.
+    /// Never a value.
+    NoteAutofill {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        action: AutofillAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rank: Option<u8>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shown: Vec<String>,
+    },
     /// Passkeys of `rp_id` for a page, without a secret. `origin` is the
     /// browser's origin of the frame.
     PasskeyList {
@@ -415,6 +444,8 @@ impl Request {
             | Self::PlanFill { id, .. }
             | Self::NoteFill { id, .. }
             | Self::ForgetSite { id, .. }
+            | Self::ClientInfo { id, .. }
+            | Self::NoteAutofill { id, .. }
             | Self::PasskeyList { id, .. }
             | Self::PasskeyGet { id, .. }
             | Self::PasskeyCreate { id, .. } => *id,
@@ -447,6 +478,8 @@ impl Request {
             Self::PlanFill { .. } => "plan_fill",
             Self::NoteFill { .. } => "note_fill",
             Self::ForgetSite { .. } => "forget_site",
+            Self::ClientInfo { .. } => "client_info",
+            Self::NoteAutofill { .. } => "note_autofill",
             Self::PasskeyList { .. } => "passkey_list",
             Self::PasskeyGet { .. } => "passkey_get",
             Self::PasskeyCreate { .. } => "passkey_create",

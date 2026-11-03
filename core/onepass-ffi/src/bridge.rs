@@ -14,7 +14,7 @@
 //! unlock, reload after a write. Pairing keys cross the FFI like the Secret
 //! Key does (spec P-06); vault keys never do.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -30,6 +30,7 @@ use onepass_bridge::pairing::PairingRecord;
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
+use onepass_core::autofill_history::{AutofillEvent, ClientContext};
 use onepass_core::model::Item;
 use onepass_core::model::usage::SiteUsage;
 use time::OffsetDateTime;
@@ -450,6 +451,22 @@ impl VaultAccess for AppVault<'_> {
                 Err(bridge_error(e))
             }
         }
+    }
+    fn record_autofill_event(&mut self, ev: AutofillEvent) -> onepass_bridge::Result<bool> {
+        self.session()?
+            .with(|repo| Ok(repo.record_autofill_event(ev.clone())?))
+            .map_err(bridge_error)
+    }
+
+    fn autofill_affinity(
+        &mut self,
+        site: &str,
+        client: &ClientContext,
+        now: OffsetDateTime,
+    ) -> onepass_bridge::Result<BTreeMap<Id, i64>> {
+        self.session()?
+            .with(|repo| Ok(repo.autofill_affinity(site, client, now)?))
+            .map_err(bridge_error)
     }
 }
 

@@ -1071,6 +1071,37 @@ fn plan_one_time_code_only_items_with_totp() {
     assert_eq!(pw.item_ids.len(), 3);
 }
 
+// ---- autofill history (2026-11-03) -----------------------------------------
+
+#[test]
+fn autofill_picks_are_kept_on_device_and_switch_off_erases() {
+    let fx = fixture();
+    let a = login(&fx, "A", &["https://example.com"]);
+    let b = login(&fx, "B", &["https://example.com"]);
+    let s = &fx.session;
+    assert!(s.autofill_history_enabled().unwrap());
+    assert_eq!(s.autofill_history_count().unwrap(), 0);
+    note(&fx, &b, "example.com").unwrap();
+    note(&fx, &a, "https://www.example.com/login").unwrap();
+    // Each pick of the system AutoFill is one event.
+    assert_eq!(s.autofill_history_count().unwrap(), 2);
+    assert_eq!(
+        plan(&fx, "example.com", FfiAutofillRequest::Password).item_ids[0],
+        a.id
+    );
+    assert_eq!(s.clear_autofill_history().unwrap(), 2);
+    assert_eq!(s.autofill_history_count().unwrap(), 0);
+    note(&fx, &a, "example.com").unwrap();
+    s.set_autofill_history_enabled(false).unwrap();
+    assert!(!s.autofill_history_enabled().unwrap());
+    assert_eq!(s.autofill_history_count().unwrap(), 0);
+    // Off: the fill still notes the site memory, the history keeps nothing.
+    note(&fx, &b, "example.com").unwrap();
+    assert_eq!(s.autofill_history_count().unwrap(), 0);
+    s.set_autofill_history_enabled(true).unwrap();
+    assert!(s.autofill_history_enabled().unwrap());
+}
+
 #[test]
 fn note_autofill_use_rejects_other_site() {
     let fx = fixture();

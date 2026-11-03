@@ -2,19 +2,20 @@
 //! history of a site (`crate::autofill_history`), added to the candidate
 //! score of `fill_plan::score`.
 //!
-//! Version 1 is a deterministic scorer, not a trained model: decayed
-//! frecency of the user's choices, in the same browser profile first and on
-//! the site as a whole second, with a penalty for an item offered first and
-//! passed over. Its inputs are exactly the features a trained ranker would
+//! Version 1 is a deterministic scorer, not a trained model: the last
+//! choice in the same browser profile, decayed frecency of the user's
+//! choices in that profile and on the site as a whole, with a penalty for
+//! an item offered first and passed over. Its inputs are exactly the features a trained ranker would
 //! use (per site and per context choice counts, rank shown, the lists
 //! shown, the age of each event), so a model trained later on the device
 //! from the same history (pairwise logistic or LambdaMART over the `Shown`
 //! lists and the choices that followed) replaces `affinity` behind the same
 //! signature, with this scorer as its baseline and fallback.
 //!
-//! Scale: `CONTEXT_MAX` is above `LAST_ON_SITE`, so two choices of an
-//! account in one browser profile put it first there even when another
-//! profile used another account on the site last; a typed username
+//! Scale: `CONTEXT_LAST` equals `LAST_ON_SITE`, so the account chosen last
+//! in a browser profile comes first there even when another profile used
+//! another account on the site last (the synced usage memory), and a new
+//! habit wins at its first choice over an old one; a typed username
 //! (`TYPED_USERNAME`) still wins over everything.
 
 use std::collections::BTreeMap;
@@ -24,8 +25,10 @@ use time::OffsetDateTime;
 use crate::autofill_history::{AutofillAction, AutofillEvent, ClientContext, expired};
 use crate::id::Id;
 
+/// Bonus of the item chosen last in the same browser and profile.
+pub const CONTEXT_LAST: f64 = 80.0;
 /// Most bonus from the choices made in the same browser and profile.
-pub const CONTEXT_MAX: f64 = 160.0;
+pub const CONTEXT_MAX: f64 = 80.0;
 /// Most bonus from the choices made on the site in any context.
 pub const SITE_MAX: f64 = 40.0;
 /// Most penalty for an item offered first and passed over (or dismissed).
@@ -77,6 +80,9 @@ pub fn affinity(
     let mut ctx = Tally::default();
     let mut site = Tally::default();
     let mut passed: BTreeMap<Id, f64> = BTreeMap::new();
+    // The latest choice in the context; a tie goes to the lowest item id,
+    // as the tie of `last_on_site` does (`model::usage::last_used_on`).
+    let mut last: Option<(OffsetDateTime, Id)> = None;
     for e in events.iter().filter(|e| !expired(e, now)) {
         let Some(item) = e.item_id else { continue };
         let w = decay(now, e.at);
@@ -85,6 +91,9 @@ pub fn affinity(
             site.add(item, w);
             if same {
                 ctx.add(item, w);
+                if last.is_none_or(|(at, i)| e.at > at || (e.at == at && item < i)) {
+                    last = Some((e.at, item));
+                }
             }
         } else if same {
             match e.action {
@@ -104,7 +113,12 @@ pub fn affinity(
         let chosen = ctx.by_item.get(&item).copied().unwrap_or(0.0);
         let neg = passed.get(&item).copied().unwrap_or(0.0);
         let penalty = PENALTY_MAX * neg / (neg + chosen + 1.0);
-        let bonus = CONTEXT_MAX * ctx.part(&item) + SITE_MAX * site.part(&item) - penalty;
+        let latest = if last.is_some_and(|(_, i)| i == item) {
+            CONTEXT_LAST
+        } else {
+            0.0
+        };
+        let bonus = latest + CONTEXT_MAX * ctx.part(&item) + SITE_MAX * site.part(&item) - penalty;
         let b = bonus.round() as i64;
         if b != 0 {
             out.insert(item, b);
@@ -174,11 +188,22 @@ mod tests {
     fn exact_values_are_deterministic() {
         let c = client(BrowserKind::Safari, "s");
         let evs = vec![ev(1, AutofillAction::Picked, &c, 0)];
-        // One fresh choice: ctx part = 1 * 1/2, site part = 1/2.
-        assert_eq!(affinity(&evs, &c, at(0))[&Id([1; 16])], 100);
+        // One fresh choice: last (80), ctx part 1/2 (40), site part 1/2 (20).
+        assert_eq!(affinity(&evs, &c, at(0))[&Id([1; 16])], 140);
         // A month later the weight is halved: n = 0.5, part = 1/3.
         let later = OffsetDateTime::from_unix_timestamp(NOW + 30 * 86_400).unwrap();
-        assert_eq!(affinity(&evs, &c, later)[&Id([1; 16])], 67);
+        assert_eq!(affinity(&evs, &c, later)[&Id([1; 16])], 120);
+    }
+
+    #[test]
+    fn a_new_habit_wins_at_its_first_choice() {
+        let c = client(BrowserKind::Chrome, "a");
+        let mut evs: Vec<AutofillEvent> = (0..5)
+            .map(|d| ev(1, AutofillAction::Picked, &c, 30 + d))
+            .collect();
+        evs.push(ev(2, AutofillAction::Picked, &c, 0));
+        let a = affinity(&evs, &c, at(0));
+        assert!(a[&Id([2; 16])] > a[&Id([1; 16])], "{a:?}");
     }
 
     #[test]

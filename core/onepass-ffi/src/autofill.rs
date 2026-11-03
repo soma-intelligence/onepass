@@ -5,6 +5,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use onepass_core::Id;
+use onepass_core::autofill_history::{AutofillAction, AutofillEvent, ClientContext, EventSource};
 use onepass_core::fill_plan::intent::Intent;
 use onepass_core::fill_plan::score::{
     Candidate, CandidateKind, Confidence, MatchQuality as PlanQuality, Tiebreak, confidence, order,
@@ -562,11 +563,21 @@ impl Session {
                 .filter_map(|i| item_quality(&target, i).map(|(q, _)| (i, q)))
                 .collect();
             let last = last_used_on(matched.iter().map(|(i, _)| *i), &key);
+            // The choices made in the system AutoFill on this device; a
+            // failing history never fails the plan.
+            let learned = repo
+                .autofill_affinity(
+                    &key,
+                    &ClientContext::system_autofill(),
+                    OffsetDateTime::now_utc(),
+                )
+                .unwrap_or_default();
             let mut cands: Vec<Candidate> = matched
                 .iter()
                 .map(|(i, q)| {
                     let mut c = to_candidate(i, *q);
                     c.usage = i.usage_signal(&key, last, None);
+                    c.affinity = learned.get(&i.id).copied().unwrap_or(0);
                     c
                 })
                 .collect();
@@ -637,8 +648,43 @@ impl Session {
                 },
             };
             let vault = find_vault(repo, vault_id)?;
-            Ok(repo.record_usage(&vault, item_id, usage, now, force)?)
+            let written = repo.record_usage(&vault, item_id, usage, now, force)?;
+            // The pick, for the device's autofill history (best effort:
+            // off, Travel Mode or a failing write never fails the fill).
+            let _ = repo.record_autofill_event(AutofillEvent {
+                at: now,
+                action: AutofillAction::Picked,
+                source: EventSource::SystemAutoFill,
+                site: key.clone(),
+                item_id: Some(item_id),
+                rank: None,
+                shown: Vec::new(),
+                client: ClientContext::system_autofill(),
+                device_id: None,
+            });
+            Ok(written)
         })
+    }
+
+    /// Whether this device keeps an autofill history (on by default; it
+    /// never leaves the device).
+    pub fn autofill_history_enabled(&self) -> Result<bool, OnePassError> {
+        self.with(|repo| Ok(repo.autofill_history_enabled()?))
+    }
+
+    /// Turn the autofill history on or off for this device. Off erases it.
+    pub fn set_autofill_history_enabled(&self, enabled: bool) -> Result<(), OnePassError> {
+        self.with(|repo| Ok(repo.set_autofill_history_enabled(enabled)?))
+    }
+
+    /// How many autofill history events this device keeps.
+    pub fn autofill_history_count(&self) -> Result<u32, OnePassError> {
+        self.with(|repo| Ok(u32::try_from(repo.autofill_history_count()?).unwrap_or(u32::MAX)))
+    }
+
+    /// Erase this device's autofill history: how many events went.
+    pub fn clear_autofill_history(&self) -> Result<u32, OnePassError> {
+        self.with(|repo| Ok(u32::try_from(repo.clear_autofill_history()?).unwrap_or(u32::MAX)))
     }
 
     /// The sites the items of the vaults not excluded remember (registrable

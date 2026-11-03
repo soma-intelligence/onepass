@@ -5,10 +5,13 @@
 //! the origin the browser gave it. A reply holding a secret is built in a
 //! `Zeroizing` buffer and journaled without its value.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use onepass_core::Id;
+use onepass_core::autofill_history::{
+    AutofillAction, AutofillEvent, BrowserKind, ClientContext, EventSource, MAX_SHOWN,
+};
 use onepass_core::fill_plan::compose::PRIORITY;
 use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
@@ -110,6 +113,24 @@ pub trait VaultAccess {
     /// Forget `site` in every item (`Repository::forget_site_usage`): how
     /// many items were rewritten.
     fn forget_site_usage(&mut self, site: &str) -> Result<usize>;
+    /// Keep one event in the device's autofill history
+    /// (`Repository::record_autofill_event`): `false` when the history is
+    /// off or not kept. A host without a history keeps nothing.
+    fn record_autofill_event(&mut self, ev: AutofillEvent) -> Result<bool> {
+        let _ = ev;
+        Ok(false)
+    }
+    /// The learned bonus of each item on `site` for a plan made in
+    /// `client` (`Repository::autofill_affinity`). None without a history.
+    fn autofill_affinity(
+        &mut self,
+        site: &str,
+        client: &ClientContext,
+        now: OffsetDateTime,
+    ) -> Result<BTreeMap<Id, i64>> {
+        let _ = (site, client, now);
+        Ok(BTreeMap::new())
+    }
 }
 
 type OpResult<T> = std::result::Result<T, AppErrorCode>;
@@ -299,6 +320,9 @@ pub struct Service<V: VaultAccess> {
     /// Drawn at the first `fill_salt` or `plan_fill`, gone with the
     /// session.
     salt: Option<UsernameSalt>,
+    /// The browser and profile of the session (`client_info`); unknown
+    /// until the extension says.
+    client: ClientContext,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -309,6 +333,7 @@ impl<V: VaultAccess> Service<V> {
             seen: HashSet::new(),
             secret_times: VecDeque::new(),
             salt: None,
+            client: ClientContext::unknown(),
         }
     }
 
@@ -623,6 +648,29 @@ impl<V: VaultAccess> Service<V> {
                 self.note_fill(*ctx, item_id, o, fill, now)
             }
             Request::ForgetSite { ctx, site, .. } => self.forget_site(*ctx, site, now),
+            Request::ClientInfo {
+                browser,
+                profile_id,
+                profile_name,
+                ..
+            } => self.client_info(*browser, profile_id, profile_name),
+            Request::NoteAutofill {
+                ctx,
+                origin: o,
+                action,
+                item_id,
+                rank,
+                shown,
+                ..
+            } => {
+                let note = AutofillNote {
+                    action: *action,
+                    item_id: item_id.as_deref(),
+                    rank: *rank,
+                    shown,
+                };
+                self.note_autofill(*ctx, o, note, now)
+            }
             Request::PasskeyList {
                 ctx,
                 origin: o,
@@ -1172,11 +1220,23 @@ impl<V: VaultAccess> Service<V> {
             .iter()
             .filter_map(|(i, _)| identity_country(i).map(|c| (i.id, c)))
             .collect();
+        // The learned preference of this browser profile on the site; a
+        // failing history never fails the plan.
+        let learned = self
+            .vault
+            .autofill_affinity(&site, &self.client, unix(now))
+            .unwrap_or_default();
         let salt = self.salt()?.bytes();
+        let with_learned = |mut v: Vec<Candidate>| {
+            for c in &mut v {
+                c.affinity = learned.get(&c.item_id).copied().unwrap_or(0);
+            }
+            v
+        };
         let pool = Pool {
-            logins: plan_candidates(&logins, &site, shape, salt),
-            cards: plan_candidates(&cards, &site, shape, salt),
-            identities: plan_candidates(&identities, &site, shape, salt),
+            logins: with_learned(plan_candidates(&logins, &site, shape, salt)),
+            cards: with_learned(plan_candidates(&cards, &site, shape, salt)),
+            identities: with_learned(plan_candidates(&identities, &site, shape, salt)),
             identity_country,
             default_card: None,
             now: i64::try_from(now).unwrap_or(i64::MAX),
@@ -1233,7 +1293,7 @@ impl<V: VaultAccess> Service<V> {
         let (vault_id, item_id) = (vault.id, item.id);
         let at = unix(now);
         let usage = SiteUsage {
-            site,
+            site: site.clone(),
             form_shape_hash: form_shape_hash(fill.roles),
             intent: fill.intent,
             step_seq: fill.steps.iter().map(|s| (*s).into()).collect(),
@@ -1243,7 +1303,107 @@ impl<V: VaultAccess> Service<V> {
         self.vault
             .record_usage(vault_id, item_id, usage, at, force)
             .map_err(app_code)?;
+        // A fill that worked (the page moved on, a chain ended, a save
+        // confirmed it): a choice for the history. Best effort.
+        let _ = self.vault.record_autofill_event(AutofillEvent {
+            at,
+            action: AutofillAction::Submitted,
+            source: EventSource::Extension,
+            site,
+            item_id: Some(item_id),
+            rank: None,
+            shown: Vec::new(),
+            client: self.client.clone(),
+            device_id: None,
+        });
         self.record("note_fill", item_id, Some(page.host()), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// The browser and profile of the session, checked
+    /// (`ClientContext::validated`). The extension says it once per
+    /// session; an older app refuses the op and ranks without it.
+    fn client_info(
+        &mut self,
+        browser: BrowserKind,
+        profile_id: &Option<String>,
+        profile_name: &Option<String>,
+    ) -> OpResult<Response> {
+        // Only the AutoFill extension of the system speaks for itself.
+        if browser == BrowserKind::SystemAutoFill {
+            return Err(AppErrorCode::Invalid);
+        }
+        self.client = ClientContext {
+            browser,
+            profile_id: profile_id.clone(),
+            profile_name: profile_name.clone(),
+        }
+        .validated()
+        .map_err(|_| AppErrorCode::Invalid)?;
+        Ok(Response::Empty {})
+    }
+
+    /// One event of the autofill history for the frame `o`. Items are
+    /// checked as `note_fill` checks them: eligible, a login matching the
+    /// origin. A shown id that is not such an item is left out. Kept only
+    /// on this device, with this session's browser and profile.
+    fn note_autofill(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        note: AutofillNote<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        if !matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Overlay | Ctx::Chain) {
+            return Err(AppErrorCode::NotAllowed);
+        }
+        let page = origin(o)?;
+        if note.shown.len() > MAX_SHOWN {
+            return Err(AppErrorCode::Invalid);
+        }
+        let all = self.items()?;
+        let usable = |id: Id| {
+            all.iter().map(|(_, i)| i).find(|i| {
+                i.id == id
+                    && eligible(i)
+                    && match summary_kind(i.item_type) {
+                        Some(SummaryKind::Login) => item_match(i, &page).is_some(),
+                        Some(_) => true,
+                        None => false,
+                    }
+            })
+        };
+        let item_id = match note.item_id {
+            Some(s) => Some(usable(parse_id(s)?).ok_or(AppErrorCode::NotFound)?.id),
+            None if note.action == AutofillAction::Shown => None,
+            None => return Err(AppErrorCode::Invalid),
+        };
+        let mut shown = Vec::new();
+        for s in note.shown {
+            if let Some(i) = usable(parse_id(s)?) {
+                shown.push(i.id);
+            }
+        }
+        let ev = AutofillEvent {
+            at: unix(now),
+            action: note.action,
+            source: EventSource::Extension,
+            site: page.site(),
+            item_id,
+            rank: note.rank,
+            shown,
+            client: self.client.clone(),
+            device_id: None,
+        };
+        self.vault.record_autofill_event(ev).map_err(app_code)?;
+        self.audit.record(AuditEvent {
+            op: "note_autofill",
+            item_id: item_id.map(|i| i.to_string()),
+            origin: Some(page.host().to_owned()),
+            ctx,
+            at: now,
+            plan: None,
+        });
         Ok(Response::Empty {})
     }
 
@@ -1514,6 +1674,14 @@ struct NewPasskey<'a> {
     challenge: &'a str,
     exclude: &'a [String],
     vault_id: Option<&'a str>,
+}
+
+/// What `note_autofill` carries, borrowed from the request.
+struct AutofillNote<'a> {
+    action: AutofillAction,
+    item_id: Option<&'a str>,
+    rank: Option<u8>,
+    shown: &'a [String],
 }
 
 /// Input of `note_fill`.
