@@ -319,6 +319,11 @@ impl Repository<SyncStore> {
         if let Err(e) = self.replay_own_writes() {
             first_error.get_or_insert(e);
         }
+        // Shared vaults whose manifest lost the race (sharing plan 2,
+        // Task 9).
+        if let Err(e) = self.rebase_shared() {
+            first_error.get_or_insert(e);
+        }
         let mut replaying = BTreeSet::new();
         if let Some(t) = crate::repo::trust_of(&self.store)? {
             replaying = t.own_writes.replay_vaults();

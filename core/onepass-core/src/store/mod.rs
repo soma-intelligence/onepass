@@ -262,6 +262,10 @@ pub fn check_local_meta_prefix(prefix: &str) -> Result<()> {
     }
 }
 
+/// A pending row of a shared zone: kind, id, version, data (none for a
+/// deletion).
+pub type ZonePendingRow = (RecordKind, Id, u64, Option<Vec<u8>>);
+
 fn zones_unsupported() -> Error {
     Error::Store("zones unsupported".into())
 }
@@ -339,6 +343,28 @@ pub trait RecordStore {
     /// pushing nothing. The default holds no shared zone.
     fn drop_zone(&mut self, zone: Zone) -> Result<()> {
         let _ = zone;
+        Err(zones_unsupported())
+    }
+
+    /// The local rows of shared `zone` not pushed yet, every kind, in no
+    /// phase order: `(kind, id, version, data)`, a deletion without data.
+    /// The default holds none.
+    fn zone_pending(&self, zone: Zone) -> Result<Vec<ZonePendingRow>> {
+        let _ = zone;
+        Ok(Vec::new())
+    }
+
+    /// The version of the confirmed (server) row of a record of shared
+    /// `zone`, pending writes aside. The default holds none.
+    fn zone_base_version(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+        let _ = (zone, kind, id);
+        Ok(None)
+    }
+
+    /// Forget the pending rows `rows` of shared `zone`, pushing nothing
+    /// (a shared rebase rewrites them). The default holds no shared zone.
+    fn drop_zone_pending(&mut self, zone: Zone, rows: &[(RecordKind, Id)]) -> Result<()> {
+        let _ = (zone, rows);
         Err(zones_unsupported())
     }
 

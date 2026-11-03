@@ -78,6 +78,7 @@ mod local;
 pub mod migrate;
 pub mod pairing;
 pub mod profile;
+pub mod rekey;
 pub mod replay;
 mod reseal;
 pub mod rotate;

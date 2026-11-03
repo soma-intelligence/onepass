@@ -542,12 +542,18 @@ impl<S: RecordStore> Repository<S> {
     /// adopted first (ruling A-14).
     pub fn shared_vaults(&mut self) -> Result<Vec<SharedVaultInfo>> {
         self.adopt_zone_accesses()?;
+        self.follow_heads()?;
         let mut out = Vec::new();
-        for state in self.store.share_states()? {
+        for mut state in self.store.share_states()? {
             let name = self
                 .open_shared_with(&state)
                 .map(|v| v.meta.name)
                 .unwrap_or_default();
+            if !name.is_empty() && name != state.name {
+                state.name = name.clone();
+                self.store
+                    .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+            }
             out.push(self.shared_info(&state, &name)?);
         }
         Ok(out)
@@ -633,6 +639,7 @@ impl<S: RecordStore> Repository<S> {
         if use_ != Use::Read {
             self.writable()?;
         }
+        self.follow_head(vault.id)?;
         let mut state = self.share_state_of(vault.id)?;
         let zone = state.zone;
         let rec = self
@@ -726,6 +733,9 @@ impl<S: RecordStore> Repository<S> {
 
     fn writer_state(&mut self, vault: &Vault) -> Result<ShareState> {
         let state = self.share_state_of(vault.id)?;
+        if state.access_refused.is_some() {
+            return Err(refused("vault", "access refused"));
+        }
         self.require_role(&state, Role::Write)?;
         // The vault must be open under the head's generation (a rekey
         // since it was opened: reopen it).
@@ -1048,7 +1058,7 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// The contact zones this account has an access to.
-    fn contact_zones(&self) -> Result<Vec<Zone>> {
+    pub(crate) fn contact_zones(&self) -> Result<Vec<Zone>> {
         Ok(self
             .zone_accesses()?
             .into_iter()

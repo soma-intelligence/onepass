@@ -11,6 +11,7 @@ use super::common::*;
 use onepass_core::repo::share::list_zone_accesses;
 use onepass_core::share::AccessTarget;
 use onepass_core::store::Zone;
+use onepass_core::sync::PhaseOutcome;
 
 #[derive(Default)]
 pub struct Zones {
@@ -38,7 +39,19 @@ pub fn zones_of(dev: &Device) -> Vec<Zone> {
     out
 }
 
+/// Push `zone`'s pending rows, then move a resealing being pushed to its
+/// next phase and push again, until nothing moves.
 pub fn zpush(zs: &mut Zones, dev: &Device, zone: Zone) -> std::result::Result<(), Conflict> {
+    loop {
+        zpush_once(zs, dev, zone)?;
+        if dev.store().push_share_phase(zone).unwrap() == PhaseOutcome::Retry {
+            return Ok(());
+        }
+    }
+}
+
+/// One batch of `zone`'s pending rows, no phase move.
+pub fn zpush_once(zs: &mut Zones, dev: &Device, zone: Zone) -> std::result::Result<(), Conflict> {
     let mut store = dev.store();
     let batch: Vec<(Change, Option<u64>)> = store
         .pending_changes_in(zone)
@@ -76,9 +89,29 @@ pub fn zpull(zs: &mut Zones, dev: &Device, zone: Zone) {
 pub fn zsync(server: &mut Server, zs: &mut Zones, dev: &mut Device) {
     sync(server, dev).unwrap();
     for z in zones_of(dev) {
-        zpush(zs, dev, z).unwrap();
-        zpull(zs, dev, z);
+        zsync_zone(zs, dev, z);
     }
+}
+
+/// Push and pull one zone; a refused push pulls, rebases and tries again.
+pub fn zsync_zone(zs: &mut Zones, dev: &mut Device, z: Zone) {
+    for _ in 0..3 {
+        match zpush(zs, dev, z) {
+            Ok(()) => {
+                zpull(zs, dev, z);
+                return;
+            }
+            Err(_) => {
+                zpull(zs, dev, z);
+                dev.repo().rebase().unwrap();
+                // A rebase that found my removal erased the zone.
+                if !zones_of(dev).contains(&z) {
+                    return;
+                }
+            }
+        }
+    }
+    panic!("no agreement on {z:?} after three rounds");
 }
 
 /// `zsync` for each device, twice, so every write reaches every device.

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{MEMBERSHIP_HISTORY, MemberRef, MembershipBody, MembershipView, ShareAction};
 use crate::lineage::decode_strict_with;
-use crate::manifest::SeenManifest;
+use crate::manifest::{ManifestEntry, SeenManifest};
 use crate::store::Zone;
 use crate::{Error, Id, Result};
 
@@ -22,6 +22,47 @@ pub const SHARE_STATE_VERSION: u8 = 1;
 pub struct PendingIdentity {
     pub new_identity: MemberRef,
     pub since: i64,
+}
+
+/// A membership change that resealed the vault (spec 9.2), being pushed in
+/// three phases: (1) the new envelopes and item records, (2) the body and
+/// the manifest, conditional, (3) once (2) is confirmed, the deletion of
+/// the old records and envelopes, the signed removal copy in the removed
+/// member's contact zone, and the revocation of its credential. Kept in the
+/// share state, so it is written in the rekey's transaction and a cut
+/// resumes at the phase reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharePush {
+    /// 1 to 3.
+    pub phase: u8,
+    /// Item records of the old generation, deleted in phase 3
+    /// (attachment chunks are rewrapped in place, same id).
+    pub collect: Vec<Id>,
+    /// The `MemberKey` records of the old generations.
+    pub old_keys: Vec<Id>,
+    /// The removed member's contact zone, and the id and bytes of the
+    /// `InviteRecord::Removed` written there in phase 3 (none when we have
+    /// no contact zone with that member).
+    pub notice: Option<(Zone, Id, Vec<u8>)>,
+    /// The removed member's credential, revoked in phase 3.
+    pub revoke: Option<[u8; 16]>,
+    /// The manifest the reseal started from (a rebase verifies the
+    /// server's manifest against it).
+    pub from: SeenManifest,
+    /// Each item resealed: item id, the version it was resealed from, the
+    /// new record's blob id and its manifest entry.
+    pub resealed: Vec<(Id, u64, Id, ManifestEntry)>,
+}
+
+/// Items a former member saw (spec 9.3): the item versions of the reseal
+/// that followed its removal. An item still at that version is unchanged
+/// since and the former member may still know it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormerMemberExposure {
+    pub vault_id: Id,
+    pub account_id: Id,
+    pub removed_at: i64,
+    pub items: Vec<(Id, u64)>,
 }
 
 /// What this device pins for one shared vault.
@@ -50,6 +91,16 @@ pub struct ShareState {
     /// The `meta_hash` that manifest committed to: a change needs a
     /// manager (spec 8.2 rule 4).
     pub last_meta: Option<[u8; 32]>,
+    /// The resealing being pushed, if any.
+    pub push: Option<SharePush>,
+    /// The mailbox refused my credential and no signed removal was found
+    /// (spec 13.8): the vault stays readable here, writes are refused.
+    pub access_refused: Option<i64>,
+    /// Former members and what they saw (spec 9.3).
+    pub exposures: Vec<FormerMemberExposure>,
+    /// The vault's name as this device last opened it (a removal can make
+    /// the meta unreadable before the personal copy is named).
+    pub name: String,
 }
 
 impl ShareState {
@@ -67,6 +118,10 @@ impl ShareState {
             actions: Vec::new(),
             last_manifest: None,
             last_meta: None,
+            push: None,
+            access_refused: None,
+            exposures: Vec::new(),
+            name: String::new(),
         }
     }
 
@@ -89,6 +144,7 @@ impl ShareState {
             || !ordered
             || s.head.vault_id != s.vault_id
             || s.ancestors.iter().any(|a| a.vault_id != s.vault_id)
+            || s.push.as_ref().is_some_and(|p| !(1..=3).contains(&p.phase))
         {
             return Err(BAD);
         }

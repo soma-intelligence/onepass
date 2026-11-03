@@ -1,4 +1,4 @@
-//! Shared vaults on the repository (sharing plan 2, Tasks 6 to 8).
+//! Shared vaults on the repository (sharing plan 2, Tasks 6 to 9).
 
 mod common;
 mod share_common;
@@ -10,13 +10,15 @@ use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
 };
+use onepass_core::repo::rekey::AccessRefusal;
 use onepass_core::share::{
     AccessTarget, InviteRecord, MEMBERSHIP_FORMAT, Member, MemberKey, MemberRef, MembershipBody,
-    MembershipReason, Role, ShareAction, ShareInvite, SignedMembership, ZoneHome, ZoneMailboxKind,
-    ZoneRole, ZoneSeed, identity_pub_hash, member_key_id, open_member_key, open_zone_credential,
-    server_role, sign_membership, wrap_zone_credential,
+    MembershipReason, Role, ShareAction, ShareInvite, SignedMembership, ZONE_ACCESS_KIND, ZoneHome,
+    ZoneMailboxKind, ZoneRole, ZoneSeed, identity_pub_hash, member_key_id, open_member_key,
+    open_zone_credential, server_role, sign_membership, wrap_zone_credential,
 };
-use onepass_core::store::{MemoryStore, Zone};
+use onepass_core::store::{MemoryStore, RecordStore, Zone};
+use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
 use share_common::*;
 
@@ -1066,4 +1068,410 @@ fn a13_unverified_manager_gives_read_only() {
     assert_eq!(info.role, Role::Read);
     let v = shared(&mut b2, id);
     assert_eq!(ids(&b2.repo().items(&v).unwrap()), ids(&items));
+}
+
+// ---- Task 9: removal with resealing ----
+
+/// Alice (owner) shares "Famille" with Bob (`Write`) and Carol (`role`),
+/// both accepted and synced.
+fn trio(carol_role: Role) -> (Zones, Acct, Acct, Acct, Id, Vec<Item>) {
+    let (mut zs, mut a, mut b, id, items) = alice_and_bob(ContactLevel::Verified);
+    let mut c = Acct::new();
+    pin(&mut a.dev, &mut c.dev, ContactLevel::Verified);
+    pin(&mut c.dev, &mut a.dev, ContactLevel::Verified);
+    contact_zone(&mut a.dev, &mut c.dev);
+    let bob = account_id(&mut b.dev);
+    let carol = account_id(&mut c.dev);
+    a.dev
+        .repo()
+        .add_member(id, bob, Role::Write, NOW + 1)
+        .unwrap();
+    a.dev
+        .repo()
+        .add_member(id, carol, carol_role, NOW + 1)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    for x in [&mut b, &mut c] {
+        let inv = x.dev.repo().share_invites().unwrap()[0].id;
+        x.dev.repo().accept_share_invite(inv, NOW + 2).unwrap();
+    }
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    (zs, a, b, c, id, items)
+}
+
+/// The item rows of the vault zone on its server that `v` opens.
+fn opened_on_server(zs: &mut Zones, v: &Vault) -> Vec<Item> {
+    let server = zs.server(Zone::Vault(v.id));
+    let mut out = Vec::new();
+    for ((kind, _), e) in &server.records {
+        if *kind != RecordKind::Item {
+            continue;
+        }
+        let Some(r) = &e.record else { continue };
+        let (_, body) = split_item_record(&r.data).unwrap();
+        let rec = ItemRecord::decode(body).unwrap();
+        if let Ok(item) = v.open_item(&rec) {
+            out.push(item);
+        }
+    }
+    out
+}
+
+fn item_rows_on_server(zs: &mut Zones, id: Id) -> usize {
+    zs.server(Zone::Vault(id))
+        .records
+        .iter()
+        .filter(|((k, _), e)| *k == RecordKind::Item && e.record.is_some())
+        .count()
+}
+
+fn push_phase(d: &Device, id: Id) -> Option<u8> {
+    d.store()
+        .share_state(id)
+        .unwrap()
+        .and_then(|s| s.push)
+        .map(|p| p.phase)
+}
+
+#[test]
+fn a4_removed_reads_nothing_new() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let carol_old = shared(&mut c.dev, id);
+    let carol = account_id(&mut c.dev);
+    let carol_ref = me(&mut c.dev);
+    let out = a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    assert_eq!(out.generation, 2);
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    assert_eq!(push_phase(&a.dev, id), None);
+    let va = shared(&mut a.dev, id);
+    a.dev.repo().save_item(&va, login(id, "dave", 700)).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    // No row on the server opens with Carol's old key.
+    assert!(item_rows_on_server(&mut zs, id) > 0);
+    assert!(opened_on_server(&mut zs, &carol_old).is_empty());
+    // No envelope of generation 2 for Carol.
+    let mk = member_key_id(id, 2, &carol_ref);
+    assert!(
+        zs.server(Zone::Vault(id))
+            .live(RecordKind::MemberKey, mk)
+            .is_none()
+    );
+    // Bob reads everything at generation 2.
+    let vb = shared(&mut b.dev, id);
+    assert!(users(&b.dev.repo().items(&vb).unwrap()).contains(&"dave".to_string()));
+}
+
+#[test]
+fn removal_is_one_transaction() {
+    let (_zs, mut a, _b, mut c, id, items) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    let st = a.dev.store();
+    let state = st.share_state(id).unwrap().unwrap();
+    assert_eq!(state.head.generation, 2);
+    assert!(state.head.member(carol).is_none());
+    assert_eq!(state.push.as_ref().unwrap().phase, 1);
+    let zone = Zone::Vault(id);
+    let kinds: Vec<RecordKind> = st
+        .zone_pending(zone)
+        .unwrap()
+        .iter()
+        .filter(|r| r.3.is_some())
+        .map(|r| r.0)
+        .collect();
+    for k in [
+        RecordKind::Membership,
+        RecordKind::MemberKey,
+        RecordKind::VaultMeta,
+        RecordKind::Manifest,
+        RecordKind::Item,
+    ] {
+        assert!(kinds.contains(&k), "{k:?} pending");
+    }
+    assert_eq!(
+        kinds.iter().filter(|k| **k == RecordKind::Item).count(),
+        items.len()
+    );
+    // A refused removal writes nothing.
+    let before = st.zone_pending(zone).unwrap();
+    drop(st);
+    let alice = account_id(&mut a.dev);
+    assert!(a.dev.repo().remove_member(id, alice, NOW + 4).is_err());
+    assert_eq!(a.dev.store().zone_pending(zone).unwrap(), before);
+}
+
+#[test]
+fn removal_cut_between_phases_resumes() {
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    let zone = Zone::Vault(id);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    // Phase 1 only, then a cut.
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    assert!(
+        a.dev
+            .store()
+            .pending_changes_in(zone)
+            .unwrap()
+            .iter()
+            .all(|c| c.data.is_none() || c.kind != RecordKind::Item)
+    );
+    a.dev.lock();
+    a.dev.unlock(&a.sk);
+    assert_eq!(push_phase(&a.dev, id), Some(1));
+    assert_eq!(
+        a.dev.store().push_share_phase(zone).unwrap(),
+        PhaseOutcome::Done
+    );
+    // Phase 2, then a cut.
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    a.dev.lock();
+    a.dev.unlock(&a.sk);
+    assert_eq!(push_phase(&a.dev, id), Some(2));
+    // Old items still on the server until phase 3.
+    assert_eq!(item_rows_on_server(&mut zs, id), 2 * items.len());
+    assert_eq!(
+        a.dev.store().push_share_phase(zone).unwrap(),
+        PhaseOutcome::Done
+    );
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    assert_eq!(
+        a.dev.store().push_share_phase(zone).unwrap(),
+        PhaseOutcome::Done
+    );
+    assert_eq!(push_phase(&a.dev, id), None);
+    let va = shared(&mut a.dev, id);
+    assert_eq!(item_rows_on_server(&mut zs, id), items.len());
+    assert_eq!(opened_on_server(&mut zs, &va).len(), items.len());
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let vb = shared(&mut b.dev, id);
+    assert_eq!(ids(&b.dev.repo().items(&vb).unwrap()), ids(&items));
+}
+
+#[test]
+fn concurrent_write_during_removal_survives_at_new_generation() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let carol_old = shared(&mut c.dev, id);
+    let carol = account_id(&mut c.dev);
+    // Bob writes while Alice removes Carol; Alice's push goes first.
+    let vb = shared(&mut b.dev, id);
+    let erin = login(id, "erin", 600);
+    b.dev.repo().save_item(&vb, erin.clone()).unwrap();
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    a.sync(&mut zs);
+    b.sync(&mut zs);
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let va = shared(&mut a.dev, id);
+    assert!(
+        a.dev
+            .repo()
+            .items(&va)
+            .unwrap()
+            .iter()
+            .any(|i| i.id == erin.id)
+    );
+    let mine = opened_on_server(&mut zs, &va);
+    assert!(mine.iter().any(|i| i.id == erin.id));
+    assert!(opened_on_server(&mut zs, &carol_old).is_empty());
+}
+
+#[test]
+fn removal_rebases_over_a_write_between_phases() {
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let carol_old = shared(&mut c.dev, id);
+    let carol = account_id(&mut c.dev);
+    let zone = Zone::Vault(id);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    a.dev.store().push_share_phase(zone).unwrap();
+    // Bob writes at generation 1 between Alice's phases.
+    let vb = shared(&mut b.dev, id);
+    let erin = login(id, "erin", 600);
+    b.dev.repo().save_item(&vb, erin.clone()).unwrap();
+    b.sync(&mut zs);
+    // Alice's manifest loses: she rebases her reseal over Bob's write.
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    assert_eq!(push_phase(&a.dev, id), None);
+    let va = shared(&mut a.dev, id);
+    let got = a.dev.repo().items(&va).unwrap();
+    assert_eq!(got.len(), items.len() + 1);
+    assert!(opened_on_server(&mut zs, &carol_old).is_empty());
+    let vb = shared(&mut b.dev, id);
+    assert_eq!(b.dev.repo().items(&vb).unwrap().len(), items.len() + 1);
+}
+
+#[test]
+fn removed_device_erases_local_copy() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    c.sync(&mut zs);
+    assert!(
+        c.dev
+            .repo()
+            .shared_vaults()
+            .unwrap()
+            .iter()
+            .all(|v| v.vault_id != id)
+    );
+    let st = c.dev.store();
+    assert!(st.share_state(id).unwrap().is_none());
+    assert!(
+        st.list_in(Zone::Vault(id), RecordKind::Item)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        st.get(
+            ZONE_ACCESS_KIND,
+            AccessTarget::Zone(Zone::Vault(id)).record_id().unwrap()
+        )
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn removed_offline_device_keeps_pending_as_personal_copy() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let bob = account_id(&mut b.dev);
+    let vb = shared(&mut b.dev, id);
+    let erin = login(id, "erin", 600);
+    b.dev.repo().save_item(&vb, erin.clone()).unwrap();
+    a.dev.repo().remove_member(id, bob, NOW + 3).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut c]);
+    b.sync(&mut zs);
+    assert!(b.dev.store().share_state(id).unwrap().is_none());
+    let copy = b.dev.vault_named("Copie de Famille");
+    let kept = b.dev.repo().items(&copy).unwrap();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(users(&kept), vec!["erin".to_string()]);
+    // Erin never reached the shared vault.
+    let va = shared(&mut a.dev, id);
+    assert!(
+        a.dev
+            .repo()
+            .items(&va)
+            .unwrap()
+            .iter()
+            .all(|i| i.id != erin.id)
+    );
+}
+
+#[test]
+fn keys_changed_member_gets_key_pending() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let bob = account_id(&mut b.dev);
+    let bob_ref = me(&mut b.dev);
+    let carol = account_id(&mut c.dev);
+    a.dev.repo().test_mark_keys_changed(bob, NOW + 3).unwrap();
+    a.dev.repo().remove_member(id, carol, NOW + 4).unwrap();
+    let state = a.dev.store().share_state(id).unwrap().unwrap();
+    assert!(state.head.member(bob).unwrap().key_pending);
+    settle(&mut zs, &mut [&mut a]);
+    let mk = member_key_id(id, 2, &bob_ref);
+    assert!(
+        zs.server(Zone::Vault(id))
+            .live(RecordKind::MemberKey, mk)
+            .is_none()
+    );
+}
+
+#[test]
+fn seen_items_count_matches() {
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    let out = a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    assert_eq!(out.seen_items as usize, items.len());
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let seen = a.dev.repo().seen_by_former_members().unwrap();
+    assert_eq!(seen.len(), items.len());
+    let va = shared(&mut a.dev, id);
+    a.dev
+        .repo()
+        .save_item(&va, edited(&items[0], "alice2", 800))
+        .unwrap();
+    let seen = a.dev.repo().seen_by_former_members().unwrap();
+    assert_eq!(seen.len(), items.len() - 1);
+    assert!(seen.iter().all(|(_, i)| *i != items[0].id));
+}
+
+#[test]
+fn owner_and_last_manager_cannot_be_removed() {
+    let (_zs, mut a, mut b, _c, id, _) = trio(Role::Read);
+    let alice = account_id(&mut a.dev);
+    let bob = account_id(&mut b.dev);
+    let e = a.dev.repo().remove_member(id, alice, NOW + 3).unwrap_err();
+    assert_eq!(validation(e), ("member".into(), "self"));
+    let e = b.dev.repo().remove_member(id, alice, NOW + 3).unwrap_err();
+    assert_eq!(validation(e), ("role".into(), "manager only"));
+    let e = a
+        .dev
+        .repo()
+        .remove_member(id, Id([7; 16]), NOW + 3)
+        .unwrap_err();
+    assert_eq!(validation(e), ("member".into(), "not a member"));
+    let _ = bob;
+}
+
+fn revokes(d: &mut Device) -> usize {
+    d.repo()
+        .pending_share_actions()
+        .unwrap()
+        .iter()
+        .filter(|a| matches!(a, ShareAction::RevokeCredential { .. }))
+        .count()
+}
+
+#[test]
+fn revoke_queued_after_phase_b_only() {
+    let (mut zs, mut a, _b, mut c, id, _) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    let zone = Zone::Vault(id);
+    let before = revokes(&mut a.dev);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    assert_eq!(revokes(&mut a.dev), before);
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    a.dev.store().push_share_phase(zone).unwrap();
+    assert_eq!(revokes(&mut a.dev), before);
+    zpush_once(&mut zs, &a.dev, zone).unwrap();
+    assert_eq!(revokes(&mut a.dev), before);
+    a.dev.store().push_share_phase(zone).unwrap();
+    assert_eq!(revokes(&mut a.dev), before + 1);
+}
+
+#[test]
+fn removed_member_reads_its_removal_before_revocation() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let carol = account_id(&mut c.dev);
+    a.dev.repo().remove_member(id, carol, NOW + 3).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    // Carol's credential is refused: she reads only her contact zone.
+    let cz = Zone::Contact(pair_id(account_id(&mut a.dev), carol));
+    zpull(&mut zs, &c.dev, cz);
+    let got = c
+        .dev
+        .repo()
+        .zone_access_refused(Zone::Vault(id), NOW + 5)
+        .unwrap();
+    assert_eq!(got, AccessRefusal::Removed);
+    assert!(c.dev.store().share_state(id).unwrap().is_none());
+}
+
+#[test]
+fn unsigned_revocation_never_wipes() {
+    let (_zs, _a, mut b, _c, id, items) = trio(Role::Read);
+    let zone = Zone::Vault(id);
+    let got = b.dev.repo().zone_access_refused(zone, NOW + 5).unwrap();
+    assert_eq!(got, AccessRefusal::Unconfirmed);
+    let vb = shared(&mut b.dev, id);
+    assert_eq!(ids(&b.dev.repo().items(&vb).unwrap()), ids(&items));
+    let e = b
+        .dev
+        .repo()
+        .save_item(&vb, login(id, "zed", 900))
+        .unwrap_err();
+    assert_eq!(validation(e), ("vault".into(), "access refused"));
+    assert!(b.dev.store().pending_changes_in(zone).unwrap().is_empty());
 }

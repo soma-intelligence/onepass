@@ -11,7 +11,7 @@ mod access;
 mod action;
 mod invite;
 mod key;
-mod manifest;
+pub(crate) mod manifest;
 mod membership;
 mod state;
 
@@ -33,7 +33,9 @@ pub use manifest::{
     MembershipView, SharedSignedManifest, sign_shared_manifest, verify_shared_manifest,
 };
 
-pub use state::{PendingIdentity, SHARE_STATE_VERSION, ShareState};
+pub use state::{
+    FormerMemberExposure, PendingIdentity, SHARE_STATE_VERSION, SharePush, ShareState,
+};
 
 pub use action::{MemberView, ShareAction, SharedVaultInfo, ZoneMailboxKind};
 

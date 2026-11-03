@@ -504,6 +504,20 @@ impl<S: RecordStore> Repository<S> {
         self.pin_contact(card, level, transcript_hash, now)
     }
 
+    /// Mark contact `account_id` `KeysChanged` for the integration tests
+    /// (a lineage rotation of the contact is a later task's fixture).
+    #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
+    #[doc(hidden)]
+    pub fn test_mark_keys_changed(&mut self, account_id: Id, now: i64) -> Result<()> {
+        self.edit_contact(account_id, |e| {
+            e.state = ContactState::KeysChanged {
+                child: e.pinned_head.hash,
+                seen_at: now,
+            };
+            Ok(())
+        })
+    }
+
     /// Set the local name of a contact. A name that breaks the card name
     /// rules, or a removed contact, is `Validation`; an unknown one
     /// `NotFound`.

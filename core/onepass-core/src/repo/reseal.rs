@@ -43,8 +43,8 @@ pub(crate) fn item_record(vault_id: Id, rec: &ItemRecord) -> Result<Record> {
 
 impl<S: RecordStore> Repository<S> {
     /// Reseal every item `loaded` lists from `from` to `to`. Attachment
-    /// chunks are read from the private zone; one not synced yet is left
-    /// as it is.
+    /// chunks are read from `from`'s zone; one not synced yet is left as
+    /// it is.
     pub(crate) fn reseal_vault(
         &self,
         from: &Vault,
@@ -69,7 +69,8 @@ impl<S: RecordStore> Repository<S> {
             items.push(item_record(to.id, &sealed)?);
             for r in &item.attachments {
                 for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
-                    if let Some(chunk) = self.store.get(RecordKind::Attachment, id)?
+                    if let Some(chunk) =
+                        self.store.get_in(from.zone(), RecordKind::Attachment, id)?
                         && let Ok(moved) = crate::attachment::rewrap(from, to, &chunk)
                     {
                         attachments.push((moved, chunk.version));

@@ -13,11 +13,11 @@ use std::collections::BTreeSet;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    StagedRow, SyncStore, TRUST_STATE_KEY, check_size, decode_id, decode_kind, delete_in,
-    effective_version, set_meta_in, store_err, to_i64, write_pending,
+    PhaseOutcome, StagedRow, SyncStore, TRUST_STATE_KEY, check_size, decode_id, decode_kind,
+    delete_in, effective_version, set_meta_in, store_err, to_i64, write_pending,
 };
-use crate::share::ShareState;
-use crate::store::{Record, RecordKind, Zone};
+use crate::share::{ShareAction, ShareState};
+use crate::store::{Record, RecordKind, Zone, ZonePendingRow};
 use crate::sync::{Change, RemoteChange};
 use crate::trust::TrustState;
 use crate::{Error, Id, Result};
@@ -248,6 +248,94 @@ pub(super) fn share_states_in(conn: &Connection) -> Result<Vec<ShareState>> {
     rows.iter().map(|b| ShareState::decode(b)).collect()
 }
 
+/// The kinds phase 1 of a resealing sends (spec 9.2 (a)).
+fn phase_one_kind(kind: RecordKind) -> bool {
+    matches!(
+        kind,
+        RecordKind::MemberKey | RecordKind::Attachment | RecordKind::Item
+    )
+}
+
+/// Push order of a pending row in a shared zone (gap 1 of Task 9): what a
+/// record names goes before it, so a reader never sees a manifest whose
+/// body, envelope or items are not there yet; deletions last.
+fn push_rank(kind: RecordKind, write: bool) -> u8 {
+    if !write {
+        return 7;
+    }
+    match kind {
+        RecordKind::MemberKey => 0,
+        RecordKind::Attachment => 1,
+        RecordKind::Item => 2,
+        RecordKind::VaultMeta => 3,
+        RecordKind::Membership => 4,
+        RecordKind::Manifest => 5,
+        _ => 6,
+    }
+}
+
+pub(super) fn zone_pending_rows(conn: &Connection, zone: Zone) -> Result<Vec<ZonePendingRow>> {
+    let z = shared_key(zone)?;
+    let mut stmt = conn
+        .prepare("SELECT kind, id, version, data FROM zone_pending WHERE zone = ?1")
+        .map_err(store_err)?;
+    let rows = stmt
+        .query_map(params![&z], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+            ))
+        })
+        .map_err(store_err)?;
+    rows.map(|row| {
+        let (k, id, v, data) = row.map_err(store_err)?;
+        Ok((
+            decode_kind(k)?,
+            decode_id(id)?,
+            u64::try_from(v).map_err(|_| Error::InvalidFormat("record version"))?,
+            data,
+        ))
+    })
+    .collect()
+}
+
+pub(super) fn zone_base_version(
+    conn: &Connection,
+    zone: Zone,
+    kind: RecordKind,
+    id: Id,
+) -> Result<Option<u64>> {
+    let z = shared_key(zone)?;
+    let v: Option<i64> = conn
+        .query_row(
+            "SELECT version FROM zone_base WHERE zone = ?1 AND kind = ?2 AND id = ?3",
+            params![&z, kind.code(), &id.0[..]],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(store_err)?;
+    v.map(|v| u64::try_from(v).map_err(|_| Error::InvalidFormat("record version")))
+        .transpose()
+}
+
+pub(super) fn drop_pending_rows(
+    conn: &Connection,
+    zone: Zone,
+    rows: &[(RecordKind, Id)],
+) -> Result<()> {
+    let z = shared_key(zone)?;
+    for (kind, id) in rows {
+        conn.execute(
+            "DELETE FROM zone_pending WHERE zone = ?1 AND kind = ?2 AND id = ?3",
+            params![&z, kind.code(), &id.0[..]],
+        )
+        .map_err(store_err)?;
+    }
+    Ok(())
+}
+
 /// One zoned write in `tx`: conditional on the version the caller read.
 fn put_zoned_in(conn: &Connection, zone: Zone, r: &Record, expected: Option<u64>) -> Result<()> {
     check_size(&r.data)?;
@@ -296,41 +384,150 @@ impl SyncStore {
     }
 
     /// The local writes of `zone` waiting to be pushed (the private zone:
-    /// `pending_changes`).
+    /// `pending_changes`), in push order (`push_rank`): envelopes, chunks,
+    /// items, meta, body, manifest, other kinds, deletions last. While a
+    /// resealing is pushed (`SharePush`), phase 1 sends the envelopes,
+    /// chunks and items only, phase 2 every write, and deletions wait for
+    /// phase 3 (spec 9.2).
     pub fn pending_changes_in(&self, zone: Zone) -> Result<Vec<Change>> {
         if !zone.is_shared() {
             return self.pending_changes();
         }
-        let z = zone.key();
         self.read(|conn| {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT kind, id, version, data FROM zone_pending WHERE zone = ?1
-                     ORDER BY kind, id",
-                )
-                .map_err(store_err)?;
-            let rows = stmt
-                .query_map(params![&z], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, Vec<u8>>(1)?,
-                        r.get::<_, i64>(2)?,
-                        r.get::<_, Option<Vec<u8>>>(3)?,
-                    ))
-                })
-                .map_err(store_err)?;
-            rows.map(|row| {
-                let (k, id, v, data) = row.map_err(store_err)?;
-                Ok(Change {
-                    kind: decode_kind(k)?,
-                    id: decode_id(id)?,
-                    version: u64::try_from(v)
-                        .map_err(|_| Error::InvalidFormat("record version"))?,
+            let state = match zone {
+                Zone::Vault(v) => share_state_in(conn, v)?,
+                _ => None,
+            };
+            // Spec 13.8: a vault whose access was refused sends nothing.
+            if state.as_ref().is_some_and(|s| s.access_refused.is_some()) {
+                return Ok(Vec::new());
+            }
+            let phase = state.and_then(|s| s.push).map(|p| p.phase);
+            let mut rows = zone_pending_rows(conn, zone)?;
+            rows.retain(|(kind, _, _, data)| match (phase, data.is_some()) {
+                (Some(1), true) => phase_one_kind(*kind),
+                (Some(1 | 2), false) => false,
+                _ => true,
+            });
+            rows.sort_by_key(|(kind, id, _, data)| {
+                (push_rank(*kind, data.is_some()), kind.code(), *id)
+            });
+            Ok(rows
+                .into_iter()
+                .map(|(kind, id, version, data)| Change {
+                    kind,
+                    id,
+                    version,
                     data,
                 })
-            })
-            .collect()
+                .collect())
         })
+    }
+
+    /// The confirmed (server) row of a record of shared `zone`, pending
+    /// writes aside.
+    pub fn zone_base_record(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        let z = shared_key(zone)?;
+        let row: Option<(i64, Vec<u8>)> = self
+            .conn
+            .query_row(
+                "SELECT version, data FROM zone_base WHERE zone = ?1 AND kind = ?2 AND id = ?3",
+                params![&z, kind.code(), &id.0[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?;
+        row.map(|(v, data)| {
+            Ok(Record {
+                kind,
+                id,
+                version: u64::try_from(v).map_err(|_| Error::InvalidFormat("record version"))?,
+                data,
+            })
+        })
+        .transpose()
+    }
+
+    /// Move the resealing pushed in vault zone `zone` (`SharePush`) to its
+    /// next phase once the writes of the current one are confirmed, in one
+    /// transaction with the share state. Phase 2 confirmed: the old item
+    /// records and envelopes are queued for deletion, the signed removal
+    /// copy is written in the removed member's contact zone and the
+    /// revocation of its credential is queued (spec 13.8: only after the
+    /// body and manifest are confirmed). Phase 3 confirmed: the push is
+    /// over. `Retry` (nothing written) while a write of the phase is
+    /// pending, or when no resealing is pushed in `zone`.
+    pub fn push_share_phase(&mut self, zone: Zone) -> Result<PhaseOutcome> {
+        let Zone::Vault(vault) = zone else {
+            return Ok(PhaseOutcome::Retry);
+        };
+        let tx = self.write_tx()?;
+        let Some(mut state) = share_state_in(&tx, vault)? else {
+            return Ok(PhaseOutcome::Retry);
+        };
+        let Some(mut push) = state.push.clone() else {
+            return Ok(PhaseOutcome::Retry);
+        };
+        let rows = zone_pending_rows(&tx, zone)?;
+        match push.phase {
+            1 => {
+                if rows
+                    .iter()
+                    .any(|(k, _, _, d)| d.is_some() && phase_one_kind(*k))
+                {
+                    return Ok(PhaseOutcome::Retry);
+                }
+                push.phase = 2;
+                state.push = Some(push);
+            }
+            2 => {
+                if rows.iter().any(|(_, _, _, d)| d.is_some()) {
+                    return Ok(PhaseOutcome::Retry);
+                }
+                for id in &push.collect {
+                    zone_delete(&tx, zone, RecordKind::Item, *id)?;
+                }
+                for id in &push.old_keys {
+                    zone_delete(&tx, zone, RecordKind::MemberKey, *id)?;
+                }
+                if let Some((cz, id, data)) = &push.notice
+                    && zone_get(&tx, *cz, RecordKind::ShareInvite, *id)?.is_none()
+                {
+                    zone_write(
+                        &tx,
+                        *cz,
+                        &Record {
+                            kind: RecordKind::ShareInvite,
+                            id: *id,
+                            version: 1,
+                            data: data.clone(),
+                        },
+                    )?;
+                }
+                if let Some(credential_id) = push.revoke {
+                    state.actions.push(ShareAction::RevokeCredential {
+                        zone,
+                        credential_id,
+                    });
+                }
+                push.phase = 3;
+                state.push = Some(push);
+            }
+            _ => {
+                let left = rows.iter().any(|(k, id, _, d)| {
+                    d.is_none()
+                        && ((*k == RecordKind::Item && push.collect.contains(id))
+                            || (*k == RecordKind::MemberKey && push.old_keys.contains(id)))
+                });
+                if left {
+                    return Ok(PhaseOutcome::Retry);
+                }
+                state.push = None;
+            }
+        }
+        set_meta_in(&tx, &share_state_key(vault), &state.encode())?;
+        tx.commit()?;
+        Ok(PhaseOutcome::Done)
     }
 
     /// The server confirmed `(kind, id, version)` in `zone`: the pending row
@@ -467,12 +664,20 @@ impl SyncStore {
             .optional()
             .map_err(store_err)?
             .is_some();
+        let items_pending = zone_pending_rows(&tx, zone)?
+            .iter()
+            .any(|(k, _, _, d)| *k == RecordKind::Item && d.is_some());
         let mut manifests = BTreeSet::new();
         let mut served_items = BTreeSet::new();
         for (kind_code, id, version, data, server_meta) in staged {
             let kind = decode_kind(kind_code)?;
             let rid = decode_id(id.clone())?;
             if data.is_none() && kind.server_deletion_refused() {
+                continue;
+            }
+            // An envelope of an old generation stays while item writes of
+            // this device wait: the shared rebase opens them with it.
+            if data.is_none() && kind == RecordKind::MemberKey && items_pending {
                 continue;
             }
             if kind.is_immutable()

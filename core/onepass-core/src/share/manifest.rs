@@ -94,6 +94,18 @@ pub fn sign_shared_manifest(
     Ok(SharedSignedManifest { blob, signer, sig })
 }
 
+/// Open a shared manifest this device wrote itself and still holds as a
+/// pending row, without the checks of `verify_shared_manifest`: a rebase
+/// reads where its lost write started from (the meta it was bound to may
+/// no longer open).
+pub(crate) fn open_own_shared_manifest(
+    vault: &Vault,
+    sm: &SharedSignedManifest,
+) -> Result<Manifest> {
+    let plain = open(vault.key(), BlobKind::Manifest, &aad(vault.id), &sm.blob)?;
+    decode_manifest(&plain)
+}
+
 /// Verify a shared manifest (spec 8.2), in order: the signature under the
 /// signer's key from the pinned chain (`Integrity(Signature)`); the opening
 /// and decoding; the shape (as `verify_manifest`); the membership body it

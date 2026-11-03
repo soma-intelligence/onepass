@@ -283,6 +283,17 @@ impl Vault {
     }
 
     /// The zone the vault's records live in.
+    /// A shared vault under an older key generation (a rebase reads its
+    /// own writes back with it), carrying `meta` as it is.
+    pub(crate) fn with_key(id: Id, key: SymmetricKey, meta: VaultMeta, zone: Zone) -> Vault {
+        Vault {
+            id,
+            meta,
+            key,
+            zone,
+        }
+    }
+
     pub fn zone(&self) -> Zone {
         self.zone
     }

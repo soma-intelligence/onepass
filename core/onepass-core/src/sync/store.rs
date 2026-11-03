@@ -3593,6 +3593,20 @@ impl RecordStore for SyncStore {
         tx.commit()
     }
 
+    fn zone_pending(&self, zone: Zone) -> Result<Vec<crate::store::ZonePendingRow>> {
+        self.read(|c| zones::zone_pending_rows(c, zone))
+    }
+
+    fn zone_base_version(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+        self.read(|c| zones::zone_base_version(c, zone, kind, id))
+    }
+
+    fn drop_zone_pending(&mut self, zone: Zone, rows: &[(RecordKind, Id)]) -> Result<()> {
+        let tx = self.write_tx()?;
+        zones::drop_pending_rows(&tx, zone, rows)?;
+        tx.commit()
+    }
+
     fn put(&mut self, r: Record) -> Result<()> {
         check_size(&r.data)?;
         let tx = self.write_tx()?;
