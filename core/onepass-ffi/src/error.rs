@@ -70,6 +70,17 @@ pub enum OnePassError {
     /// allow it (a grant or a locator by a non-manager, an abandon of a
     /// mailbox no longer fresh).
     Forbidden,
+    /// Sharing: this account reads this shared vault only (role `Read`).
+    ReadOnlyRole,
+    /// Sharing: the contact must be verified in person (or by a compared
+    /// safety number) for this: a role above Read, or a writer's new
+    /// identity.
+    ContactNotVerified,
+    /// Sharing: the server showed two different member lists (alert).
+    MembershipFork,
+    /// Sharing: this account's new identity waits for a manager's
+    /// confirmation; the vault reads but does not write yet.
+    IdentityPending,
 }
 
 impl fmt::Display for OnePassError {
@@ -99,6 +110,10 @@ impl fmt::Display for OnePassError {
             Self::ClockSkew => f.write_str("device clock is too far off"),
             Self::MailboxUnavailable { reason } => write!(f, "mailbox unavailable: {reason}"),
             Self::Forbidden => f.write_str("not allowed for this credential"),
+            Self::ReadOnlyRole => f.write_str("read only in this shared vault"),
+            Self::ContactNotVerified => f.write_str("the contact must be verified in person"),
+            Self::MembershipFork => f.write_str("the server showed two member lists"),
+            Self::IdentityPending => f.write_str("new identity waiting for a manager"),
         }
     }
 }
@@ -142,6 +157,7 @@ impl From<Error> for OnePassError {
         match e {
             Error::Crypto => Self::Crypto,
             Error::WrongPassword => Self::WrongPassword,
+            Error::Integrity(IntegrityError::MembershipFork) => Self::MembershipFork,
             Error::Integrity(i) => Self::Integrity {
                 kind: integrity_kind(i).to_owned(),
             },
@@ -158,6 +174,19 @@ impl From<Error> for OnePassError {
             // The core's refusal of a quarantined device (spec 8.4).
             Error::Validation(v) if v.field == "device" && v.reason == "quarantined" => {
                 Self::Quarantined
+            }
+            // Sharing (plan 4 Task 3): the refusals the screens act on.
+            Error::Validation(v) if v.field == "role" && v.reason == "read only" => {
+                Self::ReadOnlyRole
+            }
+            Error::Validation(v)
+                if (v.field == "contact" && v.reason == "not verified")
+                    || (v.field == "proof" && v.reason == "in person required") =>
+            {
+                Self::ContactNotVerified
+            }
+            Error::Validation(v) if v.field == "vault" && v.reason == "identity pending" => {
+                Self::IdentityPending
             }
             Error::Validation(v) => Self::Validation {
                 field: v.field,
@@ -184,6 +213,37 @@ pub(crate) fn invalid(what: &str) -> OnePassError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sharing_refusals_have_their_own_kinds() {
+        let v = |field: &str, reason: &'static str| {
+            OnePassError::from(Error::Validation(onepass_core::ValidationError {
+                field: field.into(),
+                reason,
+            }))
+        };
+        assert_eq!(v("role", "read only"), OnePassError::ReadOnlyRole);
+        assert_eq!(
+            v("contact", "not verified"),
+            OnePassError::ContactNotVerified
+        );
+        assert_eq!(
+            v("proof", "in person required"),
+            OnePassError::ContactNotVerified
+        );
+        assert_eq!(
+            v("vault", "identity pending"),
+            OnePassError::IdentityPending
+        );
+        assert_eq!(
+            OnePassError::from(Error::Integrity(IntegrityError::MembershipFork)),
+            OnePassError::MembershipFork
+        );
+        assert!(matches!(
+            v("role", "manager only"),
+            OnePassError::Validation { .. }
+        ));
+    }
 
     #[test]
     fn store_detail_is_dropped() {

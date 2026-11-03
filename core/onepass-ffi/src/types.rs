@@ -340,6 +340,8 @@ pub struct FfiVault {
     pub id: String,
     pub meta: FfiVaultMeta,
     pub item_count: u32,
+    /// Set for a shared vault (sharing plan 4): role, members, generation.
+    pub shared: Option<crate::sharing::FfiSharedVault>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

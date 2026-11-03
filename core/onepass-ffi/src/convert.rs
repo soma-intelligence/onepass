@@ -786,11 +786,16 @@ pub(crate) fn meta_to_core(m: &FfiVaultMeta) -> VaultMeta {
     }
 }
 
-pub(crate) fn vault_to_ffi(v: &Vault, item_count: u32) -> FfiVault {
+pub(crate) fn vault_to_ffi(
+    v: &Vault,
+    item_count: u32,
+    shared: Option<crate::sharing::FfiSharedVault>,
+) -> FfiVault {
     FfiVault {
         id: id_hex(v.id),
         meta: meta_to_ffi(&v.meta),
         item_count,
+        shared,
     }
 }
 
