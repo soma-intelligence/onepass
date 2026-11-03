@@ -181,6 +181,11 @@ pub(crate) fn type_label(t: ItemType) -> &'static str {
 
 // ---- providers ------------------------------------------------------------
 
+/// The stable id of a provider (`google`, `apple`, `oidc:<domain>`...).
+pub(crate) fn provider_id(p: &Provider) -> String {
+    provider_to_string(p)
+}
+
 fn provider_to_string(p: &Provider) -> String {
     match p {
         Provider::Google => "google".into(),

@@ -599,12 +599,17 @@ pub struct FfiAutofillIdentity {
     pub favorite: bool,
     /// Order among the identities of one service, higher first: 100 for
     /// the Login used last on the service's site, 50 for a favorite, 0
-    /// otherwise (last used beats favorite).
+    /// otherwise (last used beats favorite), plus up to 200 from the learned
+    /// preference of the system AutoFill (`fill_plan::learned`).
     pub rank: u32,
     /// Empty unless `kind` is `Passkey`.
     pub credential_id: Vec<u8>,
     /// Empty unless `kind` is `Passkey`.
     pub user_handle: Vec<u8>,
+    /// A Login without password nor username that signs in with a provider
+    /// (`google`, `apple`, `oidc:<domain>`...): the system menu shows "Signs
+    /// in with <provider>". Empty otherwise, and for codes and passkeys.
+    pub sign_in_with: String,
 }
 
 /// How well a Login matches the requested site, best first.

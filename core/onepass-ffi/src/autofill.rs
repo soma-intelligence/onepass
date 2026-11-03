@@ -31,6 +31,10 @@ const PASSKEYS: &str = "passkeys";
 const RANK_LAST_USED: u32 = 100;
 /// `FfiAutofillIdentity::rank` of a favorite.
 const RANK_FAVORITE: u32 = 50;
+/// Most rank the learned preference adds (`fill_plan::learned::affinity`
+/// in the system AutoFill context): a learned habit outranks the Login used
+/// last and the favorites.
+const RANK_LEARNED_MAX: u32 = 200;
 /// Most items in an `FfiAutofillPlan`.
 const PLAN_MAX: usize = 6;
 
@@ -239,22 +243,90 @@ impl LastUsed {
     }
 }
 
+/// The learned preference of the system AutoFill (`fill_plan::learned`),
+/// per usage site: the bonus of each item. Sites without history are absent.
+struct Learned(HashMap<String, std::collections::BTreeMap<Id, i64>>);
+
+impl Learned {
+    /// One history read per usage site of the published Logins. A failing
+    /// history never fails the identities (no bonus).
+    fn of(repo: &mut Repo, items: &[Item]) -> Self {
+        let sites: BTreeSet<String> = items
+            .iter()
+            .flat_map(|i| i.urls.iter())
+            .filter(|u| u.rule != MatchRule::Never)
+            .filter_map(|u| site(&u.url))
+            .map(|s| usage_site(&s))
+            .collect();
+        let now = OffsetDateTime::now_utc();
+        let client = ClientContext::system_autofill();
+        let mut out = HashMap::new();
+        for s in sites {
+            if let Ok(map) = repo.autofill_affinity(&s, &client, now)
+                && !map.is_empty()
+            {
+                out.insert(s, map);
+            }
+        }
+        Learned(out)
+    }
+
+    /// The rank bonus of `item` on `site`, `0..=RANK_LEARNED_MAX`.
+    fn bonus(&self, site: &str, item: Id) -> u32 {
+        let v = self
+            .0
+            .get(site)
+            .and_then(|m| m.get(&item))
+            .copied()
+            .unwrap_or(0);
+        u32::try_from(v.max(0))
+            .unwrap_or(u32::MAX)
+            .min(RANK_LEARNED_MAX)
+    }
+}
+
+/// The provider a Login without password nor username signs in with
+/// (`convert::provider_to_string`), or empty.
+fn sign_in_provider(item: &Item) -> String {
+    item.login_methods
+        .iter()
+        .find_map(|m| match m {
+            LoginMethod::Provider { provider, .. } => Some(crate::convert::provider_id(provider)),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 /// The identities of one Login. `last_used`: the Login used last on each
 /// usage site, which gets `RANK_LAST_USED` on that site's identities of
-/// its kind.
-fn identities_of(item: &Item, last_used: &LastUsed, out: &mut Vec<FfiAutofillIdentity>) {
+/// its kind; `learned`: the system AutoFill's learned preference, added on
+/// top. A Login with a password and no username shows its title (the
+/// system menu needs a readable line; the fill gives the real, empty,
+/// username). A Login with neither that signs in with a provider is
+/// published once per host with `sign_in_with` set.
+fn identities_of(
+    item: &Item,
+    last_used: &LastUsed,
+    learned: &Learned,
+    out: &mut Vec<FfiAutofillIdentity>,
+) {
     let user = item.subtitle();
     let rank = |kind: FfiAutofillKind, service: &str| {
-        let last = site(service)
-            .map(|s| usage_site(&s))
-            .and_then(|s| last_used.get(kind, &s));
-        if last == Some(item.id) {
+        let key = site(service).map(|s| usage_site(&s));
+        let last = key.as_ref().and_then(|s| last_used.get(kind, s));
+        let base = if last == Some(item.id) {
             RANK_LAST_USED
         } else if item.favorite {
             RANK_FAVORITE
         } else {
             0
-        }
+        };
+        base + key.map(|s| learned.bonus(&s, item.id)).unwrap_or(0)
+    };
+    let sign_in_with = if user.trim().is_empty() && !filled(item, "password") {
+        sign_in_provider(item)
+    } else {
+        String::new()
     };
     let entry =
         |kind, service: String, credential_id, user_handle, user: &str| FfiAutofillIdentity {
@@ -266,6 +338,11 @@ fn identities_of(item: &Item, last_used: &LastUsed, out: &mut Vec<FfiAutofillIde
             favorite: item.favorite,
             credential_id,
             user_handle,
+            sign_in_with: if kind == FfiAutofillKind::Password {
+                sign_in_with.clone()
+            } else {
+                String::new()
+            },
         };
     let hosts: Vec<String> = item
         .urls
@@ -274,14 +351,19 @@ fn identities_of(item: &Item, last_used: &LastUsed, out: &mut Vec<FfiAutofillIde
         .filter_map(|u| site(&u.url))
         .map(|s| s.host)
         .collect();
-    if !user.trim().is_empty() || filled(item, "password") {
+    let shown = if user.trim().is_empty() {
+        item.title.as_str()
+    } else {
+        user.as_str()
+    };
+    if !user.trim().is_empty() || filled(item, "password") || !sign_in_with.is_empty() {
         for h in &hosts {
             out.push(entry(
                 FfiAutofillKind::Password,
                 h.clone(),
                 Vec::new(),
                 Vec::new(),
-                &user,
+                if sign_in_with.is_empty() { shown } else { "" },
             ));
         }
     }
@@ -448,9 +530,10 @@ impl Session {
                 .filter(offerable)
                 .collect();
             let last_used = LastUsed::of(&items);
+            let learned = Learned::of(repo, &items);
             let mut out = Vec::new();
             for item in &items {
-                identities_of(item, &last_used, &mut out);
+                identities_of(item, &last_used, &learned, &mut out);
             }
             let mut seen = HashSet::new();
             out.retain(|i| {

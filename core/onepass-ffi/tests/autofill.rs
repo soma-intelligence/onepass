@@ -897,6 +897,8 @@ fn plan(fx: &Fixture, service: &str, request: FfiAutofillRequest) -> FfiAutofill
 #[test]
 fn identity_rank_prefers_last_used_on_host() {
     let fx = fixture();
+    // The base rule alone: the learned preference has its own test.
+    fx.session.set_autofill_history_enabled(false).unwrap();
     let fav = login(&fx, "Favori", &["https://example.com"]);
     fx.session
         .set_favorite(fx.vault_id.clone(), fav.id.clone(), true)
@@ -1170,6 +1172,8 @@ fn note_autofill_use_rejects_other_site() {
 #[test]
 fn otp_identity_rank_counts_logins_with_a_code_only() {
     let fx = fixture();
+    // The base rule alone: the learned preference has its own test.
+    fx.session.set_autofill_history_enabled(false).unwrap();
     let coded = login_in(
         &fx,
         &fx.vault_id,
@@ -1214,4 +1218,72 @@ fn summaries_count_passkeys() {
     assert_eq!(with.passkey_count, 2);
     let without = rows.iter().find(|r| r.id == plain.id).unwrap();
     assert_eq!(without.passkey_count, 0);
+}
+
+// ---- identities for the system menu (2026-11-03 iOS Safari) -----------------
+
+#[test]
+fn identity_rank_adds_the_learned_preference() {
+    let fx = fixture();
+    let a = login(&fx, "Compte A", &["https://example.com"]);
+    let b = login(&fx, "Compte B", &["https://example.com"]);
+    let rid = |i: &FfiItem| record_id(&i.vault_id, &i.id);
+    note(&fx, &a, "example.com").unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    let ra = rank_of(&ids, &rid(&a), FfiAutofillKind::Password);
+    let rb = rank_of(&ids, &rid(&b), FfiAutofillKind::Password);
+    assert!(ra > 100, "learned bonus on top of last used: {ra}");
+    assert!(ra <= 300, "bounded: {ra}");
+    assert_eq!(rb, 0);
+
+    // B picked twice later: the learned habit moves to B although A keeps
+    // nothing but its old pick.
+    note(&fx, &b, "example.com").unwrap();
+    note(&fx, &b, "example.com").unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert!(
+        rank_of(&ids, &rid(&b), FfiAutofillKind::Password)
+            > rank_of(&ids, &rid(&a), FfiAutofillKind::Password)
+    );
+
+    // History off (erased): the base rule only.
+    fx.session.set_autofill_history_enabled(false).unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(rank_of(&ids, &rid(&b), FfiAutofillKind::Password), 100);
+}
+
+#[test]
+fn identity_of_a_sign_in_with_login() {
+    let fx = fixture();
+    let mut item = fx
+        .session
+        .new_item(fx.vault_id.clone(), FfiItemType::Login, "NVIDIA".into())
+        .unwrap();
+    item.urls = vec![url("https://login.nvgs.nvidia.com", FfiMatchRule::Domain)];
+    item.login_methods = vec![FfiLoginMethod::Provider {
+        provider: "apple".into(),
+        account_item_id: "0".repeat(32),
+        relay_email: None,
+    }];
+    let item = fx.session.save_item(item).unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    let mine: Vec<&FfiAutofillIdentity> = ids
+        .iter()
+        .filter(|i| i.record_id == record_id(&item.vault_id, &item.id))
+        .collect();
+    assert_eq!(mine.len(), 1, "{mine:?}");
+    assert_eq!(mine[0].kind, FfiAutofillKind::Password);
+    assert_eq!(mine[0].service, "login.nvgs.nvidia.com");
+    assert_eq!(mine[0].sign_in_with, "apple");
+    assert_eq!(mine[0].user, "");
+
+    // A login with a password keeps its plain identity.
+    let plain = login(&fx, "Simple", &["https://example.com"]);
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    let p = ids
+        .iter()
+        .find(|i| i.record_id == record_id(&plain.vault_id, &plain.id))
+        .unwrap();
+    assert_eq!(p.sign_in_with, "");
+    assert_eq!(p.user, "camille@exemple.fr");
 }
