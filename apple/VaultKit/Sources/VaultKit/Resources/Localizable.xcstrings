@@ -6204,6 +6204,35 @@
         }
       }
     },
+    "sharing.contact.offline %@" : {
+      "comment" : "Contact verification: the pair's mailbox cannot be made without network; %@ is the contact's name. Nothing was added.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to the internet to finish adding %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a Internet para terminar de añadir a %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecte-toi à Internet pour terminer l'ajout de %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connettiti a Internet per completare l'aggiunta di %@."
+          }
+        }
+      }
+    },
     "sharing.error.contactNotVerified" : {
       "comment" : "Error: this action needs a contact verified in person or by a compared safety number.",
       "localizations" : {
