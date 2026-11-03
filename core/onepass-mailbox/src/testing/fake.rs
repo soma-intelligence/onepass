@@ -1190,9 +1190,29 @@ impl FakeMailbox {
     pub fn client(&self, credential: Credential) -> FakeMailboxClient {
         FakeMailboxClient {
             fake: self.clone(),
-            credential,
+            credential: Who::Full(credential),
             mailbox: None,
         }
+    }
+
+    /// A client for a credential known by its public key only: what a test
+    /// server needs to answer requests it checked the signature of. It
+    /// cannot issue enroll tickets (no secret).
+    pub fn client_for_key(&self, key: CredentialKey) -> FakeMailboxClient {
+        FakeMailboxClient {
+            fake: self.clone(),
+            credential: Who::Public(key),
+            mailbox: None,
+        }
+    }
+
+    /// The public key of a credential this server knows (created, granted
+    /// or enrolled), revoked or not.
+    pub fn credential_key(&self, id: CredentialId) -> Option<CredentialKey> {
+        self.lock()
+            .credentials
+            .get(&id)
+            .map(|c| CredentialKey::from_bytes(c.key))
     }
 
     /// The 90 day maintenance, for every tombstone of every mailbox whose
@@ -1542,8 +1562,31 @@ impl FaultHandle {
 /// network.
 pub struct FakeMailboxClient {
     fake: FakeMailbox,
-    credential: Credential,
+    credential: Who,
     mailbox: Option<MailboxId>,
+}
+
+/// The credential a fake client acts for: with its secret, or its public
+/// key only (`FakeMailbox::client_for_key`).
+enum Who {
+    Full(Credential),
+    Public(CredentialKey),
+}
+
+impl Who {
+    fn id(&self) -> CredentialId {
+        match self {
+            Who::Full(c) => c.id(),
+            Who::Public(k) => k.id(),
+        }
+    }
+
+    fn public_key(&self) -> CredentialKey {
+        match self {
+            Who::Full(c) => c.public_key(),
+            Who::Public(k) => *k,
+        }
+    }
 }
 
 impl FakeMailboxClient {
@@ -1923,13 +1966,10 @@ impl MailboxApi for FakeMailboxClient {
         now: i64,
     ) -> Result<SignedEnrollTicket, MailboxError> {
         let base = self.fake.lock().base_url.clone();
-        issue_ticket(
-            &self.credential,
-            &base,
-            self.mailbox,
-            new_credential_pub,
-            now,
-        )
+        let Who::Full(credential) = &self.credential else {
+            return Err(MailboxError::Forbidden);
+        };
+        issue_ticket(credential, &base, self.mailbox, new_credential_pub, now)
     }
 
     fn upload_blobs(&self, blobs: &[&[u8]]) -> Result<(), MailboxError> {

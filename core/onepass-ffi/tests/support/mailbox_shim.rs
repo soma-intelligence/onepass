@@ -14,10 +14,10 @@ use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_core::device_keys::{PqDeviceHalf, SoftwarePqHalf};
 use onepass_ffi::*;
 use onepass_mailbox::testing::{FakeMailbox, FakeMailboxClient};
-use onepass_mailbox::{Credential, MailboxApi, MailboxError};
+use onepass_mailbox::{Credential, CredentialKey, MailboxApi, MailboxError};
 use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, ChangesQuery, CommitRequest, CommitResponse,
-    CreateMailbox, Enroll, ErrorBody, GrantCredential, LocateRequest, Located, SetLocator, ErrorCode, ServerConfig, SetPush, content_digest, decode,
+    CreateChild, CreateMailbox, Enroll, SetCredentialRole, ErrorBody, GrantCredential, LocateRequest, Located, SetLocator, ErrorCode, ServerConfig, SetPush, content_digest, decode,
     encode, parse_signature_headers, signature_base,
 };
 use tempfile::TempDir;
@@ -118,7 +118,7 @@ impl Shim {
             .lock()
             .unwrap()
             .clients
-            .insert(cred.id(), (cred, client));
+            .insert(cred.id(), (cred.public_key(), client));
     }
 }
 
@@ -127,7 +127,8 @@ impl Shim {
 #[derive(Default)]
 struct Registry {
     fake: Option<FakeMailbox>,
-    clients: HashMap<[u8; 16], (Credential, FakeMailboxClient)>,
+    /// By credential id: its public key and the fake client acting for it.
+    clients: HashMap<[u8; 16], (CredentialKey, FakeMailboxClient)>,
     sizes: HashMap<[u8; 32], u32>,
 }
 
@@ -250,8 +251,12 @@ fn error(e: &MailboxError) -> (u16, Vec<u8>) {
     )
 }
 
-/// Checks the signature (spec 4.7) and returns the key id.
-fn signer(req: &Req, clients: &Registry) -> Result<[u8; 16], MailboxError> {
+/// Checks the signature (spec 4.7) and returns the key id. A credential
+/// the test did not register is answered when its key is known: the one a
+/// mailbox creation carries, or one the fake holds (created, granted or
+/// enrolled earlier), as the edge function reads it from its table. Zone
+/// credentials are made inside the core, so the test never sees them.
+fn signer(req: &Req, clients: &mut Registry) -> Result<[u8; 16], MailboxError> {
     let bad = MailboxError::Server(ErrorCode::BadSignature);
     let parsed = parse_signature_headers(
         req.header("signature-input").ok_or(bad.clone())?,
@@ -264,11 +269,24 @@ fn signer(req: &Req, clients: &Registry) -> Result<[u8; 16], MailboxError> {
     }
     let base = signature_base(&req.method, &req.target, digest, &parsed.params)
         .map_err(|_| bad.clone())?;
-    let (cred, _) = clients
-        .clients
-        .get(&parsed.params.keyid)
-        .ok_or(MailboxError::Server(ErrorCode::UnknownCredential))?;
-    UnparsedPublicKey::new(&ED25519, cred.public_key().as_bytes())
+    let keyid = parsed.params.keyid;
+    if !clients.clients.contains_key(&keyid) {
+        let fake = clients.fake.clone().unwrap();
+        let created = (req.method == "POST" && req.target == "/v1/mailboxes")
+            .then(|| decode::<CreateMailbox>(&req.body).ok())
+            .flatten()
+            .map(|c| CredentialKey::from_bytes(c.public_key));
+        let key = fake
+            .credential_key(keyid)
+            .or(created)
+            .filter(|k| k.id() == keyid)
+            .ok_or(MailboxError::Server(ErrorCode::UnknownCredential))?;
+        clients
+            .clients
+            .insert(keyid, (key, fake.client_for_key(key)));
+    }
+    let (key, _) = &clients.clients[&keyid];
+    UnparsedPublicKey::new(&ED25519, key.as_bytes())
         .verify(&base, &parsed.sig)
         .map_err(|_| bad)?;
     Ok(parsed.params.keyid)
@@ -387,7 +405,7 @@ fn answer(req: &Req, port: u16, clients: &Mutex<Registry>) -> Result<(u16, Vec<u
         }
         return Ok(ok(&Located { mailbox_ids }));
     }
-    let id = signer(req, &registry)?;
+    let id = signer(req, &mut registry)?;
     let Registry { clients, sizes, .. } = &mut *registry;
     let (_, client) = clients.get_mut(&id).unwrap();
     let (path, query) = req.target.split_once('?').unwrap_or((&req.target, ""));
@@ -446,6 +464,20 @@ fn answer(req: &Req, port: u16, clients: &Mutex<Registry>) -> Result<(u16, Vec<u
                 ("PUT", ["push"]) => {
                     let r: SetPush = body(req)?;
                     client.set_push(r.kind, &r.token)?;
+                    Ok((204, vec![]))
+                }
+                ("POST", ["children"]) => {
+                    let r: CreateChild = body(req)?;
+                    Ok(ok(&client.create_child(r.kind, r.owner_public_key, &r.label)?))
+                }
+                ("PUT", ["credentials", c, "role"]) => {
+                    let r: SetCredentialRole = body(req)?;
+                    client.set_role(hex16(c)?, r.role, r.put_kinds)?;
+                    Ok((204, vec![]))
+                }
+                ("PUT", ["push-targets", tag]) => {
+                    let r: SetPush = body(req)?;
+                    client.set_push_target(hex16(tag)?, r.kind, &r.token)?;
                     Ok((204, vec![]))
                 }
                 ("DELETE", ["credentials", c]) => {

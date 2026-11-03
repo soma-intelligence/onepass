@@ -434,3 +434,75 @@ pub fn drop_delete(
         drop_id(id)?,
     )?)
 }
+
+/// Which half of a remote invitation (`invite_put`).
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiInvitePart {
+    /// The invitee's reply.
+    Reply,
+    /// The inviter's answer.
+    Answer,
+}
+
+impl From<FfiInvitePart> for onepass_mailbox::InvitePart {
+    fn from(p: FfiInvitePart) -> onepass_mailbox::InvitePart {
+        match p {
+            FfiInvitePart::Reply => onepass_mailbox::InvitePart::Reply,
+            FfiInvitePart::Answer => onepass_mailbox::InvitePart::Answer,
+        }
+    }
+}
+
+/// Write one half of the remote invitation at `rdv_id` (16 bytes, from
+/// the invitation): a sealed reply or answer is larger than one slot, so
+/// it spreads over the slots of a drop of its own. A retry after a partial
+/// write is safe; other bytes already there are `Conflict`.
+#[uniffi::export(default(extra_ca_pem = None))]
+pub fn invite_put(
+    base_url: String,
+    rdv_id: Vec<u8>,
+    part: FfiInvitePart,
+    bytes: Vec<u8>,
+    extra_ca_pem: Option<String>,
+) -> Result<(), OnePassError> {
+    match onepass_mailbox::invite_put(
+        &drop_endpoint(base_url, extra_ca_pem),
+        drop_id(rdv_id)?,
+        part.into(),
+        &bytes,
+    ) {
+        Err(MailboxError::Conflict) => Err(OnePassError::Conflict),
+        other => Ok(other?),
+    }
+}
+
+/// Read one half of the remote invitation at `rdv_id`: `None` until it
+/// is all there.
+#[uniffi::export(default(extra_ca_pem = None))]
+pub fn invite_get(
+    base_url: String,
+    rdv_id: Vec<u8>,
+    part: FfiInvitePart,
+    extra_ca_pem: Option<String>,
+) -> Result<Option<Vec<u8>>, OnePassError> {
+    Ok(onepass_mailbox::invite_get(
+        &drop_endpoint(base_url, extra_ca_pem),
+        drop_id(rdv_id)?,
+        part.into(),
+    )?)
+}
+
+/// Close the drop of one half of the remote invitation at `rdv_id`.
+#[uniffi::export(default(extra_ca_pem = None))]
+pub fn invite_delete(
+    base_url: String,
+    rdv_id: Vec<u8>,
+    part: FfiInvitePart,
+    extra_ca_pem: Option<String>,
+) -> Result<(), OnePassError> {
+    Ok(onepass_mailbox::invite_delete(
+        &drop_endpoint(base_url, extra_ca_pem),
+        drop_id(rdv_id)?,
+        part.into(),
+    )?)
+}
