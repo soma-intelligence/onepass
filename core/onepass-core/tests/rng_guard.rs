@@ -102,6 +102,11 @@ const ALLOWED: &[(&str, usize, &str)] = &[
          randomness",
     ),
     ("apple/App/Root/DemoData.swift", 1, "Debug demo data only"),
+    (
+        "apple/VaultKit/Sources/VaultKit/Sync/PushRegistration.swift",
+        1,
+        "zone push target tag: an opaque routing label for the relay, not a secret",
+    ),
 ];
 
 fn repo_root() -> PathBuf {
