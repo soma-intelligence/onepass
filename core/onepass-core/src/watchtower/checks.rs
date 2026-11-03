@@ -577,8 +577,16 @@ fn duplicates(items: &[&Item], out: &mut Vec<Finding>) {
         }
         match first.entry((host, user.to_lowercase())) {
             Entry::Occupied(e) => {
-                let detail = Detail::Duplicate { other: *e.get() };
-                push(out, item, Check::Duplicate, None, detail);
+                // A pair the user called "not duplicates" is not reported.
+                let other = *e.get();
+                let dismissed = items
+                    .iter()
+                    .find(|i| i.id == other)
+                    .is_some_and(|o| crate::duplicates::dismissed(item, o));
+                if !dismissed {
+                    let detail = Detail::Duplicate { other };
+                    push(out, item, Check::Duplicate, None, detail);
+                }
             }
             Entry::Vacant(e) => {
                 e.insert(item.id);
@@ -1098,6 +1106,16 @@ mod tests {
         let r = run(&[i]);
         assert!(of(&r, Check::Weak).is_empty());
         assert_eq!(of(&r, Check::InsecureUrl).len(), 1);
+    }
+
+    #[test]
+    fn duplicate_dismissed_by_the_user_is_not_reported() {
+        let first = login("A", "bob", "password1", "https://example.com/a");
+        let mut second = login("B", "Bob", "password2", "https://example.com/b");
+        second.id = Id([2; 16]);
+        crate::duplicates::mark_distinct(&mut second, [first.id]);
+        let r = run(&[first, second]);
+        assert!(of(&r, Check::Duplicate).is_empty());
     }
 
     #[test]

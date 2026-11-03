@@ -151,7 +151,11 @@ impl<S: RecordStore> Repository<S> {
 
     /// Write the chunks of a new attachment: in the private zone with
     /// `put`, in a shared vault's zone as zone rows (sharing plan 2).
-    fn put_chunks(&mut self, zone: Zone, records: Vec<crate::store::Record>) -> Result<()> {
+    pub(crate) fn put_chunks(
+        &mut self,
+        zone: Zone,
+        records: Vec<crate::store::Record>,
+    ) -> Result<()> {
         if zone == Zone::Private {
             return records.into_iter().try_for_each(|r| self.store.put(r));
         }
@@ -161,7 +165,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// Best effort: delete chunks `ids` of `zone`. A chunk already gone is
     /// fine.
-    fn delete_chunks(&mut self, zone: Zone, ids: &[Id]) {
+    pub(crate) fn delete_chunks(&mut self, zone: Zone, ids: &[Id]) {
         if zone == Zone::Private {
             for id in ids {
                 let _ = self.store.delete(RecordKind::Attachment, *id);

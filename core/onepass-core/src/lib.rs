@@ -14,6 +14,7 @@ pub mod contact;
 pub mod crypto;
 pub mod device_keys;
 pub mod devices;
+pub mod duplicates;
 pub mod enroll_request;
 pub mod epoch;
 pub mod error;

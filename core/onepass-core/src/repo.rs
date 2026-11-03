@@ -73,6 +73,7 @@ use crate::{Error, Id, IntegrityError, Result};
 
 mod attachments;
 mod autofill_history;
+pub mod duplicates;
 pub mod family;
 pub mod follow;
 pub mod kit;

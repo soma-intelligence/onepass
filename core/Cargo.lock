@@ -1830,6 +1830,7 @@ dependencies = [
  "postcard",
  "proptest",
  "prost",
+ "psl",
  "quick-xml",
  "ripemd",
  "rusqlite",
