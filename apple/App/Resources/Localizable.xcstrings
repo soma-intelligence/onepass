@@ -35059,6 +35059,64 @@
         }
       }
     },
+    "root.quarantineErasesOn %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device will erase its OnePass data on %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo borrará sus datos de OnePass el %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet appareil effacera ses données OnePass le %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo dispositivo cancellerà i suoi dati OnePass il %@."
+          }
+        }
+      }
+    },
+    "root.quarantineTimeLeft %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ left."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quedan %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restano %@."
+          }
+        }
+      }
+    },
     "root.recoverFromIcloudRuns" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37949,6 +38007,35 @@
         }
       }
     },
+    "settings.devices.markStolen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as stolen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marcar como robado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquer comme volé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segna come rubato"
+          }
+        }
+      }
+    },
     "settings.driversLicense" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40244,6 +40331,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gestisci nelle Impostazioni di Sistema"
+          }
+        }
+      }
+    },
+    "settings.markStolen %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark %@ as stolen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Marcar %@ como robado?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquer %@ comme volé ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segnare %@ come rubato?"
+          }
+        }
+      }
+    },
+    "settings.markStolen.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At its next sync, this device erases its OnePass data, with no 7-day wait. This can't be undone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En su próxima sincronización, este dispositivo borra sus datos de OnePass, sin esperar 7 días. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À sa prochaine synchronisation, cet appareil efface ses données OnePass, sans attendre 7 jours. Ça ne s'annule pas."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alla prossima sincronizzazione, questo dispositivo cancella i suoi dati OnePass, senza attendere 7 giorni. Non si può annullare."
           }
         }
       }
@@ -42612,6 +42757,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "chiavi SSH"
+          }
+        }
+      }
+    },
+    "settings.stolen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marked as stolen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marcado como robado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marqué comme volé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segnato come rubato"
           }
         }
       }

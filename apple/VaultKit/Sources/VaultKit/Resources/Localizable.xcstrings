@@ -5132,6 +5132,35 @@
         }
       }
     },
+    "session.markDeviceStolen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark this device as stolen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marcar este dispositivo como robado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquer cet appareil comme volé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segna questo dispositivo come rubato"
+          }
+        }
+      }
+    },
     "session.n1ItemExpiresSoon" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -83,7 +83,16 @@ extension VaultSession {
         let (list, me, acks) = try await read { session in
             (try session.devices(), session.thisDeviceId(), (try? session.rotationAcks()) ?? [])
         }
+        let path = dbPath
+        let (stolen, lineage) = try await read { session in
+            (
+                Set((try? session.stolenDevices()) ?? []),
+                (try? lineageStatus(dbPath: path))?.removesByRotation ?? false
+            )
+        }
         devices = list
+        stolenDeviceIDs = stolen
+        canMarkStolen = lineage
         thisDeviceID = me
         rotationAcks = Dictionary(acks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         devicesRefreshed?(list)
@@ -103,6 +112,18 @@ extension VaultSession {
         let bytes = SecretBytes(utf8: password)
         defer { bytes.wipe() }
         try await revokeDevice(id, password: bytes)
+    }
+
+    /// "Marquer comme volé" (founder decision 2026-11-03): after a fresh presence (Face ID or Touch ID,
+    /// else `password`, as for a removal), a wipe order signed by the account's current keys for a
+    /// device the account already removed (by a key rotation, or every old device after a recovery).
+    /// That device erases its local copy as soon as its next sync brings the order, with no 7-day
+    /// wait. Refreshes the list and lets the sync layer send the order.
+    public func markStolen(_ id: String, password: SecretBytes? = nil) async throws {
+        try await confirmPresence(password: password, prompt: Self.stolenPrompt)
+        let now = Int64(environment.clock.now.timeIntervalSince1970.rounded(.down))
+        try await write { try $0.markStolen(id: id, now: now) }
+        try await refreshDevices()
     }
 
     /// Renames a device of the list (a revoked one is refused).
@@ -201,6 +222,9 @@ extension VaultSession {
 
     nonisolated static var revokePrompt: String {
         String(localized: "session.removeDeviceFromAccount", bundle: VaultKitStrings.bundle)
+    }
+    nonisolated static var stolenPrompt: String {
+        String(localized: "session.markDeviceStolen", bundle: VaultKitStrings.bundle)
     }
     nonisolated static var approvePrompt: String {
         String(localized: "session.addDeviceToAccount", bundle: VaultKitStrings.bundle)

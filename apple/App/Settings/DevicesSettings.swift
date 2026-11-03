@@ -5,7 +5,10 @@ import VaultKit
 /// Appareils (spec 2b 4.3): the signed device list, "Ajouter un appareil" on iPhone and iPad (scan the
 /// new device's QR), "Configurer un appareil…" on the Mac (it shows the code, the new device joins it),
 /// "Retirer cet appareil" for any other device (ruling A6) after a confirmation and a fresh presence
-/// check (ruling A8), then the advice to change the master password.
+/// check (ruling A8), then the advice to change the master password. On an account whose removals go
+/// through the key lineage, a removed device can be marked stolen ("Marquer comme volé", founder
+/// decision 2026-11-03): after a confirmation and the same presence check, it erases its local copy at
+/// its next sync instead of 7 days later.
 struct DevicesSettings: View {
     @Environment(AppModel.self) private var model
     @State private var approving = false
@@ -15,6 +18,8 @@ struct DevicesSettings: View {
     @State private var confirmRevoke: FfiDevice?
     @State private var passwordForRevoke: DeviceTarget?
     @State private var revokedName: String?
+    @State private var confirmStolen: FfiDevice?
+    @State private var passwordForStolen: DeviceTarget?
     @State private var changingPassword = false
     @State private var renaming: FfiDevice?
     @State private var newName = ""
@@ -101,7 +106,7 @@ struct DevicesSettings: View {
             if !revoked.isEmpty {
                 Section("settings.removed") {
                     ForEach(revoked, id: \.id) { device in
-                        DeviceRow(device: device, isThisDevice: false, ack: nil) { EmptyView() }
+                        DeviceRow(device: device, isThisDevice: false, ack: nil) { stolenAction(device) }
                     }
                 }
             }
@@ -140,6 +145,29 @@ struct DevicesSettings: View {
             Button("Annuler", role: .cancel) {}
         } message: { _ in
             Text("settings.itErasesOnepassData")
+        }
+        .confirmationDialog(
+            Text("settings.markStolen \(confirmStolen?.name ?? "")"),
+            isPresented: Binding(get: { confirmStolen != nil }, set: { if !$0 { confirmStolen = nil } }),
+            titleVisibility: .visible,
+            presenting: confirmStolen
+        ) { device in
+            Button("settings.devices.markStolen", role: .destructive) {
+                Task { await markStolen(device) }
+            }
+            .accessibilityIdentifier("settings.devices.stolen.confirm")
+            Button("Annuler", role: .cancel) {}
+        } message: { _ in
+            Text("settings.markStolen.message")
+        }
+        .sheet(item: $passwordForStolen) { target in
+            let device = target.device
+            PasswordPromptSheet(
+                title: "settings.markStolen \(device.name)",
+                footer: "settings.confirmWithMasterPassword"
+            ) { password in
+                try await session.markStolen(device.id, password: password)
+            }
         }
         .sheet(item: $passwordForRevoke) { target in
             let device = target.device
@@ -199,6 +227,38 @@ struct DevicesSettings: View {
         .fixedSize()
         .accessibilityLabel(Text("app.actionsFor \(device.name)"))
         .accessibilityIdentifier("settings.devices.menu.\(device.id)")
+    }
+
+    /// A removed device: "Marquer comme volé" while the account can, "Marqué comme volé" once done.
+    @ViewBuilder private func stolenAction(_ device: FfiDevice) -> some View {
+        if session.stolenDeviceIDs.contains(device.id) {
+            Text("settings.stolen")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("settings.devices.stolen.\(device.id)")
+        } else if session.canMarkStolen {
+            Button("settings.devices.markStolen", role: .destructive) {
+                errorMessage = nil
+                confirmStolen = device
+            }
+            .buttonStyle(.borderless)
+            .font(.footnote)
+            .accessibilityIdentifier("settings.devices.markStolen.\(device.id)")
+        }
+    }
+
+    /// Face ID or Touch ID first; without them (or refused), the master password sheet.
+    private func markStolen(_ device: FfiDevice) async {
+        do {
+            try await session.markStolen(device.id)
+        } catch {
+            let failure = VaultError(error)
+            if failure == .passwordRequired {
+                passwordForStolen = DeviceTarget(device: device)
+            } else {
+                errorMessage = failure.localizedMessage
+            }
+        }
     }
 
     private func reload() async {

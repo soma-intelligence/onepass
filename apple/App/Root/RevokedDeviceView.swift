@@ -5,7 +5,9 @@ import VaultKit
 /// The signed device list marked this device revoked: the session is locked and its OnePass data
 /// kept (rule 8.4 of the key rotation v2 spec: a revoked device can sign that list too). "Effacer cet
 /// appareil" erases it after a confirmation. When the erase failed (L6), the screen says so and
-/// "Réessayer" tries again (also once on appear, after a relaunch).
+/// "Réessayer" tries again (also once on appear, after a relaunch). A device the key lineage removed
+/// (quarantine, also every old device after a recovery) shows the date it erases itself and the time
+/// left (founder decision 2026-11-03).
 struct RevokedDeviceView: View {
     @Environment(AppModel.self) private var model
     @State private var confirmErase = false
@@ -32,6 +34,18 @@ struct RevokedDeviceView: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .accessibilityIdentifier("revoked.detail")
+            if let eraseAt = model.session.quarantineEraseAt, !eraseFailed {
+                // Key rotation v2 quarantine: the date the device erases itself and the time left.
+                VStack(spacing: 4) {
+                    Text("root.quarantineErasesOn \(eraseAt.formatted(date: .long, time: .shortened))")
+                    Text("root.quarantineTimeLeft \(Text(eraseAt, style: .relative))")
+                        .monospacedDigit()
+                }
+                .font(.callout.weight(.medium))
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("revoked.eraseAt")
+            }
             Button {
                 if eraseFailed {
                     Task { await model.session.refresh() }

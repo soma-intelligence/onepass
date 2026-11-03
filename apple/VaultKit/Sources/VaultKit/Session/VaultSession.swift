@@ -37,6 +37,11 @@ public final class VaultSession {
     public internal(set) var passwordChangedElsewhere = false
     /// The signed device list, revoked devices included (`refreshDevices`). Emptied on lock.
     public internal(set) var devices: [FfiDevice] = []
+    /// Devices this account marked stolen (`markStolen`), by id.
+    public internal(set) var stolenDeviceIDs: Set<String> = []
+    /// The account removes devices by lineage (key rotation v2): a removed device can then be marked
+    /// stolen. False for an account with no lineage.
+    public internal(set) var canMarkStolen = false
     /// This device's id in the device list, once known (`refreshDevices`).
     public internal(set) var thisDeviceID: String?
     /// After a key rotation, each device's signed acknowledgment of this device's current head, by
@@ -46,6 +51,13 @@ public final class VaultSession {
     /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
     /// the revoked screen must not say "effacées". `refresh` tries again.
     public private(set) var revokedEraseFailed = false
+    /// A lineage record removed this device (key rotation v2 quarantine): the date it erases itself,
+    /// shown on the removed-device screen. Nil when not quarantined or when the core keeps it locked
+    /// with no date (`runQuarantineClock`).
+    public private(set) var quarantineEraseAt: Date?
+    /// The quarantine erased this device's local copy (7 days passed, or another device of the
+    /// account marked it stolen). Shown once by the onboarding.
+    public var erasedByQuarantine = false
     /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
@@ -200,6 +212,7 @@ public final class VaultSession {
             lastError = refusedStore
             return
         }
+        if runQuarantineClock() { return }
         if settings.revokedErasePending {
             // Revoked, not erased yet (L6): never the lock screen of a revoked account.
             state = .failed(.deviceRevoked)
@@ -309,6 +322,14 @@ public final class VaultSession {
         try await environment.sync.resetStore {
             if accountMissing { try resetStoreForRecovery(dbPath: path) } else { try resetStore(dbPath: path) }
         }
+        forgetErasedAccount()
+    }
+
+    /// What `eraseLocalAccount` removes outside the store, once the store is empty: the Secret Key and
+    /// biometric enrollment of the account (its Keychain items), the account id, name, failure
+    /// throttle and biometric wish, and the system identity store. Other accounts on the device are
+    /// untouched (their own Keychain items, keyed by their account id).
+    private func forgetErasedAccount() {
         if let accountID = settings.accountID {
             do {
                 try secretKeys.remove(accountID: accountID)
@@ -349,6 +370,62 @@ public final class VaultSession {
         state = .failed(.deviceRevoked)
         lastError = .deviceRevoked
         if wasOpen { notifySync { await $0.sessionLocked() } }
+        // A lineage removal locks the session the same way: its clock (or a stolen order) runs now.
+        _ = runQuarantineClock()
+    }
+
+    /// The core's quarantine clock (key rotation v2 spec 8.4; founder decision 2026-11-03), run at
+    /// launch, on every re-read of the store and when a session is found removed, with the device
+    /// clock. A device a lineage record removed (also every old device after a recovery) is locked on
+    /// the removed-device screen with the date it erases itself (`quarantineEraseAt`, nil when the
+    /// core keeps it locked with no date); a device whose 7 days ran out, or that a valid "Marquer
+    /// comme volé" order names, has an empty store now: its Keychain items and settings go too
+    /// (`forgetErasedAccount`), and the session ends in `.noAccount` with `erasedByQuarantine` set.
+    /// A store with no lineage (every account the app creates today) is never touched. Returns
+    /// whether it decided the state. The biometric policy is unchanged: the removed screen offers no
+    /// unlock.
+    @discardableResult
+    func runQuarantineClock() -> Bool {
+        guard FileManager.default.fileExists(atPath: dbPath) else {
+            quarantineEraseAt = nil
+            return false
+        }
+        let now = UInt64(max(0, environment.clock.now.timeIntervalSince1970.rounded(.down)))
+        let tick: FfiQuarantineTick
+        do {
+            tick = try quarantineTick(dbPath: dbPath, now: now)
+        } catch {
+            Self.log.error("quarantine clock not run")
+            return false
+        }
+        switch tick {
+        case .notQuarantined:
+            quarantineEraseAt = nil
+            return false
+        case .waiting(let eraseAt):
+            quarantineEraseAt = Date(timeIntervalSince1970: TimeInterval(eraseAt))
+        case .locked:
+            quarantineEraseAt = nil
+        case .erased:
+            quarantineEraseAt = nil
+            if let session {
+                self.session = nil
+                release(session)
+            }
+            clearMemory()
+            forgetErasedAccount()
+            settings.revokedLocked = false
+            settings.revokedErasePending = false
+            revokedEraseFailed = false
+            erasedByQuarantine = true
+            state = .noAccount
+            lastError = nil
+            return true
+        }
+        settings.revokedLocked = true
+        state = .failed(.deviceRevoked)
+        lastError = .deviceRevoked
+        return true
     }
 
     /// The user erases a device found revoked (`lockRevokedDevice`): the store, the Secret Key and the
