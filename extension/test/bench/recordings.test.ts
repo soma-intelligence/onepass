@@ -100,6 +100,33 @@ describe("real-site bench recordings", () => {
   });
 });
 
+describe("lone password under a create-worded submit", () => {
+  const roles = (html: string): string[] => {
+    document.body.innerHTML = html;
+    const analysis = analyzeDocument(document, new RefRegistry(), { url: "https://site.test/account", geometry: testGeometry });
+    return analysis.forms.flatMap((f) => f.fields.map((x) => x.role));
+  };
+  it("a sign-in with a noisy 'create imagelog in' label keeps its current password (lab g5 sites 63, 72)", () => {
+    expect(
+      roles(`<form><label for="u">username *</label><input id="u" name="identifier">
+        <label for="p">Your password</label><input id="p" type="password" name="password-field">
+        <button type="submit">create imagelog in</button></form>`),
+    ).toEqual(["username", "current_password"]);
+    expect(
+      roles(`<form><label for="p">password input</label><input id="p" type="password" name="ul-password">
+        <button type="submit">create imagelog in</button></form>`),
+    ).toEqual(["current_password"]);
+  });
+  it("a user name, an e-mail and one password under Register is a signup", () => {
+    expect(
+      roles(`<form><label for="u">Username</label><input id="u" name="user[url_name]">
+        <label for="e">Email</label><input id="e" type="email" name="user[email]">
+        <label for="p">Password</label><input id="p" type="password" name="user[password]">
+        <input type="submit" value="register"></form>`),
+    ).toEqual(["username", "email", "new_password"]);
+  });
+});
+
 describe("buttonClass on combined labels", () => {
   const button = (label: string): HTMLButtonElement => {
     document.body.innerHTML = `<button type="button">${label}</button>`;

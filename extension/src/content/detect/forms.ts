@@ -179,14 +179,18 @@ function trailingNext(form: Element, buttons: Element[], groups: readonly Group[
 }
 
 /**
- * A lone password guessed as the current one (no `autocomplete`) is a new password when the
- * group's submit says the form makes an account ("Register", "Create account") and not a sign-in:
- * a signup with a single password field and no `new-password` hint.
+ * A lone password guessed as the current one (no `autocomplete`) is a new password when the group
+ * has a signup's shape: the submit says the form makes an account ("Register", "Create account")
+ * and not a sign-in, and the group asks for two or more identity fields beside the password (a
+ * user name and an e-mail, a name and an e-mail...). A sign-in asks for one identifier: a create
+ * word in a noisy sign-in label ("create imagelog in", lab g5) never turns its password into a new one.
  */
 function resolveSignupPassword(fields: Classified[], submit: Element | undefined): void {
   const pw = fields.filter((f) => f.role === "current_password" || f.role === "new_password" || f.role === "confirm_password");
   const [only] = pw;
   if (pw.length !== 1 || only === undefined || only.role !== "current_password" || only.direct || submit === undefined) return;
+  const identity = fields.filter((f) => IDENTIFIERS.has(f.role) || IDENTITY.has(f.role)).length;
+  if (identity < 2) return;
   const label = normalizeText(buttonLabel(submit));
   if (CREATE_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) only.role = "new_password";
 }
