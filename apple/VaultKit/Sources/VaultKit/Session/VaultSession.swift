@@ -65,6 +65,13 @@ public final class VaultSession {
     /// How long an edit of the profile waits before its write (typing a name writes once).
     @ObservationIgnored var profileWriteDelay: Duration = .milliseconds(800)
 
+    /// Contacts, shared vaults, invitations, identity changes, family and received items
+    /// (`refreshSharing`, sharing plan 4). Emptied on lock.
+    public internal(set) var sharing = SharingSnapshot()
+    /// The recovery requests for this account (spec 11.5), read from the store without unlocking
+    /// (`refreshRecoveryAlerts`): a locked device shows them too. Kept on lock.
+    public internal(set) var recoveryAlerts: [FfiRecoveryAlert] = []
+
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
 
@@ -837,6 +844,7 @@ public final class VaultSession {
     }
 
     private func clearMemory() {
+        sharing = SharingSnapshot()
         devices = []
         rotationAcks = [:]
         summaries = []

@@ -25,6 +25,8 @@ mod rotation;
 mod rules;
 mod session;
 mod sharing;
+#[cfg(feature = "dev-fast-kdf")]
+mod test_mailbox;
 pub mod timeline;
 mod travel;
 mod types;

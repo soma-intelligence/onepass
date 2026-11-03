@@ -42,6 +42,9 @@ onepass-bridge = { path = "../onepass-bridge" }
 onepass-mailbox = { path = "../onepass-mailbox" }
 onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 onepass-sync = { path = "../onepass-sync" }
+# The test mailbox server of the Swift tests (`dev-fast-kdf` only).
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"], optional = true }
+aws-lc-rs = { workspace = true, optional = true }
 
 # The bridge's socket and the code-signature checks of its clients: Mac only.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -52,7 +55,12 @@ onepass-relay = { path = "../onepass-relay" }
 bindgen = ["uniffi/cli"]
 # Lowers the Argon2id floor in debug builds only (see onepass-core): for the
 # tests and the Swift test framework, never for a shipped build.
-dev-fast-kdf = ["onepass-core/dev-fast-kdf"]
+dev-fast-kdf = [
+    "onepass-core/dev-fast-kdf",
+    "onepass-mailbox/testing",
+    "dep:rustls",
+    "dep:aws-lc-rs",
+]
 
 [dev-dependencies]
 tempfile = "3"

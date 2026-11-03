@@ -3043,6 +3043,122 @@
         }
       }
     },
+    "recovery.alert %@ %@ %@" : {
+      "comment" : "Spec 11.5, on the member's devices (locked too): %1$@ organizer, %2$@ date, %3$@ time.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ asked to recover your account. It will be possible on %2$@ at %3$@. If this isn't you, cancel."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ pidió recuperar tu cuenta. Será posible el %2$@ a las %3$@. Si no fuiste tú, cancela."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a demandé à récupérer ton compte. Ce sera possible le %2$@ à %3$@. Si ce n'est pas toi, annule."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ha chiesto di recuperare il tuo account. Sarà possibile il %2$@ alle %3$@. Se non sei tu, annulla."
+          }
+        }
+      }
+    },
+    "recovery.enroll.riskICloud %@" : {
+      "comment" : "Spec 11.4, before enrolling (iCloud account): %@ is the organizer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ and someone with access to your iCloud account could open your vault together."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ y alguien con acceso a tu cuenta de iCloud podrían abrir juntos tu bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ et quelqu'un qui aurait accès à ton compte iCloud pourraient ensemble ouvrir ton coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ e qualcuno con accesso al tuo account iCloud potrebbero aprire insieme la tua cassaforte."
+          }
+        }
+      }
+    },
+    "recovery.enroll.riskKit %@" : {
+      "comment" : "Spec 11.4 and 11.7, before enrolling (mailbox account): %@ is the organizer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ and someone with your Emergency Kit could open your vault together."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ y alguien que tuviera tu Emergency Kit podrían abrir juntos tu bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ et quelqu'un qui aurait ton Emergency Kit pourraient ensemble ouvrir ton coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ e qualcuno che avesse il tuo Emergency Kit potrebbero aprire insieme la tua cassaforte."
+          }
+        }
+      }
+    },
+    "recovery.helper.chosen %@" : {
+      "comment" : "Spec 11.4, organizer side: %@ is the member who enrolled.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ chose you to help recover their account."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ te eligió para ayudarle a recuperar su cuenta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ t'a choisi pour l'aider à récupérer son compte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ti ha scelto per aiutarlo a recuperare il suo account."
+          }
+        }
+      }
+    },
     "remote.allowedFor5Min" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6349,6 +6465,122 @@
         }
       }
     },
+    "sharing.identity.forked %@" : {
+      "comment" : "Spec 12.3: two devices of the contact (%@) removed each other.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two of %@'s devices removed each other. Which one do they still have?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dos dispositivos de %@ se retiraron mutuamente. ¿Cuál tiene todavía?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deux appareils de %@ se sont retirés l'un l'autre. Lequel a-t-elle encore en main ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Due dispositivi di %@ si sono rimossi a vicenda. Quale ha ancora in mano?"
+          }
+        }
+      }
+    },
+    "sharing.identity.reader %@ %@ %@ %@" : {
+      "comment" : "Spec 12.3, a reader's keys changed: %1$@ contact name, %2$@ date, %3$@ the device that removed, %4$@ the devices removed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s keys changed on %2$@ (%3$@ removed %4$@). Ask them for the code shown on their iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de %1$@ cambiaron el %2$@ (%3$@ retiró %4$@). Pídele el código que aparece en su iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés de %1$@ ont changé le %2$@ (%3$@ a retiré %4$@). Demande-lui le code affiché sur son iPhone."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiavi di %1$@ sono cambiate il %2$@ (%3$@ ha rimosso %4$@). Chiedigli il codice mostrato sul suo iPhone."
+          }
+        }
+      }
+    },
+    "sharing.identity.readerShort %@ %@" : {
+      "comment" : "Spec 12.3 without the device names: %1$@ contact name, %2$@ date.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s keys changed on %2$@. Ask them for the code shown on their iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de %1$@ cambiaron el %2$@. Pídele el código que aparece en su iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés de %1$@ ont changé le %2$@. Demande-lui le code affiché sur son iPhone."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiavi di %1$@ sono cambiate il %2$@. Chiedigli il codice mostrato sul suo iPhone."
+          }
+        }
+      }
+    },
+    "sharing.identity.writer %@ %@" : {
+      "comment" : "Ruling C-2 (provisional copy), a writer or manager's keys changed: %1$@ contact name, %2$@ date.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s keys changed on %2$@. To give them access again, verify each other in person with the QR code."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de %1$@ cambiaron el %2$@. Para devolverle el acceso, verificaos en persona con el código QR."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés de %1$@ ont changé le %2$@. Pour lui rendre l'accès, vérifiez-vous en personne avec le QR."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiavi di %1$@ sono cambiate il %2$@. Per ridargli l'accesso, verificatevi di persona con il codice QR."
+          }
+        }
+      }
+    },
     "sharing.invite.expired" : {
       "comment" : "Remote contact invitation: the link expired before the other person answered.",
       "localizations" : {
@@ -6403,6 +6635,93 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connettiti a Internet per completare l'aggiunta di questo contatto."
+          }
+        }
+      }
+    },
+    "sharing.rekey.notice %@" : {
+      "comment" : "Local notification: this device renewed a shared vault's key after a member left or rotated keys; %@ is the vault name (provisional copy).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key of vault %@ renewed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de la bóveda %@ renovada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé du coffre %@ renouvelée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiave della cassaforte %@ rinnovata"
+          }
+        }
+      }
+    },
+    "sharing.rekey.title" : {
+      "comment" : "Title of the local notification after a shared vault key was renewed (provisional copy).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóveda compartida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffre partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cassaforte condivisa"
+          }
+        }
+      }
+    },
+    "sharing.removal.prompt %@ %@ %lld" : {
+      "comment" : "Spec 9.3, after removing a member: %1$@ member's name, %2$@ vault name, %3$lld items they could read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ won't see anything new in %2$@. They may have kept what they already saw: %3$lld passwords. Change them?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ya no verá nada nuevo en %2$@. Puede haber guardado lo que ya vio: %3$lld contraseñas. ¿Cambiarlas?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ne verra plus rien de nouveau dans %2$@. Il a pu garder ce qu'il a déjà vu : %3$lld mots de passe. Les changer ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ non vedrà più niente di nuovo in %2$@. Potrebbe aver conservato ciò che ha già visto: %3$lld password. Cambiarle?"
           }
         }
       }
@@ -7552,6 +7871,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niente lascerebbe questo dispositivo: tutte le tue casseforti sono sicure in viaggio e nessun elemento è nascosto o protetto."
+          }
+        }
+      }
+    },
+    "watchtower.filter.seenByFormerMember" : {
+      "comment" : "Spec 9.3, Watchtower filter: items a removed member could read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seen by a former member"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vistos por un antiguo miembro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vus par un ancien membre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visti da un ex membro"
           }
         }
       }

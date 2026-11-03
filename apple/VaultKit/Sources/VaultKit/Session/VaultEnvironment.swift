@@ -58,6 +58,8 @@ public struct VaultEnvironment: Sendable {
     public var identityDebounce: Duration = .seconds(1)
     /// Darwin notification of a write by another process (the AutoFill extension).
     public var storeChanges = StoreChangeNotifier()
+    /// Local notifications of the sharing model (a vault key renewed). None by default.
+    public var notifier: any LocalNotifying = NoLocalNotifier()
 
     public init(
         databaseURL: URL, keychain: any KeychainStore, biometrics: BiometricUnlock,

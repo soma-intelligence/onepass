@@ -30,6 +30,19 @@ extension VaultSession {
             breachCatalog: breachCatalog)
         return try await read { try $0.watchtowerReport(options: options) }
     }
+
+    /// Watchtower filter "Vus par un ancien membre" (sharing spec 9.3): the items a removed member
+    /// could read, whose passwords should change. Read from the core, never computed here.
+    public static var seenByFormerMemberTitle: String {
+        String(localized: "watchtower.filter.seenByFormerMember", bundle: VaultKitStrings.bundle)
+    }
+
+    /// The summaries behind "Vus par un ancien membre", trashed items left out.
+    public func seenByFormerMemberItems() async throws -> [FfiItemSummary] {
+        let seen = Set(try await read { try $0.seenByFormerMembers() }.map(\.itemId))
+        sharing.seenByFormerMembers = seen
+        return summaries.filter { seen.contains($0.id) && $0.trashedAt == nil }
+    }
 }
 
 /// Download of the public Watchtower data: HIBP password ranges (kept in memory, for one hour, and
