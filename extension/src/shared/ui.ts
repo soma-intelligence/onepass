@@ -128,6 +128,8 @@ export interface OverlayAccount {
   accounts?: ProviderChoice[];
   /** Password rows: the item also fills a one-time code. */
   totp?: boolean;
+  /** The vault the item lives in: named on the card when the site's logins span several vaults. */
+  vault?: { id: string; name: string };
 }
 
 export interface OverlayInit {

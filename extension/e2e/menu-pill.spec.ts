@@ -3,7 +3,8 @@
 // - "Remplir" filled one page only (the identifier, or just the password):
 //   on a sign-in form it now runs the sign-in to its end, code included;
 // - the pill's other accounts were unreachable (their chevron sat, hidden,
-//   under the close button in the pill's corner);
+//   under the close button in the pill's corner): now "Other logins" hangs
+//   under the capsule and opens a searchable list;
 // - a page that declares a light scheme turned the menu light on a dark Mac,
 //   and painted an opaque white backdrop under the dark pill (the white line).
 import type { Page } from "@playwright/test";
@@ -43,24 +44,35 @@ paired("menu_fill_on_google_identifier_goes_through_the_password_page", async ({
   await expect.poll(() => ext.server.providerSignIns, { timeout: 30_000 }).toEqual([FX.googlePerso.email]);
 });
 
-paired("pill_other_accounts_are_reachable", async ({ ext }) => {
+paired("pill_other_logins_are_reachable", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/login`);
   const overlay = await ext.extFrame(page, "overlay");
-  const more = overlay.locator(".ov-more");
-  await expect(more).toHaveCount(1);
+  const others = overlay.locator(".ov-others");
+  await expect(others).toHaveCount(1);
   await ext.settle();
-  // Shown without hovering, and not under the close button.
-  const look = await more.evaluate((el) => {
-    const close = el.closest(".ov-shell")?.querySelector(".ov-close");
-    const a = el.getBoundingClientRect();
-    const b = close?.getBoundingClientRect();
-    const over = b ? !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top) : false;
-    return { opacity: getComputedStyle(el).opacity, over, width: a.width };
+  // One capsule: the login, a text "Sign in" and x inside; "Other logins" hangs under it, once.
+  const look = await overlay.locator(".ov-pill").evaluate((pill) => {
+    const tab = pill.parentElement?.querySelector(".ov-others");
+    const a = pill.getBoundingClientRect();
+    const b = tab?.getBoundingClientRect();
+    return {
+      closeInside: !!pill.querySelector(".ov-close"),
+      signIn: !!pill.querySelector(".ov-signin"),
+      tabUnder: b ? b.top >= a.bottom - 2 && b.left > a.left && b.right < a.right : false,
+      opacity: tab ? getComputedStyle(tab).opacity : null,
+    };
   });
-  expect(look).toEqual({ opacity: "1", over: false, width: 30 });
-  await more.click();
-  await ext.overlayStart(page, "Atlas Cloud (multi)");
+  expect(look).toEqual({ closeInside: true, signIn: true, tabUnder: true, opacity: "1" });
+  await others.click();
+  const search = overlay.locator(".ov-search");
+  await expect(search).toBeFocused();
+  // Typing finds the login, Enter signs in with it.
+  await ext.settle();
+  await search.pressSequentially("multi");
+  await expect(overlay.locator(".ov-opt")).toHaveCount(1);
+  await expect(overlay.locator(".ov-opt").first()).toHaveAttribute("aria-selected", "true");
+  await search.press("Enter");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText(FX.ops.email);
 });

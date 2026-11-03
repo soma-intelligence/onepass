@@ -400,9 +400,7 @@ body.island { background: transparent; }
   background: var(--elevated);
   box-shadow: var(--card-shadow);
 }
-.ov-pill { display: flex; align-items: center; min-height: 52px; padding: 9px 9px 9px 9px; border-radius: 26px; }
-.ov-pill-open, .ov-card { border-radius: 22px; }
-.ov-pill-open { padding: 8px 9px; }
+.ov-card { border-radius: 22px; }
 .ov-card { display: flex; flex-direction: column; padding: 10px 12px 12px 9px; }
 .ov-close {
   flex-shrink: 0;
@@ -418,56 +416,111 @@ body.island { background: transparent; }
 .ov-head { display: flex; align-items: center; gap: 10px; padding: 4px 4px 2px 6px; }
 .ov-title { flex-grow: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-card .message { padding: 8px 6px 2px; }
-.ov-accounts { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.ov-pill-open .ov-accounts { gap: 4px; }
-.ov-row { min-height: 34px; gap: 10px; padding: 0; border-radius: 0; background: none !important; }
-.ov-pill-open .ov-row { min-height: 48px; }
-.ov-row .t1, .ov-who .t1 { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
-.ov-row .line2, .ov-row .t2, .ov-row .meta, .ov-who .line2, .ov-who .t2 { font-size: 12.5px; }
-/* The card names the account only; how it signs in (password, code) is in the menu. */
-.ov-row .line2 .t2 + .meta { display: none; }
-/* The accounts chevron: just before the first row's button. */
-.ov-more {
-  position: absolute;
-  top: 11px;
-  right: calc(9px + var(--act-w, 84px) + 6px);
-  width: 30px !important;
-  height: 30px !important;
-  border-radius: 50% !important;
-  background: var(--fill-2);
-  color: var(--text2);
-}
-.ov-pill-open .ov-more { top: 16px; }
-.ov-more svg { transition: transform 200ms cubic-bezier(.23, 1, .32, 1); transform: rotate(90deg); }
-.ov-more.open svg { transform: rotate(-90deg); }
-.with-more .ov-accounts > .ov-account:first-child .stack { padding-right: 38px; }
+.ov-who .t1 { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.ov-who .line2, .ov-who .t2 { font-size: 12.5px; }
 .ov-done .ov-who { flex-grow: 1; min-width: 0; padding: 0; }
 .ov-pill, .ov-card { animation: ov-in 320ms cubic-bezier(.34, 1.56, .64, 1) both; }
 .dot-big { animation: ov-pop 360ms cubic-bezier(.34, 1.56, .64, 1) both; }
 @keyframes ov-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes ov-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ov-pill, .ov-card, .dot-big { animation: none; } }
-.ov-sub .ov-row { min-height: 44px; }
-/* The row's button: quiet on every row, filled on the first way only. */
-.pill {
+
+/* The pill: one capsule (site, login, "Sign in", x) and the "Other logins" tab hanging under it. */
+.ov-pill-wrap { display: flex; flex-direction: column; align-items: center; padding-bottom: 2px; }
+.ov-pill {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 8px 10px 12px;
+  border-radius: 30px;
+}
+.ov-pill .stack { gap: 2px; }
+.ov-pill .t1, .ov-opt .t1 { font-size: 14px; font-weight: 500; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-line2 { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; }
+.ov-via { flex-shrink: 0; margin-right: -3px; }
+/* The account is never cut: the title gives way first, then the line wraps. */
+.ov-email { flex-shrink: 0; color: var(--text); opacity: .86; }
+.ov-line2.ov-wrap { flex-wrap: wrap; row-gap: 3px; white-space: normal; overflow: visible; }
+.ov-wrap .ov-email { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
+.ov-signin { flex-shrink: 0; height: 34px; padding: 0 8px; border-radius: 17px; font-size: 15px; font-weight: 600; color: var(--accent-ink); }
+.ov-signin:hover { background: var(--fill-2); }
+.ov-pill .ov-close, .ov-picker .ov-close { margin: 0; width: 30px !important; height: 30px !important; background: none !important; box-shadow: none; color: var(--text2); }
+.ov-pill .ov-close:hover, .ov-picker .ov-close:hover { background: var(--fill-2) !important; color: var(--text); }
+.ov-others {
+  position: relative;
+  margin-top: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 16px 2px;
+  border-radius: 0 0 14px 14px;
+  background: var(--elevated);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, .18);
+}
+/* The tab's inner corners curve into the capsule's edge. */
+.ov-others::before, .ov-others::after { content: ""; position: absolute; top: 0; width: 12px; height: 12px; pointer-events: none; }
+.ov-others::before { left: -12px; background: radial-gradient(circle at 0 100%, transparent 11.5px, var(--elevated) 12px); }
+.ov-others::after { right: -12px; background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--elevated) 12px); }
+.ov-others svg { transform: rotate(90deg); color: var(--text2); }
+.ov-others:hover svg { color: var(--text); }
+.brand-art { position: relative; flex-shrink: 0; display: inline-flex; }
+.brand-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #1F1F1F;
+  box-shadow: 0 0 0 2px var(--elevated);
+}
+.brand-mark { display: block; }
+.vault-chip {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 17px;
-  background: var(--fill);
-  font-size: 14px;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text);
+  line-height: 1;
   white-space: nowrap;
-  transition: background-color 120ms ease, color 120ms ease;
+  background: color-mix(in srgb, var(--vault) 20%, transparent);
+  color: color-mix(in srgb, var(--vault) 62%, var(--text));
 }
-.pill-primary { background: var(--accent); color: #FFFFFF; }
-.ov-row:hover .pill-primary, .ov-row:focus-visible .pill-primary { background: var(--accent-hover); }
-.ov-row:active { transform: scale(.99); }
-.row-fold.row { min-height: 30px !important; padding: 0 0 0 6px; background: none !important; }
-.ov-accounts .row-fold .t1 { color: var(--accent-ink); }
+.vault-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vault); }
+
+/* "Other logins": the search, then every login; the selection is a full-width accent pill. */
+.ov-picker { display: flex; flex-direction: column; padding: 8px 10px 10px; border-radius: 26px; background: var(--elevated); box-shadow: var(--card-shadow); animation: ov-in 320ms cubic-bezier(.34, 1.56, .64, 1) both; }
+.ov-find { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 2px 0 8px; }
+.ov-search { flex-grow: 1; min-width: 0; height: 36px; border: 0; outline: none; background: none; font-size: 17px; color: var(--text); }
+.ov-search::placeholder { color: var(--text2); }
+/* The field is the panel's whole header: the caret marks focus, as in a search bar. */
+.ov-search:focus-visible { outline: none; box-shadow: none; }
+.ov-search::-webkit-search-cancel-button { display: none; }
+.ov-rule { height: 1px; margin: 4px 0 6px; background: var(--sep); }
+.ov-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.ov-opt { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 14px 6px 10px; border-radius: 26px; cursor: default; }
+.ov-opt .site-tile { border-radius: 8px; }
+.ov-opt .brand-badge { box-shadow: 0 0 0 2px var(--elevated); }
+.ov-opt.selected { background: var(--accent); }
+.ov-opt.selected .t1, .ov-opt.selected .ov-line2, .ov-opt.selected .ov-email, .ov-opt.selected .ov-key { color: #FFFFFF; opacity: 1; }
+.ov-opt.selected .brand-badge { box-shadow: 0 0 0 2px var(--accent); }
+.ov-opt.selected .vault-chip { background: rgba(255, 255, 255, .2); color: #FFFFFF; }
+.ov-opt.selected .vault-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, .8); }
+.ov-key { flex-shrink: 0; margin-left: auto; color: var(--text2); display: inline-flex; }
+.ov-none { padding: 14px 10px; font-size: 13px; color: var(--text2); }
+@media (prefers-reduced-motion: reduce) { .ov-picker { animation: none; } }
 
 /* Progress and result: the account at the top, then the steps. */
 .ov-who { display: flex; align-items: center; gap: 10px; }

@@ -306,13 +306,14 @@ describe("overlay", () => {
       origin: SITE,
       chain: null,
       accounts: [
-        { itemId: "it_01", title: "Atlas Cloud", subtitle: "alex@atlas.dev", iconLetter: "A", iconColor: "#14532D" },
+        { itemId: "it_01", title: "Atlas Cloud", subtitle: "alex@atlas.dev", iconLetter: "A", iconColor: "#14532D", vault: { id: "v1", name: "Personnel" } },
         {
           itemId: "it_02",
           title: "Atlas Perso",
           subtitle: "alex.perso@example.com",
           iconLetter: "A",
           iconColor: "#14532D",
+          vault: { id: "v1", name: "Personnel" },
           provider: "google",
           email: "alex.perso@example.com",
           accountId: "g_perso",

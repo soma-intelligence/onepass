@@ -294,11 +294,21 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           const overlay = await extFrame(p, "overlay");
           const via = /^(.*) via (\S+)$/.exec(title);
           const provider = via ? (via[2] ?? "").toLowerCase() : null;
-          const scope = provider ? `.ov-account[data-provider="${provider}"]:not(.ov-sub)` : ".ov-account:not([data-provider])";
-          const account = overlay.locator(scope).filter({ has: overlay.locator(".t1", { hasText: exact(via ? (via[1] ?? "") : title) }) });
-          await expect(account).toHaveCount(1);
+          const name = exact(via ? (via[1] ?? "") : title);
+          const titled = (sel: string) => overlay.locator(sel).filter({ has: overlay.locator(".t1", { hasText: name }) });
+          await expect(overlay.locator(".ov-pill")).toHaveCount(1);
           await settle();
-          await account.getByRole("button").click();
+          // The pill's login: its "Sign in"; any other: from "Other logins".
+          const pill = titled(provider ? `.ov-pill[data-provider="${provider}"]` : ".ov-pill:not([data-provider])");
+          if ((await pill.count()) === 1) {
+            await pill.locator(".ov-signin").click();
+            return overlay;
+          }
+          await overlay.locator(".ov-others").click();
+          await settle();
+          const opt = titled(provider ? `.ov-opt[data-provider="${provider}"]` : ".ov-opt:not([data-provider])").first();
+          await expect(opt).toBeVisible();
+          await opt.click();
           return overlay;
         },
         async chainState() {

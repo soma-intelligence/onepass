@@ -92,7 +92,7 @@ for (const scheme of ["dark", "light"] as const) {
     // The offer, alone, on a page that signs in with Google.
     await page.goto(`${DOCS}/login`);
     const offer = await ext.extFrame(page, "overlay");
-    await expect(offer.locator('.ov-account[data-provider="google"]')).toHaveCount(1);
+    await expect(offer.locator('.ov-pill[data-provider="google"]')).toHaveCount(1);
     await ext.settle();
     await shot(page, "offer", scheme);
 

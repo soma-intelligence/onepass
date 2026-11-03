@@ -169,6 +169,10 @@ function account(v: unknown): OverlayAccount {
   if (o.accountId !== undefined) a.accountId = str(o.accountId, 128);
   if (o.accounts !== undefined) a.accounts = list(o.accounts, providerChoice, 32);
   if (o.totp !== undefined) a.totp = bool(o.totp);
+  if (o.vault !== undefined) {
+    const v = obj(o.vault);
+    a.vault = { id: str(v.id, 128), name: str(v.name, 256) };
+  }
   return a;
 }
 

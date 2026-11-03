@@ -1,17 +1,20 @@
 // "Connexion en un clic" overlay (spec 8.6, Inline mockup). Three faces of
 // one compact card, sized to its content:
 //
-// - the offer: every way to sign in on this site, each a single row that
-//   says how it signs in (password, or "Avec Google · <compte>") and starts
-//   the chain on a click; other accounts of a provider unfold inline;
+// - the offer: a pill with the first login (the site's icon, with the
+//   provider's official mark for a "Sign in with" login, its title and the
+//   account in full, never cut), a text "Se connecter" and x; "Autres
+//   identifiants" hangs under it when the site has others and opens a
+//   searchable list of every login (arrows, Enter, pointer). When the logins
+//   live in several vaults, each names its vault on a coloured chip;
 // - the progress, in place of the card the user clicked (or under the field
 //   when started from the menu): the account at the top, one line that says
 //   what happens now ("Ouverture de Google…"), "Annuler" at any time;
 // - the result: "Connecté" (the card then leaves by itself), or a precise
 //   stop with what to do next, and "Réessayer" when trying again can help.
 //
-// The card is a capsule (a rounded card once it grows) with the close button
-// detached at its right; it follows the system appearance. The service
+// The progress and result cards keep the close button detached at their
+// right; everything follows the system appearance. The service
 // worker reports the chain (polled every 500 ms while it runs); the overlay
 // computes no progress of its own, it only lists the steps a password login
 // still has ahead. While it runs the card shows one line (what happens now);
@@ -33,14 +36,13 @@ import {
   messageBlock,
   mount,
   observeVisibility,
-  otherAccounts,
-  providerGlyph,
+  brandTile,
   providerLabel,
   realTimers,
   siteTile,
   srOnly,
   tokenFromHash,
-  wayTile,
+  vaultChip,
 } from "./components";
 import { parseEmpty, parseOverlayInit, parseOverlayState } from "./parse";
 
@@ -160,6 +162,13 @@ const STATE_TEXT: Readonly<Record<StepState, string>> = {
   stopped: t("overlay.stopped"),
 };
 
+/** One login the card can start: a way to sign in, and the provider account it uses. */
+interface Entry {
+  way: OverlayAccount;
+  accountId?: string;
+  email?: string;
+}
+
 export interface OverlayHandle {
   ready: Promise<void>;
   /** One poll of the chain state (tests drive it). */
@@ -197,9 +206,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let stepsOpen = false;
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
-  const unfolded = new Set<string>();
-  /** The other logins for this site, shown under the first one from the pill's dropdown. */
-  let showAll = false;
+  /** The picker of every login for this site ("Other logins"), open or not, and its search. */
+  let pickerOpen = false;
+  let query = "";
 
   const stopPolling = () => {
     if (timer !== null) timers.clearInterval(timer);
@@ -244,9 +253,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       ),
     );
 
-  /** The site's icon on a round tile, with the provider's glyph at its corner. */
+  /** The site's icon on a round tile, with the provider's mark at its corner. */
   const artOf = (letter: string, provider: ProviderId | undefined) =>
-    provider ? wayTile(init?.origin ?? null, letter, provider, 34, true) : siteTile(init?.origin ?? null, letter, 34, true);
+    provider ? brandTile(init?.origin ?? null, letter, provider, 34, true) : siteTile(init?.origin ?? null, letter, 34, true);
 
   const renderMessage = (code: string) => {
     stopPolling();
@@ -280,69 +289,157 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     startPolling();
   };
 
-  /** One way to sign in: a single button for the whole row. */
-  const wayRow = (a: OverlayAccount, primary: boolean) => {
-    const name = a.provider ? providerLabel(a.provider) : null;
-    const line2 = name
-      ? h("span", { class: "line2" }, h("span", { class: "meta" }, t("menu.withName", { name })), h("span", { class: "t2" }, a.email ?? a.subtitle))
-      : h(
-          "span",
-          { class: "line2" },
-          h("span", { class: "t2" }, a.subtitle),
-          h("span", { class: "meta" }, a.totp ? t("overlay.passwordAndCode") : t("overlay.password")),
-        );
-    const art = artOf(a.iconLetter, a.provider);
-    const row = h(
+  /**
+   * Every login the card can start: each way to sign in with its default
+   * account, then the provider's other accounts for that way.
+   */
+  const entries = (): Entry[] => {
+    const out: Entry[] = [];
+    for (const a of init?.accounts ?? []) {
+      out.push({ way: a, ...(a.accountId !== undefined ? { accountId: a.accountId } : {}), ...(a.email !== undefined ? { email: a.email } : {}) });
+      if (!a.provider) continue;
+      for (const x of a.accounts ?? []) if (x.itemId !== a.accountId) out.push({ way: a, accountId: x.itemId, email: x.email });
+    }
+    return out;
+  };
+
+  /** The vaults are named only when the logins of this site live in more than one. */
+  const showVaults = (list: Entry[]) => new Set(list.map((e) => e.way.vault?.id ?? "")).size > 1;
+
+  /**
+   * Line 2: the account, in full. A "Sign in with" login says its provider
+   * first ("Google · <email>") when the whole line fits; otherwise the email
+   * alone, the mark on the icon saying the rest.
+   */
+  const accountLine = (e: Entry, vaults: boolean) => {
+    const name = e.way.provider ? providerLabel(e.way.provider) : null;
+    const who = (e.way.provider ? e.email : null) ?? e.way.subtitle;
+    return h(
+      "span",
+      { class: "ov-line2" },
+      name ? h("span", { class: "ov-via" }, `${name} · `) : null,
+      h("span", { class: "ov-email" }, who),
+      vaults && e.way.vault ? vaultChip(e.way.vault) : null,
+    );
+  };
+  /** Drops the "Google · " prefix of the lines it would push past their width; wraps what still does not fit. */
+  const fitLines = (el: HTMLElement) => {
+    for (const line of el.querySelectorAll<HTMLElement>(".ov-line2")) {
+      const via = line.querySelector(".ov-via");
+      if (via && line.scrollWidth > line.clientWidth) via.remove();
+      // Still too long: the line wraps rather than cut the account.
+      if (line.scrollWidth > line.clientWidth) line.classList.add("ov-wrap");
+    }
+  };
+
+  const startEntry = (e: Entry) => void start(e.way, e.accountId, e.email)();
+
+  /** The pill: the site, the login (title, then the account in full), "Sign in" and ×; "Other logins" hangs under it. */
+  const renderPill = (list: Entry[]) => {
+    const e = list[0];
+    const heading = h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host: hostOf(init!.origin) }));
+    if (!e) {
+      show(h("div", { class: "ov-pill-wrap" }, h("div", { class: "ov-pill" }, heading, messageBlock(t("menu.noLoginForHost", { host: hostOf(init!.origin) })), closeButton())));
+      return;
+    }
+    const pill = h(
       "div",
-      { class: "ov-account", attrs: a.provider ? { "data-provider": a.provider } : {} },
-      h(
-        "button",
-        { class: "row ov-row", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(a, a.accountId, a.email)()) } },
-        art,
-        h("span", { class: "stack" }, h("span", { class: "t1" }, a.title), line2),
-        h("span", { class: primary ? "pill pill-primary" : "pill" }, t("popup.signIn")),
-      ),
+      { class: "ov-pill", attrs: e.way.provider ? { "data-provider": e.way.provider } : {} },
+      heading,
+      brandTile(init!.origin, e.way.iconLetter, e.way.provider, 36, true),
+      h("span", { class: "stack" }, h("span", { class: "t1" }, e.way.title), accountLine(e, showVaults(list))),
+      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => startEntry(e)) } }, t("popup.signIn")),
+      closeButton(),
     );
-    const out: HTMLElement[] = [row];
-    const others = (a.accounts ?? []).filter((x) => x.itemId !== a.accountId);
-    if (!a.provider || others.length === 0 || !name) return out;
-    const key = `${a.itemId}|${a.provider}`;
-    const open = unfolded.has(key);
-    out.push(
-      h(
-        "button",
-        {
-          class: `row row-fold${open ? " open" : ""}`,
-          attrs: { type: "button", "aria-expanded": String(open) },
-          on: {
-            click: guard.wrap(() => {
-              if (open) unfolded.delete(key);
-              else unfolded.add(key);
-              renderIdle();
-            }),
-          },
-        },
-        h("span", { class: "way-fold", attrs: { "aria-hidden": "true" } }, icon("chevron", 10)),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, otherAccounts(name, others.length))),
-      ),
-    );
-    if (!open) return out;
-    for (const x of others) {
-      out.push(
-        h(
-          "div",
-          { class: "ov-account ov-sub", attrs: { "data-provider": a.provider, "data-account": x.itemId } },
-          h(
+    const others =
+      list.length > 1
+        ? h(
             "button",
-            { class: "row ov-row row-sub", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(a, x.itemId, x.email)()) } },
-            h("span", { class: "way-glyph", attrs: { "aria-hidden": "true" } }, providerGlyph(a.provider, 14)),
-            h("span", { class: "stack" }, h("span", { class: "t1" }, x.email), h("span", { class: "line2" }, h("span", { class: "meta" }, `${name} · `), h("span", { class: "t2" }, x.title))),
-            h("span", { class: "pill" }, t("popup.signIn")),
+            {
+              class: "ov-others",
+              attrs: { type: "button", "aria-haspopup": "listbox", "aria-expanded": "false" },
+              on: {
+                click: guard.wrap(() => {
+                  pickerOpen = true;
+                  query = "";
+                  renderIdle();
+                }),
+              },
+            },
+            t("overlay.otherLogins"),
+            icon("chevron", 10),
+          )
+        : null;
+    const wrap = h("div", { class: "ov-pill-wrap" }, pill, others);
+    show(wrap);
+    fitLines(wrap);
+  };
+
+  /** "Other logins": a search field and every login, the selection moved by the keyboard or the pointer. */
+  const renderPicker = (all: Entry[]) => {
+    const vaults = showVaults(all);
+    const input = h("input", {
+      class: "ov-search",
+      attrs: { type: "search", placeholder: t("overlay.findLogin"), "aria-label": t("overlay.findLogin"), "aria-controls": "ov-list", autocomplete: "off", spellcheck: "false" },
+    }) as HTMLInputElement;
+    input.value = query;
+    const listEl = h("ul", { class: "ov-list", attrs: { id: "ov-list", role: "listbox", "aria-label": t("overlay.otherLogins") } });
+    let shown: Entry[] = [];
+    let sel = 0;
+    const select = (i: number) => {
+      sel = i;
+      [...listEl.children].forEach((li, j) => {
+        li.classList.toggle("selected", j === i);
+        li.setAttribute("aria-selected", String(j === i));
+      });
+      const cur = listEl.children[i] as HTMLElement | undefined;
+      if (cur) input.setAttribute("aria-activedescendant", cur.id);
+      cur?.scrollIntoView?.({ block: "nearest" });
+    };
+    const fillList = () => {
+      const q = query.trim().toLowerCase();
+      shown = q ? all.filter((e) => [e.way.title, e.email ?? "", e.way.subtitle, e.way.vault?.name ?? ""].some((x) => x.toLowerCase().includes(q))) : all;
+      listEl.replaceChildren(
+        ...shown.map((e, i) =>
+          h(
+            "li",
+            {
+              class: "ov-opt",
+              attrs: { id: `ov-opt-${i}`, role: "option", "aria-selected": "false", ...(e.way.provider ? { "data-provider": e.way.provider } : {}), ...(e.accountId ? { "data-account": e.accountId } : {}) },
+              on: { click: guard.wrap(() => startEntry(e)), mouseenter: () => select(i) },
+            },
+            brandTile(init!.origin, e.way.iconLetter, e.way.provider, 32),
+            h("span", { class: "stack" }, h("span", { class: "t1" }, e.way.title), accountLine(e, vaults)),
+            h("span", { class: "ov-key", attrs: { "aria-hidden": "true" } }, icon("key", 16)),
           ),
         ),
       );
-    }
-    return out;
+      if (shown.length === 0) listEl.append(h("li", { class: "ov-none", attrs: { role: "presentation" } }, t("overlay.noLoginMatches")));
+      select(0);
+      fitLines(listEl);
+      remeasure();
+    };
+    input.addEventListener("input", () => {
+      query = input.value;
+      fillList();
+    });
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (shown.length > 0) select((sel + (ev.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length);
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        const e = shown[sel];
+        if (e && guard.accepts(ev)) startEntry(e);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        pickerOpen = false;
+        renderIdle();
+      }
+    });
+    show(h("div", { class: "ov-picker" }, h("div", { class: "ov-find" }, mark("m"), input, closeButton()), h("div", { class: "ov-rule" }), listEl));
+    fillList();
+    input.focus();
   };
 
   function renderIdle(): void {
@@ -351,39 +448,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     chainUi = null;
     picked = null;
     if (!init) return;
-    const list = h("div", { class: "ov-accounts" });
-    // Only the first login shows in the pill; the others are not rendered until the dropdown opens
-    // (a hidden row could still show: `.row` sets display, which beats the hidden attribute).
-    init.accounts.forEach((a, i) => {
-      if (i === 0 || showAll) list.append(...wayRow(a, i === 0));
-    });
-    if (init.accounts.length === 0) list.append(messageBlock(t("menu.noLoginForHost", { host: hostOf(init.origin) })));
-    const more = init.accounts.length - 1;
-    const label = showAll ? t("overlay.hideOtherAccounts") : tn("overlay.moreOtherAccounts", more, { more });
-    const dropdown =
-      more > 0
-        ? h(
-            "button",
-            {
-              class: `btn-icon ov-more${showAll ? " open" : ""}`,
-              attrs: { type: "button", "aria-expanded": String(showAll), "aria-label": label, title: label },
-              on: {
-                click: guard.wrap(() => {
-                  showAll = !showAll;
-                  renderIdle();
-                }),
-              },
-            },
-            icon("chevron", 10),
-          )
-        : null;
-    // A capsule: the site, the account, one button; other accounts behind the chevron; close beside it.
-    const heading = h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host: hostOf(init.origin) }));
-    const pill = h("div", { class: `ov-pill${showAll ? " ov-pill-open" : ""}${dropdown ? " with-more" : ""}` }, heading, list, dropdown);
-    show(shell(pill));
-    // The chevron sits just before the first row's button, whatever that button's length in this language.
-    const act = pill.querySelector<HTMLElement>(".ov-account .pill");
-    if (dropdown && act) pill.style.setProperty("--act-w", `${act.offsetWidth}px`);
+    const list = entries();
+    if (pickerOpen && list.length > 1) renderPicker(list);
+    else renderPill(list);
   }
 
   /** The way the chain runs with, as in the offer's row. */
