@@ -127,6 +127,15 @@ pub fn watch_gap_limit() -> u32 {
     wallet_watch::GAP_LIMIT
 }
 
+/// A new 256-bit key for the app's encrypted balance cache, from the core's
+/// hedged random source (`crypto::random`). The app keeps it in its keychain.
+#[uniffi::export]
+pub fn watch_cache_key() -> Result<Vec<u8>, OnePassError> {
+    let mut key = Zeroizing::new(vec![0u8; 32]);
+    onepass_core::crypto::random::fill_random(&mut key)?;
+    Ok(key.to_vec())
+}
+
 fn text(value: &FieldValue) -> Option<&str> {
     match value {
         FieldValue::Mnemonic(s) | FieldValue::Concealed(s) | FieldValue::Password(s) => Some(s),

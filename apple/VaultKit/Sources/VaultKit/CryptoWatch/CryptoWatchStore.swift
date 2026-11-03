@@ -34,9 +34,10 @@ public struct CryptoWatchStore: Sendable {
             return SymmetricKey(data: data)
         }
         guard create else { return nil }
-        let key = SymmetricKey(size: .bits256)
-        try keychain.write(keyName, key.withUnsafeBytes { Data($0) })
-        return key
+        // From the core's hedged random source, never the OS generator directly (rng_guard).
+        let bytes = try Data(watchCacheKey())
+        try keychain.write(keyName, bytes)
+        return SymmetricKey(data: bytes)
     }
 
     public func load() -> CryptoWatchState {

@@ -106,6 +106,9 @@ fn entries_and_xpubs() {
         Err(OnePassError::InvalidInput { what }) if what == "extended private key"
     ));
     assert_eq!(watch_gap_limit(), 20);
+    let (a, b) = (watch_cache_key().unwrap(), watch_cache_key().unwrap());
+    assert_eq!(a.len(), 32);
+    assert_ne!(a, b);
 }
 
 #[test]
