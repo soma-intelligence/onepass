@@ -2,8 +2,7 @@ import SwiftUI
 
 /// The vault door between the lock screen and the vault (iPhone and iPad).
 ///
-/// Unlock: while Face ID checks, the dial of the lock screen is worked tick by tick (`VaultDial`);
-/// once the session opens, it turns a quarter turn further with a mechanical catch, then the lock
+/// Unlock: the dial of the lock screen turns a quarter turn with a mechanical catch, then the lock
 /// screen splits at the dial's center: the top panel slides up, the bottom panel slides down, and
 /// the vault, already rendered underneath, settles from 96% to full size. About 0.8 s in all.
 /// Lock: two plain panels slide in and meet over the screen change, then fade. Reduce Motion: none
@@ -119,24 +118,18 @@ public struct VaultSeamKey: PreferenceKey {
 import UIKit
 
 /// The lock screen's dial: the Lattice tile as its hub, inside a machined ring of 60 ticks, under a
-/// fixed index notch. While Face ID (Touch ID, Optic ID) checks, the dial is worked one tick at a
-/// time like a combination (`working`); on success it keeps where it got to and the door's quarter
-/// turn (`vaultDialTurn`) carries on from there; a refusal brings it back to zero as it jiggles
-/// against its stop. Reduce Motion: it stays still. Reports its center as the door's seam.
+/// fixed index notch. The ring and hub turn together (`vaultDialTurn`); a refused unlock jiggles
+/// them like a dial meeting its stop. Reports its center as the door's seam.
 public struct VaultDial: View {
     private let size: CGFloat
     private let refusals: Int
-    private let working: Bool
     @Environment(\.vaultDialTurn) private var turn
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
-    /// How far the check has worked the dial, in ticks.
-    @State private var workedTicks = 0
 
-    public init(size: CGFloat, refusals: Int = 0, working: Bool = false) {
+    public init(size: CGFloat, refusals: Int = 0) {
         self.size = size
         self.refusals = refusals
-        self.working = working
     }
 
     public var body: some View {
@@ -144,20 +137,8 @@ public struct VaultDial: View {
             ring
             AppGlyph(size: size * 0.5)
         }
-        .rotationEffect(.degrees(turn + Self.workAngle(ticks: workedTicks)))
+        .rotationEffect(.degrees(turn))
         .modifier(DialJiggle(amount: reduceMotion ? 0 : 7, animatableData: CGFloat(refusals)))
-        .task(id: working && !reduceMotion) {
-            guard working, !reduceMotion else { return }
-            // A first catch at once, so the dial answers the moment the prompt rises.
-            while !Task.isCancelled {
-                withAnimation(Self.tickAnimation) { workedTicks += 1 }
-                try? await Task.sleep(for: Self.tickInterval)
-            }
-        }
-        .onChange(of: refusals) {
-            // Back to its stop: the worked ticks unwind as it jiggles.
-            withAnimation(.spring(duration: 0.45, bounce: 0)) { workedTicks = 0 }
-        }
         .overlay(alignment: .top) { index }
         .frame(width: size, height: size)
         .background {
@@ -170,16 +151,6 @@ public struct VaultDial: View {
         .accessibilityLabel(Text(verbatim: "OnePass"))
         .accessibilityAddTraits(.isImage)
     }
-
-    /// One tick of the ring per step: 6 degrees.
-    public static let tickDegrees: Double = 6
-    /// The pace of a worked dial: about the rhythm of the system Face ID glyph's scan.
-    public static let tickInterval: Duration = .milliseconds(150)
-    /// Each tick lands with a small mechanical catch.
-    static let tickAnimation: Animation = .spring(duration: 0.12, bounce: 0.35)
-
-    /// The angle the check has worked the dial to.
-    public static func workAngle(ticks: Int) -> Double { Double(ticks) * tickDegrees }
 
     /// A raised disc with a fine rim, its ticks engraved: real depth from one soft shadow.
     private var ring: some View {
@@ -342,7 +313,6 @@ private extension CGFloat {
     VStack(spacing: 40) {
         VaultDial(size: 120)
         VaultDial(size: 120).environment(\.vaultDialTurn, 90)
-        VaultDial(size: 120, working: true)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(uiColor: .systemGroupedBackground))
