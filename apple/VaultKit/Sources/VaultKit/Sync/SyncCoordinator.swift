@@ -563,14 +563,22 @@ public actor SyncCoordinator: SyncTrigger {
                 throw RemoteStoreError.retryable(after: nil)
             }
         }
-        let (vaults, dropped) = try await CoreThread.run {
-            let vaults = try store.commitRemote()
+        let at = UInt64(max(0, now().timeIntervalSince1970.rounded(.down)))
+        let (vaults, dropped, quarantined) = try await CoreThread.run {
+            // The quarantine clock runs in the commit (key rotation v2 spec 8.4): a wipe order for
+            // this device, or a removal whose 7 days ran out, erases the store here, not at the next
+            // re-read of the store.
+            let commit = try store.commitRemoteChecked(now: at)
+            if commit.quarantine == .erased { return (commit.vaults, false, true) }
             // After a fetch from scratch: rows the server did not return are deleted, or queued again
             // after a zone reset (no-op otherwise).
-            return (vaults, try store.finishFullFetch())
+            return (commit.vaults, try store.finishFullFetch(), commit.quarantine != .notQuarantined)
         }
         await refreshIgnoredDeletionCount()
-        if changed > 0 || !Set(vaults).isSubset(of: echoedManifests) || dropped { emitRemoteChange() }
+        // A quarantine is always a change: the session locks, or shows the erased screen.
+        if changed > 0 || !Set(vaults).isSubset(of: echoedManifests) || dropped || quarantined {
+            emitRemoteChange()
+        }
     }
 
     /// Binds the store to the remote's account at the first sync; throws `accountChanged` on any other
