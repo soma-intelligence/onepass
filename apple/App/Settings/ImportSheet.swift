@@ -633,9 +633,8 @@ struct ImportSheet: View {
                             .truncationMode(.middle)
                     }
                     Label {
-                        Text("import.duplicates.inVault \(Self.vaultLine(row.existing))")
+                        Text("import.duplicates.inVault \(Self.vaultLine(row))")
                             .lineLimit(1)
-                            .truncationMode(.middle)
                     } icon: {
                         Image(systemName: "arrow.turn.down.right")
                     }
@@ -643,16 +642,12 @@ struct ImportSheet: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if row.exact {
-                    Text("import.duplicates.exact")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Color.green.opacity(0.14), in: .capsule)
-                }
             }
-            if !row.differences.isEmpty {
+            if row.exact {
+                Label("import.duplicates.exact", systemImage: "equal.circle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.green)
+            } else if !row.differences.isEmpty {
                 Text(Self.differencesLine(row.differences))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -712,7 +707,7 @@ struct ImportSheet: View {
             + (p.skipped > 0 ? [("arrow.uturn.right", Self.skippedLine(p.skipped))] : [])
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Contenu")
-            if p.items == 0 {
+            if p.byType.isEmpty {
                 EditorCard {
                     Label("settings.theresNothingToImport", systemImage: "tray")
                         .foregroundStyle(.secondary)
@@ -738,13 +733,16 @@ struct ImportSheet: View {
                     }
                 }
             }
-            Text(done
-                ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
-                : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
+            // With possible duplicates, their section says what happens to the vault items.
+            if done || duplicateChoices.isEmpty {
+                Text(done
+                    ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
+                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
         }
     }
 
@@ -1060,9 +1058,11 @@ struct ImportSheet: View {
         String(localized: "settings.importDryRun \(Int(s.fixed)) \(Int(s.added)) \(Int(s.converted)) \(Int(s.archivedDuplicates)) \(Int(s.unchanged))")
     }
 
-    /// "Gmail, alice@example.com": the vault item a file item matches.
-    private static func vaultLine(_ s: FfiItemSummary) -> String {
-        s.subtitle.isEmpty ? s.title : "\(s.title), \(s.subtitle)"
+    /// "Gmail, alice@example.com": the vault item a file item matches, its subtitle only when it
+    /// is not the file item's.
+    private static func vaultLine(_ row: FfiImportDuplicate) -> String {
+        let s = row.existing
+        return s.subtitle.isEmpty || s.subtitle == row.incoming.subtitle ? s.title : "\(s.title), \(s.subtitle)"
     }
 
     /// "Diffère : mot de passe, sites".
