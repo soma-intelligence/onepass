@@ -212,7 +212,7 @@ private struct OtpAccountTarget: View {
             Task { await pick(login) }
         } label: {
             HStack(spacing: 12) {
-                ItemIcon(type: login.itemType, title: login.title, siteIcon: nil, size: 30)
+                ItemIcon(type: login.itemType, title: login.title, siteIcon: login.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 30)
                 VStack(alignment: .leading) {
                     Text(login.title).foregroundStyle(.primary)
                     if !login.subtitle.isEmpty {

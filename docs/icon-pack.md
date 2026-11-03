@@ -37,9 +37,21 @@ Une clé à part, jamais la clé Sparkle : une fuite de l'une ne doit rien donne
 3. Dépôt public, Settings, Environments, New environment `icon-pack` (relecteur obligatoire conseillé, références limitées à `main`) : secret `ICON_PACK_ED_PRIVATE_KEY`, variable `ICON_PACK_ED_PUBLIC_KEY`.
 4. Écrire la clé publique dans `IconPackStore.publicKey` (`apple/VaultKit/Sources/VaultKit/Support/IconPack.swift`) et livrer une version de l'app.
 
-## Ordre de recherche d'une icône (proposé, en attente d'accord)
+## Pack livré dans l'app
 
-1. Icône choisie par la personne pour l'élément, s'il y en a une.
-2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable.
-3. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, une tuile monogramme propre.
-4. Illustration de la catégorie.
+`apple/IconPack/onepass-icons.bin` est le pack de base, construit par `scripts/icon_pack.py build` (version 2026110303, celle de la planche-contact approuvée ; son manifeste `apple/IconPack/icon-pack-manifest.json` donne le SHA-256 et les commits amont). Il est copié une seule fois dans l'app (iOS, Mac, visionOS ; la cible `OnePass` de `apple/project.yml`). L'extension AutoFill ne l'embarque pas : elle le lit dans l'app qui la contient, ou dans la copie que l'app pose au lancement dans le dossier partagé du groupe d'apps (`SharedContainer.iconPackFolder`, où arrivent aussi les packs téléchargés). La montre et l'hôte de l'extension Safari n'affichent pas d'icônes d'éléments : pas de pack.
+
+Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais chaque semaine : les packs hebdomadaires arrivent par la mise à jour signée ci-dessus. Pour le remplacer : construire, vérifier le SHA-256 contre le manifeste, copier les deux fichiers.
+
+## Ordre de recherche d'une icône
+
+`ItemIconResolver` (VaultKit), utilisé par l'app et par l'extension AutoFill :
+
+1. Icône choisie par la personne pour l'élément. Le cœur la garde (`custom_icon`) mais aucun écran ne la règle et le pont ne l'expose pas encore : le paramètre `chosen` attend ce branchement.
+2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable. Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
+3. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme.
+4. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
+
+Le réglage « Icônes des sites » coupé : ni pack ni icône de site, aucune requête.
+
+L'extension de navigateur garde la favicon de la page : servir le pack par l'hôte natif demanderait un nouveau message dans le protocole du pont (`core/onepass-bridge`, vecteurs de test compris) alors que le pack vit côté Swift.

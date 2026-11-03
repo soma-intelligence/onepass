@@ -11,18 +11,16 @@ struct AutoFillRootView: View {
     let model: AutoFillModel
     let session: VaultSession
     let request: AutoFillRequest
-    /// Site icons, as in the app's lists (the extension keeps its own cache).
-    @State private var icons: SiteIconLoader
+    /// Item icons, as in the app's lists: the app's icon pack, else the site's own icon (the
+    /// extension keeps its own site icon cache).
+    @State private var icons: ItemIconResolver
 
     init(model: AutoFillModel, session: VaultSession, request: AutoFillRequest) {
         self.model = model
         self.session = session
         self.request = request
         let settings = session.environment.settings
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        _icons = State(initialValue: SiteIconLoader(
-            cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true),
-            enabled: { settings.siteIconsEnabled }))
+        _icons = State(initialValue: ItemIconResolver.live(settings: settings))
     }
 
     var body: some View {
@@ -107,7 +105,7 @@ struct AutoFillRootView: View {
 
 extension EnvironmentValues {
     /// The extension's site icon loader (`AutoFillRootView`).
-    @Entry var autofillIcons: SiteIconLoader?
+    @Entry var autofillIcons: ItemIconResolver?
 }
 
 /// Navigation bar with the title and "Annuler" (every screen), and "Retour" when `back` is set, over
@@ -249,7 +247,7 @@ struct AutoFillIcon: View {
     @State private var icon: Data?
 
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon, size: size)
+        ItemIcon(type: type, title: title, siteIcon: icon ?? url.flatMap { loader?.cachedIcon(for: $0) }, size: size)
             .task(id: url) {
                 guard let url, let loader else {
                     icon = nil

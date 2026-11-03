@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 /// A pack of brand icons keyed by domain, built by `scripts/icon_pack.py` from open sets (Simple
 /// Icons, gilbarbara/logos, 2FA Directory; licenses in `docs/icon-pack.md`).
@@ -29,7 +30,9 @@ public struct IconPack: Sendable {
     public let pixels: Int
     let icons: [(offset: Int, length: Int, flags: Int)]
     let domains: [String: Int]
-    let blob: Data
+    /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
+    let data: Data
+    let iconsStart: Int
 
     public var domainCount: Int { domains.count }
     public var iconCount: Int { icons.count }
@@ -60,13 +63,14 @@ public struct IconPack: Sendable {
         guard let index = try? JSONDecoder().decode(Index.self, from: data[(start + 9)..<(start + 9 + length)]),
             index.format == Int(Self.format), index.size > 0, index.version > 0
         else { throw .malformedIndex }
-        let blob = Data(data[(start + 9 + length)...])
+        let iconsStart = start + 9 + length
+        let blobCount = data.endIndex - iconsStart
         var icons: [(Int, Int, Int)] = []
         icons.reserveCapacity(index.icons.count)
         for entry in index.icons {
             guard entry.count == 3 else { throw .malformedIndex }
             let (offset, size, flags) = (entry[0], entry[1], entry[2])
-            guard offset >= 0, size > 0, offset <= blob.count - size else { throw .outOfBounds }
+            guard offset >= 0, size > 0, offset <= blobCount - size else { throw .outOfBounds }
             icons.append((offset, size, flags))
         }
         for number in index.domains.values where !(0..<icons.count).contains(number) {
@@ -76,7 +80,8 @@ public struct IconPack: Sendable {
         self.pixels = index.size
         self.icons = icons.map { (offset: $0.0, length: $0.1, flags: $0.2) }
         self.domains = index.domains
-        self.blob = blob
+        self.data = data
+        self.iconsStart = iconsStart
     }
 
     /// The icon of `host`: the host itself without `www.`, then each parent name down to two
@@ -97,8 +102,9 @@ public struct IconPack: Sendable {
 
     func icon(_ number: Int) -> Icon {
         let entry = icons[number]
-        let start = blob.startIndex + entry.offset
-        return Icon(data: blob[start..<(start + entry.length)], monochrome: entry.flags & 1 != 0)
+        let start = iconsStart + entry.offset
+        // A copy of the icon's bytes alone: a slice would keep its offsets into the whole pack.
+        return Icon(data: Data(data[start..<(start + entry.length)]), monochrome: entry.flags & 1 != 0)
     }
 }
 
@@ -158,8 +164,12 @@ public actor IconPackStore {
     static let checkedName = "checked"
     public static let refreshInterval: TimeInterval = 7 * 24 * 3600
 
-    /// The Ed25519 public key the published manifest must be signed with. Empty until the founder
-    /// creates the key (docs/icon-pack.md): the app then keeps its baseline.
+    /// The Ed25519 public key (raw 32 bytes, base64) the published manifest must be signed with.
+    ///
+    /// Deliberately empty: the signing key is created once by the founder, never by a build or an
+    /// agent (docs/icon-pack.md, "Clé de signature"). While it is empty `refreshIfDue` returns
+    /// `.disabled` and makes no request at all: the app shows the pack it ships with, updated with
+    /// each app release.
     public static let publicKey = ""
 
     private let baseline: URL?
@@ -168,8 +178,9 @@ public actor IconPackStore {
     private let baseURL: URL
     private let session: URLSession
     private let now: @Sendable () -> Date
-    private var loaded: IconPack?
-    private var didLoad = false
+    /// The pack in use, read once (`pack()`), replaced by a refresh. Behind a lock rather than the
+    /// actor: a row asks for its icon synchronously, on its first frame.
+    private let current = Mutex<(loaded: IconPack?, didLoad: Bool)>((nil, false))
 
     public init(
         baseline: URL?, directory: URL, publicKey: String = IconPackStore.publicKey,
@@ -184,20 +195,39 @@ public actor IconPackStore {
         self.now = now
     }
 
-    /// The pack in use (newest of baseline and download), loaded once.
-    public func pack() -> IconPack? {
-        if !didLoad {
-            didLoad = true
-            loaded = [baseline, directory.appending(path: Self.packName)]
-                .compactMap { $0 }
-                .compactMap { url in (try? Data(contentsOf: url, options: .mappedIfSafe)).flatMap { try? IconPack(data: $0) } }
-                .max { $0.version < $1.version }
+    /// The pack in use (newest of baseline and download), loaded once. Memory mapped: the icons are
+    /// read from the file as they are asked for.
+    public nonisolated func pack() -> IconPack? {
+        current.withLock { state in
+            if !state.didLoad {
+                state.didLoad = true
+                state.loaded = [baseline, downloaded].compactMap { $0 }.compactMap(Self.read).max { $0.version < $1.version }
+            }
+            return state.loaded
         }
-        return loaded
     }
 
-    public func icon(forHost host: String) -> IconPack.Icon? {
+    public nonisolated func icon(forHost host: String) -> IconPack.Icon? {
         pack()?.icon(forHost: host)
+    }
+
+    private nonisolated var downloaded: URL { directory.appending(path: Self.packName) }
+
+    private static func read(_ url: URL) -> IconPack? {
+        (try? Data(contentsOf: url, options: .mappedIfSafe)).flatMap { try? IconPack(data: $0) }
+    }
+
+    /// Copies the baseline into `directory` when it is newer than the pack there, so a process that
+    /// reads only that folder (the AutoFill extension, through the App Group) finds the pack the app
+    /// ships with. Returns true when it wrote.
+    @discardableResult
+    public func shareBaseline() -> Bool {
+        guard let baseline, let shipped = Self.read(baseline),
+            shipped.version > (Self.read(downloaded)?.version ?? 0),
+            let data = try? Data(contentsOf: baseline, options: .mappedIfSafe)
+        else { return false }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return swapIn(data)
     }
 
     public enum RefreshResult: Equatable, Sendable {
@@ -230,8 +260,14 @@ public actor IconPackStore {
             SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == manifest.pack.sha256,
             let fresh = try? IconPack(data: data), fresh.version == manifest.version
         else { return .failed }
-        // Written beside its place, then renamed over it: a reader sees the old pack or the new one.
-        let target = directory.appending(path: Self.packName)
+        guard swapIn(data) else { return .failed }
+        current.withLock { $0 = (fresh, true) }
+        return .updated(version: fresh.version)
+    }
+
+    /// Written beside its place, then renamed over it: a reader sees the old pack or the new one.
+    private func swapIn(_ data: Data) -> Bool {
+        let target = downloaded
         let temporary = directory.appending(path: ".\(Self.packName).\(UUID().uuidString)")
         do {
             try data.write(to: temporary, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -240,13 +276,11 @@ public actor IconPackStore {
             } else {
                 try FileManager.default.moveItem(at: temporary, to: target)
             }
+            return true
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            return .failed
+            return false
         }
-        loaded = fresh
-        didLoad = true
-        return .updated(version: fresh.version)
     }
 
     private func touch(_ url: URL) {

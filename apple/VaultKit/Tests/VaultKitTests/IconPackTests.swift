@@ -1,3 +1,4 @@
+import CoreGraphics
 import CryptoKit
 import Foundation
 import Testing
@@ -144,16 +145,16 @@ struct IconPackTests {
         let newer = makeIconPack(version: 6, icons: [(mark, 1)], domains: ["a.com": 0, "b.com": 0])
         try f.publish(newer, version: 6)
         let store = f.store(baseline: baseline)
-        #expect(await store.icon(forHost: "b.com") == nil)
+        #expect(store.icon(forHost: "b.com") == nil)
         #expect(await store.refreshIfDue() == .updated(version: 6))
-        #expect(await store.icon(forHost: "b.com")?.data == mark)
+        #expect(store.icon(forHost: "b.com")?.data == mark)
         // Only the whole-pack files were asked for, never a site.
         #expect(IconPackStub.requests.allSatisfy { $0.hasPrefix(f.base.absoluteString) })
         #expect(!IconPackStub.requests.contains { $0.contains("a.com") || $0.contains("b.com") })
         // Checked a moment ago: not again for a week.
         #expect(await store.refreshIfDue() == .notDue)
         // A new store reads the downloaded pack, newer than its baseline.
-        #expect(await f.store(baseline: baseline).pack()?.version == 6)
+        #expect(f.store(baseline: baseline).pack()?.version == 6)
     }
 
     @Test func refreshRefusesOlderTamperedOrOversizedPacks() async throws {
@@ -176,12 +177,110 @@ struct IconPackTests {
         try f.publish(makeIconPack(version: 3, icons: [(mark, 0)], domains: ["a.com": 0]), version: 8)
         #expect(await store.refreshIfDue(force: true) == .failed)
 
-        #expect(await store.pack()?.version == 5)
-        #expect(await store.icon(forHost: "a.com")?.data == red)
+        #expect(store.pack()?.version == 5)
+        #expect(store.icon(forHost: "a.com")?.data == red)
     }
 
     @Test func noKeyMeansNoRefresh() async {
         let store = IconPackStore(baseline: nil, directory: FileManager.default.temporaryDirectory, publicKey: "")
         #expect(await store.refreshIfDue(force: true) == .disabled)
+    }
+
+    @Test func shippedKeyIsEmptyUntilTheFounderCreatesIt() {
+        // docs/icon-pack.md: the key is a founder action; no refresh until it is set.
+        #expect(IconPackStore.publicKey.isEmpty)
+    }
+
+    @Test func shareBaselineCopiesTheShippedPackForTheExtensions() async throws {
+        let f = Fixture()
+        defer { try? FileManager.default.removeItem(at: f.directory) }
+        let shipped = try f.baseline(makeIconPack(version: 5, icons: [(red, 0)], domains: ["a.com": 0]))
+        let shared = f.directory.appending(path: "shared")
+        let app = IconPackStore(baseline: shipped, directory: shared, publicKey: "")
+        #expect(await app.shareBaseline())
+        // Already there: not written again.
+        #expect(await app.shareBaseline() == false)
+        // The extension reads the shared folder alone.
+        let extensionStore = IconPackStore(baseline: nil, directory: shared, publicKey: "")
+        #expect(extensionStore.icon(forHost: "a.com")?.data == red)
+        #expect(extensionStore.pack()?.version == 5)
+    }
+
+    @Test func iconSlicesAreStandaloneData() throws {
+        let pack = try IconPack(data: makeIconPack(version: 1, icons: [(red, 0), (mark, 1)], domains: ["a.com": 1]))
+        let icon = try #require(pack.icon(forHost: "a.com"))
+        #expect(icon.data == mark && icon.data.startIndex == 0 && icon.monochrome)
+    }
+}
+
+@Suite("ItemIconResolver", .serialized)
+struct ItemIconResolverTests {
+    let packIcon = Data("pack-webp".utf8)
+
+    func png(side: Int) -> Data {
+        SiteIconLoader.squarePNG(side: side, aspect: CGSize(width: 1, height: 1)) { context, rect in
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(rect)
+        }!
+    }
+
+    func resolver(enabled: Bool, directory: URL) throws -> ItemIconResolver {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let baseline = directory.appending(path: "baseline.bin")
+        try makeIconPack(version: 3, icons: [(packIcon, 0)], domains: ["withings.com": 0]).write(to: baseline)
+        let configuration = URLSession.ephemeralNoCookiesConfiguration
+        configuration.protocolClasses = [IconPackStub.self]
+        IconPackStub.lock.lock()
+        IconPackStub.bodies = [:]
+        IconPackStub.requests = []
+        IconPackStub.lock.unlock()
+        let site = SiteIconLoader(
+            cacheDirectory: directory.appending(path: "site"), session: URLSession(configuration: configuration),
+            resolver: StaticResolver(), enabled: { enabled })
+        return ItemIconResolver(
+            pack: IconPackStore(baseline: baseline, directory: directory.appending(path: "pack"), publicKey: ""),
+            site: site, enabled: { enabled })
+    }
+
+    @Test func orderIsChosenThenPackThenSharpSiteIcon() {
+        let chosen = Data("chosen".utf8)
+        let sharp = png(side: 128)
+        let blurry = png(side: 96)
+        #expect(ItemIconResolver.pick(chosen: chosen, pack: packIcon, site: sharp) == chosen)
+        #expect(ItemIconResolver.pick(chosen: nil, pack: packIcon, site: sharp) == packIcon)
+        #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: sharp) == sharp)
+        // A 48 px source is stored at 96 px: shown as the monogram tile instead.
+        #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: blurry) == nil)
+        #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: nil) == nil)
+    }
+
+    @Test func packHostsAreNeverAskedOfTheirSite() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "resolver-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let icons = try resolver(enabled: true, directory: directory)
+        #expect(icons.cachedIcon(for: "https://account.withings.com/login") == packIcon)
+        #expect(icons.cachedIcon(for: "withings.com") == packIcon)
+        #expect(icons.cachedIcon(for: "http://www.withings.com") == packIcon)
+        #expect(await icons.icon(for: "https://app.withings.com") == packIcon)
+        await icons.prefetch(["https://withings.com", "https://account.withings.com"])
+        let requests = IconPackStub.lock.withLock { IconPackStub.requests }
+        #expect(requests.isEmpty)
+    }
+
+    @Test func iconsOffShowNothingButTheChosenIcon() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "resolver-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let icons = try resolver(enabled: false, directory: directory)
+        #expect(icons.cachedIcon(for: "https://withings.com") == nil)
+        #expect(await icons.icon(for: "https://withings.com") == nil)
+        let chosen = Data("chosen".utf8)
+        #expect(icons.cachedIcon(for: "https://withings.com", chosen: chosen) == chosen)
+    }
+
+    @Test func hostParsing() {
+        #expect(ItemIconResolver.host(of: " Example.COM/login ") == "example.com")
+        #expect(ItemIconResolver.host(of: "http://a.example.com:8080/x") == "a.example.com")
+        #expect(ItemIconResolver.host(of: "androidapp://com.example") == nil)
+        #expect(ItemIconResolver.host(of: "") == nil)
     }
 }

@@ -40313,25 +40313,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Icons come from each site, no third party."
+            "value" : "Brand icons ship with the app; others come from each site, never a third party."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los iconos vienen de cada sitio, sin terceros."
+            "value" : "Los iconos de marcas vienen con la app; los demás, de cada sitio, nunca de terceros."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Icônes chargées depuis chaque site, sans service tiers."
+            "value" : "Icônes de marques livrées avec l’app, les autres chargées depuis chaque site, jamais par un service tiers."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le icone arrivano da ogni sito, senza terze parti."
+            "value" : "Le icone dei marchi sono incluse nell’app, le altre arrivano da ogni sito, mai da terze parti."
           }
         }
       }

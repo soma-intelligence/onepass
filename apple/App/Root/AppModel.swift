@@ -54,7 +54,7 @@ final class AppModel {
     @ObservationIgnored private var pendingSetupChoice: SyncChoice?
     /// Widget snapshot (and, from Task 8, the watch payload) while unlocked.
     @ObservationIgnored let companion: CompanionCoordinator
-    @ObservationIgnored let iconLoader: SiteIconLoader
+    @ObservationIgnored let iconLoader: ItemIconResolver
     /// The SSH agent and the MCP server the Mac app serves (milestone 7), and their questions.
     let developer = DeveloperHosts()
     #if os(macOS)
@@ -390,10 +390,10 @@ final class AppModel {
         #endif
 
         let settings = environment.settings
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        iconLoader = SiteIconLoader(
-            cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true),
-            enabled: { settings.siteIconsEnabled })
+        // Item icons: the icon pack shipped in the app, else the site's own icon (ItemIconResolver).
+        let icons = ItemIconResolver.live(settings: settings)
+        iconLoader = icons
+        Task(priority: .utility) { await icons.maintainPack() }
         onboardingInProgress = session.state == .noAccount
         #if DEBUG
         demoPreparing = demo != nil && session.state == .noAccount
@@ -1126,7 +1126,8 @@ final class AppModel {
             // "Me prévenir": a report after each unlock, so new findings are notified even when the
             // Watchtower page stays closed. Off: Watchtower runs only when its page is shown.
             if watchtower.notify { watchtower.refreshIfNeeded(session) }
-            // Every item's site icon, in the background: lists never show a placeholder first.
+            // Every item's site icon the pack lacks, in the background: lists never show a
+            // placeholder first.
             let urls = session.summaries.compactMap(\.primaryUrl)
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
             resumeMailboxSetup()

@@ -2,8 +2,9 @@ import ImageIO
 import SwiftUI
 import VaultKit
 
-/// Row icon: the site icon when one was loaded, otherwise the illustrated category artwork
-/// (for logins, the teal tile carries the title's first letter when there is one).
+/// Row icon: the brand icon `ItemIconResolver` found (the person's choice, the icon pack, else the
+/// site's own icon when sharp enough), otherwise the illustrated category artwork (for logins, the
+/// teal monogram tile with the title's first letter when there is one).
 public struct ItemIcon: View {
     private let type: FfiItemType
     private let title: String
