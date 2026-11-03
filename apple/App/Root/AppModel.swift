@@ -405,6 +405,8 @@ final class AppModel {
         case "watchtower": page = .watchtower
         case "developer": page = .developer
         case "crypto": page = .crypto
+        // Travel screenshots: Réglages > Travel Mode in its sheet.
+        case "travel": travelSheet = .exit
         default: break
         }
         #endif
@@ -536,7 +538,29 @@ final class AppModel {
             _ = try? await session.createAccount(
                 password: "ruisseau-tapis-orage-comete", displayName: "Camille Durand", mode: .personal)
             onboardingInProgress = false
+            // Travel screenshots (`-OnePassDebugTravelItems YES`): one login hidden in Travel Mode,
+            // one behind extra protection, and the vault stays open.
+            if UserDefaults.standard.bool(forKey: "OnePassDebugTravelItems") {
+                await seedTravelItems()
+                return
+            }
             session.lock()
+        }
+    }
+
+    private func seedTravelItems() async {
+        guard let vault = session.allVaults.first else { return }
+        for (title, user, hidden) in [("Banque", "camille@banque.example", true), ("Mail", "camille@mail.example", false)] {
+            guard var item = try? session.newItem(type: .login, vaultID: vault.id) else { continue }
+            item.title = title
+            for s in item.sections.indices {
+                for f in item.sections[s].fields.indices where item.sections[s].fields[f].id == "username" {
+                    item.sections[s].fields[f].value = .text(value: user)
+                }
+            }
+            item.travelHidden = hidden
+            item.travelGuard = !hidden
+            _ = try? await session.save(item)
         }
     }
     #endif
