@@ -27,7 +27,8 @@ import UIKit
 ///   it off; `-OnePassDemoNoAutoBiometrics YES` skips the automatic attempt of the lock screen
 ///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
 /// - `-OnePassDemoHostDevice YES` (Mac): opens "Configurer un appareil…" once the data is there.
-/// - `-OnePassDemoCrypto YES`: crypto wallets with watch data and recorded balances (DemoCrypto).
+/// - Crypto wallets with watch data and recorded balances (DemoCrypto); `-OnePassDemoCrypto NO`
+///   leaves them unwatched.
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
 /// - `-OnePassDemoSecondAccount YES`: also a business account "Atelier Atlas" (orange, work domain
 ///   `atlas.exemple.fr`, same demo password) next to the personal one, locked;
@@ -37,6 +38,7 @@ import UIKit
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
+    static let log = Logger(subsystem: "me.somalabs.onepass", category: "demo")
     private static let suiteName = "me.somalabs.onepass.demo"
     private static let folderPrefix = "OnePassDemo-"
 
@@ -190,7 +192,10 @@ enum DemoTrace {
 extension AppModel {
     func seedDemoData() {
         DemoTrace.log("demo: state %@", String(describing: session.state))
-        guard session.state == .noAccount else { return }
+        guard session.state == .noAccount else {
+            demoPreparing = false
+            return
+        }
         let defaults = UserDefaults.standard
         Task {
             do {
@@ -216,6 +221,7 @@ extension AppModel {
                     DemoTrace.log("demo: biometrics %@", session.canUseBiometrics ? "on" : "off")
                 }
                 if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
+                demoPreparing = false
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
                 if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
@@ -238,7 +244,10 @@ extension AppModel {
                 #endif
             } catch {
                 DemoTrace.log("demo: seeding failed: %@", String(describing: VaultError(error)))
+                // In the system log too: a half-seeded demo is otherwise silent on iOS.
+                DemoData.log.error("demo seeding failed: \(String(describing: VaultError(error)), privacy: .public)")
                 onboardingInProgress = false
+                demoPreparing = false
                 #if os(iOS) || os(visionOS)
                 // The settings captures need no items.
                 showSettings = defaults.bool(forKey: "OnePassDemoSettings")
@@ -355,7 +364,7 @@ private struct DemoSeeder {
             "name": .text(value: "Portefeuille de test"),
             "recovery_phrase": .mnemonic(value: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"),
         ], tags: ["Finance"])
-        // `-OnePassDemoCrypto YES`: the wallets' public addresses and a watch-only one.
+        // The wallets' public addresses and a watch-only one (off with `-OnePassDemoCrypto NO`).
         try await DemoCrypto.seed(session, vaultID: personal, phraseWallet: wallet)
         try await add(.subscription, "Musique Exemple", family, [
             "service": .text(value: "Musique Exemple"),

@@ -86,6 +86,12 @@ final class AppModel {
     /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
     /// already unlocked the session.
     var onboardingInProgress = false
+    #if DEBUG
+    /// Demo data (`-OnePassDemoData`): its account is being made and filled. The root shows a
+    /// plain progress screen meanwhile, never the onboarding (the creation takes seconds with the
+    /// real Argon2id, minutes on a busy Mac).
+    var demoPreparing = false
+    #endif
     /// A guest session lent by another device (spec 2b 5.4): its own root, nothing on disk.
     var publicSession: PublicSession?
 
@@ -385,6 +391,9 @@ final class AppModel {
             cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true),
             enabled: { settings.siteIconsEnabled })
         onboardingInProgress = session.state == .noAccount
+        #if DEBUG
+        demoPreparing = demo != nil && session.state == .noAccount
+        #endif
         accountLink.model = self
     }
 

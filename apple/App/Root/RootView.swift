@@ -198,6 +198,10 @@ struct RootView: View {
 
     private enum Route: Hashable {
         case onboarding, lock, unlocked, failed, guest, revoked
+        #if DEBUG
+        /// Demo data: its account is being made and filled.
+        case demoPreparing
+        #endif
     }
 
     private var route: Route {
@@ -205,6 +209,9 @@ struct RootView: View {
         let state = model.session.state
         if state == .failed(.deviceRevoked) { return .revoked }
         if case .failed = state { return .failed }
+        #if DEBUG
+        if model.demoPreparing { return .demoPreparing }
+        #endif
         if model.onboardingInProgress || state == .noAccount { return .onboarding }
         // An account is in the store but this device lacks its Secret Key: Emergency Kit.
         if model.session.needsSecretKey, state != .unlocked { return .onboarding }
@@ -257,6 +264,14 @@ struct RootView: View {
             if case .failed(let error) = model.session.state {
                 IntegrityFailureView(error: error)
             }
+        #if DEBUG
+        case .demoPreparing:
+            ProgressView()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("demo.preparing")
+                .transition(.opacity)
+        #endif
         }
     }
 }

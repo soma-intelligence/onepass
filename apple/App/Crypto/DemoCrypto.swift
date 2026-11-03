@@ -2,12 +2,20 @@
 import Foundation
 import VaultKit
 
-/// `-OnePassDemoCrypto YES` (Debug builds, with `-OnePassDemoData YES`): the Crypto screen on
-/// recorded answers. The demo account gets two wallets whose addresses come from public test
-/// vectors (the BIP39 "abandon … about" phrase, the EIP-55 example), the watch is switched on and
-/// every request is answered here with fictional balances, prices and charts. Nothing goes out.
+/// Demo data (Debug builds, `-OnePassDemoData YES`): the Crypto screen on recorded answers. The
+/// demo account gets two wallets whose addresses come from public test vectors (the BIP39
+/// "abandon … about" phrase, the EIP-55 example), the watch is switched on and every request is
+/// answered here with fictional balances, prices and charts. Nothing goes out.
+/// `-OnePassDemoCrypto NO` leaves the wallets without watch data and the watch off.
 enum DemoCrypto {
-    static var requested: Bool { UserDefaults.standard.bool(forKey: "OnePassDemoCrypto") }
+    static var requested: Bool {
+        guard DemoData.requested else { return false }
+        return UserDefaults.standard.object(forKey: "OnePassDemoCrypto") == nil
+            || UserDefaults.standard.bool(forKey: "OnePassDemoCrypto")
+    }
+    /// BIP39 test vector (all-0x7f entropy): a public, valid phrase. The core requires a phrase in
+    /// every crypto wallet, so the watch-only demo wallet carries this one; it is never derived.
+    static let watchOnlyPhrase = "legal winner thank year wave sausage worth useful legal winner thank yellow"
 
     /// Bitcoin addresses of the demo zpub that carry coins (BIP84 vectors, receive 0 and 1).
     private static let bitcoin: [String: Int64] = [
@@ -44,7 +52,7 @@ enum DemoCrypto {
     }
 
     /// The wallets of the demo account: the test phrase's public data (derived in the core), and a
-    /// watch-only wallet with the EIP-55 example address and no phrase.
+    /// watch-only wallet with the EIP-55 example address (its phrase, a test vector, is not derived).
     @MainActor
     static func seed(_ session: VaultSession, vaultID: String, phraseWallet: FfiItem) async throws {
         guard requested else { return }
@@ -52,6 +60,7 @@ enum DemoCrypto {
         var item = try session.newItem(type: .cryptoWallet, vaultID: vaultID)
         item.title = "Coffre long terme"
         item.set("name", .text(value: "Coffre long terme"))
+        item.set("recovery_phrase", .mnemonic(value: watchOnlyPhrase))
         item.sections = CryptoWatchFields.adding("Ethereum, 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", to: item.sections)
         item.tags = ["Finance"]
         _ = try await session.save(ItemDraft(item: item).preparedForSave())
