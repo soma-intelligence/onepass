@@ -14,7 +14,8 @@
 // detached at its right; it follows the system appearance. The service
 // worker reports the chain (polled every 500 ms while it runs); the overlay
 // computes no progress of its own, it only lists the steps a password login
-// still has ahead.
+// still has ahead. While it runs the card shows one line (what happens now);
+// "Détails" unfolds the steps, and the choice is kept for this browser.
 import { ext } from "../shared/browser";
 import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
@@ -48,6 +49,8 @@ export const POLL_MS = 500;
 export const DONE_CLOSE_MS = 4000;
 
 export const HELP_TEXT = t("overlay.oneClickRunsEvery");
+/** `storage.local` key: the steps of a running sign-in shown (true) or folded (default). */
+export const STEPS_PREF = "ui.overlay.stepsExpanded";
 
 /** Spec 8.6 stop reasons, word for word. */
 export function stopText(reason: StopReason, host?: string, email?: string, provider?: ProviderId): string {
@@ -182,7 +185,16 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let init: OverlayInit | null = null;
   let timer: unknown = null;
   let closer: unknown = null;
-  let chainUi: { mode: "running" | "ended"; status: HTMLElement; steps: HTMLElement | null; now: HTMLElement | null; last: string } | null = null;
+  let chainUi: {
+    mode: "running" | "ended";
+    status: HTMLElement;
+    steps: HTMLElement | null;
+    now: HTMLElement | null;
+    details: HTMLButtonElement | null;
+    last: string;
+  } | null = null;
+  /** The steps of a running sign-in: folded by default, the user's choice kept per browser. */
+  let stepsOpen = false;
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
   const unfolded = new Set<string>();
@@ -442,19 +454,47 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
    * keeps its size and "Annuler" stays under the pointer). The card is
    * rebuilt when the chain ends, which re-arms the click delay.
    */
+  /** Shows or folds the steps around the line under way; "Détails" only when there are steps to show. */
+  function foldSteps(): void {
+    if (!chainUi?.steps || !chainUi.now || !chainUi.details) return;
+    const others = [...chainUi.steps.children].filter((li) => li !== chainUi?.now) as HTMLElement[];
+    for (const li of others) li.hidden = !stepsOpen;
+    chainUi.details.hidden = others.length === 0;
+    chainUi.details.setAttribute("aria-expanded", String(stepsOpen));
+    chainUi.details.classList.toggle("open", stepsOpen);
+    chainUi.steps.classList.toggle("ov-steps-open", stepsOpen);
+    remeasure();
+  }
+
   function renderChain(c: ChainView): void {
     const key = JSON.stringify(c);
     if (chainUi && chainUi.last === key) return;
     const mode = c.status === "running" ? "running" : "ended";
     if (mode === "running") {
       if (!chainUi || chainUi.mode !== "running") {
-        const status = h("span", { class: "ov-status", attrs: { role: "status" } });
+        // One line: what happens now (a live region), "Annuler", and "Détails" that unfolds the steps.
+        const status = h("span", { class: "ov-status", attrs: { role: "status", "aria-live": "polite" } });
         const cancelBtn = h("button", { class: "btn-link ov-cancel", attrs: { type: "button" }, on: { click: guard.wrap(cancel) } }, t("common.cancel"));
-        const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status);
-        const steps = h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, now);
+        const steps = h("ul", { class: "ov-steps", attrs: { id: "ov-steps", "aria-label": t("overlay.stepsDone") } });
+        const details = h(
+          "button",
+          { class: "btn-link ov-details", attrs: { type: "button", "aria-controls": "ov-steps", "aria-expanded": "false" } },
+          t("overlay.stepsDetails"),
+          icon("chevron", 10),
+        ) as HTMLButtonElement;
+        details.addEventListener(
+          "click",
+          guard.wrap(() => {
+            stepsOpen = !stepsOpen;
+            foldSteps();
+            void deps.prefs?.set(STEPS_PREF, stepsOpen).catch(() => undefined);
+          }),
+        );
+        const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status, details);
+        steps.append(now);
         // Closing while it runs stops the chain, as "Annuler" does.
         show(shell(h("div", { class: "ov-card ov-run" }, whoNode(c, cancelBtn), steps), closeButton(cancel)));
-        chainUi = { mode, status, steps, now, last: "" };
+        chainUi = { mode, status, steps, now, details, last: "" };
       }
       chainUi.status.textContent = phaseText(c.phase, { ...c, provider: c.provider ?? picked?.provider, email: c.email ?? picked?.subtitle, title: c.title ?? picked?.title });
       // The steps done above the line under way, the steps still ahead under it; the line itself keeps its node.
@@ -464,6 +504,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         const done = c.steps.filter((x) => x.state === "done" && x.what !== "end");
         now.before(...done.map(stepNode(c)));
         now.after(...ahead(c).map((label) => h("li", { class: "ov-step pending" }, h("span", { class: "ov-mark", attrs: { "aria-hidden": "true" } }), h("span", { class: "ov-step-label" }, label), srOnly(STATE_TEXT.pending))));
+        foldSteps();
       }
       chainUi.last = key;
       return;
@@ -509,7 +550,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         ),
       );
     }
-    chainUi = { mode: "ended", status, steps: null, now: null, last: key };
+    chainUi = { mode: "ended", status, steps: null, now: null, details: null, last: key };
     cancelClose();
     // Success needs nothing more from the user: the card leaves by itself.
     if (done) closer = timers.setTimeout(closeOverlay, DONE_CLOSE_MS);
@@ -531,7 +572,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       renderMessage("invalid");
       return;
     }
-    const r = await call(deps.send, { type: "overlay_init", token }, parseOverlayInit);
+    const [r, open] = await Promise.all([
+      call(deps.send, { type: "overlay_init", token }, parseOverlayInit),
+      deps.prefs ? deps.prefs.get(STEPS_PREF).catch(() => false) : Promise.resolve(false),
+    ]);
+    stepsOpen = open === true;
     if (!r.ok) {
       renderMessage(r.code);
       return;
@@ -552,5 +597,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 
 if (typeof document !== "undefined" && ext?.runtime?.id) {
   const root = document.getElementById("root");
-  if (root) mountOverlay(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash });
+  if (root) {
+    const prefs = {
+      get: async (key: string) => ((await ext.storage.local.get(key)) as Record<string, unknown>)[key],
+      set: (key: string, value: unknown) => ext.storage.local.set({ [key]: value }),
+    };
+    mountOverlay(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash, prefs });
+  }
 }

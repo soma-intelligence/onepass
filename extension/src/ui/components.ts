@@ -583,6 +583,14 @@ export interface FrameDeps {
   timers?: Timers;
   /** Size observer of the frame content (tests drive it). */
   observeSize?: ObserveSize;
+  /** UI preferences of this browser profile (`storage.local`); none in tests unless given. */
+  prefs?: Prefs;
+}
+
+/** A small key-value store for UI preferences (no secret ever goes there). */
+export interface Prefs {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown): Promise<void>;
 }
 
 /** Common page frame: a status line for errors. */

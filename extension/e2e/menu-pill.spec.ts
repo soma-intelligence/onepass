@@ -7,7 +7,7 @@
 // - a page that declares a light scheme turned the menu light on a dark Mac,
 //   and painted an opaque white backdrop under the dark pill (the white line).
 import type { Page } from "@playwright/test";
-import { expect, paired } from "./fixtures";
+import { type Ext, expect, paired } from "./fixtures";
 import { readPng } from "./png";
 import { FX } from "./server";
 
@@ -117,5 +117,61 @@ paired.describe("dark system", () => {
       ...[0.3, 0.5, 0.7].map((f) => shot.at(Math.floor(shot.width * f), shot.height - 2)),
     ];
     for (const [r, g, b] of samples) expect(Math.max(r, g, b), `frame pixel ${r},${g},${b}`).toBeLessThanOrEqual(60);
+  });
+});
+
+/**
+ * A password sign-in held on its password page (the page answers 204 once):
+ * the card shows one line, and "Détails" unfolds the steps.
+ */
+async function heldSignIn(ext: Ext) {
+  const { page } = ext;
+  let held = false;
+  await page.route("**/multistep/password", async (route) => {
+    if (route.request().method() === "POST" && !held) {
+      held = true;
+      await route.fulfill({ status: 204 });
+    } else await route.continue();
+  });
+  await page.goto(`${ATLAS}/multistep`);
+  const menu = await ext.openMenu(page, "#email");
+  await ext.pickRow(menu, "Atlas Cloud");
+  await expect
+    .poll(async () => {
+      const f = ext.findExtFrame(page, "overlay");
+      return f ? await f.locator(".ov-step.done").count().catch(() => 0) : 0;
+    }, { timeout: 30_000 })
+    .toBeGreaterThan(0);
+  await ext.settle(700);
+  return ext.findExtFrame(page, "overlay")!;
+}
+
+paired("signing_in_shows_one_line_and_details_unfold_the_steps", async ({ ext }) => {
+  const overlay = await heldSignIn(ext);
+  const details = overlay.locator("button.ov-details");
+  // Folded by default: the line under way, "Annuler", "Détails"; no step shown.
+  await expect(details).toHaveText("Détails");
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await expect(overlay.locator(".ov-step.done:visible")).toHaveCount(0);
+  await expect(overlay.locator(".ov-now .ov-status")).toBeVisible();
+  await expect(overlay.locator(".ov-cancel")).toHaveText("Annuler");
+  await details.click();
+  await expect(details).toHaveAttribute("aria-expanded", "true");
+  await expect(overlay.locator(".ov-step.done").first()).toBeVisible();
+  await expect(overlay.locator(".ov-step.done .ov-step-label").first()).toHaveText("Identifiant rempli");
+});
+
+paired.describe("english", () => {
+  paired.use({ uiLang: "en" });
+
+  paired("signing_in_details_in_english", async ({ ext }) => {
+    const overlay = await heldSignIn(ext);
+    const details = overlay.locator("button.ov-details");
+    await expect(details).toHaveText("Details");
+    await expect(details).toHaveAttribute("aria-expanded", "false");
+    await expect(overlay.locator(".ov-cancel")).toHaveText("Cancel");
+    await details.click();
+    await expect(details).toHaveAttribute("aria-expanded", "true");
+    await expect(overlay.locator(".ov-step.done .ov-step-label").first()).toHaveText("Username filled");
   });
 });

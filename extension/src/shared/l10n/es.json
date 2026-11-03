@@ -265,5 +265,6 @@
     "other": "{n} inicios de sesión"
   },
   "overlay.stepCode": "Código de verificación",
-  "overlay.stepUser": "Usuario"
+  "overlay.stepUser": "Usuario",
+  "overlay.stepsDetails": "Detalles"
 }

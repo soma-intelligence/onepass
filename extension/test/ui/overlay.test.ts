@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import type { ChainView, OverlayAccount, StopReason } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
-import { DONE_CLOSE_MS, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
+import { setLang } from "../../src/shared/i18n";
+import { DONE_CLOSE_MS, STEPS_PREF, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
@@ -52,7 +53,12 @@ class ManualTimers implements Timers {
   }
 }
 
-function setup(chainState: () => ChainView | null, initChain: ChainView | null = null, extra?: (m: UiToBg) => Reply | null) {
+function setup(
+  chainState: () => ChainView | null,
+  initChain: ChainView | null = null,
+  extra?: (m: UiToBg) => Reply | null,
+  prefs?: Map<string, unknown>,
+) {
   const r = root();
   const clock = new Clock();
   const timers = new ManualTimers();
@@ -72,6 +78,14 @@ function setup(chainState: () => ChainView | null, initChain: ChainView | null =
     observe: () => undefined,
     observeSize: (_el, cb) => void sizes.push(cb),
     timers,
+    ...(prefs
+      ? {
+          prefs: {
+            get: async (k: string) => prefs.get(k),
+            set: async (k: string, v: unknown) => void prefs.set(k, v),
+          },
+        }
+      : {}),
   });
   // Clicks are accepted 300 ms after the content appeared.
   const ready = handle.ready.then(() => clock.advance(300));
@@ -156,7 +170,7 @@ describe("overlay", () => {
   it("a password login lists its steps: done ones checked, the one under way, the ones ahead", async () => {
     const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
     let now: ChainView = { ...pwd, steps: [{ label: "x", state: "done", what: "user" }] };
-    const { r, handle } = setup(() => now, pwd);
+    const { r, handle } = setup(() => now, pwd, undefined, new Map([[STEPS_PREF, true]]));
     await handle.ready;
     const items = () => [...r.querySelectorAll(".ov-steps > li")].map((li) => `${li.className}: ${li.querySelector(".ov-step-label, .ov-status")!.textContent}`);
     // At load: the username under way, the password and the code ahead.
@@ -169,6 +183,49 @@ describe("overlay", () => {
     expect(items()).toEqual(["ov-step done: Identifiant rempli", "ov-step done: Mot de passe rempli", "ov-step ov-now: Connexion…"]);
     // The line under way keeps its node.
     expect(r.querySelector(".ov-status")).toBe(status);
+  });
+
+  it("while it runs: one line, the steps folded under Détails, the choice kept", async () => {
+    const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [{ label: "x", state: "done", what: "user" }] };
+    const prefs = new Map<string, unknown>();
+    const { r, handle, clock } = setup(() => pwd, pwd, undefined, prefs);
+    await handle.ready;
+    const shown = () => [...r.querySelectorAll<HTMLElement>(".ov-steps > li")].filter((li) => !li.hidden).map((li) => li.querySelector(".ov-step-label, .ov-status")!.textContent);
+    const details = r.querySelector<HTMLButtonElement>("button.ov-details")!;
+    // Folded by default: only what happens now, read out by a live region.
+    expect(shown()).toEqual(["Connexion…"]);
+    expect(r.querySelector(".ov-status")!.getAttribute("role")).toBe("status");
+    expect(details.textContent).toBe("Détails");
+    expect(details.getAttribute("aria-expanded")).toBe("false");
+    expect(details.getAttribute("aria-controls")).toBe(r.querySelector(".ov-steps")!.id);
+    details.click();
+    expect(shown()).toEqual(["Identifiant rempli", "Connexion…", "Code de vérification"]);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(prefs.get(STEPS_PREF)).toBe(true);
+    // A poll keeps the choice and the button's node.
+    await handle.poll();
+    expect(r.querySelector("button.ov-details")).toBe(details);
+    expect(shown()).toHaveLength(3);
+    clock.advance(0);
+    details.click();
+    expect(shown()).toEqual(["Connexion…"]);
+    expect(prefs.get(STEPS_PREF)).toBe(false);
+  });
+
+  it("the steps open at load when this browser kept them open; Details in English", async () => {
+    setLang("en");
+    try {
+      const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
+      const { r, handle } = setup(() => pwd, pwd, undefined, new Map([[STEPS_PREF, true]]));
+      await handle.ready;
+      const details = r.querySelector<HTMLButtonElement>("button.ov-details")!;
+      expect(details.textContent).toBe("Details");
+      expect(details.getAttribute("aria-expanded")).toBe("true");
+      expect([...r.querySelectorAll<HTMLElement>(".ov-steps > li")].every((li) => !li.hidden)).toBe(true);
+      expect(r.querySelector(".ov-cancel")!.textContent).toBe("Cancel");
+    } finally {
+      setLang("fr");
+    }
   });
 
   it("the close button beside a running chain stops it", async () => {

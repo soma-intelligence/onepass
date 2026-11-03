@@ -265,5 +265,6 @@
     "other": "{n} logins"
   },
   "overlay.stepCode": "Verification code",
-  "overlay.stepUser": "Username"
+  "overlay.stepUser": "Username",
+  "overlay.stepsDetails": "Details"
 }
