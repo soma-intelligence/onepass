@@ -303,7 +303,7 @@ private struct WelcomeStep: View {
         } else {
             AppGlyph(size: 96).padding(.top, 36).padding(.bottom, 4)
         }
-        Text("Bienvenue dans OnePass")
+        Text("onboarding.welcomeToOnepass")
             .font(.system(size: Platform.isMac ? 32 : 34, weight: .bold))
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
@@ -359,7 +359,7 @@ private struct WelcomeStep: View {
                 .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
                 if soon {
-                    Text("Bientôt")
+                    Text("onboarding.soon")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -469,7 +469,7 @@ private struct PasswordStep: View {
         StepTitle(
             title: Platform.isMac ? "Choisis ton mot de passe maître" : "Ton mot de passe maître",
             subtitle: Platform.text(
-                mac: "C'est le seul mot de passe à retenir. Personne ne peut le récupérer pour toi, pas même nous.",
+                mac: "onboarding.onlyPasswordNeedTo",
                 phone: "Le seul à retenir. Personne ne peut le récupérer pour toi."))
         #if os(macOS)
         OnboardingField(
@@ -508,7 +508,7 @@ private struct PasswordStep: View {
                 identifier: "onboarding.confirm", focus: $focus, focusValue: .confirm,
                 onSubmit: { Task { await model.primary() } })
             if model.confirmationMismatch {
-                Label("Les deux saisies sont différentes.", systemImage: "xmark")
+                Label("app.twoEntriesDontMatch", systemImage: "xmark")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.red)
                     .transition(.opacity)
@@ -520,7 +520,7 @@ private struct PasswordStep: View {
         PasswordRulesList(rules: model.passwordRules)
         if Platform.isMac {
             Label {
-                Text("Conseil : cinq mots tirés au hasard (« tapis-orage-girafe-violon-nuage ») sont plus solides et plus faciles à retenir qu'un mot compliqué. « Générer » en tire cinq pour toi.")
+                Text("onboarding.tipFiveRandomWords")
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "lightbulb")
@@ -556,11 +556,11 @@ private struct MasterStrengthMeter: View {
 
     private var word: String {
         switch level {
-        case 1: String(localized: "Trop faible")
-        case 2: String(localized: "Presque")
-        case 3: String(localized: "Solide")
-        case 4: String(localized: "Excellent")
-        default: String(localized: "Force")
+        case 1: String(localized: "onboarding.tooWeak")
+        case 2: String(localized: "onboarding.almost")
+        case 3: String(localized: "onboarding.strong")
+        case 4: String(localized: "app.excellent")
+        default: String(localized: "onboarding.strength")
         }
     }
 
@@ -581,7 +581,7 @@ private struct MasterStrengthMeter: View {
         }
         .animation(.spring(duration: 0.35, bounce: 0), value: level)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Force du mot de passe"))
+        .accessibilityLabel(Text("onboarding.passwordStrength"))
         .accessibilityValue(Text(word))
         .accessibilityIdentifier("onboarding.strength")
     }
@@ -606,7 +606,7 @@ private struct PasswordRulesList: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(rule.label))
-                .accessibilityValue(Text(rule.met ? String(localized: "fait") : String(localized: "à faire")))
+                .accessibilityValue(Text(rule.met ? String(localized: "onboarding.done") : String(localized: "onboarding.toDo")))
                 .accessibilityIdentifier("onboarding.rule.\(rule.id)")
             }
         }
@@ -630,7 +630,7 @@ private struct SecretKeyStep: View {
 
     var body: some View {
         if model.path == .create {
-            Label("Coffre créé", systemImage: "checkmark.seal.fill")
+            Label("onboarding.vaultCreated", systemImage: "checkmark.seal.fill")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.green)
                 .padding(.horizontal, 12)
@@ -641,10 +641,10 @@ private struct SecretKeyStep: View {
         StepTitle(
             title: "Range ta Secret Key",
             subtitle: Platform.text(
-                mac: "Elle a été créée sur ce Mac et ne le quitte jamais. Avec ton mot de passe maître, elle protège ton coffre même si iCloud était piraté. Il te la faudra pour un nouvel appareil sans autre appareil à côté.",
+                mac: "onboarding.itWasCreatedOn",
                 phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
         VStack(alignment: .leading, spacing: 8) {
-            Text("SECRET KEY")
+            Text("onboarding.secretKey")
                 .font(.system(size: 12, weight: .bold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
@@ -661,7 +661,7 @@ private struct SecretKeyStep: View {
         .card()
 
         Label {
-            Text("Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne ; ne le photographie pas.")
+            Text("onboarding.kitPlusMasterPassword")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "exclamationmark.shield")
@@ -673,13 +673,13 @@ private struct SecretKeyStep: View {
             "Cet emplacement est synchronisé dans le cloud",
             isPresented: $cloudWarning
         ) {
-            Button("Enregistrer quand même", role: .destructive) {
+            Button("app.saveAnyway", role: .destructive) {
                 if let url = cloudDestination { model.saveKit(to: url) }
                 cloudDestination = nil
             }
             Button("Annuler", role: .cancel) { cloudDestination = nil }
         } message: {
-            Text("Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Avec ton mot de passe maître, il donne un accès complet à ton coffre.")
+            Text("onboarding.fileWillCopiedTo")
         }
         #endif
 
@@ -687,7 +687,7 @@ private struct SecretKeyStep: View {
             Button {
                 model.printKit()
             } label: {
-                Label("Imprimer le kit", systemImage: "printer")
+                Label("onboarding.printKit", systemImage: "printer")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: Platform.isMac ? nil : .infinity)
                     .frame(height: Platform.isMac ? 28 : 40)
@@ -696,7 +696,7 @@ private struct SecretKeyStep: View {
             .controlSize(Platform.isMac ? .large : .regular)
             .accessibilityIdentifier("onboarding.printKit")
 
-            Button("Enregistrer un fichier…") { saveWarning = true }
+            Button("app.saveFile") { saveWarning = true }
                 .buttonStyle(.borderless)
                 .font(.subheadline)
                 .accessibilityIdentifier("onboarding.saveKit")
@@ -705,12 +705,12 @@ private struct SecretKeyStep: View {
             .accessibilityIdentifier("onboarding.kitStored")
             .onAppear { model.prepareKit() }
             .onDisappear { model.deleteKit() }
-            .alert("Enregistrer l'Emergency Kit dans un fichier ?", isPresented: $saveWarning) {
-                Button("Continuer") { saveFile() }
+            .alert("onboarding.saveEmergencyKitTo", isPresented: $saveWarning) {
+                Button("common.continue") { saveFile() }
                 Button("Annuler", role: .cancel) {}
             } message: {
                 Text(Platform.text(
-                    mac: "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur une clé USB que tu ranges hors ligne.",
+                    mac: "onboarding.fileCanLeaveDevice",
                     phone: "Un fichier peut quitter cet appareil sans que tu le voies : iCloud Drive, Photos, les messageries et les captures d'écran synchronisent la Secret Key ailleurs. Préfère l'impression, ou enregistre sur un support hors ligne que tu ranges en lieu sûr."))
             }
             #if os(iOS) || os(visionOS)
@@ -827,13 +827,13 @@ private struct BiometricsStep: View {
                 subtitle: enabled
                     ? "Ton coffre s'ouvre maintenant d'un regard ou d'un doigt."
                     : Platform.text(
-                        mac: "La clé de déverrouillage reste dans la Secure Enclave de ce Mac. Ajouter une empreinte l'invalide : le mot de passe maître est alors redemandé. Il est aussi redemandé tous les 14 jours.",
+                        mac: "onboarding.unlockKeyStaysIn",
                         phone: "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change."),
                 centered: !Platform.isMac)
                 .contentTransition(.opacity)
                 .accessibilityIdentifier(enabled ? "onboarding.biometricsOn" : "onboarding.biometricsOffer")
             if !enabled, !Platform.isMac {
-                Text("« Plus tard » : tu pourras l'activer dans Réglages.")
+                Text("onboarding.laterCanTurnIt")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -841,7 +841,7 @@ private struct BiometricsStep: View {
         }
         .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
         #if os(macOS)
-        Toggle("Accepter aussi l'Apple Watch", isOn: $model.allowWatch)
+        Toggle("onboarding.alsoAllowAppleWatch", isOn: $model.allowWatch)
             .toggleStyle(.checkbox)
             .disabled(enabled)
         #endif
@@ -899,7 +899,7 @@ private struct RestoreStep: View {
         StepTitle(
             title: "Utiliser ton Emergency Kit",
             subtitle: Platform.secretKeyText(
-                mac: "Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
+                mac: "onboarding.typeSecretKeyPrinted",
                 phone: "Scanne le QR code du kit ou tape ta Secret Key. Minuscules, espaces et tirets oubliés sont acceptés."))
         if model.restoreOnly {
             // Only reached when the keychain really lost the Secret Key of the account in the store.
@@ -920,7 +920,7 @@ private struct RestoreStep: View {
             Button {
                 scanning = true
             } label: {
-                Label("Scanner le QR code du kit", systemImage: "qrcode.viewfinder")
+                Label("onboarding.scanKitQrCode", systemImage: "qrcode.viewfinder")
             }
             .buttonStyle(.glass)
             .accessibilityIdentifier("onboarding.scan")
@@ -964,7 +964,7 @@ private struct RestoreStep: View {
             Button {
                 model.choose(.pair)
             } label: {
-                Label("Appairer avec mon autre appareil", systemImage: "qrcode")
+                Label("onboarding.pairWithMyOther", systemImage: "qrcode")
             }
             .buttonStyle(.glass)
             .accessibilityIdentifier("onboarding.pairInstead")
@@ -974,7 +974,7 @@ private struct RestoreStep: View {
                 Button {
                     confirmStartOver = true
                 } label: {
-                    Label("Créer un nouveau coffre", systemImage: "plus.circle")
+                    Label("onboarding.createNewVault", systemImage: "plus.circle")
                 }
                 .buttonStyle(.glass)
                 .accessibilityIdentifier("onboarding.startOver")
@@ -1022,7 +1022,7 @@ private struct DoneStep: View {
                 .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("onboarding.doneTitle")
-            Text("Ton coffre est chiffré et prêt sur cet \(Platform.deviceName).")
+            Text("onboarding.vaultEncryptedAndReady \(Platform.deviceName)")
                 .font(Platform.isMac ? .system(size: 15) : .body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(Platform.isMac ? .leading : .center)
@@ -1060,7 +1060,7 @@ private struct DoneStep: View {
             }
         }
         #if os(macOS)
-        Button("Ouvrir OnePass") { Task { await model.primary() } }
+        Button("app.openOnepass") { Task { await model.primary() } }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
@@ -1071,25 +1071,25 @@ private struct DoneStep: View {
     private var title: String {
         let first = model.displayName.split(separator: " ").first.map(String.init) ?? ""
         return Platform.isMac && !first.isEmpty
-            ? String(localized: "Tout est prêt, \(first)") : String(localized: "Tout est prêt")
+            ? String(localized: "onboarding.youreAllSet \(first)") : String(localized: "onboarding.youreAllSet")
     }
 
     private var rows: [(symbol: String, label: String, value: String)] {
         let biometrics: String
         if model.biometricsEnabled {
-            biometrics = String(localized: "Activé")
+            biometrics = String(localized: "app.on")
         } else if model.mode == .shared {
-            biometrics = String(localized: "Désactivé (appareil partagé)")
+            biometrics = String(localized: "onboarding.offSharedDevice")
         } else if !model.biometricsOffered {
-            biometrics = String(localized: "Non disponible")
+            biometrics = String(localized: "onboarding.notAvailable")
         } else {
-            biometrics = String(localized: "Plus tard, dans Réglages")
+            biometrics = String(localized: "onboarding.laterInSettings")
         }
         return [
-            ("icloud", String(localized: "Coffre chiffré dans iCloud"),
-             model.cloudKitEnabled ? String(localized: "Oui") : String(localized: "Non (build local)")),
+            ("icloud", String(localized: "onboarding.encryptedVaultInIcloud"),
+             model.cloudKitEnabled ? String(localized: "app.yes") : String(localized: "onboarding.noLocalBuild")),
             (OnboardingModel.biometrySymbol, model.biometryName, biometrics),
-            ("doc.text", "Emergency Kit", model.path == .create ? String(localized: "Rangé") : String(localized: "Déjà fait")),
+            ("doc.text", "Emergency Kit", model.path == .create ? String(localized: "onboarding.stored") : String(localized: "onboarding.alreadyDone")),
         ]
     }
 }

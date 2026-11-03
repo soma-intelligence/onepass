@@ -150,7 +150,7 @@ struct NewItemSheet: View {
                     model.showImport = true
                 }
             } label: {
-                Label("Importer depuis un autre gestionnaire", systemImage: "square.and.arrow.down")
+                Label("browse.importFromAnotherPassword", systemImage: "square.and.arrow.down")
                     .font(.body.weight(.medium))
             }
             .buttonStyle(.borderless)
@@ -188,7 +188,7 @@ struct NewItemSheet: View {
             }
             .padding([.top, .horizontal], 14)
 
-            Text("Que veux-tu ajouter ?")
+            Text("browse.whatDoWantTo")
                 .font(.title.weight(.bold))
                 .padding(.bottom, 16)
 
@@ -240,7 +240,7 @@ struct NewItemSheet: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Rechercher un site ou une catégorie", text: $query)
+            TextField("browse.searchForSiteOr", text: $query)
                 .textFieldStyle(.plain)
                 .font(Self.searchFont)
                 .focused($searchFocused)
@@ -378,7 +378,7 @@ struct NewItemSheet: View {
                 } label: {
                     HStack(spacing: 7) {
                         ProviderMark(provider: provider, size: 20)
-                        Text("Se connecte avec \(provider.name)").font(.callout.weight(.medium))
+                        Text("browse.signsInWith \(provider.name)").font(.callout.weight(.medium))
                     }
                     .padding(.leading, 5)
                     .padding(.trailing, 11)
@@ -487,7 +487,7 @@ private struct WebsiteTile: View {
             HStack(spacing: 12) {
                 CategoryTile(category: ItemCategory.of(.login), size: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Nouvelle connexion pour \(title)").font(.body.weight(.medium))
+                    Text("browse.newLoginFor \(title)").font(.body.weight(.medium))
                     if !host.isEmpty {
                         Text(host).font(.callout).foregroundStyle(.secondary)
                     }

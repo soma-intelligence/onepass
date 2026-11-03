@@ -96,7 +96,7 @@ struct LockView: View {
             #else
             AppGlyph(size: Self.glyphSize)
             #endif
-            Text("Déverrouille OnePass")
+            Text("lock.unlockOnepass")
                 .font(.system(size: Platform.isMac ? 22 : 26, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)
@@ -170,7 +170,7 @@ struct LockView: View {
             }
             Group {
                 if name.isEmpty {
-                    Text("Compte OnePass")
+                    Text("lock.onepassAccount")
                 } else {
                     Text(verbatim: name)
                 }
@@ -190,7 +190,7 @@ struct LockView: View {
         .background(Capsule().fill(Color.primary.opacity(0.06)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
+        .accessibilityLabel(name.isEmpty ? Text("lock.onepassAccount") : Text(verbatim: name))
         .accessibilityIdentifier("lock.account")
     }
 
@@ -226,7 +226,7 @@ struct LockView: View {
             }
             .buttonStyle(.plain)
             .visionHoverEffect()
-            .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+            .accessibilityLabel(revealed ? Text("lock.hidePassword") : Text("lock.showPassword"))
             .accessibilityIdentifier("lock.reveal")
             // One trailing slot: Touch ID (Face ID, Optic ID) while the field is empty, the
             // arrow once something is typed. Everything lives in the one field.
@@ -269,7 +269,7 @@ struct LockView: View {
 
     @ViewBuilder private var status: some View {
         if session.passwordChangedElsewhere, message == nil {
-            Text("Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau.")
+            Text("lock.masterPasswordChangedOn")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -300,8 +300,8 @@ struct LockView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
                 Text(remaining > 0
-                     ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
-                     : String(localized: "Tu peux réessayer."))
+                     ? String(localized: "lock.tooManyAttemptsTry \(Self.duration(remaining))")
+                     : String(localized: "lock.canTryAgain"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -340,8 +340,8 @@ struct LockView: View {
     private var passwordDueText: String? {
         guard let days = daysUntilPassword else { return nil }
         return days <= 1
-            ? String(localized: "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.")
-            : String(localized: "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours.")
+            ? String(localized: "lock.masterPasswordRequiredAgain")
+            : String(localized: "lock.masterPasswordRequiredAgain \(days)")
     }
 
     /// The arrow at the end of the field: dim until something is typed, a spinner while unlocking.
@@ -368,7 +368,7 @@ struct LockView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(!ready)
         .animation(.smooth(duration: 0.15), value: ready)
-        .accessibilityLabel(Text("Déverrouiller"))
+        .accessibilityLabel(Text("common.unlock"))
         .accessibilityIdentifier("lock.unlock")
     }
 
@@ -425,8 +425,8 @@ struct LockView: View {
             case .wrongPassword:
                 let count = model.settings.failedUnlocks
                 message = count > 1
-                    ? String(localized: "Mot de passe incorrect (\(count) essais).")
-                    : String(localized: "Mot de passe incorrect.")
+                    ? String(localized: "lock.wrongPasswordAttempts \(count)")
+                    : String(localized: "lock.incorrectPassword")
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil

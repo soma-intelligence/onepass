@@ -133,7 +133,7 @@ struct SettingsView: View {
                 Section {
                     row(.about)
                 } footer: {
-                    Text("OnePass est open source (AGPL-3.0)")
+                    Text("settings.onepassOpenSourceAgpl")
                         .frame(maxWidth: .infinity)
                         .padding(.top, 8)
                 }
@@ -195,7 +195,7 @@ private struct SettingsAccountHeader: View {
         HStack(spacing: 14) {
             AccountAvatar(initials: model.initials, photo: model.profileImage, size: 56)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName)
+                Text(model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -294,7 +294,7 @@ struct MacSettingsView: View {
             } else {
                 ContentUnavailableView(
                     "Réglages verrouillés", systemImage: "lock",
-                    description: Text("Déverrouille OnePass pour ouvrir les réglages."))
+                    description: Text("settings.unlockOnepassToOpen"))
             }
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)

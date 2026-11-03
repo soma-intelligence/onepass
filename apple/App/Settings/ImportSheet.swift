@@ -13,89 +13,89 @@ struct ImportSource: Identifiable, Hashable {
 
     /// "Détecter automatiquement": the format comes from the content alone.
     static let automatic = ImportSource(
-        id: "auto", name: String(localized: "Détecter automatiquement"), formats: [],
-        hint: String(localized: "OnePass reconnaît le format d'après le contenu du fichier."))
+        id: "auto", name: String(localized: "settings.detectAutomatically"), formats: [],
+        hint: String(localized: "settings.onepassRecognizesFormatFrom"))
 
     static let all: [ImportSource] = [
         ImportSource(
-            id: "apple", name: String(localized: "Mots de passe d'Apple"), formats: ["safari-csv"],
-            hint: String(localized: "App Mots de passe : Fichier > Exporter tous les mots de passe vers un fichier.")),
+            id: "apple", name: String(localized: "settings.applePasswords"), formats: ["safari-csv"],
+            hint: String(localized: "settings.passwordsAppFileExport")),
         ImportSource(
             id: "safari", name: "Safari", formats: ["safari-csv"],
-            hint: String(localized: "Fichier > Exporter les données de navigation, avec les mots de passe (.zip ou .csv).")),
+            hint: String(localized: "settings.fileExportBrowsingData")),
         ImportSource(
             id: "1password", name: "1Password", formats: ["1pux", "1password-csv"],
-            hint: String(localized: "Fichier > Exporter, puis le format 1PUX (ou CSV).")),
+            hint: String(localized: "settings.fileExportThen1pux")),
         ImportSource(
             id: "bitwarden", name: "Bitwarden", formats: ["bitwarden-json", "bitwarden-csv"],
-            hint: String(localized: "Outils > Exporter le coffre, en .json non chiffré ou en .csv.")),
+            hint: String(localized: "settings.toolsExportVaultAs")),
         ImportSource(
             id: "nordpass", name: "NordPass", formats: ["nordpass-csv"],
-            hint: String(localized: "Réglages > Importer et exporter > Exporter les éléments (.csv).")),
+            hint: String(localized: "settings.settingsImportAndExport")),
         ImportSource(
             id: "dashlane", name: "Dashlane", formats: ["dashlane-zip", "dashlane-csv"],
-            hint: String(localized: "Réglages > Exporter les données > CSV (le .zip ou un des fichiers .csv).")),
+            hint: String(localized: "settings.settingsExportDataCsv")),
         ImportSource(
             id: "lastpass", name: "LastPass", formats: ["lastpass-csv"],
-            hint: String(localized: "Options avancées > Exporter > fichier CSV LastPass.")),
+            hint: String(localized: "settings.advancedOptionsExportLastpass")),
         ImportSource(
             id: "protonpass", name: "Proton Pass", formats: ["protonpass-csv"],
-            hint: String(localized: "Réglages > Exporter, au format CSV.")),
+            hint: String(localized: "settings.settingsExportAsCsv")),
         ImportSource(
             id: "keeper", name: "Keeper", formats: ["keeper-csv"],
-            hint: String(localized: "Réglages > Exporter > fichier .csv.")),
+            hint: String(localized: "settings.settingsExportCsvFile")),
         ImportSource(
             id: "enpass", name: "Enpass", formats: ["enpass-json"],
-            hint: String(localized: "Fichier > Exporter, au format .json.")),
+            hint: String(localized: "settings.fileExportAsJson")),
         ImportSource(
             id: "roboform", name: "RoboForm", formats: ["roboform-csv"],
-            hint: String(localized: "Options > Exporter les identifiants et les notes (.csv).")),
+            hint: String(localized: "settings.optionsExportLoginsAnd")),
         ImportSource(
             id: "keepass", name: "KeePass, KeePassXC", formats: ["keepass-xml"],
-            hint: String(localized: "Fichier > Exporter en XML KeePass 2 (le .kdbx ne se lit pas directement).")),
+            hint: String(localized: "settings.fileExportAsKeepass")),
         ImportSource(
             id: "chrome", name: "Google Chrome", formats: ["chrome-csv"],
-            hint: String(localized: "Gestionnaire de mots de passe Google > Paramètres > Exporter les mots de passe.")),
+            hint: String(localized: "settings.googlePasswordManagerSettings")),
         ImportSource(
             id: "edge", name: "Microsoft Edge", formats: ["chrome-csv"],
-            hint: String(localized: "Paramètres > Mots de passe > ⋯ > Exporter les mots de passe.")),
+            hint: String(localized: "settings.settingsPasswordsExportPasswords")),
         ImportSource(
             id: "brave", name: "Brave", formats: ["chrome-csv"],
-            hint: String(localized: "brave://password-manager/settings > Exporter les mots de passe.")),
+            hint: String(localized: "settings.bravePasswordManagerSettings")),
         ImportSource(
             id: "opera", name: "Opera", formats: ["chrome-csv"],
-            hint: String(localized: "Réglages > Mots de passe > ⋯ > Exporter les mots de passe.")),
+            hint: String(localized: "settings.settingsPasswordsExportPasswords2")),
         ImportSource(
             id: "arc", name: "Arc", formats: ["chrome-csv"],
-            hint: String(localized: "arc://password-manager/settings > Exporter les mots de passe.")),
+            hint: String(localized: "settings.arcPasswordManagerSettings")),
         ImportSource(
             id: "vivaldi", name: "Vivaldi", formats: ["chrome-csv"],
-            hint: String(localized: "Réglages > Confidentialité > Mots de passe > Exporter.")),
+            hint: String(localized: "settings.settingsPrivacyPasswordsExport")),
         ImportSource(
             id: "firefox", name: "Firefox", formats: ["firefox-csv"],
-            hint: String(localized: "about:logins > ⋯ > Exporter les identifiants.")),
+            hint: String(localized: "settings.aboutLoginsExportLogins")),
         ImportSource(
-            id: "cxf", name: String(localized: "Autre gestionnaire (Credential Exchange)"), formats: ["cxf"],
-            hint: String(localized: "Fichier .json au format d'échange d'identifiants (CXF).")),
+            id: "cxf", name: String(localized: "settings.otherPasswordManagerCredential"), formats: ["cxf"],
+            hint: String(localized: "settings.jsonFileInCredential")),
         ImportSource(
             id: "otpauth", name: String(localized: "Codes à usage unique"), formats: ["otpauth"],
-            hint: String(localized: "Liens otpauth:// (Google Authenticator et autres), un par ligne.")),
+            hint: String(localized: "settings.otpauthLinksGoogleAuthenticator")),
         ImportSource(
-            id: "wifi", name: String(localized: "Réseaux Wi-Fi (codes QR)"), formats: ["wifi-qr"],
-            hint: String(localized: "Texte des codes QR Wi-Fi (WIFI:S:...), un par ligne.")),
+            id: "wifi", name: String(localized: "settings.wiFiNetworksQr"), formats: ["wifi-qr"],
+            hint: String(localized: "settings.wiFiQrCode")),
         ImportSource(
-            id: "onepass", name: String(localized: "OnePass (export CSV)"), formats: ["onepass-csv"],
-            hint: String(localized: "Le fichier CSV en clair exporté par OnePass.")),
+            id: "onepass", name: String(localized: "settings.onepassCsvExport"), formats: ["onepass-csv"],
+            hint: String(localized: "settings.plainTextCsvFile")),
         ImportSource(
-            id: "pdf", name: String(localized: "PDF d'identifiants"), formats: ["pdf-text"],
-            hint: String(localized: "Une liste de mots de passe imprimée en PDF, ou l'Emergency Kit de 1Password. OnePass lit le texte du PDF sur cet appareil, puis te montre ce qu'il a trouvé.")),
+            id: "pdf", name: String(localized: "settings.credentialsPdf"), formats: ["pdf-text"],
+            hint: String(localized: "settings.passwordListPrintedTo")),
     ]
 
     /// Display name of a core format, for the preview.
     static func name(ofFormat format: String) -> String {
         switch format {
-        case "safari-csv": String(localized: "Mots de passe d'Apple, Safari (CSV)")
-        case "chrome-csv": String(localized: "Chrome et navigateurs Chromium (CSV)")
+        case "safari-csv": String(localized: "settings.applePasswordsSafariCsv")
+        case "chrome-csv": String(localized: "settings.chromeAndChromiumBrowsers")
         default: all.first { $0.formats.contains(format) }?.name ?? format
         }
     }
@@ -267,9 +267,9 @@ struct ImportSheet: View {
         VStack(spacing: 12) {
             ProgressView().controlSize(.large)
             if preview == nil {
-                Text("Lecture du fichier…")
+                Text("settings.readingFile")
             } else {
-                Text("Import en cours…")
+                Text("settings.importing")
             }
         }
         .font(.callout)
@@ -331,10 +331,10 @@ struct ImportSheet: View {
                     .frame(width: 54, height: 54)
                     .background(Theme.accent.opacity(dropTargeted ? 0.22 : 0.13), in: .circle)
                 VStack(spacing: 3) {
-                    Text("Dépose ton export ici")
+                    Text("settings.dropExportHere")
                         .font(.headline)
                         .foregroundStyle(.primary)
-                    Text("ou choisis un fichier")
+                    Text("settings.orChooseFile")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.accent)
                 }
@@ -372,10 +372,10 @@ struct ImportSheet: View {
 
     private var sourcePicker: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Ou choisis la source").font(.headline)
+            Text("settings.orChooseSource").font(.headline)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Rechercher une source", text: $query)
+                TextField("settings.searchSources", text: $query)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("import.search")
@@ -419,7 +419,7 @@ struct ImportSheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 ImportSourceGlyph(source: s, size: 24)
-                Text("Exporte depuis \(s.name)").font(.subheadline.weight(.semibold))
+                Text("settings.exportFrom \(s.name)").font(.subheadline.weight(.semibold))
                 Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -449,7 +449,7 @@ struct ImportSheet: View {
                 Button {
                     pickFile(as: s)
                 } label: {
-                    Label("Choisir le fichier", systemImage: "doc.badge.plus")
+                    Label("settings.chooseFile", systemImage: "doc.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
@@ -463,7 +463,7 @@ struct ImportSheet: View {
 
     private var privacyNote: some View {
         Label {
-            Text("Le fichier est lu sur cet appareil, jamais envoyé ni gardé. Supprime l'export une fois l'import fait : il contient tes mots de passe en clair.")
+            Text("settings.fileReadOnDevice")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "lock.fill")
@@ -499,7 +499,7 @@ struct ImportSheet: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("Terminé").frame(minWidth: 64)
+                    Text("common.done").frame(minWidth: 64)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
@@ -580,7 +580,7 @@ struct ImportSheet: View {
             sectionTitle("Contenu")
             if p.items == 0 {
                 EditorCard {
-                    Label("Aucun élément à importer dans ce fichier.", systemImage: "tray")
+                    Label("settings.theresNothingToImport", systemImage: "tray")
                         .foregroundStyle(.secondary)
                         .editorRowPadding()
                 }
@@ -641,9 +641,9 @@ struct ImportSheet: View {
                 HStack(spacing: 12) {
                     Image(systemName: "lock.rectangle.stack.fill")
                         .foregroundStyle(Theme.accent)
-                    Text("Coffre")
+                    Text("term.vault")
                     Spacer(minLength: 12)
-                    Picker("Coffre", selection: $vaultID) {
+                    Picker("term.vault", selection: $vaultID) {
                         ForEach(model.session.vaults, id: \.id) { vault in
                             Text(vault.meta.name).tag(vault.id)
                         }
@@ -680,7 +680,7 @@ struct ImportSheet: View {
     }
 
     private var otherFileButton: some View {
-        Button("Choisir un autre fichier", systemImage: "arrow.uturn.backward") {
+        Button("settings.chooseAnotherFile", systemImage: "arrow.uturn.backward") {
             reset()
             picking = true
         }
@@ -696,7 +696,7 @@ struct ImportSheet: View {
         .tint(Theme.accent)
         .keyboardShortcut(.return, modifiers: .command)
         .disabled(busy || vaultID.isEmpty || p.items == 0)
-        .help("Importer (⌘↩)")
+        .help("settings.import")
         .accessibilityIdentifier("import.confirm")
     }
 
@@ -786,7 +786,7 @@ struct ImportSheet: View {
             chosen = detected
         }
         guard let chosen else {
-            errorMessage = String(localized: "Format non reconnu. Choisis la source de l'export dans la liste.")
+            errorMessage = String(localized: "settings.unrecognizedFormatChooseWhere")
             buffer.wipe()
             return
         }
@@ -813,14 +813,14 @@ struct ImportSheet: View {
         do {
             buffer.replace(with: try await CredentialExchangeImport.receive(token: token))
             let summary = try await VaultSession.previewImport(format: CredentialExchangeImport.format, data: buffer.data)
-            fileName = String(localized: "Credential Exchange")
+            fileName = String(localized: "settings.credentialExchange")
             format = CredentialExchangeImport.format
             preview = summary
             if vaultID.isEmpty || !model.session.vaults.contains(where: { $0.id == vaultID }) {
                 vaultID = defaultVaultID
             }
         } catch {
-            errorMessage = String(localized: "Les identifiants envoyés par l'autre app n'ont pas pu être lus. Relance l'export depuis cette app.")
+            errorMessage = String(localized: "settings.credentialsSentByOther")
             buffer.wipe()
         }
     }
@@ -862,7 +862,7 @@ struct ImportSheet: View {
 
     private static func typeCount(_ type: FfiItemType, _ n: Int) -> String {
         guard let forms = typeForms(type) else {
-            return String(localized: "\(CoreLabels.typeName(type)) : \(n)")
+            return String(localized: "app.text \(CoreLabels.typeName(type)) \(n)")
         }
         return "\(n) \(n > 1 ? forms.many : forms.one)"
     }
@@ -875,17 +875,17 @@ struct ImportSheet: View {
 
     private static func typeForms(_ type: FfiItemType) -> (one: String, many: String)? {
         switch type {
-        case .login: (String(localized: "identifiant"), String(localized: "identifiants"))
-        case .password: (String(localized: "mot de passe"), String(localized: "mots de passe"))
+        case .login: (String(localized: "settings.login"), String(localized: "settings.logins"))
+        case .password: (String(localized: "settings.password"), String(localized: "settings.passwords"))
         case .secureNote: (String(localized: "note"), String(localized: "notes"))
-        case .creditCard: (String(localized: "carte"), String(localized: "cartes"))
-        case .identity: (String(localized: "identité"), String(localized: "identités"))
-        case .bankAccount: (String(localized: "compte bancaire"), String(localized: "comptes bancaires"))
-        case .router: (String(localized: "réseau Wi-Fi"), String(localized: "réseaux Wi-Fi"))
-        case .sshKey: (String(localized: "clé SSH"), String(localized: "clés SSH"))
-        case .passport: (String(localized: "passeport"), String(localized: "passeports"))
-        case .idCard: (String(localized: "carte d'identité"), String(localized: "cartes d'identité"))
-        case .driverLicense: (String(localized: "permis de conduire"), String(localized: "permis de conduire"))
+        case .creditCard: (String(localized: "settings.card"), String(localized: "settings.cards"))
+        case .identity: (String(localized: "settings.identity"), String(localized: "settings.identities"))
+        case .bankAccount: (String(localized: "settings.bankAccount"), String(localized: "settings.bankAccounts"))
+        case .router: (String(localized: "settings.wiFiNetwork"), String(localized: "settings.wiFiNetworks"))
+        case .sshKey: (String(localized: "settings.sshKey"), String(localized: "settings.sshKeys"))
+        case .passport: (String(localized: "settings.passport"), String(localized: "settings.passports"))
+        case .idCard: (String(localized: "settings.idCard"), String(localized: "settings.idCards"))
+        case .driverLicense: (String(localized: "settings.driversLicense"), String(localized: "settings.driversLicense"))
         default: nil
         }
     }
@@ -901,41 +901,41 @@ struct ImportSheet: View {
     private static func warningLine(_ w: FfiImportWarningCount) -> String {
         let n = Int(w.count)
         return switch w.code {
-        case "field_moved": String(localized: "\(n) valeur(s) rangée(s) dans la section Importé")
+        case "field_moved": String(localized: "settings.valuesPlacedInImported \(n)")
         case "login_to_password":
-            String(localized: "\(n) identifiant(s) sans nom d'utilisateur, gardé(s) comme mot de passe")
-        case "to_secure_note": String(localized: "\(n) élément(s) gardé(s) comme note sécurisée")
-        case "totp_moved": String(localized: "\(n) code(s) à usage unique rangé(s) dans la section Importé")
-        case "attachment_skipped": String(localized: "\(n) pièce(s) jointe(s) non importée(s)")
-        case "unsupported_entry": String(localized: "\(n) entrée(s) d'un type non pris en charge, ignorée(s)")
-        case "bad_date": String(localized: "\(n) date(s) illisible(s), gardée(s) en texte")
+            String(localized: "settings.loginsWithoutUsernameKept \(n)")
+        case "to_secure_note": String(localized: "settings.itemsKeptAsSecure \(n)")
+        case "totp_moved": String(localized: "settings.oneTimeCodesPlaced \(n)")
+        case "attachment_skipped": String(localized: "settings.attachmentsNotImported \(n)")
+        case "unsupported_entry": String(localized: "settings.entriesOfUnsupportedType \(n)")
+        case "bad_date": String(localized: "settings.unreadableDatesKeptAs \(n)")
         // A warning this version does not know yet: counted, never shown as its raw code.
-        default: String(localized: "\(n) élément(s) importé(s) avec une remarque")
+        default: String(localized: "settings.itemsImportedWithNote \(n)")
         }
     }
 
     /// "12 éléments déjà importés seront mis à jour, 3 nouveaux".
     private static func updatesLine(_ updated: UInt32, of total: UInt32) -> String {
         let fresh = Int(total) - Int(min(updated, total))
-        return String(localized: "\(Int(updated)) élément(s) déjà importé(s) mis à jour, \(fresh) nouveau(x)")
+        return String(localized: "settings.alreadyImportedItemS \(Int(updated)) \(fresh)")
     }
 
     private static func pdfMessage(_ e: PDFImportError) -> String {
         switch e {
-        case .unreadable: String(localized: "Ce PDF est illisible ou endommagé.")
-        case .locked: String(localized: "Ce PDF est protégé par un mot de passe. Ouvre-le, enregistre-le sans protection, puis réessaie.")
-        case .noText: String(localized: "Ce PDF ne contient pas de texte lisible (un scan ou une photo) : rien à importer.")
+        case .unreadable: String(localized: "settings.pdfCantReadOr")
+        case .locked: String(localized: "settings.pdfPasswordProtectedOpen")
+        case .noText: String(localized: "settings.pdfHasNoReadable")
         }
     }
 
     private static func skippedLine(_ n: UInt32) -> String {
-        String(localized: "\(Int(n)) ligne(s) vide(s), dossier(s) ou élément(s) supprimé(s) ignoré(s)")
+        String(localized: "settings.emptyRowsFoldersOr \(Int(n))")
     }
 
     private static func doneLine(_ n: UInt32, vault: String) -> String {
         n == 1
-            ? String(localized: "1 élément importé dans « \(vault) »")
-            : String(localized: "\(Int(n)) éléments importés dans « \(vault) »")
+            ? String(localized: "settings.n1ItemImportedInto \(vault)")
+            : String(localized: "settings.itemsImportedInto \(Int(n)) \(vault)")
     }
 }
 
@@ -946,7 +946,7 @@ private enum ImportReadError: Error {
     var message: String {
         switch self {
         case .tooLarge: VaultError.importMessage("import file too large") ?? ""
-        case .unreadable: String(localized: "Impossible de lire ce fichier.")
+        case .unreadable: String(localized: "app.cantReadFile")
         }
     }
 }

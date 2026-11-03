@@ -68,7 +68,7 @@ struct ItemDetailView: View {
                     detail(item)
                 }
             } else if let loadError {
-                EmptyState(title: String(localized: "Élément indisponible"), systemImage: "exclamationmark.triangle",
+                EmptyState(title: String(localized: "item.itemUnavailable"), systemImage: "exclamationmark.triangle",
                            message: loadError)
             } else {
                 ProgressView()
@@ -91,14 +91,14 @@ struct ItemDetailView: View {
             "Élément modifié entre-temps",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
         ) {
-            Button("Recharger", role: .destructive) {
+            Button("item.reload", role: .destructive) {
                 if let remoteVersion { item = remoteVersion }
                 remoteVersion = nil
                 model.editing = false
             }
-            Button("Continuer la modification", role: .cancel) { remoteVersion = nil }
+            Button("app.keepEditing", role: .cancel) { remoteVersion = nil }
         } message: {
-            Text("Si tu enregistres, tes modifications remplaceront cette nouvelle version. Recharger abandonne tes modifications.")
+            Text("item.ifSaveChangesWill")
         }
     }
 
@@ -196,16 +196,16 @@ struct ItemDetailView: View {
         .confirmationDialog(
             "Copier « \(item.title) » en JSON ?", isPresented: $confirmCopyJSON, titleVisibility: .visible
         ) {
-            Button("Copier en JSON") { copyJSON(item) }
+            Button("item.copyAsJson") { copyJSON(item) }
                 .accessibilityIdentifier("item.copyJSON.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Le JSON contient tous les secrets de l'élément, mots de passe compris. Le presse-papiers est effacé après 90 s.")
+            Text("item.jsonContainsAllOf")
         }
         .confirmationDialog(
             "Supprimer définitivement « \(item.title) » ?", isPresented: $confirmDelete, titleVisibility: .visible
         ) {
-            Button("Supprimer définitivement", role: .destructive) {
+            Button("item.deletePermanently", role: .destructive) {
                 run(clearsSelection: true) {
                     try await session.deletePermanently(itemID: item.id, vaultID: item.vaultId)
                 }
@@ -213,7 +213,7 @@ struct ItemDetailView: View {
             .accessibilityIdentifier("item.delete.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Cette action est irréversible.")
+            Text("item.cantUndone")
         }
         .simultaneousGesture(TapGesture().onEnded { session.noteActivity() })
     }
@@ -324,7 +324,7 @@ struct ItemDetailView: View {
                 withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { showDates.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Modifié le \(FieldDates.timestamp(item.updatedAt))")
+                    Text("item.modified \(FieldDates.timestamp(item.updatedAt))")
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.bold))
                         .rotationEffect(.degrees(showDates ? 90 : 0))
@@ -333,7 +333,7 @@ struct ItemDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("item.dates")
-            .accessibilityValue(showDates ? Text("développé") : Text("réduit"))
+            .accessibilityValue(showDates ? Text("item.expanded") : Text("item.collapsed"))
             if showDates {
                 ItemTimelineView(events: timeline.isEmpty ? ItemTimelineView.fallback(item) : timeline)
                     .transition(FoldMotion.transition(reduceMotion: reduceMotion))
@@ -343,7 +343,7 @@ struct ItemDetailView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "clock.arrow.circlepath")
-                            Text("Voir les versions précédentes")
+                            Text("item.viewPreviousVersions")
                             Text(verbatim: "(\(item.passwordHistoryCount))")
                             Image(systemName: "chevron.right").font(.caption2.weight(.bold))
                         }
@@ -368,8 +368,8 @@ struct ItemDetailView: View {
 
     static func historyLabel(_ count: UInt32) -> String {
         count == 1
-            ? String(localized: "1 version précédente")
-            : String(localized: "\(count) versions précédentes")
+            ? String(localized: "item.n1PreviousVersion")
+            : String(localized: "item.previousVersions \(count)")
     }
 
     /// Inline Markdown only (bold, italic, code, links); line breaks kept. Never opens anything itself.
@@ -399,12 +399,12 @@ struct ItemDetailView: View {
                         title: String(localized: "Mot de passe maître"), text: $password,
                         onSubmit: { verifyPassword() }, bordered: true, identifier: "item.reprompt.password")
                         .privacySensitive()
-                    Button("Confirmer") { verifyPassword() }
+                    Button("app.confirm") { verifyPassword() }
                         .buttonStyle(.borderedProminent)
                         .disabled(password.isEmpty || checking)
                         .accessibilityIdentifier("item.reprompt.confirm")
                 } else {
-                    Button("Afficher") { Task { await confirmPresence() } }
+                    Button("common.show") { Task { await confirmPresence() } }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("item.reprompt.show")
                 }
@@ -420,7 +420,7 @@ struct ItemDetailView: View {
     private func confirmPresence() async {
         guard let item else { return }
         repromptError = nil
-        if await session.confirmUserPresence(prompt: String(localized: "Afficher « \(item.title) »")) {
+        if await session.confirmUserPresence(prompt: String(localized: "item.show \(item.title)")) {
             presencePassed = true
             if travelGuarded(item), !passwordPassed {
                 askPassword = true
@@ -496,8 +496,8 @@ struct ItemDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .buttonStyle(QuietIconButtonStyle())
-                .help("Partager")
-                .accessibilityLabel(Text("Partager"))
+                .help("common.share")
+                .accessibilityLabel(Text("common.share"))
                 .accessibilityIdentifier("item.share")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -505,8 +505,8 @@ struct ItemDetailView: View {
                 // ⌘E is the "Modifier" menu command (`BrowseCommands`).
                 Button { startEditing(item) } label: { Image(systemName: "pencil") }
                     .buttonStyle(QuietIconButtonStyle())
-                    .help("Modifier (⌘E)")
-                    .accessibilityLabel(Text("Modifier"))
+                    .help("item.editE")
+                    .accessibilityLabel(Text("common.edit"))
                     .accessibilityIdentifier("item.edit")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -520,8 +520,8 @@ struct ItemDetailView: View {
             .menuStyle(.button)
             .buttonStyle(QuietIconButtonStyle())
             .menuIndicator(.hidden)
-            .help("Actions")
-            .accessibilityLabel(Text("Actions"))
+            .help("app.actions")
+            .accessibilityLabel(Text("app.actions"))
             .accessibilityIdentifier("item.menu")
         }
         .sharedBackgroundVisibility(.hidden)
@@ -533,12 +533,12 @@ struct ItemDetailView: View {
         if item.trashedAt == nil {
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
-                    Label("Partager", systemImage: "square.and.arrow.up")
+                    Label("common.share", systemImage: "square.and.arrow.up")
                 }
                 .accessibilityIdentifier("item.share")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("Modifier", systemImage: "pencil") { startEditing(item) }
+                Button("common.edit", systemImage: "pencil") { startEditing(item) }
                     .accessibilityIdentifier("item.edit")
             }
         }
@@ -546,7 +546,7 @@ struct ItemDetailView: View {
             Menu {
                 menuContent(item)
             } label: {
-                Label("Actions", systemImage: "ellipsis")
+                Label("app.actions", systemImage: "ellipsis")
             }
             .menuIndicator(.hidden)
             .accessibilityIdentifier("item.menu")
@@ -556,18 +556,18 @@ struct ItemDetailView: View {
 
     @ViewBuilder private func menuContent(_ item: FfiItem) -> some View {
         if item.trashedAt != nil {
-            Button("Restaurer", systemImage: "arrow.uturn.backward") {
+            Button("app.restore", systemImage: "arrow.uturn.backward") {
                 run { try await session.restoreItem(itemID: item.id, vaultID: item.vaultId) }
             }
             .accessibilityIdentifier("item.restore")
-            Button("Supprimer définitivement", systemImage: "trash.slash", role: .destructive) {
+            Button("item.deletePermanently", systemImage: "trash.slash", role: .destructive) {
                 confirmDelete = true
             }
             .accessibilityIdentifier("item.delete")
         } else {
             #if os(macOS)
             if !standalone {
-                Button("Ouvrir dans une nouvelle fenêtre", systemImage: "macwindow.on.rectangle") {
+                Button("item.openInNewWindow", systemImage: "macwindow.on.rectangle") {
                     openWindow(id: ItemWindow.id, value: ItemWindow.key(item))
                 }
                 .accessibilityIdentifier("item.openWindow")
@@ -582,39 +582,39 @@ struct ItemDetailView: View {
             }
             .accessibilityIdentifier("item.favorite")
             MoveToVaultMenu(currentVaultID: item.vaultId, title: "Déplacer…") { vault in move(item, to: vault) }
-            Button("Dupliquer…", systemImage: "plus.square.on.square") { duplicate(item) }
+            Button("item.duplicate", systemImage: "plus.square.on.square") { duplicate(item) }
                 .accessibilityIdentifier("item.duplicate")
             Divider()
-            Button("Copier le lien privé", systemImage: "link") {
+            Button("item.copyPrivateLink", systemImage: "link") {
                 copyPlain(OnePassLink.item(vaultID: item.vaultId, itemID: item.id).url.absoluteString,
-                          toast: String(localized: "Lien privé copié"))
+                          toast: String(localized: "item.privateLinkCopied"))
             }
             .accessibilityIdentifier("item.copyLink")
-            Button("Copier l'identifiant de l'élément", systemImage: "number") {
-                copyPlain(item.id, toast: String(localized: "Identifiant copié"))
+            Button("item.copyItemId", systemImage: "number") {
+                copyPlain(item.id, toast: String(localized: "item.idCopied"))
             }
             .accessibilityIdentifier("item.copyID")
-            Button("Copier en JSON", systemImage: "curlybraces") { confirmCopyJSON = true }
+            Button("item.copyAsJson", systemImage: "curlybraces") { confirmCopyJSON = true }
                 .disabled(locked(item))
                 .accessibilityIdentifier("item.copyJSON")
             Divider()
             ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
-                Label("Partager…", systemImage: "square.and.arrow.up")
+                Label("item.share", systemImage: "square.and.arrow.up")
             }
             .accessibilityIdentifier("item.shareMenu")
             if item.archived {
-                Button("Désarchiver", systemImage: "archivebox") {
+                Button("app.unarchive", systemImage: "archivebox") {
                     run { try await session.unarchive(itemID: item.id, vaultID: item.vaultId) }
                 }
                 .accessibilityIdentifier("item.unarchive")
             } else {
-                Button("Archiver", systemImage: "archivebox") {
+                Button("common.archive", systemImage: "archivebox") {
                     run { try await session.archive(itemID: item.id, vaultID: item.vaultId) }
                 }
                 .accessibilityIdentifier("item.archive")
             }
-            Button("Supprimer", systemImage: "trash", role: .destructive) {
-                run(clearsSelection: true, success: String(localized: "Déplacé vers Supprimés récemment")) {
+            Button("common.delete", systemImage: "trash", role: .destructive) {
+                run(clearsSelection: true, success: String(localized: "item.movedToRecentlyDeleted")) {
                     try await session.trash(itemID: item.id, vaultID: item.vaultId)
                 }
             }
@@ -623,7 +623,7 @@ struct ItemDetailView: View {
     }
 
     private func move(_ item: FfiItem, to vault: FfiVault) {
-        run(movedTo: vault.id, success: String(localized: "Déplacé vers \(vault.meta.name)")) {
+        run(movedTo: vault.id, success: String(localized: "app.movedTo \(vault.meta.name)")) {
             try await session.move(itemID: item.id, from: item.vaultId, to: vault.id)
         }
     }
@@ -637,7 +637,7 @@ struct ItemDetailView: View {
     private func copyJSON(_ item: FfiItem) {
         guard !locked(item), let json = ItemJSON.string(item) else { return }
         session.copy(json, concealed: true)
-        model.showToast(String(localized: "JSON copié · effacé dans 90 s"))
+        model.showToast(String(localized: "item.jsonCopiedClearedIn"))
     }
 
     /// A new item (new id from the new-item path) with the fields copied and " (copie)" after the
@@ -648,7 +648,7 @@ struct ItemDetailView: View {
                 let fresh = try session.newItem(type: item.itemType, vaultID: item.vaultId)
                 var copy = item
                 copy.id = fresh.id
-                copy.title = String(localized: "\(item.title) (copie)")
+                copy.title = String(localized: "item.copy \(item.title)")
                 copy.createdAt = fresh.createdAt
                 copy.updatedAt = fresh.updatedAt
                 copy.trashedAt = nil
@@ -665,7 +665,7 @@ struct ItemDetailView: View {
                 copy.loginMethods.removeAll { $0 == .passkey }
                 let saved = try await session.save(copy)
                 model.selectedItem = ItemRef(vaultID: saved.vaultId, itemID: saved.id)
-                model.showToast(String(localized: "« \(saved.title) » créé"))
+                model.showToast(String(localized: "item.created2 \(saved.title)"))
             } catch {
                 model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -741,7 +741,7 @@ struct ItemDetailView: View {
         item = saved
         let savedRef = ItemRef(vaultID: saved.vaultId, itemID: saved.id)
         if savedRef != ref, model.selectedItem == ref { model.selectedItem = savedRef }
-        showToast(String(localized: "Enregistré"))
+        showToast(String(localized: "item.saved"))
     }
 
     private func load() async {
@@ -849,14 +849,14 @@ private struct WifiQRCard: View {
                 Color.clear.frame(width: 28, height: 28)
                 qrSquare
                 Menu {
-                    Button("Copier l'image", systemImage: "doc.on.doc") { copyImage() }
+                    Button("item.copyImage", systemImage: "doc.on.doc") { copyImage() }
                         .accessibilityIdentifier("item.wifiQR.copy")
-                    Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") {
+                    Button("item.showLarge", systemImage: "arrow.up.left.and.arrow.down.right") {
                         shown = true
                         large = true
                     }
                     .accessibilityIdentifier("item.wifiQR.large")
-                    Button("Imprimer", systemImage: "printer") { printImage() }
+                    Button("item.print", systemImage: "printer") { printImage() }
                         .accessibilityIdentifier("item.wifiQR.print")
                 } label: {
                     Image(systemName: "ellipsis")
@@ -869,7 +869,7 @@ private struct WifiQRCard: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel(Text("Actions du code QR"))
+                .accessibilityLabel(Text("item.qrCodeActions"))
                 .accessibilityIdentifier("item.wifiQR.menu")
             }
             Text(shown ? "Scanne ce code pour rejoindre « \(ssid) »." : "Touche le code pour l'afficher.")
@@ -919,8 +919,8 @@ private struct WifiQRCard: View {
         .contentShape(.rect)
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown.toggle() } }
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(Text("Code QR du réseau \(ssid)"))
-        .accessibilityValue(visible ? Text("affiché") : Text("masqué"))
+        .accessibilityLabel(Text("item.qrCodeForNetwork \(ssid)"))
+        .accessibilityValue(visible ? Text("item.shown") : Text("item.hidden2"))
         .accessibilityIdentifier("item.wifiQR")
     }
 
@@ -1017,7 +1017,7 @@ private struct ItemPlacesCard: View {
                 Button {
                     location.openInMaps()
                 } label: {
-                    Label("Ouvrir dans Plans", systemImage: "map")
+                    Label("item.openInMaps", systemImage: "map")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.readableAccent)
                 }
@@ -1126,32 +1126,32 @@ struct ItemTimelineView: View {
     static func sentence(_ e: FfiTimelineEvent) -> String {
         let d = e.detail
         switch e.kind {
-        case "created": return String(localized: "Élément créé")
+        case "created": return String(localized: "item.itemCreated")
         case "imported":
-            return d.isEmpty ? String(localized: "Importé") : String(localized: "Importé depuis \(d)")
-        case "field_added": return String(localized: "Champ « \(d) » ajouté")
-        case "field_removed": return String(localized: "Champ « \(d) » supprimé")
+            return d.isEmpty ? String(localized: "item.imported") : String(localized: "item.importedFrom \(d)")
+        case "field_added": return String(localized: "item.fieldAdded \(d)")
+        case "field_removed": return String(localized: "item.fieldRemoved \(d)")
         case "field_changed":
             switch d {
-            case "notes": return String(localized: "Notes modifiées")
-            case "tags": return String(localized: "Tags modifiés")
-            default: return String(localized: "« \(d) » modifié")
+            case "notes": return String(localized: "item.notesChanged")
+            case "tags": return String(localized: "item.tagsChanged")
+            default: return String(localized: "item.changed \(d)")
             }
-        case "password_changed": return String(localized: "Mot de passe modifié")
-        case "title_changed": return String(localized: "Titre modifié")
-        case "website_added": return String(localized: "Site web ajouté : \(d)")
-        case "website_removed": return String(localized: "Site web retiré : \(d)")
-        case "moved": return String(localized: "Déplacé vers \(d)")
-        case "favorited": return String(localized: "Ajouté aux favoris")
-        case "unfavorited": return String(localized: "Retiré des favoris")
-        case "archived": return String(localized: "Archivé")
-        case "unarchived": return String(localized: "Désarchivé")
-        case "trashed": return String(localized: "Mis dans Supprimés récemment")
-        case "restored": return String(localized: "Restauré")
-        case "passkey_added": return String(localized: "Passkey ajoutée pour \(d)")
-        case "passkey_removed": return String(localized: "Passkey supprimée pour \(d)")
-        case "attachment_added": return String(localized: "Pièce jointe ajoutée : \(d)")
-        default: return String(localized: "Modifié")
+        case "password_changed": return String(localized: "item.passwordChanged")
+        case "title_changed": return String(localized: "item.titleChanged")
+        case "website_added": return String(localized: "item.websiteAdded \(d)")
+        case "website_removed": return String(localized: "item.websiteRemoved \(d)")
+        case "moved": return String(localized: "app.movedTo \(d)")
+        case "favorited": return String(localized: "app.addedToFavorites")
+        case "unfavorited": return String(localized: "item.removedFromFavorites")
+        case "archived": return String(localized: "item.archived")
+        case "unarchived": return String(localized: "item.unarchived")
+        case "trashed": return String(localized: "item.movedToRecentlyDeleted2")
+        case "restored": return String(localized: "item.restored")
+        case "passkey_added": return String(localized: "item.passkeyAddedFor \(d)")
+        case "passkey_removed": return String(localized: "item.passkeyRemovedFor \(d)")
+        case "attachment_added": return String(localized: "item.attachmentAdded \(d)")
+        default: return String(localized: "item.modified")
         }
     }
 }
@@ -1275,7 +1275,7 @@ struct ItemWatchtowerSection: View {
         let ignored = item.watchtowerExclusions.filter { WatchtowerCard.of(check: $0) != nil }
         if !flagged.isEmpty || !ignored.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("WATCHTOWER")
+                Text("item.watchtower")
                     .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
@@ -1299,7 +1299,7 @@ struct ItemWatchtowerSection: View {
                 PageTile(symbol: card.symbol, color: ignored ? .gray : card.color, size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(card.title).font(.subheadline.weight(.medium))
-                    Text(ignored ? String(localized: "Ignoré pour cet élément") : card.message)
+                    Text(ignored ? String(localized: "item.ignoredForItem") : card.message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1332,7 +1332,7 @@ struct PasskeyOfferBanner: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.badge.key.fill")
-                    Text("Passkey disponible").font(.headline)
+                    Text("item.passkeyAvailable").font(.headline)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.bold))
@@ -1343,11 +1343,11 @@ struct PasskeyOfferBanner: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("item.passkeyOffer.toggle")
             if expanded {
-                Text("\(offer.host) accepte les passkeys. Une passkey remplace ton mot de passe : plus rapide, et impossible à hameçonner.")
+                Text("item.supportsPasskeysPasskeyReplaces \(offer.host)")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
-                    Button("Utiliser une passkey") { openURL(offer.url) }
+                    Button("item.usePasskey") { openURL(offer.url) }
                         .buttonStyle(.borderedProminent)
                         .tint(purple)
                         .accessibilityIdentifier("item.passkeyOffer.use")
@@ -1415,7 +1415,7 @@ struct DocumentCard: View {
                 withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { preview.toggle() }
             } label: {
                 HStack {
-                    Text("Aperçu")
+                    Text("item.preview")
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -1427,14 +1427,14 @@ struct DocumentCard: View {
             .editorRowPadding()
             .accessibilityIdentifier("item.document.preview")
             if preview {
-                Text("Aperçu indisponible : le contenu des pièces jointes n'est pas encore enregistré dans le coffre.")
+                Text("item.previewUnavailableAttachmentContents")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .editorRowPadding()
             }
             CardDivider()
             VStack(alignment: .leading, spacing: 3) {
-                EditorLabel(String(localized: "taille du fichier"))
+                EditorLabel(String(localized: "item.fileSize"))
                 Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: attachment.size), countStyle: .file))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1469,7 +1469,7 @@ struct ItemWindowRoot: View {
                 NavigationStack { ItemDetailView(ref: ref, standalone: true) }
             } else {
                 EmptyState(title: String(localized: "OnePass est verrouillé"), systemImage: "lock",
-                           message: String(localized: "Déverrouille OnePass dans la fenêtre principale."))
+                           message: String(localized: "item.unlockOnepassInMain"))
             }
         }
         .frame(minWidth: 480, minHeight: 520)
@@ -1492,7 +1492,7 @@ private struct SignInWithCard: View {
     var body: some View {
         EditorCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("se connecter avec")
+                Text("item.signInWith")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Theme.accent.mix(with: .white, by: 0.35))
                 if let account {

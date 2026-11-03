@@ -23,15 +23,15 @@ struct AboutSettings: View {
     var body: some View {
         Form {
             Section {
-                Text("OnePass est open source (AGPL-3.0)")
+                Text("settings.onepassOpenSourceAgpl")
                     .accessibilityIdentifier("settings.about.license")
-                LabeledContent("Version") {
+                LabeledContent("settings.version") {
                     Text(verbatim: version)
                         .textSelection(.enabled)
                 }
                 .accessibilityIdentifier("settings.about.version")
                 Link(destination: Self.sourceURL) {
-                    Label("Code source", systemImage: "chevron.left.forwardslash.chevron.right")
+                    Label("settings.sourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
                 .accessibilityIdentifier("settings.about.source")
             }

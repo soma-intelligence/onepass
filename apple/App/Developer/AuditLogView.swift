@@ -14,16 +14,16 @@ struct AuditLogView: View {
         Group {
             if let report, let problem = report.problem {
                 ContentUnavailableView {
-                    Label("Journal refusé", systemImage: "exclamationmark.shield")
+                    Label("developer.logRefused", systemImage: "exclamationmark.shield")
                 } description: {
-                    Text("Le journal ne se vérifie plus (\(problem)). Archive-le pour en commencer un nouveau : l'ancien reste à côté pour examen.")
+                    Text("developer.logNoLongerVerifies \(problem)")
                 } actions: {
-                    Button("Archiver et recommencer") { Task { await rotate() } }
+                    Button("developer.archiveAndStartOver") { Task { await rotate() } }
                 }
             } else if let report, report.entries.isEmpty {
                 ContentUnavailableView(
                     "Journal vide", systemImage: "list.bullet.rectangle",
-                    description: Text("Les signatures SSH et les accès MCP apparaîtront ici."))
+                    description: Text("developer.sshSignaturesAndMcp"))
             } else if let report {
                 Table(report.entries) {
                     TableColumn("Date") { e in Text(Self.date(e.time)) }
@@ -46,10 +46,10 @@ struct AuditLogView: View {
                 ProgressView()
             }
         }
-        .navigationTitle("Journal d'audit")
+        .navigationTitle("developer.auditLog")
         .safeAreaInset(edge: .bottom) {
             if let report, report.unsealedTail {
-                Label("Les dernières lignes ne sont pas encore scellées (arrêt pendant une écriture).", systemImage: "info.circle")
+                Label("developer.lastLinesNotSealed", systemImage: "info.circle")
                     .font(.footnote)
                     .padding(8)
             }

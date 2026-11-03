@@ -835,14 +835,14 @@ final class AppModel {
         guard await confirmBiometry() else {
             session.disableBiometrics()
             settingsChanged()
-            throw VaultError.other(String(localized: "\(OnboardingModel.biometryName) n'a pas été confirmé : rien n'a été activé."))
+            throw VaultError.other(String(localized: "root.wasntConfirmedSoNothing \(OnboardingModel.biometryName)"))
         }
         settingsChanged()
     }
 
     /// One biometric check (no key involved). The demo answers like its simulated Secure Enclave.
     private func confirmBiometry() async -> Bool {
-        let reason = String(localized: "Activer le déverrouillage avec \(OnboardingModel.biometryName)")
+        let reason = String(localized: "root.turnOnUnlockingWith \(OnboardingModel.biometryName)")
         #if DEBUG
         if DemoData.requested { return await DemoPresenceChecker().confirm(prompt: reason) }
         #endif
@@ -895,7 +895,7 @@ final class AppModel {
             defer { password.wipe() }
             do {
                 try await enableBiometrics(password: password)
-                showToast(String(localized: "\(OnboardingModel.biometryName) activé"))
+                showToast(String(localized: "root.turnedOn \(OnboardingModel.biometryName)"))
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -1007,7 +1007,7 @@ final class AppModel {
     /// "Utiliser ce compte iCloud", after the zone check (and the confirmation for an empty zone).
     func acceptAccountChange(expected: AccountChangeCheck) async -> AccountChangeOutcome {
         guard let coordinator else {
-            return .failed(String(localized: "La synchronisation iCloud n'est pas active dans ce build."))
+            return .failed(String(localized: "root.icloudSyncIsntActive"))
         }
         return await coordinator.acceptAccountChange(expected: expected)
     }
@@ -1187,10 +1187,10 @@ final class AppModel {
         if PendingRequest.isExpired(queuedAt: pendingRouteAt, now: .now) {
             switch route {
             case .copyTotp:
-                showToast(String(localized: "Demande de copie expirée"), kind: .error)
+                showToast(String(localized: "root.copyRequestExpired"), kind: .error)
                 return
             case .otpLink:
-                showToast(String(localized: "Lien de code de vérification expiré. Ouvre-le de nouveau."), kind: .error)
+                showToast(String(localized: "root.verificationCodeLinkExpired"), kind: .error)
                 return
             case .link:
                 break
@@ -1234,11 +1234,11 @@ final class AppModel {
         do {
             accounts = try OtpLink.accounts(in: link)
         } catch {
-            showToast(String(localized: "Ce lien de code de vérification n'est pas pris en charge."), kind: .error)
+            showToast(String(localized: "root.verificationCodeLinkNot"), kind: .error)
             return
         }
         guard newItemDraft == nil, !editing else {
-            showToast(String(localized: "Termine l'élément en cours pour ajouter le code."), kind: .error)
+            showToast(String(localized: "root.finishItemEditingTo"), kind: .error)
             return
         }
         let covered = showSettings || showGenerator || showNewItemPicker || showImport || showOtpScanner
@@ -1293,14 +1293,14 @@ final class AppModel {
         try? await Task.sleep(for: .seconds(1))
         if totpPasswordRequest == ref, !totpPromptShown {
             totpPasswordRequest = nil
-            showToast(String(localized: "Ouvre OnePass pour copier le code"), kind: .error)
+            showToast(String(localized: "root.openOnepassToCopy"), kind: .error)
         }
     }
 
     /// Copies the item's current one-time code with the OnePass clipboard (90 s, local only).
     func copyTotpCode(_ ref: ItemRef) async {
         guard session.state == .unlocked else { return }
-        let noCode = String(localized: "Cet élément n'a pas de code à usage unique")
+        let noCode = String(localized: "root.itemHasNoOne")
         guard !session.hiddenVaultIDs.contains(ref.vaultID) else {
             showToast(noCode, kind: .error)
             return
@@ -1332,7 +1332,7 @@ final class AppModel {
             return
         }
         session.copy(totp.code, concealed: true)
-        showToast(String(localized: "Code copié"))
+        showToast(String(localized: "root.codeCopied"))
     }
 
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
@@ -1575,7 +1575,7 @@ final class AppModel {
             do {
                 try await session.trash(itemID: ref.itemID, vaultID: ref.vaultID)
                 if selectedItem == ref, !isEditing { selectedItem = nil }
-                showToast(String(localized: "« \(title) » mis à la corbeille"))
+                showToast(String(localized: "root.movedToTrash \(title)"))
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -1598,10 +1598,10 @@ final class AppModel {
             do {
                 if archived {
                     try await session.archive(itemID: ref.itemID, vaultID: ref.vaultID)
-                    showToast(String(localized: "« \(title) » archivé"))
+                    showToast(String(localized: "root.archived \(title)"))
                 } else {
                     try await session.unarchive(itemID: ref.itemID, vaultID: ref.vaultID)
-                    showToast(String(localized: "« \(title) » désarchivé"))
+                    showToast(String(localized: "root.unarchived \(title)"))
                 }
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)

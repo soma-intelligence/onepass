@@ -255,7 +255,7 @@ struct Sidebar: View {
                     .tag(Destination.filter(.vault(vault.id)))
                     // Name, symbol, color and travel safety: the same sheet as "Nouveau coffre".
                     .contextMenu {
-                        Button("Modifier le coffre…", systemImage: "paintpalette") { editingVaultID = vault.id }
+                        Button("browse.editVault", systemImage: "paintpalette") { editingVaultID = vault.id }
                             .accessibilityIdentifier("sidebar.vaults.edit.\(vault.id)")
                     }
                     .accessibilityIdentifier("sidebar.vaults.\(vault.id)")
@@ -369,7 +369,7 @@ struct AccountHeader: View {
     var menuOpen: Binding<Bool>?
 
     private var name: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+        model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
     }
 
     private var modeLabel: String {
@@ -389,7 +389,7 @@ struct AccountHeader: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
-            .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+            .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
             .accessibilityIdentifier("account.menu")
         } else {
             systemMenu
@@ -475,7 +475,7 @@ struct AccountHeader: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .visionHoverEffect()
-        .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+        .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
         .accessibilityIdentifier("account.menu")
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }

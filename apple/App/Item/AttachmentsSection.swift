@@ -34,7 +34,7 @@ struct ItemAttachmentsSection: View {
     var body: some View {
         if !item.attachments.isEmpty || editable {
             VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "Pièces jointes").uppercased())
+                Text(String(localized: "item.attachments").uppercased())
                     .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
@@ -90,13 +90,13 @@ struct ItemAttachmentsSection: View {
                 isPresented: Binding(get: { confirmRemove != nil }, set: { if !$0 { confirmRemove = nil } }),
                 titleVisibility: .visible
             ) {
-                Button("Supprimer le fichier", role: .destructive) {
+                Button("item.deleteFile", role: .destructive) {
                     if let a = confirmRemove { Task { await remove(a) } }
                 }
                 .accessibilityIdentifier("item.attachment.remove.confirm")
                 Button("Annuler", role: .cancel) {}
             } message: {
-                Text("Le fichier est effacé de l'élément sur tous tes appareils.")
+                Text("item.fileRemovedFromItem")
             }
         }
     }
@@ -126,11 +126,11 @@ struct ItemAttachmentsSection: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("item.attachment.open")
             Menu {
-                Button("Aperçu", systemImage: "eye") { Task { await open(attachment, then: .preview) } }
-                Button("Exporter…", systemImage: "square.and.arrow.up") { Task { await open(attachment, then: .export) } }
+                Button("item.preview", systemImage: "eye") { Task { await open(attachment, then: .preview) } }
+                Button("item.export", systemImage: "square.and.arrow.up") { Task { await open(attachment, then: .export) } }
                 if editable {
                     Divider()
-                    Button("Supprimer…", systemImage: "trash", role: .destructive) { confirmRemove = attachment }
+                    Button("item.delete", systemImage: "trash", role: .destructive) { confirmRemove = attachment }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -139,7 +139,7 @@ struct ItemAttachmentsSection: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .fixedSize()
-            .accessibilityLabel("Actions sur le fichier")
+            .accessibilityLabel("item.fileActions")
             .accessibilityIdentifier("item.attachment.menu")
         }
         .editorRowPadding()
@@ -150,7 +150,7 @@ struct ItemAttachmentsSection: View {
             errorMessage = nil
             picking = true
         } label: {
-            Label("Ajouter un fichier…", systemImage: "paperclip")
+            Label("item.addFile", systemImage: "paperclip")
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
@@ -185,7 +185,7 @@ struct ItemAttachmentsSection: View {
             case .export: exporting = AttachmentFile(request)
             }
         } catch VaultError.notFound {
-            errorMessage = String(localized: "Ce fichier n'est pas encore arrivé sur cet appareil. Réessaie après la synchronisation.")
+            errorMessage = String(localized: "item.fileHasntReachedDevice")
         } catch {
             errorMessage = VaultError(error).localizedMessage
         }
@@ -215,7 +215,7 @@ struct ItemAttachmentsSection: View {
                 let updated = try await session.addAttachment(
                     itemID: item.id, vaultID: item.vaultId, name: url.lastPathComponent, mime: mime, data: data)
                 onUpdate(updated)
-                model.showToast(String(localized: "Fichier ajouté : \(url.lastPathComponent)"))
+                model.showToast(String(localized: "item.fileAdded \(url.lastPathComponent)"))
             } catch {
                 errorMessage = VaultError(error).localizedMessage
             }
@@ -240,8 +240,8 @@ private enum AttachmentReadError: Error {
 
     var message: String {
         switch self {
-        case .tooLarge: String(localized: "Ce fichier dépasse 20 Mo, la taille maximale d'une pièce jointe.")
-        case .unreadable: String(localized: "Impossible de lire ce fichier.")
+        case .tooLarge: String(localized: "item.fileOver20Mb")
+        case .unreadable: String(localized: "app.cantReadFile")
         }
     }
 }
@@ -334,7 +334,7 @@ struct AttachmentPreviewSheet: View {
             ContentUnavailableView {
                 Label(request.attachment.name, systemImage: "doc")
             } description: {
-                Text("Pas d'aperçu pour ce type de fichier. Exporte-le pour l'ouvrir dans une autre app.")
+                Text("item.noPreviewForKind")
             }
         }
     }
@@ -368,7 +368,7 @@ struct AttachmentPreviewSheet: View {
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
-                    .accessibilityLabel(String(localized: "Page \(page) sur \(pages)"))
+                    .accessibilityLabel(String(localized: "item.pageOf \(page) \(pages)"))
             }
             Divider().frame(height: 16)
             Button {
@@ -380,8 +380,8 @@ struct AttachmentPreviewSheet: View {
                     .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
-            .help("Exporter…")
-            .accessibilityLabel("Exporter…")
+            .help("item.export")
+            .accessibilityLabel("item.export")
             .accessibilityIdentifier("item.attachment.preview.export")
         }
         .padding(.horizontal, 18)

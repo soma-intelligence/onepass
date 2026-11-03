@@ -56,13 +56,13 @@ struct HomeTab: View {
                             HomeListCard(
                                 title: "Favoris", symbol: "star.fill", color: .orange, isOpen: $favoritesOpen,
                                 items: favorites, list: .favorites,
-                                emptyText: "Touche l'étoile d'un élément pour le retrouver ici.", id: "home.favorites")
+                                emptyText: "browse.tapItemsStarTo", id: "home.favorites")
                         }
                         if showsRecents {
                             HomeListCard(
                                 title: "Récents", symbol: "clock.fill", color: Color(white: 0.55), isOpen: $recentsOpen,
                                 items: recents, list: nil,
-                                emptyText: "Les éléments ouverts apparaissent ici jusqu'au verrouillage.", id: "home.recents")
+                                emptyText: "browse.itemsOpenAppearHere", id: "home.recents")
                         }
                     }
                     .padding(.horizontal, 16)
@@ -76,7 +76,7 @@ struct HomeTab: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             PhoneRootToolbar {
-                Section("Afficher sur l'accueil") {
+                Section("browse.showOnHome") {
                     Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
@@ -90,7 +90,7 @@ struct HomeTab: View {
     /// "Accueil", or "Bonjour" and the account's first name.
     private var greeting: String {
         let first = model.settings.displayName.split(separator: " ").first.map(String.init) ?? ""
-        return first.isEmpty ? String(localized: "Accueil") : String(localized: "Bonjour \(first)")
+        return first.isEmpty ? String(localized: "Accueil") : String(localized: "browse.hi \(first)")
     }
 
     private func tiles(all: Int, favorites: Int) -> some View {
@@ -125,7 +125,7 @@ struct HomeTab: View {
                 .accessibilityIdentifier("home.watchtower")
                 NavigationLink(value: PhoneRoute.list(.nearby)) {
                     HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
-                        Text("2 km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityIdentifier("home.nearby")
@@ -159,9 +159,9 @@ struct HomeTab: View {
                 }
             }
             .padding(.bottom, 6)
-            Text("Ton coffre est vide")
+            Text("browse.vaultEmpty2")
                 .font(.title2.weight(.bold))
-            Text("Mots de passe, cartes, identités, notes : tout ce que tu ranges ici est chiffré sur tes appareils.")
+            Text("browse.passwordsCardsIdentitiesNotes")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -169,7 +169,7 @@ struct HomeTab: View {
             Button {
                 model.showNewItemPicker = true
             } label: {
-                Text("Créer ton premier élément")
+                Text("browse.createFirstItem")
                     .font(.headline)
                     .padding(.horizontal, 8)
                     .frame(height: 34)
@@ -218,7 +218,7 @@ private struct HomeCardHeader<Controls: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(.isHeader)
-            .accessibilityValue(isOpen ? Text("Déplié") : Text("Replié"))
+            .accessibilityValue(isOpen ? Text("browse.expanded") : Text("browse.collapsed"))
             .accessibilityIdentifier(id)
             controls
             Button(action: toggle) {
@@ -230,7 +230,7 @@ private struct HomeCardHeader<Controls: View>: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isOpen ? Text("Replier") : Text("Déplier"))
+            .accessibilityLabel(isOpen ? Text("browse.collapse") : Text("browse.expand"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
@@ -263,7 +263,7 @@ private struct HomeListCard: View {
                 if let list, !items.isEmpty {
                     Menu {
                         NavigationLink(value: PhoneRoute.list(list)) {
-                            Label("Voir les éléments", systemImage: "list.bullet")
+                            Label("browse.showItems", systemImage: "list.bullet")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -274,7 +274,7 @@ private struct HomeListCard: View {
                             .frame(width: 44, height: 44)
                             .contentShape(.rect)
                     }
-                    .accessibilityLabel(Text("Actions pour \(Text(title))"))
+                    .accessibilityLabel(Text("app.actionsFor \(Text(title))"))
                 }
             }
             if isOpen {
@@ -354,7 +354,7 @@ private struct HomeNearbyCard: View {
             ) {
                 if isOpen {
                     Menu {
-                        Picker("Rayon", selection: $radius) {
+                        Picker("app.radius", selection: $radius) {
                             ForEach(Self.radii, id: \.self) { Text(verbatim: Self.label($0)).tag($0) }
                         }
                     } label: {
@@ -367,7 +367,7 @@ private struct HomeNearbyCard: View {
                         .frame(minHeight: 44)
                         .contentShape(.rect)
                     }
-                    .accessibilityLabel(Text("Rayon"))
+                    .accessibilityLabel(Text("app.radius"))
                     .accessibilityValue(Text(verbatim: Self.label(radius)))
                     .accessibilityIdentifier("home.nearby.radius")
                     Button {
@@ -381,7 +381,7 @@ private struct HomeNearbyCard: View {
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(showsMap ? Text("Masquer la carte") : Text("Afficher la carte"))
+                    .accessibilityLabel(showsMap ? Text("browse.hideMap") : Text("browse.showMap"))
                     .accessibilityIdentifier("home.nearby.map")
                 }
             }
@@ -429,8 +429,8 @@ private struct HomeNearbyCard: View {
         guard isOpen, nearby.phase == .ready else { return nil }
         let count = nearby.items.count
         return count == 0
-            ? String(localized: "Rien dans un rayon de \(Self.label(radius))")
-            : String(localized: "\(count) dans un rayon de \(Self.label(radius))")
+            ? String(localized: "browse.nothingWithin \(Self.label(radius))")
+            : String(localized: "browse.within \(count) \(Self.label(radius))")
     }
 
     @ViewBuilder private var content: some View {
@@ -447,17 +447,17 @@ private struct HomeNearbyCard: View {
         case .idle, .locating:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Recherche de ta position…").font(.subheadline).foregroundStyle(.secondary)
+                Text("browse.findingLocation").font(.subheadline).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
         case .failed(.denied):
             VStack(alignment: .leading, spacing: 8) {
-                Text("Autorise OnePass à utiliser ta position pour voir les éléments enregistrés autour de toi. Elle reste sur cet appareil.")
+                Text("browse.allowOnepassToUse")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Button("Ouvrir les Réglages") { LocationAccess.openSettings() }
+                Button("app.openSettings") { LocationAccess.openSettings() }
                     .font(.subheadline.weight(.semibold))
                     .accessibilityIdentifier("home.nearby.openSettings")
             }
@@ -466,7 +466,7 @@ private struct HomeNearbyCard: View {
             .padding(.bottom, 14)
         case .failed(.unavailable):
             HStack {
-                Text("Impossible de savoir où tu es pour le moment.").font(.subheadline).foregroundStyle(.secondary)
+                Text("browse.cantTellWhereRight").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Button("Réessayer") { Task { await nearby.load(model.session, within: radius) } }
                     .font(.subheadline.weight(.semibold))
@@ -597,10 +597,10 @@ struct SyncRefusalSection: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     IntegrityBanner(kind: kind)
-                    Text("Les données reçues d'iCloud ont été refusées. Tes modifications restent sur cet appareil mais ne se synchronisent plus pour ce coffre.")
+                    Text("browse.dataReceivedFromIcloud")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Button("Voir les solutions") { safeExitKind = kind }
+                    Button("app.seeSolutions") { safeExitKind = kind }
                         .font(.footnote.weight(.semibold))
                         .accessibilityIdentifier("sync.refused.safeExits")
                 }

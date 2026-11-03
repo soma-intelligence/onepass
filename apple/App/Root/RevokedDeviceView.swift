@@ -24,9 +24,9 @@ struct RevokedDeviceView: View {
                 .accessibilityIdentifier("revoked.message")
             Group {
                 if eraseFailed {
-                    Text("Ses données OnePass n'ont pas encore pu être effacées. OnePass réessaie à chaque ouverture ; tu peux aussi réessayer maintenant.")
+                    Text("root.onepassDataCouldNot")
                 } else {
-                    Text("Ses données OnePass restent chiffrées sur cet appareil tant que tu ne l'effaces pas. Si tu ne l'as pas retiré depuis un autre de tes appareils, un appareil déjà retiré a pu le faire : vérifie tes appareils avant d'effacer.")
+                    Text("root.onepassDataStaysEncrypted")
                 }
             }
             .foregroundStyle(.secondary)
@@ -53,11 +53,11 @@ struct RevokedDeviceView: View {
         .confirmationDialog(
             "Effacer les données OnePass de cet appareil ?", isPresented: $confirmErase, titleVisibility: .visible
         ) {
-            Button("Effacer", role: .destructive) { Task { await model.session.eraseRevokedDevice() } }
+            Button("app.erase", role: .destructive) { Task { await model.session.eraseRevokedDevice() } }
                 .accessibilityIdentifier("revoked.confirmErase")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Ce qui n'a pas encore été synchronisé sera perdu. Tu pourras l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit.")
+            Text("root.anythingNotSyncedYet")
         }
         .task {
             // After a relaunch the erase is tried again at once.

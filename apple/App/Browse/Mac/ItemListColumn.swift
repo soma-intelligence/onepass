@@ -166,7 +166,7 @@ struct ItemListColumn: View {
             searchFocused = true
         }
         #else
-        .searchable(text: $query, prompt: Text("Rechercher"))
+        .searchable(text: $query, prompt: Text("common.search"))
         .searchFocused($searchFocused)
         .onChange(of: model.searchFocusRequest) { searchFocused = true }
         #endif
@@ -179,20 +179,20 @@ struct ItemListColumn: View {
                 } label: {
                     Label("Nouvel élément", systemImage: "plus")
                 }
-                .help("Nouvel élément (⌘N)")
+                .help("browse.newItemN")
                 .accessibilityIdentifier("items.new")
             }
             #endif
             #if !os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Picker("Trier par", selection: $sortByDate) {
-                        Text("Titre").tag(false)
-                        Text("Date de modification").tag(true)
+                    Picker("browse.sortBy", selection: $sortByDate) {
+                        Text("app.title").tag(false)
+                        Text("browse.dateModified").tag(true)
                     }
                     .pickerStyle(.inline)
                 } label: {
-                    Label("Trier", systemImage: "arrow.up.arrow.down")
+                    Label("browse.sort", systemImage: "arrow.up.arrow.down")
                 }
                 .accessibilityIdentifier("items.sort")
             }
@@ -224,9 +224,9 @@ struct ItemListColumn: View {
             .contentShape(Circle())
         }
         .buttonStyle(QuietIconButtonStyle())
-        .help(current?.plural ?? String(localized: "Toutes les catégories"))
+        .help(current?.plural ?? String(localized: "browse.allCategories"))
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(current?.plural ?? String(localized: "Toutes les catégories")))
+        .accessibilityLabel(Text(current?.plural ?? String(localized: "browse.allCategories")))
         .accessibilityIdentifier("list.title")
         .popover(isPresented: $choosingCategory, arrowEdge: .bottom) {
             CategoryFilterPopover(types: presentTypes, current: shownCategory) { type in
@@ -250,16 +250,16 @@ struct ItemListColumn: View {
             Image(systemName: "plus")
         }
         .buttonStyle(QuietIconButtonStyle())
-        .help("Nouvel élément (⌘N)")
+        .help("browse.newItemN")
         .accessibilityLabel(Text("Nouvel élément"))
         .accessibilityIdentifier("items.new")
     }
 
     private var sortMenu: some View {
         Menu {
-            Picker("Trier par", selection: $sortByDate) {
-                Text("Titre").tag(false)
-                Text("Date de modification").tag(true)
+            Picker("browse.sortBy", selection: $sortByDate) {
+                Text("app.title").tag(false)
+                Text("browse.dateModified").tag(true)
             }
             .pickerStyle(.inline)
         } label: {
@@ -269,21 +269,21 @@ struct ItemListColumn: View {
         .buttonStyle(QuietIconButtonStyle())
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Trier")
+        .help("browse.sort")
         .accessibilityIdentifier("items.sort")
     }
 
     /// "Rechercher", or "Rechercher dans Logins" once a type is chosen.
     private var searchPrompt: String {
-        guard let type = shownCategory else { return String(localized: "Rechercher") }
-        return String(localized: "Rechercher dans \(ItemCategory.of(type).plural)")
+        guard let type = shownCategory else { return String(localized: "common.search") }
+        return String(localized: "browse.search \(ItemCategory.of(type).plural)")
     }
 
     /// The list's own search field (⌘F), above the rows. Escape clears it.
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Rechercher", text: $query, prompt: Text(searchPrompt))
+            TextField("common.search", text: $query, prompt: Text(searchPrompt))
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onExitCommand { query = ""; searchFocused = false }
@@ -295,7 +295,7 @@ struct ItemListColumn: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("Effacer la recherche"))
+                .accessibilityLabel(Text("browse.clearSearch"))
             }
         }
         .padding(.horizontal, 10)
@@ -335,7 +335,7 @@ struct ItemListColumn: View {
                 }
             }
             Divider()
-            Button("Mettre à la corbeille", systemImage: "trash", role: .destructive) {
+            Button("browse.moveToTrash", systemImage: "trash", role: .destructive) {
                 model.trash(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }
             .disabled(model.isEditing && model.selectedItem == ItemRef(vaultID: summary.vaultId, itemID: summary.id))
@@ -360,16 +360,16 @@ struct ItemListColumn: View {
         case .favorites: String(localized: "Favoris")
         case .passkeys: String(localized: "Passkeys")
         case .nearby: String(localized: "À proximité")
-        case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
+        case .vault(let id): vaultName(id) ?? String(localized: "term.vault")
         case .category(let type): ItemCategory.of(type).plural
-        case .tag(let tag): String(localized: "Tag : \(tag)")
+        case .tag(let tag): String(localized: "browse.tag \(tag)")
         case .archive: String(localized: "Archive")
         case .trash: String(localized: "Supprimés récemment")
         }
     }
 
     static func countLabel(_ count: Int) -> String {
-        count == 1 ? String(localized: "1 élément") : String(localized: "\(count) éléments")
+        count == 1 ? String(localized: "browse.n1Item") : String(localized: "browse.items \(count)")
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -418,47 +418,47 @@ struct ItemListEmptyState: View {
         switch reason {
         case .noMatch:
             EmptyState(
-                title: String(localized: "Aucun élément ne correspond."), systemImage: "magnifyingglass",
-                message: String(localized: "Essaie avec d'autres mots."))
+                title: String(localized: "browse.noMatchingItems"), systemImage: "magnifyingglass",
+                message: String(localized: "browse.tryOtherWords"))
             .accessibilityIdentifier("list.empty.search")
         case .emptyLibrary:
             EmptyState(
-                title: String(localized: "Ce coffre est vide"), systemImage: "tray",
-                message: String(localized: "Crée ton premier élément : un identifiant, une carte, une note..."),
+                title: String(localized: "browse.vaultEmpty"), systemImage: "tray",
+                message: String(localized: "browse.createFirstItemLogin"),
                 actionTitle: String(localized: "Nouvel élément"), actionIdentifier: "list.empty.newItem",
                 action: newItem)
             .accessibilityIdentifier("list.empty.library")
         case .emptyCategory:
             EmptyState(
-                title: String(localized: "Aucun élément dans cette catégorie"), systemImage: "square.grid.2x2",
-                message: String(localized: "Les éléments de ce type apparaîtront ici."),
+                title: String(localized: "browse.noItemsInCategory"), systemImage: "square.grid.2x2",
+                message: String(localized: "browse.itemsOfTypeWill"),
                 actionTitle: String(localized: "Nouvel élément"), actionIdentifier: "list.empty.newItem",
                 action: newItem)
         case .emptyTag:
             EmptyState(
-                title: String(localized: "Aucun élément avec ce tag"), systemImage: "tag",
-                message: String(localized: "Ajoute ce tag à un élément pour le retrouver ici."))
+                title: String(localized: "browse.noItemsWithTag"), systemImage: "tag",
+                message: String(localized: "browse.addTagToItem"))
         case .noNearby:
             EmptyState(
-                title: String(localized: "Rien à proximité"), systemImage: "mappin.slash",
-                message: String(localized: "Ajoute un lieu à un élément pour le retrouver ici quand tu es à moins de 2 km."))
+                title: String(localized: "browse.nothingNearby"), systemImage: "mappin.slash",
+                message: String(localized: "browse.addPlaceToItem"))
         case .noPasskeys:
             EmptyState(
-                title: String(localized: "Aucune passkey"), systemImage: "person.badge.key",
-                message: String(localized: "Choisis OnePass quand un site te propose de créer une passkey, ou importe celles de Mots de passe (Exporter vers OnePass)."))
+                title: String(localized: "browse.noPasskeys"), systemImage: "person.badge.key",
+                message: String(localized: "browse.pickOnepassWhenSite"))
             .accessibilityIdentifier("list.empty.passkeys")
         case .noFavorites:
             EmptyState(
-                title: String(localized: "Aucun favori"), systemImage: "star",
-                message: String(localized: "Marque un élément comme favori pour le retrouver ici."))
+                title: String(localized: "browse.noFavorites"), systemImage: "star",
+                message: String(localized: "browse.markItemAsFavorite"))
         case .emptyArchive:
             EmptyState(
-                title: String(localized: "Archive vide"), systemImage: "archivebox",
-                message: String(localized: "Les éléments archivés apparaîtront ici."))
+                title: String(localized: "browse.archiveEmpty"), systemImage: "archivebox",
+                message: String(localized: "browse.archivedItemsWillAppear"))
         case .emptyTrash:
             EmptyState(
-                title: String(localized: "Corbeille vide"), systemImage: "trash",
-                message: String(localized: "Les éléments mis à la corbeille restent ici 30 jours."))
+                title: String(localized: "browse.trashEmpty"), systemImage: "trash",
+                message: String(localized: "browse.itemsMovedToTrash"))
         }
     }
 }
@@ -531,7 +531,7 @@ private struct CategoryFilterRow: View {
                         .font(.system(size: 12, weight: .semibold))
                         .frame(width: 20, height: 20)
                 }
-                Text(category?.plural ?? String(localized: "Toutes les catégories")).lineLimit(1)
+                Text(category?.plural ?? String(localized: "browse.allCategories")).lineLimit(1)
                 Spacer(minLength: 8)
                 Text("\(count)")
                     .font(.callout.monospacedDigit())

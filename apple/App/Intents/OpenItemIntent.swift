@@ -5,7 +5,7 @@ import Foundation
 /// the detail (the route waits in `AppModel.pendingRoute`).
 struct OpenItemIntent: AppIntent {
     static let title: LocalizedStringResource = "Ouvrir un élément"
-    static let description = IntentDescription("Ouvre un élément dans OnePass.")
+    static let description = IntentDescription("intents.opensItemInOnepass")
     static let supportedModes: IntentModes = .foreground
 
     @Parameter(title: "Élément")

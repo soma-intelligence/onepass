@@ -5,7 +5,7 @@ import Foundation
 /// that was not running holds no key: it is already locked.
 struct LockVaultIntent: AppIntent {
     static let title: LocalizedStringResource = "Verrouiller OnePass"
-    static let description = IntentDescription("Verrouille OnePass sur cet appareil.")
+    static let description = IntentDescription("intents.locksOnepassOnDevice")
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {

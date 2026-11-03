@@ -105,7 +105,7 @@ struct RootView: View {
             // After the first password unlock where biometrics could be on (`AppModel.biometricOffer`).
             // Only the buttons answer: the setter must not race "Activer" with a refusal.
             .alert(
-                Text("Utiliser \(OnboardingModel.biometryName) pour déverrouiller ?"),
+                Text("root.useToUnlock \(OnboardingModel.biometryName)"),
                 isPresented: Binding(
                     get: {
                         model.biometricOffer != nil && model.session.state == .unlocked
@@ -114,13 +114,13 @@ struct RootView: View {
                     set: { _ in }),
                 presenting: model.biometricOffer
             ) { _ in
-                Button("Activer") { model.answerBiometricOffer(accept: true) }
+                Button("app.turnOn") { model.answerBiometricOffer(accept: true) }
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("biometricOffer.enable")
-                Button("Plus tard", role: .cancel) { model.answerBiometricOffer(accept: false) }
+                Button("app.later", role: .cancel) { model.answerBiometricOffer(accept: false) }
                     .accessibilityIdentifier("biometricOffer.later")
             } message: { _ in
-                Text("La prochaine fois, \(OnboardingModel.biometryName) suffit pour ouvrir OnePass. Le mot de passe maître reste demandé tous les 14 jours et après un redémarrage.")
+                Text("root.nextTimeAllIt \(OnboardingModel.biometryName)")
             }
             // Multi-account (spec 7): adding an account, from the account panel, the lock screen or
             // Réglages > Comptes; the search over every unlocked account when the user chose it.

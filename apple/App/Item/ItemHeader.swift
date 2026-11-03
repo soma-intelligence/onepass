@@ -32,7 +32,7 @@ struct ItemHeader: View {
             .padding(.vertical, 2)
             .background(.fill.quaternary, in: Capsule())
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+            .accessibilityLabel(Text("item.vault \(vault.meta.name)"))
         }
     }
 

@@ -39,7 +39,7 @@ struct LocationEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Étiquette", text: Binding(get: { location.label }, set: { t in update { $0.label = t } }))
+            TextField("item.label2", text: Binding(get: { location.label }, set: { t in update { $0.label = t } }))
                 .accessibilityIdentifier("editor.field.\(field.id)")
             addressField
             if addressFocused, !completer.results.isEmpty { suggestions }
@@ -47,7 +47,7 @@ struct LocationEditor: View {
                 Button {
                     Task { await useCurrentLocation() }
                 } label: {
-                    Label("Utiliser ma position", systemImage: "location.fill")
+                    Label("item.useMyLocation", systemImage: "location.fill")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.readableAccent)
                 }
@@ -70,9 +70,9 @@ struct LocationEditor: View {
             }
             .font(.callout)
             HStack {
-                Text("Rayon (m)").foregroundStyle(.secondary)
+                Text("item.radiusM").foregroundStyle(.secondary)
                 ParsedTextField(
-                    title: String(localized: "Rayon"), prompt: "100", kind: .number,
+                    title: String(localized: "app.radius"), prompt: "100", kind: .number,
                     value: Int64(location.radiusM),
                     parse: { NumberInput.integer($0).flatMap { (0...Int64(UInt32.max)).contains($0) ? $0 : nil } },
                     format: { String($0) },
@@ -91,7 +91,7 @@ struct LocationEditor: View {
     private var addressField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-            TextField("Adresse", text: $addressText, prompt: Text("Cherche une adresse ou un lieu"))
+            TextField("item.address", text: $addressText, prompt: Text("item.searchForAddressOr"))
                 .focused($addressFocused)
                 .onSubmit { Task { await geocodeTyped() } }
                 .accessibilityIdentifier("editor.location.address")
@@ -140,13 +140,13 @@ struct LocationEditor: View {
         case .locating:
             ProgressView().controlSize(.small)
         case .notFound:
-            Text("Adresse introuvable").font(.footnote).foregroundStyle(.secondary)
+            Text("item.addressNotFound").font(.footnote).foregroundStyle(.secondary)
         case .unavailable:
-            Text("Position introuvable").font(.footnote).foregroundStyle(.secondary)
+            Text("app.locationNotFound").font(.footnote).foregroundStyle(.secondary)
         case .denied:
             HStack(spacing: 6) {
-                Text("Position non autorisée").font(.footnote).foregroundStyle(.secondary)
-                Button("Ouvrir les Réglages") { LocationAccess.openSettings() }
+                Text("app.locationNotAllowed").font(.footnote).foregroundStyle(.secondary)
+                Button("app.openSettings") { LocationAccess.openSettings() }
                     .font(.footnote)
                     .buttonStyle(.borderless)
                     .accessibilityIdentifier("editor.location.openSettings")
@@ -280,7 +280,7 @@ struct LocationMap: View {
             initialPosition: .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 700, longitudinalMeters: 700)),
             interactionModes: []
         ) {
-            Marker(title.isEmpty ? String(localized: "Lieu") : title, coordinate: coordinate)
+            Marker(title.isEmpty ? String(localized: "item.place") : title, coordinate: coordinate)
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
         .mapControlVisibility(.hidden)
@@ -288,7 +288,7 @@ struct LocationMap: View {
         .id(point)
         .clipShape(.rect(cornerRadius: 10))
         .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.08)) }
-        .accessibilityLabel(Text("Carte de \(title.isEmpty ? String(localized: "ce lieu") : title)"))
+        .accessibilityLabel(Text("item.mapOf \(title.isEmpty ? String(localized: "item.place2") : title)"))
     }
 }
 
@@ -318,7 +318,7 @@ struct PlaceBlock<Accessory: View>: View {
             }
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(location.label.isEmpty ? String(localized: "Lieu") : location.label)
+                    Text(location.label.isEmpty ? String(localized: "item.place") : location.label)
                         .font(.body.weight(.semibold))
                     if let address = location.address, !address.isEmpty {
                         Text(address).font(.callout).foregroundStyle(.secondary).lineLimit(2)
@@ -350,7 +350,7 @@ struct LocationSearchSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Ajouter un lieu").font(.headline)
+                Text("item.addPlace").font(.headline)
                 Spacer()
                 Button("Annuler") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -358,7 +358,7 @@ struct LocationSearchSheet: View {
             }
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-                TextField("Rechercher", text: $query, prompt: Text("Cherche un lieu ou une adresse"))
+                TextField("common.search", text: $query, prompt: Text("item.searchForPlaceOr"))
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .onSubmit { Task { await geocodeTyped() } }
@@ -375,11 +375,11 @@ struct LocationSearchSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     resultRow(
-                        icon: "location.fill", tint: .blue, title: String(localized: "Utiliser ma position"),
+                        icon: "location.fill", tint: .blue, title: String(localized: "item.useMyLocation"),
                         subtitle: statusText, id: "location.search.current"
                     ) { Task { await useCurrentLocation() } }
                     if status == .denied {
-                        Button("Ouvrir les Réglages") { LocationAccess.openSettings() }
+                        Button("app.openSettings") { LocationAccess.openSettings() }
                             .buttonStyle(.borderless)
                             .padding(.leading, 44)
                             .padding(.bottom, 6)
@@ -404,10 +404,10 @@ struct LocationSearchSheet: View {
 
     private var statusText: String {
         switch status {
-        case .denied: String(localized: "Position non autorisée")
-        case .unavailable: String(localized: "Position introuvable")
-        case .notFound: String(localized: "Adresse introuvable")
-        default: String(localized: "Elle reste sur cet appareil")
+        case .denied: String(localized: "app.locationNotAllowed")
+        case .unavailable: String(localized: "app.locationNotFound")
+        case .notFound: String(localized: "item.addressNotFound")
+        default: String(localized: "item.itStaysOnDevice")
         }
     }
 
@@ -476,7 +476,7 @@ struct LocationSearchSheet: View {
         do {
             let here = try await LocationAccess.shared.currentLocation()
             pick(FfiLocation(
-                label: String(localized: "Ma position"), address: nil,
+                label: String(localized: "item.myLocation"), address: nil,
                 lat: here.coordinate.latitude, lon: here.coordinate.longitude, radiusM: 100, suggestNearby: true))
         } catch LocationAccess.Failure.denied {
             status = .denied

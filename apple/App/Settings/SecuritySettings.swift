@@ -44,7 +44,7 @@ struct SecuritySettings: View {
             }
             deviceModeSection
             Section {
-                Button("Verrouiller maintenant", systemImage: "lock") {
+                Button("settings.lockNow", systemImage: "lock") {
                     // The discard confirmation of an edited draft belongs to the main screen.
                     model.showSettings = false
                     model.perform(.lock)
@@ -125,7 +125,7 @@ struct SecuritySettings: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
         } header: {
-            Text("Déverrouillage")
+            Text("settings.unlock")
         } footer: {
             unlockFooter(personal: personal)
         }
@@ -181,7 +181,7 @@ struct SecuritySettings: View {
 
     private var deviceModeSection: some View {
         Section {
-            Picker("Cet appareil", selection: Binding(
+            Picker("settings.device", selection: Binding(
                 get: { settings.deviceMode },
                 set: { mode in
                     if mode != settings.deviceMode { pendingMode = mode }
@@ -211,7 +211,7 @@ struct SecuritySettings: View {
     private var visibleSummary: String {
         let all = session.allVaults.count
         let visible = session.allVaults.filter { !session.hiddenVaultIDs.contains($0.id) }.count
-        return String(localized: "\(visible) sur \(all)")
+        return String(localized: "app.of \(visible) \(all)")
     }
 
     private var modeDialogTitle: LocalizedStringKey {
@@ -298,7 +298,7 @@ struct PasswordPromptSheet: View {
                     Button("Annuler") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Confirmer", action: run)
+                    Button("app.confirm", action: run)
                         .disabled(password.isEmpty || busy)
                         .accessibilityIdentifier("settings.prompt.confirm")
                 }

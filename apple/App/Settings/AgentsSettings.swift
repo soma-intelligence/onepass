@@ -18,10 +18,10 @@ struct AgentsSettings: View {
                 content(agents)
             } else {
                 Section {
-                    Label("Nécessite la version iCloud de OnePass", systemImage: "icloud.slash")
+                    Label("settings.requiresIcloudVersionOf", systemImage: "icloud.slash")
                         .foregroundStyle(.secondary)
                 } footer: {
-                    Text("Les demandes des agents passent par iCloud, chiffrées de bout en bout entre ton Mac et cet iPhone.")
+                    Text("settings.agentRequestsGoThrough")
                 }
             }
         }
@@ -33,15 +33,15 @@ struct AgentsSettings: View {
     @ViewBuilder private func content(_ agents: PhoneAgents) -> some View {
         Section {
             if agents.isEnabled {
-                Label("Cet iPhone approuve les demandes", systemImage: "checkmark.circle.fill")
+                Label("settings.iphoneApprovesRequests", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("agents.enabled")
-                Button("Voir les demandes en attente (\(agents.requests.count))") {
+                Button("settings.seePendingRequests \(agents.requests.count)") {
                     agents.showRequests = true
                 }
                 .accessibilityIdentifier("agents.pending")
             } else {
-                Button("Approuver les demandes sur cet iPhone") {
+                Button("settings.approveRequestsOnIphone") {
                     run {
                         try await agents.enable()
                         // The alert of a request (time sensitive, no action in it).
@@ -51,9 +51,9 @@ struct AgentsSettings: View {
                 .accessibilityIdentifier("agents.enable")
             }
             if agents.faceIDNeedsReset {
-                Label("Face ID a changé sur cet iPhone. Réactive-le pour répondre aux demandes.", systemImage: "faceid")
+                Label("settings.faceIdChangedOn", systemImage: "faceid")
                     .foregroundStyle(.orange)
-                Button("Réactiver Face ID") {
+                Button("settings.turnFaceIdBack") {
                     run { try await agents.reArmFaceID() }
                 }
                 .accessibilityIdentifier("agents.rearmFaceID")
@@ -72,20 +72,20 @@ struct AgentsSettings: View {
 
         ForEach(agents.macs) { mac in
             Section(mac.name) {
-                LabeledContent("Déverrouillage à distance") {
-                    mac.unlockEnrolled ? Text("Activé") : Text("Désactivé")
+                LabeledContent("settings.remoteUnlock") {
+                    mac.unlockEnrolled ? Text("app.on") : Text("app.off")
                 }
                 if let end = mac.windowEndsAt {
-                    LabeledContent("Fenêtre agents demandée") {
-                        Text("jusqu'à \(end.formatted(date: .omitted, time: .shortened))")
+                    LabeledContent("settings.agentsWindowRequested") {
+                        Text("settings.until \(end.formatted(date: .omitted, time: .shortened))")
                     }
                 }
                 if mac.unlockEnrolled {
-                    Button("Verrouiller maintenant") {
+                    Button("settings.lockNow") {
                         run { try await agents.lockNow(mac: mac.id) }
                     }
                     .accessibilityIdentifier("agents.lockNow")
-                    Button("Oublier le déverrouillage à distance", role: .destructive) {
+                    Button("settings.forgetRemoteUnlock", role: .destructive) {
                         forgetting = mac
                     }
                     .accessibilityIdentifier("agents.forget")
@@ -97,16 +97,16 @@ struct AgentsSettings: View {
             isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
             titleVisibility: .visible, presenting: forgetting
         ) { mac in
-            Button("Oublier", role: .destructive) {
+            Button("settings.forget", role: .destructive) {
                 run { try await agents.forget(mac: mac.id) }
             }
             Button("Annuler", role: .cancel) {}
         } message: { mac in
-            Text("Cet iPhone efface sa clé et \(mac.name) efface la sienne. Pour le réactiver, recommence depuis le Mac.")
+            Text("settings.iphoneErasesKeyAnd \(mac.name)")
         }
 
         if !agents.log.isEmpty {
-            Section("Journal") {
+            Section("app.log") {
                 ForEach(agents.log) { line in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: "\(line.client) · \(AgentRequestText.actionTitle(line.action))")

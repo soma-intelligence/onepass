@@ -45,7 +45,7 @@ struct ScanCodeStep: View {
             title: "Scanne le QR code",
             subtitle: "Sur ton Mac : Fichier > Configurer un appareil… Place le QR code dans le cadre.")
         Label {
-            Text("Ne scanne jamais un QR code qu'on t'a envoyé.")
+            Text("pairing.neverScanQrCode")
                 .font(.subheadline.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
@@ -56,7 +56,7 @@ struct ScanCodeStep: View {
             .frame(height: 320)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .accessibilityIdentifier("pairing.scanner")
-        Button("Saisir le code à la place") { model.pairMethod = .type }
+        Button("pairing.typeCodeInstead") { model.pairMethod = .type }
             .buttonStyle(.plain)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(Theme.accent)

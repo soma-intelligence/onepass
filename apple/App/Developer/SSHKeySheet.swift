@@ -30,52 +30,52 @@ struct SSHKeySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Source", selection: $source) {
+                Picker("developer.source", selection: $source) {
                     Text("Générer").tag(Source.generate)
-                    Text("Importer un fichier").tag(Source.importFile)
+                    Text("developer.importFile").tag(Source.importFile)
                 }
                 .pickerStyle(.segmented)
                 Section {
-                    TextField("Titre", text: $title, prompt: Text("Github"))
+                    TextField("app.title", text: $title, prompt: Text("Github"))
                         .accessibilityIdentifier("sshKey.title")
-                    Picker("Coffre", selection: $vaultID) {
+                    Picker("term.vault", selection: $vaultID) {
                         ForEach(model.session.vaults, id: \.id) { Text($0.meta.name).tag($0.id) }
                     }
                     if source == .generate {
-                        Picker("Type", selection: $keyType) {
-                            Text("Ed25519 (recommandé)").tag(FfiSshKeyType.ed25519)
-                            Text("ECDSA P-256").tag(FfiSshKeyType.ecdsaP256)
-                            Text("ECDSA P-384").tag(FfiSshKeyType.ecdsaP384)
-                            Text("ECDSA P-521").tag(FfiSshKeyType.ecdsaP521)
-                            Text("RSA 3072").tag(FfiSshKeyType.rsa3072)
-                            Text("RSA 4096").tag(FfiSshKeyType.rsa4096)
+                        Picker("app.type", selection: $keyType) {
+                            Text("developer.ed25519Recommended").tag(FfiSshKeyType.ed25519)
+                            Text("developer.ecdsaP256").tag(FfiSshKeyType.ecdsaP256)
+                            Text("developer.ecdsaP384").tag(FfiSshKeyType.ecdsaP384)
+                            Text("developer.ecdsaP521").tag(FfiSshKeyType.ecdsaP521)
+                            Text("developer.rsa3072").tag(FfiSshKeyType.rsa3072)
+                            Text("developer.rsa4096").tag(FfiSshKeyType.rsa4096)
                         }
                     } else {
-                        LabeledContent("Fichier") {
+                        LabeledContent("app.file") {
                             HStack {
-                                Text(importedText == nil ? String(localized: "Aucun") : importedName)
+                                Text(importedText == nil ? String(localized: "app.none") : importedName)
                                     .foregroundStyle(.secondary)
                                 Button("Choisir…") { chooseFile() }
                             }
                         }
                         if needsPassphrase {
-                            SecureField("Phrase de passe de la clé", text: $passphrase)
+                            SecureField("developer.keyPassphrase", text: $passphrase)
                         }
                     }
                 }
                 Section {
-                    TextField("Hôtes", text: $hosts, prompt: Text("github.com, *.exemple.fr"))
-                    Toggle("Utiliser dans l'agent", isOn: $useInAgent)
-                    Toggle("Demander à chaque usage", isOn: $confirmEachUse)
+                    TextField("developer.hosts", text: $hosts, prompt: Text("github.com, *.exemple.fr"))
+                    Toggle("developer.useInSshAgent", isOn: $useInAgent)
+                    Toggle("developer.askAtEveryUse", isOn: $confirmEachUse)
                 } footer: {
-                    Text("Une clé liée à des hôtes ne signe que pour eux. « Demander à chaque usage » refuse les autorisations de quelques minutes.")
+                    Text("developer.keyBoundToHosts")
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.orange) }
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Nouvelle clé SSH")
+            .navigationTitle("developer.newSshKey")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annuler") { dismiss() }
@@ -107,7 +107,7 @@ struct SSHKeySheet: View {
 
     private func chooseFile() {
         let panel = NSOpenPanel()
-        panel.message = String(localized: "Choisis une clé privée SSH (OpenSSH ou PEM).")
+        panel.message = String(localized: "developer.chooseSshPrivateKey")
         panel.showsHiddenFiles = true
         panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".ssh")
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -116,7 +116,7 @@ struct SSHKeySheet: View {
         guard let data = try? Data(contentsOf: url), data.count < 64 << 10,
             let text = String(data: data, encoding: .utf8)
         else {
-            errorMessage = String(localized: "Ce fichier n'est pas une clé SSH lisible.")
+            errorMessage = String(localized: "developer.fileNotReadableSsh")
             return
         }
         importedText = text
@@ -141,7 +141,7 @@ struct SSHKeySheet: View {
                 }
                 importedText = nil
                 passphrase = ""
-                model.showToast(String(localized: "Clé SSH créée"))
+                model.showToast(String(localized: "developer.sshKeyCreated"))
                 dismiss()
             } catch {
                 errorMessage = VaultError(error).localizedMessage

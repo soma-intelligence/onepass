@@ -62,7 +62,7 @@ struct SearchTab: View {
         .background(PhoneBackground())
         .animation(Motion.list(reduceMotion: reduceMotion), value: results.map(\.id))
         .animation(Motion.fold(reduceMotion: reduceMotion), value: trimmed.isEmpty)
-        .navigationTitle("Rechercher")
+        .navigationTitle("common.search")
         // A category chosen for another search would hide what the next one finds.
         .onChange(of: trimmed.isEmpty) { _, empty in if empty { category = nil } }
     }
@@ -94,13 +94,13 @@ struct SearchTab: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Rechercher « \(text) »"))
+                    .accessibilityLabel(Text("browse.searchFor \(text)"))
                 }
             } header: {
                 HStack(alignment: .firstTextBaseline) {
                     PhoneSectionLabel("Recherches récentes")
                     Spacer()
-                    Button("Vider") {
+                    Button("browse.clear") {
                         withAnimation(Motion.list(reduceMotion: reduceMotion)) { session.clearRecentSearches() }
                     }
                     .font(.subheadline)
@@ -198,7 +198,7 @@ struct SearchTab: View {
     private func chips(_ scopes: [Scope], total: Int) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                chip(String(localized: "Tout"), type: nil, count: total, selected: category == nil, id: "search.category.all") {
+                chip(String(localized: "browse.all"), type: nil, count: total, selected: category == nil, id: "search.category.all") {
                     category = nil
                 }
                 // A category chosen keeps its chip even when the search no longer finds it.
@@ -248,7 +248,7 @@ struct SearchTab: View {
 
     private func resultsTitle(count: Int) -> String {
         if trimmed.isEmpty, let category { return ItemCategory.of(category).plural }
-        return count == 1 ? String(localized: "1 résultat") : String(localized: "\(count) résultats")
+        return count == 1 ? String(localized: "browse.n1Result") : String(localized: "browse.results \(count)")
     }
 
     // MARK: Empty states
@@ -261,19 +261,19 @@ struct SearchTab: View {
                     .font(.system(size: 34, weight: .regular))
                     .foregroundStyle(.tertiary)
                     .padding(.bottom, 2)
-                Text(trimmed.isEmpty ? String(localized: "Rien dans cette catégorie")
-                    : String(localized: "Aucun résultat pour « \(trimmed) »"))
+                Text(trimmed.isEmpty ? String(localized: "browse.nothingInCategory")
+                    : String(localized: "browse.noResultsFor \(trimmed)"))
                     .font(.headline)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("search.empty")
                 Text(category == nil
-                    ? String(localized: "Cherche un titre, un site, un identifiant ou un tag.")
-                    : String(localized: "La recherche porte sur une seule catégorie."))
+                    ? String(localized: "browse.searchForTitleWebsite")
+                    : String(localized: "browse.searchLooksInOne"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 if category != nil {
-                    Button("Chercher partout") {
+                    Button("browse.searchEverywhere") {
                         withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = nil }
                     }
                     .buttonStyle(.glass)

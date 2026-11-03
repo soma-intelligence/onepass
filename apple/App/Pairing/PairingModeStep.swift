@@ -24,7 +24,7 @@ struct PairingModeStep: View {
         }
         // A guest session starts from the guest's QR code, scanned by the phone that lends the items.
         if model.pairDeviceMode != .public {
-            Text("Comment relier cet appareil ?")
+            Text("pairing.howDoWantTo")
                 .font(.system(size: 15, weight: .semibold))
                 .padding(.top, 8)
             VStack(spacing: 10) {
@@ -152,7 +152,7 @@ enum DeviceKindText {
         case .tablet: "iPad"
         case .mac: "Mac"
         case .vision: "Apple Vision Pro"
-        case .other: String(localized: "Autre appareil")
+        case .other: String(localized: "pairing.otherDevice")
         case .android: "Android"
         case .windows: "Windows"
         case .linux: "Linux"

@@ -41,15 +41,15 @@ struct CategoryListView: View {
                     if summary.trashedAt == nil {
                         // The first button is the one a full swipe runs: Archive, never the trash.
                         if summary.archived {
-                            Button("Désarchiver", systemImage: "archivebox") { model.unarchive(ref) }
+                            Button("app.unarchive", systemImage: "archivebox") { model.unarchive(ref) }
                                 .tint(.indigo)
                                 .accessibilityIdentifier("list.swipe.unarchive")
                         } else {
-                            Button("Archiver", systemImage: "archivebox") { model.archive(ref) }
+                            Button("common.archive", systemImage: "archivebox") { model.archive(ref) }
                                 .tint(.indigo)
                                 .accessibilityIdentifier("list.swipe.archive")
                         }
-                        Button("Corbeille", systemImage: "trash", role: .destructive) {
+                        Button("term.trash", systemImage: "trash", role: .destructive) {
                             model.trash(ref)
                         }
                         // The list's accent tint would paint it like Archive.
@@ -89,7 +89,7 @@ struct CategoryListView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("Rechercher"))
+        .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("common.search"))
         .toolbar {
             // No count in the bar: the list is the count. A new item of this list's type (Supprimés récemment and À proximité have none).
             if filter != .trash, filter != .nearby {
@@ -125,7 +125,7 @@ struct CategoryListView: View {
         case .favorites: String(localized: "Favoris")
         case .passkeys: String(localized: "Passkeys")
         case .nearby: String(localized: "À proximité")
-        case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
+        case .vault(let id): vaultName(id) ?? String(localized: "term.vault")
         case .category(let type): ItemCategory.of(type).plural
         case .tag(let tag): tag
         case .archive: String(localized: "Archive")

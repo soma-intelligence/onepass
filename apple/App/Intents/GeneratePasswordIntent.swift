@@ -7,7 +7,7 @@ import VaultKit
 /// secret (ruling W14).
 struct GeneratePasswordIntent: AppIntent {
     static let title: LocalizedStringResource = "Générer un mot de passe"
-    static let description = IntentDescription("Génère un mot de passe aléatoire, sans l'enregistrer.")
+    static let description = IntentDescription("intents.generatesRandomPasswordWithout")
 
     @Parameter(title: "Longueur", default: 20, inclusiveRange: (8, 64))
     var length: Int

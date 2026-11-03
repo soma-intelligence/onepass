@@ -18,7 +18,7 @@ struct TravelSuggestionCard: View {
                 detail: "travel.suggest.body",
                 symbol: "airplane.departure"
             ) {
-                Button("Oui") {
+                Button("app.yes") {
                     model.travel.answerYes()
                     model.travelSheet = .enter
                 }
@@ -27,7 +27,7 @@ struct TravelSuggestionCard: View {
                 Button("travel.suggest.no") { withAnimation(.snappy) { model.travel.answerNo() } }
                     .buttonStyle(.glass)
                     .accessibilityIdentifier("travel.suggest.no")
-                Button("Plus tard") { withAnimation(.snappy) { model.travel.answerNotNow() } }
+                Button("app.later") { withAnimation(.snappy) { model.travel.answerNotNow() } }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("travel.suggest.later")
@@ -42,7 +42,7 @@ struct TravelSuggestionCard: View {
                 Button("travel.welcome.turnOff") { model.travelSheet = .exit }
                     .buttonStyle(.glassProminent)
                     .accessibilityIdentifier("travel.welcome.exit")
-                Button("Plus tard") { withAnimation(.snappy) { model.travel.dismissWelcome() } }
+                Button("app.later") { withAnimation(.snappy) { model.travel.dismissWelcome() } }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("travel.welcome.later")

@@ -27,7 +27,7 @@ struct PasswordHistoryView: View {
                         ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
                             if index > 0 { CardDivider() }
                             ValueRow(
-                                label: String(localized: "remplacé le \(FieldDates.timestamp(entry.replacedAt))"),
+                                label: String(localized: "item.replaced \(FieldDates.timestamp(entry.replacedAt))"),
                                 value: entry.value, isSecret: true, monospaced: true,
                                 copyIdentifier: "history.copy.\(index)", allowsLarge: false,
                                 concealToken: model.session.concealGeneration, captured: captured,
@@ -40,7 +40,7 @@ struct PasswordHistoryView: View {
                         }
                     }
                 }
-                Text("Les anciens mots de passe restent chiffrés avec l'élément.")
+                Text("item.oldPasswordsStayEncrypted")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 16)
@@ -51,7 +51,7 @@ struct PasswordHistoryView: View {
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.top)
-        .navigationTitle("Versions précédentes")
+        .navigationTitle("item.previousVersions")
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
@@ -80,7 +80,7 @@ struct PasswordHistoryView: View {
 
     private func copy(_ value: String) {
         model.session.copy(value, concealed: true)
-        let text = String(localized: "Copié · effacé dans 90 s")
+        let text = String(localized: "app.copiedClearedIn90")
         withAnimation(.snappy) { toast = text }
         Task {
             try? await Task.sleep(for: .seconds(1.6))

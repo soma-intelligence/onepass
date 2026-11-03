@@ -262,8 +262,8 @@ struct MenuBarMenu: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Button("Ouvrir OnePass") { show() }
-        Button("Rechercher") {
+        Button("app.openOnepass") { show() }
+        Button("common.search") {
             show()
             model.searchFocusRequest &+= 1
         }

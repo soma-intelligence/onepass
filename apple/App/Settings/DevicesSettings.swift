@@ -48,7 +48,7 @@ struct DevicesSettings: View {
                     }
                 }
             } header: {
-                Text("Sur ton compte")
+                Text("settings.onAccount")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("settings.devices.list.footer")
@@ -93,13 +93,13 @@ struct DevicesSettings: View {
                 #if os(iOS)
                 Text("settings.devices.add.footer")
                 #elseif os(macOS)
-                Text("Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres.")
+                Text("settings.macShowsCodeTo")
                 #else
                 Text("settings.devices.add.footer.mac")
                 #endif
             }
             if !revoked.isEmpty {
-                Section("Retirés") {
+                Section("settings.removed") {
                     ForEach(revoked, id: \.id) { device in
                         DeviceRow(device: device, isThisDevice: false, ack: nil) { EmptyView() }
                     }
@@ -128,45 +128,45 @@ struct DevicesSettings: View {
         }
         #endif
         .confirmationDialog(
-            Text("Retirer \(confirmRevoke?.name ?? "") ?"),
+            Text("settings.remove \(confirmRevoke?.name ?? "")"),
             isPresented: Binding(get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
             titleVisibility: .visible,
             presenting: confirmRevoke
         ) { device in
-            Button("Retirer cet appareil", role: .destructive) {
+            Button("settings.removeDevice", role: .destructive) {
                 Task { await revoke(device) }
             }
             .accessibilityIdentifier("settings.devices.revoke.confirm")
             Button("Annuler", role: .cancel) {}
         } message: { _ in
-            Text("Il efface ses données OnePass dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.")
+            Text("settings.itErasesOnepassData")
         }
         .sheet(item: $passwordForRevoke) { target in
             let device = target.device
             PasswordPromptSheet(
                 title: "Retirer \(device.name)",
-                footer: "Confirme avec ton mot de passe maître pour retirer cet appareil."
+                footer: "settings.confirmWithMasterPassword"
             ) { password in
                 try await session.revokeDevice(device.id, password: password)
                 revokedName = device.name
             }
         }
         .alert(
-            Text("\(revokedName ?? "") est retiré"),
+            Text("settings.removed \(revokedName ?? "")"),
             isPresented: Binding(get: { revokedName != nil }, set: { if !$0 { revokedName = nil } })
         ) {
-            Button("Changer le mot de passe maître") { changingPassword = true }
-            Button("Plus tard", role: .cancel) {}
+            Button("settings.changeMasterPassword") { changingPassword = true }
+            Button("app.later", role: .cancel) {}
         } message: {
-            Text("Change ton mot de passe maître si cet appareil a été perdu ou volé.")
+            Text("settings.changeMasterPasswordIf")
         }
         .alert(
             "Renommer l'appareil",
             isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
             presenting: renaming
         ) { device in
-            TextField("Nom", text: $newName)
-            Button("Renommer") { Task { await rename(device) } }
+            TextField("settings.name", text: $newName)
+            Button("common.rename") { Task { await rename(device) } }
             Button("Annuler", role: .cancel) {}
         }
         .sheet(isPresented: $changingPassword) {
@@ -176,12 +176,12 @@ struct DevicesSettings: View {
 
     @ViewBuilder private func deviceMenu(_ device: FfiDevice) -> some View {
         Menu {
-            Button("Renommer", systemImage: "pencil") {
+            Button("common.rename", systemImage: "pencil") {
                 newName = device.name
                 renaming = device
             }
             if !isThisDevice(device) {
-                Button("Retirer cet appareil", systemImage: "minus.circle", role: .destructive) {
+                Button("settings.removeDevice", systemImage: "minus.circle", role: .destructive) {
                     errorMessage = nil
                     confirmRevoke = device
                 }
@@ -197,7 +197,7 @@ struct DevicesSettings: View {
         .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel(Text("Actions pour \(device.name)"))
+        .accessibilityLabel(Text("app.actionsFor \(device.name)"))
         .accessibilityIdentifier("settings.devices.menu.\(device.id)")
     }
 
@@ -252,9 +252,9 @@ private struct DeviceRow<Actions: View>: View {
         let kind = DeviceKindText.kind(device.kind)
         let mode = DeviceKindText.mode(device.mode)
         if let revokedAt {
-            return String(localized: "\(kind) · Retiré le \(revokedAt.formatted(date: .abbreviated, time: .omitted))")
+            return String(localized: "settings.removedOn \(kind) \(revokedAt.formatted(date: .abbreviated, time: .omitted))")
         }
-        return String(localized: "\(kind) · \(mode) · ajouté le \(addedAt.formatted(date: .abbreviated, time: .omitted))")
+        return String(localized: "settings.addedOn \(kind) \(mode) \(addedAt.formatted(date: .abbreviated, time: .omitted))")
     }
 
     var body: some View {
@@ -271,7 +271,7 @@ private struct DeviceRow<Actions: View>: View {
                 HStack(spacing: 6) {
                     Text(device.name).lineLimit(1)
                     if isThisDevice {
-                        Text("Cet appareil")
+                        Text("settings.device")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.readableAccent)
                             .padding(.horizontal, 7)
@@ -327,10 +327,10 @@ private struct BrowserExtensionsSection: View {
     var body: some View {
         Section {
             if !bridge.isRunning {
-                Text("Indisponible dans cette version de OnePass.")
+                Text("settings.notAvailableInBuild")
                     .foregroundStyle(.secondary)
             } else if bridge.paired.isEmpty {
-                Label("Ouvre l'extension OnePass dans Safari, Chrome ou Firefox pour l'associer à ce Mac.",
+                Label("settings.openOnepassExtensionIn",
                     systemImage: "puzzlepiece.extension")
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("settings.devices.browsers.empty")
@@ -350,16 +350,16 @@ private struct BrowserExtensionsSection: View {
                 .accessibilityIdentifier("settings.devices.browsers.blocked")
             }
         } header: {
-            Text("Extensions de navigateur")
+            Text("settings.browserExtensions")
         } footer: {
             Text("Elles se connectent seules à OnePass quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
         }
         .confirmationDialog(
-            Text("Oublier \(forgetting?.browser ?? "") ?"),
+            Text("settings.forget2 \(forgetting?.browser ?? "")"),
             isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
             titleVisibility: .visible, presenting: forgetting
         ) { paired in
-            Button("Oublier l'extension", role: .destructive) { bridge.forget(paired.id) }
+            Button("settings.forgetExtension", role: .destructive) { bridge.forget(paired.id) }
                 .accessibilityIdentifier("settings.devices.browsers.confirmForget")
         } message: { _ in
             Text("Elle ne pourra plus remplir ni se reconnecter seule. Pour la réutiliser, associe-la avec le code, ou autorise-la de nouveau ici.")
@@ -377,7 +377,7 @@ private struct BrowserExtensionsSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(paired.browser).lineLimit(1)
-                    Text("Extension")
+                    Text("settings.extension")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 7)
@@ -393,7 +393,7 @@ private struct BrowserExtensionsSection: View {
             }
             Spacer(minLength: 0)
             Menu {
-                Button("Oublier l'extension", systemImage: "minus.circle", role: .destructive) { forgetting = paired }
+                Button("settings.forgetExtension", systemImage: "minus.circle", role: .destructive) { forgetting = paired }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
             }
@@ -401,7 +401,7 @@ private struct BrowserExtensionsSection: View {
             .buttonStyle(.borderless)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel(Text("Actions"))
+            .accessibilityLabel(Text("app.actions"))
             .accessibilityIdentifier("settings.devices.browsers.menu")
         }
         .accessibilityElement(children: .contain)

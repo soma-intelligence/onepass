@@ -225,32 +225,32 @@ struct NearbyStatusView: View {
     var body: some View {
         switch phase {
         case .idle, .locating:
-            ProgressView("Recherche de ta position…")
+            ProgressView("browse.findingLocation")
                 .accessibilityIdentifier("list.nearby.locating")
         case .failed(.denied):
             ContentUnavailableView {
-                Label("Position non autorisée", systemImage: "location.slash")
+                Label("app.locationNotAllowed", systemImage: "location.slash")
             } description: {
-                Text("Autorise OnePass à utiliser ta position pour voir les éléments enregistrés autour de toi. Elle reste sur cet appareil.")
+                Text("browse.allowOnepassToUse")
             } actions: {
-                Button("Ouvrir les Réglages") { LocationAccess.openSettings() }
+                Button("app.openSettings") { LocationAccess.openSettings() }
                     .buttonStyle(.glassProminent)
                     .accessibilityIdentifier("list.nearby.openSettings")
             }
             .accessibilityIdentifier("list.nearby.denied")
         case .failed(.unavailable):
             ContentUnavailableView {
-                Label("Position introuvable", systemImage: "location.magnifyingglass")
+                Label("app.locationNotFound", systemImage: "location.magnifyingglass")
             } description: {
-                Text("Impossible de savoir où tu es pour le moment.")
+                Text("browse.cantTellWhereRight")
             } actions: {
                 Button("Réessayer", action: retry)
                     .accessibilityIdentifier("list.nearby.retry")
             }
         case .ready:
             EmptyState(
-                title: String(localized: "Rien à proximité"), systemImage: "mappin.slash",
-                message: String(localized: "Ajoute un lieu à un élément pour le retrouver ici quand tu es à moins de 2 km."))
+                title: String(localized: "browse.nothingNearby"), systemImage: "mappin.slash",
+                message: String(localized: "browse.addPlaceToItem"))
             .accessibilityIdentifier("list.nearby.empty")
         }
     }

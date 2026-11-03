@@ -23,13 +23,13 @@ struct ItemLinkPicker: View {
                 if let id = linkedID {
                     Label(Self.title(of: id, in: model.session), systemImage: "link")
                 } else {
-                    Text("Choisir un élément")
+                    Text("item.chooseItem")
                 }
             }
             .accessibilityIdentifier("editor.field.\(field.id)")
             Spacer()
             if linkedID != nil {
-                Button("Retirer", systemImage: "xmark.circle.fill") { value = .empty }
+                Button("common.remove", systemImage: "xmark.circle.fill") { value = .empty }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -53,7 +53,7 @@ struct ItemPickerList: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let excluding: String
-    var title: LocalizedStringKey = "Lier un élément"
+    var title: LocalizedStringKey = "item.linkItem"
     let onPick: (FfiItemSummary) -> Void
     @State private var query = ""
 
@@ -75,7 +75,7 @@ struct ItemPickerList: View {
                     }
                 }
             }
-            .searchable(text: $query, prompt: Text("Rechercher"))
+            .searchable(text: $query, prompt: Text("common.search"))
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -254,7 +254,7 @@ struct LoginMethodCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            EditorLabel(String(localized: "se connecte avec")).padding(.leading, 16)
+            EditorLabel(String(localized: "item.signsInWith")).padding(.leading, 16)
             EditorCard {
                 ChipFlow(spacing: 8) {
                     chip(nil)
@@ -265,7 +265,7 @@ struct LoginMethodCard: View {
                 if let current {
                     CardDivider()
                     HStack(spacing: 10) {
-                        Text("Compte utilisé")
+                        Text("item.accountUsed")
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button {
@@ -306,7 +306,7 @@ struct LoginMethodCard: View {
         } label: {
             HStack(spacing: 7) {
                 ProviderMark(provider: provider, size: 20)
-                Text(provider?.name ?? String(localized: "Aucun (mot de passe)"))
+                Text(provider?.name ?? String(localized: "item.nonePassword"))
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
             }
@@ -335,7 +335,7 @@ struct LoginMethodCard: View {
         } label: {
             HStack(spacing: 7) {
                 if let chosen { ProviderMark(provider: chosen, size: 20) }
-                Text(chosen?.name ?? String(localized: "Autre…")).font(.callout.weight(.medium))
+                Text(chosen?.name ?? String(localized: "item.other")).font(.callout.weight(.medium))
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
             .padding(.leading, chosen == nil ? 11 : 5)
@@ -371,7 +371,7 @@ private struct SignInAccountChooser: View {
             List {
                 Section {
                     if accounts.isEmpty {
-                        Text("Aucun élément ne ressemble à un compte \(provider.name).")
+                        Text("item.noItemLooksLike \(provider.name)")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(accounts, id: \.id) { summary in
@@ -393,14 +393,14 @@ private struct SignInAccountChooser: View {
                         .accessibilityIdentifier("signIn.account.\(summary.title)")
                     }
                 } header: {
-                    Text("Comptes \(provider.name)")
+                    Text("item.accounts \(provider.name)")
                 }
                 Section {
-                    Button("Choisir un autre élément…", systemImage: "magnifyingglass") { pickingOther = true }
+                    Button("item.chooseAnotherItem", systemImage: "magnifyingglass") { pickingOther = true }
                         .accessibilityIdentifier("signIn.other")
                 }
             }
-            .navigationTitle(Text("Quel compte \(provider.name) utilises-tu ?"))
+            .navigationTitle(Text("item.whichAccountDoUse \(provider.name)"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Annuler") { dismiss() }

@@ -22,12 +22,12 @@ struct ChangePasswordSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("Mot de passe actuel", text: $current)
+                    SecureField("settings.currentPassword", text: $current)
                         .privacySensitive()
                         .accessibilityIdentifier("settings.changePassword.current")
                 }
                 Section {
-                    SecureField("Nouveau mot de passe", text: $new)
+                    SecureField("settings.newPassword", text: $new)
                         .privacySensitive()
                         .accessibilityIdentifier("settings.changePassword.new")
                     StrengthMeter(bits: PasswordStrength.estimatedBits(new))
@@ -37,11 +37,11 @@ struct ChangePasswordSheet: View {
                         .accessibilityIdentifier("settings.changePassword.confirm")
                 } footer: {
                     if mismatch {
-                        Text("Les deux saisies sont différentes.").foregroundStyle(.red)
+                        Text("app.twoEntriesDontMatch").foregroundStyle(.red)
                     } else if !new.isEmpty, !newAccepted {
-                        Text("Trop faible pour un mot de passe maître : cinq mots tirés au hasard marchent bien.")
+                        Text("settings.tooWeakForMaster")
                     } else {
-                        Text("Ta Secret Key ne change pas : ton Emergency Kit reste valable. Tes autres appareils te demanderont le nouveau mot de passe.")
+                        Text("settings.secretKeyDoesntChange")
                     }
                 }
                 if let errorMessage {
@@ -53,7 +53,7 @@ struct ChangePasswordSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Changer le mot de passe maître")
+            .navigationTitle("settings.changeMasterPassword")
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -62,7 +62,7 @@ struct ChangePasswordSheet: View {
                     Button("Annuler") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Changer", action: run)
+                    Button("settings.change", action: run)
                         .disabled(!canSubmit)
                         .accessibilityIdentifier("settings.changePassword.submit")
                 }
@@ -98,12 +98,12 @@ struct ChangePasswordSheet: View {
                 new = ""
                 confirmation = ""
                 model.settingsChanged()
-                model.showToast(String(localized: "Mot de passe maître changé"))
+                model.showToast(String(localized: "settings.masterPasswordChanged"))
                 dismiss()
             } catch {
                 let failure = VaultError(error)
                 errorMessage = failure == .wrongPassword
-                    ? String(localized: "Le mot de passe actuel est incorrect.") : failure.localizedMessage
+                    ? String(localized: "settings.currentPasswordIncorrect") : failure.localizedMessage
             }
         }
     }

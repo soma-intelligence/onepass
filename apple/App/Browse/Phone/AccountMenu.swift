@@ -27,7 +27,7 @@ struct AccountMenu: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Menu du compte"))
+        .accessibilityLabel(Text("browse.accountMenu"))
         .accessibilityIdentifier("account.menu")
         .popover(isPresented: $isOpen, arrowEdge: .top) {
             AccountPanel { action in
@@ -163,7 +163,7 @@ struct AccountPanel: View {
     }
 
     private var name: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+        model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
     }
 
     private var device: String {
@@ -253,7 +253,7 @@ struct PhoneRootToolbar<Options: View>: ToolbarContent {
                 Menu {
                     options
                 } label: {
-                    Label("Afficher", systemImage: "slider.horizontal.3")
+                    Label("common.show", systemImage: "slider.horizontal.3")
                 }
                 .accessibilityIdentifier("root.options")
             }

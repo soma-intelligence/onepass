@@ -41,7 +41,7 @@ struct VaultsSettings: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(vault.meta.name).foregroundStyle(.primary)
                                 if shared, model.session.hiddenVaultIDs.contains(vault.id) {
-                                    Text("Masqué sur cet appareil").font(.footnote).foregroundStyle(.secondary)
+                                    Text("settings.hiddenOnDevice").font(.footnote).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer(minLength: 0)
@@ -51,7 +51,7 @@ struct VaultsSettings: View {
                     }
                     .buttonStyle(.plain)
                     .visionHoverEffect()
-                    .accessibilityLabel(Text("Modifier le coffre \(vault.meta.name)"))
+                    .accessibilityLabel(Text("settings.editVault \(vault.meta.name)"))
                     .accessibilityIdentifier("settings.vaults.\(vault.id)")
                 }
                 Button {

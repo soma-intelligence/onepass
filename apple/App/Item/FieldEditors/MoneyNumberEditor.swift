@@ -99,14 +99,14 @@ struct MoneyEditor: View {
                     value = amount.map { .money(minorUnits: Money.minorUnits($0), currency: code) } ?? .empty
                 })
                 .accessibilityIdentifier("editor.field.\(field.id)")
-            TextField("Devise", text: currency)
+            TextField("item.currency", text: currency)
                 .frame(maxWidth: 64)
                 .multilineTextAlignment(.trailing)
                 .fieldInput(.text)
                 #if os(iOS) || os(visionOS)
                 .textInputAutocapitalization(.characters)
                 #endif
-                .accessibilityLabel(Text("Devise"))
+                .accessibilityLabel(Text("item.currency"))
         }
     }
 }

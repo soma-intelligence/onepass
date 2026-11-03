@@ -30,7 +30,7 @@ struct VisibleVaultsView: View {
                     .accessibilityIdentifier("settings.visibleVaults.\(vault.id)")
                 }
             } footer: {
-                Text("Les coffres décochés restent chiffrés et n'apparaissent pas sur cet appareil. Au moins un coffre reste visible.")
+                Text("vaults.uncheckedVaultsStayEncrypted")
             }
         }
         .formStyle(.grouped)

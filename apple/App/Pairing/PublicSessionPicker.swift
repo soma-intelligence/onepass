@@ -23,14 +23,14 @@ struct PublicSessionPicker: View {
     var body: some View {
         Form {
             Section {
-                Picker("Durée", selection: $minutes) {
+                Picker("pairing.duration", selection: $minutes) {
                     ForEach(Self.durations, id: \.self) { value in
                         Text("\(value) min").tag(value)
                     }
                 }
                 .accessibilityIdentifier("approve.public.duration")
             } footer: {
-                Text("La session se termine aussi si tu la termines d'ici, si le nouvel appareil passe en arrière-plan ou après 5 min sans activité.")
+                Text("pairing.sessionAlsoEndsIf")
             }
             Section {
                 ForEach(items, id: \.id) { item in
@@ -59,9 +59,9 @@ struct PublicSessionPicker: View {
                     .accessibilityIdentifier("approve.public.item.\(item.id)")
                 }
             } header: {
-                Text("Éléments à prêter")
+                Text("pairing.itemsToLend")
             } footer: {
-                Text("En lecture seule, sans historique des mots de passe ni passkey. Rien n'est enregistré sur le nouvel appareil.")
+                Text("pairing.readOnlyWithoutPassword")
             }
             if flow.approvalError != nil {
                 Section {
@@ -72,7 +72,7 @@ struct PublicSessionPicker: View {
                     if let error = flow.approvalError, error != .passwordRequired {
                         Text(error.localizedMessage).foregroundStyle(.red)
                     } else {
-                        Text("Confirme avec ton mot de passe maître.")
+                        Text("pairing.confirmWithMasterPassword")
                     }
                 }
             }
@@ -82,8 +82,8 @@ struct PublicSessionPicker: View {
                 } label: {
                     HStack {
                         Text(selected.count < 2
-                             ? String(localized: "Prêter \(selected.count) élément")
-                             : String(localized: "Prêter \(selected.count) éléments"))
+                             ? String(localized: "pairing.lendItem \(selected.count)")
+                             : String(localized: "pairing.lendItems \(selected.count)"))
                             .font(.headline)
                         Spacer()
                         if lending { ProgressView() }
@@ -94,7 +94,7 @@ struct PublicSessionPicker: View {
             }
         }
         .formStyle(.grouped)
-        .searchable(text: $query, prompt: Text("Rechercher"))
+        .searchable(text: $query, prompt: Text("common.search"))
     }
 
     private func lend() async {

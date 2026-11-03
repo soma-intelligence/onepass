@@ -41,11 +41,11 @@ struct DeveloperSettingsPage: View {
                 NavigationLink {
                     AuditLogView()
                 } label: {
-                    Label("Journal d'audit", systemImage: "list.bullet.rectangle")
+                    Label("developer.auditLog", systemImage: "list.bullet.rectangle")
                 }
                 .accessibilityIdentifier("settings.developer.audit")
             } footer: {
-                Text("Chaque signature SSH et chaque accès MCP y sont inscrits, acceptés ou refusés. Le journal est chaîné et signé par ton compte : une ligne modifiée ou retirée se voit.")
+                Text("developer.everySshSignatureAnd")
             }
             if let errorMessage {
                 Section {
@@ -68,44 +68,44 @@ struct DeveloperSettingsPage: View {
         Section {
             Toggle(isOn: setting(\.sshEnabled)) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Agent SSH")
+                    Text("app.sshAgent")
                     statusLine(running: hosts.sshRunning, error: hosts.sshError, enabled: hosts.settings.sshEnabled)
                 }
             }
             .accessibilityIdentifier("settings.developer.ssh")
             if hosts.settings.sshEnabled {
-                Toggle("Touch ID à chaque signature", isOn: setting(\.sshRequirePresence))
+                Toggle("developer.touchIdAtEvery", isOn: setting(\.sshRequirePresence))
                     .accessibilityIdentifier("settings.developer.sshPresence")
-                Toggle("Autoriser les connexions transférées", isOn: setting(\.sshAllowForwarded))
-                LabeledContent("known_hosts") {
+                Toggle("developer.allowForwardedConnections", isOn: setting(\.sshAllowForwarded))
+                LabeledContent("developer.knownHosts") {
                     HStack {
                         Text(hosts.settings.knownHostsBookmark == nil ? "Non choisi" : "Choisi")
                             .foregroundStyle(.secondary)
                         Button(hosts.settings.knownHostsBookmark == nil ? "Choisir…" : "Changer…") { chooseKnownHosts() }
                         if hosts.settings.knownHostsBookmark != nil {
-                            Button("Retirer") { update { $0.knownHostsBookmark = nil } }
+                            Button("common.remove") { update { $0.knownHostsBookmark = nil } }
                         }
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Dans `~/.ssh/config` :").font(.callout)
+                    Text("developer.inSshConfig").font(.callout)
                     CodeBox(code: "Host *\n  \(hosts.paths.identityAgentLine)", onCopy: copy)
-                    Text("Ou dans ton terminal :").font(.callout)
+                    Text("developer.orInTerminal").font(.callout)
                     CodeBox(code: hosts.paths.exportLine, onCopy: copy)
                 }
                 .padding(.vertical, 4)
             }
         } header: {
-            Text("Agent SSH")
+            Text("app.sshAgent")
         } footer: {
-            Text("L'app sert les clés SSH de tes coffres à `ssh` et à `git`. Chaque signature te demande ton accord, avec la clé, le programme et la destination. La clé privée ne quitte jamais OnePass. L'agent s'arrête quand l'app se verrouille.")
+            Text("developer.appServesSshKeys")
         }
     }
 
     @ViewBuilder private var sshKeysSection: some View {
         Section {
             if keys.isEmpty {
-                Text("Aucune clé n'est proposée à l'agent. Active « Utiliser dans l'agent » sur une clé SSH, ou crée-en une.")
+                Text("developer.noKeyOfferedTo")
                     .foregroundStyle(.secondary)
             }
             ForEach(keys, id: \.itemId) { key in
@@ -129,18 +129,18 @@ struct DeveloperSettingsPage: View {
                         Image(systemName: "doc.on.doc")
                     }
                     .buttonStyle(.borderless)
-                    .help(Text("Copier la clé publique"))
-                    .accessibilityLabel(Text("Copier la clé publique de \(key.title)"))
+                    .help(Text("developer.copyPublicKey"))
+                    .accessibilityLabel(Text("developer.copyPublicKeyOf \(key.title)"))
                 }
             }
             Button {
                 newKey = true
             } label: {
-                Label("Nouvelle clé SSH…", systemImage: "plus")
+                Label("developer.newSshKey2", systemImage: "plus")
             }
             .accessibilityIdentifier("settings.developer.newKey")
         } header: {
-            Text("Clés proposées")
+            Text("developer.offeredKeys")
         }
     }
 
@@ -150,23 +150,23 @@ struct DeveloperSettingsPage: View {
         Section {
             Toggle(isOn: setting(\.mcpEnabled)) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Serveur MCP")
+                    Text("app.mcpServer")
                     statusLine(running: hosts.mcpRunning, error: hosts.mcpError, enabled: hosts.settings.mcpEnabled)
                 }
             }
             .accessibilityIdentifier("settings.developer.mcp")
             if hosts.settings.mcpEnabled {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Pour déclarer OnePass à la main dans ton client MCP (ou utilise « Installer dans un agent » plus bas) :")
+                    Text("developer.toAddOnepassTo")
                         .font(.callout)
                     CodeBox(code: hosts.paths.mcpClientConfig, onCopy: copy)
                 }
                 .padding(.vertical, 4)
             }
         } header: {
-            Text("Serveur MCP")
+            Text("app.mcpServer")
         } footer: {
-            Text("Un agent IA appairé voit les coffres que tu exposes, utilise leurs secrets sans les voir, et chaque usage te demande ton accord. Révéler un secret ou un code demande Touch ID.")
+            Text("developer.pairedAiAgentSees")
         }
     }
 
@@ -183,21 +183,21 @@ struct DeveloperSettingsPage: View {
                     }
                     .accessibilityIdentifier("settings.developer.expose.\(vault.vaultId)")
                 }
-                Toggle("Génération de mots de passe", isOn: Binding(
+                Toggle("developer.passwordGeneration", isOn: Binding(
                     get: { policy.allowGenerate },
                     set: { allow in Task { await savePolicy(allowGenerate: allow) } }))
             }
         } header: {
-            Text("Coffres exposés")
+            Text("developer.exposedVaults")
         } footer: {
-            Text("Rien n'est exposé tant que tu ne le choisis pas ici. « Métadonnées » : titres et champs, jamais de valeur. « Utiliser » : lancer une commande avec les secrets, sortie masquée.")
+            Text("developer.nothingExposedUntilChoose")
         }
     }
 
     @ViewBuilder private var clientsSection: some View {
         Section {
             if clients.isEmpty {
-                Text("Aucun client appairé. Un client signé demande l'appairage à sa première connexion.")
+                Text("developer.noPairedClientSigned")
                     .foregroundStyle(.secondary)
             }
             ForEach(clients, id: \.id) { client in
@@ -211,7 +211,7 @@ struct DeveloperSettingsPage: View {
                             }
                         }
                     }
-                    Button("Désappairer", role: .destructive) { Task { await unpair(client) } }
+                    Button("developer.unpair", role: .destructive) { Task { await unpair(client) } }
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(client.label)
@@ -226,37 +226,37 @@ struct DeveloperSettingsPage: View {
             Button {
                 pairProgram()
             } label: {
-                Label("Appairer un programme…", systemImage: "plus")
+                Label("developer.pairProgram", systemImage: "plus")
             }
         } header: {
-            Text("Clients appairés")
+            Text("developer.pairedClients")
         } footer: {
-            Text("Un programme non signé par un développeur ne s'appaire qu'ici, en choisissant son fichier : il doit être réappairé après chaque mise à jour.")
+            Text("developer.programNotSignedBy")
         }
     }
 
     @ViewBuilder private var grantsSection: some View {
         Section {
             if grants.isEmpty {
-                Text("Aucune autorisation en cours.").foregroundStyle(.secondary)
+                Text("developer.noActiveGrant").foregroundStyle(.secondary)
             }
             ForEach(grants, id: \.id) { grant in
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(grant.action)
-                        Text("\(label(of: grant.clientId)) · jusqu'à \(Date(timeIntervalSince1970: TimeInterval(grant.expiresAt)).formatted(date: .omitted, time: .shortened))")
+                        Text("developer.until \(label(of: grant.clientId)) \(Date(timeIntervalSince1970: TimeInterval(grant.expiresAt)).formatted(date: .omitted, time: .shortened))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Révoquer") { Task { await revoke(grant.id) } }
+                    Button("developer.revoke") { Task { await revoke(grant.id) } }
                 }
             }
             if !grants.isEmpty {
-                Button("Tout révoquer", role: .destructive) { Task { await revoke(nil) } }
+                Button("developer.revokeAll", role: .destructive) { Task { await revoke(nil) } }
             }
         } header: {
-            Text("Autorisations en cours")
+            Text("developer.activeGrants")
         }
     }
 
@@ -266,12 +266,12 @@ struct DeveloperSettingsPage: View {
         Section {
             CardHeading(
                 symbol: "iphone", color: .blue, title: String(localized: "iPhone"),
-                message: String(localized: "Approuve les demandes des agents sur ton iPhone, et déverrouille OnePass pour eux quand tu n'es pas devant ce Mac."))
+                message: String(localized: "developer.approveAgentsRequestsOn"))
             if !phones.available {
-                Text("Cette version de OnePass n'utilise pas iCloud : les demandes s'approuvent sur ce Mac seulement.")
+                Text("developer.buildOfOnepassDoesnt")
                     .foregroundStyle(.secondary)
             } else if phones.phones.isEmpty {
-                Text("Aucun iPhone enrôlé. Sur ton iPhone, ouvre OnePass > Réglages > Agents et active les demandes des agents.")
+                Text("developer.noIphoneEnrolledOn")
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("settings.developer.noPhone")
             } else {
@@ -281,9 +281,9 @@ struct DeveloperSettingsPage: View {
                             Text(phone.name)
                             Group {
                                 if phone.id == phones.unlockPhone {
-                                    Text("Approbations et déverrouillage")
+                                    Text("developer.approvalsAndUnlock")
                                 } else {
-                                    Text("Approbations")
+                                    Text("developer.approvals")
                                 }
                             }
                             .font(.caption)
@@ -294,12 +294,12 @@ struct DeveloperSettingsPage: View {
                     }
                     .accessibilityIdentifier("settings.developer.phone.\(phone.id)")
                 }
-                Toggle("Approuver aussi sur l'iPhone", isOn: Binding(
+                Toggle("developer.alsoApproveOnIphone", isOn: Binding(
                     get: { phones.approveOnPhone },
                     set: { on in Task { await phones.setApproveOnPhone(on) } }))
                     .accessibilityIdentifier("settings.developer.phoneApprovals")
                 if phones.phones.count > 1, phones.unlockPhone == nil {
-                    Picker("iPhone qui déverrouille", selection: Binding(
+                    Picker("developer.iphoneUnlocks", selection: Binding(
                         get: { unlockTarget ?? phones.phones.first?.id },
                         set: { unlockTarget = $0 })) {
                         ForEach(phones.phones) { Text($0.name).tag(Optional($0.id)) }
@@ -310,8 +310,8 @@ struct DeveloperSettingsPage: View {
                     set: { on in Task { await phones.setUnlockFromPhone(on, phone: unlockTarget) } })
                 ) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Déverrouiller depuis mon iPhone")
-                        Text("Touch ID confirme. Ouvert depuis l'iPhone, OnePass sert seulement les agents : l'app reste verrouillée.")
+                        Text("developer.unlockFromMyIphone")
+                        Text("developer.touchIdConfirmsOpened")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -319,10 +319,10 @@ struct DeveloperSettingsPage: View {
                 .disabled(phones.busy)
                 .accessibilityIdentifier("settings.developer.phoneUnlock")
                 if let code = phones.pairingCode {
-                    Label("Sur ton iPhone, vérifie le code \(code) et accepte avec Face ID.", systemImage: "checkmark.shield")
+                    Label("developer.onIphoneCheckCode \(code)", systemImage: "checkmark.shield")
                         .font(.callout)
                 }
-                Picker("Durée de la fenêtre des agents", selection: Binding(
+                Picker("developer.agentWindowLength", selection: Binding(
                     get: { phones.windowMinutes },
                     set: { minutes in Task { await phones.setWindowMinutes(minutes) } })) {
                     ForEach(PhoneApprovals.windowChoices, id: \.self) { Text(Self.duration($0)).tag($0) }
@@ -336,7 +336,7 @@ struct DeveloperSettingsPage: View {
                 Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } footer: {
-            Text("Chaque demande part aussi vers ton iPhone, et la première réponse compte. La fenêtre des agents se ferme à son terme, quand ce Mac se met en veille ou quand tu verrouilles.")
+            Text("developer.eachRequestAlsoGoes")
         }
         .accessibilityIdentifier("settings.developer.phoneCard")
     }
@@ -353,51 +353,51 @@ struct DeveloperSettingsPage: View {
         Section {
             CardHeading(
                 symbol: "square.and.arrow.down.on.square", color: .purple,
-                title: String(localized: "Installer dans un agent"),
-                message: String(localized: "Cette commande ajoute seulement l'entrée « onepass » à la configuration de ton client et garde une copie de sauvegarde."))
+                title: String(localized: "developer.installInAgent"),
+                message: String(localized: "developer.commandAddsOnlyOnepass"))
             Picker("Client", selection: $installer.client) {
                 ForEach(AgentClient.allCases) { Text($0.title).tag($0) }
             }
             .accessibilityIdentifier("settings.developer.installClient")
             VStack(alignment: .leading, spacing: 8) {
-                Text("Dans ton terminal :").font(.callout)
+                Text("developer.inTerminal").font(.callout)
                 CodeBox(code: installer.terminalCommand, onCopy: copy)
                     .accessibilityIdentifier("settings.developer.installCommand")
             }
             .padding(.vertical, 4)
             // Secondary: the app's sandbox usually keeps the helper out of the client's file.
             HStack {
-                Button("Voir les changements") { Task { await installer.previewInstall() } }
+                Button("developer.showChanges") { Task { await installer.previewInstall() } }
                     .accessibilityIdentifier("settings.developer.installPreview")
-                Button("Installer") { Task { await installer.install() } }
+                Button("developer.install") { Task { await installer.install() } }
                     .disabled(!installer.canInstall)
                     .accessibilityIdentifier("settings.developer.install")
                 if installer.running { ProgressView().controlSize(.small) }
             }
             .disabled(installer.running)
             if let shown = installer.result ?? installer.preview, shown.blockedBySandbox {
-                Label("Le bac à sable de l'app bloque l'accès : lance la commande dans ton terminal", systemImage: "lock.shield")
+                Label("developer.appSandboxBlocksAccess", systemImage: "lock.shield")
                     .foregroundStyle(.orange)
                     .accessibilityIdentifier("settings.developer.installSandbox")
             } else if let result = installer.result {
                 if result.succeeded {
-                    Label("Installé. Quitte \(installer.client.title) puis relance-le.", systemImage: "checkmark.circle.fill")
+                    Label("developer.installedQuitThenOpen \(installer.client.title)", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                 } else {
-                    Label("L'installation a échoué.", systemImage: "exclamationmark.triangle.fill")
+                    Label("developer.installationFailed", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
                 if !result.output.isEmpty { CodeBox(code: result.output, onCopy: copy) }
             } else if let preview = installer.preview {
                 if preview.succeeded {
-                    Text("Changements prévus :").font(.callout)
+                    Text("developer.plannedChanges").font(.callout)
                 } else {
-                    Text("Aperçu impossible :").font(.callout)
+                    Text("developer.previewFailed").font(.callout)
                 }
-                CodeBox(code: preview.output.isEmpty ? String(localized: "Aucun changement.") : preview.output, onCopy: copy)
+                CodeBox(code: preview.output.isEmpty ? String(localized: "developer.noChanges") : preview.output, onCopy: copy)
             }
         } footer: {
-            Text("Quitte le client avant d'installer : il réécrit sa configuration en quittant. Le fichier d'origine est gardé à côté (.onepass-bak).")
+            Text("developer.quitClientBeforeInstall")
         }
         .accessibilityIdentifier("settings.developer.installCard")
     }
@@ -408,11 +408,11 @@ struct DeveloperSettingsPage: View {
         if let error {
             Text(error).font(.caption).foregroundStyle(.orange)
         } else if running {
-            Text("En marche").font(.caption).foregroundStyle(.green)
+            Text("developer.running").font(.caption).foregroundStyle(.green)
         } else if enabled {
-            Text("Démarrage…").font(.caption).foregroundStyle(.secondary)
+            Text("developer.starting").font(.caption).foregroundStyle(.secondary)
         } else {
-            Text("Arrêté").font(.caption).foregroundStyle(.secondary)
+            Text("developer.stopped").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -438,7 +438,7 @@ struct DeveloperSettingsPage: View {
 
     private func copy(_ text: String) {
         model.session.copy(text, concealed: false)
-        model.showToast(String(localized: "Copié"))
+        model.showToast(String(localized: "common.copied"))
     }
 
     private func reload() async {
@@ -461,7 +461,7 @@ struct DeveloperSettingsPage: View {
 
     private func setExposure(_ vault: FfiMcpVault, scopes: [String]) async {
         let widening = Set(scopes).subtracting(exposed(vault) ? vault.scopes : []).isEmpty == false
-        if widening, !(await confirmed(String(localized: "Exposer « \(vault.name) » aux agents IA"))) { return }
+        if widening, !(await confirmed(String(localized: "developer.exposeToAiAgents \(vault.name)"))) { return }
         do {
             // The vault's own flag and the signed policy: both are needed (spec 4.4).
             if let current = model.session.allVaults.first(where: { $0.id == vault.vaultId }),
@@ -495,7 +495,7 @@ struct DeveloperSettingsPage: View {
     private func setClientScopes(_ client: FfiPairedClient, vault: FfiMcpVault, scopes: [String]) async {
         let before = Set(client.scopes.first { $0.vaultId == vault.vaultId }?.scopes ?? [])
         if !Set(scopes).subtracting(before).isEmpty,
-            !(await confirmed(String(localized: "Donner plus de droits à \(client.label)")))
+            !(await confirmed(String(localized: "developer.giveMoreRightsTo \(client.label)")))
         {
             return
         }
@@ -527,17 +527,17 @@ struct DeveloperSettingsPage: View {
 
     private func pairProgram() {
         let panel = NSOpenPanel()
-        panel.message = String(localized: "Choisis le programme à appairer avec le serveur MCP de OnePass.")
+        panel.message = String(localized: "developer.chooseProgramToPair")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
-            guard await confirmed(String(localized: "Appairer \(url.lastPathComponent) avec OnePass")) else { return }
+            guard await confirmed(String(localized: "developer.pairWithOnepass \(url.lastPathComponent)")) else { return }
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 let id = try await model.session.pairProgram(dataDirectory: dir, path: url.path)
-                model.showToast(String(localized: "Programme appairé : \(id)"))
+                model.showToast(String(localized: "developer.programPaired \(id)"))
             } catch {
                 errorMessage = VaultError(error).localizedMessage
             }
@@ -547,7 +547,7 @@ struct DeveloperSettingsPage: View {
 
     private func chooseKnownHosts() {
         let panel = NSOpenPanel()
-        panel.message = String(localized: "Choisis ton fichier known_hosts (souvent ~/.ssh/known_hosts). OnePass le lit seulement.")
+        panel.message = String(localized: "developer.chooseKnownHostsFile")
         panel.showsHiddenFiles = true
         panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".ssh")
         guard panel.runModal() == .OK, let url = panel.url,
@@ -609,7 +609,7 @@ private struct ScopeMenu: View {
     }
 
     private var summary: String {
-        if selected.isEmpty { return String(localized: "Non exposé") }
+        if selected.isEmpty { return String(localized: "developer.notExposed") }
         if selected.contains("reveal") { return String(localized: "Révéler") }
         if selected.contains("use") { return String(localized: "Utiliser") }
         return String(localized: "Métadonnées")

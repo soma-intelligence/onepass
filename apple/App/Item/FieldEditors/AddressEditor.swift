@@ -24,21 +24,21 @@ struct AddressEditor: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            TextField("Ligne 1", text: part(\.line1))
+            TextField("item.line1", text: part(\.line1))
                 .addressContent(.line1)
                 .accessibilityIdentifier("editor.field.\(field.id)")
-            TextField("Ligne 2", text: part(\.line2))
+            TextField("item.line2", text: part(\.line2))
                 .addressContent(.line2)
             HStack {
-                TextField("Code postal", text: part(\.postalCode))
+                TextField("item.postalCode", text: part(\.postalCode))
                     .addressContent(.postalCode)
                     .frame(maxWidth: 120)
-                TextField("Ville", text: part(\.city))
+                TextField("item.city", text: part(\.city))
                     .addressContent(.city)
             }
-            TextField("Région", text: part(\.region))
+            TextField("item.region", text: part(\.region))
                 .addressContent(.region)
-            TextField("Pays", text: part(\.country))
+            TextField("item.country", text: part(\.country))
                 .addressContent(.country)
         }
     }

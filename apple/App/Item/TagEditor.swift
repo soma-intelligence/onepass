@@ -35,12 +35,12 @@ struct TagEditor: View {
                 }
                 .buttonStyle(.plain)
                 .visionHoverEffect()
-                .help("Retirer le tag")
-                .accessibilityLabel(Text("Retirer le tag \(tag)"))
+                .help("item.removeTag")
+                .accessibilityLabel(Text("item.removeTag \(tag)"))
             }
             HStack(spacing: 6) {
                 Image(systemName: "plus").font(.callout.weight(.semibold))
-                TextField("Tag", text: $newTag, prompt: Text("Ajouter un tag").foregroundStyle(Theme.accent.mix(with: .white, by: 0.3)))
+                TextField("item.tag", text: $newTag, prompt: Text("item.addTag").foregroundStyle(Theme.accent.mix(with: .white, by: 0.3)))
                     .labelsHidden()
                     .textFieldStyle(.plain)
                     .onSubmit(add)

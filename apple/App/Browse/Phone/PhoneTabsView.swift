@@ -74,7 +74,7 @@ struct PhoneTabsView: View {
                 tabLabel("Watchtower", "checkmark.shield", .watchtower)
             }
             .accessibilityIdentifier("tab.watchtower")
-            Tab("Rechercher", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
+            Tab("common.search", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
                 stack(.search) { SearchTab(query: $searchQuery, isSearching: $searching) }
             }
             .accessibilityIdentifier("tab.search")
@@ -83,7 +83,7 @@ struct PhoneTabsView: View {
         // search field of the tab bar (a `searchable` inside the tab showed no field at all).
         // Toolbar placement and search tab activation: the search tab is the separate round
         // button on the right of the three tabs, and its field opens at the bottom.
-        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("Rechercher dans tes éléments"))
+        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("browse.searchItems"))
         .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
         // A search is only ever shown on its own tab, whatever presented it.
@@ -445,7 +445,7 @@ private struct FoldDropTray: View {
         Task {
             do {
                 try await model.session.move(itemID: ref.itemID, from: ref.vaultID, to: vault.id)
-                model.showToast(String(localized: "Déplacé vers \(vault.meta.name)"))
+                model.showToast(String(localized: "app.movedTo \(vault.meta.name)"))
             } catch {
                 model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -457,7 +457,7 @@ private struct FoldDropTray: View {
         done()
         Task {
             try? await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
-            model.showToast(String(localized: "Ajouté aux favoris"))
+            model.showToast(String(localized: "app.addedToFavorites"))
         }
     }
 }

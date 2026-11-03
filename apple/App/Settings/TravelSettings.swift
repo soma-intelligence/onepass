@@ -56,7 +56,7 @@ struct TravelSettings: View {
                         .accessibilityIdentifier("settings.travel.safe.\(vault.id)")
                     }
                 } header: {
-                    Text("Sûr en voyage")
+                    Text("app.safeForTravel")
                 } footer: {
                     Text("settings.travel.safe.footer")
                 }
@@ -70,7 +70,7 @@ struct TravelSettings: View {
         .confirmationDialog(
             "settings.travel.forget.title", isPresented: $confirmForget, titleVisibility: .visible
         ) {
-            Button("Oublier", role: .destructive) { model.travel.forgetPlaces() }
+            Button("settings.forget", role: .destructive) { model.travel.forgetPlaces() }
                 .accessibilityIdentifier("settings.travel.forget.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
@@ -79,7 +79,7 @@ struct TravelSettings: View {
         .confirmationDialog(
             "Activer le Travel Mode ?", isPresented: $confirming, titleVisibility: .visible
         ) {
-            Button("Activer") { Task { await enter() } }
+            Button("app.turnOn") { Task { await enter() } }
                 .accessibilityIdentifier("settings.travel.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
@@ -101,7 +101,7 @@ struct TravelSettings: View {
         let names = leavingNames
         var parts: [String] = []
         if !names.isEmpty {
-            parts.append(String(localized: "Ces coffres quittent cet appareil jusqu'à ton retour : \(names.formatted(.list(type: .and)))."))
+            parts.append(String(localized: "settings.theseVaultsLeaveDevice \(names.formatted(.list(type: .and)))"))
         }
         let hidden = hiddenItems.count
         if hidden > 0 {
@@ -169,7 +169,7 @@ struct TravelSettings: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(status.exiting ? "Retour en cours" : "Travel Mode activé")
                     if let at = status.enteredAt {
-                        Text("Depuis le \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)), \(Self.vaultCount(status.hiddenCount)) hors de cet appareil")
+                        Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)) \(Self.vaultCount(status.hiddenCount))")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -178,13 +178,13 @@ struct TravelSettings: View {
                 Image(systemName: "airplane").foregroundStyle(Theme.accent)
             }
         } else {
-            Label("Travel Mode désactivé", systemImage: "airplane")
+            Label("settings.travelModeOff", systemImage: "airplane")
                 .foregroundStyle(.secondary)
         }
     }
 
     static func vaultCount(_ n: UInt32) -> String {
-        n == 1 ? String(localized: "1 coffre") : String(localized: "\(n) coffres")
+        n == 1 ? String(localized: "settings.n1Vault") : String(localized: "settings.vaults \(n)")
     }
 
     @ViewBuilder private var actionButton: some View {
@@ -205,7 +205,7 @@ struct TravelSettings: View {
                 confirming = true
             } label: {
                 HStack {
-                    Text("Activer le Travel Mode")
+                    Text("settings.turnOnTravelMode")
                     if working { Spacer(); ProgressView().controlSize(.small) }
                 }
             }
@@ -247,7 +247,7 @@ struct TravelSettings: View {
         // The device owner confirms (Touch ID, Face ID or the passcode). A device without any owner
         // authentication has nothing to check: hiding vaults is never a risk in itself.
         if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
-            guard await SystemPresenceChecker().confirm(prompt: String(localized: "Activer le Travel Mode")) else { return }
+            guard await SystemPresenceChecker().confirm(prompt: String(localized: "settings.turnOnTravelMode")) else { return }
         }
         // Every write of the leaving vaults must be in iCloud first: the core refuses otherwise.
         await model.coordinator?.syncNow()

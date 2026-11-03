@@ -19,7 +19,7 @@ struct SecretKeyCaptureGuard: ViewModifier {
             .accessibilityHidden(captured)
             .overlay {
                 if captured {
-                    Label("Secret Key masquée pendant l'enregistrement ou la recopie de l'écran",
+                    Label("onboarding.secretKeyHiddenWhile",
                           systemImage: "eye.slash")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -31,10 +31,10 @@ struct SecretKeyCaptureGuard: ViewModifier {
                 for: UIApplication.userDidTakeScreenshotNotification)) { _ in
                     screenshotTaken = true
                 }
-            .alert("Capture d'écran de ta Secret Key", isPresented: $screenshotTaken) {
+            .alert("onboarding.screenshotOfSecretKey", isPresented: $screenshotTaken) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Cette capture contient ta Secret Key. Supprime-la de Photos, puis de l'album Supprimés récemment : Photos et iCloud peuvent la copier hors de cet appareil.")
+                Text("onboarding.screenshotContainsSecretKey")
             }
         #else
         content

@@ -66,7 +66,7 @@ private struct PublicSessionBrowser: View {
                 } else {
                     ContentUnavailableView(
                         "Choisis un élément", systemImage: "list.bullet.rectangle",
-                        description: Text("Lecture seule. Tes copies s'effacent du presse-papiers après 30 s."))
+                        description: Text("pairing.readOnlyCopiesCleared"))
                 }
             }
             #if os(macOS)
@@ -114,8 +114,8 @@ private struct PublicSessionBrowser: View {
                 ContentUnavailableView.search(text: query)
             }
         }
-        .searchable(text: $query, prompt: Text("Rechercher"))
-        .navigationTitle("Éléments prêtés")
+        .searchable(text: $query, prompt: Text("common.search"))
+        .navigationTitle("pairing.lentItems")
     }
 }
 
@@ -127,9 +127,9 @@ private struct PublicSessionBanner: View {
         let left = Int(session.remaining.rounded(.up))
         if left >= 60 {
             let minutes = Int((Double(left) / 60).rounded(.up))
-            return String(localized: "Session invitée · se termine dans \(minutes) min")
+            return String(localized: "pairing.guestSessionEndsIn \(minutes)")
         }
-        return String(localized: "Session invitée · se termine dans \(left) s")
+        return String(localized: "pairing.guestSessionEndsIn2 \(left)")
     }
 
     var body: some View {
@@ -145,7 +145,7 @@ private struct PublicSessionBanner: View {
                 .lineLimit(2)
                 .accessibilityIdentifier("guest.countdown")
             Spacer(minLength: 8)
-            Button("Terminer") { session.end() }
+            Button("pairing.end") { session.end() }
                 .buttonStyle(.glass)
                 .accessibilityIdentifier("guest.end")
         }
@@ -197,9 +197,9 @@ private struct PublicItemDetail: View {
                         ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
                             if index > 0 { CardDivider() }
                             ValueRow(
-                                label: url.label.isEmpty ? String(localized: "site web") : url.label.detailLabelCase,
+                                label: url.label.isEmpty ? String(localized: "app.website") : url.label.detailLabelCase,
                                 value: url.url, isSecret: false, monospaced: false, copyIdentifier: nil,
-                                allowsLarge: false, onCopy: { copy(url.url, label: String(localized: "Site web")) },
+                                allowsLarge: false, onCopy: { copy(url.url, label: String(localized: "pairing.website")) },
                                 onReveal: nil
                             ) { EmptyView() }
                         }
@@ -210,11 +210,11 @@ private struct PublicItemDetail: View {
                         ValueRow(
                             label: String(localized: "notes"), value: item.notes, isSecret: false, monospaced: false,
                             copyIdentifier: nil, allowsLarge: false,
-                            onCopy: { copy(item.notes, label: String(localized: "Notes")) }, onReveal: nil
+                            onCopy: { copy(item.notes, label: String(localized: "pairing.notes")) }, onReveal: nil
                         ) { EmptyView() }
                     }
                 }
-                Label("Lecture seule : rien n'est enregistré sur cet appareil.", systemImage: "eye")
+                Label("pairing.readOnlyNothingSaved", systemImage: "eye")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -225,7 +225,7 @@ private struct PublicItemDetail: View {
         .groupedScreen()
         .overlay(alignment: .bottom) {
             if showsCopied {
-                Text("Copié · effacé dans 30 s")
+                Text("pairing.copiedClearedIn30")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -336,11 +336,11 @@ private struct PublicSessionEnded: View {
 
     private var reasonText: String {
         switch reason {
-        case .expired: String(localized: "Le temps accordé est écoulé.")
-        case .endedByOwner: String(localized: "Ton autre appareil a terminé la session.")
-        case .connectionLost: String(localized: "La connexion avec ton autre appareil a été coupée.")
-        case .inactivity: String(localized: "Aucune activité depuis 5 minutes.")
-        case .endedHere, nil: String(localized: "Tu as terminé la session.")
+        case .expired: String(localized: "pairing.timeGrantedUp")
+        case .endedByOwner: String(localized: "pairing.otherDeviceEndedSession")
+        case .connectionLost: String(localized: "pairing.connectionWithOtherDevice")
+        case .inactivity: String(localized: "pairing.noActivityFor5")
+        case .endedHere, nil: String(localized: "pairing.endedSession")
         }
     }
 
@@ -357,7 +357,7 @@ private struct PublicSessionEnded: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("guest.endReason")
-            Text("Rien n'est resté sur cet appareil et le presse-papiers a été vidé.")
+            Text("pairing.nothingStayedOnDevice")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

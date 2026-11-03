@@ -112,8 +112,8 @@ struct ApproveDeviceSheet: View {
                 symbol: "checkmark.circle.fill", tint: .green,
                 title: picking ? "Session terminée" : "Appareil ajouté",
                 message: picking
-                    ? String(localized: "Le nouvel appareil n'a plus accès aux éléments prêtés.")
-                    : String(localized: "Il te demande maintenant ton mot de passe maître."))
+                    ? String(localized: "pairing.newDeviceNoLonger")
+                    : String(localized: "pairing.itNowAsksFor"))
         case .failed(let failure):
             outcome(
                 symbol: "exclamationmark.triangle.fill", tint: .red, title: "L'appairage n'a pas abouti",
@@ -135,7 +135,7 @@ struct ApproveDeviceSheet: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(peer.name).font(.headline)
-                        Text("\(DeviceKindText.kind(peer.kind)) · demande un accès \(DeviceKindText.mode(mode))")
+                        Text("pairing.asksForAccess \(DeviceKindText.kind(peer.kind)) \(DeviceKindText.mode(mode))")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -152,7 +152,7 @@ struct ApproveDeviceSheet: View {
             } header: {
                 Text("Code de vérification")
             } footer: {
-                Text("Le même code doit s'afficher sur le nouvel appareil.")
+                Text("pairing.sameCodeMustShow")
             }
             if flow.approvalError != nil {
                 Section {
@@ -168,7 +168,7 @@ struct ApproveDeviceSheet: View {
                     if let error = flow.approvalError, error != .passwordRequired {
                         Text(error.localizedMessage).foregroundStyle(.red)
                     } else {
-                        Text("Confirme avec ton mot de passe maître.")
+                        Text("pairing.confirmWithMasterPassword")
                     }
                 }
             }
@@ -187,14 +187,14 @@ struct ApproveDeviceSheet: View {
                     Task { await approve(flow, mode: mode) }
                 } label: {
                     HStack {
-                        Text("Les codes sont identiques").font(.headline)
+                        Text("pairing.codesMatch").font(.headline)
                         Spacer()
                         if approving { ProgressView() }
                     }
                 }
                 .disabled(approving || (flow.approvalError != nil && password.isEmpty) || (Platform.isMac && mode == .public))
                 .accessibilityIdentifier("approve.codesMatch")
-                Button("Ils sont différents", role: .destructive) { flow.cancel() }
+                Button("pairing.theyreDifferent", role: .destructive) { flow.cancel() }
                     .disabled(approving)
                     .accessibilityIdentifier("approve.codesDiffer")
             }
@@ -272,16 +272,16 @@ private struct InviteStep: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Scanne ce code avec ton nouvel appareil")
+                    Text("pairing.scanCodeWithNew")
                         .font(.title3.bold())
-                    Text("Sur l'iPhone ou l'iPad : « J'ai déjà OnePass sur un autre appareil », puis « Scanner le code de mon autre appareil ».")
+                    Text("pairing.onIphoneOrIpad")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 PairingQRView(text: text, expiresAt: expiresAt, renewal: .beforeExpiry)
                     .accessibilityIdentifier("approve.invite")
-                Label("Ne montre ce code qu'à ton propre appareil, devant toi.", systemImage: "exclamationmark.shield.fill")
+                Label("pairing.showCodeOnlyTo", systemImage: "exclamationmark.shield.fill")
                     .font(.footnote)
                     .foregroundStyle(.orange)
                 Label("Les deux appareils doivent être proches, sur le même Wi-Fi.", systemImage: "wifi")
@@ -302,14 +302,14 @@ private struct ScanStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label {
-                Text("Ne scanne jamais un QR code qu'on t'a envoyé.")
+                Text("pairing.neverScanQrCode")
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange)
             }
             .accessibilityIdentifier("approve.warning")
-            Text("Scanne seulement le QR code affiché par ton nouvel appareil, devant toi : « J'ai déjà OnePass sur un autre appareil ».")
+            Text("pairing.onlyScanQrCode")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -326,7 +326,7 @@ private struct ScanStep: View {
         #if DEBUG
         if let injected = UserDefaults.standard.string(forKey: "OnePassPairingQRText"), !injected.isEmpty {
             // Debug only, never in Release (ruling A3).
-            Label("QR code injecté (Debug)", systemImage: "ladybug")
+            Label("pairing.injectedQrCodeDebug", systemImage: "ladybug")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.fill.tertiary)
                 .task { onText(injected) }
@@ -345,7 +345,7 @@ private struct ScanStep: View {
         } else {
             ContentUnavailableView(
                 "Caméra indisponible", systemImage: "camera",
-                description: Text("Cet appareil ne peut pas lire de QR code."))
+                description: Text("pairing.deviceCantReadQr"))
                 .background(.fill.tertiary)
         }
     }

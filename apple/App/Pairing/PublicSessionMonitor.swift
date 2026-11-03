@@ -17,9 +17,9 @@ struct PublicSessionMonitor: View {
         let left = Int(flow.remaining.rounded(.up))
         if left >= 60 {
             let minutes = Int((Double(left) / 60).rounded(.up))
-            return String(localized: "Se termine dans \(minutes) min")
+            return String(localized: "pairing.endsInMin \(minutes)")
         }
-        return String(localized: "Se termine dans \(left) s")
+        return String(localized: "pairing.endsInS \(left)")
     }
 
     var body: some View {
@@ -35,11 +35,11 @@ struct PublicSessionMonitor: View {
                     Image(systemName: "person.badge.clock").foregroundStyle(.orange)
                 }
             } header: {
-                Text("Session invitée en cours")
+                Text("pairing.guestSessionInProgress")
             }
             Section {
                 if journal.isEmpty {
-                    Text("Rien n'a encore été ouvert.")
+                    Text("pairing.nothingOpenedYet")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(journal) { entry in
@@ -61,12 +61,12 @@ struct PublicSessionMonitor: View {
                     }
                 }
             } header: {
-                Text("Journal")
+                Text("app.log")
             } footer: {
-                Text("Le journal disparaît à la fin de la session.")
+                Text("pairing.logDisappearsWhenSession")
             }
             Section {
-                Button("Terminer la session", role: .destructive) {
+                Button("pairing.endSession", role: .destructive) {
                     Task { await flow.endPublicSession() }
                 }
                 .accessibilityIdentifier("approve.monitor.end")
@@ -85,7 +85,7 @@ struct PublicSessionMonitor: View {
     private static func label(_ action: FfiAuditAction) -> String {
         switch action {
         case .opened: String(localized: "Ouvert")
-        case .copied(let label): String(localized: "Copié : \(label)")
+        case .copied(let label): String(localized: "pairing.copied \(label)")
         }
     }
 }

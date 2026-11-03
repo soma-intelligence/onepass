@@ -31,7 +31,7 @@ struct AddOtpSheet: View {
             Group {
                 if request.accounts.count == 1, let account = request.accounts.first {
                     OtpAccountTarget(account: account, source: request.source) { title in
-                        model.showToast(String(localized: "Code ajouté à \(title)"))
+                        model.showToast(String(localized: "item.codeAddedTo \(title)"))
                         dismiss()
                     }
                 } else {
@@ -43,7 +43,7 @@ struct AddOtpSheet: View {
                     Button {
                         dismiss()
                     } label: {
-                        added.isEmpty ? Text("Annuler") : Text("Terminé")
+                        added.isEmpty ? Text("Annuler") : Text("common.done")
                     }
                     .accessibilityIdentifier("addOtp.close")
                 }
@@ -75,7 +75,7 @@ struct AddOtpSheet: View {
                                 Label(title, systemImage: "checkmark.circle.fill")
                                     .labelStyle(.iconOnly)
                                     .foregroundStyle(.green)
-                                    .accessibilityLabel(Text("Ajouté à \(title)"))
+                                    .accessibilityLabel(Text("item.addedTo \(title)"))
                             }
                         }
                     }
@@ -84,12 +84,12 @@ struct AddOtpSheet: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    if request.source == .link { Text("Ce lien vient d'une autre app ou d'un site.") }
-                    Text("\(request.accounts.count) codes dans cet export. Chacun va dans son propre élément Login.")
+                    if request.source == .link { Text("item.linkComesFromAnother") }
+                    Text("item.codesInExportEach \(request.accounts.count)")
                 }
             }
         }
-        .navigationTitle("Ajouter des codes")
+        .navigationTitle("item.addCodes")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -140,55 +140,55 @@ private struct OtpAccountTarget: View {
                     }
                 }
             } footer: {
-                if source == .link { Text("Ce lien vient d'une autre app ou d'un site.") }
+                if source == .link { Text("item.linkComesFromAnother") }
             }
             Section {
                 Button {
                     Task { await create() }
                 } label: {
-                    Label("Nouvel élément Login", systemImage: "plus.circle")
+                    Label("item.newLoginItem", systemImage: "plus.circle")
                 }
                 .disabled(busy || model.vaultForNewItem == nil)
                 .accessibilityIdentifier("addOtp.newLogin")
             } footer: {
-                Text("Titre \(account.title), dans le coffre \(vaultName).")
+                Text("item.titleInVault \(account.title) \(vaultName)")
             }
             if !suggested.isEmpty {
-                Section("Suggestions") {
+                Section("item.suggestions") {
                     ForEach(suggested, id: \.id) { row($0) }
                 }
             }
             Section {
                 if others.isEmpty {
-                    (query.isEmpty ? Text("Aucun élément Login.") : Text("Aucun résultat."))
+                    (query.isEmpty ? Text("item.noLoginItems") : Text("item.noResults"))
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(others, id: \.id) { row($0) }
                 }
             } header: {
-                query.isEmpty ? Text("Ajouter à un élément existant") : Text("Résultats")
+                query.isEmpty ? Text("item.addToExistingItem") : Text("item.results")
             }
         }
-        .searchable(text: $query, prompt: Text("Rechercher un élément Login"))
-        .navigationTitle("Ajouter un code")
+        .searchable(text: $query, prompt: Text("item.searchForLoginItem"))
+        .navigationTitle("item.addCode")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .alert(
-            Text("Remplacer le code existant ?"),
+            Text("item.replaceExistingCode"),
             isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }),
             presenting: replacing
         ) { login in
-            Button("Remplacer", role: .destructive) { Task { await attach(login) } }
+            Button("app.replace", role: .destructive) { Task { await attach(login) } }
             Button("Annuler", role: .cancel) { replacing = nil }
         } message: { login in
-            Text("\(login.title) a déjà un code à usage unique. Le nouveau le remplace, l'ancien reste dans le champ masqué « Ancien code ».")
+            Text("item.alreadyHasOneTime \(login.title)")
         }
         .sheet(isPresented: Binding(get: { passwordFor != nil }, set: { if !$0 { passwordFor = nil } })) {
             if let login = passwordFor {
                 PasswordPromptSheet(
                     title: "Confirmer ton identité",
-                    footer: "Cet élément demande une confirmation avant d'être modifié."
+                    footer: "item.itemAsksForConfirmation"
                 ) { password in
                     try await model.session.verifyMasterPassword(password)
                     confirmedIDs.insert(login.id)
@@ -232,7 +232,7 @@ private struct OtpAccountTarget: View {
             var target = try await model.session.otpTarget(
                 itemID: login.id, vaultID: login.vaultId, confirmed: confirmedIDs.contains(login.id))
             if target == .confirmFirst {
-                guard await model.session.confirmUserPresence(prompt: String(localized: "Modifier « \(login.title) »"))
+                guard await model.session.confirmUserPresence(prompt: String(localized: "item.edit \(login.title)"))
                 else {
                     passwordFor = login
                     return

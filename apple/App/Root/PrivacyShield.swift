@@ -12,7 +12,7 @@ struct PrivacyShield: View {
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("OnePass masqué"))
+        .accessibilityLabel(Text("root.onepassHidden"))
     }
 }
 

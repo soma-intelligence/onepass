@@ -50,7 +50,7 @@ struct GeneralSettings: View {
                 }
                 .disabled(shared)
                 .accessibilityIdentifier("settings.autoLock")
-                Toggle("Icônes des sites", isOn: Binding(
+                Toggle("settings.websiteIcons", isOn: Binding(
                     get: { settings.siteIconsEnabled },
                     set: { value in model.updateSettings { $0.siteIconsEnabled = value } }
                 ))
@@ -265,10 +265,10 @@ struct ProfileSection: View {
                     }
                     #endif
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Nom", text: Binding(
+                    TextField("settings.name", text: Binding(
                         get: { model.settings.displayName },
                         set: { name in model.setProfile(name: name, photo: model.settings.profilePhoto) }
-                    ), prompt: Text("Ton nom"))
+                    ), prompt: Text("settings.name2"))
                     .labelsHidden()
                     .textFieldStyle(.plain)
                     .font(.title3.weight(.semibold))
@@ -296,7 +296,7 @@ struct ProfileSection: View {
                         .accessibilityIdentifier("settings.profile.photo")
                         #endif
                         if model.settings.profilePhoto != nil {
-                            Button("Retirer", role: .destructive) {
+                            Button("common.remove", role: .destructive) {
                                 model.setProfile(name: model.settings.displayName, photo: nil)
                             }
                             .accessibilityIdentifier("settings.profile.removePhoto")

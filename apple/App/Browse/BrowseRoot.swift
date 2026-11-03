@@ -28,7 +28,7 @@ struct BrowseRoot: View {
                 GeneratorSheet(
                     onUse: { value in
                         model.session.copy(value, concealed: true)
-                        model.showToast(String(localized: "Copié · effacé dans 90 s"))
+                        model.showToast(String(localized: "app.copiedClearedIn90"))
                     },
                     purpose: .copy)
             }
@@ -70,7 +70,7 @@ struct BrowseRoot: View {
             .sheet(item: $model.totpPasswordRequest) { ref in
                 PasswordPromptSheet(
                     title: "Copier le code à usage unique",
-                    footer: "Le mot de passe maître est demandé pour copier le code à usage unique."
+                    footer: "browse.masterPasswordRequiredTo"
                 ) { password in
                     try await model.session.verifyMasterPassword(password)
                     await model.copyTotpCode(ref)
@@ -235,9 +235,9 @@ private struct DiscardConfirmation: ViewModifier {
                 model.confirmDiscard()
             }
             .accessibilityIdentifier("discard.confirm")
-            Button("Continuer la modification", role: .cancel) { model.pendingDiscard = nil }
+            Button("app.keepEditing", role: .cancel) { model.pendingDiscard = nil }
         } message: {
-            Text("Les modifications de cet élément ne sont pas enregistrées.")
+            Text("browse.changesToItemArent")
         }
     }
 

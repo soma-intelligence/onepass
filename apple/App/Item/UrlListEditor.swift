@@ -9,10 +9,10 @@ struct UrlListEditor: View {
 
     static func ruleLabel(_ rule: FfiMatchRule) -> String {
         switch rule {
-        case .domain: String(localized: "Domaine")
-        case .exactHost: String(localized: "Hôte exact")
-        case .exactUrl: String(localized: "URL exacte")
-        case .never: String(localized: "Jamais")
+        case .domain: String(localized: "item.domain")
+        case .exactHost: String(localized: "item.exactHost")
+        case .exactUrl: String(localized: "item.exactUrl")
+        case .never: String(localized: "item.never")
         }
     }
 
@@ -37,19 +37,19 @@ struct UrlListEditor: View {
             if position > 0 { CardDivider() }
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    EditorLabel(many && (url(key)?.primary ?? false) ? String(localized: "site web principal") : String(localized: "site web"))
-                    TextField("site web", text: binding(key, \.url, default: ""), prompt: Text("https://"))
+                    EditorLabel(many && (url(key)?.primary ?? false) ? String(localized: "item.primaryWebsite") : String(localized: "app.website"))
+                    TextField("app.website", text: binding(key, \.url, default: ""), prompt: Text("https://"))
                         .labelsHidden()
                         .fieldInput(.url)
                         .accessibilityIdentifier("editor.url.\(position)")
                 }
                 Menu {
-                    Picker("Correspondance", selection: binding(key, \.rule, default: .domain)) {
+                    Picker("item.matching", selection: binding(key, \.rule, default: .domain)) {
                         ForEach(Self.rules, id: \.self) { Text(Self.ruleLabel($0)).tag($0) }
                     }
                     .pickerStyle(.inline)
                     if many {
-                        Button("Site principal", systemImage: "star") {
+                        Button("item.mainWebsite", systemImage: "star") {
                             if let i = editor.urlIndex(of: key) { editor.draft.setPrimaryURL(at: i) }
                         }
                     }
@@ -60,18 +60,18 @@ struct UrlListEditor: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Correspondance pour le remplissage")
-                .accessibilityLabel(Text("Correspondance"))
+                .help("item.matchingForAutofill")
+                .accessibilityLabel(Text("item.matching"))
                 RemoveRowButton {
                     if let i = editor.urlIndex(of: key) { editor.removeURL(at: i) }
                 }
-                .accessibilityLabel(Text("Retirer ce site web"))
+                .accessibilityLabel(Text("item.removeWebsite"))
             }
             .editorRowPadding()
         }
         if !editor.urlKeys.isEmpty { CardDivider() }
         AddRowButton(
-            title: editor.urlKeys.isEmpty ? String(localized: "ajouter un site web") : String(localized: "ajouter un autre site web")) {
+            title: editor.urlKeys.isEmpty ? String(localized: "item.addWebsite") : String(localized: "item.addAnotherWebsite")) {
             editor.addURL()
         }
         .accessibilityIdentifier("editor.addURL")

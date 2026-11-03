@@ -22,7 +22,7 @@ struct AutoFillSettings: View {
             }
             #endif
             Section {
-                Button("Codes de vérification", systemImage: "number.square") {
+                Button("settings.verificationCodes", systemImage: "number.square") {
                     Task { await AutoFillStatus.openVerificationCodeSettings() }
                 }
                 .accessibilityIdentifier("autofill.codes")
@@ -66,8 +66,8 @@ struct AutoFillSettings: View {
             LabeledContent("OnePass") {
                 Group {
                     switch enabled {
-                    case true?: Label("Activé", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    case false?: Text("Désactivé")
+                    case true?: Label("app.on", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    case false?: Text("app.off")
                     case nil: ProgressView().controlSize(.small)
                     }
                 }
@@ -81,16 +81,16 @@ struct AutoFillSettings: View {
                 Button {
                     activate()
                 } label: {
-                    Label("Activer OnePass", systemImage: "key.fill")
+                    Label("app.turnOnOnepass", systemImage: "key.fill")
                 }
                 .disabled(requesting)
                 .accessibilityIdentifier("autofill.enable")
-                Button("Ouvrir les réglages du système", systemImage: "gear") {
+                Button("settings.openSystemSettings", systemImage: "gear") {
                     Task { await AutoFillStatus.openProviderSettings() }
                 }
                 .accessibilityIdentifier("autofill.systemSettings")
             } else if enabled == true {
-                Button("Gérer dans les réglages du système", systemImage: "gear") {
+                Button("settings.manageInSystemSettings", systemImage: "gear") {
                     Task { await AutoFillStatus.openProviderSettings() }
                 }
                 .accessibilityIdentifier("autofill.systemSettings")
@@ -114,8 +114,8 @@ struct AutoFillSettings: View {
 
     private func statusValue(_ enabled: Bool?) -> Text {
         switch enabled {
-        case true?: Text("Activé")
-        case false?: Text("Désactivé")
+        case true?: Text("app.on")
+        case false?: Text("app.off")
         case nil: Text(verbatim: "")
         }
     }
@@ -151,12 +151,12 @@ struct ForgetSiteChoices: View {
                 case nil:
                     ProgressView()
                 case let sites? where sites.isEmpty:
-                    Text("Aucun site retenu pour l'instant.")
+                    Text("settings.noSiteRememberedYet")
                         .foregroundStyle(.secondary)
                 case let sites?:
                     ForEach(sites, id: \.self) { site in
                         LabeledContent(site) {
-                            Button("Oublier", role: .destructive) { forgetting = site }
+                            Button("settings.forget", role: .destructive) { forgetting = site }
                                 .accessibilityIdentifier("autofill.forgetSites.forget")
                         }
                     }
@@ -171,7 +171,7 @@ struct ForgetSiteChoices: View {
             "Oublier ce site ?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
             titleVisibility: .visible, presenting: forgetting
         ) { site in
-            Button("Oublier \(site)", role: .destructive) { Task { await forget(site) } }
+            Button("settings.forget \(site)", role: .destructive) { Task { await forget(site) } }
             Button("Annuler", role: .cancel) {}
         }
     }

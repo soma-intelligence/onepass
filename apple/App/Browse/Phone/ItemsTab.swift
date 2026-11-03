@@ -125,7 +125,7 @@ struct ItemsTab: View {
                     } label: {
                         Text("À proximité")
                     } count: {
-                        Text("2 km")
+                        Text("browse.n2Km")
                     }
                 }
                 Section {
@@ -145,7 +145,7 @@ struct ItemsTab: View {
                     } label: {
                         Text("Supprimés récemment")
                     } count: {
-                        Text("\(counts.trash) · 30 jours")
+                        Text("browse.n30Days \(counts.trash)")
                     }
                 }
             }
@@ -158,10 +158,10 @@ struct ItemsTab: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             PhoneRootToolbar {
-                Section("Afficher") {
+                Section("common.show") {
                     Toggle("Catégories", systemImage: "square.grid.2x2", isOn: $showsCategories)
                     Toggle("Tags", systemImage: "tag", isOn: $showsTags)
-                    Toggle("À proximité, Archive et Supprimés", systemImage: "archivebox", isOn: $showsOthers)
+                    Toggle("browse.nearbyArchiveAndRecently", systemImage: "archivebox", isOn: $showsOthers)
                 }
             }
         }
@@ -171,7 +171,7 @@ struct ItemsTab: View {
     }
 
     private var accountName: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+        model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
     }
 
     private func row(
@@ -221,7 +221,7 @@ struct FoldHeader: View {
         .buttonStyle(.plain)
         .textCase(nil)
         .accessibilityAddTraits(.isHeader)
-        .accessibilityValue(isOpen ? Text("Déplié") : Text("Replié"))
+        .accessibilityValue(isOpen ? Text("browse.expanded") : Text("browse.collapsed"))
         .accessibilityIdentifier(id)
     }
 }

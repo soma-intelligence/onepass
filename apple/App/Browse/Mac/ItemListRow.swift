@@ -19,7 +19,7 @@ struct ItemListRow: View {
     /// A login with no username that signs in with a provider: "Se connecte avec GitHub".
     private var signInLine: String? {
         guard summary.subtitle.isEmpty, let provider = summary.signInProvider else { return nil }
-        return String(localized: "Se connecte avec \(LoginProvider.displayName(provider))")
+        return String(localized: "browse.signsInWith \(LoginProvider.displayName(provider))")
     }
 
     private var secondLine: String {

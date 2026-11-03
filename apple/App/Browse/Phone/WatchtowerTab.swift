@@ -21,8 +21,8 @@ struct WatchtowerTab: View {
                     PhoneScoreGauge(score: score)
                         .padding(.top, 4)
                     if let score {
-                        ShareLink(item: String(localized: "Mon score de sécurité OnePass : \(score) sur 100.")) {
-                            Label("Partager mon score", systemImage: "square.and.arrow.up")
+                        ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                            Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
                                 .font(.subheadline.weight(.semibold))
                                 .padding(.horizontal, 4)
                                 .frame(minHeight: 30)
@@ -33,7 +33,7 @@ struct WatchtowerTab: View {
                 }
                 .frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Watchtower repère les mots de passe à changer et les sites où tu peux renforcer la sécurité de tes comptes.")
+                    Text("browse.watchtowerFindsPasswordsTo")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -88,10 +88,10 @@ struct WatchtowerTab: View {
                 switch watchtower.phase {
                 case .checkingBreaches(let done, let total):
                     ScanProgressBar(
-                        title: Text("Vérification des fuites"), detail: Text("\(done) sur \(total)"), done: done,
+                        title: Text("browse.checkingForBreaches"), detail: Text("app.of \(done) \(total)"), done: done,
                         total: total)
                 default:
-                    ScanProgressBar(title: Text("Analyse des éléments"))
+                    ScanProgressBar(title: Text("browse.analyzingItems"))
                 }
             }
             .padding(.horizontal, 16)
@@ -107,7 +107,7 @@ struct WatchtowerTab: View {
         case .idle, .ready:
             if let report = watchtower.report {
                 Text(report.itemsAnalyzed == 1
-                     ? String(localized: "1 élément analysé") : String(localized: "\(report.itemsAnalyzed) éléments analysés"))
+                     ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)"))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
@@ -149,7 +149,7 @@ struct PhoneScoreGauge: View {
                     .font(.system(size: 58, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                Text(score.map(ScoreGauge.label) ?? String(localized: "Analyse…"))
+                Text(score.map(ScoreGauge.label) ?? String(localized: "browse.analyzing"))
                     .font(.subheadline.weight(.semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
@@ -158,7 +158,7 @@ struct PhoneScoreGauge: View {
         }
         .frame(width: 210, height: 210)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Score de sécurité"))
+        .accessibilityLabel(Text("browse.securityScore"))
         .accessibilityValue(Text(score.map { "\($0) sur 100, \(ScoreGauge.label($0))" } ?? ""))
     }
 
@@ -232,7 +232,7 @@ private struct PhoneWatchtowerCard: View {
                 .padding(16)
                 Rectangle().fill(.white.opacity(0.25)).frame(height: 0.5)
                 HStack {
-                    Text("Voir les éléments").font(.body.weight(.medium))
+                    Text("browse.showItems").font(.body.weight(.medium))
                     Spacer()
                     Image(systemName: "chevron.forward").font(.footnote.weight(.bold))
                 }
@@ -247,7 +247,7 @@ private struct PhoneWatchtowerCard: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint(Text("Voir les éléments"))
+        .accessibilityHint(Text("browse.showItems"))
         .accessibilityIdentifier("watchtower.show.\(card.id)")
     }
 
@@ -274,7 +274,7 @@ private struct ClearChecksCard: View {
     var body: some View {
         EditorCard {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Rien à signaler")
+                Text("browse.nothingToReport")
                     .font(.headline)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
@@ -293,7 +293,7 @@ private struct ClearChecksCard: View {
                         if note(card) == nil {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
-                                .accessibilityLabel(Text("Rien à signaler"))
+                                .accessibilityLabel(Text("browse.nothingToReport"))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -335,8 +335,8 @@ struct WatchtowerItemsList: View {
         .background(PhoneBackground())
         .overlay {
             if items.isEmpty {
-                EmptyState(title: String(localized: "Rien à signaler"), systemImage: "checkmark.shield",
-                    message: String(localized: "Aucun élément concerné pour l'instant."))
+                EmptyState(title: String(localized: "browse.nothingToReport"), systemImage: "checkmark.shield",
+                    message: String(localized: "browse.noItemAffectedFor"))
             }
         }
         .navigationTitle(title)

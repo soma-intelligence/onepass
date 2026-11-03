@@ -83,7 +83,7 @@ struct PageColumn: View {
                     } label: {
                         Label("Nouvel élément", systemImage: "plus")
                     }
-                    .help("Nouvel élément (⌘N)")
+                    .help("browse.newItemN")
                     .accessibilityIdentifier("items.new")
                 }
             }
@@ -116,7 +116,7 @@ struct DetailColumn: View {
                 VaultIllustration(size: 340, tint: Theme.accent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement()
-                    .accessibilityLabel(Text("Aucun élément sélectionné. Choisis un élément dans la liste."))
+                    .accessibilityLabel(Text("browse.noItemSelectedChoose"))
             }
         }
     }

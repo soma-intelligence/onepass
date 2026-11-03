@@ -49,7 +49,7 @@ enum KitSavePanel {
     /// encrypted backup of a safe exit passes its own name, type and message.
     static func chooseDestination(
         fileName: String = EmergencyKitFile.fileName, contentType: UTType = .pdf,
-        message: String = String(localized: "Choisis un emplacement hors ligne, par exemple une clé USB. iCloud Drive et les autres clouds synchronisent la Secret Key hors de ce Mac.")
+        message: String = String(localized: "onboarding.chooseOfflineLocationSuch")
     ) async -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = fileName
