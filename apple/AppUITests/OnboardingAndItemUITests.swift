@@ -154,8 +154,9 @@ final class OnboardingAndItemUITests: XCTestCase {
         assertPasswordOnlyLockScreen(app)
         unlock(app)
 
-        // The row is still there.
-        tap(tabButton(app, id: "tab.search", label: "Rechercher"))
+        // The item is still there. The empty search lists the items opened this session, and
+        // those are forgotten on lock: it is found by its name.
+        searchAtlas(app)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after unlock")
 
         // Relaunched (same isolated store, no reset): the same password-only lock screen.
@@ -165,7 +166,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         relaunched.launch()
         assertPasswordOnlyLockScreen(relaunched)
         unlock(relaunched)
-        tap(tabButton(relaunched, id: "tab.search", label: "Rechercher"))
+        searchAtlas(relaunched)
         XCTAssertTrue(row(relaunched).waitForExistence(timeout: Self.uiTimeout), "row missing after relaunch")
     }
 
@@ -314,6 +315,17 @@ final class OnboardingAndItemUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Rechercher, then "atlas" typed unless the row already shows (a query kept from before).
+    private func searchAtlas(_ app: XCUIApplication) {
+        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        tap(search)
+        if row(app).waitForExistence(timeout: 2) { return }
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 3) { search.tap() }
+        tap(field)
+        field.typeText("atlas")
+    }
 
     private func row(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["list.row.\(Self.title)"].firstMatch
