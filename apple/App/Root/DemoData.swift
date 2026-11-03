@@ -455,6 +455,22 @@ private struct DemoSeeder {
             "seats": .number(value: 5),
         ], tags: ["Travail"])
 
+        // Possible duplicates (spec 2026-11-03-duplicates): the same GitHub account saved again in
+        // Personnel, the Google account saved from Gmail, the Visa card entered again in Famille.
+        try await add(.login, "GitHub", personal, [
+            "username": .text(value: "Camille.Durand@exemple.fr"),
+            "password": .password(value: "Ancien-Forge-2024"),
+        ], urls: ["https://github.com/login"], notes: "Enregistré depuis Safari.")
+        try await add(.login, "Gmail", personal, [
+            "username": .text(value: "camille.durand.exemple@gmail.com"),
+            "password": .password(value: "Colline-Ardoise-Pluie-73"),
+        ], urls: ["https://mail.google.com"])
+        try await add(.creditCard, "Visa Banque Exemple", family, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "4111111111111111"),
+            "expiry": .monthYear(year: 2030, month: 3),
+        ], tags: ["Famille"])
+
         // One archived item, one in Supprimés récemment.
         let old = try await add(.login, "Ancien forum Exemple", personal, [
             "username": .text(value: "camille.d"),

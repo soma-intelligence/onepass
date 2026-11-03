@@ -23,6 +23,9 @@ struct HomeTab: View {
     // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
     @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
 
+    // Loaded here: a banner with nothing to show is an empty view, and an empty view never runs its task.
+    @State private var duplicates = DuplicatesLoader()
+
     private var session: VaultSession { model.session }
 
     var body: some View {
@@ -38,6 +41,8 @@ struct HomeTab: View {
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
+                        // Under the search, above Tous les éléments and Favoris (spec 2026-11-03-duplicates).
+                        if !searchActive { DuplicatesBanner(loader: duplicates) }
                         tiles(all: counts.all, favorites: counts.favorites)
                         if model.travel.suggestion != .none, !searchActive {
                             TravelSuggestionCard()
@@ -69,6 +74,7 @@ struct HomeTab: View {
                     .padding(.bottom, 24)
                 }
                 .background(PhoneBackground())
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
         // "Bonjour Camille", large, above the four tiles.

@@ -203,6 +203,36 @@
         }
       }
     },
+    "duplicates.mergedInto %@" : {
+      "comment" : "Note appended to a copy archived by a merge; the argument is the kept item's title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merged into “%@”"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Combinado en «%@»"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionné dans « %@ »"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unito in «%@»"
+          }
+        }
+      }
+    },
     "Emergency Kit OnePass" : {
       "localizations" : {
         "en" : {

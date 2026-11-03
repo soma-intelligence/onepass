@@ -13,6 +13,8 @@ enum PhoneRoute: Hashable {
     /// The Crypto screen (watch-only balances) and one coin of it.
     case crypto
     case cryptoCoin(String)
+    /// The review of possible duplicates (spec 2026-11-03-duplicates).
+    case duplicates
 
     var itemRef: ItemRef? {
         if case .item(let ref) = self { return ref }
@@ -156,6 +158,8 @@ struct PhoneTabsView: View {
                             CryptoPortfolioView()
                         case .cryptoCoin(let coin):
                             CryptoCoinView(coin: coin)
+                        case .duplicates:
+                            DuplicatesReviewView()
                         case .item(let ref):
                             ItemDetailView(ref: ref)
                                 .id(ref)
@@ -243,6 +247,12 @@ struct PhoneTabsView: View {
             tab = .home
             let coin = list.split(separator: ":").dropFirst().first.map(String.init)
             paths[.home] = [.crypto] + (coin.map { [PhoneRoute.cryptoCoin($0)] } ?? [])
+            return
+        }
+        // `-OnePassDemoList duplicates` (or `duplicates-merge`, which also opens the first merge).
+        if let list = defaults.string(forKey: "OnePassDemoList"), list.hasPrefix("duplicates") {
+            tab = .home
+            paths[.home] = [.duplicates]
             return
         }
         if let list = defaults.string(forKey: "OnePassDemoList") {
