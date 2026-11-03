@@ -10,7 +10,12 @@ pub mod driver;
 pub mod mailbox;
 pub mod policy;
 pub mod transport;
+pub mod zones;
 
 pub use driver::{RoundHooks, RoundReport, RoundStatus, SyncDriver, integrity_kind};
 pub use mailbox::{MailboxTransport, transport_error};
 pub use transport::{BatchLimits, Outgoing, Page, SendResult, Transport, TransportError};
+pub use zones::{
+    Connect, HttpConnect, ParentMailbox, ZoneError, ZoneHooks, ZoneRoundReport, ZoneSeedStore,
+    ZoneSync, ZoneWake,
+};

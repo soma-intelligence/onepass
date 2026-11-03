@@ -509,7 +509,7 @@ impl SyncStoreHandle {
         }))
     }
 
-    fn guard(&self) -> MutexGuard<'_, SyncStore> {
+    pub(crate) fn guard(&self) -> MutexGuard<'_, SyncStore> {
         self.store.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

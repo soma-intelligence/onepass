@@ -34,7 +34,7 @@ use std::time::Duration;
 use onepass_core::Id;
 use onepass_core::store::RecordKind;
 use onepass_core::sync::RemoteChange;
-use onepass_mailbox::{MailboxApi, MailboxClient, MailboxError};
+use onepass_mailbox::{ErrorCode, MailboxApi, MailboxClient, MailboxError};
 use onepass_mailbox_proto::{
     Body, COMMIT_BODY_MAX, COMMIT_OPS_MAX, CommitOp, CommitResponse, INLINE_MAX, Op,
     PAGE_MAX_RECORDS, RECORD_MAX, ServerRecord, blob_sha256,
@@ -159,6 +159,10 @@ pub fn transport_error(e: MailboxError) -> TransportError {
         MailboxError::Stale => TransportError::Stale,
         MailboxError::IncarnationChanged { .. } => TransportError::ZoneReset,
         MailboxError::Integrity(_) => TransportError::RecordUnreadable,
+        MailboxError::Server(ErrorCode::Quota) => TransportError::Quota,
+        MailboxError::Server(
+            ErrorCode::RevokedCredential | ErrorCode::UnknownCredential | ErrorCode::NotFound,
+        ) => TransportError::Revoked,
         e => TransportError::Other(e.to_string()),
     }
 }

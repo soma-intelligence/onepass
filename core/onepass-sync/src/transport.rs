@@ -73,6 +73,13 @@ pub enum TransportError {
     /// A record the server serves cannot be read (a blob that does not
     /// match its hash, a body that does not decode).
     RecordUnreadable,
+    /// The mailbox is over its quota (records or bytes): nothing was
+    /// written, the writes wait until space is freed.
+    Quota,
+    /// This credential no longer opens the mailbox: revoked, unknown, or
+    /// the mailbox is gone. For a shared zone the core decides what it
+    /// means (`zone_access_refused`); the transport never does.
+    Revoked,
     /// Anything else, for the logs.
     Other(String),
 }

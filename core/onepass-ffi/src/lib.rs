@@ -27,6 +27,7 @@ mod travel;
 mod types;
 mod wallet_watch;
 pub mod watchtower;
+mod zones;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -60,6 +61,7 @@ pub use session::{Session, SyncStoreHandle};
 pub use travel::{FfiTravelItemEntry, FfiTravelItemPlan, FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
 pub use wallet_watch::*;
+pub use zones::*;
 
 uniffi::setup_scaffolding!();
 

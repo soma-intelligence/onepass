@@ -10,6 +10,7 @@ rust-version.workspace = true
 onepass-core = { path = "../onepass-core" }
 onepass-mailbox = { path = "../onepass-mailbox" }
 onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
+zeroize.workspace = true
 
 [dev-dependencies]
 # FakeMailbox: the mailbox from memory.
@@ -18,3 +19,4 @@ onepass-mailbox = { path = "../onepass-mailbox", features = ["testing"] }
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
 time = { version = "0.3", features = ["macros"] }
 tempfile = "3"
+postcard = { version = "1", default-features = false, features = ["alloc"] }

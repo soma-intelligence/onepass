@@ -2027,8 +2027,10 @@ dependencies = [
  "onepass-core",
  "onepass-mailbox",
  "onepass-mailbox-proto",
+ "postcard",
  "tempfile",
  "time",
+ "zeroize",
 ]
 
 [[package]]

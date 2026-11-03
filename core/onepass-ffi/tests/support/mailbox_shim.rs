@@ -201,10 +201,12 @@ fn serve(
         body.len()
     );
     if !body.is_empty() {
-        out.push_str(&format!(
-            "content-type: {}\r\n",
+        let ct = if req.target.starts_with("/v1/drops/") {
+            "application/octet-stream"
+        } else {
             onepass_mailbox_proto::CONTENT_TYPE
-        ));
+        };
+        out.push_str(&format!("content-type: {ct}\r\n"));
     }
     out.push_str("\r\n");
     let tls = reader.get_mut();
@@ -348,6 +350,33 @@ fn answer(req: &Req, port: u16, clients: &Mutex<Registry>) -> Result<(u16, Vec<u
         }));
     }
     let mut registry = clients.lock().unwrap();
+    if req.target.starts_with("/v1/drops/") {
+        // Invite drops (sharing spec 13.9): unsigned, the id is the key.
+        let fake = registry.fake.as_ref().unwrap();
+        let segs: Vec<&str> = req.target.trim_start_matches('/').split('/').collect();
+        return match (req.method.as_str(), segs.as_slice()) {
+            ("PUT", ["v1", "drops", id, slot]) => {
+                let slot: u8 = slot.parse().map_err(|_| MailboxError::Server(ErrorCode::Malformed))?;
+                match fake.drop_put(hex16(id)?, slot, &req.body) {
+                    Ok(()) => Ok((204, vec![])),
+                    Err(MailboxError::Conflict) => Ok((409, vec![])),
+                    Err(e) => Err(e),
+                }
+            }
+            ("GET", ["v1", "drops", id, slot]) => {
+                let slot: u8 = slot.parse().map_err(|_| MailboxError::Server(ErrorCode::Malformed))?;
+                Ok(match fake.drop_get(hex16(id)?, slot)? {
+                    Some(b) => (200, b),
+                    None => (204, vec![]),
+                })
+            }
+            ("DELETE", ["v1", "drops", id]) => {
+                fake.drop_delete(hex16(id)?)?;
+                Ok((204, vec![]))
+            }
+            _ => Err(MailboxError::Server(ErrorCode::NoRoute)),
+        };
+    }
     if req.method == "POST" && req.target == "/v1/locate" {
         let r: LocateRequest = body(req)?;
         let fake = registry.fake.as_ref().unwrap();

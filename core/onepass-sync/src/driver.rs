@@ -13,6 +13,14 @@
 //! server's row and starts another turn. A device in the middle of its own
 //! key rotation pushes its phases in order (`push_rotation_phase`).
 //!
+//! `SyncDriver::for_zone` runs the same round on one shared zone (sharing
+//! plan 4, Task 1): the `_in` methods of the store, the meta keys
+//! `zone.<zone key hex>.cursor` and `.incarnation`, no `SyncHome` check
+//! and no sync health (the private round counts those), the share push
+//! phases (`push_share_phase`) in place of the rotation phases, and the
+//! pending order of `pending_changes_in` kept as the store gives it (the
+//! shared push order is the core's).
+//!
 //! The driver runs one round at a time on the calling thread; scheduling
 //! (debounce, wake, retry timers) belongs to the app, which reads
 //! `RoundReport::retry_after` and `rerun`.
@@ -21,7 +29,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use onepass_core::repo::Repository;
-use onepass_core::store::{RecordKind, RecordStore};
+use onepass_core::store::{RecordKind, RecordStore, Zone};
 use onepass_core::sync::{Change, RebaseReport, SyncStore, VaultSyncHealth};
 use onepass_core::synchome::{SyncBackend, SyncHomeBody};
 use onepass_core::trust::DeviceLineageState;
@@ -160,7 +168,14 @@ struct Round {
 /// See the module doc.
 pub struct SyncDriver<T: Transport> {
     transport: T,
-    home: SyncBackend,
+    zone: Zone,
+    /// The account's sync home (private zone only): a signed `SyncHome`
+    /// naming anything else stops the round.
+    home: Option<SyncBackend>,
+    cursor_key: String,
+    incarnation_key: String,
+    /// The transport error that ended the last round, if one did.
+    last_error: Option<TransportError>,
     retry_attempt: u32,
     unreadable_rounds: u32,
     conflict_rounds: u32,
@@ -183,9 +198,30 @@ impl<T: Transport> SyncDriver<T> {
     /// A driver for an account whose sync home is `home`: a signed
     /// `SyncHome` naming anything else stops the round.
     pub fn new(transport: T, home: SyncBackend) -> Self {
+        let mut d = SyncDriver::for_zone(transport, Zone::Private);
+        d.home = Some(home);
+        d
+    }
+
+    /// A driver for `zone` (a shared zone, or the private zone without a
+    /// home check).
+    pub fn for_zone(transport: T, zone: Zone) -> Self {
+        let (cursor_key, incarnation_key) = if zone.is_shared() {
+            let hex: String = zone.key().iter().map(|b| format!("{b:02x}")).collect();
+            (
+                format!("zone.{hex}.cursor"),
+                format!("zone.{hex}.incarnation"),
+            )
+        } else {
+            (CURSOR_KEY.to_string(), INCARNATION_KEY.to_string())
+        };
         SyncDriver {
             transport,
-            home,
+            zone,
+            home: None,
+            cursor_key,
+            incarnation_key,
+            last_error: None,
             retry_attempt: 0,
             unreadable_rounds: 0,
             conflict_rounds: 0,
@@ -196,6 +232,21 @@ impl<T: Transport> SyncDriver<T> {
             safe_exit_keep: false,
             keep_reissue: false,
         }
+    }
+
+    pub fn zone(&self) -> Zone {
+        self.zone
+    }
+
+    /// The store meta key of this driver's change cursor.
+    pub fn cursor_key(&self) -> &str {
+        &self.cursor_key
+    }
+
+    /// The transport error that ended the last round (`None`: the last
+    /// round reached the server, or ended for another reason).
+    pub fn last_error(&self) -> Option<&TransportError> {
+        self.last_error.as_ref()
     }
 
     pub fn transport(&self) -> &T {
@@ -232,6 +283,10 @@ impl<T: Transport> SyncDriver<T> {
     ) -> RoundReport {
         let mut round = Round::default();
         let result = self.turns(store, &mut hooks, &mut round);
+        self.last_error = match &result {
+            Err(Stop::Transport(e)) => Some(e.clone()),
+            _ => None,
+        };
         let mut retry_after = None;
         let mut rerun = false;
         let status = match result {
@@ -273,7 +328,12 @@ impl<T: Transport> SyncDriver<T> {
                     RoundStatus::Retrying
                 }
             }
-            Err(Stop::Transport(TransportError::ZoneReset | TransportError::Other(_)))
+            Err(Stop::Transport(
+                TransportError::ZoneReset
+                | TransportError::Other(_)
+                | TransportError::Quota
+                | TransportError::Revoked,
+            ))
             | Err(Stop::Core) => {
                 retry_after = Some(self.next_delay());
                 RoundStatus::Retrying
@@ -345,18 +405,28 @@ impl<T: Transport> SyncDriver<T> {
     fn bind(&mut self, store: &mut SyncStore, reset: bool) -> Result<(), Stop> {
         let incarnation = self.transport.binding()?;
         let stored = store
-            .meta(INCARNATION_KEY)?
+            .meta(&self.incarnation_key)?
             .and_then(|b| <[u8; 8]>::try_from(b.as_slice()).ok())
             .map(u64::from_be_bytes);
+        let shared = self.zone.is_shared();
         let reset = match stored {
             Some(s) => reset || s != incarnation,
-            None => reset || store.has_account()?,
+            None => reset || (!shared && store.has_account()?),
         };
         if reset {
-            store.begin_zone_reset(CURSOR_KEY)?;
+            if shared {
+                // Ruling (plan 4 Task 1): a zone whose mailbox lost its
+                // data is fetched from scratch; the core has no zoned
+                // requeue, so rows only this device held are not sent
+                // again (pending writes still are).
+                store.set_meta(&self.cursor_key, &[])?;
+                store.begin_full_fetch_in(self.zone)?;
+            } else {
+                store.begin_zone_reset(CURSOR_KEY)?;
+            }
         }
         if reset || stored != Some(incarnation) {
-            store.set_meta(INCARNATION_KEY, &incarnation.to_be_bytes())?;
+            store.set_meta(&self.incarnation_key, &incarnation.to_be_bytes())?;
         }
         Ok(())
     }
@@ -380,36 +450,37 @@ impl<T: Transport> SyncDriver<T> {
     /// is the one stored (this device's own push coming back) is not
     /// staged, except a manifest, which then is no remote change.
     fn fetch_all(&mut self, store: &mut SyncStore, round: &mut Round) -> Result<(), Stop> {
-        let mut cursor = store.meta(CURSOR_KEY)?.filter(|c| !c.is_empty());
+        let zone = self.zone;
+        let mut cursor = store.meta(&self.cursor_key)?.filter(|c| !c.is_empty());
         if cursor.is_none() {
-            store.begin_full_fetch()?;
+            store.begin_full_fetch_in(zone)?;
         }
         let mut changed = 0usize;
         let mut echoed: BTreeSet<Id> = BTreeSet::new();
         loop {
             let page = self.transport.fetch(cursor.as_deref())?;
             if page.restarted_from_scratch {
-                store.begin_full_fetch()?;
+                store.begin_full_fetch_in(zone)?;
             }
             for change in page.changes {
-                let known = store.server_meta(change.kind, change.id)?;
+                let known = store.server_meta_in(zone, change.kind, change.id)?;
                 if change.data.is_some() {
                     if change.server_meta.is_some() && known == change.server_meta {
                         if change.kind != RecordKind::Manifest {
                             continue;
                         }
                         echoed.insert(change.id);
-                        store.stage_remote(change)?;
+                        store.stage_remote_in(zone, change)?;
                         continue;
                     }
                     changed += 1;
                 } else if known.is_some() {
                     changed += 1;
                 }
-                store.stage_remote(change)?;
+                store.stage_remote_in(zone, change)?;
             }
             if let Some(next) = page.cursor {
-                store.set_meta(CURSOR_KEY, &next)?;
+                store.set_meta(&self.cursor_key, &next)?;
                 cursor = Some(next);
             }
             if !page.more {
@@ -421,8 +492,13 @@ impl<T: Transport> SyncDriver<T> {
                 return Err(TransportError::Retryable { after: None }.into());
             }
         }
-        let vaults = store.commit_remote()?;
-        let dropped = store.finish_full_fetch()?;
+        let vaults = store.commit_remote_in(zone)?;
+        // A shared zone settles a fetch from scratch in `commit_remote_in`.
+        let dropped = if zone.is_shared() {
+            false
+        } else {
+            store.finish_full_fetch()?
+        };
         if changed > 0 || vaults.iter().any(|v| !echoed.contains(v)) || dropped {
             round.changed = true;
         }
@@ -472,11 +548,17 @@ impl<T: Transport> SyncDriver<T> {
     /// The account's signed `SyncHome` (unlocked; the last one read while
     /// locked) must name this driver's home.
     fn check_home(&mut self, hooks: &mut Option<&mut dyn RoundHooks>) -> Result<(), Stop> {
+        if self.home.is_none() {
+            return Ok(());
+        }
         if let Some(h) = hooks.as_deref_mut() {
             self.last_home = h.sync_home()?;
         }
+        let Some(mine) = &self.home else {
+            return Ok(());
+        };
         match &self.last_home {
-            Some(home) if home.backend != self.home => Err(Stop::HomeMoved(home.backend.clone())),
+            Some(home) if home.backend != *mine => Err(Stop::HomeMoved(home.backend.clone())),
             _ => Ok(()),
         }
     }
@@ -492,6 +574,18 @@ impl<T: Transport> SyncDriver<T> {
         loop {
             if !self.send_pending(store)? {
                 return Ok(false);
+            }
+            if self.zone.is_shared() {
+                // A resealing pushed in this zone moves to its next phase
+                // once the writes of the current one are confirmed.
+                if phases >= MAX_PHASES_PER_ROUND {
+                    return Ok(true);
+                }
+                phases += 1;
+                if store.push_share_phase(self.zone)? == onepass_core::sync::PhaseOutcome::Retry {
+                    return Ok(true);
+                }
+                continue;
             }
             let phase = match store.trust_state()?.map(|t| t.state) {
                 Some(DeviceLineageState::Rotating { phase }) => phase,
@@ -517,8 +611,9 @@ impl<T: Transport> SyncDriver<T> {
         if lost.is_empty() {
             return Ok(true);
         }
+        let zone = self.zone;
         let pending: BTreeSet<(RecordKind, Id)> = store
-            .pending_changes()?
+            .pending_changes_in(zone)?
             .into_iter()
             .map(|c| (c.kind, c.id))
             .collect();
@@ -527,7 +622,12 @@ impl<T: Transport> SyncDriver<T> {
             if pending.contains(&(kind, id)) {
                 continue;
             }
-            if let Some(rec) = RecordStore::get(store, kind, id)? {
+            let rec = if zone.is_shared() {
+                store.get_in(zone, kind, id)?
+            } else {
+                RecordStore::get(store, kind, id)?
+            };
+            if let Some(rec) = rec {
                 outgoing.push(Outgoing {
                     change: Change {
                         kind,
@@ -541,18 +641,29 @@ impl<T: Transport> SyncDriver<T> {
         }
         let limits = self.transport.limits();
         let mut settled = true;
-        for batch in split(ordered(outgoing), limits.max_records, limits.max_bytes) {
+        for batch in split(self.order(outgoing), limits.max_records, limits.max_bytes) {
             settled &= self.send(store, &batch)?;
         }
         Ok(settled)
     }
 
+    /// The private zone's batch order (`ordered`); a shared zone keeps the
+    /// store's push order (`pending_changes_in`).
+    fn order(&self, outgoing: Vec<Outgoing>) -> Vec<Outgoing> {
+        if self.zone.is_shared() {
+            outgoing
+        } else {
+            ordered(outgoing)
+        }
+    }
+
     /// Every pending change, as one batch unless the limits force a split.
     /// `false` at the first batch not fully saved.
     fn send_pending(&mut self, store: &mut SyncStore) -> Result<bool, Stop> {
+        let zone = self.zone;
         let mut outgoing = Vec::new();
-        for change in store.pending_changes()? {
-            let server_meta = store.server_meta(change.kind, change.id)?;
+        for change in store.pending_changes_in(zone)? {
+            let server_meta = store.server_meta_in(zone, change.kind, change.id)?;
             outgoing.push(Outgoing {
                 change,
                 server_meta,
@@ -562,7 +673,7 @@ impl<T: Transport> SyncDriver<T> {
             return Ok(true);
         }
         let limits = self.transport.limits();
-        for batch in split(ordered(outgoing), limits.max_records, limits.max_bytes) {
+        for batch in split(self.order(outgoing), limits.max_records, limits.max_bytes) {
             if !self.send(store, &batch)? {
                 return Ok(false);
             }
@@ -592,7 +703,7 @@ impl<T: Transport> SyncDriver<T> {
                     if o.change.data.is_some() && server_meta.is_none() {
                         settled = false;
                     } else {
-                        store.mark_pushed(kind, id, o.change.version, server_meta)?;
+                        store.mark_pushed_in(self.zone, kind, id, o.change.version, server_meta)?;
                     }
                 }
                 SendResult::Conflict(server) => {
@@ -608,6 +719,9 @@ impl<T: Transport> SyncDriver<T> {
     /// The end of a complete round (unlocked): count it, read the health.
     /// An integrity error is a refusal; other errors keep the last health.
     fn note_round(&mut self, hooks: &mut Option<&mut dyn RoundHooks>, now: i64) {
+        if self.zone.is_shared() {
+            return;
+        }
         let Some(h) = hooks.as_deref_mut() else {
             return;
         };
