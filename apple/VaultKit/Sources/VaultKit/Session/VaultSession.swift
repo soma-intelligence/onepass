@@ -55,9 +55,12 @@ public final class VaultSession {
     /// shown on the removed-device screen. Nil when not quarantined or when the core keeps it locked
     /// with no date (`runQuarantineClock`).
     public private(set) var quarantineEraseAt: Date?
-    /// The quarantine erased this device's local copy (7 days passed, or another device of the
-    /// account marked it stolen). Shown once by the onboarding.
-    public var erasedByQuarantine = false
+    /// The quarantine erased this device's local copy, and why: 7 days after a recovery of the
+    /// account on another device or after a removal, or another device of the account marked it
+    /// stolen. Kept by the core in the emptied store until the erased screen was shown
+    /// (`dismissErasedNotice`), so an erase inside a sync commit, or one the app was killed right
+    /// after, is still told and its Keychain items still go.
+    public private(set) var erasedByQuarantine: FfiErasedNotice?
     /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
@@ -194,9 +197,18 @@ public final class VaultSession {
     public func reload() async {
         switch state {
         case .unlocked:
+            // A sync commit may have erased this device (a wipe order, or its 7 days ran out): the
+            // session closes, then the quarantine clock reads the erase.
+            if storedErasedNotice() != nil {
+                lockRevokedDevice()
+                return
+            }
             await refresh()
             refreshAutofillIdentities()
         case .noAccount, .locked: evaluateStoredAccount()
+        case .failed(let error) where error == .deviceRevoked:
+            // On the removed screen: a sync commit may have erased it, or moved its date.
+            runQuarantineClock()
         case .unlocking, .failed: break
         }
     }
@@ -382,7 +394,7 @@ public final class VaultSession {
     /// the removed-device screen with the date it erases itself (`quarantineEraseAt`, nil when the
     /// core keeps it locked with no date); a device whose 7 days ran out, or that a valid "Marquer
     /// comme volé" order names, has an empty store now: its Keychain items and settings go too
-    /// (`forgetErasedAccount`), and the session ends in `.noAccount` with `erasedByQuarantine` set.
+    /// (`finishQuarantineErase`), and the session ends in `.noAccount` with `erasedByQuarantine` set.
     /// A store with no lineage (every account the app creates today) is never touched. Returns
     /// whether it decided the state. The biometric policy is unchanged: the removed screen offers no
     /// unlock.
@@ -391,6 +403,11 @@ public final class VaultSession {
         guard FileManager.default.fileExists(atPath: dbPath) else {
             quarantineEraseAt = nil
             return false
+        }
+        // Erased already (inside a sync commit, or before a kill): finish it and tell it.
+        if let notice = storedErasedNotice() {
+            finishQuarantineErase(notice)
+            return true
         }
         let now = UInt64(max(0, environment.clock.now.timeIntervalSince1970.rounded(.down)))
         let tick: FfiQuarantineTick
@@ -409,25 +426,57 @@ public final class VaultSession {
         case .locked:
             quarantineEraseAt = nil
         case .erased:
-            quarantineEraseAt = nil
-            if let session {
-                self.session = nil
-                release(session)
-            }
-            clearMemory()
-            forgetErasedAccount()
-            settings.revokedLocked = false
-            settings.revokedErasePending = false
-            revokedEraseFailed = false
-            erasedByQuarantine = true
-            state = .noAccount
-            lastError = nil
+            finishQuarantineErase(storedErasedNotice() ?? .removed)
             return true
         }
         settings.revokedLocked = true
         state = .failed(.deviceRevoked)
         lastError = .deviceRevoked
         return true
+    }
+
+    /// After the core erased the store (`runQuarantineClock`): the session, the account's Keychain
+    /// items and settings go, and the session ends in `.noAccount` with `erasedByQuarantine` set.
+    /// Idempotent: it runs again at each re-read until the erased screen was shown.
+    private func finishQuarantineErase(_ notice: FfiErasedNotice) {
+        quarantineEraseAt = nil
+        if let session {
+            self.session = nil
+            release(session)
+        }
+        clearMemory()
+        forgetErasedAccount()
+        settings.revokedLocked = false
+        settings.revokedErasePending = false
+        revokedEraseFailed = false
+        erasedByQuarantine = notice
+        state = .noAccount
+        lastError = nil
+    }
+
+    /// The erase notice the core left in the emptied store, if any. Never creates the store.
+    private func storedErasedNotice() -> FfiErasedNotice? {
+        guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
+        do {
+            return try erasedNotice(dbPath: dbPath)
+        } catch {
+            Self.log.error("erase notice not read")
+            return nil
+        }
+    }
+
+    /// The user read the erased screen: the notice is forgotten (in the store too), then the store
+    /// is read again (the onboarding, or what a sync brought back since).
+    public func dismissErasedNotice() {
+        if FileManager.default.fileExists(atPath: dbPath) {
+            do {
+                try clearErasedNotice(dbPath: dbPath)
+            } catch {
+                Self.log.error("erase notice not cleared")
+            }
+        }
+        erasedByQuarantine = nil
+        evaluateStoredAccount()
     }
 
     /// The user erases a device found revoked (`lockRevokedDevice`): the store, the Secret Key and the

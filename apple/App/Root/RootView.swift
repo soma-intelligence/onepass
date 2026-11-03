@@ -202,7 +202,7 @@ struct RootView: View {
     #endif
 
     private enum Route: Hashable {
-        case onboarding, lock, unlocked, failed, guest, revoked
+        case onboarding, lock, unlocked, failed, guest, revoked, erased
         #if DEBUG
         /// Demo data: its account is being made and filled.
         case demoPreparing
@@ -214,6 +214,8 @@ struct RootView: View {
         let state = model.session.state
         if state == .failed(.deviceRevoked) { return .revoked }
         if case .failed = state { return .failed }
+        // The quarantine erased this device: why, once, before the onboarding.
+        if state == .noAccount, model.session.erasedByQuarantine != nil { return .erased }
         #if DEBUG
         if model.demoPreparing { return .demoPreparing }
         #endif
@@ -266,6 +268,9 @@ struct RootView: View {
             .transition(.opacity)
         case .revoked:
             RevokedDeviceView()
+                .transition(.opacity)
+        case .erased:
+            ErasedDeviceView()
                 .transition(.opacity)
         case .guest:
             if let guest = model.publicSession {

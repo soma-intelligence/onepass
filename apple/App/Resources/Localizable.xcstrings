@@ -35117,6 +35117,151 @@
         }
       }
     },
+    "root.erasedRecovered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account was recovered on another device 7 days ago. For your security, the OnePass data on this device was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu cuenta se recuperó en otro dispositivo hace 7 días. Por seguridad, los datos de OnePass de este dispositivo se han borrado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton compte a été récupéré sur un autre appareil il y a 7 jours. Par sécurité, les données OnePass de cet appareil ont été effacées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo account è stato recuperato su un altro dispositivo 7 giorni fa. Per sicurezza, i dati OnePass di questo dispositivo sono stati cancellati."
+          }
+        }
+      }
+    },
+    "root.erasedRemoved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another of your devices removed this one from your account 7 days ago. For your security, the OnePass data on this device was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro de tus dispositivos quitó este de tu cuenta hace 7 días. Por seguridad, los datos de OnePass de este dispositivo se han borrado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre de tes appareils a retiré celui-ci de ton compte il y a 7 jours. Par sécurité, les données OnePass de cet appareil ont été effacées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro dei tuoi dispositivi ha rimosso questo dal tuo account 7 giorni fa. Per sicurezza, i dati OnePass di questo dispositivo sono stati cancellati."
+          }
+        }
+      }
+    },
+    "root.erasedStolen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another of your devices marked this one as stolen. Its OnePass data was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro de tus dispositivos marcó este como robado. Sus datos de OnePass se han borrado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre de tes appareils a signalé celui-ci comme volé. Ses données OnePass ont été effacées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro dei tuoi dispositivi ha segnalato questo come rubato. I suoi dati OnePass sono stati cancellati."
+          }
+        }
+      }
+    },
+    "root.erasedTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device was erased"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se ha borrado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet appareil a été effacé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo dispositivo è stato cancellato"
+          }
+        }
+      }
+    },
+    "root.erasedWhatToDo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If this is your device, sign in again with your Emergency Kit and your master password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si es tu dispositivo, vuelve a iniciar sesión con tu Emergency Kit y tu contraseña maestra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si c'est bien ton appareil, reconnecte-toi avec ton Emergency Kit et ton mot de passe maître."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se è il tuo dispositivo, accedi di nuovo con il tuo Emergency Kit e la tua password principale."
+          }
+        }
+      }
+    },
     "root.exportEncryptedBackup" : {
       "extractionState" : "manual",
       "localizations" : {
