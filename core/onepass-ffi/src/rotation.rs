@@ -1207,3 +1207,37 @@ pub fn restore_from_kit(
     repo.persist_device_state()?;
     Session::new(repo)
 }
+
+/// Tests only: a software PQ half (ML-DSA-87 and ML-KEM-1024 in memory),
+/// for the Swift tests of the flows that need device keys. Built into the
+/// fast-KDF test framework only, never into a shipped one.
+#[cfg(feature = "dev-fast-kdf")]
+struct TestSoftwareHalf(onepass_core::device_keys::SoftwarePqHalf);
+
+#[cfg(feature = "dev-fast-kdf")]
+impl FfiPqDeviceHalf for TestSoftwareHalf {
+    fn mldsa_public(&self) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mldsa_public()?)
+    }
+
+    fn mlkem_public(&self) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mlkem_public()?)
+    }
+
+    fn mldsa_sign(&self, message: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mldsa_sign(&message)?)
+    }
+
+    fn mlkem_decapsulate(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mlkem_decapsulate(&ciphertext)?.to_vec())
+    }
+}
+
+/// Tests only (fast-KDF test framework): a fresh software PQ half.
+#[cfg(feature = "dev-fast-kdf")]
+#[uniffi::export]
+pub fn test_software_pq_half() -> Result<Arc<dyn FfiPqDeviceHalf>, OnePassError> {
+    Ok(Arc::new(TestSoftwareHalf(
+        onepass_core::device_keys::SoftwarePqHalf::generate()?,
+    )))
+}

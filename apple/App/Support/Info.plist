@@ -49,6 +49,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_onepass-pair._tcp</string>
+		<string>_onepass-contact._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification.</string>

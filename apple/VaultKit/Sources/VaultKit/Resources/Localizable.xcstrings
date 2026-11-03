@@ -6349,6 +6349,64 @@
         }
       }
     },
+    "sharing.invite.expired" : {
+      "comment" : "Remote contact invitation: the link expired before the other person answered.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The invitation expired. Send a new link."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La invitación caducó. Envía un enlace nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'invitation a expiré. Envoie un nouveau lien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'invito è scaduto. Invia un nuovo link."
+          }
+        }
+      }
+    },
+    "sharing.invite.offline" : {
+      "comment" : "Remote contact invitation: the pair's mailbox cannot be made without network.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to the internet to finish adding this contact."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a Internet para terminar de añadir este contacto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecte-toi à Internet pour terminer l'ajout de ce contact."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connettiti a Internet per completare l'aggiunta di questo contatto."
+          }
+        }
+      }
+    },
     "sync.batchTooLargeFor" : {
       "extractionState" : "manual",
       "localizations" : {

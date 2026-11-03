@@ -10,6 +10,9 @@ import Synchronization
 /// read. Closing cancels the connection.
 public final class LocalNetworkPairingTransport: PairingTransport, @unchecked Sendable {
     public static let serviceType = "_onepass-pair._tcp"
+    /// Contact verification in person (sharing spec 5.3.1): same frames, a service type of its own,
+    /// so a device pairing never finds a contact session and the reverse.
+    public static let contactServiceType = "_onepass-contact._tcp"
 
     private let connection: NWConnection
     private let queue: DispatchQueue
@@ -128,7 +131,12 @@ public struct LocalNetworkPairingListener: PairingListener {
     /// How long a new connection may take to become ready.
     static let readyTimeout: Duration = .seconds(15)
 
-    public init() {}
+    /// The Bonjour type published: device pairing by default, `contactServiceType` for contacts.
+    public let serviceType: String
+
+    public init(serviceType: String = LocalNetworkPairingTransport.serviceType) {
+        self.serviceType = serviceType
+    }
 
     public func connections(serviceName: String) -> AsyncThrowingStream<any PairingTransport, any Error> {
         let (stream, continuation) = AsyncThrowingStream<any PairingTransport, any Error>.makeStream(
@@ -141,7 +149,7 @@ public struct LocalNetworkPairingListener: PairingListener {
             continuation.finish(throwing: error)
             return stream
         }
-        listener.service = NWListener.Service(name: serviceName, type: LocalNetworkPairingTransport.serviceType)
+        listener.service = NWListener.Service(name: serviceName, type: serviceType)
         /// Connections accepted but not ready yet, cancelled when the stream ends.
         let starting = Mutex<(ended: Bool, connections: [ObjectIdentifier: NWConnection])>((false, [:]))
         listener.newConnectionHandler = { connection in
@@ -193,15 +201,18 @@ public struct LocalNetworkPairingListener: PairingListener {
 public struct LocalNetworkPairingConnector: PairingConnector {
     /// How long the service may take to appear before "Rapproche les deux appareils".
     public var timeout: Duration
+    /// The Bonjour type looked for: device pairing by default, `contactServiceType` for contacts.
+    public let serviceType: String
 
-    public init(timeout: Duration = .seconds(20)) {
+    public init(timeout: Duration = .seconds(20), serviceType: String = LocalNetworkPairingTransport.serviceType) {
         self.timeout = timeout
+        self.serviceType = serviceType
     }
 
     public func connect(serviceName: String) async throws -> any PairingTransport {
         let queue = DispatchQueue(label: "me.somalabs.onepass.pairing.connector")
         let endpoint = NWEndpoint.service(
-            name: serviceName, type: LocalNetworkPairingTransport.serviceType, domain: "local.", interface: nil)
+            name: serviceName, type: serviceType, domain: "local.", interface: nil)
         let connection = NWConnection(to: endpoint, using: LocalNetworkPairingTransport.parameters())
         return try await LocalNetworkPairingTransport.start(connection, queue: queue, timeout: timeout)
     }

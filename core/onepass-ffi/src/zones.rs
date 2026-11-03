@@ -506,3 +506,29 @@ pub fn invite_delete(
         part.into(),
     )?)
 }
+
+/// Tests only (fast-KDF test framework): the creator's zone offer for
+/// `peer_card` without a server, the pair's mailbox at a made-up home
+/// (`https://zones.test`, a random mailbox id). For the Swift tests of the
+/// verification flows; never built into a shipped framework.
+#[cfg(feature = "dev-fast-kdf")]
+#[uniffi::export]
+pub fn test_contact_zone_offer(
+    session: Arc<Session>,
+    peer_card: Vec<u8>,
+    now: i64,
+) -> Result<Vec<u8>, OnePassError> {
+    let card = SignedContactCard::decode(&peer_card).map_err(|_| invalid("contact card"))?;
+    let mailbox_id: [u8; 16] = onepass_core::crypto::random_array()?;
+    session.with(|repo| {
+        let plan = repo.prepare_contact_zone(&card, now)?;
+        Ok(repo.seal_contact_zone_offer(
+            plan,
+            ZoneHome {
+                url: "https://zones.test/functions/v1/mailbox".into(),
+                mailbox_id,
+                extra_ca_pem: None,
+            },
+        )?)
+    })
+}

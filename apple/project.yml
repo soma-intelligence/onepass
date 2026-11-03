@@ -172,7 +172,7 @@ targets:
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
         NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
-        NSBonjourServices: [_onepass-pair._tcp]
+        NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
         # Asked only on "Utiliser ma position" or when "À proximité" opens (macOS reads NSLocationUsageDescription).
         NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
         NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
