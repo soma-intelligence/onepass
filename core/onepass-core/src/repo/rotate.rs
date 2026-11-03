@@ -197,6 +197,9 @@ struct RotatedVault {
     head: SeenManifest,
 }
 
+/// Zoned rows and share states a rotation writes next to its own rows.
+type ShareWrites = (Vec<(Zone, Record, Option<u64>)>, Vec<ShareState>);
+
 impl<S: RecordStore> Repository<S> {
     /// The removals this device made that its head's roster lacks (spec
     /// 8.5 step 5): devices in `revoked` (monotone, every removal this
@@ -769,7 +772,7 @@ impl<S: RecordStore> Repository<S> {
         revoke: bool,
         at: i64,
         writes: &mut Vec<(Record, Option<u64>)>,
-    ) -> Result<(Vec<(Zone, Record, Option<u64>)>, Vec<ShareState>)> {
+    ) -> Result<ShareWrites> {
         let old = self.me();
         let new = MemberRef {
             account_id: old.account_id,

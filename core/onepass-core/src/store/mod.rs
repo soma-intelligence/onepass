@@ -646,6 +646,7 @@ pub trait RecordStore {
     /// Task 13, all or nothing. The default is `put_with_trust_cas` (a
     /// store that pushes nothing has no phases to drive) and holds the
     /// private zone only.
+    #[allow(clippy::too_many_arguments)]
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,

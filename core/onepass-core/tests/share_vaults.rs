@@ -2363,7 +2363,7 @@ fn a11_wrong_code_adopts_nothing() {
             .unwrap_or(false),
         "Carol's own envelope for her new identity is on the server"
     );
-    assert_eq!(
+    assert_ne!(
         a.dev
             .store()
             .share_state(id)
@@ -2372,9 +2372,8 @@ fn a11_wrong_code_adopts_nothing() {
             .head
             .member(carol)
             .unwrap()
-            .identity_id
-            == new.identity_id,
-        false
+            .identity_id,
+        new.identity_id
     );
 }
 
