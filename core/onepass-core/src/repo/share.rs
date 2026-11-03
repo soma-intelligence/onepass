@@ -463,12 +463,16 @@ impl<S: RecordStore> Repository<S> {
                 out.push(a.clone());
             }
         }
+        out.extend(self.pending_family_actions()?);
         Ok(out)
     }
 
     /// The transport ran `a`: drop it from its zone's queue. An action no
     /// longer queued is a no-op.
     pub fn share_action_done(&mut self, a: &ShareAction) -> Result<()> {
+        if let Zone::Family(_) = a.zone() {
+            return self.family_action_done(a);
+        }
         let Zone::Vault(id) = a.zone() else {
             return Ok(());
         };

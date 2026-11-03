@@ -232,7 +232,7 @@ impl TrustGuard<'_> {
 /// Prefixes of the device-local metadata keys the repository may read and
 /// write through `RecordStore::local_meta` and its siblings: never synced,
 /// never a key the store uses itself (chain, trust, sync state).
-pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite."];
+pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite.", "family."];
 
 /// `key` under one of `LOCAL_META_PREFIXES`, else `Validation`.
 pub fn check_local_meta_key(key: &str) -> Result<()> {

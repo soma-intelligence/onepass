@@ -72,6 +72,7 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 mod attachments;
+pub mod family;
 pub mod follow;
 pub mod kit;
 mod local;

@@ -1,14 +1,26 @@
 //! The family (sharing plan 3, Tasks 1 and 2): the signed body and its
 //! rules, then the repository operations.
 
+mod common;
+mod share_accts;
+mod share_common;
+
+use common::*;
 use onepass_core::contact::ContactLevel;
 use onepass_core::crypto::{HybridKemSecret, HybridSigningKey};
 use onepass_core::family::{
     FamilyBody, FamilyInvite, FamilyMember, FamilyReason, FamilyRole, MAX_FAMILY, SignedFamily,
     accept_first_family, accept_next_family, sign_family,
 };
-use onepass_core::share::{InviteRecord, MemberRef, Removed, ZoneHome, ZoneSeed};
-use onepass_core::{Error, Id, IntegrityError};
+use onepass_core::share::AccessTarget;
+use onepass_core::share::{
+    InviteRecord, MemberRef, Removed, Role, ZoneHome, ZoneSeed, member_key_id,
+};
+use onepass_core::store::Zone;
+use onepass_core::{Error, IntegrityError};
+use share_accts::settle;
+use share_accts::*;
+use share_common::*;
 
 struct Person {
     key: HybridSigningKey,
@@ -268,4 +280,187 @@ fn skipped_body_followed_through_history() {
         matches!(r, Err(Error::Integrity(IntegrityError::FamilyRollback))),
         "{r:?}"
     );
+}
+
+// ---- Task 2: the family on the repository ----
+
+/// Alice creates her family; its zone and its vault's zone get homes.
+fn alice_family() -> (Zones, Acct, Id, Id) {
+    let mut zs = Zones::default();
+    let mut a = Acct::new();
+    let info = a.dev.repo().create_family("Famille", NOW).unwrap();
+    let vault = info.vaults[0];
+    a.dev
+        .repo()
+        .set_zone_home(AccessTarget::Zone(Zone::Family(info.family_id)), home(7))
+        .unwrap();
+    a.dev
+        .repo()
+        .set_zone_home(AccessTarget::Zone(Zone::Vault(vault)), home(8))
+        .unwrap();
+    a.sync(&mut zs);
+    (zs, a, info.family_id, vault)
+}
+
+/// `who` joins Alice's family, held by her at `level`.
+fn join(zs: &mut Zones, a: &mut Acct, who: &mut Acct, level: ContactLevel, role: FamilyRole) {
+    pin(&mut a.dev, &mut who.dev, level);
+    pin(&mut who.dev, &mut a.dev, ContactLevel::Verified);
+    contact_zone(&mut a.dev, &mut who.dev);
+    let id = account_id(&mut who.dev);
+    a.dev.repo().invite_to_family(id, role, NOW + 1).unwrap();
+    settle(zs, &mut [&mut *a, &mut *who]);
+    let inv = who.dev.repo().family_invites().unwrap()[0].id;
+    who.dev.repo().accept_family_invite(inv, NOW + 2).unwrap();
+    settle(zs, &mut [&mut *a, &mut *who]);
+}
+
+#[test]
+fn create_family_has_family_vault() {
+    let (_zs, mut a, family_id, vault) = alice_family();
+    let info = a.dev.repo().family().unwrap().unwrap();
+    assert_eq!(info.family_id, family_id);
+    assert_eq!(info.vaults, vec![vault]);
+    assert!(info.i_am_organizer);
+    assert_eq!(info.members.len(), 1);
+    assert_eq!(shared(&mut a.dev, vault).meta.name, "Famille");
+}
+
+#[test]
+fn invite_then_accept_joins_vaults() {
+    let (mut zs, mut a, _, vault) = alice_family();
+    let mut b = Acct::new();
+    let mut c = Acct::new();
+    join(
+        &mut zs,
+        &mut a,
+        &mut b,
+        ContactLevel::Verified,
+        FamilyRole::Member,
+    );
+    join(
+        &mut zs,
+        &mut a,
+        &mut c,
+        ContactLevel::Link,
+        FamilyRole::Member,
+    );
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let bob = account_id(&mut b.dev);
+    let carol = account_id(&mut c.dev);
+    assert_eq!(role_of(&mut a.dev, vault, bob), Some(Role::Write));
+    assert_eq!(role_of(&mut a.dev, vault, carol), Some(Role::Read));
+    for x in [&mut b, &mut c] {
+        let info = x.dev.repo().family().unwrap().unwrap();
+        assert_eq!(info.members.len(), 3);
+        assert!(!info.i_am_organizer);
+        let v = shared(&mut x.dev, vault);
+        x.dev.repo().items(&v).unwrap();
+    }
+}
+
+#[test]
+fn organizer_reads_no_private_vault() {
+    let (mut zs, mut a, _, vault) = alice_family();
+    let mut b = Acct::new();
+    join(
+        &mut zs,
+        &mut a,
+        &mut b,
+        ContactLevel::Verified,
+        FamilyRole::Member,
+    );
+    let bobs: Vec<Id> = b
+        .dev
+        .repo()
+        .vaults()
+        .unwrap()
+        .iter()
+        .filter(|v| v.id != vault)
+        .map(|v| v.id)
+        .collect();
+    assert!(!bobs.is_empty());
+    let alices: Vec<Id> = a
+        .dev
+        .repo()
+        .vaults()
+        .unwrap()
+        .iter()
+        .map(|v| v.id)
+        .collect();
+    assert!(bobs.iter().all(|v| !alices.contains(v)));
+    let info = a.dev.repo().family().unwrap().unwrap();
+    assert!(info.vaults.iter().all(|v| !bobs.contains(v)));
+}
+
+#[test]
+fn remove_from_family_rotates_each_vault() {
+    let (mut zs, mut a, _, vault) = alice_family();
+    let mut b = Acct::new();
+    join(
+        &mut zs,
+        &mut a,
+        &mut b,
+        ContactLevel::Verified,
+        FamilyRole::Member,
+    );
+    let bob = account_id(&mut b.dev);
+    let bob_ref = me(&mut b.dev);
+    let g = generation(&a.dev, vault);
+    let info = a.dev.repo().remove_from_family(bob, NOW + 3).unwrap();
+    assert_eq!(info.members.len(), 1);
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    assert_eq!(generation(&a.dev, vault), g + 1);
+    assert!(
+        zs.server(Zone::Vault(vault))
+            .live(
+                onepass_core::store::RecordKind::MemberKey,
+                member_key_id(vault, g + 1, &bob_ref)
+            )
+            .is_none()
+    );
+    assert!(b.dev.repo().family().unwrap().is_none());
+}
+
+#[test]
+fn needs_second_organizer_until_two() {
+    let (mut zs, mut a, _, _) = alice_family();
+    assert!(
+        a.dev
+            .repo()
+            .family()
+            .unwrap()
+            .unwrap()
+            .needs_second_organizer
+    );
+    let mut b = Acct::new();
+    join(
+        &mut zs,
+        &mut a,
+        &mut b,
+        ContactLevel::Verified,
+        FamilyRole::Member,
+    );
+    let bob = account_id(&mut b.dev);
+    assert!(
+        a.dev
+            .repo()
+            .family()
+            .unwrap()
+            .unwrap()
+            .needs_second_organizer
+    );
+    let info = a
+        .dev
+        .repo()
+        .set_family_role(bob, FamilyRole::Organizer, NOW + 3)
+        .unwrap();
+    assert!(!info.needs_second_organizer);
+}
+
+#[test]
+fn one_family_per_account() {
+    let (_zs, mut a, _, _) = alice_family();
+    let e = a.dev.repo().create_family("Autre", NOW + 1).unwrap_err();
+    assert!(matches!(e, Error::Validation(_)), "{e:?}");
 }
