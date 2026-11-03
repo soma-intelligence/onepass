@@ -58,26 +58,26 @@ public struct FieldRow: View {
                     .font(monospaced ? .body.monospaced() : .body)
                     .textSelection(.disabled)
                     .accessibilityLabel(Text(label))
-                    .accessibilityValue(hidden ? Text("masqué", bundle: DesignKitStrings.bundle) : Text(verbatim: value))
+                    .accessibilityValue(hidden ? Text("fieldRow.hidden", bundle: DesignKitStrings.bundle) : Text(verbatim: value))
             }
             Spacer(minLength: 0)
             Menu {
-                Button(String(localized: "Copier", bundle: DesignKitStrings.bundle), systemImage: "doc.on.doc", action: onCopy)
+                Button(String(localized: "common.copy", bundle: DesignKitStrings.bundle), systemImage: "doc.on.doc", action: onCopy)
                     .accessibilityIdentifier(copyIdentifier ?? "")
                 if isSecret {
                     Button(
-                        revealed ? String(localized: "Masquer", bundle: DesignKitStrings.bundle) : String(localized: "Révéler", bundle: DesignKitStrings.bundle),
+                        revealed ? String(localized: "common.hide", bundle: DesignKitStrings.bundle) : String(localized: "fieldRow.reveal", bundle: DesignKitStrings.bundle),
                         systemImage: revealed ? "eye.slash" : "eye"
                     ) { setRevealed(!revealed) }
                 }
                 if allowsLarge {
-                    Button(String(localized: "Afficher en grand", bundle: DesignKitStrings.bundle), systemImage: "arrow.up.left.and.arrow.down.right") {
+                    Button(String(localized: "fieldRow.showLarge", bundle: DesignKitStrings.bundle), systemImage: "arrow.up.left.and.arrow.down.right") {
                         showLarge()
                     }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .accessibilityLabel(Text("Actions pour \(label)", bundle: DesignKitStrings.bundle))
+                    .accessibilityLabel(Text("fieldRow.actionsFor \(label)", bundle: DesignKitStrings.bundle))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -101,7 +101,7 @@ public struct FieldRow: View {
                     .font(.system(.largeTitle, design: .monospaced))
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.4)
-                Button(String(localized: "Fermer", bundle: DesignKitStrings.bundle)) { disclosure.large = false }.keyboardShortcut(.cancelAction)
+                Button(String(localized: "common.close", bundle: DesignKitStrings.bundle)) { disclosure.large = false }.keyboardShortcut(.cancelAction)
             }
             .padding(32)
             .presentationDetents([.medium])

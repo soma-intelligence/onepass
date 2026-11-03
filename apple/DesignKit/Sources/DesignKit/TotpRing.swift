@@ -43,8 +43,8 @@ public struct TotpRing: View {
         }
         .frame(width: 28, height: 28)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Code à usage unique", bundle: DesignKitStrings.bundle))
-        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes", bundle: DesignKitStrings.bundle))
+        .accessibilityLabel(Text("term.oneTimeCode", bundle: DesignKitStrings.bundle))
+        .accessibilityValue(Text("totpRing.secondsLeft \(max(remaining, 0))", bundle: DesignKitStrings.bundle))
     }
 }
 
@@ -96,8 +96,8 @@ public struct TotpCountdown: View {
         .padding(.vertical, 4)
         .background(Color.secondary.opacity(0.14), in: Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Code à usage unique", bundle: DesignKitStrings.bundle))
-        .accessibilityValue(Text("encore \(max(remaining, 0)) secondes", bundle: DesignKitStrings.bundle))
+        .accessibilityLabel(Text("term.oneTimeCode", bundle: DesignKitStrings.bundle))
+        .accessibilityValue(Text("totpRing.secondsLeft \(max(remaining, 0))", bundle: DesignKitStrings.bundle))
     }
 }
 

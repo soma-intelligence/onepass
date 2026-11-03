@@ -7,22 +7,22 @@ public struct IntegrityBanner: View {
     public init(kind: String) { self.kind = kind }
 
     nonisolated static var fallback: String {
-        String(localized: "Le stockage a renvoyé des données altérées.", bundle: DesignKitStrings.bundle)
+        String(localized: "integrityBanner.storageReturnedTamperedData", bundle: DesignKitStrings.bundle)
     }
 
     /// Text for a core `Integrity { kind }`.
     public nonisolated static func message(for kind: String) -> String {
         switch kind {
-        case "account_missing": String(localized: "Le compte a disparu du stockage.", bundle: DesignKitStrings.bundle)
-        case "vault_missing": String(localized: "Un coffre a disparu du stockage.", bundle: DesignKitStrings.bundle)
-        case "manifest_rollback": String(localized: "Une ancienne version des données a été rejouée.", bundle: DesignKitStrings.bundle)
-        case "manifest_missing_item": String(localized: "Un élément a été retenu ou supprimé du stockage.", bundle: DesignKitStrings.bundle)
-        case "manifest_unexpected_item": String(localized: "Un élément inconnu a été ajouté au stockage.", bundle: DesignKitStrings.bundle)
-        case "manifest_item_mismatch": String(localized: "Un élément ne correspond pas à la liste signée du coffre.", bundle: DesignKitStrings.bundle)
-        case "commitment", "aead": String(localized: "Des données chiffrées ont été modifiées.", bundle: DesignKitStrings.bundle)
-        case "signature", "params_unsigned": String(localized: "Une signature est invalide.", bundle: DesignKitStrings.bundle)
-        case "params_downgrade": String(localized: "Les paramètres de sécurité du compte ont été affaiblis.", bundle: DesignKitStrings.bundle)
-        case "wrong_kind", "wrong_context": String(localized: "Un enregistrement a été déplacé ou substitué.", bundle: DesignKitStrings.bundle)
+        case "account_missing": String(localized: "integrityBanner.accountDisappearedFromStorage", bundle: DesignKitStrings.bundle)
+        case "vault_missing": String(localized: "integrityBanner.vaultDisappearedFromStorage", bundle: DesignKitStrings.bundle)
+        case "manifest_rollback": String(localized: "integrityBanner.oldVersionOfData", bundle: DesignKitStrings.bundle)
+        case "manifest_missing_item": String(localized: "integrityBanner.itemWasHeldBack", bundle: DesignKitStrings.bundle)
+        case "manifest_unexpected_item": String(localized: "integrityBanner.unknownItemWasAdded", bundle: DesignKitStrings.bundle)
+        case "manifest_item_mismatch": String(localized: "integrityBanner.itemDoesntMatchVaults", bundle: DesignKitStrings.bundle)
+        case "commitment", "aead": String(localized: "integrityBanner.encryptedDataWasModified", bundle: DesignKitStrings.bundle)
+        case "signature", "params_unsigned": String(localized: "integrityBanner.signatureInvalid", bundle: DesignKitStrings.bundle)
+        case "params_downgrade": String(localized: "integrityBanner.accountsSecuritySettingsWere", bundle: DesignKitStrings.bundle)
+        case "wrong_kind", "wrong_context": String(localized: "integrityBanner.recordWasMovedOr", bundle: DesignKitStrings.bundle)
         default: fallback
         }
     }
@@ -33,7 +33,7 @@ public struct IntegrityBanner: View {
                 .foregroundStyle(.red)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Données refusées", bundle: DesignKitStrings.bundle).font(.headline)
+                Text("integrityBanner.dataRefused", bundle: DesignKitStrings.bundle).font(.headline)
                 Text(Self.message(for: kind)).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -41,7 +41,7 @@ public struct IntegrityBanner: View {
         .padding(12)
         .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Alerte d'intégrité", bundle: DesignKitStrings.bundle))
+        .accessibilityLabel(Text("integrityBanner.integrityAlert", bundle: DesignKitStrings.bundle))
     }
 }
 

@@ -9,11 +9,11 @@ public struct StrengthMeter: View {
     nonisolated static let thresholds: [Double] = [40, 60, 80, 100]
     nonisolated static var labels: [String] {
         [
-            String(localized: "trop court", bundle: DesignKitStrings.bundle),
-            String(localized: "faible", bundle: DesignKitStrings.bundle),
-            String(localized: "moyen", bundle: DesignKitStrings.bundle),
-            String(localized: "bon", bundle: DesignKitStrings.bundle),
-            String(localized: "excellent", bundle: DesignKitStrings.bundle),
+            String(localized: "strengthMeter.tooShort", bundle: DesignKitStrings.bundle),
+            String(localized: "strengthMeter.weak", bundle: DesignKitStrings.bundle),
+            String(localized: "strengthMeter.fair", bundle: DesignKitStrings.bundle),
+            String(localized: "strengthMeter.good", bundle: DesignKitStrings.bundle),
+            String(localized: "strengthMeter.excellent", bundle: DesignKitStrings.bundle),
         ]
     }
 
@@ -49,7 +49,7 @@ public struct StrengthMeter: View {
             Text(Self.label(forBits: bits)).font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Force du mot de passe", bundle: DesignKitStrings.bundle))
+        .accessibilityLabel(Text("strengthMeter.passwordStrength", bundle: DesignKitStrings.bundle))
         .accessibilityValue(Text(Self.label(forBits: bits)))
     }
 }
@@ -80,7 +80,7 @@ public struct StrengthBadge: View {
             .accessibilityHidden(true)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Force du mot de passe", bundle: DesignKitStrings.bundle))
+        .accessibilityLabel(Text("strengthMeter.passwordStrength", bundle: DesignKitStrings.bundle))
         .accessibilityValue(Text(word))
     }
 }
