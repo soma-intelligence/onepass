@@ -120,7 +120,7 @@ public final class BrowserBridge {
     public func approve(_ id: UInt64) async {
         guard let request = requests.first(where: { $0.id == id }) else { return }
         let prompt = String(
-            localized: "Associer \(request.browser) à OnePass", bundle: VaultKitStrings.bundle)
+            localized: "bridge.pairWithOnepass \(request.browser)", bundle: VaultKitStrings.bundle)
         let ok = await session.confirmUserPresence(prompt: prompt)
         BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (locked or Touch ID off)")
         server?.answerPairing(requestId: id, approved: ok)
@@ -210,7 +210,7 @@ public final class BrowserBridge {
     }
 
     fileprivate func confirmReprompt() async -> Bool {
-        let prompt = String(localized: "Remplir un élément protégé", bundle: VaultKitStrings.bundle)
+        let prompt = String(localized: "bridge.fillProtectedItem", bundle: VaultKitStrings.bundle)
         return await session.confirmUserPresence(prompt: prompt)
     }
 

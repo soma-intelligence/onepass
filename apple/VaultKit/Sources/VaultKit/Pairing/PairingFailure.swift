@@ -36,41 +36,41 @@ public enum PairingFailure: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .expired:
-            String(localized: "Le code a expiré. Un nouveau s'affiche.", bundle: VaultKitStrings.bundle)
+            String(localized: "pairing.codeExpiredNewOne", bundle: VaultKitStrings.bundle)
         case .codeRejected:
-            String(localized: "Appairage annulé. Rien n'a été envoyé.", bundle: VaultKitStrings.bundle)
+            String(localized: "pairing.pairingCancelledNothingWas", bundle: VaultKitStrings.bundle)
         case .notFound:
             String(
-                localized: "Rapproche les deux appareils et vérifie qu'ils sont sur le même Wi-Fi.",
+                localized: "pairing.bringBothDevicesCloser",
                 bundle: VaultKitStrings.bundle)
         case .connectionLost:
-            String(localized: "La connexion avec l'autre appareil a été coupée.", bundle: VaultKitStrings.bundle)
+            String(localized: "pairing.connectionWithOtherDevice", bundle: VaultKitStrings.bundle)
         case .cancelledByPeer:
-            String(localized: "L'autre appareil a annulé l'appairage.", bundle: VaultKitStrings.bundle)
+            String(localized: "pairing.otherDeviceCancelledPairing", bundle: VaultKitStrings.bundle)
         case .snapshotTooLarge:
-            String(localized: "Ce compte est trop gros pour être copié par appairage.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.accountTooLargeTo", bundle: VaultKitStrings.bundle)
         case .notSynced:
-            String(localized: "Synchronise d'abord cet appareil.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.syncDeviceFirst", bundle: VaultKitStrings.bundle)
         case .accountExists:
-            String(localized: "Un compte OnePass existe déjà sur cet appareil.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.onepassAccountAlreadyExists", bundle: VaultKitStrings.bundle)
         case .refused:
             String(
-                localized: "L'appairage a été refusé. Recommence depuis le début.", bundle: VaultKitStrings.bundle)
+                localized: "pairing.pairingWasRefusedStart", bundle: VaultKitStrings.bundle)
         case .peerTimedOut:
             String(
-                localized: "Le nouvel appareil n'a pas confirmé à temps. Recommence l'appairage.",
+                localized: "pairing.newDeviceDidNot",
                 bundle: VaultKitStrings.bundle)
         case .tooManyAttempts:
             String(
-                localized: "Trop d'essais. Le compte reçu a été effacé de cet appareil : recommence l'appairage.",
+                localized: "pairing.tooManyAttemptsReceived",
                 bundle: VaultKitStrings.bundle)
         case .grantExpired:
             String(
-                localized: "Le délai est dépassé. Le compte reçu a été effacé de cet appareil : recommence l'appairage.",
+                localized: "pairing.timeUpReceivedAccount",
                 bundle: VaultKitStrings.bundle)
         case .badCode:
             String(
-                localized: "Ce code n'est pas valide. Vérifie-le : 8 caractères, par exemple K7QM-4XPR.",
+                localized: "pairing.codeNotValidCheck",
                 bundle: VaultKitStrings.bundle)
         case .hostNotFound:
             String(

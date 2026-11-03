@@ -43,15 +43,15 @@ public final class RemoteUnlockCoordinator {
         public var message: String {
             switch self {
             case .staleEnrollment:
-                String(localized: "Ton mot de passe maître a changé : réactive le déverrouillage depuis ton iPhone.", bundle: VaultKitStrings.bundle)
+                String(localized: "remote.masterPasswordChangedTurn", bundle: VaultKitStrings.bundle)
             case .throttled:
-                String(localized: "Trop de demandes de déverrouillage : réessaie plus tard.", bundle: VaultKitStrings.bundle)
+                String(localized: "remote.tooManyUnlockRequests", bundle: VaultKitStrings.bundle)
             case .denied:
-                String(localized: "Déverrouillage refusé sur l'iPhone.", bundle: VaultKitStrings.bundle)
+                String(localized: "remote.unlockRefusedOnIphone", bundle: VaultKitStrings.bundle)
             case .timedOut:
-                String(localized: "L'iPhone n'a pas répondu à temps.", bundle: VaultKitStrings.bundle)
+                String(localized: "remote.iphoneDidNotAnswer", bundle: VaultKitStrings.bundle)
             case .unavailable:
-                String(localized: "iPhone injoignable : déverrouille l'app sur ce Mac.", bundle: VaultKitStrings.bundle)
+                String(localized: "remote.iphoneUnreachableUnlockApp", bundle: VaultKitStrings.bundle)
             }
         }
     }
@@ -148,7 +148,7 @@ public final class RemoteUnlockCoordinator {
     }
 
     static var enrollPrompt: String {
-        String(localized: "Activer le déverrouillage depuis ton iPhone", bundle: VaultKitStrings.bundle)
+        String(localized: "remote.turnOnUnlockingFrom", bundle: VaultKitStrings.bundle)
     }
 
     // MARK: - Launch

@@ -643,12 +643,12 @@ public final class AutoFillModel {
             country.count == 2 && country.allSatisfy(\.isLetter)
             ? locale.localizedString(forRegionCode: country.uppercased()) ?? country : country
         let parts: [(String, String, String)] = [
-            ("line1", String(localized: "Adresse", bundle: VaultKitStrings.bundle), address.line1),
-            ("line2", String(localized: "Complément d’adresse", bundle: VaultKitStrings.bundle), address.line2),
-            ("city", String(localized: "Ville", bundle: VaultKitStrings.bundle), address.city),
-            ("postal_code", String(localized: "Code postal", bundle: VaultKitStrings.bundle), address.postalCode),
-            ("region", String(localized: "Région", bundle: VaultKitStrings.bundle), address.region),
-            ("country", String(localized: "Pays", bundle: VaultKitStrings.bundle), countryName),
+            ("line1", String(localized: "autoFill.address", bundle: VaultKitStrings.bundle), address.line1),
+            ("line2", String(localized: "autoFill.addressLine2", bundle: VaultKitStrings.bundle), address.line2),
+            ("city", String(localized: "autoFill.city", bundle: VaultKitStrings.bundle), address.city),
+            ("postal_code", String(localized: "autoFill.postalCode", bundle: VaultKitStrings.bundle), address.postalCode),
+            ("region", String(localized: "autoFill.region", bundle: VaultKitStrings.bundle), address.region),
+            ("country", String(localized: "autoFill.country", bundle: VaultKitStrings.bundle), countryName),
         ]
         return parts.filter { !$0.2.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }

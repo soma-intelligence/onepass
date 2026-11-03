@@ -26,14 +26,14 @@ public enum SyncStatus: Equatable, Sendable {
     /// French text for the UI.
     public var label: String {
         switch self {
-        case .disabled: String(localized: "Synchronisation désactivée", bundle: VaultKitStrings.bundle)
-        case .idle: String(localized: "À jour", bundle: VaultKitStrings.bundle)
-        case .syncing: String(localized: "Synchronisation en cours", bundle: VaultKitStrings.bundle)
-        case .offline: String(localized: "Hors ligne", bundle: VaultKitStrings.bundle)
+        case .disabled: String(localized: "sync.syncOff", bundle: VaultKitStrings.bundle)
+        case .idle: String(localized: "sync.upToDate", bundle: VaultKitStrings.bundle)
+        case .syncing: String(localized: "sync.syncing", bundle: VaultKitStrings.bundle)
+        case .offline: String(localized: "sync.offline", bundle: VaultKitStrings.bundle)
         case .error(let message): message
-        case .refused(let kind): String(localized: "Données refusées : \(VaultError.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
-        case .accountChanged: String(localized: "Le compte iCloud a changé", bundle: VaultKitStrings.bundle)
-        case .waitingForServer: String(localized: "Synchronisation en attente d'iCloud", bundle: VaultKitStrings.bundle)
+        case .refused(let kind): String(localized: "vaultKit.dataRefused \(VaultError.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
+        case .accountChanged: String(localized: "sync.icloudAccountChanged", bundle: VaultKitStrings.bundle)
+        case .waitingForServer: String(localized: "sync.syncWaitingForIcloud", bundle: VaultKitStrings.bundle)
         case .waitingForMailbox: String(localized: "sync.status.waitingForMailbox", bundle: VaultKitStrings.bundle)
         case .homeMoved: String(localized: "sync.status.homeMoved", bundle: VaultKitStrings.bundle)
         }
@@ -63,7 +63,7 @@ public enum AccountChangeOutcome: Equatable, Sendable {
 
     /// The refusal shown to the user.
     public static var otherVaultMessage: String {
-        String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.", bundle: VaultKitStrings.bundle)
+        String(localized: "sync.icloudAccountAlreadyHolds", bundle: VaultKitStrings.bundle)
     }
 }
 

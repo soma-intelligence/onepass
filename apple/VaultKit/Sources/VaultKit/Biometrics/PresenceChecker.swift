@@ -38,7 +38,7 @@ public struct SystemPresenceChecker: PresenceChecker {
     /// fallback button leads to the master password.
     public func confirmWithBiometrics(prompt: String) async -> Bool {
         let context = LAContext()
-        context.localizedFallbackTitle = String(localized: "Utiliser le mot de passe maître", bundle: VaultKitStrings.bundle)
+        context.localizedFallbackTitle = String(localized: "biometrics.useMasterPassword", bundle: VaultKitStrings.bundle)
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else { return false }
         do {

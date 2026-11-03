@@ -41,17 +41,17 @@ public enum ArchiveError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .tampered:
-            String(localized: "Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.backupWasChangedOr", bundle: VaultKitStrings.bundle)
         case .wrongPassphrase:
-            String(localized: "Phrase de passe incorrecte.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.wrongPassphrase", bundle: VaultKitStrings.bundle)
         case .passphraseRequired:
-            String(localized: "Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.backupComesFromAnother", bundle: VaultKitStrings.bundle)
         case .otherAccount:
-            String(localized: "Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.backupBelongsToAnother", bundle: VaultKitStrings.bundle)
         case .newerVersion:
-            String(localized: "Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.backupComesFromNewer", bundle: VaultKitStrings.bundle)
         case .notAnArchive:
-            String(localized: "Ce fichier n'est pas une sauvegarde OnePass.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.fileNotOnepassBackup", bundle: VaultKitStrings.bundle)
         case .other(let error):
             error.localizedMessage
         }
@@ -101,7 +101,7 @@ public enum PlaintextExportFile {
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
-        return String(localized: "OnePass export non chiffré \(day).csv", bundle: VaultKitStrings.bundle)
+        return String(localized: "session.onepassUnencryptedExportCsv \(day)", bundle: VaultKitStrings.bundle)
     }
 
     /// Creates `url` with mode 0600 and writes `data`; refuses an existing file (or link).

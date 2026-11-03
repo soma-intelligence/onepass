@@ -200,9 +200,9 @@ extension VaultSession {
     }
 
     nonisolated static var revokePrompt: String {
-        String(localized: "Retirer cet appareil de ton compte", bundle: VaultKitStrings.bundle)
+        String(localized: "session.removeDeviceFromAccount", bundle: VaultKitStrings.bundle)
     }
     nonisolated static var approvePrompt: String {
-        String(localized: "Ajouter un appareil à ton compte", bundle: VaultKitStrings.bundle)
+        String(localized: "session.addDeviceToAccount", bundle: VaultKitStrings.bundle)
     }
 }

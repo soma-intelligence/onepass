@@ -187,9 +187,9 @@ public enum CloudKitMapping {
         case .requestRateLimited, .zoneBusy, .serviceUnavailable:
             return .retryable(after: ck.retryAfterSeconds.map { .seconds($0) })
         case .limitExceeded:
-            return .other(String(localized: "Lot trop volumineux pour iCloud", bundle: VaultKitStrings.bundle))
+            return .other(String(localized: "sync.batchTooLargeFor", bundle: VaultKitStrings.bundle))
         case .quotaExceeded:
-            return .other(String(localized: "Espace iCloud insuffisant.", bundle: VaultKitStrings.bundle))
+            return .other(String(localized: "sync.notEnoughIcloudStorage", bundle: VaultKitStrings.bundle))
         default:
             return .other(ErrorText.cloudKit(ck.code.rawValue).text)
         }

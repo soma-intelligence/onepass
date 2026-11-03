@@ -15,7 +15,7 @@ public enum EncryptedBackupFile {
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
-        return String(localized: "OnePass sauvegarde \(day).\(fileExtension)", bundle: VaultKitStrings.bundle)
+        return String(localized: "encryptedBackupFile.onepassBackup \(day) \(fileExtension)", bundle: VaultKitStrings.bundle)
     }
 
     /// Writes `data` to `<parent>/backup-<UUID>/<name>` and returns the file URL. On failure nothing is

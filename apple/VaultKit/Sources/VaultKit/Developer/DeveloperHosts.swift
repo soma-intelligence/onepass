@@ -138,9 +138,9 @@ public struct DeveloperPrompt: Identifiable, Sendable {
         case .off, .asking:
             nil
         case .sent(let names):
-            String(localized: "Envoyé à \(names.formatted(.list(type: .and)))", bundle: VaultKitStrings.bundle)
+            String(localized: "developer.sentTo \(names.formatted(.list(type: .and)))", bundle: VaultKitStrings.bundle)
         case .unavailable:
-            String(localized: "iPhone indisponible : approuve ici", bundle: VaultKitStrings.bundle)
+            String(localized: "developer.iphoneUnavailableApproveHere", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -477,7 +477,7 @@ public final class DeveloperHosts {
     /// listed, nothing for older lines (no `approved_on`).
     public func originLabel(_ approvedOn: String?) -> String {
         guard let approvedOn, !approvedOn.isEmpty else { return "" }
-        if approvedOn == "mac" { return String(localized: "Ce Mac", bundle: VaultKitStrings.bundle) }
+        if approvedOn == "mac" { return String(localized: "developer.mac", bundle: VaultKitStrings.bundle) }
         if approvedOn.hasPrefix("phone:") { return phoneName(String(approvedOn.dropFirst("phone:".count))) }
         return ""
     }
@@ -494,12 +494,12 @@ public final class DeveloperHosts {
         let text: String
         if origin == "mac" {
             guard approved else { return }
-            text = String(localized: "Approuvé sur ce Mac", bundle: VaultKitStrings.bundle)
+            text = String(localized: "developer.approvedOnMac", bundle: VaultKitStrings.bundle)
         } else if origin.hasPrefix("phone:") {
             let name = phoneName(String(origin.dropFirst("phone:".count)))
             text = approved
-                ? String(localized: "Approuvé sur \(name)", bundle: VaultKitStrings.bundle)
-                : String(localized: "Refusé sur \(name)", bundle: VaultKitStrings.bundle)
+                ? String(localized: "developer.approvedOn \(name)", bundle: VaultKitStrings.bundle)
+                : String(localized: "developer.deniedOn \(name)", bundle: VaultKitStrings.bundle)
         } else {
             return
         }
@@ -629,7 +629,7 @@ final class PromptBridge: FfiDeveloperUi, @unchecked Sendable {
         let answer = box.wait(timeout: .now() + timeout)
         close(prompt.id)
         guard let answer, answer.decision != .deny else { return false }
-        return verifyPresence(reason: String(localized: "Appairer \(client.label) avec OnePass", bundle: VaultKitStrings.bundle))
+        return verifyPresence(reason: String(localized: "developer.pairWithOnepass \(client.label)", bundle: VaultKitStrings.bundle))
     }
 
     func verifyPresence(reason: String) -> Bool {

@@ -115,11 +115,11 @@ public struct LocationIndex: Sendable {
     public static func distanceLabel(_ meters: Double) -> String {
         if meters < 1_000 {
             let rounded = max(10, Int((meters / 10).rounded()) * 10)
-            if rounded < 1_000 { return String(localized: "à \(rounded) m", bundle: VaultKitStrings.bundle) }
+            if rounded < 1_000 { return String(localized: "session.mAway \(rounded)", bundle: VaultKitStrings.bundle) }
         }
         let km = max(1, (meters / 100).rounded() / 10)
         let locale = Locale(identifier: VaultKitStrings.language)
         let text = km.formatted(.number.precision(.fractionLength(0...1)).locale(locale))
-        return String(localized: "à \(text) km", bundle: VaultKitStrings.bundle)
+        return String(localized: "session.kmAway \(text)", bundle: VaultKitStrings.bundle)
     }
 }

@@ -118,7 +118,7 @@ public final class VaultSession {
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
-    static var unlockPrompt: String { String(localized: "Déverrouiller OnePass", bundle: VaultKitStrings.bundle) }
+    static var unlockPrompt: String { String(localized: "session.unlockOnepass", bundle: VaultKitStrings.bundle) }
     nonisolated static let personalVault = FfiVaultMeta(
         name: "Personnel", icon: "person", color: "blue", travelSafe: false, mcpAccess: false)
     nonisolated private static let log = Logger(subsystem: "me.somalabs.onepass", category: "session")
@@ -372,7 +372,7 @@ public final class VaultSession {
 
     nonisolated static var recoveryRefused: String {
         String(
-            localized: "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque.",
+            localized: "session.onlyPossibleWhenAccount",
             bundle: VaultKitStrings.bundle)
     }
 
@@ -407,7 +407,7 @@ public final class VaultSession {
     /// `needsSecretKey`. Keychain error: thrown as is.
     func loadSecretKey() throws -> (accountID: String, secretKey: SecretBytes) {
         let missing = VaultError.other(String(
-            localized: "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.", bundle: VaultKitStrings.bundle))
+            localized: "session.accountsSecretKeyIsnt", bundle: VaultKitStrings.bundle))
         guard let accountID = knownAccountID() else {
             needsSecretKey = true
             throw fail(missing)
@@ -1055,7 +1055,7 @@ public final class VaultSession {
             let failure = VaultError(error)
             if case .integrity = failure {
                 throw VaultError.other(String(
-                    localized: "Ce fichier est endommagé : il ne s'ouvre pas.", bundle: VaultKitStrings.bundle))
+                    localized: "session.fileDamagedItCant", bundle: VaultKitStrings.bundle))
             }
             throw failure
         }
@@ -1670,12 +1670,12 @@ public final class VaultSession {
 
     nonisolated static var secretKeyNotStoredOnCreate: String {
         String(
-            localized: "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé.",
+            localized: "session.secretKeyCouldntStored2",
             bundle: VaultKitStrings.bundle)
     }
     nonisolated static var secretKeyNotStoredOnRestore: String {
         String(
-            localized: "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée.",
+            localized: "session.secretKeyCouldntStored",
             bundle: VaultKitStrings.bundle)
     }
 
@@ -1743,7 +1743,7 @@ public final class VaultSession {
 
     func beginPasswordCheck() throws {
         guard !passwordCheckInFlight else {
-            throw fail(.other(String(localized: "Une vérification du mot de passe est déjà en cours.", bundle: VaultKitStrings.bundle)))
+            throw fail(.other(String(localized: "session.passwordCheckAlreadyIn", bundle: VaultKitStrings.bundle)))
         }
         passwordCheckInFlight = true
     }

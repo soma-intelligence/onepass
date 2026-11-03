@@ -32,7 +32,7 @@ public enum KeychainError: Error, Equatable, Sendable {
         case .unexpectedStatus(let status):
             return ErrorText.keychain(status).text
         case .notReadBack:
-            return String(localized: "Le trousseau n'a pas conservé la donnée.", bundle: VaultKitStrings.bundle)
+            return String(localized: "keychain.keychainDidntKeepData", bundle: VaultKitStrings.bundle)
         }
     }
 }

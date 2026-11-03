@@ -54,24 +54,24 @@ public enum WatchtowerAlerts {
         switch alert.check {
         case "compromised":
             return n == 1
-                ? String(localized: "1 mot de passe apparaît dans une fuite.", bundle: VaultKitStrings.bundle)
-                : String(localized: "\(n) mots de passe apparaissent dans des fuites.", bundle: VaultKitStrings.bundle)
+                ? String(localized: "session.n1PasswordAppearsIn", bundle: VaultKitStrings.bundle)
+                : String(localized: "session.passwordsAppearInBreaches \(n)", bundle: VaultKitStrings.bundle)
         case "breached_site":
             return n == 1
-                ? String(localized: "1 site a été piraté depuis ton dernier changement de mot de passe.", bundle: VaultKitStrings.bundle)
-                : String(localized: "\(n) sites ont été piratés depuis ton dernier changement de mot de passe.", bundle: VaultKitStrings.bundle)
+                ? String(localized: "session.n1SiteWasBreached", bundle: VaultKitStrings.bundle)
+                : String(localized: "session.sitesWereBreachedSince \(n)", bundle: VaultKitStrings.bundle)
         case "provider_exposed":
             return n == 1
-                ? String(localized: "1 compte de connexion est exposé.", bundle: VaultKitStrings.bundle)
-                : String(localized: "\(n) comptes de connexion sont exposés.", bundle: VaultKitStrings.bundle)
+                ? String(localized: "session.n1SignInAccount", bundle: VaultKitStrings.bundle)
+                : String(localized: "session.signInAccountsExposed \(n)", bundle: VaultKitStrings.bundle)
         case "expired":
             return n == 1
-                ? String(localized: "1 élément a expiré.", bundle: VaultKitStrings.bundle)
-                : String(localized: "\(n) éléments ont expiré.", bundle: VaultKitStrings.bundle)
+                ? String(localized: "session.n1ItemHasExpired", bundle: VaultKitStrings.bundle)
+                : String(localized: "session.itemsHaveExpired \(n)", bundle: VaultKitStrings.bundle)
         default:
             return n == 1
-                ? String(localized: "1 élément expire bientôt.", bundle: VaultKitStrings.bundle)
-                : String(localized: "\(n) éléments expirent bientôt.", bundle: VaultKitStrings.bundle)
+                ? String(localized: "session.n1ItemExpiresSoon", bundle: VaultKitStrings.bundle)
+                : String(localized: "session.itemsExpireSoon \(n)", bundle: VaultKitStrings.bundle)
         }
     }
 }

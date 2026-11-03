@@ -185,7 +185,7 @@ public enum EmergencyKit {
         y = text(String(localized: "Emergency Kit OnePass", bundle: VaultKitStrings.bundle), font: title, top: y) - 10
         y = text(
             String(
-                localized: "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud.",
+                localized: "emergencyKit.kitPlusMasterPassword",
                 bundle: VaultKitStrings.bundle),
             font: strong, top: y) - 12
         let formatter = DateFormatter()
@@ -193,17 +193,17 @@ public enum EmergencyKit {
         formatter.dateStyle = .long
         formatter.timeStyle = .none
         formatter.timeZone = TimeZone(identifier: "UTC")
-        y = text(String(localized: "Compte : \(displayName)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
-        y = text(String(localized: "Identifiant du compte : \(accountID)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
-        y = text(String(localized: "Créé le \(formatter.string(from: createdAt))", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        y = text(String(localized: "emergencyKit.account \(displayName)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        y = text(String(localized: "emergencyKit.accountId \(accountID)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        y = text(String(localized: "emergencyKit.created \(formatter.string(from: createdAt))", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
         if let server {
             y = text(String(localized: "kit.server \(server.absoluteString)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
         }
         y -= 20
 
-        y = text(String(localized: "Ta Secret Key", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.secretKey", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         y = text(
-            String(localized: "Cette clé s'ajoute à ton mot de passe maître pour protéger ton coffre. Elle est stockée sur tes appareils et n'est jamais envoyée à personne.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.keyWorksWithMaster", bundle: VaultKitStrings.bundle),
             font: body, top: y) - 10
         y = text(secretKey, font: mono, top: y) - 16
 
@@ -217,14 +217,14 @@ public enum EmergencyKit {
         }
         let side = margin + qrSide + 20
         _ = text(
-            String(localized: "Scanne ce QR code avec OnePass sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.scanQrCodeWith", bundle: VaultKitStrings.bundle),
             font: body, top: y - 6, left: side, width: pageWidth - margin - side)
         y -= qrSide + 30
 
-        y = text(String(localized: "Ton mot de passe maître", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.masterPassword", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         y = text(
             String(
-                localized: "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo.",
+                localized: "emergencyKit.itNotPrintedOn",
                 bundle: VaultKitStrings.bundle),
             font: body, top: y) - 30
         context.setStrokeColor(CGColor(gray: 0, alpha: 1))
@@ -234,12 +234,12 @@ public enum EmergencyKit {
         context.strokePath()
         y -= 30
 
-        y = text(String(localized: "En cas de perte", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.ifLoseThem", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         let lines = [
-            String(localized: "Sans ton mot de passe maître et ta Secret Key, personne ne peut ouvrir ton coffre, pas même nous. Il n'existe aucun moyen de les récupérer.", bundle: VaultKitStrings.bundle),
-            String(localized: "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries).", bundle: VaultKitStrings.bundle),
-            String(localized: "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître.", bundle: VaultKitStrings.bundle),
-            String(localized: "Si tu penses que cette page a été vue par quelqu'un d'autre, crée un nouveau compte et déplace tes données.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.withoutMasterPasswordAnd", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.printKitAndKeep", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.toAddNewDevice", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.ifThinkSomeoneElse", bundle: VaultKitStrings.bundle),
         ]
         for line in lines {
             y = text(line, font: body, top: y) - 8
