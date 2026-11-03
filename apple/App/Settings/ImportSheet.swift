@@ -140,7 +140,6 @@ struct ImportSheet: View {
     /// Items of the export already in the chosen vault from an earlier import: updated, not added.
     /// What importing into the chosen vault would do (`previewImportInto`): nil until counted.
     @State private var into: FfiImportSummary?
-    private var updates: UInt32 { into?.updated ?? 0 }
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
@@ -491,7 +490,7 @@ struct ImportSheet: View {
                             .editorRowPadding()
                     }
                     .accessibilityIdentifier("import.done")
-                    if d.updated > 0 {
+                    if d.updated > 0 || d.archivedDuplicates > 0 {
                         Label(Self.outcomeLine(d), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -531,8 +530,8 @@ struct ImportSheet: View {
                     fileCard(format: format)
                     contentSection(p)
                     destinationSection
-                    if updates > 0 {
-                        Label(Self.outcomeLine(into ?? p), systemImage: "arrow.triangle.2.circlepath")
+                    if let into {
+                        Label(Self.outcomeLine(into), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 4)
@@ -852,7 +851,7 @@ struct ImportSheet: View {
         do {
             let written = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
             buffer.wipe()
-            model.showToast(written.updated > 0
+            model.showToast(written.updated > 0 || written.archivedDuplicates > 0
                 ? Self.outcomeLine(written)
                 : Self.doneLine(written.items, vault: vaultName))
             doneVaultName = vaultName
@@ -924,10 +923,11 @@ struct ImportSheet: View {
         }
     }
 
-    /// "4 corrigés, 3 ajoutés, 120 inchangés": what a re-import does with the items an earlier
-    /// import of the same export made (fixed in place, never duplicated).
+    /// "4 mis à jour, 3 créés, 2 convertis depuis une note, 1 doublon archivé, 120 inchangés": the
+    /// dry run of an import into the chosen vault, and its result. Items an earlier import of the
+    /// same export made are updated in place, never duplicated; nothing is deleted.
     private static func outcomeLine(_ s: FfiImportSummary) -> String {
-        String(localized: "settings.importOutcome \(Int(s.fixed)) \(Int(s.added)) \(Int(s.unchanged))")
+        String(localized: "settings.importDryRun \(Int(s.fixed)) \(Int(s.added)) \(Int(s.converted)) \(Int(s.archivedDuplicates)) \(Int(s.unchanged))")
     }
 
     private static func pdfMessage(_ e: PDFImportError) -> String {

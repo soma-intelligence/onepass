@@ -23,8 +23,17 @@
 //! added, and a value both sides hold is replaced only when the source
 //! changed it after the vault did (the replaced password goes to the
 //! history). Nothing to add is `Outcome::Unchanged`, and is not written.
+//!
+//! Nothing is ever deleted. A converted note is first copied, as it was,
+//! into an archived item (`Plan::archived`), so its old content stays
+//! reachable. Once the import is planned, exact duplicates that involve an
+//! item of this import (same type, same site, same username, same password)
+//! fold into one item through `duplicates::merge`: the others are archived
+//! intact with a note. Near duplicates are left to the duplicates review.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use time::OffsetDateTime;
 
 use super::{Format, Import, is_source_tag};
 use crate::id::Id;
@@ -36,8 +45,11 @@ use crate::watchtower::host::host_of;
 pub enum Outcome {
     /// New in the vault.
     Added,
-    /// Updates a vault item: a fallback converted, or something added.
+    /// Updates a vault item of the same type: something added or changed.
     Fixed,
+    /// A secure note (or password) an older import made instead of this
+    /// item becomes it again, same id; the note as it was is archived.
+    Converted,
     /// The vault item already holds everything: nothing is written.
     Unchanged,
 }
@@ -49,13 +61,75 @@ pub struct Planned {
     pub outcome: Outcome,
 }
 
+/// Everything an import writes: the imported items (and the vault items
+/// an exact duplicate folded into), then archived items (converted notes
+/// as they were, folded duplicates). `Planned::outcome` of an `Unchanged`
+/// item means it is not written.
+#[derive(Debug, Clone, Default)]
+pub struct Plan {
+    pub items: Vec<Planned>,
+    /// Copies of the converted notes as they were, archived.
+    pub archived_notes: Vec<Item>,
+    /// Exact duplicates folded into another item, archived.
+    pub archived_duplicates: Vec<Item>,
+}
+
+/// Counts of a plan, for the dry run shown before writing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Counts {
+    pub added: u32,
+    pub fixed: u32,
+    pub converted: u32,
+    pub unchanged: u32,
+    pub archived_duplicates: u32,
+}
+
+impl Plan {
+    pub fn counts(&self) -> Counts {
+        let n = |o: Outcome| {
+            u32::try_from(self.items.iter().filter(|p| p.outcome == o).count()).unwrap_or(u32::MAX)
+        };
+        Counts {
+            added: n(Outcome::Added),
+            fixed: n(Outcome::Fixed),
+            converted: n(Outcome::Converted),
+            unchanged: n(Outcome::Unchanged),
+            archived_duplicates: u32::try_from(self.archived_duplicates.len()).unwrap_or(u32::MAX),
+        }
+    }
+
+    /// Every item to save, in order: written imported items, then the
+    /// archived ones.
+    pub fn to_write(self) -> Vec<Item> {
+        self.items
+            .into_iter()
+            .filter(|p| p.outcome != Outcome::Unchanged)
+            .map(|p| p.item)
+            .chain(self.archived_notes)
+            .chain(self.archived_duplicates)
+            .collect()
+    }
+}
+
+/// Note appended to an archived copy of a converted note.
+const REPLACED_NOTE: &str = "Remplacé à l'import par l'identifiant du même nom.";
+/// Note appended to a folded exact duplicate (`duplicates::merge`).
+const MERGED_NOTE: &str = "Doublon exact fusionné à l'import.";
+
 const IMPORTED_SECTION: &str = "imported";
 
 /// The items of `import` ready for `vault`, matched against `existing` (the
 /// vault's items). New items get a new id; matched ones the id of their
 /// vault item. The source folder is kept as a tag and "sign in with"
 /// methods point at the final id of their account item.
-pub fn reconcile(format: Format, import: Import, vault: Id, existing: &[Item]) -> Vec<Planned> {
+pub fn reconcile(
+    format: Format,
+    import: Import,
+    vault: Id,
+    existing: &[Item],
+    now: OffsetDateTime,
+) -> Plan {
+    let mut archived_notes: Vec<Item> = Vec::new();
     let mut claimed: HashSet<Id> = HashSet::new();
     let mut ids: HashMap<Id, Id> = HashMap::new();
     let mut out: Vec<Planned> = Vec::with_capacity(import.items.len());
@@ -82,7 +156,11 @@ pub fn reconcile(format: Format, import: Import, vault: Id, existing: &[Item]) -
         let planned = match found {
             Some(e) => {
                 claimed.insert(e.id);
-                merge(e, item)
+                let p = merge(e, item);
+                if p.outcome == Outcome::Converted {
+                    archived_notes.push(archived_copy(e, vault, now));
+                }
+                p
             }
             None => {
                 item.id = Id::new();
@@ -119,7 +197,179 @@ pub fn reconcile(format: Format, import: Import, vault: Id, existing: &[Item]) -
             p.outcome = Outcome::Fixed;
         }
     }
-    out
+    let mut plan = Plan {
+        items: out,
+        archived_notes,
+        archived_duplicates: Vec::new(),
+    };
+    if matches_existing(format) {
+        fold_exact_duplicates(&mut plan, existing, now);
+    }
+    plan
+}
+
+/// The vault item `e` as it was, under a new id, archived, with a note
+/// saying what replaced it.
+fn archived_copy(e: &Item, vault: Id, now: OffsetDateTime) -> Item {
+    let mut c = e.clone();
+    c.id = Id::new();
+    c.vault_id = vault;
+    c.archived = true;
+    c.favorite = false;
+    c.tags.retain(|t| !is_source_tag(t));
+    c.events.clear();
+    c.usage.clear();
+    c.usage_forgotten.clear();
+    if !c.notes.is_empty() {
+        c.notes.push('\n');
+    }
+    c.notes.push_str(REPLACED_NOTE);
+    c.updated_at = now;
+    c
+}
+
+/// The secret of an item for exact duplicates: its password.
+fn password(item: &Item) -> Option<&str> {
+    item.sections
+        .iter()
+        .filter(|s| s.id != IMPORTED_SECTION)
+        .flat_map(|s| &s.fields)
+        .find_map(|f| match (&f.id[..], &f.value) {
+            ("password", FieldValue::Password(p)) if !p.trim().is_empty() => Some(p.as_str()),
+            _ => None,
+        })
+}
+
+/// Same type, same first site, same username, same password.
+fn exact_key(item: &Item) -> Option<(ItemType, String, String, String)> {
+    if item.archived || item.trashed_at.is_some() || item.is_profile() || item.is_pending() {
+        return None;
+    }
+    if !matches!(item.item_type, ItemType::Login | ItemType::Password) {
+        return None;
+    }
+    let host = hosts(item).into_iter().next()?;
+    Some((
+        item.item_type,
+        host,
+        username(item),
+        password(item)?.to_owned(),
+    ))
+}
+
+/// Folds the exact duplicates that involve an item this import writes.
+/// The primary is the oldest vault item of the group (else the first
+/// imported one); the others are archived by `duplicates::merge`. A group
+/// with attachments on a folded item is left to the duplicates review.
+fn fold_exact_duplicates(plan: &mut Plan, existing: &[Item], now: OffsetDateTime) {
+    // The vault as it will be: planned items over the existing ones.
+    let planned: HashMap<Id, usize> = plan
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.item.id, i))
+        .collect();
+    let mut view: Vec<(Item, Option<usize>)> = existing
+        .iter()
+        .filter(|e| !planned.contains_key(&e.id))
+        .map(|e| (e.clone(), None))
+        .collect();
+    view.extend(
+        plan.items
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.item.clone(), Some(i))),
+    );
+    let mut groups: BTreeMap<(String, String, String, String), Vec<usize>> = BTreeMap::new();
+    for (vi, (item, _)) in view.iter().enumerate() {
+        if let Some((t, h, u, p)) = exact_key(item) {
+            groups
+                .entry((format!("{t:?}"), h, u, p))
+                .or_default()
+                .push(vi);
+        }
+    }
+    let mut drop: HashSet<usize> = HashSet::new();
+    for members in groups.into_values() {
+        if members.len() < 2 {
+            continue;
+        }
+        let touched = members.iter().any(|vi| {
+            view.get(*vi)
+                .and_then(|(_, p)| *p)
+                .and_then(|i| plan.items.get(i))
+                .is_some_and(|p| p.outcome != Outcome::Unchanged)
+        });
+        if !touched {
+            continue;
+        }
+        // Primary: an item already in the vault, the oldest; else the first.
+        let is_new = |vi: &usize| {
+            view.get(*vi)
+                .and_then(|(_, p)| *p)
+                .and_then(|i| plan.items.get(i))
+                .is_some_and(|p| p.outcome == Outcome::Added)
+        };
+        let Some(primary_vi) = members
+            .iter()
+            .filter(|vi| !is_new(vi))
+            .min_by_key(|vi| view.get(**vi).map(|(it, _)| it.created_at))
+            .or_else(|| members.first())
+            .copied()
+        else {
+            continue;
+        };
+        let Some((primary, primary_plan)) = view.get(primary_vi).cloned() else {
+            continue;
+        };
+        let others: Vec<&Item> = members
+            .iter()
+            .filter(|vi| **vi != primary_vi)
+            .filter_map(|vi| view.get(*vi).map(|(it, _)| it))
+            .collect();
+        let mut m = crate::duplicates::merge(&primary, &others, MERGED_NOTE, now);
+        if !m.attachments.is_empty() {
+            continue;
+        }
+        // The primary answers for the folded items' sources from now on.
+        for a in &mut m.archived {
+            for t in a.tags.iter().filter(|t| is_source_tag(t)) {
+                if !m.merged.tags.contains(t) {
+                    m.merged.tags.push(t.clone());
+                }
+            }
+            a.tags.retain(|t| !is_source_tag(t));
+        }
+        match primary_plan.and_then(|i| plan.items.get_mut(i)) {
+            Some(p) => {
+                if p.item != m.merged {
+                    p.item = m.merged;
+                    if p.outcome == Outcome::Unchanged {
+                        p.outcome = Outcome::Fixed;
+                    }
+                }
+            }
+            None => plan.items.push(Planned {
+                item: m.merged,
+                outcome: Outcome::Fixed,
+            }),
+        }
+        for vi in members.iter().filter(|vi| **vi != primary_vi) {
+            if let Some(i) = view.get(*vi).and_then(|(_, p)| *p) {
+                drop.insert(i);
+            }
+        }
+        plan.archived_duplicates.extend(m.archived);
+    }
+    if !drop.is_empty() {
+        let items = std::mem::take(&mut plan.items);
+        plan.items = items
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !drop.contains(i))
+            .map(|(_, p)| p)
+            .collect();
+    }
 }
 
 /// Formats whose re-import updates the vault items it made: 1PUX and
@@ -151,16 +401,25 @@ fn source_kind(tag: &str) -> &str {
 /// The vault item is another item of the same source: it carries a source
 /// tag of the same kind that differs.
 fn other_source_item(e: &Item, item: &Item) -> bool {
-    match (source_tag(e), source_tag(item)) {
-        (Some(a), Some(b)) => source_kind(a) == source_kind(b) && a != b,
-        _ => false,
-    }
+    let Some(mine) = source_tag(item) else {
+        return false;
+    };
+    let kind = source_kind(mine);
+    let theirs: Vec<&String> = e
+        .tags
+        .iter()
+        .filter(|t| is_source_tag(t) && source_kind(t) == kind)
+        .collect();
+    !theirs.is_empty() && !theirs.iter().any(|t| *t == mine)
 }
 
+/// An archived item (an archived copy of a converted note among them) is
+/// never converted.
 fn compatible_type(e: &Item, item: &Item) -> bool {
     e.item_type == item.item_type
-        || e.item_type == ItemType::SecureNote
-        || (e.item_type == ItemType::Password && item.item_type == ItemType::Login)
+        || (!e.archived
+            && (e.item_type == ItemType::SecureNote
+                || (e.item_type == ItemType::Password && item.item_type == ItemType::Login)))
 }
 
 fn username(item: &Item) -> String {
@@ -295,7 +554,7 @@ fn merge(e: &Item, item: Item) -> Planned {
     if e.item_type != item.item_type {
         return Planned {
             item: convert(e, item),
-            outcome: Outcome::Fixed,
+            outcome: Outcome::Converted,
         };
     }
     let mut m = e.clone();
@@ -495,14 +754,6 @@ fn merge_methods(m: &mut Item, methods: &[LoginMethod]) {
     }
 }
 
-/// Counts of a plan: (added, fixed, unchanged).
-pub fn counts(plan: &[Planned]) -> (u32, u32, u32) {
-    let n = |o: Outcome| {
-        u32::try_from(plan.iter().filter(|p| p.outcome == o).count()).unwrap_or(u32::MAX)
-    };
-    (n(Outcome::Added), n(Outcome::Fixed), n(Outcome::Unchanged))
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write};
@@ -531,6 +782,16 @@ mod tests {
 
     fn vault() -> Id {
         Id([7; 16])
+    }
+
+    fn now() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_900_000_000).unwrap()
+    }
+
+    /// (added, fixed + converted, unchanged).
+    fn counts(plan: &Plan) -> (u32, u32, u32) {
+        let c = plan.counts();
+        (c.added, c.fixed + c.converted, c.unchanged)
     }
 
     /// The vault an older importer left: every login without a username or
@@ -586,12 +847,22 @@ mod tests {
             .collect()
     }
 
-    fn by<'a>(plan: &'a [Planned], title: &str) -> &'a Planned {
-        plan.iter().find(|p| p.item.title == title).unwrap()
+    fn by<'a>(plan: &'a Plan, title: &str) -> &'a Planned {
+        plan.items.iter().find(|p| p.item.title == title).unwrap()
     }
 
-    fn written(plan: &[Planned]) -> Vec<Item> {
-        plan.iter().map(|p| p.item.clone()).collect()
+    /// The vault after the plan is written.
+    fn written(plan: &Plan) -> Vec<Item> {
+        plan.clone()
+            .to_write()
+            .into_iter()
+            .chain(
+                plan.items
+                    .iter()
+                    .filter(|p| p.outcome == Outcome::Unchanged)
+                    .map(|p| p.item.clone()),
+            )
+            .collect()
     }
 
     fn passkeys(item: &Item) -> Vec<crate::model::PasskeyCredential> {
@@ -606,12 +877,12 @@ mod tests {
             .find(|e| e.title == "Notion")
             .unwrap()
             .clone();
-        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &existing);
-        assert_eq!(plan.len(), existing.len());
+        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &existing, now());
+        assert_eq!(plan.items.len(), existing.len());
         // Every source item found its vault item: nothing added.
         assert_eq!(counts(&plan).0, 0, "no duplicate");
         let ids: HashSet<Id> = existing.iter().map(|e| e.id).collect();
-        assert!(plan.iter().all(|p| ids.contains(&p.item.id)));
+        assert!(plan.items.iter().all(|p| ids.contains(&p.item.id)));
         for title in [
             "Notion",
             "Figma",
@@ -623,7 +894,7 @@ mod tests {
             "WebAuthn demo",
         ] {
             let p = by(&plan, title);
-            assert_eq!(p.outcome, Outcome::Fixed, "{title}");
+            assert_eq!(p.outcome, Outcome::Converted, "{title}");
             assert_eq!(p.item.item_type, ItemType::Login, "{title}");
             validate(&p.item).unwrap();
         }
@@ -642,28 +913,51 @@ mod tests {
             LoginMethod::Provider { provider: Provider::Google, account, .. } if *account == google
         )));
         assert!(notion.sections.iter().all(|s| s.id != IMPORTED_SECTION));
+        // Nothing deleted: every converted note is kept, archived, as it was.
+        assert_eq!(plan.archived_notes.len(), 8);
+        assert_eq!(plan.counts().converted, 8);
+        let copy = plan
+            .archived_notes
+            .iter()
+            .find(|n| n.title == "Notion")
+            .unwrap();
+        assert!(copy.archived);
+        assert_eq!(copy.item_type, ItemType::SecureNote);
+        assert_ne!(copy.id, notion_before.id);
+        assert_eq!(copy.field("content"), notion_before.field("content"));
+        assert!(copy.notes.contains(REPLACED_NOTE));
     }
 
     #[test]
     fn importing_again_changes_nothing() {
-        let first = reconcile(Format::OnePasswordPux, pux(), vault(), &legacy_vault());
+        let first = reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &legacy_vault(),
+            now(),
+        );
         let vault_now = written(&first);
-        let again = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now);
+        let again = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now, now());
         assert_eq!(
             counts(&again),
-            (0, 0, u32::try_from(vault_now.len()).unwrap())
+            (0, 0, u32::try_from(again.items.len()).unwrap())
         );
-        for (a, b) in again.iter().zip(&vault_now) {
-            assert_eq!(a.item.id, b.id);
-        }
+        assert!(
+            again.archived_notes.is_empty(),
+            "an archived copy is never converted again"
+        );
+        assert!(again.archived_duplicates.is_empty());
+        let ids: HashSet<Id> = vault_now.iter().map(|e| e.id).collect();
+        assert!(again.items.iter().all(|p| ids.contains(&p.item.id)));
     }
 
     #[test]
     fn fresh_vault_adds_everything() {
-        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &[]);
-        let n = u32::try_from(plan.len()).unwrap();
+        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &[], now());
+        let n = u32::try_from(plan.items.len()).unwrap();
         assert_eq!(counts(&plan), (n, 0, 0));
-        assert!(plan.iter().all(|p| p.item.vault_id == vault()));
+        assert!(plan.items.iter().all(|p| p.item.vault_id == vault()));
         let google = by(&plan, "Google").item.id;
         assert!(
             by(&plan, "Notion")
@@ -679,8 +973,20 @@ mod tests {
 
     #[test]
     fn credential_exchange_passkeys_join_their_logins() {
-        let vault_now = written(&reconcile(Format::OnePasswordPux, pux(), vault(), &[]));
-        let plan = reconcile(Format::CredentialExchange, cxf(), vault(), &vault_now);
+        let vault_now = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
+        let plan = reconcile(
+            Format::CredentialExchange,
+            cxf(),
+            vault(),
+            &vault_now,
+            now(),
+        );
         assert_eq!(counts(&plan), (0, 2, 0), "no new item for a passkey");
         let demo_id = vault_now
             .iter()
@@ -692,7 +998,7 @@ mod tests {
             .find(|e| e.title == "Dev account")
             .unwrap()
             .id;
-        let demo = plan.iter().find(|p| p.item.id == demo_id).unwrap();
+        let demo = plan.items.iter().find(|p| p.item.id == demo_id).unwrap();
         let keys = passkeys(&demo.item);
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0].rp_id, "webauthn.example.com");
@@ -702,7 +1008,7 @@ mod tests {
         assert!(demo.item.login_methods.contains(&LoginMethod::Passkey));
         validate(&demo.item).unwrap();
         // Matched by site and account, whatever the title ("GitHub" here).
-        let dev = plan.iter().find(|p| p.item.id == dev_id).unwrap();
+        let dev = plan.items.iter().find(|p| p.item.id == dev_id).unwrap();
         assert_eq!(dev.item.title, "Dev account");
         let keys = passkeys(&dev.item);
         assert_eq!(keys.len(), 1);
@@ -715,23 +1021,36 @@ mod tests {
         let vault_after: Vec<Item> = vault_now
             .iter()
             .map(|e| {
-                plan.iter()
+                plan.items
+                    .iter()
                     .find(|p| p.item.id == e.id)
                     .map_or_else(|| e.clone(), |p| p.item.clone())
             })
             .collect();
-        let again = reconcile(Format::CredentialExchange, cxf(), vault(), &vault_after);
+        let again = reconcile(
+            Format::CredentialExchange,
+            cxf(),
+            vault(),
+            &vault_after,
+            now(),
+        );
         assert_eq!(counts(&again), (0, 0, 2));
     }
 
     #[test]
     fn a_value_changed_in_the_vault_after_the_export_wins() {
-        let mut vault_now = written(&reconcile(Format::OnePasswordPux, pux(), vault(), &[]));
+        let mut vault_now = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
         let google = vault_now.iter_mut().find(|e| e.title == "Google").unwrap();
         google.field_mut("password").unwrap().value =
             FieldValue::Password(zeroize::Zeroizing::new("Changed-In-OnePass".into()));
         google.updated_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
-        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now);
+        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now, now());
         let g = by(&plan, "Google");
         assert_eq!(g.outcome, Outcome::Unchanged);
         assert!(matches!(
@@ -742,12 +1061,18 @@ mod tests {
 
     #[test]
     fn a_value_changed_in_the_source_later_wins_and_keeps_history() {
-        let mut vault_now = written(&reconcile(Format::OnePasswordPux, pux(), vault(), &[]));
+        let mut vault_now = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
         let google = vault_now.iter_mut().find(|e| e.title == "Google").unwrap();
         google.field_mut("password").unwrap().value =
             FieldValue::Password(zeroize::Zeroizing::new("Older-Password".into()));
         google.updated_at = OffsetDateTime::from_unix_timestamp(1_500_000_000).unwrap();
-        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now);
+        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now, now());
         let g = by(&plan, "Google");
         assert_eq!(g.outcome, Outcome::Fixed);
         assert!(matches!(
@@ -766,7 +1091,13 @@ mod tests {
     fn a_note_of_the_same_title_elsewhere_is_left_alone() {
         let mut note = new_item(ItemType::SecureNote, vault(), "Notion");
         note.field_mut("content").unwrap().value = FieldValue::Text("my own note".into());
-        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &[note.clone()]);
+        let plan = reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[note.clone()],
+            now(),
+        );
         let notion = by(&plan, "Notion");
         assert_eq!(notion.outcome, Outcome::Added);
         assert_ne!(notion.item.id, note.id);
@@ -774,12 +1105,81 @@ mod tests {
 
     #[test]
     fn other_formats_always_add() {
-        let existing = written(&reconcile(Format::OnePasswordPux, pux(), vault(), &[]));
+        let existing = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
         let mut csv = pux();
         for it in &mut csv.items {
             it.item.tags.retain(|t| !is_source_tag(t));
         }
-        let plan = reconcile(Format::ChromeCsv, csv, vault(), &existing);
+        let plan = reconcile(Format::ChromeCsv, csv, vault(), &existing, now());
         assert_eq!(counts(&plan).1 + counts(&plan).2, 0);
+    }
+
+    #[test]
+    fn exact_duplicates_fold_into_one_and_are_archived() {
+        // The vault already holds the Google login, saved by hand (no source
+        // tag, another title, older): same site, username and password.
+        let first = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
+        let mut mine = first.iter().find(|e| e.title == "Google").unwrap().clone();
+        mine.id = Id::new();
+        mine.title = "Gmail".into();
+        mine.tags.clear();
+        mine.created_at = OffsetDateTime::from_unix_timestamp(1_500_000_000).unwrap();
+        let plan = reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[mine.clone()],
+            now(),
+        );
+        assert_eq!(plan.counts().archived_duplicates, 1);
+        // The older vault item stays and answers for the 1Password item.
+        let kept = plan.items.iter().find(|p| p.item.id == mine.id).unwrap();
+        assert!(
+            kept.item
+                .tags
+                .iter()
+                .any(|t| t == "onepass:src:1pux:vault-perso/google-acct")
+        );
+        assert!(plan.items.iter().all(|p| p.item.title != "Google"));
+        let gone = &plan.archived_duplicates[0];
+        assert!(gone.archived);
+        assert_eq!(gone.title, "Google");
+        assert!(gone.tags.iter().all(|t| !is_source_tag(t)));
+        // Imported again: nothing new, nothing folded twice.
+        let vault_now = written(&plan);
+        let again = reconcile(Format::OnePasswordPux, pux(), vault(), &vault_now, now());
+        assert_eq!(again.counts().added, 0);
+        assert_eq!(again.counts().archived_duplicates, 0);
+    }
+
+    #[test]
+    fn near_duplicates_are_left_alone() {
+        let first = written(&reconcile(
+            Format::OnePasswordPux,
+            pux(),
+            vault(),
+            &[],
+            now(),
+        ));
+        let mut other = first.iter().find(|e| e.title == "Google").unwrap().clone();
+        other.id = Id::new();
+        other.title = "Gmail".into();
+        other.tags.clear();
+        other.field_mut("password").unwrap().value =
+            FieldValue::Password(zeroize::Zeroizing::new("Another-Password".into()));
+        let plan = reconcile(Format::OnePasswordPux, pux(), vault(), &[other], now());
+        assert_eq!(plan.counts().archived_duplicates, 0);
     }
 }

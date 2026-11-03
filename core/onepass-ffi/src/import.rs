@@ -47,16 +47,21 @@ pub struct FfiImportSummary {
     /// Blank rows, folder rows, trashed and unsupported entries.
     pub skipped: u32,
     /// Items that stand for one already in the vault from an earlier import
-    /// of the same source: `fixed + unchanged` (counted by
+    /// of the same source: `fixed + converted + unchanged` (counted by
     /// `Session::preview_import_into` and `Session::import_items`; 0 in
     /// `preview_import`). `items - updated` are new.
     pub updated: u32,
     /// Items new in the vault (all of them in `preview_import`).
     pub added: u32,
-    /// Vault items the import updates in place: a secure note an older
-    /// import left converted back into its login, or a passkey, a sign-in
-    /// method, a blank field added.
+    /// Vault items of the same type the import updates in place: a passkey,
+    /// a sign-in method, a blank field added, a value the source changed.
     pub fixed: u32,
+    /// Secure notes (or passwords) an older import made instead of a login,
+    /// turned back into it in place; the note is archived as it was.
+    pub converted: u32,
+    /// Exact duplicates (same type, site, username and password) folded
+    /// into one item by this import and archived, never deleted.
+    pub archived_duplicates: u32,
     /// Vault items that already hold everything: not written.
     pub unchanged: u32,
 }
@@ -105,7 +110,9 @@ fn summary(format: Format, import: &Import) -> FfiImportSummary {
         updated: 0,
         added: count(import.items.len()),
         fixed: 0,
+        converted: 0,
         unchanged: 0,
+        archived_duplicates: 0,
     }
 }
 
@@ -154,41 +161,63 @@ pub fn preview_import(format: String, bytes: Vec<u8>) -> Result<FfiImportSummary
     Ok(summary(format, &import))
 }
 
-/// Items added, fixed and unchanged by an import.
-type Counts = (u32, u32, u32);
+/// What an import writes: the imported items to save, then the archived
+/// ones (converted notes as they were, folded exact duplicates).
+struct Prepared {
+    items: Vec<Item>,
+    archived: Vec<Item>,
+    counts: reimport::Counts,
+}
 
 /// The items of an import ready for `vault`, matched against `existing`
 /// (the vault's items, `import::reimport`): an item an earlier import of the
 /// same source made is updated in place (same id), a fallback secure note
-/// becomes the login it stood for, and an item holding nothing new is left
-/// out. Returns the items to write and the counts (added, fixed, unchanged).
-/// Every item to write is validated before the first write, so an invalid
-/// one refuses the whole import.
+/// becomes the login it stood for (the note archived as it was), exact
+/// duplicates fold into one (the others archived), and an item holding
+/// nothing new is left out. Nothing is ever deleted. Every item to write is
+/// validated before the first write, so an invalid one refuses the whole
+/// import.
 fn prepared(
     format: Format,
     import: Import,
     vault: Id,
     existing: &[Item],
-) -> Result<(Vec<Item>, Counts), OnePassError> {
-    let plan = reimport::reconcile(format, import, vault, existing);
-    let counts = reimport::counts(&plan);
+) -> Result<Prepared, OnePassError> {
+    let now = time::OffsetDateTime::now_utc();
+    let plan = reimport::reconcile(format, import, vault, existing, now);
+    let counts = plan.counts();
+    let valid = |item: Item| Ok(crate::validate_for_save(item)?);
     let items = plan
+        .items
         .into_iter()
         .filter(|p| p.outcome != Outcome::Unchanged)
-        .map(|p| Ok(crate::validate_for_save(p.item)?))
+        .map(|p| valid(p.item))
         .collect::<Result<Vec<_>, OnePassError>>()?;
-    Ok((items, counts))
+    let archived = plan
+        .archived_notes
+        .into_iter()
+        .chain(plan.archived_duplicates)
+        .map(valid)
+        .collect::<Result<Vec<_>, OnePassError>>()?;
+    Ok(Prepared {
+        items,
+        archived,
+        counts,
+    })
 }
 
-/// Fills the outcome counts of a summary.
-fn with_counts(
-    mut s: FfiImportSummary,
-    (added, fixed, unchanged): (u32, u32, u32),
-) -> FfiImportSummary {
-    s.added = added;
-    s.fixed = fixed;
-    s.unchanged = unchanged;
-    s.updated = fixed.saturating_add(unchanged);
+/// Fills the outcome counts of a summary: the dry run shown before
+/// writing, and the result after.
+fn with_counts(mut s: FfiImportSummary, c: reimport::Counts) -> FfiImportSummary {
+    s.added = c.added;
+    s.fixed = c.fixed;
+    s.converted = c.converted;
+    s.unchanged = c.unchanged;
+    s.archived_duplicates = c.archived_duplicates;
+    s.updated = c
+        .fixed
+        .saturating_add(c.converted)
+        .saturating_add(c.unchanged);
     s
 }
 
@@ -210,7 +239,7 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             Ok(repo.items(&vault)?)
         })?;
-        let counts = prepared(format, import, vault_id, &existing)?.1;
+        let counts = prepared(format, import, vault_id, &existing)?.counts;
         Ok(with_counts(out, counts))
     }
 
@@ -233,8 +262,14 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             Ok(repo.items(&vault)?)
         })?;
-        let (items, counts) = prepared(format, import, vault_id, &existing)?;
+        let Prepared {
+            items,
+            archived,
+            counts,
+        } = prepared(format, import, vault_id, &existing)?;
         done = with_counts(done, counts);
+        let imported = items.len();
+        let items: Vec<Item> = items.into_iter().chain(archived).collect();
         // `with` runs the closure again after a conflict: it resumes after
         // the last item written instead of writing the first ones twice.
         let mut next = 0usize;
@@ -243,18 +278,24 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             while let Some(item) = items.get(next) {
                 let mut item = item.clone();
-                item.record(
-                    now,
+                let kind = if next < imported {
                     onepass_core::model::EventKind::Imported {
                         format: format.name().to_owned(),
-                    },
-                );
+                    }
+                } else {
+                    onepass_core::model::EventKind::Archived
+                };
+                item.record(now, kind);
                 repo.save_item(&vault, item)?;
                 next += 1;
             }
             Ok(())
         })?;
-        done.items = count(next).saturating_add(done.unchanged);
+        done.items = counts
+            .added
+            .saturating_add(counts.fixed)
+            .saturating_add(counts.converted)
+            .saturating_add(counts.unchanged);
         Ok(done)
     }
 }
@@ -339,8 +380,20 @@ mod tests {
                 .collect(),
             ..Import::default()
         };
-        let (items, counts) = prepared(Format::OnePasswordPux, import, vault, &existing).unwrap();
-        assert_eq!(counts, (1, 1, 0), "one source item claims one copy");
+        let Prepared {
+            items,
+            archived,
+            counts,
+        } = prepared(Format::OnePasswordPux, import, vault, &existing).unwrap();
+        assert_eq!(
+            (counts.added, counts.converted, counts.unchanged),
+            (1, 1, 0),
+            "one source item claims one copy"
+        );
+        // The converted note is kept, archived, under a new id.
+        assert_eq!(archived.len(), 1);
+        assert!(archived[0].archived);
+        assert_ne!(archived[0].id, old.id);
         assert_eq!(items[0].id, old.id);
         assert_eq!(items[0].item_type, ItemType::Login);
         assert_eq!(
@@ -357,8 +410,9 @@ mod tests {
         assert_eq!(
             prepared(Format::ChromeCsv, csv, vault, &existing)
                 .unwrap()
-                .1,
-            (1, 0, 0)
+                .counts
+                .added,
+            1
         );
     }
 

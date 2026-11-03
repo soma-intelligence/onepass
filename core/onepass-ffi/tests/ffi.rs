@@ -2057,6 +2057,88 @@ fn reimport_1pux_updates_instead_of_duplicating() {
 }
 
 #[test]
+fn reimport_1pux_turns_an_older_broken_note_back_into_its_login() {
+    let fx = fixture();
+    // What the importer before 2026-10-28 left for "Notes app": a secure
+    // note with the site and the source vault as a tag, no source id.
+    let mut note = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::SecureNote,
+            "Notes app".into(),
+        )
+        .unwrap();
+    for f in note.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "content" {
+            f.value = FfiFieldValue::Text {
+                value: "{\"ssoLogin\":\"apple\"}".into(),
+            };
+        }
+    }
+    note.urls = vec![FfiUrl {
+        label: String::new(),
+        url: "https://notes.example.com".into(),
+        rule: FfiMatchRule::Domain,
+        primary: true,
+    }];
+    note.tags = vec!["Personal".into(), "mine".into()];
+    note.favorite = true;
+    let note = fx.session.save_item(note).unwrap();
+
+    let bytes = pux(PUX_DATA);
+    let preview = fx
+        .session
+        .preview_import_into("1pux".into(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(
+        (
+            preview.added,
+            preview.converted,
+            preview.fixed,
+            preview.archived_duplicates
+        ),
+        (1, 1, 0, 0),
+        "dry run"
+    );
+    let done = fx
+        .session
+        .import_items("1pux".into(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!((done.added, done.converted), (1, 1));
+
+    let all = fx.session.item_summaries().unwrap();
+    let live: Vec<_> = all.iter().filter(|s| !s.archived).collect();
+    assert_eq!(live.len(), 2, "the login and its account, no duplicate");
+    let app = fx
+        .session
+        .item(fx.vault_id.clone(), note.id.clone())
+        .unwrap();
+    assert_eq!(app.item_type, FfiItemType::Login, "same id, now a login");
+    assert!(app.favorite);
+    assert!(app.tags.contains(&"mine".to_owned()));
+    assert!(app.tags.iter().all(|t| !t.starts_with("onepass:")));
+    assert!(
+        matches!(&app.login_methods[..], [FfiLoginMethod::Provider { provider, .. }] if provider == "apple")
+    );
+    // The old note is kept, archived, never deleted.
+    let archived: Vec<_> = all.iter().filter(|s| s.archived).collect();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].item_type, FfiItemType::SecureNote);
+    assert_ne!(archived[0].id, note.id);
+
+    let again = fx
+        .session
+        .import_items("1pux".into(), bytes, fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(
+        (again.added, again.converted, again.fixed, again.unchanged),
+        (0, 0, 0, 2)
+    );
+    assert_eq!(fx.session.item_summaries().unwrap().len(), all.len());
+}
+
+#[test]
 fn import_into_unknown_vault_writes_nothing() {
     let fx = fixture();
     let csv = b"name,url,username,password\nA,https://a.example.com,u,p\n".to_vec();

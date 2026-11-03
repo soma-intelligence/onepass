@@ -36103,31 +36103,31 @@
         }
       }
     },
-    "settings.importOutcome %lld %lld %lld" : {
+    "settings.importDryRun %lld %lld %lld %lld %lld" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld fixed, %2$lld added, %3$lld unchanged"
+            "value" : "%1$lld updated, %2$lld created, %3$lld converted from a note, %4$lld exact duplicates archived, %5$lld unchanged"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld corregidos, %2$lld añadidos, %3$lld sin cambios"
+            "value" : "%1$lld actualizados, %2$lld creados, %3$lld convertidos desde una nota, %4$lld duplicados exactos archivados, %5$lld sin cambios"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld corrigé(s), %2$lld ajouté(s), %3$lld inchangé(s)"
+            "value" : "%1$lld mis à jour, %2$lld créés, %3$lld convertis depuis une note, %4$lld doublons exacts archivés, %5$lld inchangés"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld corretti, %2$lld aggiunti, %3$lld invariati"
+            "value" : "%1$lld aggiornati, %2$lld creati, %3$lld convertiti da una nota, %4$lld duplicati esatti archiviati, %5$lld invariati"
           }
         }
       }
