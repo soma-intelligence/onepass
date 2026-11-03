@@ -32,6 +32,15 @@ pub struct RekeyOutcome {
     pub seen_items: u32,
 }
 
+/// What a lost membership change became (`rebase_membership`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebaseOutcome {
+    /// Applied again over the winning body: the head is now at `seq`.
+    Reapplied { seq: u64 },
+    /// Nothing of it was left to apply.
+    Dropped,
+}
+
 /// What `zone_access_refused` concluded (spec 13.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessRefusal {
@@ -73,6 +82,13 @@ impl<S: RecordStore> Repository<S> {
         self.rekey_vault(vault_id, MembershipReason::Remove, Some(account_id), now)
     }
 
+    /// A rotation with no removal, for the integration tests.
+    #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
+    #[doc(hidden)]
+    pub fn test_rekey_vault(&mut self, vault_id: Id, now: i64) -> Result<RekeyOutcome> {
+        self.rekey_vault(vault_id, MembershipReason::Rekey, None, now)
+    }
+
     /// A new key generation for shared vault `vault_id` (spec 9.2 steps 1
     /// to 5): the next body (reason `reason`, `remove` taken out and listed
     /// in `removed`), a fresh key, an envelope for each remaining member
@@ -87,6 +103,23 @@ impl<S: RecordStore> Repository<S> {
         reason: MembershipReason,
         remove: Option<Id>,
         now: i64,
+    ) -> Result<RekeyOutcome> {
+        self.rekey_vault_with(vault_id, reason, remove, now, 0, Vec::new())
+    }
+
+    /// `rekey_vault` past generation `floor` at least (a rotation redone
+    /// after it lost keeps clear of the generation it had used, whose
+    /// envelopes are immutable on the server), with `orphans`, item
+    /// records of that lost rotation already on the server, collected in
+    /// phase 3 with the old ones.
+    pub(crate) fn rekey_vault_with(
+        &mut self,
+        vault_id: Id,
+        reason: MembershipReason,
+        remove: Option<Id>,
+        now: i64,
+        floor: u32,
+        orphans: Vec<Id>,
     ) -> Result<RekeyOutcome> {
         self.writable()?;
         self.follow_head(vault_id)?;
@@ -138,6 +171,7 @@ impl<S: RecordStore> Repository<S> {
         let g = state
             .head
             .generation
+            .max(floor)
             .checked_add(1)
             .ok_or(Error::InvalidFormat("generation"))?;
         let (next, key, meta_blob) = Vault::new_shared(vault_id, vault.meta.clone())?;
@@ -236,7 +270,7 @@ impl<S: RecordStore> Repository<S> {
         // key and must never reach the server after the key changed.
         let mut deletes = Vec::new();
         let mut collect = Vec::new();
-        for blob in &resealed.collect {
+        for blob in resealed.collect.iter().chain(&orphans) {
             if self
                 .store
                 .zone_base_version(zone, RecordKind::Item, *blob)?
@@ -866,6 +900,246 @@ impl Repository<SyncStore> {
         first.map_or(Ok(()), Err)
     }
 
+    /// My pending membership body lost: the server holds another body at
+    /// its seq or later.
+    fn membership_lost(&self, zone: Zone, vault_id: Id) -> Result<bool> {
+        let pending = self
+            .store
+            .zone_pending(zone)?
+            .into_iter()
+            .find(|(k, id, _, d)| *k == RecordKind::Membership && *id == vault_id && d.is_some());
+        let Some((_, _, version, _)) = pending else {
+            return Ok(false);
+        };
+        let base = self
+            .store
+            .zone_base_version(zone, RecordKind::Membership, vault_id)?
+            .unwrap_or(0);
+        Ok(base >= version)
+    }
+
+    /// My membership change lost to another manager's (spec 7.4, A20):
+    /// my body and everything written with it are dropped, the server's
+    /// body is pinned, and my change is applied again over it as the
+    /// merge rules say (`merge_concurrent`): a member I added and they did
+    /// not remove is added; a role I changed is set when they left it, or
+    /// when mine is lower (the lowest wins); a member I removed and they
+    /// kept is removed; a rotation they did not make is made, past the
+    /// generation I had used. My unsent item writes are read back and
+    /// written again. `Dropped` when nothing of mine is left to apply.
+    pub(crate) fn rebase_membership(&mut self, vault_id: Id) -> Result<RebaseOutcome> {
+        let mut state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        let zone = state.zone;
+        let now = state.head.issued_at;
+        let pending = self
+            .store
+            .zone_pending(zone)?
+            .into_iter()
+            .find(|(k, id, _, d)| *k == RecordKind::Membership && *id == vault_id && d.is_some())
+            .and_then(|r| r.3)
+            .ok_or(Error::NotFound)?;
+        let mine = SignedMembership::decode(&pending)?.body;
+        let base = state.ancestors.first().cloned().ok_or(Error::NotFound)?;
+        if state.head != mine || mine.prev_hash != base.hash() {
+            return Err(crate::IntegrityError::WrongContext.into());
+        }
+        let theirs_rec = self
+            .store
+            .zone_base_record(zone, RecordKind::Membership, vault_id)?
+            .ok_or(Error::NotFound)?;
+        let theirs = accept_next(&base, &SignedMembership::decode(&theirs_rec.data)?)?;
+
+        // What my body changed over the base.
+        let added: Vec<(Id, Role)> = mine
+            .members
+            .iter()
+            .filter(|m| base.member(m.account_id).is_none())
+            .map(|m| (m.account_id, m.role))
+            .collect();
+        let roles: Vec<(Id, Role, Role)> = mine
+            .members
+            .iter()
+            .filter_map(|m| {
+                let b = base.member(m.account_id)?;
+                (b.role != m.role).then_some((m.account_id, b.role, m.role))
+            })
+            .collect();
+        let me = self.me();
+        let removed: Vec<Id> = base
+            .members
+            .iter()
+            .filter(|b| mine.member(b.account_id).is_none() && b.account_id != me.account_id)
+            .map(|b| b.account_id)
+            .collect();
+        let rotated = mine.generation > base.generation;
+        let lost_generation = mine.generation;
+
+        // My unsent item writes, read back with every key I hold (the lost
+        // generation's included), except the reseal's own records.
+        let vaults = self.generation_vaults(&state)?;
+        let resealed: BTreeSet<Id> = state
+            .push
+            .iter()
+            .flat_map(|p| p.resealed.iter().map(|r| r.2))
+            .collect();
+        let rows = self.store.zone_pending(zone)?;
+        let mut saves = Vec::new();
+        let mut drop = Vec::new();
+        for (kind, id, _, data) in &rows {
+            match kind {
+                RecordKind::Item => {
+                    if let Some(d) = data
+                        && !resealed.contains(id)
+                        && let Some(item) = open_item_row(&vaults, d)
+                    {
+                        saves.push(item);
+                    }
+                    drop.push((*kind, *id));
+                }
+                RecordKind::Membership
+                | RecordKind::Manifest
+                | RecordKind::MemberKey
+                | RecordKind::VaultMeta
+                | RecordKind::Attachment => drop.push((*kind, *id)),
+                _ => {}
+            }
+        }
+        // Records of my lost rotation already on the server.
+        let mut orphans = Vec::new();
+        for blob in &resealed {
+            if self
+                .store
+                .zone_base_version(zone, RecordKind::Item, *blob)?
+                .is_some()
+            {
+                orphans.push(*blob);
+            }
+        }
+        // Invites of members I added carry my lost body: they go.
+        let mut invite_drops = Vec::new();
+        for (account, _) in &added {
+            if let Ok(cz) = self.contact_zone(*account) {
+                for r in self.store.zone_pending(cz)? {
+                    if r.0 == RecordKind::ShareInvite {
+                        invite_drops.push((cz, r.1));
+                    }
+                }
+            }
+        }
+
+        state.head = state.ancestors.remove(0);
+        state.push = None;
+        let i_am_in = theirs
+            .member(me.account_id)
+            .is_some_and(|m| m.identity_id == me.identity_id);
+        state.advance(theirs.clone());
+        // The manifest the server's continues from: theirs names their
+        // body; ours to verify it is the one before my lost change.
+        state.last_manifest = None;
+        self.store.begin_batch()?;
+        let result = (|| {
+            self.store.drop_zone_pending(zone, &drop)?;
+            for (cz, id) in &invite_drops {
+                self.store
+                    .drop_zone_pending(*cz, &[(RecordKind::ShareInvite, *id)])?;
+            }
+            self.store
+                .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))
+        })()
+        .and_then(|()| self.store.commit_batch());
+        if let Err(e) = result {
+            let _ = self.store.rollback_batch();
+            return Err(e);
+        }
+        if !i_am_in {
+            let state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+            self.erase_shared(&state)?;
+            return Ok(RebaseOutcome::Dropped);
+        }
+
+        // Apply my change again.
+        let mut applied = false;
+        for (account, role) in added {
+            let gone = theirs.removed.iter().any(|r| r.account_id == account);
+            if theirs.member(account).is_none() && !gone {
+                self.add_member(vault_id, account, role, now)?;
+                applied = true;
+            }
+        }
+        for (account, before, role) in roles {
+            let Some(t) = theirs.member(account) else {
+                continue;
+            };
+            if t.role == before || role < t.role {
+                self.set_role(vault_id, account, role, now)?;
+                applied = true;
+            }
+        }
+        let still: Vec<Id> = removed
+            .into_iter()
+            .filter(|a| theirs.member(*a).is_some())
+            .collect();
+        let head_now = self
+            .store
+            .share_state(vault_id)?
+            .ok_or(Error::NotFound)?
+            .head;
+        if !still.is_empty() || (rotated && theirs.generation == base.generation) {
+            let reason = if still.is_empty() {
+                MembershipReason::Rekey
+            } else {
+                MembershipReason::Remove
+            };
+            let mut first = true;
+            for account in still
+                .iter()
+                .copied()
+                .map(Some)
+                .chain(std::iter::once(None).filter(|_| still.is_empty()))
+            {
+                if !first {
+                    break;
+                }
+                first = false;
+                self.rekey_vault_with(
+                    vault_id,
+                    reason,
+                    account,
+                    now,
+                    lost_generation.max(head_now.generation),
+                    orphans.clone(),
+                )?;
+                applied = true;
+            }
+        } else if !orphans.is_empty() {
+            // Their rotation stands: my orphans are deleted on their own.
+            let deletes = orphans
+                .iter()
+                .map(|b| (zone, RecordKind::Item, *b))
+                .collect();
+            self.store.put_all_zoned(vec![], deletes, None, &[])?;
+        }
+        if !saves.is_empty() {
+            let vault = self.open_shared(vault_id)?;
+            for mut item in saves {
+                item.vault_id = vault_id;
+                self.shared_save_item(&vault, item)?;
+            }
+            applied = true;
+        }
+        let seq = self
+            .store
+            .share_state(vault_id)?
+            .ok_or(Error::NotFound)?
+            .head
+            .seq;
+        Ok(if applied {
+            RebaseOutcome::Reapplied { seq }
+        } else {
+            RebaseOutcome::Dropped
+        })
+    }
+
     fn manifest_lost(&self, zone: Zone, vault_id: Id) -> Result<bool> {
         let pending = self
             .store
@@ -887,6 +1161,9 @@ impl Repository<SyncStore> {
             return Ok(());
         };
         let zone = state.zone;
+        if self.membership_lost(zone, vault_id)? {
+            return self.rebase_membership(vault_id).map(|_| ());
+        }
         if !self.manifest_lost(zone, vault_id)? {
             return Ok(());
         }

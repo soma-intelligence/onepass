@@ -476,8 +476,12 @@ impl Acct {
         Acct { server, dev, sk }
     }
 
+    /// One sync, then the shared heads followed, as the app does after
+    /// every sync (a device that skips a body signed by a manager raised
+    /// in between cannot verify it, spec 7.2 rule 2).
     fn sync(&mut self, zs: &mut Zones) {
         zsync(&mut self.server, zs, &mut self.dev);
+        self.dev.repo().shared_vaults().unwrap();
     }
 }
 
@@ -1667,4 +1671,241 @@ fn owner_cannot_leave() {
     let (_zs, mut a, _b, _c, id, _) = trio(Role::Read);
     let e = a.dev.repo().leave_shared_vault(id, NOW + 3).unwrap_err();
     assert_eq!(validation(e), ("member".into(), "owner"));
+}
+
+// Task 11: concurrent managers (spec 7.4, A20, P6).
+
+/// `trio(carol_role)` with Bob raised to manager, and Dan, a contact of
+/// Bob only.
+fn two_managers(carol_role: Role) -> (Zones, Acct, Acct, Acct, Acct, Id) {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(carol_role);
+    let bob = account_id(&mut b.dev);
+    a.dev
+        .repo()
+        .set_role(id, bob, Role::Manage, NOW + 3)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let mut d = Acct::new();
+    pin(&mut b.dev, &mut d.dev, ContactLevel::Verified);
+    pin(&mut d.dev, &mut b.dev, ContactLevel::Verified);
+    contact_zone(&mut b.dev, &mut d.dev);
+    (zs, a, b, c, d, id)
+}
+
+fn head_hash(d: &mut Device, id: Id) -> [u8; 32] {
+    d.repo().shared_vaults().unwrap();
+    d.store().share_state(id).unwrap().unwrap().head.hash()
+}
+
+fn head_members(d: &mut Device, id: Id) -> Vec<(Id, Role)> {
+    d.repo().shared_vaults().unwrap();
+    d.store()
+        .share_state(id)
+        .unwrap()
+        .unwrap()
+        .head
+        .members
+        .iter()
+        .map(|m| (m.account_id, m.role))
+        .collect()
+}
+
+fn role_of(d: &mut Device, id: Id, who: Id) -> Option<Role> {
+    head_members(d, id)
+        .into_iter()
+        .find(|(a, _)| *a == who)
+        .map(|(_, r)| r)
+}
+
+/// Alice and Bob both act on the vault offline, then sync in the given
+/// order and settle.
+fn race(zs: &mut Zones, a: &mut Acct, b: &mut Acct, c: &mut Acct, alice_first: bool) {
+    if alice_first {
+        a.sync(zs);
+        b.sync(zs);
+    } else {
+        b.sync(zs);
+        a.sync(zs);
+    }
+    settle(zs, &mut [a, b, c]);
+}
+
+#[test]
+fn a20_concurrent_managers() {
+    for alice_first in [true, false] {
+        let (mut zs, mut a, mut b, mut c, mut d, id) = two_managers(Role::Read);
+        let carol = account_id(&mut c.dev);
+        let carol_ref = me(&mut c.dev);
+        let dan = account_id(&mut d.dev);
+        a.dev.repo().remove_member(id, carol, NOW + 4).unwrap();
+        b.dev
+            .repo()
+            .add_member(id, dan, Role::Read, NOW + 4)
+            .unwrap();
+        race(&mut zs, &mut a, &mut b, &mut c, alice_first);
+        settle(&mut zs, &mut [&mut a, &mut b, &mut d]);
+        let inv = d.dev.repo().share_invites().unwrap();
+        assert_eq!(inv.len(), 1, "alice_first={alice_first}");
+        d.dev
+            .repo()
+            .accept_share_invite(inv[0].id, NOW + 5)
+            .unwrap();
+        settle(&mut zs, &mut [&mut a, &mut b, &mut d]);
+        assert_eq!(head_hash(&mut a.dev, id), head_hash(&mut b.dev, id));
+        assert_eq!(head_hash(&mut a.dev, id), head_hash(&mut d.dev, id));
+        assert_eq!(role_of(&mut a.dev, id, carol), None);
+        assert_eq!(role_of(&mut a.dev, id, dan), Some(Role::Read));
+        let g = generation(&a.dev, id);
+        assert!(g >= 2, "generation {g}");
+        let dan_ref = me(&mut d.dev);
+        let server = zs.server(Zone::Vault(id));
+        assert!(
+            server
+                .live(RecordKind::MemberKey, member_key_id(id, g, &dan_ref))
+                .is_some()
+        );
+        assert!(
+            server
+                .live(RecordKind::MemberKey, member_key_id(id, g, &carol_ref))
+                .is_none()
+        );
+        // Dan reads the vault at the final generation.
+        let vd = shared(&mut d.dev, id);
+        assert!(!d.dev.repo().items(&vd).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn concurrent_role_changes_lowest_wins() {
+    for alice_first in [true, false] {
+        let (mut zs, mut a, mut b, mut c, _d, id) = two_managers(Role::Manage);
+        let carol = account_id(&mut c.dev);
+        a.dev
+            .repo()
+            .set_role(id, carol, Role::Write, NOW + 4)
+            .unwrap();
+        b.dev
+            .repo()
+            .set_role(id, carol, Role::Read, NOW + 4)
+            .unwrap();
+        race(&mut zs, &mut a, &mut b, &mut c, alice_first);
+        assert_eq!(head_hash(&mut a.dev, id), head_hash(&mut b.dev, id));
+        assert_eq!(head_hash(&mut a.dev, id), head_hash(&mut c.dev, id));
+        assert_eq!(
+            role_of(&mut a.dev, id, carol),
+            Some(Role::Read),
+            "alice_first={alice_first}"
+        );
+    }
+}
+
+/// One manager's change in the convergence table.
+#[derive(Debug, Clone, Copy)]
+enum Op {
+    RemoveCarol,
+    AddDan,
+    CarolRole(Role),
+    Rekey,
+}
+
+fn apply(x: &mut Acct, id: Id, op: Op, carol: Id, dan: Id) {
+    let r = x.dev.repo();
+    match op {
+        Op::RemoveCarol => {
+            r.remove_member(id, carol, NOW + 4).unwrap();
+        }
+        Op::AddDan => {
+            r.add_member(id, dan, Role::Write, NOW + 4).unwrap();
+        }
+        Op::CarolRole(role) => {
+            r.set_role(id, carol, role, NOW + 4).unwrap();
+        }
+        Op::Rekey => {
+            r.test_rekey_vault(id, NOW + 4).unwrap();
+        }
+    }
+}
+
+/// Alice's change and Bob's change (only Bob knows Dan), delivered in
+/// both orders: one head, no removal lost, no removed member with an
+/// envelope of the final generation, the lowest role kept.
+fn converge(op_a: Op, op_b: Op) {
+    use Op::*;
+    for alice_first in [true, false] {
+        let what = format!("{op_a:?} / {op_b:?} alice_first={alice_first}");
+        let (mut zs, mut a, mut b, mut c, mut d, id) = two_managers(Role::Manage);
+        let carol = account_id(&mut c.dev);
+        let carol_ref = me(&mut c.dev);
+        let dan = account_id(&mut d.dev);
+        let g0 = generation(&a.dev, id);
+        apply(&mut a, id, op_a, carol, dan);
+        apply(&mut b, id, op_b, carol, dan);
+        race(&mut zs, &mut a, &mut b, &mut c, alice_first);
+        assert_eq!(
+            head_hash(&mut a.dev, id),
+            head_hash(&mut b.dev, id),
+            "{what}"
+        );
+        let removed = matches!(op_a, RemoveCarol) || matches!(op_b, RemoveCarol);
+        let g = generation(&a.dev, id);
+        if removed {
+            assert_eq!(role_of(&mut a.dev, id, carol), None, "{what}");
+            assert!(g > g0, "{what}");
+            assert!(
+                zs.server(Zone::Vault(id))
+                    .live(RecordKind::MemberKey, member_key_id(id, g, &carol_ref))
+                    .is_none(),
+                "{what}"
+            );
+        } else {
+            assert_eq!(
+                head_hash(&mut a.dev, id),
+                head_hash(&mut c.dev, id),
+                "{what}"
+            );
+        }
+        if matches!(op_b, AddDan) {
+            assert!(role_of(&mut a.dev, id, dan).is_some(), "{what}");
+        }
+        if matches!(op_a, Rekey) || matches!(op_b, Rekey) {
+            assert!(g > g0, "{what}");
+        }
+        for (x, y) in [(op_a, op_b), (op_b, op_a)] {
+            if let (CarolRole(r), CarolRole(s)) = (x, y) {
+                assert_eq!(role_of(&mut a.dev, id, carol), Some(r.min(s)), "{what}");
+            }
+        }
+        // Every member left can read the vault at the final generation.
+        let va = shared(&mut a.dev, id);
+        let vb = shared(&mut b.dev, id);
+        assert_eq!(
+            ids(&a.dev.repo().items(&va).unwrap()),
+            ids(&b.dev.repo().items(&vb).unwrap()),
+            "{what}"
+        );
+    }
+}
+
+macro_rules! converge_cases {
+    ($($name:ident: $a:expr, $b:expr;)*) => {
+        $(
+            #[test]
+            fn $name() {
+                use Op::*;
+                converge($a, $b);
+            }
+        )*
+    };
+}
+
+converge_cases! {
+    converge_remove_vs_add: RemoveCarol, AddDan;
+    converge_remove_vs_role: RemoveCarol, CarolRole(Role::Read);
+    converge_role_vs_remove: CarolRole(Role::Read), RemoveCarol;
+    converge_remove_vs_remove: RemoveCarol, RemoveCarol;
+    converge_rekey_vs_add: Rekey, AddDan;
+    converge_rekey_vs_rekey: Rekey, Rekey;
+    converge_remove_vs_rekey: RemoveCarol, Rekey;
+    converge_role_vs_role: CarolRole(Role::Write), CarolRole(Role::Read);
+    converge_role_vs_add: CarolRole(Role::Read), AddDan;
 }

@@ -567,6 +567,23 @@ fn generation_bump_rules() {
     }
 }
 
+/// A device that missed a rotation reads the body after it: the new
+/// generation came with the body in between, the next one only adds.
+#[test]
+fn generation_bump_over_a_skipped_rotation() {
+    let c = cast();
+    let mut rot = next_by(&c.head, &c.alice, MembershipReason::Rekey);
+    rot.generation = 2;
+    rot.key_commit = [8; 32];
+    let rot = accept_next(&c.head, &signed(rot, &c.alice)).unwrap();
+    let after = next_by(&rot, &c.alice, MembershipReason::Meta);
+    accept_next(&c.head, &signed(after.clone(), &c.alice)).unwrap();
+    // Without a new commitment the skip is still refused.
+    let mut forged = after;
+    forged.key_commit = c.head.key_commit;
+    validation(accept_next(&c.head, &signed(forged, &c.alice)));
+}
+
 #[test]
 fn link_member_read_only() {
     let c = cast();

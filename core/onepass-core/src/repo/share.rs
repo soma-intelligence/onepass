@@ -951,6 +951,7 @@ impl<S: RecordStore> Repository<S> {
         now: i64,
     ) -> Result<SharedVaultInfo> {
         self.writable()?;
+        self.follow_head(vault_id)?;
         let state = self.share_state_of(vault_id)?;
         self.require_role(&state, Role::Manage)?;
         let me = self.me();

@@ -431,7 +431,9 @@ fn check_generation(pinned: &MembershipBody, n: &MembershipBody) -> Result<()> {
     if n.key_commit == pinned.key_commit {
         return Err(refused("membership", "new generation without new key"));
     }
-    if !matches!(n.reason, Remove | Leave | Rekey | IdentityUpdate) {
+    // Over a skip (bodies between not seen) the rotation may come from a
+    // body in between: only the next body itself must give its reason.
+    if n.seq == pinned.seq + 1 && !matches!(n.reason, Remove | Leave | Rekey | IdentityUpdate) {
         return Err(refused("membership", "new generation for this reason"));
     }
     Ok(())
