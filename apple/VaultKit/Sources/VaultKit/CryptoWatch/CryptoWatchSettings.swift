@@ -66,8 +66,13 @@ public enum CryptoSection: String, Codable, Sendable, CaseIterable, Hashable {
 /// Per-account settings of the watch. Kept in the encrypted watch file (custom endpoints may carry
 /// an API key in their URL), never in `UserDefaults`.
 public struct CryptoWatchSettings: Codable, Sendable, Equatable {
-    /// Off by default: nothing leaves the device until the user turns it on.
-    public var enabled = false
+    /// "Suivre les soldes": on by default (founder ruling 2026-11-03). Only the wallets' public
+    /// addresses go out, and only while the Crypto screen is open or pulled. A user who flips the
+    /// switch (`choose(enabled:)`) keeps that choice.
+    public var enabled = true
+    /// True once the user turned the switch on or off. Until then the watch follows the default,
+    /// whatever an older file (written while the default was off) says.
+    public var enabledChosen = false
     /// Lower-case ISO 4217 code for prices.
     public var currency: String
     public var bitcoin: CryptoEndpoint = .preset("mempool")
@@ -84,6 +89,38 @@ public struct CryptoWatchSettings: Codable, Sendable, Equatable {
 
     public init(currency: String = CryptoWatchSettings.defaultCurrency) {
         self.currency = currency
+    }
+
+    /// The user's own choice of the switch.
+    public mutating func choose(enabled: Bool) {
+        self.enabled = enabled
+        enabledChosen = true
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, enabledChosen, currency, bitcoin, ethereum, solana, prices, period, sections
+        case hiddenSections, handoffScheme, handoffName
+    }
+
+    /// Every key is optional, so a file from an older or newer version keeps what it can. A file
+    /// without `enabledChosen` was written before the default turned on: its `enabled` is the old
+    /// default, not a choice, and the watch is on.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let base = CryptoWatchSettings()
+        enabledChosen = try c.decodeIfPresent(Bool.self, forKey: .enabledChosen) ?? false
+        enabled = enabledChosen ? (try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? base.enabled) : base.enabled
+        currency = try c.decodeIfPresent(String.self, forKey: .currency) ?? base.currency
+        bitcoin = try c.decodeIfPresent(CryptoEndpoint.self, forKey: .bitcoin) ?? base.bitcoin
+        ethereum = try c.decodeIfPresent(CryptoEndpoint.self, forKey: .ethereum) ?? base.ethereum
+        solana = try c.decodeIfPresent(CryptoEndpoint.self, forKey: .solana) ?? base.solana
+        // No key: "Aucune" (the encoder leaves a nil out), as before.
+        prices = try c.decodeIfPresent(CryptoEndpoint.self, forKey: .prices)
+        period = try c.decodeIfPresent(CryptoPeriod.self, forKey: .period) ?? base.period
+        sections = try c.decodeIfPresent([CryptoSection].self, forKey: .sections) ?? base.sections
+        hiddenSections = try c.decodeIfPresent(Set<CryptoSection>.self, forKey: .hiddenSections) ?? base.hiddenSections
+        handoffScheme = try c.decodeIfPresent(String.self, forKey: .handoffScheme)
+        handoffName = try c.decodeIfPresent(String.self, forKey: .handoffName)
     }
 
     /// Currencies the price source quotes and the picker offers.

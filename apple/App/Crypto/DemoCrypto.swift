@@ -46,7 +46,11 @@ enum DemoCrypto {
 
     @MainActor
     static func installIfRequested(_ watch: CryptoWatch) {
-        guard requested else { return }
+        guard requested else {
+            // `-OnePassDemoCrypto NO`: the demo's watch stays off (it is on by default) and asks nothing.
+            if DemoData.requested, watch.isEnabled { watch.update { $0.choose(enabled: false) } }
+            return
+        }
         watch.useService(CryptoWatchService(http: RecordedCryptoHTTP(answer)))
         if !watch.isEnabled { watch.update { $0.enabled = true } }
     }

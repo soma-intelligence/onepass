@@ -25,7 +25,8 @@ public final class CryptoWatch {
 
     @ObservationIgnored private var store: CryptoWatchStore?
     @ObservationIgnored private var service: CryptoWatchService
-    @ObservationIgnored private var loaded = false
+    /// Bound to an account's file: nothing is on before that, nor after `clear`.
+    private var loaded = false
     @ObservationIgnored private var running: Task<Void, Never>?
 
     public init(service: CryptoWatchService = CryptoWatchService()) {
@@ -47,7 +48,7 @@ public final class CryptoWatch {
         self.service = service
     }
 
-    public var isEnabled: Bool { settings.enabled }
+    public var isEnabled: Bool { loaded && settings.enabled }
 
     public func portfolio(period: CryptoPeriod? = nil) -> CryptoPortfolio? {
         snapshot.map { CryptoPortfolio(snapshot: $0, period: period ?? settings.period) }
@@ -85,7 +86,7 @@ public final class CryptoWatch {
     /// One refresh of `targets` (screen open, pull to refresh). Does nothing while off. A refresh
     /// already running is awaited, not doubled.
     public func refresh() async {
-        guard settings.enabled else { return }
+        guard isEnabled else { return }
         if let running {
             await running.value
             return
@@ -94,7 +95,7 @@ public final class CryptoWatch {
         let task = Task {
             phase = .refreshing
             let next = await service.refresh(targets: targets, settings: settings, previous: previous)
-            guard self.settings.enabled else {
+            guard self.isEnabled else {
                 phase = .idle
                 return
             }

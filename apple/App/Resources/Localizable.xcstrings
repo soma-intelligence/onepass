@@ -16659,25 +16659,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass can show the balance of your wallets' public addresses. It stays off until you turn it on: nothing leaves the device."
+            "value" : "OnePass can show the balance of your wallets' public addresses. It's off for now: nothing leaves the device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass puede mostrar el saldo de las direcciones públicas de tus billeteras. Está desactivado hasta que lo actives: nada sale del dispositivo."
+            "value" : "OnePass puede mostrar el saldo de las direcciones públicas de tus billeteras. Ahora está desactivado: nada sale del dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass peut afficher le solde des adresses publiques de tes portefeuilles. C'est désactivé tant que tu ne l'actives pas : rien ne quitte l'appareil."
+            "value" : "OnePass peut afficher le solde des adresses publiques de tes portefeuilles. C'est désactivé pour l'instant : rien ne quitte l'appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass può mostrare il saldo degli indirizzi pubblici dei tuoi wallet. Resta disattivato finché non lo attivi: nulla lascia il dispositivo."
+            "value" : "OnePass può mostrare il saldo degli indirizzi pubblici dei tuoi wallet. Ora è disattivato: nulla lascia il dispositivo."
           }
         }
       }
@@ -17471,25 +17471,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Off by default. Balances are requested when you open the Crypto screen or pull to refresh, never in the background."
+            "value" : "On by default. Balances are requested when you open the Crypto screen or pull to refresh, never in the background."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desactivado por defecto. Los saldos se piden al abrir la pantalla Cripto o al deslizar para actualizar, nunca en segundo plano."
+            "value" : "Activado por defecto. Los saldos se piden al abrir la pantalla Cripto o al deslizar para actualizar, nunca en segundo plano."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Désactivé par défaut. Les soldes sont demandés à l'ouverture de l'écran Crypto ou quand tu tires pour actualiser, jamais en arrière-plan."
+            "value" : "Activé par défaut. Les soldes sont demandés à l'ouverture de l'écran Crypto ou quand tu tires pour actualiser, jamais en arrière-plan."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Disattivato per impostazione predefinita. I saldi vengono richiesti quando apri la schermata Cripto o trascini per aggiornare, mai in background."
+            "value" : "Attivato per impostazione predefinita. I saldi vengono richiesti quando apri la schermata Cripto o trascini per aggiornare, mai in background."
           }
         }
       }

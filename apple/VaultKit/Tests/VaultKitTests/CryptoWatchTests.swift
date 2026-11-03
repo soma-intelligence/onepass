@@ -149,10 +149,33 @@ struct CryptoWatchTests {
         #expect(!CryptoWatchSettings.acceptsCustom(URL(string: "ftp://eth.example")!))
     }
 
-    @Test func settingsAreOffByDefault() {
+    @Test func settingsAreOnByDefault() {
         let s = CryptoWatchSettings()
-        #expect(!s.enabled)
+        #expect(s.enabled)
+        #expect(!s.enabledChosen)
         #expect(s.baseURL(for: .bitcoin).absoluteString == "https://mempool.space/api")
+    }
+
+    /// A file written while the default was off (no `enabledChosen`) is on now, and keeps the rest;
+    /// a choice made with the switch stays, on or off.
+    @Test func followBalanceIsOnUnlessTheUserChoseOff() throws {
+        let legacy = Data(#"{"enabled":false,"currency":"chf","bitcoin":{"preset":{"_0":"blockstream"}},"period":"week","sections":["market","holdings","tiles","movers"],"hiddenSections":[]}"#.utf8)
+        let old = try JSONDecoder().decode(CryptoWatchSettings.self, from: legacy)
+        #expect(old.enabled && !old.enabledChosen)
+        #expect(old.currency == "chf" && old.period == .week && old.bitcoin == .preset("blockstream"))
+        #expect(old.prices == nil, "no prices key: Aucune, as before")
+        #expect(old.sections.first == .market)
+
+        var off = CryptoWatchSettings()
+        off.choose(enabled: false)
+        let reread = try JSONDecoder().decode(CryptoWatchSettings.self, from: JSONEncoder().encode(off))
+        #expect(!reread.enabled && reread.enabledChosen)
+
+        var on = CryptoWatchSettings()
+        on.choose(enabled: true)
+        #expect(try JSONDecoder().decode(CryptoWatchSettings.self, from: JSONEncoder().encode(on)).enabled)
+        let empty = try JSONDecoder().decode(CryptoWatchSettings.self, from: Data("{}".utf8))
+        #expect(empty.enabled && empty.currency == CryptoWatchSettings.defaultCurrency)
     }
 
     @Test func storeRoundTripsEncryptedAndRefusesTampering() throws {
@@ -279,11 +302,17 @@ struct CryptoWatchTests {
         let watch = CryptoWatch(service: CryptoWatchService(http: http))
         let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
+        // Not bound to an account yet: off, whatever the default.
+        #expect(!watch.isEnabled)
+        await watch.refresh()
+        #expect(calls.value == 0)
         watch.open(store: CryptoWatchStore(fileURL: dir.appending(path: "x.cryptowatch"), keychain: InMemoryKeychain(), accountID: "A"))
+        #expect(watch.isEnabled, "on by default once the account's file is read")
+        watch.update { $0.choose(enabled: false) }
         await watch.refresh()
         #expect(calls.value == 0)
         #expect(!watch.isEnabled)
-        watch.update { $0.enabled = true }
+        watch.update { $0.choose(enabled: true) }
         #expect(watch.isEnabled)
         watch.clear()
         #expect(!watch.isEnabled && watch.snapshot == nil)

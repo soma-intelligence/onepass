@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Réglages > Crypto: the switch (off by default, per account), what leaves the device, the
+/// Réglages > Crypto: the switch (on by default, per account), what leaves the device, the
 /// currency, the balance providers per chain (a public service or the user's own endpoint), the
 /// price source, the user's own wallet app for "Ouvrir dans…", and erasing the cached balances.
 struct CryptoSettingsView: View {
@@ -17,7 +17,7 @@ struct CryptoSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: Binding(get: { watch.isEnabled }, set: { on in watch.update { $0.enabled = on } })) {
+                Toggle(isOn: Binding(get: { watch.isEnabled }, set: { on in watch.update { $0.choose(enabled: on) } })) {
                     Text("crypto.settings.enable")
                 }
                 .accessibilityIdentifier("crypto.settings.enable")
@@ -75,7 +75,7 @@ struct CryptoSettingsView: View {
         }
         .confirmationDialog("crypto.settings.erase.confirm", isPresented: $confirmErase, titleVisibility: .visible) {
             Button("crypto.settings.erase", role: .destructive) {
-                watch.update { $0.enabled = false }
+                watch.update { $0.choose(enabled: false) }
             }
             Button("common.cancel", role: .cancel) {}
         }
