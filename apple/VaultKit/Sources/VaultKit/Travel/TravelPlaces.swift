@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OnePassCore
 
 /// Geohash of a position (spec 2026-11-02 travel detection, section 6): computed on the device, no
 /// geocoder. Precision 3 is a cell of about 156 by 156 km at the equator.
@@ -256,7 +257,8 @@ public struct TravelPlacesStore: Sendable {
         if let existing = try keychain.read(Self.keyName) {
             keyData = existing
         } else {
-            keyData = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+            // The hedged source (core crypto::random), 32 bytes, like every key.
+            keyData = try Data(newDeviceRngSeed())
             try keychain.write(Self.keyName, keyData)
         }
         let plain = try JSONEncoder().encode(places)
