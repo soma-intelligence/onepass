@@ -27,6 +27,8 @@ pub const FAMILY_INVITE_DOMAIN: &[u8] = b"onepass/family-invite/v1";
 pub const MAX_FAMILY: usize = 6;
 /// Format byte of a family body.
 pub const FAMILY_FORMAT: u8 = 1;
+/// Ancestors a body keeps in `history`.
+pub const FAMILY_HISTORY: usize = 64;
 /// Vaults a family lists.
 pub const MAX_FAMILY_VAULTS: usize = 64;
 
@@ -99,6 +101,9 @@ pub struct FamilyBody {
     pub vaults: Vec<Id>,
     pub signer: MemberRef,
     pub reason: FamilyReason,
+    /// Recent ancestors `(seq, hash)`, so that a device that missed a
+    /// body still follows (as the membership chain, plan 2).
+    pub history: Vec<(u64, [u8; 32])>,
     pub issued_at: i64,
 }
 
@@ -136,9 +141,15 @@ impl FamilyBody {
     /// The next body: `seq + 1`, chained to this one, signed by `signer`
     /// for `reason`. The caller then changes members or vaults.
     pub fn next(&self, signer: MemberRef, reason: FamilyReason, now: i64) -> Result<FamilyBody> {
+        let mut history = self.history.clone();
+        history.push((self.seq, self.hash()));
+        if history.len() > FAMILY_HISTORY {
+            history.drain(..history.len() - FAMILY_HISTORY);
+        }
         Ok(FamilyBody {
             seq: self.seq.checked_add(1).ok_or(BAD)?,
             prev_hash: self.hash(),
+            history,
             signer,
             reason,
             issued_at: now,
@@ -151,8 +162,14 @@ impl FamilyBody {
         if self.format != FAMILY_FORMAT || self.seq == 0 {
             return Err(BAD);
         }
-        if self.seq == 1 && self.prev_hash != [0; 32] {
+        if self.seq == 1 && (self.prev_hash != [0; 32] || !self.history.is_empty()) {
             return Err(BAD);
+        }
+        if self.history.len() > FAMILY_HISTORY
+            || !self.history.windows(2).all(|w| w[0].0 < w[1].0)
+            || self.history.last().is_some_and(|(s, _)| *s >= self.seq)
+        {
+            return Err(Error::InvalidFormat("family history"));
         }
         if self.members.is_empty() || self.members.len() > MAX_FAMILY {
             return Err(Error::InvalidFormat("family size"));
@@ -270,7 +287,12 @@ pub fn accept_next_family(pinned: &FamilyBody, next: &SignedFamily) -> Result<Fa
             Err(IntegrityError::FamilyRollback.into())
         };
     }
-    if n.seq != pinned.seq + 1 || n.prev_hash != pinned.hash() {
+    let chained = if n.seq == pinned.seq + 1 {
+        n.prev_hash == pinned.hash()
+    } else {
+        n.history.contains(&(pinned.seq, pinned.hash()))
+    };
+    if !chained {
         return Err(IntegrityError::FamilyRollback.into());
     }
     let signer = pinned
@@ -326,6 +348,11 @@ fn accept_leave(pinned: &FamilyBody, n: &FamilyBody) -> Result<FamilyBody> {
         .removed
         .iter()
         .any(|r| r.account_id == me.account_id && r.identity_id == me.identity_id && r.by == me);
+    // Over a skip, the bodies in between may have changed the rest: only
+    // the leave itself is checked.
+    if left && n.seq > pinned.seq + 1 && n.member(me.account_id).is_none() {
+        return Ok(n.clone());
+    }
     if !left
         || n.members != expected.members
         || removed != pinned.removed

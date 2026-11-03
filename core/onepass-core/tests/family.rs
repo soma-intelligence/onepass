@@ -47,6 +47,7 @@ fn first(org: &Person, others: &[&Person]) -> FamilyBody {
         vaults: vec![Id([6; 16])],
         signer: org.member.member_ref(),
         reason: FamilyReason::Create,
+        history: vec![],
         issued_at: 100,
     }
 }
@@ -242,4 +243,29 @@ fn vault_invite_bytes_unchanged() {
         account_id: Id::new(),
         identity_id: Id::new(),
     };
+}
+
+#[test]
+fn skipped_body_followed_through_history() {
+    let org = person(FamilyRole::Organizer, ContactLevel::Verified);
+    let kid = person(FamilyRole::Member, ContactLevel::Verified);
+    let h1 = first(&org, &[&kid]);
+    let mut b2 = h1
+        .next(org.member.member_ref(), FamilyReason::Vaults, 200)
+        .unwrap();
+    b2.vaults.push(Id([7; 16]));
+    let mut b3 = b2
+        .next(org.member.member_ref(), FamilyReason::Vaults, 201)
+        .unwrap();
+    b3.vaults.push(Id([8; 16]));
+    let s3 = sign_family(b3.clone(), &org.key).unwrap();
+    assert_eq!(accept_next_family(&h1, &s3).unwrap(), b3);
+    // A body whose history does not hold the pinned head: refused.
+    let mut lone = b3.clone();
+    lone.history.clear();
+    let r = accept_next_family(&h1, &sign_family(lone, &org.key).unwrap());
+    assert!(
+        matches!(r, Err(Error::Integrity(IntegrityError::FamilyRollback))),
+        "{r:?}"
+    );
 }
