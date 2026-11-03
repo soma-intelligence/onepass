@@ -501,6 +501,9 @@ struct ItemDetailView: View {
                 .accessibilityIdentifier("item.share")
             }
             .sharedBackgroundVisibility(.hidden)
+        }
+        // A vault shared with this account in Read: nothing to edit (sharing spec 10.2).
+        if item.trashedAt == nil, !isReadOnly(item) {
             ToolbarItem(placement: .primaryAction) {
                 // ⌘E is the "Modifier" menu command (`BrowseCommands`).
                 Button { startEditing(item) } label: { Image(systemName: "pencil") }
@@ -537,9 +540,11 @@ struct ItemDetailView: View {
                 }
                 .accessibilityIdentifier("item.share")
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button("common.edit", systemImage: "pencil") { startEditing(item) }
-                    .accessibilityIdentifier("item.edit")
+            if !isReadOnly(item) {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("common.edit", systemImage: "pencil") { startEditing(item) }
+                        .accessibilityIdentifier("item.edit")
+                }
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -687,7 +692,13 @@ struct ItemDetailView: View {
         }
     }
 
+    /// The item sits in a vault shared with this account in Read (sharing spec 10.2).
+    private func isReadOnly(_ item: FfiItem) -> Bool {
+        model.session.sharedRole(of: item.vaultId) == .read
+    }
+
     private func startEditing(_ item: FfiItem) {
+        guard !isReadOnly(item) else { return }
         if standalone {
             // The editor lives in the main window (one editing state for the app).
             model.selectedItem = ref

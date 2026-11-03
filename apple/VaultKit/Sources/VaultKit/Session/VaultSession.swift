@@ -83,6 +83,8 @@ public final class VaultSession {
     /// The recovery requests for this account (spec 11.5), read from the store without unlocking
     /// (`refreshRecoveryAlerts`): a locked device shows them too. Kept on lock.
     public internal(set) var recoveryAlerts: [FfiRecoveryAlert] = []
+    /// Demo data (`showDemoSharing`, Debug): `refreshSharing` keeps the shown state.
+    @ObservationIgnored var sharingPinned = false
 
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }

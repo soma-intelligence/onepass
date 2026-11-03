@@ -40,7 +40,7 @@ extension VaultSession {
     }
 
     /// The name the user gave this device.
-    static func currentDeviceName() -> String {
+    public static func currentDeviceName() -> String {
         #if os(macOS)
         Host.current().localizedName ?? "Mac"
         #elseif os(watchOS)
@@ -51,7 +51,7 @@ extension VaultSession {
     }
 
     /// This device's type in the device list.
-    static var currentDeviceKind: FfiDeviceKind {
+    public static var currentDeviceKind: FfiDeviceKind {
         #if os(macOS)
         .mac
         #elseif os(visionOS)

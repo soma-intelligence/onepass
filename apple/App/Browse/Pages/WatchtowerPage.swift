@@ -30,6 +30,15 @@ struct WatchtowerPage: View {
                                 model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report))
                             }
                         }
+                        let seen = model.seenByFormerMemberIDs
+                        if !seen.isEmpty {
+                            WatchtowerCardView(
+                                card: .seenByFormerMember, report: report, checkBreaches: watchtower.checkBreaches,
+                                breachCatalog: watchtower.breachCatalogUsed, itemIDs: seen
+                            ) {
+                                model.showWatchtowerItems(title: WatchtowerCard.seenByFormerMember.title, itemIDs: seen)
+                            }
+                        }
                     }
                 }
                 BreachSettingCard()
@@ -50,7 +59,10 @@ struct WatchtowerPage: View {
                 .help(Text("browse.analyzeAgain"))
             }
         }
-        .task(id: model.session.summariesRevision) { watchtower.refreshIfNeeded(model.session) }
+        .task(id: model.session.summariesRevision) {
+            watchtower.refreshIfNeeded(model.session)
+            _ = try? await model.session.seenByFormerMemberItems()
+        }
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")
@@ -297,6 +309,14 @@ struct WatchtowerCard: Identifiable {
         all.first { $0.checks.contains(check) }
     }
 
+    /// Items a removed member of a shared vault could read (sharing spec 10.4): not a report
+    /// check, the ids come from the sharing state.
+    static let seenByFormerMember = WatchtowerCard(
+        id: "seen_by_former_member", checks: [],
+        title: VaultSession.seenByFormerMemberTitle,
+        message: String(localized: "watchtower.seenByFormerMember.message"),
+        symbol: "person.crop.circle.badge.xmark", color: .orange, source: .local)
+
     static let all: [WatchtowerCard] = [
         WatchtowerCard(
             id: "compromised", checks: ["compromised"],
@@ -388,6 +408,8 @@ struct WatchtowerCardView: View {
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
     let breachCatalog: Bool
+    /// The items when they do not come from the report ("Vus par un ancien membre").
+    var itemIDs: Set<String>? = nil
     let onShow: () -> Void
 
     private var unavailable: String? {
@@ -395,7 +417,7 @@ struct WatchtowerCardView: View {
     }
 
     var body: some View {
-        let ids = card.itemIDs(in: report)
+        let ids = itemIDs ?? card.itemIDs(in: report)
         EditorCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {

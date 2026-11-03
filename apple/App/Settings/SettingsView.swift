@@ -32,7 +32,7 @@ enum SettingsTiming {
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, accounts, vaults, devices, travel, crypto, developer, about
+    case general, security, autofill, sync, accounts, vaults, contacts, family, devices, travel, crypto, developer, about
 
     var id: String { rawValue }
 
@@ -44,6 +44,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .sync: "Sync"
         case .accounts: "accounts.title"
         case .vaults: "Coffres"
+        case .contacts: "settings.contacts.title"
+        case .family: "settings.family.title"
         case .devices: "Appareils"
         case .travel: "Travel Mode"
         case .crypto: "crypto.title"
@@ -60,6 +62,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .sync: "arrow.triangle.2.circlepath.icloud"
         case .accounts: "person.2.fill"
         case .vaults: "square.stack.3d.up.fill"
+        case .contacts: "person.crop.circle.badge.checkmark"
+        case .family: "figure.2.and.child.holdinghands"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
         case .crypto: "bitcoinsign"
@@ -76,6 +80,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
         case .accounts: Color(red: 0.35, green: 0.34, blue: 0.84)
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .contacts: Color(red: 0.16, green: 0.60, blue: 0.86)
+        case .family: Color(red: 0.93, green: 0.36, blue: 0.45)
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
         case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
@@ -93,6 +99,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .sync: SyncSettings()
         case .accounts: AccountsSettings()
         case .vaults: VaultsSettings()
+        case .contacts: ContactsView()
+        case .family: FamilyView()
         case .devices: DevicesSettings()
         case .travel: TravelSettings()
         case .crypto: CryptoSettingsView()
@@ -148,6 +156,8 @@ struct SettingsView: View {
                 Section {
                     row(.accounts)
                     row(.vaults)
+                    row(.contacts)
+                    row(.family)
                     row(.devices)
                     row(.travel)
                     row(.crypto)
@@ -297,6 +307,8 @@ struct MacSettingsView: View {
                         Section {
                             row(.accounts)
                             row(.vaults)
+                            row(.contacts)
+                            row(.family)
                             row(.devices)
                             row(.travel)
                             row(.crypto)

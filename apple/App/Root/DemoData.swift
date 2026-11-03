@@ -222,6 +222,8 @@ extension AppModel {
                     DemoTrace.log("demo: biometrics %@", session.canUseBiometrics ? "on" : "off")
                 }
                 if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
+                // `-OnePassDemoSharing YES [-OnePassDemoRecoveryAlert YES]`: the sharing screens.
+                if defaults.bool(forKey: "OnePassDemoSharing") { showDemoSharing() }
                 demoPreparing = false
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
@@ -259,6 +261,57 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Sharing screens without a mailbox (sharing plan 4): a fixed snapshot, never refreshed.
+    /// "Projet Atlas" is shared by this account (Camille in Write, Léo by link in Read), "Famille"
+    /// is shared with it in Read, one invitation waits, and the family has one organizer.
+    fileprivate func showDemoSharing() {
+        let atlas = session.vaults.first { $0.meta.name == "Projet Atlas" }?.id ?? ""
+        let family = session.vaults.first { $0.meta.name == "Famille" }?.id ?? ""
+        let me = "demo-me", camille = "demo-camille", leo = "demo-leo"
+        let now = Int64(Date().timeIntervalSince1970)
+        var snapshot = SharingSnapshot()
+        snapshot.contacts = [
+            FfiContact(
+                accountId: camille, nameLocal: "Camille Durand", level: .verified, state: .active,
+                verifiedAt: now - 86_400, safetyNumber: "48213 90577 11640 32098 75521 60034"),
+            FfiContact(
+                accountId: leo, nameLocal: "Léo Martin", level: .link, state: .active,
+                verifiedAt: 0, safetyNumber: "17702 64390 22815 90476 31158 84203"),
+        ]
+        snapshot.sharedVaults = [
+            FfiSharedVault(
+                vaultId: atlas, name: "Projet Atlas", role: .manage, owner: true, generation: 1,
+                members: [
+                    FfiMember(accountId: me, nameLocal: "", role: .manage, owner: true, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: camille, nameLocal: "Camille Durand", role: .write, owner: false, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: leo, nameLocal: "Léo Martin", role: .read, owner: false, level: .link, keysChanged: false, keyPending: false),
+                ],
+                identityPending: false, mcpHidden: false),
+            FfiSharedVault(
+                vaultId: family, name: "Famille", role: .read, owner: false, generation: 1,
+                members: [
+                    FfiMember(accountId: camille, nameLocal: "Camille Durand", role: .manage, owner: true, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: me, nameLocal: "", role: .read, owner: false, level: .verified, keysChanged: false, keyPending: false),
+                ],
+                identityPending: false, mcpHidden: false),
+        ]
+        snapshot.shareInvites = [
+            FfiShareInvite(id: "demo-invite", vaultNameHint: "Vacances", fromNameLocal: "Camille Durand", role: .write, serverHost: "somalabs.me")
+        ]
+        snapshot.family = FfiFamily(
+            familyId: "demo-family",
+            members: [
+                FfiFamilyMember(accountId: me, nameLocal: "", role: .organizer, level: .verified, keysChanged: false),
+                FfiFamilyMember(accountId: camille, nameLocal: "Camille Durand", role: .member, level: .verified, keysChanged: false),
+            ],
+            vaults: [family], iAmOrganizer: true, needsSecondOrganizer: true)
+        snapshot.seenByFormerMembers = Set(session.summaries.filter { $0.vaultId == atlas }.prefix(2).map(\.id))
+        let alerts = UserDefaults.standard.bool(forKey: "OnePassDemoRecoveryAlert")
+            ? [FfiRecoveryAlert(enrollmentId: "demo-enrollment", organizerNameLocal: "Camille Durand", releaseAfter: now + 3 * 86_400)]
+            : []
+        session.showDemoSharing(snapshot, alerts: alerts)
+    }
+
     /// A second, business account on the same device: its own store, keyset and Secret Key.
     fileprivate func seedSecondDemoAccount() async throws {
         let slot = try accounts.beginAdding(kind: .business, label: "Atelier Atlas", color: .orange)

@@ -33,14 +33,16 @@ extension VaultSession {
 
     /// Watchtower filter "Vus par un ancien membre" (sharing spec 9.3): the items a removed member
     /// could read, whose passwords should change. Read from the core, never computed here.
-    public static var seenByFormerMemberTitle: String {
+    nonisolated public static var seenByFormerMemberTitle: String {
         String(localized: "watchtower.filter.seenByFormerMember", bundle: VaultKitStrings.bundle)
     }
 
     /// The summaries behind "Vus par un ancien membre", trashed items left out.
     public func seenByFormerMemberItems() async throws -> [FfiItemSummary] {
-        let seen = Set(try await read { try $0.seenByFormerMembers() }.map(\.itemId))
-        sharing.seenByFormerMembers = seen
+        if !sharingPinned {
+            sharing.seenByFormerMembers = Set(try await read { try $0.seenByFormerMembers() }.map(\.itemId))
+        }
+        let seen = sharing.seenByFormerMembers
         return summaries.filter { seen.contains($0.id) && $0.trashedAt == nil }
     }
 }

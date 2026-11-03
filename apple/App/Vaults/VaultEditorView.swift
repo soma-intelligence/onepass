@@ -175,6 +175,8 @@ struct VaultEditorView: View {
     @State private var confirmDelete = false
     @FocusState private var nameFocused: Bool
 
+    @State private var sharingVault = false
+
     init(vault: FfiVault?, onDone: @escaping () -> Void) {
         self.vault = vault
         self.onDone = onDone
@@ -235,6 +237,7 @@ struct VaultEditorView: View {
                     Text("vaults.inTravelModeVaults")
                 }
                 if let vault {
+                    shareSection(vault)
                     deleteSection(vault)
                 }
                 if let errorMessage {
@@ -280,6 +283,28 @@ struct VaultEditorView: View {
     /// No live or archived item left (trashed ones go with the vault).
     private func isEmpty(_ vault: FfiVault) -> Bool {
         !model.session.summaries.contains { $0.vaultId == vault.id && $0.trashedAt == nil }
+    }
+
+    /// "Partage" (sharing spec 10): the members of a shared vault, or "Partager" on a private one.
+    @ViewBuilder private func shareSection(_ vault: FfiVault) -> some View {
+        Section("sharing.vault.section") {
+            if model.session.sharedRole(of: vault.id) != nil {
+                NavigationLink {
+                    MembersView(vaultID: vault.id)
+                } label: {
+                    Label("sharing.vault.members", systemImage: "person.2")
+                }
+                .accessibilityIdentifier("vault.editor.members")
+            } else {
+                Button {
+                    sharingVault = true
+                } label: {
+                    Label("sharing.vault.share", systemImage: "person.crop.circle.badge.plus")
+                }
+                .accessibilityIdentifier("vault.editor.share")
+                .sheet(isPresented: $sharingVault) { ShareVaultSheet(vaultID: vault.id) }
+            }
+        }
     }
 
     private func deleteSection(_ vault: FfiVault) -> some View {

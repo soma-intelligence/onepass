@@ -43,6 +43,7 @@ struct HomeTab: View {
                         AccountChangedSection()
                         // Under the search, above Tous les éléments and Favoris (spec 2026-11-03-duplicates).
                         if !searchActive { DuplicatesBanner(loader: duplicates) }
+                        SharingBanners(horizontalPadding: 0)
                         tiles(all: counts.all, favorites: counts.favorites)
                         if model.travel.suggestion != .none, !searchActive {
                             TravelSuggestionCard()

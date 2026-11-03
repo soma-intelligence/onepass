@@ -22,6 +22,8 @@ struct LockView: View {
     @State private var fieldFocused = false
     /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop.
     @State private var dialRefusals = 0
+    /// "J'ai perdu mon mot de passe ou ma Secret Key" is open.
+    @State private var recovering = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -295,6 +297,15 @@ struct LockView: View {
                 .padding(.top, 8)
                 .transition(.opacity)
                 .accessibilityIdentifier("lock.error")
+        }
+        // Sharing plan 4: recovery with the organizer's help. Shown once this device has its keys
+        // (device keys plan); until then the flow cannot start.
+        if model.deviceKeys != nil {
+            Button("recovery.lost") { recovering = true }
+                .font(.footnote)
+                .padding(.top, 10)
+                .accessibilityIdentifier("lock.recoverWithHelp")
+                .sheet(isPresented: $recovering) { RecoverWithHelpView() }
         }
         if let until = lockoutUntil {
             TimelineView(.periodic(from: .now, by: 1)) { context in

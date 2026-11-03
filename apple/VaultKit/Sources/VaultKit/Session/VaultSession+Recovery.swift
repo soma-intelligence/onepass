@@ -41,6 +41,7 @@ extension VaultSession {
     /// Reads the recovery requests for this account from the store, without unlocking: the app calls
     /// it at launch and after each sync round, locked or not (spec 11.5).
     public func refreshRecoveryAlerts() async {
+        if sharingPinned { return }
         let path = dbPath
         guard FileManager.default.fileExists(atPath: path) else {
             recoveryAlerts = []

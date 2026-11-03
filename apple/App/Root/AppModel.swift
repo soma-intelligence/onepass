@@ -500,12 +500,17 @@ final class AppModel {
         }
         #endif
         tasks.append(Task { [weak self] in await self?.refreshAutoFillStatus() })
+        // A recovery asked by an organizer shows at launch, locked or not (sharing spec 11.5).
+        tasks.append(Task { [weak self] in await self?.primarySession.refreshRecoveryAlerts() })
         guard let router else { return }
         let coordinator = coordinator
         tasks.append(Task { [weak self] in
             for await _ in await router.remoteChanges() {
                 await self?.primarySession.reload()
                 self?.remoteRevision &+= 1
+                // Sharing plan 4: rekeys owed, then the sharing state and the recovery alerts.
+                _ = try? await self?.primarySession.afterSyncRound()
+                await self?.primarySession.refreshRecoveryAlerts()
             }
         })
         tasks.append(Task { [weak self] in
@@ -1101,6 +1106,7 @@ final class AppModel {
     /// whichever account is shown.
     func primaryStateChanged(_ state: VaultSession.State) {
         companion.sessionChanged()
+        if state == .unlocked { Task { await refreshSharing() } }
         #if os(iOS)
         // The phone reads its agent requests only while the vault is open.
         if let phoneAgents { Task { await phoneAgents.sessionChanged() } }

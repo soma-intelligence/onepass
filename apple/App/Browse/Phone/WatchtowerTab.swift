@@ -47,6 +47,10 @@ struct WatchtowerTab: View {
                     ForEach(flagged) { card in
                         PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
                     }
+                    let seen = model.seenByFormerMemberIDs
+                    if !seen.isEmpty {
+                        PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
+                    }
                     CryptoPhraseAlertCard()
                     let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
                     if !clear.isEmpty {
@@ -68,7 +72,10 @@ struct WatchtowerTab: View {
             PhoneRootToolbar()
         }
         .refreshable { watchtower.refresh(model.session) }
-        .task(id: model.session.summariesRevision) { watchtower.refreshIfNeeded(model.session) }
+        .task(id: model.session.summariesRevision) {
+            watchtower.refreshIfNeeded(model.session)
+            _ = try? await model.session.seenByFormerMemberItems()
+        }
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")

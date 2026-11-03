@@ -74,6 +74,7 @@ extension VaultSession {
     /// received items again. A part that cannot be read (a legacy account without device keys) is
     /// left empty: display only.
     public func refreshSharing(at now: Date = Date()) async throws {
+        if sharingPinned { return }
         let t = Self.unix(now)
         let snapshot = try await read { session in
             var s = SharingSnapshot()
@@ -126,7 +127,46 @@ extension VaultSession {
         return notices
     }
 
+    #if DEBUG
+    /// Demo data and UI tests (`-OnePassDemoSharing YES`): shows `snapshot` and `alerts` as if the
+    /// core had read them; `refreshSharing` keeps them.
+    public func showDemoSharing(_ snapshot: SharingSnapshot, alerts: [FfiRecoveryAlert] = []) {
+        sharing = snapshot
+        recoveryAlerts = alerts
+        sharingPinned = true
+    }
+    #endif
+
+    /// This account's role in a shared vault (the core's), nil for a personal vault.
+    public func sharedRole(of vaultID: String) -> FfiRole? {
+        sharing.sharedVaults.first { $0.vaultId == vaultID }?.role
+            ?? allVaults.first { $0.id == vaultID }?.shared?.role
+    }
+
     // MARK: - Contacts
+
+    /// An in-person verification on the unlocked session; nil while locked.
+    public func contactVerificationFlow(
+        myName: String, keys: any DeviceKeySource, creator: any ContactZoneCreating
+    ) -> ContactVerificationFlow? {
+        guard let session = coreSession else { return nil }
+        return ContactVerificationFlow(session: session, myName: myName, keys: keys, creator: creator)
+    }
+
+    /// A remote invitation; while locked, an opened link waits in the Keychain for `unlocked`.
+    public func contactInviteFlow(
+        myName: String, drops: any InviteDrops, creator: any ContactZoneCreating, hosted: URL
+    ) -> ContactInviteFlow {
+        ContactInviteFlow(
+            session: coreSession, myName: myName, keychain: environment.keychain, drops: drops, creator: creator,
+            hosted: hosted)
+    }
+
+    /// The organizer's side of a recovery for `member`; nil while locked.
+    public func recoveryReleaseFlow(member: String) -> RecoveryReleaseFlow? {
+        guard let session = coreSession else { return nil }
+        return RecoveryReleaseFlow(session: session, member: member)
+    }
 
     /// "Comparer le numéro de sécurité" (spec 5.3.2): a `Link` contact whose number matches becomes
     /// `Verified`.

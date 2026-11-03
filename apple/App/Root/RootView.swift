@@ -31,6 +31,11 @@ struct RootView: View {
 
     var body: some View {
         content
+            // Sharing notices. iPhone: on the lock screen only, the home shows them in its blocks
+            // (its large header draws under the top inset).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if showsRootSharingBanners { SharingBanners() }
+            }
             .animation(.smooth(duration: 0.25), value: route)
             #if os(iOS)
             .environment(\.vaultDialTurn, door.dialTurn)
@@ -216,6 +221,13 @@ struct RootView: View {
         // An account is in the store but this device lacks its Secret Key: Emergency Kit.
         if model.session.needsSecretKey, state != .unlocked { return .onboarding }
         return state == .unlocked ? .unlocked : .lock
+    }
+
+    private var showsRootSharingBanners: Bool {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone { return route == .lock }
+        #endif
+        return true
     }
 
     @ViewBuilder private var content: some View {
