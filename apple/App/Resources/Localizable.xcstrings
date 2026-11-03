@@ -36103,31 +36103,31 @@
         }
       }
     },
-    "settings.alreadyImportedItemS %lld %lld" : {
+    "settings.importOutcome %lld %lld %lld" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld already imported item(s) updated, %2$lld new"
+            "value" : "%1$lld fixed, %2$lld added, %3$lld unchanged"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld elementos ya importados actualizados, %2$lld nuevos"
+            "value" : "%1$lld corregidos, %2$lld añadidos, %3$lld sin cambios"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld élément(s) déjà importé(s) mis à jour, %lld nouveau(x)"
+            "value" : "%1$lld corrigé(s), %2$lld ajouté(s), %3$lld inchangé(s)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld elementi già importati aggiornati, %2$lld nuovi"
+            "value" : "%1$lld corretti, %2$lld aggiunti, %3$lld invariati"
           }
         }
       }
@@ -43933,6 +43933,83 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld date illeggibili, conservate come testo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings.passkeysNeedCredentialExchange %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passkey not in the file: import it from 1Password with Credential Exchange"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passkeys not in the file: import them from 1Password with Credential Exchange"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld llave de acceso no está en el archivo: impórtala desde 1Password con Credential Exchange"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld llaves de acceso no están en el archivo: impórtalas desde 1Password con Credential Exchange"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld clé d'accès absente du fichier : importe-la depuis 1Password avec l'échange d'identifiants"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld clés d'accès absentes du fichier : importe-les depuis 1Password avec l'échange d'identifiants"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passkey non presente nel file: importala da 1Password con Credential Exchange"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passkey non presenti nel file: importale da 1Password con Credential Exchange"
                 }
               }
             }

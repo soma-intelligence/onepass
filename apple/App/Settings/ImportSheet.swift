@@ -138,7 +138,9 @@ struct ImportSheet: View {
     @State private var format: String?
     @State private var preview: FfiImportSummary?
     /// Items of the export already in the chosen vault from an earlier import: updated, not added.
-    @State private var updates: UInt32 = 0
+    /// What importing into the chosen vault would do (`previewImportInto`): nil until counted.
+    @State private var into: FfiImportSummary?
+    private var updates: UInt32 { into?.updated ?? 0 }
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
@@ -489,6 +491,13 @@ struct ImportSheet: View {
                             .editorRowPadding()
                     }
                     .accessibilityIdentifier("import.done")
+                    if d.updated > 0 {
+                        Label(Self.outcomeLine(d), systemImage: "arrow.triangle.2.circlepath")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .accessibilityIdentifier("import.outcome")
+                    }
                     contentSection(d, done: true)
                 }
                 .padding(20)
@@ -523,7 +532,7 @@ struct ImportSheet: View {
                     contentSection(p)
                     destinationSection
                     if updates > 0 {
-                        Label(Self.updatesLine(updates, of: p.items), systemImage: "arrow.triangle.2.circlepath")
+                        Label(Self.outcomeLine(into ?? p), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 4)
@@ -828,11 +837,11 @@ struct ImportSheet: View {
     /// How many items of the export already sit in the chosen vault from an earlier import.
     private func countUpdates() async {
         guard let format, !vaultID.isEmpty else {
-            updates = 0
+            into = nil
             return
         }
         let summary = try? await model.session.previewImport(format: format, data: buffer.data, vaultID: vaultID)
-        updates = summary?.updated ?? 0
+        into = summary
     }
 
     private func runImport() async {
@@ -844,7 +853,7 @@ struct ImportSheet: View {
             let written = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
             buffer.wipe()
             model.showToast(written.updated > 0
-                ? Self.updatesLine(written.updated, of: written.items)
+                ? Self.outcomeLine(written)
                 : Self.doneLine(written.items, vault: vaultName))
             doneVaultName = vaultName
             done = written
@@ -909,15 +918,16 @@ struct ImportSheet: View {
         case "attachment_skipped": String(localized: "settings.attachmentsNotImported \(n)")
         case "unsupported_entry": String(localized: "settings.entriesOfUnsupportedType \(n)")
         case "bad_date": String(localized: "settings.unreadableDatesKeptAs \(n)")
+        case "passkey_needs_cxf": String(localized: "settings.passkeysNeedCredentialExchange \(n)")
         // A warning this version does not know yet: counted, never shown as its raw code.
         default: String(localized: "settings.itemsImportedWithNote \(n)")
         }
     }
 
-    /// "12 éléments déjà importés seront mis à jour, 3 nouveaux".
-    private static func updatesLine(_ updated: UInt32, of total: UInt32) -> String {
-        let fresh = Int(total) - Int(min(updated, total))
-        return String(localized: "settings.alreadyImportedItemS \(Int(updated)) \(fresh)")
+    /// "4 corrigés, 3 ajoutés, 120 inchangés": what a re-import does with the items an earlier
+    /// import of the same export made (fixed in place, never duplicated).
+    private static func outcomeLine(_ s: FfiImportSummary) -> String {
+        String(localized: "settings.importOutcome \(Int(s.fixed)) \(Int(s.added)) \(Int(s.unchanged))")
     }
 
     private static func pdfMessage(_ e: PDFImportError) -> String {
