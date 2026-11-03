@@ -212,7 +212,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   const closeButton = () =>
     h(
       "button",
-      { class: "btn-icon", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(closeOverlay) } },
+      { class: "btn-icon ov-close", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(closeOverlay) } },
       icon("close", 10),
     );
 

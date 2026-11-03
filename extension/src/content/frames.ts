@@ -91,7 +91,11 @@ iframe {
   border: 0;
   border-radius: 14px;
   background: transparent;
-  color-scheme: normal;
+  /* The frames follow the system appearance. "normal" would take the page's
+     declared scheme: a page that declares only "light" turned the menu light
+     on a dark Mac, and, the overlay's own document being dark, made Chromium
+     paint an opaque white backdrop under it (a white line along its edge). */
+  color-scheme: light dark;
   pointer-events: auto;
   box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
   opacity: 0;
@@ -319,7 +323,8 @@ export function createFrames(opts: FramesOptions): Frames {
       iframe.setAttribute("allow", "");
       iframe.setAttribute("referrerpolicy", "no-referrer");
       iframe.setAttribute("scrolling", "no");
-      iframe.setAttribute("title", "OnePass");
+      // Named for assistive technologies only: a `title` shows as a tooltip over the frame.
+      iframe.setAttribute("aria-label", "OnePass");
       iframe.setAttribute("src", url);
       const height = FRAME_HEIGHT[kind];
       place(kind, iframe, anchor, height);

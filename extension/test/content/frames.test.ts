@@ -94,6 +94,23 @@ describe("shell placement", () => {
     expect(document.documentElement.lastElementChild).toBe(host());
   });
 
+  it("frames follow the system appearance, whatever the page declares, and carry no tooltip", () => {
+    setPage(`<meta name="color-scheme" content="light"><input id="f" data-test-rect="10,10,200,30">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, document.getElementById("f"));
+    const iframe = shell.root.querySelector("iframe")!;
+    // A frame of "normal" scheme takes the page's (a page that says "light" turned the menu
+    // light on a dark Mac, and painted an opaque white backdrop under the dark pill).
+    const css = shell.root.querySelector("style")!.textContent!;
+    const rule = /iframe \{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(rule).toMatch(/color-scheme:\s*light dark/);
+    // A `title` shows as a "OnePass" tooltip over the frame's corner: named for assistive tech only.
+    expect(iframe.hasAttribute("title")).toBe(false);
+    expect(iframe.getAttribute("aria-label")).toBe("OnePass");
+    frames.destroy();
+  });
+
   it("ignores clicks into a frame for 300 ms after it moves or the host comes back", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setPage(`<input id="f" data-test-rect="10,10,200,30">`);

@@ -104,6 +104,12 @@ interface WorkerFixtures {
 
 interface TestFixtures {
   build: Build;
+  /**
+   * The system appearance the browser runs under: "dark" starts Chromium with
+   * `--force-dark-mode`, as on a Mac in dark mode (no media emulation, which
+   * would reach every frame and hide how the frames pick their scheme).
+   */
+  scheme: "light" | "dark";
   ext: Ext;
 }
 
@@ -119,7 +125,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: "worker" },
   ],
   build: ["regular", { option: true }],
-  ext: async ({ env, build }, use) => {
+  scheme: ["light", { option: true }],
+  ext: async ({ env, build, scheme }, use) => {
     const { server, cert, cache, staged } = env;
     server.reset();
     const dir = mkdtempSync(join(tmpdir(), "onepass-e2e-test-"));
@@ -136,6 +143,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         headless: true,
         viewport: { width: 1280, height: 860 },
         locale: "fr-FR",
+        // Playwright emulates a light scheme by default (in every frame): off for "dark".
+        ...(scheme === "dark" ? { colorScheme: null } : {}),
         ...(process.env.ONEPASS_E2E_VIDEO
           ? { recordVideo: { dir: process.env.ONEPASS_E2E_VIDEO, size: { width: 1280, height: 860 } } }
           : {}),
@@ -151,6 +160,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           "--disable-sync",
           "--disable-background-networking",
           "--disable-component-update",
+          ...(scheme === "dark" ? ["--force-dark-mode"] : []),
         ],
       });
       context = ctx;

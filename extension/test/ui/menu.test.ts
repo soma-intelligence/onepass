@@ -227,6 +227,28 @@ describe("inline menu", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("one selection: the pointer and the relayed keys move the same highlight", async () => {
+    const keys: string[][] = [["down"]];
+    const { r, handle } = setup((m) => {
+      if (m.type === "menu_keys") {
+        const k = keys.shift();
+        return k ? ok({ keys: k }) : new Promise<Reply>(() => undefined);
+      }
+      return def();
+    });
+    await handle.ready;
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    await new Promise((res) => setTimeout(res, 0));
+    const opts = [...r.querySelectorAll<HTMLElement>("[role=option]")];
+    const selected = () => opts.filter((o) => o.classList.contains("active") || o.getAttribute("aria-selected") === "true");
+    expect(selected()).toEqual([opts[0]]);
+    // The pointer over another row takes the selection: never two rows highlighted.
+    opts[2]!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    expect(selected()).toEqual([opts[2]]);
+    opts[1]!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    expect(selected()).toEqual([opts[1]]);
+  });
+
   it("keyboard: arrows move between options, Escape closes", async () => {
     const { r, handle, worker } = setup(def);
     await handle.ready;

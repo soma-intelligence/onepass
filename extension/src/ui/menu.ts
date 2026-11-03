@@ -103,6 +103,21 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     opts[active]?.scrollIntoView?.({ block: "nearest" });
   };
 
+  // One selection: the row under the pointer is the highlighted row (the
+  // relayed arrows go on from it), never a hover tint beside a key highlight.
+  container.addEventListener("mousemove", (e) => {
+    const row = (e.target as Element | null)?.closest?.("[data-opt]");
+    const i = row ? options().indexOf(row as HTMLButtonElement) : -1;
+    if (i >= 0 && i !== active) highlight(i);
+  });
+  container.addEventListener("mouseleave", () => {
+    active = -1;
+    for (const o of options()) {
+      o.classList.remove("active");
+      o.setAttribute("aria-selected", "false");
+    }
+  });
+
   const relayed = (key: MenuKey) => {
     const opts = options();
     if (opts.length === 0) return;
