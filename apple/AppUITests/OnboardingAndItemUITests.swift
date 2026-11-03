@@ -253,6 +253,30 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertFalse(menu.isHittable, "Accueil shown during a search")
     }
 
+    // MARK: - Demo data
+
+    /// `-OnePassDemoData YES`: the demo account is made at launch (seconds with the real Argon2id,
+    /// far more on a busy Mac), and the onboarding never shows meanwhile. Once seeded, the Crypto
+    /// screen (`-OnePassDemoList crypto`) shows the demo wallets' balance from recorded answers.
+    func testDemoDataOpensTheVaultWithCryptoBalances() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
+        app.launch()
+
+        let welcome = app.buttons["onboarding.create"]
+        let total = app.descendants(matching: .any)["crypto.total"].firstMatch
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        while !total.exists, Date() < deadline {
+            XCTAssertFalse(welcome.exists, "onboarding shown while the demo account is made")
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTAssertTrue(total.exists, "Crypto screen without a total")
+        // Recorded answers: a non-zero balance in the user's currency.
+        XCTAssertTrue(total.label.contains(where: { ("1"..."9").contains($0) }), "zero crypto total: \(total.label)")
+        XCTAssertTrue(app.descendants(matching: .any)["crypto.coin.bitcoin"].firstMatch.exists, "no Bitcoin holding")
+        XCTAssertTrue(app.descendants(matching: .any)["crypto.coin.ethereum"].firstMatch.exists, "no Ethereum holding")
+    }
+
     // MARK: - Unfolded iPhone
 
     /// Showcase of the unfolded layout (recorded for review): two panes, hold to reveal a
