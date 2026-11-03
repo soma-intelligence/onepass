@@ -285,3 +285,17 @@ path = "fuzz_targets/family.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "item_send"
+path = "fuzz_targets/item_send.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recovery_message"
+path = "fuzz_targets/recovery_message.rs"
+test = false
+doc = false
+bench = false
