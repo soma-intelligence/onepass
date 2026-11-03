@@ -1759,6 +1759,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -1924,6 +1928,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
@@ -2438,6 +2446,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -2796,6 +2808,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
