@@ -117,16 +117,11 @@ paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
   const menu = await ext.extFrame(page, "menu");
   await menu.waitForLoadState("domcontentloaded");
   expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ action: "show_menu" });
+  // The pick signs in to the end (identifier, password, code), and the chain notes it at its end.
   await ext.pickRow(menu, "Atlas Cloud", FX.atlas.email);
-  await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
-  // The user sends the identifier: the page moves on, the pick is noted.
-  await page.locator("#next").click();
-  await expect(page).toHaveURL(`${ATLAS}/multistep/password`);
-  await expect.poll(() => audited(ext, "note_fill").length, { timeout: 10_000 }).toBe(1);
-  // One click on the password page: the remembered account, the chain to the end (done).
-  await clickIcon(ext, page, "#password");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect.poll(async () => (await ext.chainState())?.status, { timeout: 20_000 }).toBe("done");
+  await expect.poll(() => audited(ext, "note_fill").length, { timeout: 10_000 }).toBe(1);
   await page.goto(`${ATLAS}/logout`);
 
   // Next time: the same account, no menu.

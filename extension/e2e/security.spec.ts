@@ -320,9 +320,23 @@ paired("S6_no_fill_in_cross_site_iframe", async ({ ext }) => {
 
 paired("S7_invisible_form_stays_empty", async ({ ext }) => {
   const { page } = ext;
+  // The pick signs in (the chain submits the form): the post is held here, so the page and
+  // its decoys stay on screen, and the body sent is checked too.
+  const posted: string[] = [];
+  await page.route(`${ATLAS}/login`, (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posted.push(route.request().postData() ?? "");
+    // No content: the browser stays on the page.
+    return route.fulfill({ status: 204 });
+  });
   await page.goto(`${ATLAS}/invisible`);
   const menu = await ext.openMenu(page, "#email");
   await ext.pickRow(menu, "Atlas Cloud");
+  await expect.poll(() => posted.length, { timeout: 20_000 }).toBe(1);
+  const sent = new URLSearchParams(posted[0]);
+  expect(sent.get("email")).toBe(FX.atlas.email);
+  expect(sent.get("password")).toBe(FX.atlas.password);
+  for (const k of ["p0", "hidden_password", "p2", "p3", "p4", "p5"]) expect(sent.get(k) ?? "", k).toBe("");
   await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
   await expect(page.locator("#password")).toHaveValue(FX.atlas.password);
   await emptyFields(page, "#decoy-email", "#decoy-password", "#ghost-email", "#ghost-password");

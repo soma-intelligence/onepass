@@ -37,14 +37,13 @@ paired("menu_fill_login", async ({ ext }) => {
   const records = Object.entries(await ext.sessionStorage()).filter(([k]) => k.startsWith("menu:"));
   expect(records).toHaveLength(1);
   expect((records[0]?.[1] as { documentId?: unknown }).documentId).toEqual(expect.any(String));
+  // Remplir on a sign-in form signs in: filled, then sent by OnePass.
   await ext.pickRow(menu, "Atlas Cloud");
-  await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
-  await expect(page.locator("#password")).toHaveValue(FX.atlas.password);
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
   // The host journaled the secret it returned (no value): positive control of S3 and S9.
   expect(ext.audit()).toContain('"op":"fill_login"');
   expect(ext.audit()).not.toContain(FX.atlas.password);
-  await page.locator("#submit").click();
-  await expect(page.locator("#status")).toHaveText("Connecté");
 
   // The pairing survives a service worker restart (IndexedDB): fill again, no new pairing.
   await (await ext.worker()).evaluate(() => {
@@ -54,8 +53,8 @@ paired("menu_fill_login", async ({ ext }) => {
   await page.goto(`${ATLAS}/logout`);
   const again = await ext.openMenu(page, "#email");
   await ext.pickRow(again, "Atlas Cloud (multi)");
-  await expect(page.locator("#email")).toHaveValue(FX.ops.email);
-  await expect(page.locator("#password")).toHaveValue(FX.ops.password);
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.ops.email);
   expect(ext.host.codes()).toHaveLength(1);
   // A new worker served this fill: the in-memory marker is gone.
   const marker = await (await ext.worker()).evaluate(() => (globalThis as { e2eMarker?: number }).e2eMarker);
@@ -82,10 +81,8 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await expect(saved).toHaveCount(1);
   const title = (await saved.locator(".t1").textContent()) ?? "";
   await ext.pickRow(menu, title, "alex.new@atlas.dev");
-  await expect(page.locator("#email")).toHaveValue("alex.new@atlas.dev");
-  await expect(page.locator("#password")).toHaveValue("Nouv-Pass-0042");
-  await page.locator("#submit").click();
-  await expect(page.locator("#status")).toHaveText("Connecté");
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText("alex.new@atlas.dev");
 });
 
 paired("change_password_updates_item", async ({ ext }) => {
@@ -116,9 +113,8 @@ paired("change_password_updates_item", async ({ ext }) => {
   await page.goto(`${ATLAS}/login`);
   const menu = await ext.openMenu(page, "#email");
   await ext.pickRow(menu, "Atlas Cloud (multi)");
-  await expect(page.locator("#password")).toHaveValue(generated);
-  await page.locator("#submit").click();
-  await expect(page.locator("#status")).toHaveText("Connecté");
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  expect(ext.server.users.get(FX.ops.email)).toBe(generated);
 });
 
 paired("signup_generates_password", async ({ ext }) => {
@@ -263,13 +259,11 @@ paired("menu_keyboard_from_the_field", async ({ ext }) => {
   await expect(menu.locator("button.row.active .t1")).toHaveText("Atlas Cloud (multi)");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#email")).toHaveValue(FX.ops.email);
-  await expect(page.locator("#password")).toHaveValue(FX.ops.password);
-  // Return picked the row: the page's form was not submitted.
-  await expect(page.locator("#status")).toHaveCount(0);
-  expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+  // Return picked the highlighted row (not the page's empty form): signed in as that login.
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.ops.email);
   // Escape closes; the focus stays where it was.
-  await page.locator("#email").fill("");
+  await page.goto(`${ATLAS}/logout`);
   await ext.openMenu(page, "#email");
   await page.keyboard.press("Escape");
   await expect.poll(() => ext.findExtFrame(page, "menu")).toBeUndefined();

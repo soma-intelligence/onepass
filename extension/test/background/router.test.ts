@@ -118,7 +118,8 @@ describe("router", () => {
 
   it("menu open, init and pick fill the bound frame", async () => {
     const { ext, client } = await setup();
-    const token = await openMenu(ext);
+    // A sign-up form: the pick fills (on a sign-in form it runs the chain, pages.test.ts).
+    const token = await openMenu(ext, { formKind: "signup" });
     const ui = uiSender(`menu.html#${token}`, 7);
     await ext.send({ type: "menu_init", token }, ui);
     expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
@@ -127,7 +128,7 @@ describe("router", () => {
       ctx: "menu",
       item_id: "it_01",
       origin: SITE,
-      fields: ["username", "password"],
+      fields: ["username"],
     });
     expect(ext.sentToTabs).toEqual([
       {

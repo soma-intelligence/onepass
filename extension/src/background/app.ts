@@ -36,7 +36,7 @@ import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
 import type { ModelSession } from "./model";
-import { BgError, type BridgeLike, Session } from "./session";
+import { BgError, type BridgeLike, Session, toBgError } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
 
 export interface BackgroundOptions {
@@ -68,6 +68,8 @@ export const PLAN_MENU_MS = 30_000;
 
 /** Forms the menu offers sign-ins on (provider methods start the chain there). */
 const SIGN_IN_FORMS: ReadonlySet<string> = new Set(["login", "signup", "change_password", "otp"]);
+/** Forms where picking a login runs the whole sign-in (chain) rather than a fill of the page. */
+const CHAIN_FORMS: ReadonlySet<string> = new Set(["login", "otp"]);
 /** Forms where the menu offers to generate a password, items or not. */
 const NEW_PASSWORD_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
 
@@ -466,6 +468,26 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const rec = await menuRecord(m.token, from);
         // Only an item the menu showed; its kind comes from the host.
         const kind = rec.offered && Object.hasOwn(rec.offered, m.itemId) ? rec.offered[m.itemId] : undefined;
+        // A login on a sign-in form of the top document: the sign-in runs to its
+        // end (identifier, password, code), as the overlay's button does; a fill
+        // of the one page left the user on the next step. Where no chain can run
+        // (an http page, an item without a password), the fill as before.
+        if (kind === "login" && CHAIN_FORMS.has(rec.formKind) && rec.frameId === 0) {
+          // Still the document the menu was opened in (as the fill checks it).
+          const check = await frames.checkFillTarget(rec.tabId, 0, rec.origin, rec.documentId);
+          if (!check.ok) throw new BgError(check.code);
+          await menus.revokeFrame(rec.tabId, rec.frameId);
+          await removeFrame(ext.tabs, rec, "menu");
+          const start: StartOptions = { anchorRef: rec.fieldRef };
+          if (rec.planned) start.planned = rec.planned;
+          try {
+            await chain.start(rec.tabId, m.itemId, undefined, start);
+            return {};
+          } catch (e) {
+            const code = toBgError(e).code;
+            if (code !== "insecure_origin" && code !== "invalid") throw e;
+          }
+        }
         const t = targetOf(rec);
         // The choice and its rank, before the fill (a close racing it is no dismissal).
         if (kind !== undefined) void history.picked(menuList(rec.tabId, rec.frameId), m.itemId);

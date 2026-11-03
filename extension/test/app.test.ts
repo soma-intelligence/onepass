@@ -270,7 +270,7 @@ describe("site memory (note_fill)", () => {
     expect(t.notes()).toHaveLength(1);
   });
 
-  it("a pick in the menu a plan opened is noted once the page moves on", async () => {
+  it("a pick in the menu a plan opened runs the sign-in with that plan, noted by the chain at its end", async () => {
     const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A] }));
     await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
@@ -278,9 +278,21 @@ describe("site memory (note_fill)", () => {
     const ui = uiSender(`menu.html#${token}`, 7);
     await t.ext.send({ type: "menu_init", token }, ui);
     expect(await t.ext.send({ type: "menu_pick", token, itemId: A }, ui)).toEqual({ ok: {} });
+    expect(t.chainCalls).toEqual([[7, A, undefined, { anchorRef: "f1e0", planned: { roles: ["username", "current_password"], intent: "login" } }]]);
+  });
+
+  it("a pick in the menu a plan opened on a password change form is noted once the page moves on", async () => {
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A] }));
+    await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
+    const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "change_password" }, t.top)) as { ok: { url: string } };
+    const token = open.ok.url.split("#")[1] as string;
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await t.ext.send({ type: "menu_init", token }, ui);
+    expect(await t.ext.send({ type: "menu_pick", token, itemId: A }, ui)).toEqual({ ok: {} });
     t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
     await new Promise((r) => setTimeout(r, 0));
     expect(t.notes()).toEqual([expect.objectContaining({ item_id: A, roles: ["username", "current_password"], intent: "login" })]);
+    expect(t.chainCalls).toEqual([]);
   });
 
   it("save_confirmed_notes_fill: the saved login with the roles of the fill before it", async () => {

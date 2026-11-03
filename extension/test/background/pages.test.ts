@@ -6,6 +6,7 @@ import type { ChainDriver } from "../../src/background/chain/types";
 import { contentSender } from "../../src/background/frames";
 import { NEVER_SAVE_KEY } from "../../src/background/never-save";
 import { SAVE_TTL_MS, titleFromSite } from "../../src/background/save";
+import { BgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import type { ChainView } from "../../src/shared/ui";
 import { type Answer, FakeClient, record } from "./fake-client";
@@ -136,6 +137,41 @@ describe("menu extras", () => {
     });
     // The token is spent.
     expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("menu_pick of a login on a sign-in form runs the sign-in to its end (chain), from where the menu was", async () => {
+    const { ext, chain, client } = await setup();
+    const { token, ui } = await menu(ext);
+    expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
+    // Identifier, password, then the code: the chain, not a one-page fill.
+    expect(chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+    expect(chain.opts).toEqual([{ anchorRef: "e1" }]);
+    expect(client.requests.some((r) => r.op === "fill_login")).toBe(false);
+    expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "remove_frame").at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
+    expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("menu_pick on a password change form only fills (no chain)", async () => {
+    const { ext, chain } = await setup();
+    const r = (await ext.send(
+      { type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "change_password" },
+      csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }),
+    )) as { ok: { url: string } };
+    const token = hashOf(r.ok.url);
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await ext.send({ type: "menu_init", token }, ui);
+    await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui);
+    expect(chain.calls).toEqual([]);
+  });
+
+  it("menu_pick falls back to a fill where no chain can run", async () => {
+    const { ext, chain, client } = await setup();
+    chain.start = async () => {
+      throw new BgError("insecure_origin");
+    };
+    const { token, ui } = await menu(ext);
+    await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui);
+    expect(client.requests.some((r) => r.op === "fill_login")).toBe(true);
   });
 
   it("menu_signin takes a picked account only among those the menu showed, and anchors the progress", async () => {
