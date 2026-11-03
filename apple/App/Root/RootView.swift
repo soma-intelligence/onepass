@@ -57,8 +57,8 @@ struct RootView: View {
             }
             #endif
             .onAppear { model.start() }
-            .onChange(of: model.session.state) { _, state in
-                model.sessionStateChanged(state)
+            .onChange(of: model.session.state) { old, state in
+                model.sessionStateChanged(state, from: old)
             }
             // Favorites, titles and codes of the widgets follow the data.
             .onChange(of: model.session.summaries) {
@@ -178,14 +178,23 @@ struct RootView: View {
             .onChange(of: windowScene) { _, _ in
                 updateShield(scenePhase)
             }
+            // The lock screen's own Face ID prompt makes the scene inactive: the shield stays down
+            // for it, so the prompt rises over the lock screen and its dial, not a blank cover.
+            .onChange(of: model.biometricAutoPrompt.promptOnScreen) { _, _ in
+                updateShield(scenePhase)
+            }
             #endif
     }
 
     #if os(iOS) || os(visionOS)
-    /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9).
+    /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9). Not
+    /// over the lock screen's own biometric prompt, nor while its sheet leaves after a success (the
+    /// dial turns and the door opens right then); always in the background, where the app switcher
+    /// takes its picture.
     private func updateShield(_ phase: ScenePhase) {
         guard let windowScene else { return }
-        PrivacyShieldWindows.shared.setVisible(phase != .active, in: windowScene)
+        let visible = model.biometricAutoPrompt.shieldVisible(in: BiometricAutoPrompt.Phase(phase))
+        PrivacyShieldWindows.shared.setVisible(visible, in: windowScene)
     }
     #endif
 
