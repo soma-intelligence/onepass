@@ -130,6 +130,36 @@ describe("shell placement", () => {
     frames.destroy();
   });
 
+  it("touch screen: the sheet sits on top of the keyboard (the visual viewport), not under it", () => {
+    setPage(`<input id="f" data-test-rect="10,10,200,30">`);
+    const vv = { offsetTop: 40, height: 400 };
+    const desc = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    Object.defineProperty(window, "visualViewport", { configurable: true, get: () => vv });
+    try {
+      shell = createShell(document);
+      const frames = createFrames({ shell, doc: document, geometry: testGeometry, touch: true });
+      frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, document.getElementById("f"));
+      const iframe = shell.root.querySelector("iframe")!;
+      frames.resize("menu", 300);
+      expect(iframe.style.top).toBe("140px");
+      expect(iframe.style.height).toBe("300px");
+      // Taller than what is visible: capped to the visible part.
+      frames.resize("menu", 500);
+      expect(iframe.style.top).toBe("40px");
+      expect(iframe.style.height).toBe("400px");
+      // The keyboard goes away: the sheet follows on reposition.
+      vv.offsetTop = 0;
+      vv.height = 700;
+      frames.reposition();
+      expect(iframe.style.top).toBe("200px");
+      expect(iframe.style.height).toBe("500px");
+      frames.destroy();
+    } finally {
+      if (desc) Object.defineProperty(window, "visualViewport", desc);
+      else delete (window as { visualViewport?: unknown }).visualViewport;
+    }
+  });
+
   it("ignores clicks into a frame for 300 ms after it moves or the host comes back", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setPage(`<input id="f" data-test-rect="10,10,200,30">`);

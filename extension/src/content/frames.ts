@@ -311,6 +311,19 @@ export function createFrames(opts: FramesOptions): Frames {
     const view = doc.defaultView;
     return { w: view?.innerWidth ?? 1024, h: view?.innerHeight ?? 768 };
   };
+  /**
+   * The part of the page the user sees. On iOS the keyboard shrinks the
+   * visual viewport and not the layout one, so a sheet placed on innerHeight
+   * lands under the keyboard.
+   */
+  const visible = () => {
+    const vv = doc.defaultView?.visualViewport;
+    if (!vv || !(vv.height > 0)) {
+      const { h } = viewport();
+      return { top: 0, h };
+    }
+    return { top: vv.offsetTop, h: vv.height };
+  };
 
   /**
    * Under the anchor (the menu, or the overlay of a chain started from a
@@ -326,9 +339,12 @@ export function createFrames(opts: FramesOptions): Frames {
     let width2 = width;
     if (sheet(kind)) {
       // A bottom sheet across the screen; it does not follow the field.
+      // Its bottom is the top of the keyboard when one is up.
+      const v = visible();
       width2 = w;
       left = 0;
-      top = Math.max(0, vh - height);
+      height = Math.min(height, Math.max(0, Math.floor(v.h)));
+      top = Math.max(0, v.top + v.h - height);
     } else if (kind === "overlay") {
       // The one-click offer and its progress sit centered at the top of the page.
       left = Math.max(EDGE, Math.round((w - width) / 2));

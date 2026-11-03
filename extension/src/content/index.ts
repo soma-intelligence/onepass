@@ -483,6 +483,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
       // Unfiltered: a scroll of a host itself is not seen inside its root.
       listen(target, "scroll", queueLayout, { capture: true, passive: true }, false);
       listen(target, "resize", queueLayout, { passive: true });
+      // iOS: the keyboard moves the visual viewport only (the touch sheet sits on it).
+      const vv = view?.visualViewport;
+      if (vv) {
+        listen(vv, "resize", queueLayout, { passive: true }, false);
+        listen(vv, "scroll", queueLayout, { passive: true }, false);
+      }
       listen(
         doc,
         "keydown",
