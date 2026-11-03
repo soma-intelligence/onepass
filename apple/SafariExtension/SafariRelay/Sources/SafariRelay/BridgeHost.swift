@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// Where the Safari extension finds its bridge host.
@@ -47,3 +48,4 @@ public enum BridgeHost {
             arguments: arguments(config: defaultConfig(), bundlePath: bundle.bundlePath, extensionId: id))
     }
 }
+#endif
