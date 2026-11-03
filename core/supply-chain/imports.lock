@@ -174,11 +174,11 @@ user-login = "cuviper"
 user-name = "Josh Stone"
 
 [[publisher.ff]]
-version = "0.13.1"
-when = "2025-03-09"
-user-id = 6289
-user-login = "str4d"
-user-name = "Jack Grigg"
+version = "0.14.0"
+when = "2026-05-30"
+user-id = 1244
+user-login = "ebfull"
+user-name = "Sean Bowe"
 
 [[publisher.find-msvc-tools]]
 version = "0.1.0"
@@ -194,8 +194,8 @@ user-id = 55123
 user-login = "rust-lang-owner"
 
 [[publisher.group]]
-version = "0.12.0"
-when = "2022-05-04"
+version = "0.14.0"
+when = "2026-06-01"
 user-id = 1244
 user-login = "ebfull"
 user-name = "Sean Bowe"
@@ -2252,18 +2252,6 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.3.13 -> 0.3.14"
 aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
-
-[[audits.zcash.audits.group]]
-who = "Kris Nuttycombe <kris@nutty.land>"
-criteria = "safe-to-deploy"
-delta = "0.12.0 -> 0.12.1"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.group]]
-who = "Sean Bowe <ewillbefull@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "0.12.1 -> 0.13.0"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
 
 [[audits.zcash.audits.num-conv]]
 who = "Kris Nuttycombe <kris@nutty.land>"

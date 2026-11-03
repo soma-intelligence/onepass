@@ -5,7 +5,7 @@
 use aws_lc_rs::digest::{SHA256, digest};
 use aws_lc_rs::hmac::{self, HMAC_SHA512};
 use k256::elliptic_curve::PrimeField;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::sec1::ToSec1Point;
 use k256::{ProjectivePoint, PublicKey, Scalar};
 use ripemd::Ripemd160;
 use sha3::Digest;
@@ -78,7 +78,7 @@ pub(crate) fn scalar(bytes: &[u8]) -> Result<Scalar> {
 }
 
 pub(crate) fn compressed(point: &ProjectivePoint) -> Result<[u8; 33]> {
-    let enc = point.to_affine().to_encoded_point(true);
+    let enc = point.to_affine().to_sec1_point(true);
     enc.as_bytes().try_into().map_err(|_| Error::Crypto)
 }
 

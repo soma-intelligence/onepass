@@ -64,11 +64,6 @@ version = "0.46.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.base16ct]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-notes = "Constant-time hex of sec1, under k256 (secp256k1 public derivation of the watch-only crypto balances, spec 2026-11-02-crypto-watch, wallet_watch::bip32). Not audited here: exemption until an audit is imported or recorded."
-
-[[exemptions.base16ct]]
 version = "1.0.0"
 criteria = "safe-to-deploy"
 
@@ -130,11 +125,6 @@ version = "0.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
-version = "0.9.6"
-criteria = "safe-to-deploy"
-notes = "OID constants of der 0.7, under k256 through sec1 (watch-only crypto balances, spec 2026-11-02-crypto-watch). Version 0.10 is already in the lockfile. Not audited here: exemption until an audit is imported or recorded."
-
-[[exemptions.const-oid]]
 version = "0.10.2"
 criteria = "safe-to-deploy"
 notes = "OID constants, now shipped through digest 0.11 (feature oid) under sha1 0.11, the WebSocket handshake hash of tungstenite (mailbox wake listener, onepass-mailbox). Was safe-to-run for dev-dependencies only. Not audited here: exemption until an audit is imported or recorded."
@@ -164,11 +154,6 @@ version = "1.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.5.5"
-criteria = "safe-to-deploy"
-notes = "Constant-time big integers of elliptic-curve, under k256 (secp256k1 for BIP32 public derivation, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
-
-[[exemptions.crypto-bigint]]
 version = "0.7.10"
 criteria = "safe-to-deploy"
 
@@ -195,6 +180,11 @@ notes = "Linux Secret Service store of the CLI Secret Key (spec 2026-10-28-cli-s
 
 [[exemptions.der]]
 version = "0.8.3"
+criteria = "safe-to-deploy"
+notes = "DER codec under sec1 0.8, under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). The core only uses compressed SEC1 points with it. Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.der]]
+version = "0.8.3"
 criteria = "safe-to-run"
 
 [[exemptions.deranged]]
@@ -214,9 +204,9 @@ version = "0.2.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.elliptic-curve]]
-version = "0.13.8"
+version = "0.14.3"
 criteria = "safe-to-deploy"
-notes = "RustCrypto curve traits under k256 (secp256k1 for BIP32 public derivation and the explicit phrase-to-public derivation, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
+notes = "RustCrypto curve traits under k256 0.14 (secp256k1 for BIP32 public derivation and the explicit phrase-to-public derivation, spec 2026-11-02-crypto-watch). 0.14 drops crypto-bigint 0.5 (RUSTSEC-2026-0387, timing on secret integers). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.fancy-regex]]
 version = "0.18.0"
@@ -352,9 +342,9 @@ version = "0.3.106"
 criteria = "safe-to-deploy"
 
 [[exemptions.k256]]
-version = "0.13.4"
+version = "0.14.0"
 criteria = "safe-to-deploy"
-notes = "secp256k1 arithmetic (feature arithmetic only, no ECDSA, no signing): BIP32 CKDpub of xpub watch-only addresses and the public key of the explicit phrase-to-public derivation (spec 2026-11-02-crypto-watch). aws-lc-rs has no secp256k1. Not audited here: exemption until an audit is imported or recorded."
+notes = "secp256k1 arithmetic (feature arithmetic only, no ECDSA, no signing): BIP32 CKDpub of xpub watch-only addresses and the public key of the explicit phrase-to-public derivation (spec 2026-11-02-crypto-watch). aws-lc-rs has no secp256k1. 0.14 to leave crypto-bigint 0.5 (RUSTSEC-2026-0387). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.keccak]]
 version = "0.2.2"
@@ -480,6 +470,16 @@ criteria = "safe-to-deploy"
 version = "0.2.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.primefield]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+notes = "Prime field arithmetic under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.primeorder]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+notes = "Prime order curve formulas under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
+
 [[exemptions.proc-macro-crate]]
 version = "3.5.0"
 criteria = "safe-to-run"
@@ -579,9 +579,9 @@ version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.sec1]]
-version = "0.7.3"
+version = "0.8.1"
 criteria = "safe-to-deploy"
-notes = "SEC1 point encoding under k256 (compressed public keys of BIP32, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
+notes = "SEC1 point encoding under k256 0.14 (compressed public keys of BIP32, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.security-framework]]
 version = "3.7.0"
@@ -775,6 +775,11 @@ criteria = "safe-to-deploy"
 [[exemptions.web-sys]]
 version = "0.3.106"
 criteria = "safe-to-deploy"
+
+[[exemptions.wnaf]]
+version = "0.14.1"
+criteria = "safe-to-deploy"
+notes = "Windowed NAF scalar multiplication under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). Not audited here: exemption until an audit is imported or recorded."
 
 [[exemptions.writeable]]
 version = "0.6.4"
