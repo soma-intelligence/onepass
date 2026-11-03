@@ -62,3 +62,25 @@ Lecture :
 - Pistes chiffrables ensuite : plus de pages réelles (23 aujourd'hui, la moitié des candidats refusés par `robots.txt` ou vides en headless), poids du banc plus fort, modèle B.
 
 Chiffres avant et après, en une ligne : réel holdout F1 fusionnée 0,931 (heuristique) contre 0,953 (modèle), laboratoire 94,0 % contre 80,0 %. Livré : l'heuristique, inchangée.
+
+## 4. Correctifs de l'heuristique (après le banc)
+
+Les quatre défauts de la section 1 sont corrigés dans l'heuristique livrée, sans cas par site ; chacun est épinglé par un test sur sa page enregistrée (`extension/test/bench/recordings.test.ts`) et, pour l'intention, par un test de `fill_plan` (commits `ecd7124a`, `e968f491`, `935a63d1`).
+
+| Défaut | Règle générale |
+| --- | --- |
+| wordpress-login (et vimeo-login) | un « Continuer » désactivé marque encore l'étape d'identifiant ; il n'est jamais le bouton que OnePass presse |
+| zoom-login | un « Next » placé après un `<form>` sans bouton propre est son envoi, si aucun champ d'un autre groupe n'est entre eux |
+| microsoft-login, spiegel-login | le genre `login` du détecteur l'emporte sur un lien de création ; « Anmelden oder Konto erstellen » est un bouton de connexion |
+| qiita-signup | un mot de passe seul, sous un envoi qui crée un compte, dans un formulaire qui demande deux champs d'identité, est un nouveau mot de passe |
+
+| Mesure | Avant | Après |
+| --- | --- | --- |
+| Banc hors ligne, champs justes | 41 / 44 | 44 / 44 |
+| Banc hors ligne, F1 macro fusionnée | 0,838 | 0,889 |
+| Banc hors ligne, remplissage juste | 17 / 23 | 23 / 23 |
+| Laboratoire `g5-2026-11-02`, 200 sites, 3 workers, même `main` | 90,5 % (19 échecs) | 95,5 % (9 échecs) |
+| Un clic courant | 83 / 183 | 92 / 183 |
+| Fuites | 0 | 0 |
+
+Le laboratoire « avant » est le même `main` avec les trois commits retirés de l'arbre de travail, passé le même jour ; la charge de la machine différait entre les deux passages (plus forte pour « avant »), mais les sites 63 et 72 rejoués seuls tranchent : une première version de la règle Qiita les cassait (libellé bruité « create imagelog in »), corrigée par `935a63d1` avant la mesure finale. `vimeo-login` passe désormais hors ligne ; son verdict épinglé est mis à jour. Le banc vivant n'a pas été relancé (une passe par site et par jour).
