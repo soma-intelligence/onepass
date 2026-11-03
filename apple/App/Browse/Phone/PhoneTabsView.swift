@@ -225,7 +225,7 @@ struct PhoneTabsView: View {
     #if DEBUG
     /// Captures: `-OnePassDemoTab items|watchtower|search` opens that tab (`settings` opens Réglages),
     /// `-OnePassDemoQuery <text>` fills the search, `-OnePassDemoNewItem YES` opens the add sheet,
-    /// `-OnePassDemoList <vault|category|tag|archive|trash>` pushes a list in Éléments, `crypto[:<coin>]` the
+    /// `-OnePassDemoList <vault|category|cards|tag|archive|trash>` pushes a list in Éléments, `crypto[:<coin>]` the
     /// Crypto screen. Debug builds only.
     private func applyDemoArguments() {
         let defaults = UserDefaults.standard
@@ -263,6 +263,7 @@ struct PhoneTabsView: View {
             case "passkeys": .passkeys
             case "all": .all
             case "category": model.session.summaries.first.map { .category($0.itemType) }
+            case "cards": .category(.creditCard)
             case "tag": model.session.counts().byTag.keys.sorted().first.map { .tag($0) }
             default: model.session.vaults.first.map { .vault($0.id) }
             }
@@ -270,6 +271,11 @@ struct PhoneTabsView: View {
                 tab = .items
                 paths[.items] = [.list(filter)]
             }
+        }
+        // `-OnePassDemoItem <title>` selected an item before this view appeared: open its detail.
+        if defaults.string(forKey: "OnePassDemoItem") != nil, let ref = model.selectedItem {
+            tab = .items
+            paths[.items, default: []].append(.item(ref))
         }
     }
     #endif

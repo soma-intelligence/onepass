@@ -32,6 +32,20 @@ enum Snapshot {
             return
         }
 
+        // `-OnePassSnapshotOnly cards`: Cartes bancaires with the Amex selected, light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "cards" {
+            let amex = model.session.summaries.first { $0.title == "Amex Platinum" }
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.editing = false
+                model.selection = .category(.creditCard)
+                model.selectedItem = amex.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }
+                await capture(directory, "mac-cards-\(suffix)")
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             model.editing = false

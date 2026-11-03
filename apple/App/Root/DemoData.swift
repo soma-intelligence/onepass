@@ -409,6 +409,18 @@ private struct DemoSeeder {
             "cvv": .concealed(value: "123"),
             "issuer": .text(value: "Banque Exemple"),
         ], tags: ["Finance"], favorite: true)
+        // Two more networks, so the list tells cards apart by their last four (public test numbers).
+        try await add(.creditCard, "Mastercard Pro", personal, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "5555 5555 5555 4444"),
+            "expiry": .monthYear(year: 2029, month: 11),
+            "issuer": .text(value: "Banque Exemple"),
+        ], tags: ["Finance"])
+        try await add(.creditCard, "Amex Platinum", personal, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "3782 822463 10005"),
+            "expiry": .monthYear(year: 2031, month: 6),
+        ], tags: ["Finance"])
         try await add(.bankAccount, "Compte courant", personal, [
             "bank": .text(value: "Banque Exemple"),
             "holder": .text(value: "Camille Durand"),
