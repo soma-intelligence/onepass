@@ -409,6 +409,10 @@ struct LockView: View {
         message = nil
         let typed = SecretBytes(utf8: password)
         password = ""
+        // The keyboard leaves with the submission. Left on, the field (disabled while unlocking)
+        // took the keyboard back once enabled again, under the vault door: the panels parted
+        // with it up and it stayed over the vault. A refusal gives the focus back below.
+        fieldFocused = false
         defer { typed.wipe() }
         do {
             try await session.unlock(password: typed)
@@ -440,6 +444,7 @@ struct LockView: View {
             return
         }
         message = nil
+        fieldFocused = false
         do {
             try await session.unlockWithBiometrics()
         } catch {
