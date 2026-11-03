@@ -72,6 +72,7 @@ use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
 mod attachments;
+mod autofill_history;
 pub mod family;
 pub mod follow;
 pub mod kit;
@@ -1588,6 +1589,10 @@ impl<S: RecordStore> Repository<S> {
         let now = OffsetDateTime::now_utc();
         let mut rewritten = 0;
         let mut first_err: Option<Error> = None;
+        // The device's autofill history of the site goes too.
+        if let Err(e) = self.forget_autofill_site(site) {
+            first_err.get_or_insert(e);
+        }
         for vault in self.vaults()?.into_iter().filter(|v| keep(v)) {
             let items = match self.items(&vault) {
                 Ok(items) => items,

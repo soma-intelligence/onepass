@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use super::{Record, RecordKind, RecordStore, Zone, check_local_meta_key, check_local_meta_prefix};
+use super::{
+    AutofillRow, Record, RecordKind, RecordStore, Zone, check_local_meta_key,
+    check_local_meta_prefix,
+};
 use crate::chain::ChainState;
 use crate::share::ShareState;
 use crate::trust::TrustState;
@@ -17,6 +20,9 @@ pub struct MemoryStore {
     zoned: BTreeMap<Zone, BTreeMap<(RecordKind, Id), Record>>,
     /// Local state of each shared vault, never synced.
     shares: BTreeMap<Id, ShareState>,
+    /// Autofill history rows `(seq, site tag, data)`, oldest first.
+    autofill: Vec<AutofillRow>,
+    autofill_seq: i64,
 }
 
 impl MemoryStore {
@@ -168,6 +174,55 @@ impl RecordStore for MemoryStore {
     fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
         check_local_meta_key(key)?;
         Ok(self.meta.get(key).cloned())
+    }
+
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        self.autofill_seq += 1;
+        self.autofill
+            .push((self.autofill_seq, *site_tag, data.to_vec()));
+        let same = self.autofill.iter().filter(|r| r.1 == *site_tag).count();
+        let mut drop_same = same.saturating_sub(keep_per_site);
+        self.autofill.retain(|r| {
+            if r.1 == *site_tag && drop_same > 0 {
+                drop_same -= 1;
+                false
+            } else {
+                true
+            }
+        });
+        let extra = self.autofill.len().saturating_sub(keep_total);
+        self.autofill.drain(..extra);
+        Ok(())
+    }
+
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        Ok(self
+            .autofill
+            .iter()
+            .filter(|r| site_tag.is_none_or(|t| r.1 == *t))
+            .cloned()
+            .collect())
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        self.autofill.retain(|r| !seqs.contains(&r.0));
+        Ok(())
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        let n = self.autofill.len();
+        self.autofill.clear();
+        Ok(n)
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {

@@ -7,6 +7,7 @@ pub mod account;
 pub mod approvers;
 pub mod archive;
 pub mod attachment;
+pub mod autofill_history;
 pub mod chain;
 pub mod companion;
 pub mod contact;

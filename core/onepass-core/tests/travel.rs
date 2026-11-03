@@ -11,7 +11,7 @@ use onepass_core::crypto::{KdfParams, random_array};
 use onepass_core::model::{FieldValue, Item, ItemType, new_item};
 use onepass_core::repo::travel::{SEALED_TRAVEL_STATE_LEN, TravelState};
 use onepass_core::repo::{DeviceState, Repository, split_item_record};
-use onepass_core::store::{MemoryStore, Record, RecordKind, RecordStore};
+use onepass_core::store::{AutofillRow, MemoryStore, Record, RecordKind, RecordStore};
 use onepass_core::vault::{Vault, VaultMeta};
 use onepass_core::{Error, Id, IntegrityError, Result};
 
@@ -72,6 +72,34 @@ impl RecordStore for Shared {
 
     fn delete(&mut self, kind: RecordKind, id: Id) -> Result<()> {
         self.0.borrow_mut().delete(kind, id)
+    }
+
+    fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        self.0.borrow().local_meta(key)
+    }
+
+    fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
+        self.0.borrow_mut().set_local_meta(key, value)
+    }
+
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(&mut self, t: &[u8; 32], d: &[u8], site: usize, total: usize) -> Result<()> {
+        self.0.borrow_mut().autofill_append(t, d, site, total)
+    }
+
+    fn autofill_rows(&self, t: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        self.0.borrow().autofill_rows(t)
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        self.0.borrow_mut().autofill_delete(seqs)
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        self.0.borrow_mut().autofill_clear()
     }
 }
 
@@ -242,6 +270,44 @@ fn roundtrip_restores_hidden_vaults_intact() {
         f.local.vault_records(f.perso.id),
         f.upstream.vault_records(f.perso.id)
     );
+}
+
+/// The autofill history names sites and items of the vaults that leave:
+/// entering Travel Mode erases it, and nothing is recorded or ranked from
+/// it while travelling.
+#[test]
+fn entering_travel_erases_the_autofill_history() {
+    use onepass_core::autofill_history::{
+        AutofillAction, AutofillEvent, ClientContext, EventSource,
+    };
+    let mut f = fx();
+    let ev = || AutofillEvent {
+        at: time::OffsetDateTime::now_utc(),
+        action: AutofillAction::Picked,
+        source: EventSource::Extension,
+        site: "example.com".into(),
+        item_id: Some(Id::new()),
+        rank: Some(0),
+        shown: vec![],
+        client: ClientContext::unknown(),
+        device_id: None,
+    };
+    assert!(f.repo.record_autofill_event(ev()).unwrap());
+    assert_eq!(f.repo.autofill_history_count().unwrap(), 1);
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    assert_eq!(f.repo.autofill_history_count().unwrap(), 0);
+    assert!(!f.repo.record_autofill_event(ev()).unwrap());
+    assert_eq!(f.repo.autofill_history_count().unwrap(), 0);
+    let now = time::OffsetDateTime::now_utc();
+    assert!(
+        f.repo
+            .autofill_affinity("example.com", &ClientContext::unknown(), now)
+            .unwrap()
+            .is_empty()
+    );
+    f.repo.exit_travel(&f.upstream, &state).unwrap();
+    assert!(f.repo.record_autofill_event(ev()).unwrap());
 }
 
 #[test]

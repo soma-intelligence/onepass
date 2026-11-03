@@ -5,8 +5,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    Record, RecordKind, RecordStore, RotationPush, TrustGuard, check_local_meta_key,
-    check_local_meta_prefix,
+    AutofillRow, Record, RecordKind, RecordStore, RotationPush, TrustGuard, autofill_sql,
+    check_local_meta_key, check_local_meta_prefix,
 };
 use crate::chain::ChainState;
 use crate::sync::merge_chain;
@@ -103,6 +103,8 @@ impl SqliteStore {
              );",
         )
         .map_err(store_err)?;
+        conn.execute_batch(autofill_sql::SCHEMA)
+            .map_err(store_err)?;
         Ok(SqliteStore { conn })
     }
 
@@ -234,6 +236,39 @@ impl RecordStore for SqliteStore {
     fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
         check_local_meta_key(key)?;
         meta_on(&self.conn, key)
+    }
+
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        autofill_sql::append(&tx, site_tag, data, keep_per_site, keep_total)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        autofill_sql::rows(&self.conn, site_tag)
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        autofill_sql::delete(&tx, seqs)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        let n = autofill_sql::clear(&tx)?;
+        tx.commit().map_err(store_err)?;
+        Ok(n)
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {

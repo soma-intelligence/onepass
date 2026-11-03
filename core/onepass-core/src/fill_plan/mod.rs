@@ -4,6 +4,7 @@
 pub mod compose;
 pub mod context;
 pub mod intent;
+pub mod learned;
 pub mod score;
 pub mod weights;
 

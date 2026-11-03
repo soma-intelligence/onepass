@@ -228,6 +228,9 @@ impl<S: RecordStore> Repository<S> {
             .flat_map(|(_, _, r)| r.iter().cloned())
             .chain(item_plan.iter().flat_map(|(_, _, r)| r.iter().cloned()))
             .collect();
+        // The autofill history names sites and items of what leaves: it
+        // goes first, and nothing is recorded while travelling.
+        self.clear_autofill_history()?;
         self.store.evict_all(&all)?;
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {

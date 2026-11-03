@@ -252,6 +252,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
     migrate_retained(conn)?;
     conn.execute_batch(SCHEMA).map_err(store_err)?;
     conn.execute_batch(zones::ZONE_SCHEMA).map_err(store_err)?;
+    conn.execute_batch(crate::store::autofill_sql::SCHEMA)
+        .map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
@@ -3662,6 +3664,39 @@ impl RecordStore for SyncStore {
     fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
         check_local_meta_key(key)?;
         self.read(|c| meta_in(c, key))
+    }
+
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::autofill_sql::append(&tx, site_tag, data, keep_per_site, keep_total)?;
+        tx.commit()
+    }
+
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<crate::store::AutofillRow>> {
+        self.read(|c| crate::store::autofill_sql::rows(c, site_tag))
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::autofill_sql::delete(&tx, seqs)?;
+        tx.commit()
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        let tx = self.write_tx()?;
+        let n = crate::store::autofill_sql::clear(&tx)?;
+        tx.commit()?;
+        Ok(n)
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {

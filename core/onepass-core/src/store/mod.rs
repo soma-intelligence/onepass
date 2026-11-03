@@ -1,6 +1,7 @@
 //! Record storage. A store keeps opaque records and is not trusted: the
 //! `Repository` verifies everything it reads back.
 
+pub(crate) mod autofill_sql;
 mod memory;
 mod sqlite;
 mod zone;
@@ -232,7 +233,7 @@ impl TrustGuard<'_> {
 /// Prefixes of the device-local metadata keys the repository may read and
 /// write through `RecordStore::local_meta` and its siblings: never synced,
 /// never a key the store uses itself (chain, trust, sync state).
-pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite.", "family."];
+pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite.", "family.", "autofill."];
 
 /// `key` under one of `LOCAL_META_PREFIXES`, else `Validation`.
 pub fn check_local_meta_key(key: &str) -> Result<()> {
@@ -268,6 +269,14 @@ pub type ZonePendingRow = (RecordKind, Id, u64, Option<Vec<u8>>);
 
 fn zones_unsupported() -> Error {
     Error::Store("zones unsupported".into())
+}
+
+/// A row of the autofill history: `(seq, site_tag, sealed event)`.
+pub type AutofillRow = (i64, [u8; 32], Vec<u8>);
+
+/// A store without an autofill history (`RecordStore::autofill_append`).
+pub fn autofill_unsupported() -> Error {
+    Error::Store("no autofill history in this store".into())
 }
 
 fn local_meta_unsupported() -> Error {
@@ -511,6 +520,45 @@ pub trait RecordStore {
     fn set_local_meta(&mut self, key: &str, value: Option<&[u8]>) -> Result<()> {
         let _ = (key, value);
         Err(local_meta_unsupported())
+    }
+
+    /// Whether this store keeps an autofill history (the methods below).
+    fn keeps_autofill_history(&self) -> bool {
+        false
+    }
+
+    /// Append one sealed autofill history row under its keyed site tag
+    /// (`crate::autofill_history`), then keep the newest `keep_per_site`
+    /// rows of that tag and the newest `keep_total` rows in all, in one
+    /// transaction. Device-local: never synced, never a record. A store
+    /// that keeps no history refuses.
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let _ = (site_tag, data, keep_per_site, keep_total);
+        Err(autofill_unsupported())
+    }
+
+    /// The autofill history rows `(seq, site_tag, data)`, oldest first:
+    /// those of `site_tag`, or all of them.
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        let _ = site_tag;
+        Err(autofill_unsupported())
+    }
+
+    /// Remove the autofill history rows of these `seq`s.
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let _ = seqs;
+        Err(autofill_unsupported())
+    }
+
+    /// Remove every autofill history row: how many there were.
+    fn autofill_clear(&mut self) -> Result<usize> {
+        Err(autofill_unsupported())
     }
 
     /// `put_all_if_version`, and remove the local metadata under `key`,

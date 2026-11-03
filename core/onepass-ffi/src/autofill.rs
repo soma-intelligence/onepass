@@ -344,6 +344,7 @@ pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
         username_hash: None,
         usage: None,
         has_totp: filled(item, "totp"),
+        affinity: 0,
     }
 }
 

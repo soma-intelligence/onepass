@@ -76,6 +76,7 @@ pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
         username_hash: None,
         usage: None,
         has_totp: item.item_type == ItemType::Login && otp_field(item).is_some(),
+        affinity: 0,
     }
 }
 
