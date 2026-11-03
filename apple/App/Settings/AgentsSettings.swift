@@ -11,6 +11,9 @@ struct AgentsSettings: View {
     @State private var busy = false
     @State private var error: String?
     @State private var forgetting: PhoneAgents.Mac?
+    /// The pending requests open over Réglages: the root's sheet (`showRequests`) cannot show while
+    /// Réglages, itself a sheet, is up.
+    @State private var showingRequests = false
 
     var body: some View {
         Form {
@@ -28,6 +31,11 @@ struct AgentsSettings: View {
         .settingsPage("Agents")
         .disabled(busy)
         .task { await model.phoneAgents?.refresh() }
+        .sheet(isPresented: $showingRequests) {
+            if let agents = model.phoneAgents {
+                AgentRequestsSheet(agents: agents)
+            }
+        }
     }
 
     @ViewBuilder private func content(_ agents: PhoneAgents) -> some View {
@@ -37,7 +45,7 @@ struct AgentsSettings: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("agents.enabled")
                 Button("settings.seePendingRequests \(agents.requests.count)") {
-                    agents.showRequests = true
+                    showingRequests = true
                 }
                 .accessibilityIdentifier("agents.pending")
             } else {

@@ -6,6 +6,9 @@ import VaultKit
 /// and work domains; the unified search choice; adding and removing an account.
 struct AccountsSettings: View {
     @Environment(AppModel.self) private var model
+    /// "Ajouter un compte" opens here, over Réglages: the root's sheet (`showAddAccount`) cannot
+    /// show while Réglages, itself a sheet, is up.
+    @State private var adding = false
 
     var body: some View {
         Form {
@@ -28,7 +31,7 @@ struct AccountsSettings: View {
                     }
                 }
                 Button {
-                    model.showAddAccount = true
+                    adding = true
                 } label: {
                     Label("accounts.add", systemImage: "plus")
                 }
@@ -54,11 +57,10 @@ struct AccountsSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("accounts.title")
-        #if os(iOS) || os(visionOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .settingsPage("accounts.title")
+        .sheet(isPresented: $adding) {
+            AddAccountSheet()
+        }
     }
 }
 
