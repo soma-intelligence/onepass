@@ -206,7 +206,14 @@ fn verified_chain<'a>(
 /// from `t`); else the target of a decision of the resolver that moves
 /// away from the head (a sibling branch wins). `None` when the head is the
 /// latest.
-fn newer_than_head(t: &TrustState, records: &[LineageRecord]) -> Option<[u8; 32]> {
+///
+/// A `Recover` child (sharing plan 3 Task 3) counts through the resolver,
+/// with the self-intros under the head in `intros`.
+fn newer_than_head(
+    t: &TrustState,
+    records: &[LineageRecord],
+    intros: &[SignedIntro],
+) -> Option<[u8; 32]> {
     let mut children: Vec<[u8; 32]> = records
         .iter()
         .filter_map(|r| match r {
@@ -230,7 +237,14 @@ fn newer_than_head(t: &TrustState, records: &[LineageRecord]) -> Option<[u8; 32]
     if let Some(h) = children.first() {
         return Some(*h);
     }
-    match resolve(t, records, &Completeness::default()) {
+    let complete = Completeness {
+        self_introduced: self_intros(t, intros)
+            .into_iter()
+            .map(|(id, i)| (id, i.body.entry.clone()))
+            .collect(),
+        ..Completeness::default()
+    };
+    match resolve(t, records, &complete) {
         Decision::Prompt(p) => p.children.first().copied(),
         Decision::Quarantine { by } => Some(by),
         Decision::Orphaned { child } => Some(child),
@@ -246,7 +260,10 @@ fn newer_than_head(t: &TrustState, records: &[LineageRecord]) -> Option<[u8; 32]
 /// by the head's identity (`t.identity_pub`, from the local trust state),
 /// its proof of possession over the account id verified, for a device that
 /// is not this one, not revoked or excluded, and not in the roster.
-fn self_intros<'a>(t: &TrustState, intros: &'a [SignedIntro]) -> BTreeMap<Id, &'a SignedIntro> {
+pub(crate) fn self_intros<'a>(
+    t: &TrustState,
+    intros: &'a [SignedIntro],
+) -> BTreeMap<Id, &'a SignedIntro> {
     let mut found: BTreeMap<Id, Vec<(Id, &SignedIntro)>> = BTreeMap::new();
     for i in intros {
         let b = &i.body;
@@ -308,7 +325,7 @@ fn kit_restored(t: &TrustState, records: &[LineageRecord], i: &SignedIntro) -> K
 /// The generation 0 account id of the store: the one params record whose
 /// id is the account id it names (`NotFound` with none,
 /// `InvalidFormat("account params")` with several).
-fn store_account_id<S: RecordStore>(store: &S) -> Result<Id> {
+pub(crate) fn store_account_id<S: RecordStore>(store: &S) -> Result<Id> {
     let ids: BTreeSet<Id> = store
         .list(RecordKind::AccountParams)?
         .iter()
@@ -403,6 +420,55 @@ fn open_with_kit<S: RecordStore>(
     Err(Error::WrongPassword)
 }
 
+/// The checks every restore runs before opening anything (spec 7.5, 8.2):
+/// the name and mode, a store that keeps the chain state, a device with no
+/// trust state (and no device id) or a locked one; with `recovering`, also
+/// a kit-restored device no one pinned yet (a recovery cut before its
+/// rotation runs again, sharing plan 3 Task 3). Returns the stored trust
+/// state, the account id and its lineage records.
+pub(crate) fn restore_prelude<S: RecordStore>(
+    store: &S,
+    req: &KitRestore<'_>,
+    recovering: bool,
+) -> Result<(Option<TrustState>, Id, Vec<LineageRecord>)> {
+    check_name(req.name)?;
+    check_mode(req.mode)?;
+    if !store.persists_chain() {
+        return Err(Error::InvalidFormat(
+            "device registration needs a sync store",
+        ));
+    }
+    let existing = trust_of(store)?;
+    match &existing {
+        None if store.chain_state()?.device_id.is_some() => {
+            return Err(refused("device", "holds the account"));
+        }
+        None => {}
+        Some(t) => {
+            let locked = matches!(
+                t.state,
+                DeviceLineageState::Quarantined { .. } | DeviceLineageState::Orphaned { .. }
+            ) || look_for(store, t)?.lock.is_some();
+            let unpinned = recovering && t.state == DeviceLineageState::Current && kit_unpinned(t);
+            if !locked && !unpinned {
+                return Err(refused("device", "not locked"));
+            }
+        }
+    }
+    let account_id = store_account_id(store)?;
+    if existing
+        .as_ref()
+        .is_some_and(|t| t.account_id != account_id)
+    {
+        return Err(IntegrityError::WrongContext.into());
+    }
+    let records: Vec<LineageRecord> = lineage_records(store)?
+        .into_iter()
+        .filter(|r| r.account_id() == account_id)
+        .collect();
+    Ok((existing, account_id, records))
+}
+
 impl<S: RecordStore> Repository<S> {
     /// "Restaurer avec mon Emergency Kit" (spec 7.5, R14). See the module
     /// doc. The caller ran a full sync first.
@@ -435,40 +501,7 @@ impl<S: RecordStore> Repository<S> {
     /// as before: a plain `unlock` (trust on first use), then the app runs
     /// `migrate_to_v2`.
     pub fn restore_from_kit(store: S, req: KitRestore<'_>) -> Result<Repository<S>> {
-        check_name(req.name)?;
-        check_mode(req.mode)?;
-        if !store.persists_chain() {
-            return Err(Error::InvalidFormat(
-                "device registration needs a sync store",
-            ));
-        }
-        let existing = trust_of(&store)?;
-        match &existing {
-            None if store.chain_state()?.device_id.is_some() => {
-                return Err(refused("device", "holds the account"));
-            }
-            None => {}
-            Some(t) => {
-                let locked = matches!(
-                    t.state,
-                    DeviceLineageState::Quarantined { .. } | DeviceLineageState::Orphaned { .. }
-                ) || look_for(&store, t)?.lock.is_some();
-                if !locked {
-                    return Err(refused("device", "not locked"));
-                }
-            }
-        }
-        let account_id = store_account_id(&store)?;
-        if existing
-            .as_ref()
-            .is_some_and(|t| t.account_id != account_id)
-        {
-            return Err(IntegrityError::WrongContext.into());
-        }
-        let records: Vec<LineageRecord> = lineage_records(&store)?
-            .into_iter()
-            .filter(|r| r.account_id() == account_id)
-            .collect();
+        let (existing, account_id, records) = restore_prelude(&store, &req, false)?;
         if records.is_empty() {
             if existing.is_some() {
                 return Err(Error::NotFound);
@@ -479,6 +512,21 @@ impl<S: RecordStore> Repository<S> {
         // Spec 7.5 step 2: the identity the kit opens (2SKD).
         let (account, params) =
             open_with_kit(&store, account_id, &records, req.password, req.secret_key)?;
+        Self::restore_opened(store, existing, records, account, params, &req)
+    }
+
+    /// Steps 3 to 5 of `restore_from_kit` on an account already opened (by
+    /// the kit, or by a recovery slot, sharing plan 3 Task 3): `params` is
+    /// the params record it was opened with.
+    pub(crate) fn restore_opened(
+        store: S,
+        existing: Option<TrustState>,
+        records: Vec<LineageRecord>,
+        account: Account,
+        params: Record,
+        req: &KitRestore<'_>,
+    ) -> Result<Repository<S>> {
+        let account_id = account.params.account_id;
         let identity = account.params.identity_pub.clone();
 
         // Step 3: the record that introduces it, on a verified chain.
@@ -661,7 +709,7 @@ impl<S: RecordStore> Repository<S> {
         }
 
         // Step 4: an outdated kit restores nothing.
-        if let Some(h) = newer_than_head(&trust, &records) {
+        if let Some(h) = newer_than_head(&trust, &records, &intros) {
             let bodies = rotations(&records);
             let body = bodies.get(&h).ok_or(Error::NotFound)?;
             let rotator = existing

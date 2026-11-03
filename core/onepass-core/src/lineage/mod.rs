@@ -92,6 +92,13 @@ pub enum RotationReason {
     RotateWithPassword,
     Reapply,
     Finish,
+    /// Organizer-assisted recovery (sharing spec 11.5 step 5, plan 3
+    /// rulings B-3 and B-4): the rotator is a device outside the parent
+    /// roster, admitted by a self-intro under the parent signed by the
+    /// parent identity; the roster is that device alone and every device
+    /// of the parent roster is revoked. Appended last: the other reasons
+    /// keep their encoding.
+    Recover,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

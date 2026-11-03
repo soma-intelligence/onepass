@@ -34,8 +34,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aws_lc_rs::digest::{SHA256, digest};
 
+use super::kit::{KitRestore, kit_unpinned, restore_prelude};
+use super::pairing::{insert_sorted, same_keys, stored_intros};
 use super::replay::meta_hash;
-use super::{Repository, pin, seen};
+use super::{DeviceState, Repository, pin, seen};
 use crate::account::{Account, Auk, RotatedAccount};
 use crate::approvers::ApproverEntry;
 use crate::chain::{ChainState, Seen};
@@ -43,7 +45,7 @@ use crate::contact::ContactEntry;
 use crate::crypto::kem::wrap_key_labeled;
 use crate::crypto::{SecretKey, SymmetricKey};
 use crate::device_keys::DeviceKeys;
-use crate::devices::{DeviceEntry, now};
+use crate::devices::{DeviceEntry, DeviceKind, DeviceMode, now};
 use crate::lineage::{
     LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationBody, RotationReason, check_rotation,
     delivery_id, identity_id, rotation_code, sign_rotation,
@@ -129,6 +131,107 @@ pub struct RotationOutcome {
     pub code: u32,
     /// The lineage hash of the new head.
     pub head: [u8; 32],
+}
+
+/// What `recover_rotate` needs from the app (sharing plan 3 Task 3).
+pub struct RecoverRequest<'a> {
+    /// The keyset opened by the recovery key, in clear
+    /// (`Account::recovery_keyset`).
+    pub keyset_record: &'a [u8],
+    /// The new master password.
+    pub new_password: &'a str,
+    /// The new Secret Key, drawn by the caller and stored as pending
+    /// before the call (K6).
+    pub new_secret_key: &'a SecretKey,
+    /// The device keys the app just created for this device.
+    pub device_keys: &'a DeviceKeys,
+    pub device_name: &'a str,
+    pub kind: DeviceKind,
+    pub mode: DeviceMode,
+    /// The device state the app saved (default on a new device).
+    pub device: DeviceState,
+}
+
+/// Organizer-assisted recovery, the last step (sharing spec 11.5 step 5,
+/// plan 3 rulings B-3 and B-4): from the keyset the recovery slot gave,
+/// pin the head that introduces its identity through the identity's
+/// signature (as an Emergency Kit restore does, spec rotation 7.5 step 3),
+/// publish this device's self-intro signed by its key and by that
+/// identity, then rotate with reason `Recover`: a new identity, Secret Key
+/// and password, every live vault re-sealed (spec 7.1), the roster this
+/// device alone, every other device of the roster revoked. The old
+/// devices see the rotation as valid through the self-intro and go to
+/// quarantine (or `Orphaned`); they come back by pairing from this device.
+///
+/// Two local transactions (ruled): the restore (trust state, self-intro),
+/// then the rotation. Cut between them, the device is a kit-restored
+/// device nobody pinned; calling again restores again (a new device id)
+/// and rotates. The phases of the rotation are pushed by the sync layer
+/// as for any rotation.
+///
+/// Refused: what an Emergency Kit restore refuses (a bad name or mode,
+/// a device that is neither new, locked nor a cut recovery, an identity
+/// introduced by no verified record, a keyset whose identity has a newer
+/// child: `OutdatedKit`); an account with no lineage:
+/// `Validation("lineage")`; a keyset that does not match its params:
+/// `Integrity(Signature)`; own writes left to replay:
+/// `Validation("device")`.
+pub fn recover_rotate<S: RecordStore>(
+    store: S,
+    mut req: RecoverRequest<'_>,
+    now: i64,
+) -> Result<(Repository<S>, RotationOutcome)> {
+    // Only the device fields of a kit restore are read past the prelude.
+    let unused = SecretKey([0; 32]);
+    let kit = KitRestore {
+        password: "",
+        secret_key: &unused,
+        device_keys: req.device_keys,
+        name: req.device_name,
+        kind: req.kind,
+        mode: req.mode,
+        device: std::mem::take(&mut req.device),
+    };
+    let (existing, account_id, records) = restore_prelude(&store, &kit, true)?;
+    if records.is_empty() {
+        return Err(refused("lineage", "none"));
+    }
+    let mut params_record = None;
+    let account = Account::open_recovered(req.keyset_record, |identity| {
+        let generation = records
+            .iter()
+            .filter(|r| r.identity_pub() == identity)
+            .map(LineageRecord::generation)
+            .min()
+            .ok_or(IntegrityError::Signature)?;
+        let id = account_record_id(account_id, (generation > 0).then_some(identity));
+        let rec = store
+            .get(RecordKind::AccountParams, id)?
+            .ok_or(Error::NotFound)?;
+        params_record = Some(rec.clone());
+        Ok(rec.data)
+    })?;
+    let params = params_record.ok_or(Error::NotFound)?;
+    if account.params.account_id != account_id {
+        return Err(IntegrityError::WrongContext.into());
+    }
+    let mut repo =
+        Repository::restore_opened(store, existing, records, account, params.clone(), &kit)?;
+    let outcome = repo.recover_rotation(&req, &params.data, now)?;
+    Ok((repo, outcome))
+}
+
+/// What `rotate_with` makes a rotation of, its preconditions checked.
+struct RotationPlan<'a> {
+    revoked: BTreeSet<Id>,
+    /// The master password of the new identity (new or kept).
+    password: &'a str,
+    new_secret_key: &'a SecretKey,
+    device_keys: &'a DeviceKeys,
+    reason: RotationReason,
+    keep_tofu: &'a [Id],
+    /// The `issued_at` of the record and the date of the list changes.
+    at: i64,
 }
 
 fn refused(field: &str, reason: &'static str) -> Error {
@@ -347,7 +450,116 @@ impl<S: RecordStore> Repository<S> {
         if req.new_secret_key.same_as(req.secret_key) {
             return Err(refused("secret key", "unchanged"));
         }
-        let generation = trust
+        let plan = RotationPlan {
+            revoked,
+            password: req.new_password.unwrap_or(req.password),
+            new_secret_key: req.new_secret_key,
+            device_keys: req.device_keys,
+            reason: req.reason,
+            keep_tofu: req.keep_tofu,
+            at: now(),
+        };
+        let (password, secret_key) = (req.password, req.secret_key);
+        self.rotate_with(&trust, trust.clone(), plan, move |repo, t| {
+            // The current password and Secret Key, with every unlock check, on
+            // the records of the current identity (spec 6.6). This also gives
+            // the account the current Secret Key (`rotate_keys` compares, K11).
+            let current_id = account_record_id(
+                account_id,
+                (t.head.generation > 0).then_some(&t.identity_pub),
+            );
+            let params = repo
+                .store
+                .get(RecordKind::AccountParams, current_id)?
+                .ok_or(Error::NotFound)?;
+            let keyset = repo
+                .store
+                .get(RecordKind::Keyset, current_id)?
+                .ok_or(Error::NotFound)?;
+            let (stored, _) = Account::unlock_exporting_auk_at(
+                password,
+                secret_key,
+                &params.data,
+                &keyset.data,
+                repo.device.pinned.as_ref(),
+                repo.account.params.epoch,
+            )?;
+            Ok(stored)
+        })
+    }
+
+    /// The `Recover` rotation of `recover_rotate`, on the device it just
+    /// restored: this device pinned in memory from its own self-intro (as
+    /// `claim_only_device` would, but not stored), every other roster
+    /// device revoked.
+    fn recover_rotation(
+        &mut self,
+        req: &RecoverRequest<'_>,
+        params: &[u8],
+        now: i64,
+    ) -> Result<RotationOutcome> {
+        if self.travelling() {
+            return Err(refused("travel mode", "active"));
+        }
+        let trust = self
+            .store
+            .trust_state()?
+            .ok_or_else(|| refused("device", "no device keys"))?;
+        if trust.state != DeviceLineageState::Current || !kit_unpinned(&trust) {
+            return Err(refused("device", "not current"));
+        }
+        if !trust.own_writes.replay.is_empty() {
+            return Err(refused("device", "own writes to replay"));
+        }
+        let me = trust.me.device_id;
+        if req.device_keys.public(me)? != trust.me {
+            return Err(refused("device", "other device keys"));
+        }
+        let entry = stored_intros(&self.store)?
+            .into_iter()
+            .find(|i| {
+                i.identity_sig.is_some()
+                    && i.body.head == trust.head.hash
+                    && i.body.introducer == me
+                    && same_keys(&i.body.entry, &trust.me)
+            })
+            .map(|i| i.body.entry)
+            .ok_or(Error::NotFound)?;
+        let mut work = trust.clone();
+        let revoked: BTreeSet<Id> = work.roster.iter().map(|e| e.device_id).collect();
+        insert_sorted(&mut work.roster, entry);
+        work.levels.insert(me, TrustLevel::Verified);
+        let plan = RotationPlan {
+            revoked,
+            password: req.new_password,
+            new_secret_key: req.new_secret_key,
+            device_keys: req.device_keys,
+            reason: RotationReason::Recover,
+            keep_tofu: &[],
+            at: now,
+        };
+        let keyset = req.keyset_record;
+        self.rotate_with(&trust, work, plan, move |_, _| {
+            Account::open_recovered(keyset, |_| Ok(params.to_vec()))
+        })
+    }
+
+    /// Steps 1 to 6 of `rotate` (spec 7.1) from `work`, the trust state the
+    /// rotation is made from (the stored one, `stored_trust`, or for a
+    /// recovery that state with this device pinned in memory), once the
+    /// preconditions of `plan` hold. `unlock` gives the current account
+    /// with its keys. The transaction is conditional on `stored_trust`.
+    fn rotate_with(
+        &mut self,
+        stored_trust: &TrustState,
+        work: TrustState,
+        plan: RotationPlan<'_>,
+        unlock: impl FnOnce(&Self, &TrustState) -> Result<Account>,
+    ) -> Result<RotationOutcome> {
+        let account_id = self.account.params.account_id;
+        let me = work.me.device_id;
+        let revoked = &plan.revoked;
+        let generation = work
             .head
             .generation
             .checked_add(1)
@@ -368,29 +580,9 @@ impl<S: RecordStore> Repository<S> {
         // opens its own chain on the same backend.
         let home = self.sync_home()?;
 
-        // The current password and Secret Key, with every unlock check, on
-        // the records of the current identity (spec 6.6). This also gives
-        // the account the current Secret Key (`rotate_keys` compares, K11).
-        let current_id = account_record_id(
-            account_id,
-            (trust.head.generation > 0).then_some(&trust.identity_pub),
-        );
-        let params = self
-            .store
-            .get(RecordKind::AccountParams, current_id)?
-            .ok_or(Error::NotFound)?;
-        let keyset = self
-            .store
-            .get(RecordKind::Keyset, current_id)?
-            .ok_or(Error::NotFound)?;
-        let (stored, _) = Account::unlock_exporting_auk_at(
-            req.password,
-            req.secret_key,
-            &params.data,
-            &keyset.data,
-            self.device.pinned.as_ref(),
-            self.account.params.epoch,
-        )?;
+        // The current keys (the caller's unlock: the password and Secret Key
+        // with every check, or a recovered keyset).
+        let stored = unlock(self, &work)?;
         if stored.params != self.account.params {
             // Changed since this session opened: the vault keys loaded
             // above were opened with the session's keys.
@@ -409,11 +601,7 @@ impl<S: RecordStore> Repository<S> {
             keyset_record,
             identity_pub,
             auk,
-        } = stored.rotate_keys(
-            req.new_password.unwrap_or(req.password),
-            req.new_secret_key,
-            &floor,
-        )?;
+        } = stored.rotate_keys(plan.password, plan.new_secret_key, &floor)?;
         let new_id = identity_id(&identity_pub);
         let params_hash = sha256(&params_record);
         let keyset_hash = sha256(&keyset_record);
@@ -439,22 +627,22 @@ impl<S: RecordStore> Repository<S> {
         ];
 
         // Step 2: the roster and one delivery per member except this one.
-        let tofu = |id: &Id| trust.levels.get(id) == Some(&TrustLevel::Tofu) && *id != me;
-        let roster: Vec<RosterEntry> = trust
+        let tofu = |id: &Id| work.levels.get(id) == Some(&TrustLevel::Tofu) && *id != me;
+        let roster: Vec<RosterEntry> = work
             .roster
             .iter()
             .filter(|e| {
                 !revoked.contains(&e.device_id)
-                    && !trust.excluded.contains(&e.device_id)
-                    && !trust.revoked.contains(&e.device_id)
-                    && (!tofu(&e.device_id) || req.keep_tofu.contains(&e.device_id))
+                    && !work.excluded.contains(&e.device_id)
+                    && !work.revoked.contains(&e.device_id)
+                    && (!tofu(&e.device_id) || plan.keep_tofu.contains(&e.device_id))
             })
             .cloned()
             .collect();
-        let secret = SymmetricKey::from_bytes(req.new_secret_key.0);
+        let secret = SymmetricKey::from_bytes(plan.new_secret_key.0);
         let mut envelopes = Vec::new();
         for e in roster.iter().filter(|e| e.device_id != me) {
-            let context = delivery_context(account_id, &trust.head.hash, e.device_id);
+            let context = delivery_context(account_id, &work.head.hash, e.device_id);
             let envelope =
                 wrap_key_labeled(&e.kem_pub, &secret, SECRET_KEY_DELIVERY_LABEL, &context)?;
             envelopes.push((e.device_id, envelope));
@@ -530,12 +718,29 @@ impl<S: RecordStore> Repository<S> {
         // Step 4: the lists (and the contact book, if any) at seq 1 under
         // the identity id, signed by the new key; the device list marks the
         // revoked devices.
-        let at = now();
+        let at = plan.at;
         let mut device_entries = devices.map(|d| d.body.entries).unwrap_or_default();
         for e in &mut device_entries {
             if revoked.contains(&e.device_id) {
                 e.revoked_at.get_or_insert(at);
             }
+        }
+        // A recovery (sharing plan 3 Task 3): the recovering device was
+        // never listed (a kit-restored device signs no list); the new
+        // identity's list names it, from its self-intro entry.
+        if plan.reason == RotationReason::Recover
+            && !device_entries.iter().any(|e| e.device_id == me)
+            && let Some(e) = work.roster.iter().find(|e| e.device_id == me)
+        {
+            device_entries.push(DeviceEntry {
+                device_id: me,
+                name: e.name.clone(),
+                kind: e.kind,
+                mode: e.mode,
+                added_at: at,
+                added_by: None,
+                revoked_at: None,
+            });
         }
         let vault_entries = match vault_list {
             Some(v) => v.body.entries,
@@ -597,9 +802,9 @@ impl<S: RecordStore> Repository<S> {
             format: LINEAGE_FORMAT,
             account_id,
             generation,
-            parent: trust.head.hash,
+            parent: work.head.hash,
             rotator: me,
-            reason: req.reason,
+            reason: plan.reason,
             revoked: revoked.iter().copied().collect(),
             roster: roster.clone(),
             identity_pub: identity_pub.clone(),
@@ -612,7 +817,7 @@ impl<S: RecordStore> Repository<S> {
         check_rotation(&body)?;
         let record = LineageRecord::Rotation(sign_rotation(
             body,
-            req.device_keys,
+            plan.device_keys,
             &account.keyset().identity,
         )?);
         let head = record.hash();
@@ -648,13 +853,16 @@ impl<S: RecordStore> Repository<S> {
             &account,
             new_id,
             &record,
-            req.reason == RotationReason::Revoke,
+            matches!(
+                plan.reason,
+                RotationReason::Revoke | RotationReason::Recover
+            ),
             at,
             &mut writes,
         )?;
 
         // The trust state of the new head.
-        let mut next: TrustState = trust.clone();
+        let mut next: TrustState = work.clone();
         next.head = LineageHead {
             generation,
             hash: head,
@@ -663,12 +871,12 @@ impl<S: RecordStore> Repository<S> {
         next.levels
             .retain(|id, _| roster.iter().any(|e| e.device_id == *id));
         next.roster = roster;
-        next.add_revoked(&req.revoke);
+        next.add_revoked(&revoked.iter().copied().collect::<Vec<_>>());
         next.retired.push(RetiredIdentity {
             identity_id: identity_id(&self.account.params.identity_pub),
             sign_pub: self.account.params.signing_pub.clone(),
             identity_pub: self.account.params.identity_pub.clone(),
-            generation: trust.head.generation,
+            generation: work.head.generation,
         });
         next.state = DeviceLineageState::Rotating { phase: 1 };
         // The new head is this device's own: every write it made so far is
@@ -710,7 +918,7 @@ impl<S: RecordStore> Repository<S> {
         // Spec 6.8 (O6): this device's acknowledgment of the head it pins,
         // in the same transaction (display only).
         writes.push((
-            crate::lineage::ack::ack_record(&next, req.device_keys, at)?,
+            crate::lineage::ack::ack_record(&next, plan.device_keys, at)?,
             None,
         ));
         collect.sort();
@@ -723,8 +931,15 @@ impl<S: RecordStore> Repository<S> {
         // Step 6: one local transaction, nothing deleted (R23), conditional
         // on the trust state read above: a follow or a rejection saved
         // meanwhile (another connection) is a `Conflict`, nothing written.
-        self.store
-            .put_rotation(writes, chain.clone(), &trust, &next, &push, zoned, &shares)?;
+        self.store.put_rotation(
+            writes,
+            chain.clone(),
+            stored_trust,
+            &next,
+            &push,
+            zoned,
+            &shares,
+        )?;
 
         // Committed: from here on nothing may fail (K12), or a caller
         // following the contract would discard the new Secret Key of an

@@ -6017,3 +6017,294 @@ fn left_identity_home_never_read_after_follow() {
     assert_eq!(left, 2, "old and new identity homes");
     assert_eq!(repo.sync_home().unwrap().unwrap().backend, home);
 }
+
+// ------------------------------------ Recover rotation (sharing plan 3 Task 3)
+
+use onepass_core::contact::{ForeignLineage, ForeignPin, LegacyIntros, follow_foreign};
+use onepass_core::repo::{RecoverRequest, recover_rotate};
+
+const RECOVERED_PASSWORD: &str = "Nouveau départ, Camille Durand";
+
+/// A's account recovered on a new device N (spec 11.5 step 5), from the
+/// keyset a recovery slot gives, after A rotated (`rotated`). N synced.
+struct Recovered {
+    server: Server,
+    a: Device,
+    n: Device,
+    f: Fixture,
+    /// A's rotation, the head N recovered from.
+    before: RotationOutcome,
+    out: RotationOutcome,
+    sk: SecretKey,
+    keys: DeviceKeys,
+    items: Vec<Item>,
+}
+
+fn recovered() -> Recovered {
+    let (mut server, mut a, _c, f, before, _sk1) = rotated();
+    let keyset = a.repo().account().recovery_keyset().unwrap();
+    let items = a.items();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    let sk = SecretKey::generate().unwrap();
+    let store = n.store();
+    let device = store.device_state().unwrap();
+    let (repo, out) = recover_rotate(
+        store,
+        RecoverRequest {
+            keyset_record: &keyset,
+            new_password: RECOVERED_PASSWORD,
+            new_secret_key: &sk,
+            device_keys: &keys,
+            device_name: "iPhone de secours",
+            kind: DeviceKind::Phone,
+            mode: DeviceMode::Personal,
+            device,
+        },
+        T0 + 500,
+    )
+    .unwrap();
+    n.repo = Some(repo);
+    n.repo().persist_device_state().unwrap();
+    sync(&mut server, &mut n).unwrap();
+    Recovered {
+        server,
+        a,
+        n,
+        f,
+        before,
+        out,
+        sk,
+        keys,
+        items,
+    }
+}
+
+fn records_of(store: &SyncStore) -> (Vec<LineageRecord>, Vec<SignedIntro>) {
+    let records = store
+        .list(RecordKind::Lineage)
+        .unwrap()
+        .iter()
+        .map(|r| LineageRecord::decode(&r.data).unwrap())
+        .collect();
+    let intros = store
+        .list(RecordKind::DeviceIntro)
+        .unwrap()
+        .iter()
+        .filter_map(|r| SignedIntro::decode(&r.data).ok())
+        .collect();
+    (records, intros)
+}
+
+/// From the opened keyset: a new identity, Secret Key and password, the
+/// roster N alone, every device of A's roster revoked, every item readable
+/// under the new identity, a rotation code.
+#[test]
+fn recover_rotate_end_to_end() {
+    let mut r = recovered();
+    let t = trust_of_dev(&r.n).unwrap();
+    let me = t.me.device_id;
+    assert_eq!(t.me, r.keys.public(me).unwrap());
+    assert_eq!(
+        t.head,
+        LineageHead {
+            generation: 2,
+            hash: r.out.head
+        }
+    );
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_self_pinned(&t);
+    assert_eq!(t.roster.len(), 1);
+
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let body = rotation_of(&r.n.store(), &r.out.head);
+    assert_eq!(body.reason, RotationReason::Recover);
+    assert_eq!(body.parent, r.before.head);
+    assert_eq!(body.rotator, me);
+    assert_eq!(body.roster.len(), 1);
+    assert_eq!(body.roster[0].name, "iPhone de secours");
+    assert!(body.deliveries.is_empty());
+    let mut was: Vec<Id> = parent.roster.iter().map(|e| e.device_id).collect();
+    was.sort();
+    assert_eq!(body.revoked, was);
+    assert_ne!(body.identity_pub, parent.identity_pub);
+    assert_eq!(t.identity_pub, body.identity_pub);
+    assert_eq!(r.out.code, rotation_code(&r.out.head));
+    for id in &was {
+        assert!(t.revoked.contains(id));
+    }
+
+    // The device list of the new identity names N; A's devices are revoked.
+    let devices = r.n.repo().devices().unwrap();
+    assert!(
+        devices
+            .iter()
+            .any(|d| d.device_id == me && d.revoked_at.is_none())
+    );
+    assert!(
+        devices
+            .iter()
+            .filter(|d| was.contains(&d.device_id))
+            .all(|d| d.revoked_at.is_some())
+    );
+
+    assert_eq!(r.n.items(), r.items);
+    r.n.lock();
+    r.n.try_unlock(RECOVERED_PASSWORD, &r.sk).unwrap();
+    assert_eq!(r.n.items(), r.items);
+    assert!(r.n.try_unlock(PASSWORD, &r.sk).is_err());
+}
+
+/// Ruling B-4: an old device reads the `Recover` rotation and goes to
+/// quarantine (its id is revoked); its exit is to erase and pair again,
+/// from the recovered device, as a new device. The rotator is only
+/// self-introduced, never `Verified` here, so the erase clock does not
+/// run (final review I1): the device stays locked until the user answers.
+#[test]
+fn old_devices_quarantined_then_repair() {
+    let mut r = recovered();
+    pull(&r.server, &mut r.a);
+    r.a.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(tick(&r.a, T), QuarantineTick::Locked);
+    assert!(matches!(
+        state(&r.a),
+        DeviceLineageState::Quarantined { by, .. } if by == r.out.head
+    ));
+    assert!(
+        quarantine_resolve(r.a.store(), QuarantineChoice::Erase)
+            .unwrap()
+            .is_none()
+    );
+    assert_erased(&r.a);
+
+    // A new pairing from N.
+    use onepass_core::devices::DeviceEntry;
+    use onepass_core::pairing::{
+        DeviceInfo, FullGrant, FullGrantV2, import_full_v2, snapshot_from_store,
+    };
+    let p = Peer::new(Id::new());
+    let info = DeviceInfo {
+        device_id: p.id(),
+        name: "iPad".into(),
+        kind: DeviceKind::Tablet,
+    };
+    let entry = DeviceEntry {
+        device_id: p.id(),
+        name: info.name.clone(),
+        kind: info.kind,
+        mode: DeviceMode::Personal,
+        added_at: T0 + 600,
+        added_by: r.n.repo().this_device_id(),
+        revoked_at: None,
+    };
+    let sk = &r.sk;
+    let grant =
+        r.n.repo()
+            .add_device_then(entry, |repo| -> Result<FullGrantV2> {
+                Ok(FullGrantV2 {
+                    full: FullGrant {
+                        account_id: repo.account().params.account_id,
+                        secret_key: zeroize::Zeroizing::new(sk.to_display()),
+                        mode: DeviceMode::Personal,
+                        device_id: p.id(),
+                        snapshot: snapshot_from_store(repo.store())?,
+                    },
+                    trust: repo.trust_snapshot()?,
+                    sync: None,
+                    enroll: None,
+                })
+            })
+            .unwrap();
+    let mut d = Device::empty();
+    {
+        let mut store = SyncStore::open(&d.path).unwrap();
+        import_full_v2(&mut store, &grant, &p.public, &p.keys, &info).unwrap();
+    }
+    d.try_unlock(RECOVERED_PASSWORD, &r.sk).unwrap();
+    let t = trust_of_dev(&d).unwrap();
+    assert_eq!(t.head.hash, r.out.head);
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_self_pinned(&t);
+    assert_eq!(d.items(), r.items);
+}
+
+/// Ruling B-3: without the self-intro signed by the parent identity, the
+/// `Recover` rotation is valid neither for an old device (the resolver
+/// ignores it) nor for a contact (`follow_foreign`).
+#[test]
+fn recover_without_identity_intro_invalid() {
+    let mut r = recovered();
+    pull_only(&r.server, &mut r.a, |ch| ch.kind != RecordKind::DeviceIntro);
+    r.a.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    assert_eq!(r.a.repo().pending_lock(), None);
+    assert_eq!(tick(&r.a, T), QuarantineTick::NotQuarantined);
+
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let (records, _) = records_of(&r.n.store());
+    let pin = foreign_pin(&records, &r.before, &parent);
+    assert_eq!(
+        follow_foreign(&pin, &records, &[], &LegacyIntros::default()),
+        ForeignLineage::Same
+    );
+    // A self-intro under the head that the identity did not sign counts
+    // for nothing either.
+    let (_, intros) = records_of(&r.n.store());
+    let me = trust_of_dev(&r.n).unwrap().me.device_id;
+    let mut forged: Vec<SignedIntro> = intros
+        .into_iter()
+        .filter(|i| i.body.entry.device_id == me)
+        .collect();
+    for i in &mut forged {
+        i.identity_sig = None;
+    }
+    assert_eq!(
+        follow_foreign(&pin, &records, &forged, &LegacyIntros::default()),
+        ForeignLineage::Same
+    );
+    let _ = &r.f;
+}
+
+fn foreign_pin(
+    records: &[LineageRecord],
+    before: &RotationOutcome,
+    parent: &onepass_core::lineage::RotationBody,
+) -> ForeignPin {
+    let genesis = records
+        .iter()
+        .find(|r| matches!(r, LineageRecord::Genesis(_)))
+        .expect("a genesis");
+    ForeignPin {
+        account_id: genesis.account_id(),
+        genesis: genesis.hash(),
+        head: LineageHead {
+            generation: 1,
+            hash: before.head,
+        },
+        identity_pub: parent.identity_pub.clone(),
+    }
+}
+
+/// A contact pinned at A's head sees the recovery as an identity change
+/// (spec 12.3 point 1): `Advanced`, the last rotation of reason `Recover`.
+#[test]
+fn contact_sees_recover_as_identity_change() {
+    let r = recovered();
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let (records, intros) = records_of(&r.n.store());
+    let pin = foreign_pin(&records, &r.before, &parent);
+    match follow_foreign(&pin, &records, &intros, &LegacyIntros::default()) {
+        ForeignLineage::Advanced {
+            head,
+            last_rotation,
+            identity_pub,
+            ..
+        } => {
+            assert_eq!(head.hash, r.out.head);
+            assert_eq!(last_rotation.reason, RotationReason::Recover);
+            assert_ne!(identity_pub, parent.identity_pub);
+        }
+        other => panic!("expected Advanced, got {other:?}"),
+    }
+}

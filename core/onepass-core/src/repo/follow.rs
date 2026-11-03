@@ -183,18 +183,29 @@ fn later_epoch(params: &[u8], body: &RotationBody) -> bool {
         .is_ok_and(|p| p.account_id == body.account_id && p.epoch > 1)
 }
 
-fn completeness<S: RecordStore + ?Sized>(
+/// The completeness of every rotation for `trust`'s device, and the
+/// self-introduced devices a `Recover` child of the head may come from
+/// (sharing plan 3 Task 3).
+pub(crate) fn completeness<S: RecordStore + ?Sized>(
     store: &S,
     records: &[LineageRecord],
-    me: Id,
+    trust: &TrustState,
 ) -> Result<Completeness> {
     let mut present = BTreeSet::new();
     for (h, body) in rotations(records) {
-        if complete_for(store, &h, body, me)? {
+        if complete_for(store, &h, body, trust.me.device_id)? {
             present.insert(h);
         }
     }
-    Ok(Completeness { present })
+    let intros = super::pairing::stored_intros(store)?;
+    let self_introduced = super::kit::self_intros(trust, &intros)
+        .into_iter()
+        .map(|(id, i)| (id, i.body.entry.clone()))
+        .collect();
+    Ok(Completeness {
+        present,
+        self_introduced,
+    })
 }
 
 /// A digest of everything a rotation prompt depends on: the lineage
@@ -463,7 +474,7 @@ pub(crate) fn look_for<S: RecordStore + ?Sized>(store: &S, trust: &TrustState) -
         });
     }
     let records = lineage_records(store)?;
-    let complete = completeness(store, &records, trust.me.device_id)?;
+    let complete = completeness(store, &records, trust)?;
     look_in(store, trust, &records, &complete)
 }
 
@@ -500,7 +511,7 @@ fn offered<S: RecordStore + ?Sized>(
     records: &[LineageRecord],
     choice: [u8; 32],
 ) -> Result<Prompt> {
-    let mut complete = completeness(store, records, trust.me.device_id)?;
+    let mut complete = completeness(store, records, trust)?;
     complete.present.insert(choice);
     match resolve(trust, records, &complete) {
         Decision::Prompt(p) if p.children.contains(&choice) => Ok(p),
@@ -1069,7 +1080,7 @@ pub fn reject_rotation(
         return Err(refused("rotation", "state"));
     }
     let records = lineage_records(&*store)?;
-    let complete = completeness(&*store, &records, trust.me.device_id)?;
+    let complete = completeness(&*store, &records, &trust)?;
     // Incomplete choices are offered too: "not me" never waits.
     let offered = look_in(&*store, &trust, &records, &complete)?
         .prompt
@@ -1282,7 +1293,7 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
         DeviceLineageState::Legacy => return Ok(QuarantineTick::NotQuarantined),
         _ => {
             let records = lineage_records(&*store)?;
-            let complete = completeness(&*store, &records, trust.me.device_id)?;
+            let complete = completeness(&*store, &records, &trust)?;
             let lock = look_in(&*store, &trust, &records, &complete)?.lock;
             let Some(state) = lock.and_then(|l| l.state(&trust.state, &records, now)) else {
                 return Ok(QuarantineTick::NotQuarantined);

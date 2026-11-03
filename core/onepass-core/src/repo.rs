@@ -90,7 +90,7 @@ pub mod transfer;
 pub mod travel;
 
 pub use follow::{LineageLock, PromptChoice, RotationPrompt};
-pub use rotate::{RotateRequest, RotationOutcome};
+pub use rotate::{RecoverRequest, RotateRequest, RotationOutcome, recover_rotate};
 
 /// What a device keeps between sessions: the account pinned at first
 /// unlock, the last manifest accepted for each vault, and the restore epoch

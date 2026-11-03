@@ -47,19 +47,26 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    GenesisBody, LineageRecord, RosterEntry, RotationBody, Signed, body_bytes, check_rotation,
-    rotation_hash, sha256, verify_rotation,
+    GenesisBody, LineageRecord, RosterEntry, RotationBody, RotationReason, Signed, body_bytes,
+    check_rotation, rotation_hash, sha256, verify_rotation,
 };
 use crate::Id;
 use crate::crypto::HybridVerifyingKey;
 use crate::trust::TrustState;
 
-/// Lineage hashes whose delivery for this device, params and keyset are
-/// present and hash-match (the caller checks them; spec 7.2 "complete for
-/// me").
+/// What the caller checked in its store: the lineage hashes whose
+/// delivery for this device, params and keyset are present and hash-match
+/// (spec 7.2 "complete for me"), and the devices a `Recover` rotation may
+/// come from.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Completeness {
     pub present: BTreeSet<[u8; 32]>,
+    /// Sharing plan 3 Task 3 (ruling B-3): the devices outside the local
+    /// roster with a valid self-intro under the head (bound to this
+    /// account and head, signed by the device's own key and by the head's
+    /// identity from the local trust state), by device id. Only a
+    /// `Recover` child of the head may be signed by one of them.
+    pub self_introduced: BTreeMap<Id, RosterEntry>,
 }
 
 /// What the device does with the lineage it knows.
@@ -239,6 +246,7 @@ pub fn resolve_cached(
     cache: &mut VerifyCache,
 ) -> Decision {
     let mut view = View::new(trust, records, cache);
+    view.admitted = complete.self_introduced.clone();
     if let Some(d) = view.divergence(complete) {
         return d;
     }
@@ -270,6 +278,8 @@ struct View<'a, 'c> {
     /// A sibling that beats the own record is known but not complete:
     /// report `Wait` rather than `Stay`.
     pending: bool,
+    /// `Completeness::self_introduced`.
+    admitted: BTreeMap<Id, RosterEntry>,
 }
 
 impl<'a, 'c> View<'a, 'c> {
@@ -313,6 +323,7 @@ impl<'a, 'c> View<'a, 'c> {
             children,
             cache,
             pending: false,
+            admitted: BTreeMap::new(),
         }
     }
 
@@ -354,6 +365,9 @@ impl<'a, 'c> View<'a, 'c> {
         if b.parent != parent.hash || parent.generation.checked_add(1) != Some(b.generation) {
             return false;
         }
+        if b.reason == RotationReason::Recover {
+            return self.valid_recover(hash, parent);
+        }
         let in_local = |id: &Id| self.trust.roster.iter().any(|e| e.device_id == *id);
         let member = |id: &Id| match parent.roster {
             // The head: the local roster is the parent roster.
@@ -376,6 +390,50 @@ impl<'a, 'c> View<'a, 'c> {
             return false;
         }
         self.trusted_signer(hash, &parent.path_revoked)
+    }
+
+    /// Sharing plan 3 Task 3 (rulings B-3, B-4): a `Recover` rotation is
+    /// valid only as a child of the head, from a device pinned here or
+    /// admitted by its identity-signed self-intro under the head
+    /// (`Completeness::self_introduced`), not revoked, excluded or
+    /// ignored, its roster entry carrying the same keys, every revoked id
+    /// known here, and some copy verifying under that device's key and the
+    /// new identity. Anywhere else it is ignored.
+    fn valid_recover(&mut self, hash: &[u8; 32], parent: &Parent<'a>) -> bool {
+        if parent.roster.is_some() {
+            return false;
+        }
+        let Some(node) = self.rotations.get(hash) else {
+            return false;
+        };
+        let b = node.body;
+        if self.trust.ignored.contains(hash)
+            || self.trust.revoked.contains(&b.rotator)
+            || self.trust.excluded.contains(&b.rotator)
+        {
+            return false;
+        }
+        let Some(signer) = self
+            .pinned(b.rotator)
+            .cloned()
+            .or_else(|| self.admitted.get(&b.rotator).cloned())
+        else {
+            return false;
+        };
+        if b.roster.iter().any(|e| {
+            e.device_id == b.rotator
+                && (e.sign_pub != signer.sign_pub || e.kem_pub != signer.kem_pub)
+        }) {
+            return false;
+        }
+        let known = |id: &Id| {
+            self.trust.roster.iter().any(|e| e.device_id == *id) || self.trust.revoked.contains(id)
+        };
+        if !b.revoked.iter().all(known) {
+            return false;
+        }
+        let copies = node.copies.clone();
+        copies.iter().any(|s| self.cache.check(s, &signer.sign_pub))
     }
 
     fn valid_children(&mut self, parent: &Parent<'a>) -> BTreeMap<[u8; 32], &'a RotationBody> {

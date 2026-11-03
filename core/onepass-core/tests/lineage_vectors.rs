@@ -753,3 +753,42 @@ fn generate_vectors() {
         vec![("code", rotation_code(&[0u8; 32]).to_string())],
     );
 }
+
+/// Sharing plan 3 Task 3 (ruling B-3): `Recover` is appended to the
+/// reasons, so the other four keep their encoding (the golden vectors
+/// above still hold) and it takes the next index.
+#[test]
+fn recover_reason_encoding_appended() {
+    let reasons = [
+        RotationReason::Revoke,
+        RotationReason::Rotate,
+        RotationReason::RotateWithPassword,
+        RotationReason::Reapply,
+        RotationReason::Finish,
+        RotationReason::Recover,
+    ];
+    for (n, r) in reasons.iter().enumerate() {
+        assert_eq!(postcard_of(r), vec![n as u8]);
+    }
+    let a = dev(1);
+    let mut body = rotation_body(&[&a]);
+    body.reason = RotationReason::Recover;
+    let bytes = unsigned_rotation(body.clone()).encode();
+    assert_eq!(
+        LineageRecord::decode(&bytes).unwrap(),
+        unsigned_rotation(body)
+    );
+}
+
+/// Ruling B-3: the roster of a `Recover` rotation is its rotator alone.
+#[test]
+fn recover_roster_is_rotator_only() {
+    let a = dev(1);
+    let b = dev(2);
+    let mut body = rotation_body(&[&a, &b]);
+    body.reason = RotationReason::Recover;
+    refused(body.clone());
+    // The same roster is fine for any other reason.
+    body.reason = RotationReason::Revoke;
+    LineageRecord::decode(&unsigned_rotation(body).encode()).unwrap();
+}
