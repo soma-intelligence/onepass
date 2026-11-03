@@ -16,6 +16,8 @@ struct Sidebar: View {
     @State private var accountRowBottom: CGFloat = 60
     /// The vault whose sheet is open from its row's context menu.
     @State private var editingVaultID: String?
+    /// Doublons possibles (spec 2026-11-03-duplicates): the groups behind the row's count.
+    @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
     #if os(macOS)
@@ -129,6 +131,12 @@ struct Sidebar: View {
                     filter: .passkeys, id: "library.passkeys")
                 pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
+                // Under Watchtower while there is something to review (the open page keeps its row).
+                if !duplicates.groups.isEmpty || model.page == .duplicates {
+                    pageRow("duplicates.title", symbol: "square.on.square", color: .orange, page: .duplicates,
+                        id: "sidebar.duplicates")
+                        .badge(duplicates.groups.count)
+                }
                 pageRow("crypto.title", symbol: "bitcoinsign", color: CoinIcon.color("bitcoin"), page: .crypto,
                     id: "sidebar.crypto")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
@@ -157,6 +165,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .task(id: session.summariesRevision) { await duplicates.load(session) }
         #if os(macOS)
         .scrollIndicators(.never)
         .scrollContentBackground(.hidden)

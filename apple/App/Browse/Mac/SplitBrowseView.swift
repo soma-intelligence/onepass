@@ -68,6 +68,7 @@ struct PageColumn: View {
                 case .watchtower: WatchtowerPage()
                 case .crypto: CryptoSplitPage()
                 case .developer: DeveloperPage()
+                case .duplicates: DuplicatesReviewView(layout: .page)
                 case .items: EmptyView()
                 }
             }

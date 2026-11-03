@@ -1,11 +1,12 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Possible duplicates (spec 2026-11-03-duplicates): the home banner, the review screen with one
-/// card per group, and the merge sheet with its preview. The core finds the groups, plans the merge
-/// and refuses any write to a read-only shared copy; this file only shows and asks.
+/// Possible duplicates (spec 2026-11-03-duplicates): the home banner (iPhone), the review screen with
+/// one card per group, and the merge sheet with its preview. The review and the merge sheet are
+/// shared: an iPhone tab pushes the review, the Mac, iPad and Vision Pro sidebar opens it as a full
+/// page (`DuplicatesReviewView.Layout.page`). The core finds the groups, plans the merge and refuses
+/// any write to a read-only shared copy; this file only shows and asks.
 @MainActor
 @Observable
 final class DuplicatesLoader {
@@ -80,6 +81,8 @@ enum DuplicatesText {
 
 // MARK: - Home banner
 
+#if os(iOS)
+
 /// Accueil, under the search and above the Tous les éléments and Favoris tiles: "N doublons
 /// possibles" and a chevron. Hidden at zero, and once closed until a group appears that was not on
 /// screen then.
@@ -142,48 +145,29 @@ struct DuplicatesBanner: View {
         }
     }
 }
+#endif
 
 // MARK: - Review screen
 
 /// One card per group: each copy (icon, title, username, vault, last edit, what differs), then the
 /// actions Fusionner, Archiver les autres, Supprimer les autres, Pas des doublons.
 struct DuplicatesReviewView: View {
+    /// Where the review sits: pushed in an iPhone tab, or a full page right of the sidebar.
+    enum Layout {
+        case phone, page
+    }
+
     @Environment(AppModel.self) private var model
     @State private var loader = DuplicatesLoader()
     @State private var merging: FfiDuplicateGroup?
     @State private var trashing: FfiDuplicateGroup?
     @State private var busy: String?
+    var layout: Layout = .phone
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if loader.loaded, loader.groups.isEmpty {
-                    ContentUnavailableView {
-                        Label("duplicates.empty.title", systemImage: "checkmark.circle")
-                    } description: {
-                        Text("duplicates.empty.body")
-                    }
-                    .padding(.top, 60)
-                } else {
-                    ForEach(loader.groups, id: \.id) { group in
-                        DuplicateGroupCard(
-                            group: group, busy: busy == group.id,
-                            merge: { merging = group },
-                            archive: { run(group) { try await model.session.archiveDuplicates(others(group)) } },
-                            trash: { trashing = group },
-                            dismiss: { run(group) { try await model.session.dismissDuplicates(group.copies.map(\.key)) } })
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .animation(.snappy, value: loader.groups.map(\.id))
-        }
-        .background(PhoneBackground())
-        .navigationTitle("duplicates.title")
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: model.session.summariesRevision) {
+        content
+            .navigationTitle("duplicates.title")
+            .task(id: model.session.summariesRevision) {
             await loader.load(model.session)
             #if DEBUG
             // Captures: `-OnePassDemoList duplicates-merge` opens the first group's merge preview.
@@ -210,6 +194,78 @@ struct DuplicatesReviewView: View {
         }
     }
 
+    @ViewBuilder private var content: some View {
+        #if os(iOS)
+        if layout == .phone {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if isEmpty {
+                        emptyState.padding(.top, 60)
+                    } else {
+                        ForEach(loader.groups, id: \.id) { card($0) }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .animation(.snappy, value: loader.groups.map(\.id))
+            }
+            .background(PhoneBackground())
+            .navigationBarTitleDisplayMode(.inline)
+        } else {
+            page
+        }
+        #else
+        page
+        #endif
+    }
+
+    /// Mac, iPad and Vision Pro: the page header of Watchtower, then the cards side by side.
+    private var page: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                PageHeader(
+                    title: String(localized: "duplicates.title"), symbol: "square.on.square", color: .orange,
+                    message: String(localized: "duplicates.banner.subtitle"))
+                if isEmpty {
+                    emptyState
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 380), spacing: 14, alignment: .top)],
+                        alignment: .leading, spacing: 14
+                    ) {
+                        ForEach(loader.groups, id: \.id) { card($0) }
+                    }
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .animation(.snappy, value: loader.groups.map(\.id))
+        }
+    }
+
+    private var isEmpty: Bool { loader.loaded && loader.groups.isEmpty }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("duplicates.empty.title", systemImage: "checkmark.circle")
+        } description: {
+            Text("duplicates.empty.body")
+        }
+    }
+
+    private func card(_ group: FfiDuplicateGroup) -> some View {
+        DuplicateGroupCard(
+            group: group, busy: busy == group.id, layout: layout,
+            merge: { merging = group },
+            archive: { run(group) { try await model.session.archiveDuplicates(others(group)) } },
+            trash: { trashing = group },
+            dismiss: { run(group) { try await model.session.dismissDuplicates(group.copies.map(\.key)) } })
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
     /// Every writable copy but the suggested primary (the first).
     private func others(_ group: FfiDuplicateGroup) -> [FfiItemKey] {
         group.copies.dropFirst().filter(\.writable).map(\.key)
@@ -233,6 +289,7 @@ extension FfiDuplicateGroup: @retroactive Identifiable {}
 private struct DuplicateGroupCard: View {
     let group: FfiDuplicateGroup
     let busy: Bool
+    let layout: DuplicatesReviewView.Layout
     let merge: () -> Void
     let archive: () -> Void
     let trash: () -> Void
@@ -258,7 +315,7 @@ private struct DuplicateGroupCard: View {
             .padding(.bottom, 6)
             ForEach(Array(group.copies.enumerated()), id: \.element.summary.id) { index, copy in
                 if index > 0 { Divider().padding(.leading, 66) }
-                DuplicateCopyRow(copy: copy, suggested: index == 0)
+                DuplicateCopyRow(copy: copy, suggested: index == 0, layout: layout)
             }
             Divider()
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
@@ -298,13 +355,30 @@ private struct DuplicateGroupCard: View {
             .font(.footnote.weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .controlSize(.small)
+            .controlSize(layout == .phone ? .small : .regular)
             .disabled(busy)
             .padding(12)
         }
-        .phoneCard()
+        .modifier(DuplicateCardSurface(layout: layout))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duplicates.group")
+    }
+}
+
+/// The card's surface: the iPhone card, or the page card of the Mac and iPad (Watchtower's).
+private struct DuplicateCardSurface: ViewModifier {
+    let layout: DuplicatesReviewView.Layout
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if layout == .phone {
+            content.phoneCard()
+        } else {
+            EditorCard { content }
+        }
+        #else
+        EditorCard { content }
+        #endif
     }
 }
 
@@ -312,55 +386,77 @@ private struct DuplicateCopyRow: View {
     @Environment(AppModel.self) private var model
     let copy: FfiDuplicateCopy
     let suggested: Bool
+    let layout: DuplicatesReviewView.Layout
+
+    private var ref: ItemRef { ItemRef(vaultID: copy.summary.vaultId, itemID: copy.summary.id) }
 
     var body: some View {
-        NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: copy.summary.vaultId, itemID: copy.summary.id))) {
-            HStack(alignment: .top, spacing: 12) {
-                ItemIcon(
-                    type: copy.summary.itemType, title: copy.summary.title,
-                    siteIcon: copy.summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) },
-                    size: 40, brand: copy.summary.cardBrand)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(copy.summary.title)
-                            .font(.body.weight(.semibold))
-                            .lineLimit(1)
-                        if suggested {
-                            badge(Text("duplicates.copy.suggested"), color: Theme.readableAccent)
-                        } else if !copy.writable {
-                            badge(Text("duplicates.copy.readOnly"), color: .secondary)
-                        }
-                    }
-                    if !copy.summary.subtitle.isEmpty {
-                        Text(verbatim: copy.summary.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Text(verbatim: "\(copy.vaultName) · \(DuplicatesText.modified(copy))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        #if os(iOS)
+        if layout == .phone {
+            NavigationLink(value: PhoneRoute.item(ref)) { label }
+                .buttonStyle(RowHighlightButtonStyle())
+                .accessibilityElement(children: .combine)
+        } else {
+            reveal
+        }
+        #else
+        reveal
+        #endif
+    }
+
+    /// A page has no stack of its own for the item: the item opens in the full list, selected, as
+    /// Watchtower's "Voir les éléments" does.
+    private var reveal: some View {
+        Button { model.perform(.reveal(ref)) } label: { label }
+            .buttonStyle(.plain)
+            .visionHoverEffect()
+            .accessibilityElement(children: .combine)
+    }
+
+    private var label: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ItemIcon(
+                type: copy.summary.itemType, title: copy.summary.title,
+                siteIcon: copy.summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) },
+                size: 40, brand: copy.summary.cardBrand)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(copy.summary.title)
+                        .font(.body.weight(.semibold))
                         .lineLimit(1)
-                    if !suggested {
-                        Text(verbatim: DuplicatesText.differences(copy))
-                            .font(.caption)
-                            .foregroundStyle(copy.differences.isEmpty ? Color.secondary : Color.orange)
-                            .lineLimit(2)
+                    if suggested {
+                        badge(Text("duplicates.copy.suggested"), color: Theme.readableAccent)
+                    } else if !copy.writable {
+                        badge(Text("duplicates.copy.readOnly"), color: .secondary)
                     }
                 }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.forward")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 12)
-                    .accessibilityHidden(true)
+                if !copy.summary.subtitle.isEmpty {
+                    Text(verbatim: copy.summary.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Text(verbatim: "\(copy.vaultName) · \(DuplicatesText.modified(copy))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if !suggested {
+                    Text(verbatim: DuplicatesText.differences(copy))
+                        .font(.caption)
+                        .foregroundStyle(copy.differences.isEmpty ? Color.secondary : Color.orange)
+                        .lineLimit(2)
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .contentShape(.rect)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.top, 12)
+                .accessibilityHidden(true)
         }
-        .buttonStyle(RowHighlightButtonStyle())
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(.rect)
     }
 
     private func badge(_ text: Text, color: Color) -> some View {
@@ -400,7 +496,9 @@ struct DuplicateMergeSheet: View {
                 resultSection
             }
             .navigationTitle("duplicates.action.merge")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("common.cancel") { dismiss() }
@@ -413,7 +511,12 @@ struct DuplicateMergeSheet: View {
             }
             .task(id: primaryID) { await loadPreview() }
         }
+        #if os(iOS)
         .presentationDetents([.large])
+        #elseif os(macOS)
+        // A Mac sheet sizes to its content: a list has none, so it gets the room of a short form.
+        .frame(minWidth: 460, idealWidth: 520, minHeight: 520, idealHeight: 620)
+        #endif
     }
 
     private var keepSection: some View {
@@ -538,4 +641,3 @@ struct DuplicateMergeSheet: View {
         }
     }
 }
-#endif

@@ -465,11 +465,12 @@ final class AppModel {
             seedAccountIfRequested()
             openDebugItemIfRequested()
         }
-        // Captures (`-OnePassDemoPage watchtower|developer`): opens that page at launch.
+        // Captures (`-OnePassDemoPage watchtower|developer|crypto|duplicates`): opens that page at launch.
         switch UserDefaults.standard.string(forKey: "OnePassDemoPage") {
         case "watchtower": page = .watchtower
         case "developer": page = .developer
         case "crypto": page = .crypto
+        case "duplicates": page = .duplicates
         // Travel screenshots: Réglages > Travel Mode in its sheet.
         case "travel": travelSheet = .exit
         default: break
@@ -1781,6 +1782,8 @@ struct BiometricOffer: Identifiable {
 /// The full pages of the main window besides the items (sidebar rows above the vaults).
 enum BrowsePage: Hashable {
     case items, watchtower, crypto, developer
+    /// Doublons possibles (spec 2026-11-03-duplicates): the review page of the sidebar row.
+    case duplicates
 }
 
 /// The items a Watchtower card shows in the list, under the card's title.
