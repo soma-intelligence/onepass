@@ -43,8 +43,8 @@ struct PublicSessionPicker: View {
                             ItemIcon(type: item.itemType, title: item.title, siteIcon: nil, size: 30)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.title).foregroundStyle(.primary).lineLimit(1)
-                                if !item.subtitle.isEmpty {
-                                    Text(item.subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                                if !item.listSubtitle.isEmpty {
+                                    Text(item.listSubtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                                 }
                             }
                             Spacer(minLength: 0)

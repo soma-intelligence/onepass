@@ -13,7 +13,7 @@ struct ItemHeader: View {
 
     private var subtitle: String {
         let category = ItemCategory.of(item.itemType).singular
-        let summary = model.session.summaries.first { $0.id == item.id }?.subtitle ?? ""
+        let summary = model.session.summaries.first { $0.id == item.id }?.listSubtitle ?? ""
         return summary.isEmpty ? category : "\(category) · \(summary)"
     }
 

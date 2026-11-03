@@ -23,7 +23,7 @@ struct ItemListRow: View {
     }
 
     private var secondLine: String {
-        let line = signInLine ?? summary.subtitle
+        let line = signInLine ?? summary.listSubtitle
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 

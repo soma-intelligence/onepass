@@ -33,7 +33,7 @@ struct TextItemsView: View {
                                 } label: {
                                     AutoFillRow(
                                         type: item.itemType, title: item.title,
-                                        detail: item.subtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.subtitle,
+                                        detail: item.listSubtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.listSubtitle,
                                         url: item.primaryUrl
                                     ) {
                                         Image(systemName: "chevron.forward")

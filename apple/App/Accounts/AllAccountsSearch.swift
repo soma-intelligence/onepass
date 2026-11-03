@@ -80,8 +80,8 @@ struct AllAccountsSearch: View {
             ItemIcon(type: summary.itemType, title: summary.title, siteIcon: summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: summary.title).foregroundStyle(.primary).lineLimit(1)
-                if !summary.subtitle.isEmpty {
-                    Text(verbatim: summary.subtitle)
+                if !summary.listSubtitle.isEmpty {
+                    Text(verbatim: summary.listSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

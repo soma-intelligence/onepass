@@ -68,8 +68,8 @@ struct ItemPickerList: View {
                         ItemIcon(type: summary.itemType, title: summary.title, siteIcon: summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 30)
                         VStack(alignment: .leading) {
                             Text(summary.title).foregroundStyle(.primary)
-                            if !summary.subtitle.isEmpty {
-                                Text(summary.subtitle).font(.footnote).foregroundStyle(.secondary)
+                            if !summary.listSubtitle.isEmpty {
+                                Text(summary.listSubtitle).font(.footnote).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -382,8 +382,8 @@ private struct SignInAccountChooser: View {
                                 ItemIcon(type: summary.itemType, title: summary.title, siteIcon: summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 30)
                                 VStack(alignment: .leading) {
                                     Text(summary.title).foregroundStyle(.primary)
-                                    if !summary.subtitle.isEmpty {
-                                        Text(summary.subtitle).font(.footnote).foregroundStyle(.secondary)
+                                    if !summary.listSubtitle.isEmpty {
+                                        Text(summary.listSubtitle).font(.footnote).foregroundStyle(.secondary)
                                     }
                                 }
                             }

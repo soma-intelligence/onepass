@@ -430,8 +430,8 @@ private struct DuplicateCopyRow: View {
                         badge(Text("duplicates.copy.readOnly"), color: .secondary)
                     }
                 }
-                if !copy.summary.subtitle.isEmpty {
-                    Text(verbatim: copy.summary.subtitle)
+                if !copy.summary.listSubtitle.isEmpty {
+                    Text(verbatim: copy.summary.listSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -600,7 +600,7 @@ struct DuplicateMergeSheet: View {
                 size: 40, brand: primary?.summary.cardBrand)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).font(.headline)
-                if let user = primary?.summary.subtitle, !user.isEmpty {
+                if let user = primary?.summary.listSubtitle, !user.isEmpty {
                     Text(verbatim: user).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
