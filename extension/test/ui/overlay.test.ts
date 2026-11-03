@@ -107,13 +107,19 @@ const rows = (r: HTMLElement) => [...r.querySelectorAll<HTMLButtonElement>(".ov-
 /** What a row says, part by part: title, second line, action. */
 const says = (el: Element) => [...el.querySelectorAll(".t1, .line2, .pill")].map((x) => x.textContent).join(" | ");
 const frame = () => new Promise((r) => setTimeout(r, 40));
+/** Opens the pill's dropdown (the other ways); clicks are accepted again 300 ms later. */
+const openAll = (r: HTMLElement, clock: Clock) => {
+  r.querySelector<HTMLButtonElement>(".ov-more")!.click();
+  clock.advance(300);
+};
 
 describe("overlay", () => {
   it("offer: one row per way to sign in, each saying how, one filled action", async () => {
-    const { r, handle, worker } = setup(() => null);
+    const { r, handle, worker, clock } = setup(() => null);
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "overlay_init", token: TOKEN });
     expect(text(r)).toContain("Se connecter à atlas-cloud.test");
+    openAll(r, clock);
     const [pwd, google] = rows(r);
     expect(says(pwd!)).toBe("Atlas Cloud | alex@atlas.dev · mot de passe et code | Se connecter");
     expect(says(google!)).toBe("Atlas Perso | Avec Google · alex.perso@example.com | Se connecter");
@@ -124,9 +130,27 @@ describe("overlay", () => {
     expect(r.querySelector(".row-fold")!.textContent).toBe("Autre compte Google");
   });
 
-  it("a click on a row starts the chain; the progress replaces the offer in place", async () => {
-    const { r, handle, worker, timers } = setup(() => running);
+  it("the pill shows one way only: the other ways and their accounts row are not rendered until the dropdown opens", async () => {
+    // Two Google ways with other accounts each (the linear.app report: "Other Google accounts" twice).
+    const google = accounts[1]!;
+    const two: OverlayAccount[] = [
+      { ...google, itemId: "it_02", title: "Linear" },
+      { ...google, itemId: "it_03", title: "Linear" },
+    ];
+    const { r, handle, clock } = setup(() => null, null, (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: two, chain: null } } : null));
     await handle.ready;
+    expect(r.querySelectorAll(".ov-account")).toHaveLength(1);
+    expect(r.querySelectorAll(".row-fold")).toHaveLength(1);
+    expect(r.querySelectorAll("[hidden]")).toHaveLength(0);
+    openAll(r, clock);
+    expect(rows(r)).toHaveLength(2);
+    expect(r.querySelectorAll(".row-fold")).toHaveLength(2);
+  });
+
+  it("a click on a row starts the chain; the progress replaces the offer in place", async () => {
+    const { r, handle, worker, timers, clock } = setup(() => running);
+    await handle.ready;
+    openAll(r, clock);
     rows(r)[1]!.click();
     await flush();
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_start", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_perso" });
@@ -140,6 +164,7 @@ describe("overlay", () => {
   it("the inline picker starts with the other account of the provider", async () => {
     const { r, handle, worker, clock } = setup(() => running);
     await handle.ready;
+    openAll(r, clock);
     button(r, "Autre compte Google").click();
     expect(r.querySelector(".row-fold")!.getAttribute("aria-expanded")).toBe("true");
     const sub = r.querySelector<HTMLButtonElement>('.ov-sub[data-account="g_pro"] > button')!;

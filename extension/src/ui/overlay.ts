@@ -352,11 +352,10 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     picked = null;
     if (!init) return;
     const list = h("div", { class: "ov-accounts" });
+    // Only the first login shows in the pill; the others are not rendered until the dropdown opens
+    // (a hidden row could still show: `.row` sets display, which beats the hidden attribute).
     init.accounts.forEach((a, i) => {
-      const rows = wayRow(a, i === 0);
-      // Only the first login shows in the pill; the others wait behind the dropdown.
-      if (i > 0 && !showAll) rows.forEach((r) => (r.hidden = true));
-      list.append(...rows);
+      if (i === 0 || showAll) list.append(...wayRow(a, i === 0));
     });
     if (init.accounts.length === 0) list.append(messageBlock(t("menu.noLoginForHost", { host: hostOf(init.origin) })));
     const more = init.accounts.length - 1;
