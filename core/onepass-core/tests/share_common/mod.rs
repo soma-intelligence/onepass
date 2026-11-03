@@ -13,7 +13,7 @@ use onepass_core::share::AccessTarget;
 use onepass_core::store::Zone;
 use onepass_core::sync::PhaseOutcome;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Zones {
     pub servers: BTreeMap<Zone, Server>,
     pub cursors: BTreeMap<(PathBuf, Zone), u64>,

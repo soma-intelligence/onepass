@@ -167,3 +167,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "share_vaults"
 required-features = ["dev-fast-kdf"]
+
+# Sharing attack regressions (sharing spec 16, plan 2 Task 16).
+[[test]]
+name = "sharing_attacks"
+required-features = ["dev-fast-kdf"]

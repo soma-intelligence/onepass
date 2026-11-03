@@ -451,10 +451,10 @@ impl<S: RecordStore> Repository<S> {
         }))
     }
 
-    /// I was removed from the vault of `state` (spec 9.2, S11): my item
-    /// writes not sent yet go to a new personal vault "Copie de <name>",
-    /// then my zone access and every local record of the zone go.
-    pub(crate) fn erase_shared(&mut self, state: &ShareState) -> Result<()> {
+    /// My item writes to the vault of `state` not sent yet, opened with
+    /// any generation I hold, saved into a new personal vault "Copie de
+    /// <name>" (nothing when there are none).
+    fn keep_unsent_as_copy(&mut self, state: &ShareState) -> Result<()> {
         let zone = state.zone;
         let mut kept = Vec::new();
         let vaults = self.generation_vaults(state)?;
@@ -483,6 +483,15 @@ impl<S: RecordStore> Repository<S> {
                 self.save_item(&copy, item)?;
             }
         }
+        Ok(())
+    }
+
+    /// I was removed from the vault of `state` (spec 9.2, S11): my item
+    /// writes not sent yet go to a new personal vault "Copie de <name>",
+    /// then my zone access and every local record of the zone go.
+    pub(crate) fn erase_shared(&mut self, state: &ShareState) -> Result<()> {
+        let zone = state.zone;
+        self.keep_unsent_as_copy(state)?;
         let access = AccessTarget::Zone(zone).record_id()?;
         if self.store.get(ZONE_ACCESS_KIND, access)?.is_some() {
             self.store.put_all_zoned(
@@ -1241,6 +1250,28 @@ impl Repository<SyncStore> {
             state.last_manifest = Some(seen);
             self.store
                 .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+        }
+        // Demoted to reader since my writes: they cannot go to the zone
+        // any more, they go to a personal copy (as for a removal).
+        let can_write = state
+            .head
+            .member(self.me().account_id)
+            .is_some_and(|m| m.role >= Role::Write);
+        if !can_write {
+            self.keep_unsent_as_copy(&state)?;
+            let drop: Vec<(RecordKind, Id)> = self
+                .store
+                .zone_pending(zone)?
+                .into_iter()
+                .filter(|r| {
+                    matches!(
+                        r.0,
+                        RecordKind::Item | RecordKind::VaultMeta | RecordKind::Manifest
+                    )
+                })
+                .map(|r| (r.0, r.1))
+                .collect();
+            return self.store.drop_zone_pending(zone, &drop);
         }
         let mut vaults = self.generation_vaults(&state)?;
         vaults.extend(before);
