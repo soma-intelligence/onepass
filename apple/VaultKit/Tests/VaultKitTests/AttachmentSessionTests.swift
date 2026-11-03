@@ -37,7 +37,8 @@ struct AttachmentSessionTests {
         let id = String(repeating: "ab", count: 16)
         let chunk = RemoteRecord(name: RecordName(kind: 25, id: id), version: 1, data: Data([1]), serverMeta: nil)
         #expect(SyncCoordinator.isValid(chunk))
-        let unknown = RemoteRecord(name: RecordName(kind: 26, id: id), version: 1, data: Data([1]), serverMeta: nil)
+        // 26 and up are DeviceAck, SyncHome and the side kinds: 200 is a code the core never gave out.
+        let unknown = RemoteRecord(name: RecordName(kind: 200, id: id), version: 1, data: Data([1]), serverMeta: nil)
         #expect(!SyncCoordinator.isValid(unknown))
     }
 }
