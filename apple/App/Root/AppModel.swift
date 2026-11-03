@@ -1,3 +1,4 @@
+import DesignKit
 import Foundation
 import GlanceKit
 import ImageIO
@@ -205,8 +206,11 @@ final class AppModel {
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var started = false
-    /// One automatic biometric attempt per app activation, whatever the number of windows.
-    @ObservationIgnored private var autoBiometricsPending = true
+    /// One automatic biometric attempt per app activation, whatever the number of windows, and the
+    /// privacy shield kept down while that prompt is over the lock screen (`LockScreenActivation`).
+    /// iPhone, iPad, Vision Pro: the prompt itself makes the scene inactive, so only a launch or a
+    /// return from the background is an activation.
+    private(set) var lockActivation = LockScreenActivation(activatesFromInactive: Platform.isMac)
     /// "Utiliser Touch ID pour déverrouiller ?" after a password unlock (once per account and device).
     /// Replacing or dropping it wipes the password it holds.
     var biometricOffer: BiometricOffer? {
@@ -697,7 +701,7 @@ final class AppModel {
     func scenePhaseChanged(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            autoBiometricsPending = true
+            lockActivation.scenePhaseChanged(.active)
             accounts.scenePhaseChanged(.active)
             // A lock asked by a Control while the app was in the background or not notified.
             lockIfRequested()
@@ -719,8 +723,10 @@ final class AppModel {
             travel.appMovedToBackground(false)
             travel.check(travelling: session.state == .unlocked ? session.isTravelling : nil)
         case .inactive:
+            lockActivation.scenePhaseChanged(.inactive)
             accounts.scenePhaseChanged(.inactive)
         case .background:
+            lockActivation.scenePhaseChanged(.background)
             travel.appMovedToBackground(true)
             // A guest session never survives the app leaving the screen (ruling A7).
             publicSession?.end()
@@ -810,13 +816,30 @@ final class AppModel {
 
     /// True once per app activation: the lock screen of the first window that asks may try
     /// biometric unlock automatically.
+    /// Called once the lock screen has been on screen for `LockScreenActivation.settle`.
     func takeAutomaticBiometricAttempt() -> Bool {
-        defer { autoBiometricsPending = false }
+        let due = lockActivation.take()
         #if DEBUG
         // Captures of the demo lock screen: no system biometric sheet over it.
         if UserDefaults.standard.bool(forKey: "OnePassDemoNoAutoBiometrics") { return false }
         #endif
-        return autoBiometricsPending
+        return due
+    }
+
+    /// The lock screen raised the system biometric prompt: the privacy shield stays down for it.
+    func biometricPromptStarted() {
+        lockActivation.promptStarted()
+    }
+
+    /// The prompt answered. Its sheet may still be leaving (scene inactive): the shield stays down
+    /// until the scene is active again.
+    func biometricPromptEnded() {
+        #if os(iOS) || os(visionOS)
+        let active = UIApplication.shared.applicationState == .active
+        #else
+        let active = true
+        #endif
+        lockActivation.promptEnded(sceneActive: active)
     }
 
     // MARK: - Biometric unlock
@@ -1132,7 +1155,7 @@ final class AppModel {
     /// is not enough since macOS 14 while the browser is in front; the link, opened through
     /// LaunchServices by the extension's process, is what brings the app forward.
     func showForUnlock() {
-        if session.state != .unlocked { autoBiometricsPending = true }
+        if session.state != .unlocked { lockActivation.arm() }
         mainWindowRequest &+= 1
         NSApplication.shared.activate()
     }

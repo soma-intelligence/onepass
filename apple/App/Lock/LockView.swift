@@ -7,7 +7,10 @@ import VaultKit
 /// focus ring, shakes on a wrong password) and below it the main action: "Déverrouiller avec
 /// Touch ID" (Face ID, Optic ID) while the field is empty and biometric unlock is on, otherwise
 /// "Déverrouiller". Return unlocks. The Secret Key is never asked here: it stays in this device's
-/// keychain. Biometric unlock is tried once automatically when the screen shows up in an active scene.
+/// keychain. Biometric unlock is tried once per activation, automatically, once this screen has been
+/// seen for a moment in an active scene (`LockScreenActivation.settle`): never over the launch
+/// screen or the privacy cover. While the system checks, the dial is worked tick by tick; it opens
+/// into the vault door on success and unwinds against its stop on a refusal.
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -22,6 +25,10 @@ struct LockView: View {
     @State private var fieldFocused = false
     /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop.
     @State private var dialRefusals = 0
+    /// The system biometric check is running: the dial is being worked.
+    @State private var biometricCheck = false
+    /// This lock screen is in the view hierarchy (the automatic try waits for it).
+    @State private var shown = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -51,17 +58,28 @@ struct LockView: View {
             try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 0.2))
             lockoutRefresh &+= 1
         }
-        .task(id: scenePhase == .active) {
-            // One automatic try per app activation (AppModel), not per window or per redraw.
-            // The password field takes the focus (and the keyboard comes up) only when no automatic
-            // biometric attempt runs, or once it failed or was cancelled.
-            guard scenePhase == .active else { return }
+        .onAppear { shown = true }
+        .onDisappear { shown = false }
+        .task(id: shown && scenePhase == .active) {
+            // One automatic try per app activation (AppModel), not per window or per redraw. It
+            // waits until this screen has been on screen, active and uncovered, for a moment: run
+            // at once, the system prompt rose over the launch screen or the privacy cover before
+            // the lock screen was ever seen. The password field takes the focus (and the keyboard
+            // comes up) only when no automatic biometric attempt runs, or once it failed or was
+            // cancelled.
+            guard shown, scenePhase == .active else { return }
             #if DEBUG && os(iOS)
             if await playDemoVaultDoor() { return }
             #endif
+            do {
+                try await Task.sleep(for: LockScreenActivation.settle)
+            } catch {
+                return
+            }
             if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
-                await unlockWithBiometrics(automatic: true)
-            } else {
+                // Not tied to this task: the prompt makes the scene inactive, which ends the task.
+                Task { await unlockWithBiometrics(automatic: true) }
+            } else if session.state == .locked, !biometricCheck {
                 fieldFocused = true
             }
         }
@@ -92,7 +110,7 @@ struct LockView: View {
         VStack(spacing: 0) {
             #if os(iOS)
             // The vault's dial: it turns, and the screen opens at its center (`RootView`).
-            VaultDial(size: Self.dialSize, refusals: dialRefusals)
+            VaultDial(size: Self.dialSize, refusals: dialRefusals, working: biometricCheck)
             #else
             AppGlyph(size: Self.glyphSize)
             #endif
@@ -437,7 +455,9 @@ struct LockView: View {
         }
     }
 
-    /// Any refusal (cancel, reboot, 14 days, biometry change) leaves the password field.
+    /// Any refusal (cancel, reboot, 14 days, biometry change) leaves the password field. The dial is
+    /// worked for the whole check (the system prompt, then the vault opening): on success it hands
+    /// over to the door's quarter turn where it stands, so nothing pauses between the two.
     private func unlockWithBiometrics(automatic: Bool) async {
         guard session.canUseBiometrics, !unlocking else {
             if automatic { fieldFocused = true }
@@ -445,9 +465,15 @@ struct LockView: View {
         }
         message = nil
         fieldFocused = false
+        biometricCheck = true
+        model.biometricPromptStarted()
         do {
             try await session.unlockWithBiometrics()
+            biometricCheck = false
+            model.biometricPromptEnded()
         } catch {
+            biometricCheck = false
+            model.biometricPromptEnded()
             withAnimation(.linear(duration: 0.5)) { dialRefusals += 1 }
             fieldFocused = true
         }
