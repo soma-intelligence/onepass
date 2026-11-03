@@ -109,7 +109,7 @@ struct RootView: View {
                 isPresented: Binding(
                     get: {
                         model.biometricOffer != nil && model.session.state == .unlocked
-                            && !model.session.canUseBiometrics
+                            && !model.session.canUseBiometrics && !doorHoldsPresentations
                     },
                     set: { _ in }),
                 presenting: model.biometricOffer
@@ -186,10 +186,12 @@ struct RootView: View {
 
     #if os(iOS)
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
+    private var doorHoldsPresentations: Bool { door.holdsPresentations }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
     private var vaultScale: CGFloat { door.vaultScale }
     #else
     private var doorKeepsLock: Bool { false }
+    private var doorHoldsPresentations: Bool { false }
     private var doorShowsVault: Bool { false }
     private var vaultScale: CGFloat { 1 }
     #endif

@@ -74,6 +74,11 @@ public struct VaultDoorPassage: Equatable, Sendable {
 
     public var isActive: Bool { phase != .idle }
 
+    /// Alerts raised by the change itself (the Face ID offer after a password unlock) wait until
+    /// the door is gone: shown during the passage they sit over the lock screen, call the keyboard
+    /// back and ride the parting panels.
+    public var holdsPresentations: Bool { isActive }
+
     /// The lock screen stays mounted above the vault (it is the door until it is captured).
     public var keepsLockOnTop: Bool { phase == .turning }
 
