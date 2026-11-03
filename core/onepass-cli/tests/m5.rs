@@ -69,7 +69,8 @@ fn json(out: &Out) -> Value {
 fn template() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("m5-template");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("m5-template-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let account = run(&dir, &["account", "create"]);
         assert_eq!(account.code, 0, "{}", account.stderr);
@@ -81,7 +82,8 @@ fn template() -> &'static PathBuf {
 fn template2() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("m5-template-2");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("m5-template-2-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let account = run(&dir, &["account", "create"]);
         assert_eq!(account.code, 0, "{}", account.stderr);

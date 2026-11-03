@@ -53,7 +53,8 @@ fn run(dir: &Path, args: &[&str]) -> Out {
 fn template() -> &'static Template {
     static T: OnceLock<Template> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-template");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("cli-template-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let account = run(&dir, &["account", "create"]);
         let item = run(
