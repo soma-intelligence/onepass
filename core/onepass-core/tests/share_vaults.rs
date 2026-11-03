@@ -4,13 +4,14 @@ mod common;
 mod share_common;
 
 use common::*;
-use onepass_core::contact::{ContactLevel, pair_id};
+use onepass_core::contact::{ContactLevel, ContactState, pair_id};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
-use onepass_core::lineage::RotationReason;
 use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
 };
+use onepass_core::lineage::{RotationReason, rotation_code};
+use onepass_core::repo::members::AdoptionProof;
 use onepass_core::repo::rekey::AccessRefusal;
 use onepass_core::repo::rotate::RotateRequest;
 use onepass_core::share::{
@@ -2197,16 +2198,31 @@ fn lineage_published_to_shared_and_contact_zones() {
     let (_zs, mut a, mut b, id, _) = rotating_alice();
     a.rotate(false);
     let cz = Zone::Contact(pair_id(account_id(&mut a.dev), account_id(&mut b.dev)));
+    let head = a.dev.store().trust_state().unwrap().unwrap().head.hash;
     for zone in [Zone::Vault(id), cz] {
         let rows = a
             .dev
             .store()
             .list_in(zone, RecordKind::MemberLineage)
             .unwrap();
-        assert_eq!(rows.len(), 1, "{zone:?}");
-        let rec = MemberLineageRecord::decode(&rows[0].data).unwrap();
-        assert_eq!(rec.id(), rows[0].id);
-        assert!(matches!(rec, MemberLineageRecord::Lineage(_)));
+        let recs: Vec<MemberLineageRecord> = rows
+            .iter()
+            .map(|r| {
+                let m = MemberLineageRecord::decode(&r.data).unwrap();
+                assert_eq!(m.id(), r.id);
+                m
+            })
+            .collect();
+        // The genesis, the new rotation and the new identity's params.
+        assert_eq!(recs.len(), 3, "{zone:?}");
+        assert!(
+            recs.iter()
+                .any(|m| matches!(m, MemberLineageRecord::Lineage(l) if l.hash() == head))
+        );
+        assert!(
+            recs.iter()
+                .any(|m| matches!(m, MemberLineageRecord::Params(_)))
+        );
     }
 }
 
@@ -2265,4 +2281,220 @@ fn zone_access_resigned_on_rotation() {
             .iter()
             .any(|x| x.target == AccessTarget::Zone(Zone::Vault(id)))
     );
+}
+
+// Task 14: a member's new identity, retired at once, adopted on a human
+// check (spec 12.3, 12.5, S22 to S24, decision 6, A11).
+
+/// `trio(carol_role)` where Carol rotated her keys and pushed; Alice read
+/// the rotation. Returns Carol's new head.
+fn carol_rotated(carol_role: Role) -> (Zones, Acct, Acct, Acct, Id, [u8; 32]) {
+    let (mut zs, mut a, b, mut c, id, _) = trio(carol_role);
+    c.rotate(false);
+    c.sync(&mut zs);
+    a.sync(&mut zs);
+    let child = c.dev.store().trust_state().unwrap().unwrap().head.hash;
+    (zs, a, b, c, id, child)
+}
+
+#[test]
+fn old_identity_retired_when_rotation_seen() {
+    let (_zs, mut a, _b, mut c, id, child) = carol_rotated(Role::Read);
+    let carol = account_id(&mut c.dev);
+    let old = a
+        .dev
+        .store()
+        .share_state(id)
+        .unwrap()
+        .unwrap()
+        .head
+        .member(carol)
+        .unwrap()
+        .identity_id;
+    let changes = a.dev.repo().refresh_member_identities(NOW + 5).unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].account_id, carol);
+    assert_eq!(changes[0].child, child);
+    assert_eq!(changes[0].vaults, vec![id]);
+    assert!(!changes[0].forked);
+    let st = a.dev.store().share_state(id).unwrap().unwrap();
+    assert!(st.retired_signers.contains_key(&MemberRef {
+        account_id: carol,
+        identity_id: old,
+    }));
+    let entry = a.dev.repo().contact(carol).unwrap().unwrap();
+    assert!(matches!(entry.state, ContactState::KeysChanged { .. }));
+    // The vault still reads.
+    let va = shared(&mut a.dev, id);
+    assert!(!a.dev.repo().items(&va).unwrap().is_empty());
+}
+
+#[test]
+fn a11_wrong_code_adopts_nothing() {
+    let (mut zs, mut a, _b, mut c, id, child) = carol_rotated(Role::Read);
+    let carol = account_id(&mut c.dev);
+    a.dev.repo().refresh_member_identities(NOW + 5).unwrap();
+    let code = rotation_code(&child);
+    let e = a
+        .dev
+        .repo()
+        .adopt_member_identity(
+            carol,
+            child,
+            AdoptionProof::Code((code + 1) % 1_000_000),
+            NOW + 6,
+        )
+        .unwrap_err();
+    assert_eq!(validation(e), ("code".into(), "wrong code"));
+    // A head the records do not lead to is refused too.
+    let e = a
+        .dev
+        .repo()
+        .adopt_member_identity(carol, [9; 32], AdoptionProof::Code(code), NOW + 6)
+        .unwrap_err();
+    assert!(matches!(e, Error::NotFound | Error::Validation(_)));
+    a.sync(&mut zs);
+    let new = me(&mut c.dev);
+    let g = generation(&a.dev, id);
+    assert!(
+        zs.server(Zone::Vault(id))
+            .live(RecordKind::MemberKey, member_key_id(id, g, &new))
+            .map(|e| e.record.is_some())
+            .unwrap_or(false),
+        "Carol's own envelope for her new identity is on the server"
+    );
+    assert_eq!(
+        a.dev
+            .store()
+            .share_state(id)
+            .unwrap()
+            .unwrap()
+            .head
+            .member(carol)
+            .unwrap()
+            .identity_id
+            == new.identity_id,
+        false
+    );
+}
+
+#[test]
+fn reader_adopted_by_code() {
+    let (mut zs, mut a, mut b, mut c, id, child) = carol_rotated(Role::Read);
+    let carol = account_id(&mut c.dev);
+    let new = me(&mut c.dev);
+    let old_credential = a
+        .dev
+        .store()
+        .share_state(id)
+        .unwrap()
+        .unwrap()
+        .head
+        .member(carol)
+        .unwrap()
+        .credential_id;
+    a.dev.repo().refresh_member_identities(NOW + 5).unwrap();
+    let infos = a
+        .dev
+        .repo()
+        .adopt_member_identity(
+            carol,
+            child,
+            AdoptionProof::Code(rotation_code(&child)),
+            NOW + 6,
+        )
+        .unwrap();
+    assert_eq!(infos.len(), 1);
+    // The credential is renewed: grant the new one, then revoke the old.
+    let actions = a.dev.repo().pending_share_actions().unwrap();
+    let grant = actions
+        .iter()
+        .position(|x| matches!(x, ShareAction::GrantCredential { .. }))
+        .expect("grant");
+    let revoke = actions
+        .iter()
+        .position(|x| {
+            matches!(x, ShareAction::RevokeCredential { credential_id, .. } if *credential_id == old_credential)
+        })
+        .expect("revoke");
+    assert!(grant < revoke);
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    // Everyone follows the IdentityUpdate body; Carol is no longer
+    // pending and holds her new credential.
+    for x in [&mut a, &mut b, &mut c] {
+        let st = x.dev.store().share_state(id).unwrap().unwrap();
+        assert_eq!(st.head.member(carol).unwrap().identity_id, new.identity_id);
+        assert_eq!(st.head.reason, MembershipReason::IdentityUpdate);
+    }
+    let st = c.dev.store().share_state(id).unwrap().unwrap();
+    assert!(st.identity_pending.is_none());
+    let (_, seed) = c
+        .dev
+        .repo()
+        .zone_access(AccessTarget::Zone(Zone::Vault(id)))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        seed.credential_id(),
+        st.head.member(carol).unwrap().credential_id
+    );
+    let vc = shared(&mut c.dev, id);
+    assert!(!c.dev.repo().items(&vc).unwrap().is_empty());
+    // Alice's book pins Carol's new head again.
+    let entry = a.dev.repo().contact(carol).unwrap().unwrap();
+    assert_eq!(entry.state, ContactState::Active);
+    assert_eq!(entry.pinned_head.hash, child);
+}
+
+#[test]
+fn writer_needs_in_person() {
+    let (mut zs, mut a, mut b, _c, id, _) = trio(Role::Read);
+    b.rotate(false);
+    b.sync(&mut zs);
+    a.sync(&mut zs);
+    let bob = account_id(&mut b.dev);
+    let child = b.dev.store().trust_state().unwrap().unwrap().head.hash;
+    a.dev.repo().refresh_member_identities(NOW + 5).unwrap();
+    let e = a
+        .dev
+        .repo()
+        .adopt_member_identity(
+            bob,
+            child,
+            AdoptionProof::Code(rotation_code(&child)),
+            NOW + 6,
+        )
+        .unwrap_err();
+    assert_eq!(validation(e), ("proof".into(), "in person required"));
+    let e = a
+        .dev
+        .repo()
+        .adopt_member_identity(
+            bob,
+            child,
+            AdoptionProof::InPerson {
+                transcript_hash: [1; 32],
+            },
+            NOW + 6,
+        )
+        .unwrap_err();
+    assert_eq!(validation(e), ("proof".into(), "no session"));
+    let _ = id;
+}
+
+#[test]
+fn writes_refused_while_identity_pending() {
+    let (_zs, mut b, _, id, _) = {
+        let (zs, a, b, id, items) = rotating_alice();
+        (zs, b, a, id, items)
+    };
+    // Bob (a writer) rotates: his writes wait for a manager.
+    b.rotate(false);
+    let vb = shared(&mut b.dev, id);
+    let e = b
+        .dev
+        .repo()
+        .save_item(&vb, login(id, "zed", 900))
+        .unwrap_err();
+    assert_eq!(validation(e), ("vault".into(), "identity pending"));
 }

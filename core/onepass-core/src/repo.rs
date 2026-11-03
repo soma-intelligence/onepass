@@ -75,6 +75,7 @@ mod attachments;
 pub mod follow;
 pub mod kit;
 mod local;
+pub mod members;
 pub mod migrate;
 pub mod pairing;
 pub mod profile;

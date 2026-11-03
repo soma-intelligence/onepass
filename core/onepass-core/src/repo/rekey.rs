@@ -376,9 +376,21 @@ impl<S: RecordStore> Repository<S> {
         let Ok(next) = accept_next(&state.head, &signed) else {
             return Ok(());
         };
+        // Ruling A-12: an identity seen to rotate signs no later body.
+        if state.retired_signers.contains_key(&next.signer) {
+            return Ok(());
+        }
         let me = self.me();
+        // While my new identity waits for a manager (spec 12.3 point 2),
+        // bodies still naming my old one are followed.
+        let old_me = state
+            .identity_pending
+            .as_ref()
+            .and_then(|_| state.head.member(me.account_id))
+            .map(|m| m.identity_id);
         match next.member(me.account_id) {
-            Some(m) if m.identity_id == me.identity_id => {
+            Some(m) if m.identity_id == me.identity_id || Some(m.identity_id) == old_me => {
+                let adopted = m.identity_id == me.identity_id;
                 let before = state
                     .head
                     .member(me.account_id)
@@ -389,8 +401,14 @@ impl<S: RecordStore> Repository<S> {
                 let moved = next.moved_to.is_some();
                 let at = next.issued_at;
                 state.advance(next);
+                if adopted {
+                    state.identity_pending = None;
+                }
                 self.store
                     .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+                if adopted {
+                    self.apply_credential_renewal(vault_id)?;
+                }
                 if moved {
                     self.follow_move(vault_id, at)?;
                 }

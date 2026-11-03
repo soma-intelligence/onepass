@@ -775,28 +775,50 @@ impl<S: RecordStore> Repository<S> {
             account_id: old.account_id,
             identity_id: new_id,
         };
-        let lineage = MemberLineageRecord::Lineage(record.clone());
-        let lineage_id = lineage.id();
-        let lineage_data = lineage.encode();
+        // The whole chain (a reader follows it from the genesis it pinned)
+        // and the new identity's params (its keys, bound by `params_hash`).
+        let mut published: Vec<MemberLineageRecord> = Vec::new();
+        for r in self.store.list(RecordKind::Lineage)? {
+            if let Ok(l) = LineageRecord::decode(&r.data)
+                && l.account_id() == old.account_id
+            {
+                published.push(MemberLineageRecord::Lineage(l));
+            }
+        }
+        published.push(MemberLineageRecord::Lineage(record.clone()));
+        if let Some((p, _)) = writes
+            .iter()
+            .find(|(r, _)| r.kind == RecordKind::AccountParams && r.id == new_id)
+        {
+            published.push(MemberLineageRecord::Params(p.data.clone()));
+        }
+        let published: Vec<(Id, Vec<u8>)> = published
+            .into_iter()
+            .map(|m| (m.id(), m.encode()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .into_iter()
+            .collect();
         let head = record.hash();
         let mut zoned = Vec::new();
         let mut shares = Vec::new();
         let publish = |zone: Zone, zoned: &mut Vec<(Zone, Record, Option<u64>)>| -> Result<()> {
-            if self
-                .store
-                .get_in(zone, RecordKind::MemberLineage, lineage_id)?
-                .is_none()
-            {
-                zoned.push((
-                    zone,
-                    Record {
-                        kind: RecordKind::MemberLineage,
-                        id: lineage_id,
-                        version: 1,
-                        data: lineage_data.clone(),
-                    },
-                    None,
-                ));
+            for (id, data) in &published {
+                if self
+                    .store
+                    .get_in(zone, RecordKind::MemberLineage, *id)?
+                    .is_none()
+                {
+                    zoned.push((
+                        zone,
+                        Record {
+                            kind: RecordKind::MemberLineage,
+                            id: *id,
+                            version: 1,
+                            data: data.clone(),
+                        },
+                        None,
+                    ));
+                }
             }
             Ok(())
         };

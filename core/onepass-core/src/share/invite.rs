@@ -199,6 +199,10 @@ pub struct ShareInviteView {
 pub enum MemberLineageRecord {
     Lineage(crate::lineage::LineageRecord),
     Intro(crate::lineage::SignedIntro),
+    /// The `AccountParams` record of a rotation's new identity, signed by
+    /// it; the rotation commits to it (`params_hash`), so a reader takes
+    /// the member's new keys from it only through that hash.
+    Params(Vec<u8>),
 }
 
 impl MemberLineageRecord {
@@ -207,6 +211,7 @@ impl MemberLineageRecord {
         match self {
             MemberLineageRecord::Lineage(r) => r.record_id(),
             MemberLineageRecord::Intro(i) => crate::lineage::intro_id(&i.body),
+            MemberLineageRecord::Params(p) => id16(&sha256(&[b"onepass/member-params-id/v1", p])),
         }
     }
 

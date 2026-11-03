@@ -602,7 +602,7 @@ impl<S: RecordStore> Repository<S> {
     }
 
     /// Apply `edit` to one entry and write the next book if it changed.
-    pub(super) fn edit_contact(
+    pub(crate) fn edit_contact(
         &mut self,
         account_id: Id,
         edit: impl FnOnce(&mut ContactEntry) -> Result<()>,

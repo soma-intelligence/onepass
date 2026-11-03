@@ -668,6 +668,15 @@ impl<S: RecordStore> Repository<S> {
             state.last_manifest.as_ref(),
             state.last_meta,
         )?;
+        // Ruling A-12: an identity seen to rotate signs nothing new.
+        if state.retired_signers.contains_key(&sm.signer)
+            && state
+                .last_manifest
+                .as_ref()
+                .is_some_and(|m| manifest.seq > m.seq)
+        {
+            return Err(IntegrityError::Signature.into());
+        }
         let mut records = Vec::new();
         let mut ignored = Vec::new();
         for r in self.store.list_in(zone, RecordKind::Item)? {
@@ -755,6 +764,10 @@ impl<S: RecordStore> Repository<S> {
         }
         if state.moving_to.is_some() || state.head.moved_to.is_some() {
             return Err(refused("vault", "moved"));
+        }
+        // Spec 12.3 point 2: my new identity waits for a manager.
+        if state.identity_pending.is_some() {
+            return Err(refused("vault", "identity pending"));
         }
         self.require_role(&state, Role::Write)?;
         // The vault must be open under the head's generation (a rekey
