@@ -52,7 +52,7 @@ fn check_identity_pub(k: &IdentityVerifyingKey) -> Result<()> {
     Ok(())
 }
 
-fn check_identity_sig(s: &IdentitySignature) -> Result<()> {
+pub(crate) fn check_identity_sig(s: &IdentitySignature) -> Result<()> {
     if s.as_bytes().len() != SLH_SIG_LEN {
         return Err(bad("identity signature length"));
     }

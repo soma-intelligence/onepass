@@ -14,7 +14,10 @@
 //! added the own-write log (spec 10.4), version 3 the migration notes of
 //! spec 15 (`other_genesis`, `genesis_alert`, `rotate_now`, `conflicted`,
 //! `migration_listed`), version 4 the lost intents of the own-write log
-//! (`OwnWriteLog::lost`, Task 17); versions 1 to 3 are refused (they never
+//! (`OwnWriteLog::lost`, Task 17), version 5 the quarantine erase clock
+//! (`quarantine_clock`, recover-wipe 2026-11-03). A version 4 state still
+//! decodes, as version 5 with no clock (its quarantine clock starts again
+//! from `since` at the next tick); versions 1 to 3 are refused (they never
 //! shipped).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +33,9 @@ use crate::manifest::SeenManifest;
 use crate::{Error, Result};
 
 /// Layout version, the first byte of `TrustState::encode`.
-pub const TRUST_VERSION: u8 = 4;
+pub const TRUST_VERSION: u8 = 5;
+/// The previous layout: version 5 without `quarantine_clock`, still read.
+const TRUST_VERSION_V4: u8 = 4;
 /// Most rotation records kept in `ignored`.
 pub const MAX_IGNORED: usize = 64;
 /// Last phase of a rotation (spec 8.1: phases 1 to 3).
@@ -101,6 +106,41 @@ pub enum DeviceLineageState {
         rotator: Id,
         resume: Option<u8>,
     },
+}
+
+/// The quarantine erase clock (recover-wipe 2026-11-03, rollback-proof):
+/// the time the device clock has moved forward since the quarantine by
+/// `by` began, summed over the ticks. `last`: the device clock at the last
+/// tick (Unix seconds), `elapsed`: seconds counted so far. A tick that
+/// reads a clock behind `last` counts nothing and moves `last` back to it,
+/// so a clock set back neither stops nor reverses the count: time keeps
+/// adding up from the new reading. Only meaningful while the state is
+/// `Quarantined { by, .. }` with the same `by`; any other clock is stale
+/// and ignored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuarantineClock {
+    pub by: [u8; 32],
+    pub last: u64,
+    pub elapsed: u64,
+}
+
+impl QuarantineClock {
+    /// A clock for the quarantine by `by` read first at `now`, with
+    /// `elapsed` already counted.
+    pub fn start(by: [u8; 32], now: u64, elapsed: u64) -> QuarantineClock {
+        QuarantineClock {
+            by,
+            last: now,
+            elapsed,
+        }
+    }
+
+    /// One tick at `now`: a forward move adds to `elapsed` (saturating), a
+    /// backward one adds nothing; `last` becomes `now` either way.
+    pub fn advance(&mut self, now: u64) {
+        self.elapsed = self.elapsed.saturating_add(now.saturating_sub(self.last));
+        self.last = now;
+    }
 }
 
 /// Most intents kept in each list of the own-write log (spec 10.4).
@@ -291,6 +331,9 @@ pub struct TrustState {
     /// create a genesis this device switches to: a device listed later came
     /// through the extended pairing (`Verified`), never through TOFU.
     pub migration_listed: BTreeSet<Id>,
+    /// Version 5: the erase clock of the current quarantine
+    /// (`QuarantineClock`), `None` before the first tick of a quarantine.
+    pub quarantine_clock: Option<QuarantineClock>,
 }
 
 impl TrustState {
@@ -323,6 +366,7 @@ impl TrustState {
             rotate_now: false,
             conflicted: BTreeSet::new(),
             migration_listed: BTreeSet::new(),
+            quarantine_clock: None,
         }
     }
 
@@ -335,10 +379,18 @@ impl TrustState {
     /// equal to the input and the structural rules of the fields.
     /// Anything else is `InvalidFormat("trust state")`.
     pub fn decode(b: &[u8]) -> Result<TrustState> {
-        if b.first() != Some(&TRUST_VERSION) {
-            return Err(BAD);
-        }
-        let s: TrustState = decode_strict_with(b, BAD)?;
+        let s: TrustState = match b.first() {
+            Some(&TRUST_VERSION) => decode_strict_with(b, BAD)?,
+            Some(&TRUST_VERSION_V4) => {
+                // Version 4 is version 5 without the trailing clock: read
+                // with `None` appended (postcard: one zero byte), strictly.
+                let mut v5 = b.to_vec();
+                v5[0] = TRUST_VERSION;
+                v5.push(0);
+                decode_strict_with(&v5, BAD)?
+            }
+            _ => return Err(BAD),
+        };
         s.check()?;
         Ok(s)
     }
@@ -538,6 +590,44 @@ pub mod tests {
         }
     }
 
+    /// A version 4 state (no clock) still reads, as version 5 with no
+    /// clock; a version 4 buffer with anything after it does not.
+    #[test]
+    fn version_4_reads_without_clock() {
+        let s = sample();
+        assert_eq!(s.quarantine_clock, None);
+        let mut v4 = s.encode();
+        assert_eq!(v4.pop(), Some(0));
+        v4[0] = 4;
+        assert_eq!(TrustState::decode(&v4).unwrap(), s);
+        let mut trailing = v4.clone();
+        trailing.push(0);
+        assert_eq!(
+            TrustState::decode(&trailing),
+            Err(Error::InvalidFormat("trust state"))
+        );
+
+        let mut with = sample();
+        with.quarantine_clock = Some(QuarantineClock::start([7; 32], 100, 5));
+        assert_eq!(TrustState::decode(&with.encode()).unwrap(), with);
+    }
+
+    /// The clock counts forward moves only; a clock set back counts
+    /// nothing, then counts again from its new reading.
+    #[test]
+    fn quarantine_clock_ignores_rollback() {
+        let mut c = QuarantineClock::start([1; 32], 1_000, 0);
+        c.advance(1_100);
+        assert_eq!(c.elapsed, 100);
+        c.advance(10);
+        assert_eq!((c.elapsed, c.last), (100, 10));
+        c.advance(60);
+        assert_eq!(c.elapsed, 150);
+        c.advance(u64::MAX);
+        c.advance(u64::MAX);
+        assert_eq!(c.elapsed, u64::MAX);
+    }
+
     #[test]
     fn strict_decode() {
         let bad = Err(Error::InvalidFormat("trust state"));
@@ -546,7 +636,7 @@ pub mod tests {
         trailing.push(0);
         assert_eq!(TrustState::decode(&trailing), bad);
         let mut version = good.clone();
-        version[0] = 5;
+        version[0] = 6;
         assert_eq!(TrustState::decode(&version), bad);
         // Versions 1 (no own-write log), 2 (no migration notes) and 3 (no
         // lost intents) never shipped.

@@ -4181,6 +4181,9 @@ fn erased_after_seven_days() {
     assert_eq!(tick(&c, T + Q + 1), QuarantineTick::NotQuarantined);
 }
 
+/// A clock moved back never erases early: nothing is counted for the move,
+/// the erase date shifts to the new reading plus what is left (amended
+/// 2026-11-03: the count no longer freezes either).
 #[test]
 fn clock_moved_back_never_erases_early() {
     let (_server, _a, c, f, out) = c_revoked();
@@ -4188,9 +4191,11 @@ fn clock_moved_back_never_erases_early() {
     let before = records(&c);
     assert_eq!(
         tick(&c, T - 86_400),
-        QuarantineTick::Waiting { erase_at: T + Q }
+        QuarantineTick::Waiting {
+            erase_at: T - 86_400 + Q
+        }
     );
-    assert_eq!(tick(&c, 0), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(tick(&c, 0), QuarantineTick::Waiting { erase_at: Q });
     assert_eq!(records(&c), before);
     assert_eq!(
         state(&c),
@@ -6038,10 +6043,12 @@ struct Recovered {
     sk: SecretKey,
     keys: DeviceKeys,
     items: Vec<Item>,
+    /// A's Secret Key since its own rotation (`before`).
+    a_sk: SecretKey,
 }
 
 fn recovered() -> Recovered {
-    let (mut server, mut a, _c, f, before, _sk1) = rotated();
+    let (mut server, mut a, _c, f, before, a_sk) = rotated();
     let keyset = a.repo().account().recovery_keyset().unwrap();
     let items = a.items();
     let mut n = Device::empty();
@@ -6078,6 +6085,7 @@ fn recovered() -> Recovered {
         sk,
         keys,
         items,
+        a_sk,
     }
 }
 
@@ -6159,14 +6167,15 @@ fn recover_rotate_end_to_end() {
 /// Ruling B-4: an old device reads the `Recover` rotation and goes to
 /// quarantine (its id is revoked); its exit is to erase and pair again,
 /// from the recovered device, as a new device. The rotator is only
-/// self-introduced, never `Verified` here, so the erase clock does not
-/// run (final review I1): the device stays locked until the user answers.
+/// self-introduced, but the identity this device pinned signed its intro:
+/// the erase clock runs (founder decision 2026-11-03, replacing the I1
+/// ruling that kept it locked with no date).
 #[test]
 fn old_devices_quarantined_then_repair() {
     let mut r = recovered();
     pull(&r.server, &mut r.a);
     r.a.repo().refresh_pending_rotation().unwrap();
-    assert_eq!(tick(&r.a, T), QuarantineTick::Locked);
+    assert_eq!(tick(&r.a, T), QuarantineTick::Waiting { erase_at: T + Q });
     assert!(matches!(
         state(&r.a),
         DeviceLineageState::Quarantined { by, .. } if by == r.out.head
@@ -6307,4 +6316,343 @@ fn contact_sees_recover_as_identity_change() {
         }
         other => panic!("expected Advanced, got {other:?}"),
     }
+}
+
+// ------------------------- recover wipe and stolen devices (2026-11-03)
+
+use onepass_core::crypto::IdentityKey;
+use onepass_core::lineage::wipe::{SignedWipe, WipeBody, sign_wipe, target_key};
+
+const YEAR: u64 = 365 * 86_400;
+
+/// The recovered account with A having read the `Recover` (quarantined
+/// at `T`).
+fn a_quarantined_by_recover() -> Recovered {
+    let mut r = recovered();
+    pull(&r.server, &mut r.a);
+    assert_eq!(tick(&r.a, T), QuarantineTick::Waiting { erase_at: T + Q });
+    r
+}
+
+fn a_id(r: &Recovered) -> Id {
+    trust_of_dev(&r.a).unwrap().me.device_id
+}
+
+/// N marks `device` stolen and pushes; A fetches.
+fn n_marks_stolen(r: &mut Recovered, device: Id) {
+    r.n.repo().mark_stolen(device, (T + 10) as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    pull(&r.server, &mut r.a);
+}
+
+/// An order planted in `dev`'s store, as a server would.
+fn plant(dev: &Device, w: &SignedWipe) {
+    dev.store()
+        .put(Record {
+            id: w.record_id(),
+            kind: RecordKind::Lineage,
+            version: 2,
+            data: w.encode(),
+        })
+        .unwrap();
+}
+
+/// A valid order for A, signed by N's identity (the recovered head).
+fn order_for_a(r: &mut Recovered) -> WipeBody {
+    let t = trust_of_dev(&r.a).unwrap();
+    let n = trust_of_dev(&r.n).unwrap();
+    WipeBody {
+        format: LINEAGE_FORMAT,
+        account_id: t.account_id,
+        target: t.me.device_id,
+        target_key: target_key(&t.me),
+        removed_by: r.out.head,
+        head: r.out.head,
+        issuer: n.me.device_id,
+        issued_at: (T + 10) as i64,
+    }
+}
+
+fn n_identity(r: &mut Recovered) -> IdentityKey {
+    IdentityKey::from_bytes(&r.n.repo().account().keyset().identity.to_bytes()).unwrap()
+}
+
+/// Founder decision 2026-11-03: an old device of a recovered account
+/// erases itself 7 days after it read the `Recover`, not before.
+#[test]
+fn recover_quarantine_erases_after_seven_days() {
+    let r = a_quarantined_by_recover();
+    assert_eq!(
+        tick(&r.a, T + Q - 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert!(!matches!(state(&r.a), DeviceLineageState::Legacy));
+    assert_eq!(tick(&r.a, T + Q), QuarantineTick::Erased);
+    assert_erased(&r.a);
+    // The recovered device keeps everything.
+    assert_eq!(state(&r.n), DeviceLineageState::Current);
+}
+
+/// A clock set back neither stops nor reverses the count: the time the
+/// clock moves forward from its new reading still counts.
+#[test]
+fn clock_set_back_does_not_stop_the_erase() {
+    let r = a_quarantined_by_recover();
+    assert_eq!(
+        tick(&r.a, T + 86_400),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    // Back a year: one day counted, six left from the new reading.
+    let back = T - YEAR;
+    assert_eq!(
+        tick(&r.a, back),
+        QuarantineTick::Waiting {
+            erase_at: back + Q - 86_400
+        }
+    );
+    // Back again and again, each time after a few real days: they add up.
+    assert_eq!(
+        tick(&r.a, back + 3 * 86_400),
+        QuarantineTick::Waiting {
+            erase_at: back + Q - 86_400
+        }
+    );
+    assert!(matches!(tick(&r.a, back), QuarantineTick::Waiting { .. }));
+    assert_eq!(tick(&r.a, back + 3 * 86_400), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// The lock screen's date follows the saved clock, read only.
+#[test]
+fn erase_date_follows_the_saved_clock() {
+    use onepass_core::repo::follow::quarantine_erase_at;
+    let r = a_quarantined_by_recover();
+    assert_eq!(quarantine_erase_at(&r.a.store()).unwrap(), Some(T + Q));
+    tick(&r.a, T - YEAR);
+    assert_eq!(
+        quarantine_erase_at(&r.a.store()).unwrap(),
+        Some(T - YEAR + Q)
+    );
+}
+
+/// "Ce n'était pas moi" before the 7 days: the countdown is gone, and an
+/// order made for that removal no longer erases anything.
+#[test]
+fn reapproval_cancels_countdown_and_order() {
+    let mut r = a_quarantined_by_recover();
+    let a = a_id(&r);
+    let repo = quarantine_resolve(r.a.store(), not_me(&r.a, PASSWORD, &r.a_sk))
+        .unwrap()
+        .expect("unlocked");
+    drop(repo);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    n_marks_stolen(&mut r, a);
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::NotQuarantined);
+    assert_eq!(tick(&r.a, T + YEAR), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    r.a.try_unlock(PASSWORD, &r.a_sk).unwrap();
+}
+
+/// Founder decision 2026-11-03: marked stolen right after a `Recover`,
+/// the old device erases at its next tick, no countdown.
+#[test]
+fn stolen_after_recover_erases_at_once() {
+    let mut r = a_quarantined_by_recover();
+    let a = a_id(&r);
+    n_marks_stolen(&mut r, a);
+    assert_eq!(r.n.repo().stolen_devices().unwrap(), vec![a]);
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// The order and the `Recover` arrive in the same fetch: the first tick
+/// quarantines, then erases.
+#[test]
+fn stolen_before_first_tick_erases_at_once() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    pull(&r.server, &mut r.a);
+    assert_eq!(tick(&r.a, T), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// Marking twice writes one order.
+#[test]
+fn marking_twice_writes_once() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    let count = |r: &Recovered| {
+        r.n.store()
+            .list(RecordKind::Lineage)
+            .unwrap()
+            .iter()
+            .filter(|x| SignedWipe::decode(&x.data).is_ok())
+            .count()
+    };
+    assert_eq!(count(&r), 1);
+    r.n.repo().mark_stolen(a, T as i64 + 5).unwrap();
+    assert_eq!(count(&r), 1);
+}
+
+/// Attack: an order signed by any identity other than the recovered
+/// head's, or naming an issuer outside its roster, or another removal,
+/// or other device keys, erases nothing; the countdown goes on.
+#[test]
+fn forged_orders_erase_nothing() {
+    let mut r = a_quarantined_by_recover();
+    let good = order_for_a(&mut r);
+    let other = IdentityKey::generate().unwrap();
+    plant(&r.a, &sign_wipe(good.clone(), &other).unwrap());
+
+    // The old identity (the one A holds itself) is not the head's.
+    let old = IdentityKey::from_bytes(&r.a.repo().account().keyset().identity.to_bytes()).unwrap();
+    plant(&r.a, &sign_wipe(good.clone(), &old).unwrap());
+
+    let n = n_identity(&mut r);
+    let c = r.f.others[C].id();
+    for body in [
+        WipeBody {
+            issuer: c,
+            ..good.clone()
+        },
+        WipeBody {
+            target_key: [7; 32],
+            ..good.clone()
+        },
+        WipeBody {
+            removed_by: r.before.head,
+            ..good.clone()
+        },
+        WipeBody {
+            head: r.before.head,
+            ..good.clone()
+        },
+        WipeBody {
+            account_id: Id::new(),
+            ..good.clone()
+        },
+        WipeBody {
+            target: c,
+            ..good.clone()
+        },
+    ] {
+        plant(&r.a, &sign_wipe(body, &n).unwrap());
+    }
+    // A signature over another body.
+    let mut swapped = sign_wipe(good.clone(), &n).unwrap();
+    swapped.body.issued_at += 1;
+    plant(&r.a, &swapped);
+
+    assert_eq!(
+        tick(&r.a, T + 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert!(matches!(
+        state(&r.a),
+        DeviceLineageState::Quarantined { .. }
+    ));
+
+    // The genuine order still works afterwards.
+    plant(&r.a, &sign_wipe(good, &n).unwrap());
+    assert_eq!(tick(&r.a, T + 2), QuarantineTick::Erased);
+}
+
+/// Attack: an order for another device (C, removed by the same
+/// `Recover`) replayed to A erases nothing on A.
+#[test]
+fn order_for_another_device_erases_nothing() {
+    let mut r = a_quarantined_by_recover();
+    let c = r.f.others[C].id();
+    n_marks_stolen(&mut r, c);
+    assert_eq!(r.n.repo().stolen_devices().unwrap(), vec![c]);
+    assert_eq!(
+        tick(&r.a, T + 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+}
+
+/// Attack: the order reaches A without the removal it names (the server
+/// held the `Recover` back): A is not quarantined and erases nothing.
+#[test]
+fn order_without_its_removal_erases_nothing() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    let head = r.out.head;
+    pull_only(&r.server, &mut r.a, |ch| {
+        !(ch.kind == RecordKind::Lineage
+            && ch
+                .data
+                .as_ref()
+                .and_then(|d| LineageRecord::decode(d).ok())
+                .is_some_and(|l| l.hash() == head))
+    });
+    assert_eq!(tick(&r.a, T), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    r.a.try_unlock(PASSWORD, &r.a_sk).unwrap();
+}
+
+/// Without a `Recover`: a device still in the roster cannot be marked (it
+/// is removed first, by a rotation); once removed it is, and it erases at
+/// its next tick instead of 7 days later. C follows A's first rotation,
+/// then A removes C.
+#[test]
+fn removed_then_marked_stolen_erases_at_once() {
+    let (mut server, mut a, c, f, out, sk1) = rotated();
+    let (repo, _auk, c_sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    drop(repo);
+    let mut c = c;
+    assert_eq!(state(&c), DeviceLineageState::Current);
+
+    let c_id = f.others[C].id();
+    let refusal = a.repo().mark_stolen(c_id, T as i64);
+    assert!(matches!(&refusal, Err(Error::Validation(v)) if v.reason == "not removed"));
+    let me = trust_of_dev(&a).unwrap().me.device_id;
+    let refusal = a.repo().mark_stolen(me, T as i64);
+    assert!(matches!(&refusal, Err(Error::Validation(v)) if v.reason == "this device"));
+
+    let new_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &new_sk, vec![c_id], RotationReason::Revoke);
+    req.secret_key = &sk1;
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+
+    a.repo().mark_stolen(c_id, T as i64).unwrap();
+    assert_eq!(a.repo().stolen_devices().unwrap(), vec![c_id]);
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T + 1), QuarantineTick::Erased);
+    assert_erased(&c);
+    let _ = c_sk;
+}
+
+/// The erase touches only the store of the account that was ordered:
+/// another account's store on the same device, holding the very same
+/// order bytes, stays as it was.
+#[test]
+fn other_account_store_untouched() {
+    let mut r = a_quarantined_by_recover();
+    let mut other_server = Server::default();
+    let (other, _f) = fixture_on(&mut other_server);
+    let a = a_id(&r);
+    n_marks_stolen(&mut r, a);
+    let order =
+        r.a.store()
+            .list(RecordKind::Lineage)
+            .unwrap()
+            .into_iter()
+            .find(|x| SignedWipe::decode(&x.data).is_ok())
+            .unwrap();
+    other.store().put(order).unwrap();
+    let before = snapshot(&other.store());
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::Erased);
+    assert_eq!(tick(&other, T + 1), QuarantineTick::NotQuarantined);
+    assert_eq!(snapshot(&other.store()), before);
 }

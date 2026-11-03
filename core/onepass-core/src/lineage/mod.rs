@@ -23,6 +23,7 @@ mod codec;
 mod legacy;
 pub mod resolve;
 pub mod verify;
+pub mod wipe;
 
 pub use ack::{
     ACK_DOMAIN, AckBody, AckStatus, SignedAck, ack_id, ack_statuses, sign_ack, verify_ack,

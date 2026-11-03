@@ -89,6 +89,7 @@ mod reseal;
 pub mod rotate;
 pub mod send;
 pub mod share;
+pub mod stolen;
 pub mod transfer;
 pub mod travel;
 
