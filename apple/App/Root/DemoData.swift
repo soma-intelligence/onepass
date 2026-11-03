@@ -35,6 +35,7 @@ import UIKit
 ///   `-OnePassDemoUnifiedSearch YES` turns the search over all accounts on;
 ///   `-OnePassDemoShowWork YES` shows the business account (locked); `-OnePassDemoAddAccount YES`
 ///   opens "Ajouter un compte".
+/// - `-OnePassDemoBulkItems <n>`: n more fictional logins (a large vault for measurements).
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
@@ -482,6 +483,22 @@ private struct DemoSeeder {
         ])
         try await session.trash(itemID: draft.id, vaultID: draft.vaultId)
         _ = forge
+        try await addBulk(personal: personal, atlas: atlas, family: family)
+    }
+
+    /// `-OnePassDemoBulkItems <n>`: n more fictional logins over the three vaults, so a large vault
+    /// can be measured (Réglages opening, lists). Every value is made up (`site-N.exemple.fr`).
+    private func addBulk(personal: String, atlas: String, family: String) async throws {
+        let count = UserDefaults.standard.integer(forKey: "OnePassDemoBulkItems")
+        guard count > 0 else { return }
+        let vaults = [personal, atlas, family]
+        for index in 1...count {
+            try await add(.login, "Site exemple \(index)", vaults[index % vaults.count], [
+                "username": .text(value: "camille.\(index)@exemple.fr"),
+                "password": .password(value: "Exemple-\(index)-Mot-\(index * 7919 % 10000)"),
+            ], urls: ["https://site-\(index).exemple.fr"], tags: index % 5 == 0 ? ["Travail"] : [])
+        }
+        DemoTrace.log("demo: %d bulk items", count)
     }
 
     private func vaultID(_ name: String) -> String? {

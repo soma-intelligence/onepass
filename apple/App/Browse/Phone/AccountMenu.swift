@@ -8,6 +8,10 @@ struct AccountMenu: View {
     @Environment(AppModel.self) private var model
     @State private var isOpen = false
     /// What the panel asked for: run once the popover is gone, so a sheet never fights it.
+    /// "Gone" is the panel's `onDisappear`, at the end of the popover's dismissal: run as soon as
+    /// `isOpen` turns false, a sheet of the root (Réglages, Ajouter un compte) was refused by UIKit
+    /// ("already presenting" the popover) and only showed up at a later redraw, up to a minute on
+    /// device.
     @State private var pending: AccountPanelAction?
     @State private var creatingVault = false
 
@@ -31,15 +35,15 @@ struct AccountMenu: View {
         .accessibilityIdentifier("account.menu")
         .popover(isPresented: $isOpen, arrowEdge: .top) {
             AccountPanel { action in
+                if case .settings = action { SettingsTiming.requested("account panel") }
                 pending = action
-                isOpen = false
+                // Closed without its fade: the panel's action (a sheet, mostly) follows at once.
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) { isOpen = false }
             }
             .presentationCompactAdaptation(.popover)
-        }
-        .onChange(of: isOpen) { _, open in
-            guard !open, let action = pending else { return }
-            pending = nil
-            run(action)
+            .onDisappear(perform: runPending)
         }
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
@@ -54,9 +58,17 @@ struct AccountMenu: View {
         #endif
     }
 
+    private func runPending() {
+        guard let action = pending else { return }
+        pending = nil
+        run(action)
+    }
+
     private func run(_ action: AccountPanelAction) {
         switch action {
-        case .settings: model.showSettings = true
+        case .settings:
+            SettingsTiming.mark("popover closed")
+            model.showSettings = true
         case .newVault: creatingVault = true
         case .importItems: model.showImport = true
         case .scanCode: model.showOtpScanner = true

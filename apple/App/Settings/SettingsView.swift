@@ -1,6 +1,32 @@
 import DesignKit
 import SwiftUI
 import VaultKit
+import os
+
+/// How long Réglages takes to show after the tap that asks for it (Debug builds log it under the
+/// `settings` category, so a slow opening can be measured on a large vault).
+@MainActor
+enum SettingsTiming {
+    static let log = Logger(subsystem: "me.somalabs.onepass", category: "settings")
+    private static var requestedAt: ContinuousClock.Instant?
+
+    /// The tap on "Réglages".
+    static func requested(_ step: String) {
+        #if DEBUG
+        requestedAt = .now
+        log.notice("settings: requested (\(step, privacy: .public))")
+        #endif
+    }
+
+    /// A step after the tap: logs the time since it.
+    static func mark(_ step: String) {
+        #if DEBUG
+        guard let requestedAt else { return }
+        let ms = Int((ContinuousClock.now - requestedAt) / .milliseconds(1))
+        log.notice("settings: \(step, privacy: .public) after \(ms, privacy: .public) ms")
+        #endif
+    }
+}
 
 /// The pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3, Appareils
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
@@ -152,6 +178,7 @@ struct SettingsView: View {
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
+        .onAppear { SettingsTiming.mark("shown") }
     }
 
     #if os(iOS)
