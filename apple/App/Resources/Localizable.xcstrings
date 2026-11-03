@@ -34933,6 +34933,122 @@
         }
       }
     },
+    "settings.autofill.history" : {
+      "comment" : "Réglages > Remplissage: autofill history switch",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Learn from my choices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprender de mis elecciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apprendre de mes choix"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impara dalle mie scelte"
+          }
+        }
+      }
+    },
+    "settings.autofill.history.clear" : {
+      "comment" : "Réglages > Remplissage: erase the autofill history",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear autofill history"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar el historial de autorrelleno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer l'historique de remplissage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella la cronologia di compilazione"
+          }
+        }
+      }
+    },
+    "settings.autofill.history.clear.confirm" : {
+      "comment" : "Réglages > Remplissage: confirm erasing the autofill history",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear this device's autofill history?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Borrar el historial de autorrelleno de este dispositivo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer l'historique de remplissage de cet appareil ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellare la cronologia di compilazione di questo dispositivo?"
+          }
+        }
+      }
+    },
+    "settings.autofill.history.footer" : {
+      "comment" : "Réglages > Remplissage: autofill history footer (privacy)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass remembers which account you pick on each site, in which browser and profile, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass recuerda qué cuenta eliges en cada sitio, en qué navegador y perfil, para ofrecerla primero. Este historial queda cifrado en este dispositivo: nunca se sincroniza ni se envía. Al desactivarlo, se borra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass retient quel compte vous choisissez sur chaque site, dans quel navigateur et quel profil, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass ricorda quale account scegli su ogni sito, in quale browser e profilo, per proporlo per primo. Questa cronologia resta cifrata su questo dispositivo: non viene mai sincronizzata né inviata. Disattivata, viene cancellata."
+          }
+        }
+      }
+    },
     "settings.autofill.forgetSites.pageFooter" : {
       "comment" : "Remembered accounts page footer",
       "localizations" : {

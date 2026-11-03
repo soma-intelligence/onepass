@@ -59,6 +59,27 @@ struct AutoFillSessionTests {
         #expect(ids.first?.recordId.hasSuffix(item.id) == true)
     }
 
+    /// A pick in the system AutoFill lands in the device's autofill history; off erases it and keeps
+    /// nothing, clear erases it.
+    @Test func autofillHistoryRecordsPicksAndSwitchErases() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = autofillSession(h, store: InMemoryIdentityStore())
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let item = try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        #expect(try await session.autofillHistoryEnabled())
+        #expect(try await session.autofillHistoryCount() == 0)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        #expect(try await session.autofillHistoryCount() == 1)
+        #expect(try await session.clearAutofillHistory() == 1)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        try await session.setAutofillHistoryEnabled(false)
+        #expect(try await session.autofillHistoryEnabled() == false)
+        #expect(try await session.autofillHistoryCount() == 0)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        #expect(try await session.autofillHistoryCount() == 0)
+    }
+
     @Test func settingOffClearsStore() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

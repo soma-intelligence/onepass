@@ -55,6 +55,7 @@ struct AutoFillSettings: View {
             } footer: {
                 Text("settings.autofill.forgetSites.footer")
             }
+            AutofillHistorySection()
         }
         .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
@@ -197,5 +198,76 @@ struct ForgetSiteChoices: View {
             await reload()
             errorMessage = message
         }
+    }
+}
+
+
+/// "Apprendre de mes choix": the device-local autofill history that ranks first the login chosen
+/// before on a site, per browser and browser profile. On by default (it never leaves the device);
+/// off erases it. "Effacer l'historique" erases it and keeps learning.
+struct AutofillHistorySection: View {
+    @Environment(AppModel.self) private var model
+    @State private var enabled: Bool?
+    @State private var count: Int?
+    @State private var confirmClear = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Section {
+            Toggle("settings.autofill.history", isOn: Binding(
+                get: { enabled ?? false },
+                set: { on in Task { await set(on) } }
+            ))
+            .disabled(enabled == nil)
+            .accessibilityIdentifier("autofill.history")
+            if enabled == true {
+                Button("settings.autofill.history.clear", systemImage: "trash", role: .destructive) {
+                    confirmClear = true
+                }
+                .disabled((count ?? 0) == 0)
+                .accessibilityIdentifier("autofill.history.clear")
+            }
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            }
+        } footer: {
+            Text("settings.autofill.history.footer")
+        }
+        .task { await reload() }
+        .confirmationDialog(
+            "settings.autofill.history.clear.confirm", isPresented: $confirmClear, titleVisibility: .visible
+        ) {
+            Button("settings.autofill.history.clear", role: .destructive) { Task { await clear() } }
+            Button("Annuler", role: .cancel) {}
+        }
+    }
+
+    private func reload() async {
+        do {
+            enabled = try await model.session.autofillHistoryEnabled()
+            count = try await model.session.autofillHistoryCount()
+            errorMessage = nil
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+    }
+
+    private func set(_ on: Bool) async {
+        do {
+            try await model.session.setAutofillHistoryEnabled(on)
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+        await reload()
+    }
+
+    private func clear() async {
+        do {
+            try await model.session.clearAutofillHistory()
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+        await reload()
     }
 }

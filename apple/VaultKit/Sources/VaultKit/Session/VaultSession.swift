@@ -1200,6 +1200,33 @@ public final class VaultSession {
         }
     }
 
+    // MARK: Autofill history (device-local, 2026-11-03)
+    //
+    // Which login was chosen on which site, from which browser and profile, kept on this device only,
+    // sealed in its database, never synced (core `autofill_history`). Not a vault write: `read`, no
+    // reload and nothing for the sync.
+
+    /// Whether this device keeps the autofill history that ranks the suggestions (on by default).
+    public func autofillHistoryEnabled() async throws -> Bool {
+        try await read { try $0.autofillHistoryEnabled() }
+    }
+
+    /// Turns the autofill history on or off for this device. Off erases it.
+    public func setAutofillHistoryEnabled(_ enabled: Bool) async throws {
+        try await read { try $0.setAutofillHistoryEnabled(enabled: enabled) }
+    }
+
+    /// How many autofill history events this device keeps.
+    public func autofillHistoryCount() async throws -> Int {
+        Int(try await read { try $0.autofillHistoryCount() })
+    }
+
+    /// Erases this device's autofill history. Returns how many events went.
+    @discardableResult
+    public func clearAutofillHistory() async throws -> Int {
+        Int(try await read { try $0.clearAutofillHistory() })
+    }
+
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
     /// then reloads the lists and publishes the new identity. `.other` when the relying party already
     /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).
