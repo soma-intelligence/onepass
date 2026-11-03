@@ -12,7 +12,7 @@
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
 import type { MenuKey, ProviderId, SignupMode, UiToBg } from "../shared/messages";
-import { t } from "../shared/i18n";
+import { t, tn } from "../shared/i18n";
 import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
 import {
   ClickGuard,
@@ -33,8 +33,10 @@ import {
   realTimers,
   UNLOCK_POLL_MS,
   UNLOCK_WAIT_TRIES,
+  siteTile,
   tokenFromHash,
   wayArt,
+  wayTile,
 } from "./components";
 import { parseEmpty, parseKeys, parseLocked, parseMenuInit } from "./parse";
 
@@ -154,8 +156,15 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   };
   document.addEventListener("keydown", keydown);
 
-  const header = (origin: string | null) =>
-    h("h1", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
+  /** The OnePass mark and the site on the left, how many logins it has on the right. */
+  const header = (origin: string | null, logins?: number) =>
+    h(
+      "h1",
+      { class: "menu-head" },
+      mark("s"),
+      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
+      logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
+    );
   const glyphTile = (name: "key" | "plus" | "shield", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
 
   const showError = (line: HTMLElement | null, code: string) => {
@@ -278,7 +287,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
     // A plan opened this menu because the page refused every generated password.
     if (init.notice) errLine.textContent = errorText(init.notice);
-    const list = h("div", { class: "menu-list" });
+    const list = h("div", { class: "menu-group menu-list" });
     const pick = (itemId: string) => async () => {
       if (!token) return;
       const r = await call(deps.send, { type: "menu_pick", token, itemId }, parseEmpty);
@@ -334,7 +343,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             sub: it.subtitle,
             ...(post ? { post: ` · ${post}` } : {}),
-            lead: wayArt(it, undefined),
+            // Logins show the site's icon (the pill's source); cards and identities their art.
+            lead: it.kind === "login" ? siteTile(init.origin, it.icon_letter, 32) : wayArt(it, undefined),
             act: isLinked ? t("menu.usedForSite", { site: linked.site }) : fill,
             // The best item of a plan that could not choose (listed first by the worker).
             accent: isLinked || init.best === it.item_id,
@@ -352,7 +362,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             pre: t("menu.withName", { name }),
             sub: def?.email ?? m.account_email,
-            lead: wayArt(it, m.provider),
+            lead: wayTile(init.origin, it.icon_letter, m.provider, 32),
             act: t("common.continue"),
             attrs: { "data-provider": m.provider },
             run: signin(it.item_id, m.provider, def?.itemId),
@@ -383,7 +393,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const empty = init.items.length === 0 ? h("p", { class: "message-detail empty" }, emptyText(init)) : null;
     const extras: HTMLElement[] = [];
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
-      extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
           label: t("menu.generatePassword"),
@@ -398,7 +407,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     }
     if (LOGIN_FORMS.has(init.formKind)) {
       // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
-      if (extras.length === 0) extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
           label: t("menu.saveNewLogin"),
@@ -412,12 +420,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         }),
       );
     }
-    // Only options (and decorative separators) inside the listbox.
+    // Only options inside the listbox: the logins in one inset group, the other actions in a second.
+    const groups = [list.childElementCount > 0 ? list : null, extras.length > 0 ? h("div", { class: "menu-group menu-foot" }, ...extras) : null];
     const listbox =
       list.childElementCount + extras.length > 0
-        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, list, ...extras)
+        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, ...groups)
         : null;
-    mount(container, header(init.origin), empty, listbox, errLine);
+    const logins = init.items.filter((x) => x.kind === "login").length;
+    mount(container, header(init.origin, logins), empty, listbox, errLine);
     active = -1;
     guard.reset();
     remeasure();

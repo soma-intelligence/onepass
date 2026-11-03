@@ -52,13 +52,13 @@ paired("pill_other_accounts_are_reachable", async ({ ext }) => {
   await ext.settle();
   // Shown without hovering, and not under the close button.
   const look = await more.evaluate((el) => {
-    const close = el.parentElement?.querySelector(".ov-close");
+    const close = el.closest(".ov-shell")?.querySelector(".ov-close");
     const a = el.getBoundingClientRect();
     const b = close?.getBoundingClientRect();
     const over = b ? !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top) : false;
     return { opacity: getComputedStyle(el).opacity, over, width: a.width };
   });
-  expect(look).toEqual({ opacity: "1", over: false, width: 32 });
+  expect(look).toEqual({ opacity: "1", over: false, width: 30 });
   await more.click();
   await ext.overlayStart(page, "Atlas Cloud (multi)");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
@@ -95,7 +95,8 @@ paired.describe("dark system", () => {
     await menu.locator(".menu").waitFor();
     expect(await menu.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(true);
     const bg = await menu.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(bg).toBe("rgb(24, 24, 29)");
+    // The inset list's grouped background, dark.
+    expect(bg).toBe("rgb(28, 28, 30)");
   });
 
   paired("pill_has_no_light_backdrop_on_a_page_declaring_light", async ({ ext }) => {
@@ -107,11 +108,14 @@ paired.describe("dark system", () => {
     // The frame sits in a closed shadow root: its owner element, through the protocol.
     const box = (await (await overlay.frameElement()).boundingBox())!;
     const shot = readPng(await page.screenshot({ clip: box }));
-    // Plain pill surface: left of the icon, half way down, and along the bottom edge.
+    // The transparent frame around the capsule shows the dark page (#202124), and the
+    // capsule is dark: its edge left of the icon, the corners and along the bottom of the frame.
     const samples = [
-      shot.at(5, Math.floor(shot.height / 2)),
+      shot.at(16, 36),
+      shot.at(2, 2),
+      shot.at(shot.width - 2, 2),
       ...[0.3, 0.5, 0.7].map((f) => shot.at(Math.floor(shot.width * f), shot.height - 2)),
     ];
-    for (const [r, g, b] of samples) expect(Math.max(r, g, b), `pill pixel ${r},${g},${b}`).toBeLessThanOrEqual(20);
+    for (const [r, g, b] of samples) expect(Math.max(r, g, b), `frame pixel ${r},${g},${b}`).toBeLessThanOrEqual(60);
   });
 });

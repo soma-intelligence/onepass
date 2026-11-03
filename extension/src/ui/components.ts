@@ -216,6 +216,52 @@ export function siteIcon(url: string | null | undefined, fallback: Element, px =
   return img;
 }
 
+/**
+ * The site's icon on a neutral tile, as the apps show it (SiteIconTreatment: a
+ * coloured mark on a plain tile): the site's own /favicon.ico over HTTPS, the
+ * same source as the pill; when the site has none, the tile keeps the item's
+ * initial in the secondary text colour (never a coloured letter tile).
+ */
+export function siteTile(url: string | null | undefined, letter: string, px: number, round = false): HTMLSpanElement {
+  const tileEl = h("span", { class: `site-tile${round ? " round" : ""}`, attrs: { "aria-hidden": "true" } });
+  tileEl.style.width = tileEl.style.height = `${px}px`;
+  tileEl.style.fontSize = `${Math.round(px * 0.44)}px`;
+  const initial = () => {
+    tileEl.classList.add("letter");
+    tileEl.replaceChildren(h("span", { class: "site-letter" }, (letter.trim().charAt(0) || "•").toUpperCase()));
+  };
+  let origin: string | null = null;
+  try {
+    const u = url ? new URL(url) : null;
+    origin = u && u.protocol === "https:" ? u.origin : null;
+  } catch {
+    origin = null;
+  }
+  if (!origin) {
+    initial();
+    return tileEl;
+  }
+  const side = Math.round(px * 0.56);
+  const img = h("img", {
+    class: "site-img",
+    attrs: { src: `${origin}/favicon.ico`, alt: "", referrerpolicy: "no-referrer", decoding: "async", width: String(side), height: String(side) },
+  }) as HTMLImageElement;
+  img.style.width = img.style.height = `${side}px`;
+  img.addEventListener("error", initial, { once: true });
+  tileEl.append(img);
+  return tileEl;
+}
+
+/** A way to sign in on a site: its tile, with the provider's glyph on a disc at the corner. */
+export function wayTile(url: string | null | undefined, letter: string, provider: ProviderId | undefined, px: number, round = false): HTMLSpanElement {
+  return h(
+    "span",
+    { class: "way-art", attrs: { "aria-hidden": "true" } },
+    siteTile(url, letter, px, round),
+    provider ? h("span", { class: "way-badge" }, providerGlyph(provider, 10)) : null,
+  );
+}
+
 /** The OnePass mark: indigo tile with the white Lattice. */
 export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
   const px = size === "s" ? 12 : size === "m" ? 17 : 34;

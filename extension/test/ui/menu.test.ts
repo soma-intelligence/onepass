@@ -53,7 +53,9 @@ describe("inline menu", () => {
     const { r, handle, worker } = setup(def);
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "menu_init", token: TOKEN });
-    expect(text(r)).toContain("OnePass · atlas-cloud.test");
+    // The site and how many logins it has (the provider-only login counts).
+    expect(r.querySelector(".menu-host")!.textContent).toBe("atlas-cloud.test");
+    expect(r.querySelector(".menu-count")!.textContent).toBe("2 logins");
     const opts = [...r.querySelectorAll("[role=option]")];
     // Each row says how it signs in and what a click does.
     expect(says(opts[0]!)).toBe("Atlas Cloud | alex@atlas.dev · mot de passe | Remplir");
@@ -61,6 +63,13 @@ describe("inline menu", () => {
     expect(opts[1]!.querySelector(".way-badge svg.glyph-p_google")).not.toBeNull();
     // A provider-only login has no password row; then "Enregistrer un nouveau login".
     expect(opts).toHaveLength(3);
+    // Logins show the site's own icon over HTTPS, with no referrer.
+    const img = opts[0]!.querySelector<HTMLImageElement>(".site-tile img");
+    expect(img!.getAttribute("src")).toBe("https://atlas-cloud.test/favicon.ico");
+    expect(img!.getAttribute("referrerpolicy")).toBe("no-referrer");
+    // No icon: the tile keeps the login's initial.
+    img!.dispatchEvent(new Event("error"));
+    expect(opts[0]!.querySelector(".site-tile")!.textContent).toBe("A");
   });
 
   it("says the site refused the generated password, and on a refused Générer", async () => {
@@ -394,7 +403,8 @@ describe("inline menu", () => {
         : { err: "origin_mismatch" },
     );
     await handle.ready;
-    expect(r.querySelector("img")).toBeNull();
+    // The only image is the site's icon, never markup from the data.
+    expect(r.querySelector("img:not(.site-img)")).toBeNull();
     expect(text(r)).toContain("<img src=x onerror=alert(1)>");
     clock.advance(300);
     button(r, "<img").click();

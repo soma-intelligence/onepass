@@ -259,5 +259,11 @@
   "overlay.moreOtherAccounts": {
     "one": "{more} autre compte",
     "other": "{more} autres comptes"
-  }
+  },
+  "menu.loginCount": {
+    "one": "{n} login",
+    "other": "{n} logins"
+  },
+  "overlay.stepCode": "Code de vérification",
+  "overlay.stepUser": "Identifiant"
 }

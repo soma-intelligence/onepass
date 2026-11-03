@@ -9,8 +9,14 @@ import { type Geometry, type Rect } from "./detect/visibility";
 
 /** Highest z-index a page can use. */
 export const Z_MAX = "2147483647";
-/** Width of every extension frame (spec 8.3 "360 px de large"). */
+/** Width of the save prompt (spec 8.3 "360 px de large"). */
 export const FRAME_WIDTH = 360;
+/**
+ * Width per frame: the menu's inset list is 380 px; the one-click card is a
+ * transparent frame holding the capsule, its detached close button and the
+ * room their shadows need.
+ */
+export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: FRAME_WIDTH };
 /**
  * Largest frame heights: each page asks for its content height (a resize
  * message vouched by the worker) and scrolls inside past these.
@@ -89,7 +95,7 @@ iframe {
   position: fixed;
   box-sizing: border-box;
   border: 0;
-  border-radius: 14px;
+  border-radius: 16px;
   background: transparent;
   /* The frames follow the system appearance. "normal" would take the page's
      declared scheme: a page that declares only "light" turned the menu light
@@ -104,6 +110,8 @@ iframe {
   transition: opacity 160ms cubic-bezier(.23, 1, .32, 1), transform 200ms cubic-bezier(.23, 1, .32, 1);
 }
 iframe.corner { transform-origin: top right; }
+/* The one-click card draws its own shape and shadow inside a transparent frame. */
+iframe.bare { border-radius: 0; box-shadow: none; }
 iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
 iframe.top-center.shown { transform: none; }
 iframe.shown { opacity: 1; transform: none; }
@@ -276,7 +284,7 @@ export function createFrames(opts: FramesOptions): Frames {
    */
   const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number) => {
     const { w, h: vh } = viewport();
-    const width = Math.min(FRAME_WIDTH, Math.max(0, w - 2 * EDGE));
+    const width = Math.min(FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
     if (kind === "overlay") {
@@ -290,6 +298,7 @@ export function createFrames(opts: FramesOptions): Frames {
       if (top + height > vh - EDGE && above >= EDGE) top = above;
     }
     iframe.classList.toggle("top-center", kind === "overlay");
+    iframe.classList.toggle("bare", kind === "overlay");
     iframe.classList.toggle("corner", kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
@@ -297,8 +306,6 @@ export function createFrames(opts: FramesOptions): Frames {
     const props = ["left", "top", "width", "height"];
     const changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
-    // The one-click overlay is a pill while it is one row high, a rounded card when it grows.
-    if (kind === "overlay") s.setProperty("border-radius", `${Math.min(Math.round(height / 2), 34)}px`, "important");
     return changed;
   };
 

@@ -153,6 +153,33 @@ describe("overlay", () => {
     expect(status!.textContent).toBe("Choix de alex.perso@example.com…");
   });
 
+  it("a password login lists its steps: done ones checked, the one under way, the ones ahead", async () => {
+    const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
+    let now: ChainView = { ...pwd, steps: [{ label: "x", state: "done", what: "user" }] };
+    const { r, handle } = setup(() => now, pwd);
+    await handle.ready;
+    const items = () => [...r.querySelectorAll(".ov-steps > li")].map((li) => `${li.className}: ${li.querySelector(".ov-step-label, .ov-status")!.textContent}`);
+    // At load: the username under way, the password and the code ahead.
+    expect(items()).toEqual(["ov-step ov-now: Connexion…", "ov-step pending: Mot de passe", "ov-step pending: Code de vérification"]);
+    const status = r.querySelector(".ov-status");
+    await handle.poll();
+    expect(items()).toEqual(["ov-step done: Identifiant rempli", "ov-step ov-now: Connexion…", "ov-step pending: Code de vérification"]);
+    now = { ...now, steps: [...now.steps, { label: "y", state: "done", what: "password" }] };
+    await handle.poll();
+    expect(items()).toEqual(["ov-step done: Identifiant rempli", "ov-step done: Mot de passe rempli", "ov-step ov-now: Connexion…"]);
+    // The line under way keeps its node.
+    expect(r.querySelector(".ov-status")).toBe(status);
+  });
+
+  it("the close button beside a running chain stops it", async () => {
+    const { r, handle, worker } = setup(() => running, running);
+    await handle.ready;
+    r.querySelector<HTMLButtonElement>("button[aria-label=Fermer]")!.click();
+    await flush();
+    await flush();
+    expect(worker.types().slice(-2)).toEqual(["overlay_stop", "overlay_close"]);
+  });
+
   it("Annuler stops the chain and closes the card", async () => {
     const { r, handle, worker } = setup(() => running, running);
     await handle.ready;

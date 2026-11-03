@@ -10,8 +10,11 @@
 // - the result: "Connecté" (the card then leaves by itself), or a precise
 //   stop with what to do next, and "Réessayer" when trying again can help.
 //
-// The service worker reports the chain (polled every 500 ms while it runs);
-// the overlay computes no progress of its own.
+// The card is a capsule (a rounded card once it grows) with the close button
+// detached at its right; it follows the system appearance. The service
+// worker reports the chain (polled every 500 ms while it runs); the overlay
+// computes no progress of its own, it only lists the steps a password login
+// still has ahead.
 import { ext } from "../shared/browser";
 import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
@@ -27,16 +30,16 @@ import {
   icon,
   mark,
   messageBlock,
-  siteIcon,
   mount,
   observeVisibility,
   otherAccounts,
   providerGlyph,
   providerLabel,
   realTimers,
+  siteTile,
   srOnly,
   tokenFromHash,
-  wayArt,
+  wayTile,
 } from "./components";
 import { parseEmpty, parseOverlayInit, parseOverlayState } from "./parse";
 
@@ -179,7 +182,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let init: OverlayInit | null = null;
   let timer: unknown = null;
   let closer: unknown = null;
-  let chainUi: { mode: "running" | "ended"; status: HTMLElement; last: string } | null = null;
+  let chainUi: { mode: "running" | "ended"; status: HTMLElement; steps: HTMLElement | null; now: HTMLElement | null; last: string } | null = null;
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
   const unfolded = new Set<string>();
@@ -209,21 +212,29 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     remeasure();
   };
 
-  const closeButton = () =>
+  const closeButton = (run: () => void = closeOverlay) =>
     h(
       "button",
-      { class: "btn-icon ov-close", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(closeOverlay) } },
+      { class: "btn-icon ov-close", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(run) } },
       icon("close", 10),
     );
 
+  /** The card, with the close button detached at its right. */
+  const shell = (card: HTMLElement, close: HTMLElement = closeButton()) => h("div", { class: "ov-shell" }, card, close);
+
   const head = (origin: string | null) =>
-    h(
-      "div",
-      { class: "ov-head" },
-      mark("s"),
-      h("h1", { class: "ov-title" }, origin ? t("overlay.signInToHost", { host: hostOf(origin) }) : t("overlay.oneClickSignIn")),
-      closeButton(),
+    shell(
+      h(
+        "div",
+        { class: "ov-card ov-head" },
+        mark("s"),
+        h("h1", { class: "ov-title" }, origin ? t("overlay.signInToHost", { host: hostOf(origin) }) : t("overlay.oneClickSignIn")),
+      ),
     );
+
+  /** The site's icon on a round tile, with the provider's glyph at its corner. */
+  const artOf = (letter: string, provider: ProviderId | undefined) =>
+    provider ? wayTile(init?.origin ?? null, letter, provider, 34, true) : siteTile(init?.origin ?? null, letter, 34, true);
 
   const renderMessage = (code: string) => {
     stopPolling();
@@ -234,7 +245,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         : code === "locked"
           ? t("ui.onepassLocked")
           : errorText(code);
-    show(head(init?.origin ?? null), messageBlock(title));
+    show(shell(h("div", { class: "ov-card" }, h("div", { class: "ov-head" }, mark("s"), h("h1", { class: "ov-title" }, init ? t("overlay.signInToHost", { host: hostOf(init.origin) }) : t("overlay.oneClickSignIn"))), messageBlock(title))));
   };
 
   const start = (a: OverlayAccount, accountId?: string, email?: string) => async () => {
@@ -268,8 +279,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
           h("span", { class: "t2" }, a.subtitle),
           h("span", { class: "meta" }, a.totp ? t("overlay.passwordAndCode") : t("overlay.password")),
         );
-    const tileArt = wayArt({ kind: "login", has_password: !a.provider, methods: [], icon_letter: a.iconLetter }, a.provider, "m");
-    const art = a.provider ? tileArt : siteIcon(init?.origin ?? null, tileArt);
+    const art = artOf(a.iconLetter, a.provider);
     const row = h(
       "div",
       { class: "ov-account", attrs: a.provider ? { "data-provider": a.provider } : {} },
@@ -356,13 +366,17 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
             icon("chevron", 10),
           )
         : null;
-    // A pill: the site, the account, one button; other accounts behind the dropdown; close on hover.
+    // A capsule: the site, the account, one button; other accounts behind the chevron; close beside it.
     const heading = h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host: hostOf(init.origin) }));
-    show(h("div", { class: `ov-pill${showAll ? " ov-pill-open" : ""}` }, heading, list, dropdown, closeButton()));
+    const pill = h("div", { class: `ov-pill${showAll ? " ov-pill-open" : ""}${dropdown ? " with-more" : ""}` }, heading, list, dropdown);
+    show(shell(pill));
+    // The chevron sits just before the first row's button, whatever that button's length in this language.
+    const act = pill.querySelector<HTMLElement>(".ov-account .pill");
+    if (dropdown && act) pill.style.setProperty("--act-w", `${act.offsetWidth}px`);
   }
 
   /** The way the chain runs with, as in the offer's row. */
-  const whoNode = (c: ChainView, action: Node) => {
+  const whoNode = (c: ChainView, action: Node, heading?: string) => {
     const provider = c.provider ?? picked?.provider;
     const title = c.title ?? picked?.title ?? "";
     const email = c.email ?? picked?.subtitle ?? "";
@@ -371,13 +385,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return h(
       "div",
       { class: "ov-who" },
-      provider
-        ? wayArt({ kind: "login", has_password: false, methods: [], icon_letter: letter }, provider, "m")
-        : siteIcon(init?.origin ?? null, wayArt({ kind: "login", has_password: true, methods: [], icon_letter: letter }, undefined, "m")),
+      artOf(letter, provider),
       h(
         "span",
         { class: "stack" },
-        h("span", { class: "t1" }, title),
+        h("span", { class: "t1" }, heading ?? title),
         h("span", { class: "line2" }, name ? h("span", { class: "meta" }, t("menu.withName", { name })) : null, h("span", { class: "t2" }, email)),
       ),
       action,
@@ -389,11 +401,30 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return h(
       "li",
       { class: `ov-step ${s.state}` },
-      s.state === "stopped" ? icon("alert", 12) : icon("check", 10),
+      h("span", { class: "ov-mark", attrs: { "aria-hidden": "true" } }, s.state === "stopped" ? icon("alert", 12) : icon("check", 10)),
       h("span", { class: "ov-step-label" }, t.label),
       t.detail ? h("span", { class: "ov-step-detail" }, t.detail) : null,
       srOnly(STATE_TEXT[s.state]),
     );
+  };
+
+  /**
+   * A password login's steps not reached yet, after the one under way: the
+   * username, the password, then the code when the item has one. A provider
+   * chain has no fixed path, so it lists none.
+   */
+  const ahead = (c: ChainView): string[] => {
+    if (c.provider ?? picked?.provider) return [];
+    const totp = picked?.totp ?? init?.accounts.find((a) => a.itemId === c.itemId && !a.provider)?.totp ?? false;
+    const gone = new Set<string>();
+    for (const st of c.steps) {
+      if (st.state !== "done") continue;
+      if (st.what === "both") gone.add("user").add("password");
+      else if (st.what) gone.add(st.what);
+    }
+    const left = ["user", "password", ...(totp ? ["otp"] : [])].filter((k) => !gone.has(k));
+    const label: Record<string, string> = { user: t("overlay.stepUser"), password: t("term.password"), otp: t("overlay.stepCode") };
+    return left.slice(1).map((k) => label[k] ?? k);
   };
 
   const cancel = () => {
@@ -419,45 +450,66 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       if (!chainUi || chainUi.mode !== "running") {
         const status = h("span", { class: "ov-status", attrs: { role: "status" } });
         const cancelBtn = h("button", { class: "btn-link ov-cancel", attrs: { type: "button" }, on: { click: guard.wrap(cancel) } }, t("common.cancel"));
-        show(whoNode(c, cancelBtn), h("div", { class: "ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status));
-        chainUi = { mode, status, last: "" };
+        const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status);
+        const steps = h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, now);
+        // Closing while it runs stops the chain, as "Annuler" does.
+        show(shell(h("div", { class: "ov-card ov-run" }, whoNode(c, cancelBtn), steps), closeButton(cancel)));
+        chainUi = { mode, status, steps, now, last: "" };
       }
       chainUi.status.textContent = phaseText(c.phase, { ...c, provider: c.provider ?? picked?.provider, email: c.email ?? picked?.subtitle, title: c.title ?? picked?.title });
+      // The steps done above the line under way, the steps still ahead under it; the line itself keeps its node.
+      const { steps, now } = chainUi;
+      if (steps && now) {
+        for (const li of [...steps.children]) if (li !== now) li.remove();
+        const done = c.steps.filter((x) => x.state === "done" && x.what !== "end");
+        now.before(...done.map(stepNode(c)));
+        now.after(...ahead(c).map((label) => h("li", { class: "ov-step pending" }, h("span", { class: "ov-mark", attrs: { "aria-hidden": "true" } }), h("span", { class: "ov-step-label" }, label), srOnly(STATE_TEXT.pending))));
+      }
       chainUi.last = key;
       return;
     }
     stopPolling();
     const status = h("span", { class: "ov-status", attrs: { role: "status" } });
     const done = c.status === "done";
-    // What was done; the end (done or stop) is the status line above.
-    const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
-    const parts: (Node | null)[] = [];
     if (done) {
-      // Success is the pill again, its button turned into a check: no text, no steps.
+      // Success is the capsule again: "Connecté", the account, a check in place of the button.
       status.classList.add("ok", "ov-status-done");
       status.append(h("span", { class: "dot dot-done dot-big", attrs: { "aria-hidden": "true" } }, icon("check", 14)), srOnly(t("chain.signedIn")));
-      parts.push(h("div", { class: "ov-pill ov-done" }, whoNode(c, status)));
+      show(shell(h("div", { class: "ov-pill ov-done" }, whoNode(c, status, t("chain.signedIn")))));
     } else {
-      parts.push(whoNode(c, closeButton()));
+      // What was done; the end (done or stop) is the title.
+      const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
       const reason = c.reason ?? "user";
       status.classList.add("warn");
-      status.append(icon("alert", 16), c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped"));
+      status.append(c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped"));
+      const email = c.email ?? picked?.subtitle ?? "";
       const hint = stopHint(reason, c.site, c.provider);
-      parts.push(h("div", { class: "ov-result" }, status, hint ? h("p", { class: "ov-hint" }, hint) : null));
-    }
-    if (!done && steps.length > 0) parts.push(h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, ...steps.map(stepNode(c))));
-    const again = !done && c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
-    if (again) {
-      parts.push(
-        h(
-          "div",
-          { class: "ov-foot" },
-          h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(again, again.accountId, again.email)()) } }, t("popup.tryAgain")),
+      const again = c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
+      show(
+        shell(
+          h(
+            "div",
+            { class: "ov-card ov-stop" },
+            h(
+              "div",
+              { class: "ov-who" },
+              h("span", { class: "ov-alert", attrs: { "aria-hidden": "true" } }, icon("alert", 16)),
+              h("span", { class: "stack" }, status, email ? h("span", { class: "t2" }, email) : null),
+            ),
+            hint ? h("p", { class: "ov-hint" }, hint) : null,
+            steps.length > 0 ? h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, ...steps.map(stepNode(c))) : null,
+            again
+              ? h(
+                  "div",
+                  { class: "ov-foot" },
+                  h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(again, again.accountId, again.email)()) } }, t("popup.tryAgain")),
+                )
+              : null,
+          ),
         ),
       );
     }
-    show(...parts);
-    chainUi = { mode: "ended", status, last: key };
+    chainUi = { mode: "ended", status, steps: null, now: null, last: key };
     cancelClose();
     // Success needs nothing more from the user: the card leaves by itself.
     if (done) closer = timers.setTimeout(closeOverlay, DONE_CLOSE_MS);
