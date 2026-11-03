@@ -430,9 +430,24 @@ public final class AutoFillModel {
     }
 
     private func passwordResult(_ item: FfiItem) -> AutoFillResult {
-        .password(
-            user: Self.fieldValue("username", in: item).flatMap(Self.plainText) ?? "",
-            password: Self.fieldValue("password", in: item).flatMap(Self.plainText) ?? "")
+        Self.passwordResult(item)
+    }
+
+    /// The username and password of a Login. A Login with neither that signs in with a provider
+    /// gives the provider's relay address as the username when it has one, never a made-up
+    /// password (spec 2026-11-03-ios-safari-autofill 5): the page's own "Sign in with" button does
+    /// the rest.
+    static func passwordResult(_ item: FfiItem) -> AutoFillResult {
+        let user = fieldValue("username", in: item).flatMap(plainText) ?? ""
+        let password = fieldValue("password", in: item).flatMap(plainText) ?? ""
+        if user.isEmpty, password.isEmpty {
+            let relay = item.loginMethods.lazy.compactMap { method -> String? in
+                if case .provider(_, _, let relay?) = method, !relay.isEmpty { return relay }
+                return nil
+            }.first
+            if let relay { return .password(user: relay, password: "") }
+        }
+        return .password(user: user, password: password)
     }
 
     /// The current code of the item's `totp` field, nil when it has none.

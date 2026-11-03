@@ -203,6 +203,35 @@
         }
       }
     },
+    "autofill.signsInWith %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signs in with %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se connecte avec %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accede con %@"
+          }
+        }
+      }
+    },
     "duplicates.mergedInto %@" : {
       "comment" : "Note appended to a copy archived by a merge; the argument is the kept item's title.",
       "extractionState" : "manual",

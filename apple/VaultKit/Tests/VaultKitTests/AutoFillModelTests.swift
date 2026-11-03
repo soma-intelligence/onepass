@@ -1015,8 +1015,9 @@ struct AutoFillModelTests {
     // MARK: - Site memory
 
     /// A QuickType fill is remembered and published before the extension locks: the identity of the
-    /// Login used last on the site gets the core's rank 100, a favorite 50, and the system identity
-    /// carries the core's rank as is.
+    /// Login used last on the site gets the core's rank 100 plus its learned bonus (the fill is a
+    /// pick of the system AutoFill), a favorite 50, and the system identity carries the core's rank
+    /// as is.
     @Test func identitiesUseRankFromCore() async throws {
         let store = InMemoryIdentityStore()
         let f = try Fixture(identityStore: store)
@@ -1036,7 +1037,7 @@ struct AutoFillModelTests {
 
         let passwords = store.identities.filter { $0.kind == .password }
         let rank = { (item: FfiItem) in passwords.first { $0.recordId == "\(item.vaultId):\(item.id)" }?.rank }
-        #expect(rank(login) == 100)
+        #expect((rank(login) ?? 0) > 100)
         #expect(rank(favorite) == 50)
         #expect(rank(plain) == 0)
 

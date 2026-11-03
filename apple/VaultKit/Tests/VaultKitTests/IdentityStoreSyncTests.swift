@@ -8,11 +8,11 @@ import Testing
 func identity(
     _ kind: FfiAutofillKind = .password, service: String = "exemple.fr", user: String = "camille@exemple.fr",
     record: String = "aa:bb", favorite: Bool = false, rank: UInt32 = 0, credential: Data = Data(),
-    handle: Data = Data()
+    handle: Data = Data(), signInWith: String = ""
 ) -> FfiAutofillIdentity {
     FfiAutofillIdentity(
         kind: kind, service: service, user: user, recordId: record, favorite: favorite, rank: rank,
-        credentialId: credential, userHandle: handle)
+        credentialId: credential, userHandle: handle, signInWith: signInWith)
 }
 
 @Suite("Identity store sync")
@@ -177,6 +177,23 @@ struct IdentityStoreSyncTests {
         #expect(passkey.credentialID == Data([1, 2, 3]))
         #expect(passkey.userHandle == Data([4, 5]))
         #expect(passkey.recordIdentifier == "v:2")
+    }
+
+    /// A Login that signs in with a provider shows "Se connecte avec Apple" in the system menu
+    /// (French catalog of the test bundle), its rank unchanged.
+    @Test func builderNamesTheProviderOfASignInWithLogin() throws {
+        let built = AutoFillIdentityBuilder.credentialIdentities([
+            identity(.password, service: "login.nvgs.nvidia.com", user: "", record: "v:3", rank: 120, signInWith: "apple"),
+            identity(.password, service: "corp.test", user: "", record: "v:4", signInWith: "oidc:sso.corp.test"),
+        ])
+        let apple = try #require(built[0] as? ASPasswordCredentialIdentity)
+        #expect(apple.user.hasSuffix("Apple"))
+        #expect(apple.user != "Apple")
+        #expect(apple.rank == 120)
+        let custom = try #require(built[1] as? ASPasswordCredentialIdentity)
+        #expect(custom.user.hasSuffix("sso.corp.test"))
+        #expect(AutoFillIdentityBuilder.providerName("entra_id") == "Microsoft Entra ID")
+        #expect(AutoFillIdentityBuilder.providerName("github") == "GitHub")
     }
 
     @Test func notifierDeliversPosts() async throws {
