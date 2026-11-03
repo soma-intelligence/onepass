@@ -13,6 +13,7 @@ mod invite;
 mod key;
 pub(crate) mod manifest;
 mod membership;
+mod rekey;
 mod state;
 
 pub use access::{
@@ -38,6 +39,8 @@ pub use state::{
 };
 
 pub use action::{MemberView, ShareAction, SharedVaultInfo, ZoneMailboxKind};
+
+pub use rekey::{RekeyNotice, RekeyReason, RekeyRequest};
 
 pub use invite::{CredentialRenewal, InviteRecord, ShareInvite, ShareInviteView};
 

@@ -259,6 +259,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "rekey_request"
+path = "fuzz_targets/rekey_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sync_home"
 path = "fuzz_targets/sync_home.rs"
 test = false

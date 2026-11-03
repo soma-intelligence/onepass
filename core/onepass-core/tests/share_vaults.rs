@@ -1,4 +1,4 @@
-//! Shared vaults on the repository (sharing plan 2, Tasks 6 to 9).
+//! Shared vaults on the repository (sharing plan 2, Tasks 6 to 10).
 
 mod common;
 mod share_common;
@@ -13,9 +13,10 @@ use onepass_core::lineage::{
 use onepass_core::repo::rekey::AccessRefusal;
 use onepass_core::share::{
     AccessTarget, InviteRecord, MEMBERSHIP_FORMAT, Member, MemberKey, MemberRef, MembershipBody,
-    MembershipReason, Role, ShareAction, ShareInvite, SignedMembership, ZONE_ACCESS_KIND, ZoneHome,
-    ZoneMailboxKind, ZoneRole, ZoneSeed, identity_pub_hash, member_key_id, open_member_key,
-    open_zone_credential, server_role, sign_membership, wrap_zone_credential,
+    MembershipReason, RekeyReason, RekeyRequest, Role, ShareAction, ShareInvite, SignedMembership,
+    ZONE_ACCESS_KIND, ZoneHome, ZoneMailboxKind, ZoneRole, ZoneSeed, identity_pub_hash,
+    member_key_id, open_member_key, open_zone_credential, server_role, sign_membership,
+    wrap_zone_credential,
 };
 use onepass_core::store::{MemoryStore, RecordStore, Zone};
 use onepass_core::sync::PhaseOutcome;
@@ -1474,4 +1475,196 @@ fn unsigned_revocation_never_wipes() {
         .unwrap_err();
     assert_eq!(validation(e), ("vault".into(), "access refused"));
     assert!(b.dev.store().pending_changes_in(zone).unwrap().is_empty());
+}
+
+// ---- Task 10: roles, voluntary leave, rekey requests ----
+
+fn generation(d: &Device, id: Id) -> u32 {
+    d.store().share_state(id).unwrap().unwrap().head.generation
+}
+
+/// A rekey request signed by `who` about `vault_id` at generation `g`,
+/// written straight into `into`'s copy of the zone.
+fn plant_request(who: &mut Device, into: &mut Device, vault_id: Id, g: u32) {
+    let signer = me(who);
+    let req = RekeyRequest::sign(
+        vault_id,
+        None,
+        RekeyReason::MemberRotation,
+        g,
+        signer,
+        &who.repo().account().keyset().signing,
+    )
+    .unwrap();
+    into.repo()
+        .store_mut()
+        .put_all_zoned(
+            vec![(
+                Zone::Vault(vault_id),
+                Record {
+                    kind: RecordKind::RekeyRequest,
+                    id: req.id(),
+                    version: 1,
+                    data: req.encode(),
+                },
+                None,
+            )],
+            vec![],
+            None,
+            &[],
+        )
+        .unwrap();
+}
+
+#[test]
+fn demote_writer_to_reader_blocks_writes() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let bob = account_id(&mut b.dev);
+    let info = a.dev.repo().set_role(id, bob, Role::Read, NOW + 3).unwrap();
+    assert_eq!(
+        info.members
+            .iter()
+            .find(|m| m.account_id == bob)
+            .unwrap()
+            .role,
+        Role::Read
+    );
+    assert!(
+        a.dev
+            .repo()
+            .pending_share_actions()
+            .unwrap()
+            .iter()
+            .any(|x| matches!(x, ShareAction::SetCredentialRole { role, .. } if *role == server_role(Role::Read).0))
+    );
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let vb = shared(&mut b.dev, id);
+    let e = b
+        .dev
+        .repo()
+        .save_item(&vb, login(id, "zed", 900))
+        .unwrap_err();
+    assert_eq!(validation(e), ("role".into(), "read only"));
+    let alice = account_id(&mut a.dev);
+    let e = a.dev.repo().set_role(id, alice, Role::Read, NOW + 4);
+    assert_eq!(validation(e.unwrap_err()), ("member".into(), "self"));
+}
+
+#[test]
+fn promote_link_member_refused() {
+    let (mut zs, mut a, mut b, id, _) = alice_and_bob(ContactLevel::Link);
+    let bob = account_id(&mut b.dev);
+    a.dev
+        .repo()
+        .add_member(id, bob, Role::Read, NOW + 1)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let e = a
+        .dev
+        .repo()
+        .set_role(id, bob, Role::Write, NOW + 2)
+        .unwrap_err();
+    assert_eq!(validation(e), ("contact".into(), "not verified"));
+}
+
+#[test]
+fn leave_rotates_on_first_manager_read() {
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let bob_ref = me(&mut b.dev);
+    b.dev.repo().leave_shared_vault(id, NOW + 3).unwrap();
+    // Nothing is revoked before the body and the request are sent.
+    assert!(
+        b.dev
+            .repo()
+            .pending_share_actions()
+            .unwrap()
+            .iter()
+            .all(|x| !matches!(x, ShareAction::RevokeCredential { .. }))
+    );
+    b.sync(&mut zs);
+    let revoke = b
+        .dev
+        .repo()
+        .pending_share_actions()
+        .unwrap()
+        .into_iter()
+        .find(|x| matches!(x, ShareAction::RevokeCredential { .. }))
+        .expect("revocation queued once sent");
+    b.dev.repo().share_action_done(&revoke).unwrap();
+    assert!(b.dev.store().share_state(id).unwrap().is_none());
+    a.sync(&mut zs);
+    let notices = a.dev.repo().process_rekey_requests(NOW + 4).unwrap();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].reason, RekeyReason::Leave);
+    assert_eq!(notices[0].generation, 2);
+    settle(&mut zs, &mut [&mut a, &mut c]);
+    assert_eq!(generation(&a.dev, id), 2);
+    let mk = member_key_id(id, 2, &bob_ref);
+    assert!(
+        zs.server(Zone::Vault(id))
+            .live(RecordKind::MemberKey, mk)
+            .is_none()
+    );
+    let vc = shared(&mut c.dev, id);
+    assert_eq!(ids(&c.dev.repo().items(&vc).unwrap()), ids(&items));
+    // The request is gone: a second pass rotates nothing.
+    a.sync(&mut zs);
+    assert!(
+        a.dev
+            .repo()
+            .process_rekey_requests(NOW + 5)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn stale_rekey_request_is_noop() {
+    let (mut zs, mut a, _b, mut c, id, _) = trio(Role::Read);
+    plant_request(&mut c.dev, &mut a.dev, id, 1);
+    assert_eq!(
+        a.dev.repo().process_rekey_requests(NOW + 3).unwrap().len(),
+        1
+    );
+    assert_eq!(generation(&a.dev, id), 2);
+    settle(&mut zs, &mut [&mut a]);
+    // The same request about generation 1 again: satisfied, deleted.
+    plant_request(&mut c.dev, &mut a.dev, id, 1);
+    assert!(
+        a.dev
+            .repo()
+            .process_rekey_requests(NOW + 4)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(generation(&a.dev, id), 2);
+    assert!(
+        a.dev
+            .store()
+            .list_in(Zone::Vault(id), RecordKind::RekeyRequest)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn forged_rekey_request_from_non_member_ignored() {
+    let (_zs, mut a, _b, _c, id, _) = trio(Role::Read);
+    let mut dan = Acct::new();
+    plant_request(&mut dan.dev, &mut a.dev, id, 1);
+    assert!(
+        a.dev
+            .repo()
+            .process_rekey_requests(NOW + 3)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(generation(&a.dev, id), 1);
+}
+
+#[test]
+fn owner_cannot_leave() {
+    let (_zs, mut a, _b, _c, id, _) = trio(Role::Read);
+    let e = a.dev.repo().leave_shared_vault(id, NOW + 3).unwrap_err();
+    assert_eq!(validation(e), ("member".into(), "owner"));
 }

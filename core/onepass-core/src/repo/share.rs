@@ -442,6 +442,11 @@ impl<S: RecordStore> Repository<S> {
     pub fn pending_share_actions(&self) -> Result<Vec<ShareAction>> {
         let mut out = Vec::new();
         for state in self.store.share_states()? {
+            // A departure revokes my credential only once the body and the
+            // rekey request are on the server (spec 9.4).
+            if state.leaving && !self.store.zone_pending(state.zone)?.is_empty() {
+                continue;
+            }
             let has_home = self
                 .zone_accesses()?
                 .iter()
@@ -471,7 +476,8 @@ impl<S: RecordStore> Repository<S> {
         };
         state.actions.remove(i);
         self.store
-            .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))
+            .put_all_zoned(vec![], vec![], None, std::slice::from_ref(&state))?;
+        self.finish_leave(id)
     }
 }
 
@@ -736,6 +742,9 @@ impl<S: RecordStore> Repository<S> {
         if state.access_refused.is_some() {
             return Err(refused("vault", "access refused"));
         }
+        if state.leaving {
+            return Err(refused("vault", "leaving"));
+        }
         self.require_role(&state, Role::Write)?;
         // The vault must be open under the head's generation (a rekey
         // since it was opened: reopen it).
@@ -896,7 +905,7 @@ impl<S: RecordStore> Repository<S> {
     /// at `head`: written with each membership change so that a member who
     /// pinned `head` as its first body can verify the zone (plan 2 ruling,
     /// spec 8.2 rule 5 sets aside a manifest naming an unknown body).
-    fn manifest_for_head(
+    pub(crate) fn manifest_for_head(
         &mut self,
         vault: &Vault,
         head: &MembershipBody,

@@ -101,6 +101,9 @@ pub struct ShareState {
     /// The vault's name as this device last opened it (a removal can make
     /// the meta unreadable before the personal copy is named).
     pub name: String,
+    /// I signed a `Leave` (spec 9.4): the vault is erased here once the
+    /// body and the rekey request are sent and my credential revoked.
+    pub leaving: bool,
 }
 
 impl ShareState {
@@ -122,6 +125,7 @@ impl ShareState {
             access_refused: None,
             exposures: Vec::new(),
             name: String::new(),
+            leaving: false,
         }
     }
 

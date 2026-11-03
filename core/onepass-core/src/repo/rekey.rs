@@ -13,9 +13,10 @@ use crate::manifest::{Manifest, ManifestEntry, SeenManifest, manifest_hash, meta
 use crate::model::Item;
 use crate::share::{
     AccessTarget, FormerMemberExposure, InviteRecord, MemberKey, MemberRef, MembershipBody,
-    MembershipReason, MembershipView, Removed, Role, SharePush, ShareState, SharedSignedManifest,
-    SignedMembership, ZONE_ACCESS_KIND, accept_next, key_commit, open_member_key, sign_membership,
-    sign_shared_manifest, verify_shared_manifest, wrap_member_key,
+    MembershipReason, MembershipView, RekeyNotice, RekeyReason, RekeyRequest, Removed, Role,
+    SharePush, ShareState, SharedSignedManifest, SignedMembership, ZONE_ACCESS_KIND, accept_next,
+    key_commit, open_member_key, sign_membership, sign_shared_manifest, verify_shared_manifest,
+    wrap_member_key,
 };
 use crate::store::{Record, RecordKind, RecordStore, Zone};
 use crate::sync::SyncStore;
@@ -320,6 +321,9 @@ impl<S: RecordStore> Repository<S> {
         let Some(mut state) = self.store.share_state(vault_id)? else {
             return Ok(());
         };
+        if state.leaving {
+            return self.finish_leave(vault_id);
+        }
         let Some(rec) = self
             .store
             .get_in(state.zone, RecordKind::Membership, vault_id)?
@@ -530,6 +534,298 @@ impl<S: RecordStore> Repository<S> {
             .map(|k| Vault::with_key(state.vault_id, k, meta.clone(), state.zone))
             .collect())
     }
+}
+
+impl<S: RecordStore> Repository<S> {
+    /// The pinned state of `vault_id` for a manager's change: followed to
+    /// the newest body, I manage it, nothing pending that a change would
+    /// race (a resealing, a refused access, my departure).
+    fn manager_state(&mut self, vault_id: Id) -> Result<ShareState> {
+        self.writable()?;
+        self.follow_head(vault_id)?;
+        let state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        let me = self.me();
+        let role = state
+            .head
+            .member(me.account_id)
+            .filter(|m| m.identity_id == me.identity_id)
+            .map(|m| m.role)
+            .ok_or_else(|| refused("role", "not a member"))?;
+        if role != Role::Manage {
+            return Err(refused("role", "manager only"));
+        }
+        if state.push.is_some() {
+            return Err(refused("vault", "key change pending"));
+        }
+        if state.access_refused.is_some() || state.leaving {
+            return Err(refused("vault", "access refused"));
+        }
+        Ok(state)
+    }
+
+    /// Change the role of member `account_id` (spec 10.2): a `Role` body,
+    /// the next manifest naming it and a `SetCredentialRole` action at
+    /// `server_role(role)`, in one transaction. Refused: not a manager,
+    /// myself (`Validation("member", "self")`), the owner, not a member, a
+    /// role above `Read` for a member added at `Link` (decision 1,
+    /// `Validation("contact", "not verified")`).
+    pub fn set_role(
+        &mut self,
+        vault_id: Id,
+        account_id: Id,
+        role: Role,
+        now: i64,
+    ) -> Result<crate::share::SharedVaultInfo> {
+        let state = self.manager_state(vault_id)?;
+        let me = self.me();
+        if account_id == me.account_id {
+            return Err(refused("member", "self"));
+        }
+        let target = state
+            .head
+            .member(account_id)
+            .ok_or_else(|| refused("member", "not a member"))?
+            .clone();
+        if target.owner {
+            return Err(refused("member", "owner"));
+        }
+        if role > Role::Read && target.level != ContactLevel::Verified {
+            return Err(refused("contact", "not verified"));
+        }
+        let mut body = state.head.next(me, MembershipReason::Role, now)?;
+        for m in &mut body.members {
+            if m.account_id == account_id {
+                m.role = role;
+            }
+        }
+        let signed = sign_membership(body, &self.account.keyset().signing)?;
+        let head = accept_next(&state.head, &signed)?;
+        let vault = self.open_shared(vault_id)?;
+        let (manifest_rec, manifest_expected, seen) = self.manifest_for_head(&vault, &head)?;
+        let mut state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        let zone = state.zone;
+        let writes = vec![
+            (
+                zone,
+                Record {
+                    kind: RecordKind::Membership,
+                    id: vault_id,
+                    version: head.seq,
+                    data: signed.encode(),
+                },
+                Some(state.head.seq),
+            ),
+            (zone, manifest_rec, manifest_expected),
+        ];
+        state.advance(head);
+        state.last_manifest = Some(seen);
+        state.last_meta = Some(meta_hash(&vault.meta));
+        let (zrole, put_kinds) = crate::share::server_role(role);
+        state
+            .actions
+            .push(crate::share::ShareAction::SetCredentialRole {
+                zone,
+                credential_id: target.credential_id,
+                role: zrole,
+                put_kinds,
+            });
+        self.store
+            .put_all_zoned(writes, vec![], None, std::slice::from_ref(&state))?;
+        self.shared_info(&state, &vault.meta.name)
+    }
+
+    /// Leave shared vault `vault_id` (spec 9.4): a `Leave` body signed by
+    /// me and a `RekeyRequest { reason: Leave }`, in one transaction with
+    /// the share state marked leaving and the revocation of my own
+    /// credential queued (run only once both are sent). The vault is
+    /// erased here once the revocation is done (`finish_leave`, S11).
+    /// Refused: the owner and the last manager (`Validation("member",
+    /// "owner")`, `Validation("member", "last manager")`; the owner hands
+    /// the vault over, Task 12), not a member.
+    pub fn leave_shared_vault(&mut self, vault_id: Id, now: i64) -> Result<()> {
+        self.writable()?;
+        self.follow_head(vault_id)?;
+        let mut state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+        if state.leaving {
+            return Ok(());
+        }
+        let me = self.me();
+        let mine = state
+            .head
+            .member(me.account_id)
+            .filter(|m| m.identity_id == me.identity_id)
+            .ok_or_else(|| refused("role", "not a member"))?
+            .clone();
+        if mine.owner {
+            return Err(refused("member", "owner"));
+        }
+        let other_manager = state
+            .head
+            .members
+            .iter()
+            .any(|m| m.account_id != me.account_id && m.role == Role::Manage);
+        if mine.role == Role::Manage && !other_manager {
+            return Err(refused("member", "last manager"));
+        }
+        let mut body = state.head.next(me, MembershipReason::Leave, now)?;
+        body.members.retain(|m| m.account_id != me.account_id);
+        body.removed.push(Removed {
+            account_id: me.account_id,
+            identity_id: me.identity_id,
+            removed_at: now,
+            by: me,
+        });
+        let signed = sign_membership(body, &self.account.keyset().signing)?;
+        accept_next(&state.head, &signed)?;
+        let req = RekeyRequest::sign(
+            vault_id,
+            None,
+            RekeyReason::Leave,
+            state.head.generation,
+            me,
+            &self.account.keyset().signing,
+        )?;
+        let zone = state.zone;
+        let writes = vec![
+            (
+                zone,
+                Record {
+                    kind: RecordKind::RekeyRequest,
+                    id: req.id(),
+                    version: 1,
+                    data: req.encode(),
+                },
+                self.store
+                    .get_in(zone, RecordKind::RekeyRequest, req.id())?
+                    .map(|r| r.version),
+            ),
+            (
+                zone,
+                Record {
+                    kind: RecordKind::Membership,
+                    id: vault_id,
+                    version: signed.body.seq,
+                    data: signed.encode(),
+                },
+                Some(state.head.seq),
+            ),
+        ];
+        state.leaving = true;
+        state
+            .actions
+            .push(crate::share::ShareAction::RevokeCredential {
+                zone,
+                credential_id: mine.credential_id,
+            });
+        self.store
+            .put_all_zoned(writes, vec![], None, std::slice::from_ref(&state))
+    }
+
+    /// The end of my departure: once nothing of the zone waits to be sent
+    /// and my credential's revocation ran, the vault is erased here.
+    pub(crate) fn finish_leave(&mut self, vault_id: Id) -> Result<()> {
+        let Some(state) = self.store.share_state(vault_id)? else {
+            return Ok(());
+        };
+        if !state.leaving
+            || !self.store.zone_pending(state.zone)?.is_empty()
+            || state
+                .actions
+                .iter()
+                .any(|a| matches!(a, crate::share::ShareAction::RevokeCredential { .. }))
+        {
+            return Ok(());
+        }
+        self.erase_shared(&state)
+    }
+
+    /// Run the rekey requests of every shared vault I manage (spec 9.4,
+    /// 12.2, S12, decision 11): a request signed by a member of the pinned
+    /// head, or by a member it lists as removed (a departure) under the
+    /// key of the last body that had it, at the current generation, makes
+    /// a `Rekey` rotation; one about an older generation is satisfied and
+    /// deleted without a rotation; anything else (bad signature, unknown
+    /// signer, a future generation) is ignored. One rotation per vault and
+    /// pass.
+    pub fn process_rekey_requests(&mut self, now: i64) -> Result<Vec<RekeyNotice>> {
+        self.follow_heads()?;
+        let mut out = Vec::new();
+        for state in self.store.share_states()? {
+            let vault_id = state.vault_id;
+            if self.manager_state(vault_id).is_err() {
+                continue;
+            }
+            let zone = state.zone;
+            let mut rotated = false;
+            for rec in self.store.list_in(zone, RecordKind::RekeyRequest)? {
+                let Ok(req) = RekeyRequest::decode(&rec.data) else {
+                    continue;
+                };
+                if req.vault_id != vault_id || rec.id != req.id() {
+                    continue;
+                }
+                let state = self.store.share_state(vault_id)?.ok_or(Error::NotFound)?;
+                let Some(key) = signer_key(&state, &req.signer) else {
+                    continue;
+                };
+                if req.verify(&key).is_err() {
+                    continue;
+                }
+                if req.at_generation < state.head.generation || rotated {
+                    if req.at_generation < state.head.generation {
+                        self.store.put_all_zoned(
+                            vec![],
+                            vec![(zone, RecordKind::RekeyRequest, rec.id)],
+                            None,
+                            &[],
+                        )?;
+                    }
+                    continue;
+                }
+                if req.at_generation > state.head.generation {
+                    continue;
+                }
+                let done = self.rekey_vault(vault_id, MembershipReason::Rekey, None, now)?;
+                rotated = true;
+                out.push(RekeyNotice {
+                    vault_id,
+                    reason: req.reason,
+                    account_id: req.account_id,
+                    generation: done.generation,
+                });
+                self.store.put_all_zoned(
+                    vec![],
+                    vec![(zone, RecordKind::RekeyRequest, rec.id)],
+                    None,
+                    &[],
+                )?;
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// The signing key of `who` for a rekey request: a member of the pinned
+/// head, or a member the head lists as removed, as the newest known body
+/// that had it holds its key.
+fn signer_key(state: &ShareState, who: &MemberRef) -> Option<crate::crypto::HybridVerifyingKey> {
+    let in_body = |b: &MembershipBody| {
+        b.member(who.account_id)
+            .filter(|m| m.identity_id == who.identity_id)
+            .map(|m| m.sign_pub.clone())
+    };
+    if let Some(k) = in_body(&state.head) {
+        return Some(k);
+    }
+    let removed = state
+        .head
+        .removed
+        .iter()
+        .any(|r| r.account_id == who.account_id && r.identity_id == who.identity_id);
+    if !removed {
+        return None;
+    }
+    state.ancestors.iter().find_map(in_body)
 }
 
 /// `body` lists `me` as removed and no longer as a member.
