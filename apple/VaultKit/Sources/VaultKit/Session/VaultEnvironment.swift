@@ -107,7 +107,13 @@ public struct VaultEnvironment: Sendable {
         let keychain = SystemKeychain(service: keychainService, accessGroup: group)
         // Hedged randomness for every key the core makes from here on (best effort).
         DeviceRngSeed.install(keychain: keychain)
+        #if DEBUG && targetEnvironment(simulator)
+        // No Secure Enclave in the Simulator: a Debug-only software keyring behind the simulated
+        // Face ID, so the biometric unlock can be exercised there (never on a device).
+        let keyring: any EnclaveKeyring = SimulatorBiometricKeyring(accessGroup: group)
+        #else
         let keyring = SecureEnclaveKeyring(accessGroup: group, allowWatch: settings.allowWatchUnlock)
+        #endif
         return VaultEnvironment(
             databaseURL: databaseURL ?? container.databaseURL,
             keychain: keychain,

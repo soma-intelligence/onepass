@@ -1434,11 +1434,13 @@ public final class VaultSession {
     }
 
     /// Publishes the AutoFill identities now, without the debounce, and returns once the system store
-    /// was replaced (after every identity request sent before). For the AutoFill extension after a
-    /// write: its session locks right after, and a debounced refresh would then find it locked, leaving
-    /// the new identity out of the store until the next app unlock. Does nothing unless unlocked with
-    /// the "Suggestions au-dessus du clavier" setting on.
-    public func publishAutofillIdentitiesNow() async {
+    /// was replaced (after every identity request sent before), or after `limit` at most. For the
+    /// AutoFill extension after a write: its session locks right after, and a debounced refresh would
+    /// then find it locked, leaving the new identity out of the store until the next app unlock. The
+    /// identities are read from the core at once; only the system store's answer is not waited for
+    /// past `limit`: a fill must never hang on it (the iOS 27.0 Simulator's store never answers).
+    /// Does nothing unless unlocked with the "Suggestions au-dessus du clavier" setting on.
+    public func publishAutofillIdentitiesNow(limit: Duration = .seconds(2)) async {
         guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
         let excluded = excludedVaultIDs
         let settings = settings
@@ -1449,7 +1451,31 @@ public final class VaultSession {
             else { return }
             await sync.replaceNow(list)
         }
-        await identityChain?.value
+        guard let chain = identityChain else { return }
+        await Self.wait(for: chain, atMost: limit)
+    }
+
+    /// Returns when `task` ends or after `limit`, whichever comes first (the task keeps running).
+    nonisolated static func wait(for task: Task<Void, Never>, atMost limit: Duration) async {
+        let resumed = OSAllocatedUnfairLock(initialState: false)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeOnce: @Sendable () -> Void = {
+                if resumed.withLock({ done in
+                    defer { done = true }
+                    return !done
+                }) {
+                    continuation.resume()
+                }
+            }
+            Task {
+                await task.value
+                resumeOnce()
+            }
+            Task {
+                try? await Task.sleep(for: limit)
+                resumeOnce()
+            }
+        }
     }
 
     /// Record ids (`"<vault id>:<item id>"`) of the items hidden from AutoFill, every type included.

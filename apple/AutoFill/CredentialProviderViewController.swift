@@ -1,4 +1,5 @@
 import AuthenticationServices
+import OSLog
 import SwiftUI
 import VaultKit
 
@@ -35,6 +36,13 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     private var requestToken = 0
     /// The current request was answered or abandoned: nothing more goes to `extensionContext`.
     private var requestEnded = true
+    #if os(iOS)
+    /// On screen: Face ID may start. Before that, iOS cancels it (systemCancel), which used up the
+    /// one automatic attempt and left the password field (seen on the second sign-in step).
+    private var appeared = false
+    /// The `start` of a request prepared before the sheet came up.
+    private var pendingStart: (() -> Void)?
+    #endif
 
     #if os(macOS)
     /// No nib: an `NSViewController` without one must create its own view.
@@ -48,9 +56,18 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         tearDown()
     }
     #else
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        appeared = true
+        let start = pendingStart
+        pendingStart = nil
+        start?()
+    }
+
     /// Dismissed by the system (or after completion): lock and forget the session.
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        appeared = false
         tearDown()
     }
     #endif
@@ -190,7 +207,16 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         self.session = session
         self.model = model
         host(AutoFillRootView(model: model, session: session, request: request))
+        #if os(iOS)
+        let start = { Task { await model.start() } }
+        if appeared {
+            _ = start()
+        } else {
+            pendingStart = { _ = start() }
+        }
+        #else
         Task { await model.start() }
+        #endif
     }
 
     /// The shared store, settings and keychain service of the account that answers the request: the
@@ -214,6 +240,9 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// locked, no completion), the session is locked and dropped, and the view is removed.
     private func tearDown() {
         requestEnded = true
+        #if os(iOS)
+        pendingStart = nil
+        #endif
         model?.abandon()
         model = nil
         session?.lock(publishPending: false)
@@ -256,6 +285,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// `AutoFillResult` to `extensionContext`. The configuration request always ends with
     /// `completeExtensionConfigurationRequest` (its screen ends with the model's `cancel`).
     private func answer(_ result: AutoFillResult, for request: AutoFillRequest?) {
+        Self.log.info("answering: \(Self.kind(of: result), privacy: .public)")
         if case .configuration? = request {
             extensionContext.completeExtensionConfigurationRequest()
             return
@@ -297,6 +327,21 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             #endif
         case .cancelled(let failure):
             cancel(failure)
+        }
+    }
+
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "autofill-extension")
+
+    /// The result's kind for the log: never a value.
+    private static func kind(of result: AutoFillResult) -> String {
+        switch result {
+        case .password: "password"
+        case .oneTimeCode: "code"
+        case .passkeyAssertion: "passkey assertion"
+        case .passkeyRegistration: "passkey registration"
+        case .text: "text"
+        case .saved: "saved"
+        case .cancelled(let failure): "cancelled \(failure)"
         }
     }
 

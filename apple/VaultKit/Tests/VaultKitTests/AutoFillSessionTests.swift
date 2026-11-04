@@ -220,6 +220,25 @@ struct AutoFillSessionTests {
         #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
     }
 
+    /// The AutoFill extension publishes after a pick, then fills: a system store that does not
+    /// answer (the iOS 27.0 Simulator's) holds the fill back `limit` at most, and the read list
+    /// is still published when the store answers.
+    @Test func publishNowDoesNotHangOnASilentStore() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        let start = ContinuousClock.now
+        await session.publishAutofillIdentitiesNow(limit: .milliseconds(200))
+        #expect(ContinuousClock.now - start < .seconds(5))
+        #expect(store.inner.identities.isEmpty)
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
     /// A second lock right after the first (nothing open any more) leaves the first one's queued
     /// publish alone.
     @Test func secondLockKeepsTheFirstLocksPublish() async throws {

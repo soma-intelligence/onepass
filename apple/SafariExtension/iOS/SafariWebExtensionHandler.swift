@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import OnePassCore
 import SafariRelay
 import SafariServices
@@ -45,6 +46,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 /// `SafariExtensionVault` (main actor) behind the relay's blocking `VaultGate`, called from the relay
 /// queue. Created lazily on the main actor the first time a request needs it.
 final class ExtensionVault: VaultGate, @unchecked Sendable {
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "safari-vault")
     private let lock = NSLock()
     private var made: SafariExtensionVault?
 
@@ -65,11 +67,19 @@ final class ExtensionVault: VaultGate, @unchecked Sendable {
     }
 
     func state() -> VaultReply {
-        run { $0.state() }
+        Self.note("vault_state", run { $0.state() })
     }
 
     func unlockBiometric() -> VaultReply {
-        run { await $0.unlockWithBiometrics() }
+        Self.note("unlock_biometric", run { await $0.unlockWithBiometrics() })
+    }
+
+    /// The op and its answer in the log, never an account name or a secret.
+    private static func note(_ op: String, _ reply: VaultReply) -> VaultReply {
+        log.notice(
+            "\(op, privacy: .public): locked \(reply.locked), biometry \(reply.biometry, privacy: .public), failure \(reply.failure?.rawValue ?? "none", privacy: .public)"
+        )
+        return reply
     }
 
     func unlockPassword(_ password: Data) -> VaultReply {
