@@ -65,6 +65,10 @@ struct SearchTab: View {
         .navigationTitle("common.search")
         // A category chosen for another search would hide what the next one finds.
         .onChange(of: trimmed.isEmpty) { _, empty in if empty { category = nil } }
+        // Opening a result keeps the search that found it for next time.
+        .onChange(of: model.selectedItem) { _, opened in
+            if opened != nil, isSearching, !trimmed.isEmpty { session.noteSearch(trimmed) }
+        }
     }
 
     // MARK: Before typing
@@ -174,11 +178,12 @@ struct SearchTab: View {
     // MARK: Results
 
     private func resultRow(_ summary: FfiItemSummary, vaultName: String?) -> some View {
+        // No gesture on the link: a simultaneous tap gesture on a NavigationLink in a List swallowed
+        // the tap on iOS 27 and the result never opened. The search is noted when the selection
+        // moves to the opened result (`onChange(of: model.selectedItem)` above).
         NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
             ItemListRow(summary: summary, vaultName: vaultName)
         }
-        // Opening a result keeps the search that found it for next time.
-        .simultaneousGesture(TapGesture().onEnded { session.noteSearch(trimmed) })
     }
 
     private struct Scope: Equatable {
