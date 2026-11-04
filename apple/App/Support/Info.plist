@@ -58,9 +58,9 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>ASCredentialExchangeActivity</string>

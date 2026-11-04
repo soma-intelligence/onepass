@@ -62,6 +62,7 @@ struct GeneralSettings: View {
                     Text("settings.general.siteIcons.footer")
                 }
             }
+            WifiAutoSection()
             Section {
                 Button("Importer…", systemImage: "square.and.arrow.down") {
                     importing = true
@@ -102,6 +103,25 @@ struct GeneralSettings: View {
             }
         }
         .settingsPage("Général")
+    }
+}
+
+/// "Wi-Fi automatique": the only control of the feature (spec 2026-11-04-wifi-auto).
+private struct WifiAutoSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var wifi = model.wifi
+        Section {
+            Toggle("settings.general.wifiAuto", isOn: $wifi.enabled)
+                .accessibilityIdentifier("settings.wifiAuto")
+        } footer: {
+            #if os(macOS)
+            Text("settings.general.wifiAuto.footer.mac")
+            #else
+            Text("settings.general.wifiAuto.footer")
+            #endif
+        }
     }
 }
 

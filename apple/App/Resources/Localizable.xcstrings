@@ -41073,6 +41073,93 @@
         }
       }
     },
+    "settings.general.wifiAuto" : {
+      "comment" : "Réglages > Général: switch of automatic Wi-Fi (router items installed on the device)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic Wi-Fi"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi automático"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi automatique"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi automatico"
+          }
+        }
+      }
+    },
+    "settings.general.wifiAuto.footer" : {
+      "comment" : "Réglages > Général: footer under the automatic Wi-Fi switch, iPhone and iPad",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi networks in your vault join this device on their own."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las redes Wi-Fi de tu bóveda se añaden solas a este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les réseaux Wi-Fi de ton coffre rejoignent cet appareil tout seuls."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le reti Wi-Fi della tua cassaforte si aggiungono da sole a questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.general.wifiAuto.footer.mac" : {
+      "comment" : "Réglages > Général: footer under the automatic Wi-Fi switch, Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi networks in your vault join this Mac, and the ones it joins land in your vault."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las redes Wi-Fi de tu bóveda se añaden a este Mac, y las que él usa llegan a tu bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les réseaux Wi-Fi de ton coffre rejoignent ce Mac, et ceux qu’il rejoint arrivent dans ton coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le reti Wi-Fi della tua cassaforte si aggiungono a questo Mac, e quelle a cui si collega arrivano nella tua cassaforte."
+          }
+        }
+      }
+    },
     "settings.googlePasswordManagerSettings" : {
       "extractionState" : "manual",
       "localizations" : {

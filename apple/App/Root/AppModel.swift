@@ -110,6 +110,9 @@ final class AppModel {
     let cryptoWatch = CryptoWatch()
     /// "Are you travelling?" (spec 2026-11-02): learned places and the suggestion card.
     let travel = TravelDetection()
+    /// "Wi-Fi automatique" (spec 2026-11-04-wifi-auto): the vault's networks on the device, and on
+    /// the Mac the networks it joins in the vault.
+    let wifi = WifiAutoController()
     /// The Travel Mode sheet, opened by the suggestion card ("Oui", "Désactiver").
     var travelSheet: TravelSheetRequest?
     var selectedItem: ItemRef?
@@ -730,12 +733,14 @@ final class AppModel {
             #endif
             travel.appMovedToBackground(false)
             travel.check(travelling: session.state == .unlocked ? session.isTravelling : nil)
+            wifi.appActive(true, model: self)
         case .inactive:
             biometricAutoPrompt.scenePhaseChanged(.inactive)
             accounts.scenePhaseChanged(.inactive)
         case .background:
             biometricAutoPrompt.scenePhaseChanged(.background)
             travel.appMovedToBackground(true)
+            wifi.appActive(false, model: self)
             // A guest session never survives the app leaving the screen (ruling A7).
             publicSession?.end()
             dropPendingOtpLink()

@@ -64,6 +64,10 @@ struct RootView: View {
             .onChange(of: model.session.summaries) {
                 model.companion.sessionChanged()
             }
+            // Wi-Fi automatique: a router item added, edited or synced, or the unlock.
+            .onChange(of: model.primarySession.summariesRevision) {
+                model.wifi.schedule(model)
+            }
             // A vault hidden on this device leaves the widgets too.
             .onChange(of: model.session.hiddenVaultIDs) {
                 model.companion.sessionChanged()

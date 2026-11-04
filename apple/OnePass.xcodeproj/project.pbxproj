@@ -37,6 +37,7 @@
 		1C6456B832432BA0741D678C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2FFEBAA7199C92F167BD66F2 /* Localizable.xcstrings */; };
 		1FCDC473F5E86371EEA0641C /* ApprovalPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BC01A25495F3371464D130 /* ApprovalPanel.swift */; };
 		202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2055202225034EAB82503783 /* MacWifi.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D10599D0904E67A521ADAA /* MacWifi.swift */; };
 		22300EE0A3C12E327C3E2B41 /* SyncChoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
 		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
@@ -157,6 +158,7 @@
 		B6F74C3A30CD7A8C8205842C /* NewItemMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */; };
 		B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */ = {isa = PBXBuildFile; productRef = 451A77F800231FE2450B58B4 /* OnePassCore */; };
 		B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 958DAB1110F5AA509D48EAC7 /* CompanionLink */; };
+		B79CBE1CA10296A11E15570C /* HotspotInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */; };
 		B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */; };
 		BBD33D1A14745D3CC8C23455 /* CryptoCoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */; };
 		BDC6718A358BAB7355968523 /* OnePassSafariMobile.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -183,6 +185,7 @@
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
+		D61F8F4E86F33CC8B8CA8DC3 /* WifiAutoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */; };
 		D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */ = {isa = PBXBuildFile; fileRef = E364C6482B7E724032103715 /* onepass-icons.bin */; };
 		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
@@ -335,6 +338,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WifiAutoController.swift; sourceTree = "<group>"; };
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
@@ -361,6 +365,7 @@
 		1AA46BB707E6DFF25141F358 /* AddAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheet.swift; sourceTree = "<group>"; };
 		1B93AA639B4849F20B357AE9 /* CryptoReceiveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoReceiveSheet.swift; sourceTree = "<group>"; };
 		1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewItemMenu.swift; sourceTree = "<group>"; };
+		1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotspotInstaller.swift; sourceTree = "<group>"; };
 		1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLinkPicker.swift; sourceTree = "<group>"; };
 		1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariSetupViews.swift; sourceTree = "<group>"; };
 		1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseRoot.swift; sourceTree = "<group>"; };
@@ -490,6 +495,7 @@
 		C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsPage.swift; sourceTree = "<group>"; };
 		C1B99E34B1CA7214163402DD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchWidgets.swift; sourceTree = "<group>"; };
+		C4D10599D0904E67A521ADAA /* MacWifi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWifi.swift; sourceTree = "<group>"; };
 		C50C7FBA0DC3ED271077D28C /* JoinCodeSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinCodeSteps.swift; sourceTree = "<group>"; };
 		C6B5E824B2A8B23D5B4AA316 /* OnePassSafariUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassSafariUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveMemberSheet.swift; sourceTree = "<group>"; };
@@ -668,6 +674,7 @@
 				BCB77103B671F01316B2565E /* Sharing */,
 				8F7E71C8A920E57CFD7950C9 /* Support */,
 				1980F65E74DD51CFFD5BCD73 /* Vaults */,
+				2B9AD43DB4E6585C78CCF727 /* Wifi */,
 				0D64EBFE57E2DE8181340998 /* OnePassApp.swift */,
 			);
 			path = App;
@@ -719,6 +726,16 @@
 				0509E2F506F523BC7E788AE2 /* Widgets */,
 				B1C26DF3EFF5A88D1D2D533A /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		2B9AD43DB4E6585C78CCF727 /* Wifi */ = {
+			isa = PBXGroup;
+			children = (
+				1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */,
+				C4D10599D0904E67A521ADAA /* MacWifi.swift */,
+				00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */,
+			);
+			path = Wifi;
 			sourceTree = "<group>";
 		};
 		4169FBB3A63671BA9FD330C7 /* Intents */ = {
@@ -1799,6 +1816,7 @@
 				2753A5E46E6521FB36D5AC02 /* GlanceMapping.swift in Sources */,
 				3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */,
 				7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */,
+				B79CBE1CA10296A11E15570C /* HotspotInstaller.swift in Sources */,
 				0FEE4F27F2083359D12163E0 /* IdentityChangeView.swift in Sources */,
 				AFBE12EE3D68AE79110EA0D1 /* ImportSheet.swift in Sources */,
 				BEE689BB8A0E7E69B6AF46DB /* IntegrityFailureView.swift in Sources */,
@@ -1818,6 +1836,7 @@
 				1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */,
 				C2254D84DAD275D97FCC7692 /* LockVaultIntent.swift in Sources */,
 				E04761763662B47771A1A831 /* LockView.swift in Sources */,
+				2055202225034EAB82503783 /* MacWifi.swift in Sources */,
 				9C373AB08DC115C907C85D82 /* MembersView.swift in Sources */,
 				0CC7CE12C087FB5B9DE37825 /* MenuFieldEditor.swift in Sources */,
 				2370DDB10983D8E556FD40DB /* MigrationSheet.swift in Sources */,
@@ -1886,6 +1905,7 @@
 				E3FAF6588A99559716A0EF40 /* WatchtowerModel.swift in Sources */,
 				9EA53D0BF2DA9CB15911C35D /* WatchtowerPage.swift in Sources */,
 				BF045866C7ACBB554202D61C /* WatchtowerTab.swift in Sources */,
+				D61F8F4E86F33CC8B8CA8DC3 /* WifiAutoController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2047,6 +2067,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
+				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -2268,6 +2290,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
+				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -2830,6 +2854,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
+				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3233,6 +3259,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
+				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
