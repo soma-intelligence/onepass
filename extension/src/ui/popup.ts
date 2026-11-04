@@ -7,6 +7,7 @@
 // and "Oublier mes choix sur ce site".
 import { ext } from "../shared/browser";
 import { t } from "../shared/i18n";
+import type { UiToBg } from "../shared/messages";
 import {
   CUSTOM_MAX_LENGTH,
   CUSTOM_MIN_LENGTH,
@@ -46,6 +47,8 @@ import {
   parseItem,
   parseItems,
   parseLocked,
+  parseNativeVaultState,
+  type NativeVaultState,
   parseOutcome,
   parsePaired,
   parsePending,
@@ -359,7 +362,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         call(deps.send, { type: "popup_status" }, parseStatus).then((r) => {
           if (r.ok && !r.value.locked) return load();
           if (r.ok && --left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
-          else if (r.ok) renderLocked();
+          else if (r.ok) renderLockedPlain();
           else return load();
           return undefined;
         }),
@@ -368,7 +371,126 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     timers.setTimeout(check, UNLOCK_POLL_MS);
   }
 
-  function renderLocked(): void {
+  /** Face ID ran once by itself in this popup: never again without a tap (no loop). */
+  let autoBiometricDone = false;
+  /** A native unlock is running: the buttons wait. */
+  let unlocking = false;
+  /** The native vault said unlocked once and the bridge still said locked: no second round. */
+  let nativeSettled = false;
+
+  /**
+   * Locked. iOS (IOSSAF-01): the native vault of the Safari handler answers, and the popup turns
+   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans OnePass".
+   */
+  function renderLocked(): Promise<void> {
+    return track(
+      call(deps.send, { type: "popup_vault" }, parseNativeVaultState).then((r) => {
+        if (r.ok && r.value.locked) return renderUnlockSheet(r.value);
+        if (r.ok && !nativeSettled) {
+          nativeSettled = true;
+          return load();
+        }
+        renderLockedPlain();
+        return undefined;
+      }),
+    );
+  }
+
+  function unlockErrorText(v: NativeVaultState): string {
+    switch (v.error) {
+      case "wrong_password":
+        return t("unlock.wrongPassword");
+      case "locked_out":
+        return v.message ?? t("unlock.lockedOut");
+      case "password_required":
+        return t("unlock.passwordRequired");
+      case "no_account":
+        return t("unlock.noAccount");
+      case "failed":
+        return v.message ?? errorText("internal");
+      default:
+        return "";
+    }
+  }
+
+  /** Face ID (or Touch ID) once by itself when the policy allows it, then the button; the master password always. */
+  function renderUnlockSheet(v: NativeVaultState): void {
+    const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    const reason = v.error ? unlockErrorText(v) : "";
+    if (reason) errLine.textContent = reason;
+    const after = (r: Awaited<ReturnType<typeof callVault>>): Promise<void> | undefined => {
+      unlocking = false;
+      if (!r.ok) {
+        renderLockedPlain();
+        return undefined;
+      }
+      if (!r.value.locked) return load();
+      renderUnlockSheet(r.value);
+      return undefined;
+    };
+    const biometric = (): void => {
+      if (unlocking) return;
+      unlocking = true;
+      void track(callVault({ type: "popup_unlock_biometric" }).then(after));
+    };
+    const input = h("input", {
+      class: "input unlock-input",
+      attrs: {
+        type: "password",
+        autocomplete: "off",
+        autocapitalize: "off",
+        spellcheck: "false",
+        enterkeyhint: "go",
+        "aria-label": t("unlock.masterPassword"),
+        placeholder: t("unlock.masterPassword"),
+      },
+    });
+    const submit = (e?: Event): void => {
+      e?.preventDefault();
+      if (unlocking || input.value.length === 0) return;
+      unlocking = true;
+      const password = input.value;
+      input.value = "";
+      void track(callVault({ type: "popup_unlock_password", password }).then(after));
+    };
+    const kind = v.biometry === "none" ? null : v.biometry;
+    const bio = kind
+      ? h(
+          "button",
+          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: () => biometric() } },
+          icon(kind === "touchID" ? "touchid" : "faceid", 18),
+          t(kind === "touchID" ? "unlock.withTouchId" : kind === "opticID" ? "unlock.withOpticId" : "unlock.withFaceId"),
+        )
+      : null;
+    center(
+      h(
+        "div",
+        { class: "unlock-sheet" },
+        h("span", { class: "unlock-mark" }, mark("l")),
+        h("h1", null, t("ui.onepassLocked")),
+        v.account ? h("p", { class: "message-detail unlock-account" }, v.account) : null,
+        bio,
+        h(
+          "form",
+          { class: "unlock-form", on: { submit } },
+          input,
+          h("button", { class: kind ? "btn" : "btn btn-primary", attrs: { type: "submit" } }, t("unlock.unlock")),
+        ),
+        v.message && v.error === "password_required" ? h("p", { class: "message-detail" }, v.message) : null,
+        errLine,
+      ),
+      forgetButton(),
+    );
+    // One automatic try per popup, and never after the policy asked for the password.
+    if (kind && !autoBiometricDone && !v.error) {
+      autoBiometricDone = true;
+      biometric();
+    } else if (!kind) input.focus();
+  }
+
+  const callVault = (m: UiToBg) => call(deps.send, m, parseNativeVaultState);
+
+  function renderLockedPlain(): void {
     center(
       mark("l"),
       h("h1", null, t("ui.onepassLocked")),
@@ -617,7 +739,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   function handleError(code: string): void {
     stopTotp();
-    if (code === "locked") renderLocked();
+    if (code === "locked") void renderLocked();
     else if (code === "unpaired") renderUnpaired();
     else if (code === "host_missing") renderHostMissing();
     else toast(errorText(code), "error");
@@ -971,7 +1093,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (!r.ok) {
       if (r.code === "unpaired") renderUnpaired();
       else if (r.code === "host_missing") renderHostMissing();
-      else if (r.code === "locked") renderLocked();
+      else if (r.code === "locked") await renderLocked();
       else renderError(r.code);
       return;
     }
@@ -979,7 +1101,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     // The extension paired itself with the app while opening: said once, over the rendered view.
     const connected = status.connected === true;
     if (status.locked) {
-      renderLocked();
+      await renderLocked();
       if (connected) toast(t("popup.connectedToOnepass"));
       return;
     }

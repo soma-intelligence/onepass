@@ -11,7 +11,7 @@ import { BgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import type { ChainView } from "../../src/shared/ui";
 import { type Answer, FakeClient, record } from "./fake-client";
-import { EXT_ID, FakeExt, csSender, uiSender } from "./fake-ext";
+import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
 
 const SITE = "https://atlas-cloud.test";
 
@@ -263,6 +263,62 @@ describe("menu extras", () => {
     const { ext } = await setup(undefined, async () => null);
     const { token, ui } = await menu(ext);
     expect(await ext.send({ type: "menu_vault", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("MS-03: after an unlock this menu asked for, menu_resume closes it and runs smart fill once", async () => {
+    const { ext, clock } = await setup();
+    const { token, ui } = await menu(ext);
+    // Never without an unlock asked from this menu.
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    await ext.send({ type: "menu_unlock", token }, ui);
+    clock.t += 10_000;
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ ok: {} });
+    const sent = ext.sentToTabs.map((x) => x.message as { type: string });
+    expect(sent.at(-2)).toEqual({ type: "remove_frame", kind: "menu" });
+    expect(ext.sentToTabs.at(-1)).toEqual({ tabId: 7, message: { type: "smart_fill" }, options: { documentId: "doc-1" } });
+    // Once: the token died with the menu, and a second resume is refused.
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("MS-03: menu_resume is refused too late, from another tab, and in a frame", async () => {
+    const { ext, clock } = await setup();
+    const { token, ui } = await menu(ext);
+    await ext.send({ type: "menu_unlock", token }, ui);
+    expect(await ext.send({ type: "menu_resume", token }, uiSender(`menu.html#${token}`, 8))).toEqual({ err: "invalid" });
+    clock.t += 3 * 60 * 1000 + 1;
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+
+    ext.setFrame(7, 3, `${SITE}/frame`, "doc-3");
+    const r = (await ext.send(
+      { type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login" },
+      csSender(`${SITE}/frame`, 7, 3, { documentId: "doc-3" }),
+    )) as { ok: { url: string } };
+    const t3 = hashOf(r.ok.url);
+    const ui3 = uiSender(`menu.html#${t3}`, 7);
+    await ext.send({ type: "menu_unlock", token: t3 }, ui3);
+    expect(await ext.send({ type: "menu_resume", token: t3 }, ui3)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+  });
+
+  it("IOSSAF-01: the popup reads and unlocks the native vault; refused where there is none", async () => {
+    const calls: NativeVaultCall[] = [];
+    const vault = async (call: NativeVaultCall): Promise<NativeVault | null> => {
+      calls.push(call);
+      return { locked: call.op === "vault_state", account: "Camille", biometry: "faceID" };
+    };
+    const { ext } = await setup(undefined, vault);
+    const popup = uiSender("popup.html");
+    expect(await ext.send({ type: "popup_vault" }, popup)).toEqual({ ok: { locked: true, account: "Camille", biometry: "faceID" } });
+    expect(await ext.send({ type: "popup_unlock_biometric" }, popup)).toEqual({ ok: { locked: false, account: "Camille", biometry: "faceID" } });
+    expect(await ext.send({ type: "popup_unlock_password", password: "pw" }, popup)).toHaveProperty("ok");
+    expect(calls).toEqual([{ op: "vault_state" }, { op: "unlock_biometric" }, { op: "unlock_password", password: "pw" }]);
+    // Only from the popup page.
+    expect(await ext.send({ type: "popup_unlock_biometric" }, uiSender("menu.html#x", 7))).toBe(NO_REPLY);
+    expect(calls).toHaveLength(3);
+
+    const mac = await setup(undefined, async () => null);
+    expect(await mac.ext.send({ type: "popup_vault" }, popup)).toEqual({ err: "invalid" });
   });
 
   it("menu_unlock asks the host, menu_close removes the frame", async () => {

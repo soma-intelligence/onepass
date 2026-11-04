@@ -376,6 +376,14 @@ function height(v: unknown): number {
 const GEN_KINDS: ReadonlySet<string> = new Set(["smart", "random", "memorable", "pin"]);
 const SIGNUP_MODES: ReadonlySet<SignupMode> = new Set<SignupMode>(["password", "passkey"]);
 
+/** A master password for the native unlock: text, 1 to 1024 UTF-8 bytes (RelayRequest.maxPassword). */
+function masterPassword(v: unknown): string {
+  if (typeof v !== "string") throw new Invalid();
+  const n = new TextEncoder().encode(v).length;
+  if (n === 0 || n > 1024) throw new Invalid();
+  return v;
+}
+
 /** A fully validated, rebuilt extension page message, or null. */
 export function parseUiToBg(m: unknown): UiToBg | null {
   try {
@@ -387,6 +395,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_unlock":
       case "menu_vault":
       case "menu_unlock_biometric":
+      case "menu_resume":
       case "menu_close":
       case "menu_keys":
       case "overlay_init":
@@ -400,13 +409,11 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
-      case "menu_unlock_password": {
+      case "menu_unlock_password":
         // The master password from the iOS unlock sheet: text, 1 to 1024 UTF-8 bytes.
-        if (typeof o.password !== "string") return null;
-        const n = new TextEncoder().encode(o.password).length;
-        if (n === 0 || n > 1024) return null;
-        return { type: o.type, token: token(o.token), password: o.password };
-      }
+        return { type: o.type, token: token(o.token), password: masterPassword(o.password) };
+      case "popup_unlock_password":
+        return { type: o.type, password: masterPassword(o.password) };
       case "menu_signup":
         return { type: o.type, token: token(o.token), mode: member<SignupMode>(o.mode, SIGNUP_MODES) };
       case "menu_signin": {
@@ -447,6 +454,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "popup_status":
       case "popup_pending":
       case "popup_unlock":
+      case "popup_vault":
+      case "popup_unlock_biometric":
       case "popup_suggestions":
       case "popup_history":
       case "popup_pair_auto":

@@ -102,6 +102,9 @@ interface PlanForMenu {
   signup?: PlanOut;
 }
 
+/** A menu may resume its fill this long after its user asked to unlock (Touch ID in the app, the sheet). */
+export const RESUME_WINDOW_MS = 3 * 60 * 1000;
+
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const now = opts.now ?? Date.now;
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
@@ -310,6 +313,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     session,
     pairing,
     openApp,
+    nativeVault: vaultCall,
     filler,
     analyses,
     onLock: () => saveFlow.clearGenerated(),
@@ -357,6 +361,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     const rec = await menus.resolve(token, from);
     if (!rec) throw new BgError("invalid");
     return rec;
+  };
+
+  /**
+   * Menus whose user asked to unlock (MS-03), by token, with the time: once unlocked, the menu
+   * may resume the fill once (`menu_resume`). Memory only, no secret.
+   */
+  const unlockAsked = new Map<string, number>();
+  const askedUnlock = (token: string): void => {
+    for (const [t, at] of unlockAsked) if (now() - at > RESUME_WINDOW_MS) unlockAsked.delete(t);
+    unlockAsked.set(token, now());
   };
 
   const handlers: Handlers = {
@@ -599,6 +613,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_unlock: async (m, from) => {
         await menuRecord(m.token, from);
+        askedUnlock(m.token);
         await openApp();
         return session.request({ op: "unlock" });
       },
@@ -608,11 +623,28 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_unlock_biometric: async (m, from) => {
         await menuRecord(m.token, from);
+        askedUnlock(m.token);
         return vaultCall({ op: "unlock_biometric" });
       },
       menu_unlock_password: async (m, from) => {
         await menuRecord(m.token, from);
+        askedUnlock(m.token);
         return vaultCall({ op: "unlock_password", password: m.password });
+      },
+      menu_resume: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const at = unlockAsked.get(m.token);
+        unlockAsked.delete(m.token);
+        // Only after an unlock this very menu asked for, lately; only in the top frame (a frame's
+        // menu reloads instead: no fill a frame did not ask for).
+        if (at === undefined || now() - at > RESUME_WINDOW_MS || now() < at || rec.frameId !== 0) throw new BgError("invalid");
+        const s = await session.request({ op: "status" });
+        if (s.locked) throw new BgError("locked");
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
+        const msg: BgToCs = { type: "smart_fill" };
+        await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: 0 });
+        return {};
       },
       menu_keys: async (m, from) => {
         await menuRecord(m.token, from);

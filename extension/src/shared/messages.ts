@@ -333,6 +333,11 @@ export type UiToBg =
   | { type: "menu_vault"; token: string }
   | { type: "menu_unlock_biometric"; token: string }
   | { type: "menu_unlock_password"; token: string; password: string }
+  /**
+   * Unlocked from this menu (the app's Touch ID on the Mac, the sheet on iOS): the fill the user
+   * asked for goes on in the menu's frame (smart fill, once per unlock asked from this menu).
+   */
+  | { type: "menu_resume"; token: string }
   | { type: "menu_close"; token: string }
   /** The page's content height: the frame is sized to it (clamped by the content script). */
   | { type: "menu_resize"; token: string; height: number }
@@ -359,6 +364,13 @@ export type UiToBg =
   | { type: "popup_pending" }
   | { type: "popup_pending_decide"; id: string; decision: "save" | "update" | "never" | "dismiss" }
   | { type: "popup_unlock" }
+  /**
+   * iOS (IOSSAF-01): the unlock sheet in the toolbar popup, the same native vault calls as the
+   * menu's (`menu_vault` and its two unlocks); refused with "invalid" where there is none.
+   */
+  | { type: "popup_vault" }
+  | { type: "popup_unlock_biometric" }
+  | { type: "popup_unlock_password"; password: string }
   | { type: "popup_search"; query: string }
   | { type: "popup_suggestions" }
   | { type: "popup_item"; itemId: string }

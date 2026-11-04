@@ -156,6 +156,52 @@ describe("popup", () => {
     expect(w.types().filter((t) => t === "popup_unlock")).toHaveLength(1);
   });
 
+  it("IOSSAF-01 (iOS): locked, the popup is the unlock sheet; Face ID once by itself, then the list", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_vault") return { ok: { locked: true, account: "Camille", biometry: "faceID" } };
+      if (m.type === "popup_unlock_biometric") {
+        locked = false;
+        return { ok: { locked: false, account: "Camille", biometry: "faceID" } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    await handle.settled();
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock_biometric")).toHaveLength(1);
+    // Never the app's button on iOS.
+    expect(w.types()).not.toContain("popup_unlock");
+  });
+
+  it("IOSSAF-01 (iOS): a cancelled Face ID stays; the master password opens", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_vault") return { ok: { locked: true, account: "Camille", biometry: "faceID" } };
+      if (m.type === "popup_unlock_biometric") return { ok: { locked: true, account: "Camille", biometry: "faceID", error: "cancelled" } };
+      if (m.type === "popup_unlock_password") {
+        locked = false;
+        return { ok: { locked: false, account: "Camille", biometry: "faceID" } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    await handle.settled();
+    expect(text(r)).toContain("Camille");
+    expect(text(r)).not.toContain("Déverrouille l'app");
+    const input = r.querySelector<HTMLInputElement>("input[type=password]")!;
+    input.value = "bon-mot-de-passe";
+    r.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    await handle.settled();
+    expect(input.value).toBe("");
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock_biometric")).toHaveLength(1);
+  });
+
   it("locked: after a minute without unlock, the button comes back", async () => {
     const w = worker((m) => {
       if (m.type === "popup_status") return { ok: { ...STATUS, locked: true } };

@@ -391,6 +391,13 @@ describe("message validation", () => {
       token,
       password: "mot de passe",
     });
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "mot de passe" })).toEqual({ type: "popup_unlock_password", password: "mot de passe" });
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "" })).toBeNull();
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "é".repeat(513) })).toBeNull();
+    expect(parseUiToBg({ type: "popup_unlock_password" })).toBeNull();
+    expect(parseUiToBg({ type: "popup_vault", extra: 1 })).toEqual({ type: "popup_vault" });
+    expect(parseUiToBg({ type: "menu_resume", token })).toEqual({ type: "menu_resume", token });
+    expect(parseUiToBg({ type: "menu_resume", token: "short" })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: "" })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: 3 })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: "é".repeat(513) })).toBeNull();

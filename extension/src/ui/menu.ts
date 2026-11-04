@@ -232,14 +232,27 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       if (!token) return;
       void call(deps.send, { type: "menu_init", token }, parseMenuInit).then((r) => {
         if (r.ok) {
-          render(r.value);
-          void listenKeys();
+          // Unlocked with Touch ID in the app (MS-03): the fill asked for goes on by itself.
+          void resume(() => {
+            render(r.value);
+            void listenKeys();
+          });
         } else if (r.code !== "locked") renderState(r.code, origin);
         else if (--left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
         else renderState("locked", origin);
       });
     };
     timers.setTimeout(check, UNLOCK_POLL_MS);
+  }
+
+  /**
+   * Unlocked after this menu asked: the worker closes the menu and runs smart fill in its frame
+   * (one click plus Touch ID or Face ID). Refused (a frame, too late): `fallback`, the menu again.
+   */
+  async function resume(fallback: () => void): Promise<void> {
+    if (!token) return fallback();
+    const r = await call(deps.send, { type: "menu_resume", token }, parseEmpty);
+    if (!r.ok) fallback();
   }
 
   /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
@@ -263,7 +276,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         return;
       }
       if (!r.value.locked) {
-        void load();
+        void resume(() => void load());
         return;
       }
       renderUnlock(r.value, origin);

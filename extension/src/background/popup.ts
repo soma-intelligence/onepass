@@ -19,6 +19,7 @@ import type { FillTarget, Filler } from "./fill";
 import type { FormGenerator, Generated } from "./generate";
 import type { AutofillHistory } from "./history";
 import type { PairingFlow } from "./pairing";
+import type { NativeVault, NativeVaultCall } from "./safari";
 import type { Handlers } from "./router";
 import { BgError, type Session } from "./session";
 
@@ -40,6 +41,11 @@ export interface PopupDeps {
   session: Pick<Session, "request" | "onLocked">;
   /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
   openApp?: () => Promise<boolean>;
+  /**
+   * The native vault of the iOS Safari handler (IOSSAF-01): the popup's unlock sheet. Rejects
+   * with "invalid" where there is none (macOS, other browsers): the popup keeps the app button.
+   */
+  nativeVault?: (call: NativeVaultCall) => Promise<NativeVault>;
   pairing: Pick<
     PairingFlow,
     "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing" | "autoPair" | "takeJustPaired"
@@ -314,6 +320,12 @@ export class PopupBackend {
     historyEntries = [];
   }
 
+  /** One native vault call for the popup's unlock sheet; "invalid" where there is no native vault. */
+  private async vault(call: NativeVaultCall): Promise<NativeVault> {
+    if (!this.deps.nativeVault) throw new BgError("invalid");
+    return this.deps.nativeVault(call);
+  }
+
   /** "Oublier cet appairage" (spec 6.4): drops the record and everything the popup was shown. */
   async forget(): Promise<Record<string, never>> {
     await this.deps.pairing.forgetPairing();
@@ -329,6 +341,9 @@ export class PopupBackend {
         await this.deps.openApp?.();
         return this.deps.session.request({ op: "unlock" });
       },
+      popup_vault: async () => this.vault({ op: "vault_state" }),
+      popup_unlock_biometric: async () => this.vault({ op: "unlock_biometric" }),
+      popup_unlock_password: async (m) => this.vault({ op: "unlock_password", password: m.password }),
       popup_suggestions: async () => this.suggestions(),
       popup_search: async (m) => this.search(m.query),
       popup_item: async (m) => this.getItem(m.itemId),

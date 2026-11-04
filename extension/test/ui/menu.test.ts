@@ -304,6 +304,8 @@ describe("inline menu", () => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
       if (m.type === "menu_vault") return { err: "invalid" };
       if (m.type === "menu_unlock") return ok({ locked: true });
+      // A frame's menu, or too late: the worker refuses to resume, the menu reloads.
+      if (m.type === "menu_resume") return { err: "invalid" };
       return ok();
     });
     await handle.ready;
@@ -352,13 +354,47 @@ describe("inline menu", () => {
         locked = false;
         return ok({ locked: false, account: "Camille", biometry: "faceID" });
       }
+      if (m.type === "menu_resume") return { err: "invalid" };
       return ok();
     });
     await handle.ready;
     await flush();
     await flush();
-    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_resume", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("MS-03 (iOS): unlocked from the sheet, the worker resumes the fill: no reload, one Face ID", async () => {
+    const { handle, worker } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 4; i++) await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_resume"]);
+  });
+
+  it("MS-03 (Mac): Touch ID in the app, then the menu resumes the fill by itself", async () => {
+    let locked = true;
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return { err: "invalid" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    locked = false;
+    timers.runTimeouts();
+    await flush();
+    await flush();
+    expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(1);
+    expect(worker.types().at(-1)).toBe("menu_resume");
   });
 
   it("iOS: a cancelled Face ID never runs again by itself; the button and the password stay", async () => {
@@ -389,6 +425,7 @@ describe("inline menu", () => {
         locked = false;
         return ok({ locked: false, account: "Camille", biometry: "none" });
       }
+      if (m.type === "menu_resume") return { err: "invalid" };
       return ok();
     });
     await handle.ready;
