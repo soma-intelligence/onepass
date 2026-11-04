@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OnePass</string>
+    <string name="settings_title">Réglages</string>
+    <string name="wifi_auto_title">Wi-Fi automatique</string>
+    <string name="wifi_auto_idle">Les réseaux de tes routeurs rejoignent Android dès que ton coffre est ouvert.</string>
+    <plurals name="wifi_auto_installed">
+        <item quantity="one">%d réseau de ton coffre est connu d\'Android. Ton téléphone s\'y connecte tout seul.</item>
+        <item quantity="other">%d réseaux de ton coffre sont connus d\'Android. Ton téléphone s\'y connecte tout seul.</item>
+    </plurals>
+    <string name="wifi_auto_none">Aucun réseau à proposer : il faut un SSID et un mot de passe WPA2 ou WPA3. Les réseaux ouverts et d\'entreprise restent dehors.</string>
+    <string name="wifi_auto_pending">Android te demandera une seule fois d\'autoriser les réseaux suggérés par OnePass, la première fois que l\'un d\'eux sera à portée.</string>
+    <string name="wifi_auto_rejected">Android a refusé les réseaux suggérés par OnePass. Touche ici pour les autoriser dans les réglages de l\'app.</string>
+    <string name="wifi_auto_off">Désactivé. Les réseaux de OnePass ont quitté Android.</string>
+    <string name="wifi_auto_failed">Android a refusé un réseau (%s). OnePass réessaie à la prochaine modification du coffre.</string>
 </resources>

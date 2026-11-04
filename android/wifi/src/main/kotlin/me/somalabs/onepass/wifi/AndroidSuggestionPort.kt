@@ -17,7 +17,8 @@ class AndroidSuggestionPort(context: Context) : SuggestionPort {
     override fun installedSsids(): Set<String>? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return try {
-            wifi.networkSuggestions.mapNotNull { it.ssid }.toSet()
+            // Quotes stripped in case a release adds them: a mismatch would rebuild at each sync.
+            wifi.networkSuggestions.mapNotNull { it.ssid?.removeSurrounding("\"") }.toSet()
         } catch (e: SecurityException) {
             null
         }
@@ -41,8 +42,18 @@ class AndroidSuggestionPort(context: Context) : SuggestionPort {
 
     override fun remove(keys: List<NetworkKey>): PortResult {
         // Android matches a suggestion by SSID and security type, not by passphrase.
-        val suggestions = keys.map { build(WifiNetwork(it.ssid, REMOVAL_PLACEHOLDER, it.security, false, ""), REMOVAL_PLACEHOLDER) }
-        return removal(call { wifi.removeNetworkSuggestions(suggestions) })
+        val suggestions = keys.map { build(WifiNetwork(it.ssid, REMOVAL_PLACEHOLDER, it.security, false, "", ""), REMOVAL_PLACEHOLDER) }
+        return removal(
+            call {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    // Android 13: a network in use stays up until the phone leaves it,
+                    // so a vault glitch (partial sync, hidden vault) never cuts a call.
+                    wifi.removeNetworkSuggestions(suggestions, WifiManager.ACTION_REMOVE_SUGGESTION_LINGER)
+                } else {
+                    wifi.removeNetworkSuggestions(suggestions)
+                }
+            },
+        )
     }
 
     // An empty list removes every suggestion of the app.

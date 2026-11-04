@@ -1,5 +1,44 @@
 package me.somalabs.onepass.wifi
 
+/** The two personal security types an Android suggestion can carry. */
+enum class WifiSecurity { WPA2, WPA3 }
+
+/** What Android keys a suggestion by: SSID and security type. */
+data class NetworkKey(val ssid: String, val security: WifiSecurity)
+
+/**
+ * One network OnePass hands to Android, as the core chose it
+ * (`Session.wifiNetworks`, shared model `onepass_core::wifi`: SSID plus a
+ * WPA2 or WPA3 personal key, never open, WEP or enterprise, one per SSID).
+ * [fingerprint] is secret free and moves when the item changes. The
+ * passphrase never shows in logs.
+ */
+data class WifiNetwork(
+    val ssid: String,
+    val passphrase: String,
+    val security: WifiSecurity,
+    val hidden: Boolean,
+    val itemId: String,
+    val fingerprint: String,
+) {
+    val key: NetworkKey get() = NetworkKey(ssid, security)
+
+    /**
+     * A raw 256-bit key (64 hex digits) instead of a passphrase: Android
+     * suggestions only take a passphrase (8 to 63 characters), so such a
+     * network stays off the device rather than failing every sync.
+     */
+    val hasRawKey: Boolean
+        get() = passphrase.length == 64 && passphrase.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+
+    override fun toString(): String =
+        "WifiNetwork(ssid=$ssid, security=$security, hidden=$hidden, itemId=$itemId, " +
+            "fingerprint=$fingerprint, passphrase=[redacted])"
+}
+
+/** What OnePass gave Android for one SSID. No secret. */
+data class Applied(val security: WifiSecurity, val fingerprint: String)
+
 /** Android's answer about the one-time "allow suggested networks" prompt. */
 enum class SuggestionApproval {
     /** Before Android 12 the app cannot ask. */
@@ -13,7 +52,7 @@ enum class SuggestionApproval {
 sealed interface PortResult {
     data object Ok : PortResult
 
-    /** Android refused (status code of WifiManager, or an exception's message). */
+    /** Android refused (status code of WifiManager, or an exception). Never carries a value. */
     data class Refused(val reason: String) : PortResult
 }
 
@@ -28,7 +67,6 @@ interface SuggestionPort {
      */
     fun installedSsids(): Set<String>?
 
-    /** Adds the networks. Where [replacesInPlace] is true, re-adding a key updates it. */
     fun add(networks: List<WifiNetwork>): PortResult
 
     fun remove(keys: List<NetworkKey>): PortResult
@@ -42,32 +80,21 @@ interface SuggestionPort {
     fun approval(): SuggestionApproval
 }
 
-/**
- * What OnePass last installed: one fingerprint per network key, never the
- * passphrase. Lives in app preferences.
- */
+/** What OnePass last installed, by SSID. Lives in app preferences. */
 interface SyncLedger {
-    fun read(): Map<NetworkKey, String>
+    fun read(): Map<String, Applied>
 
-    fun write(entries: Map<NetworkKey, String>)
+    fun write(entries: Map<String, Applied>)
 
     /** Whether the user was already told about the one-time approval. */
     var approvalNoticeShown: Boolean
 }
 
-/**
- * Turns a network into a short keyed digest (HMAC under a key the device
- * keeps), so a changed passphrase shows up without storing it, nor anything
- * an attacker could test guesses against off the device.
- */
-fun interface Fingerprinter {
-    fun fingerprint(network: WifiNetwork): String
-}
-
 /** The changes that bring the device to the vault. */
 data class SyncPlan(
     val add: List<WifiNetwork>,
-    val update: List<WifiNetwork>,
+    /** Each changed network with what Android holds for its SSID now. */
+    val update: List<Pair<WifiNetwork, Applied>>,
     val remove: List<NetworkKey>,
     /** The device lost suggestions the ledger lists: drop them all and install again. */
     val rebuild: Boolean,
@@ -78,30 +105,25 @@ data class SyncPlan(
         /**
          * [installedSsids] is what the platform reports (null when it cannot
          * list): an SSID the ledger lists but the platform lacks means the
-         * suggestions were lost (app data cleared on another path, a system
-         * reset), and the plan rebuilds from scratch.
+         * suggestions were lost, and the plan rebuilds from scratch.
          */
-        fun of(
-            desired: List<WifiNetwork>,
-            ledger: Map<NetworkKey, String>,
-            installedSsids: Set<String>?,
-            fingerprinter: Fingerprinter,
-        ): SyncPlan {
-            val lost = installedSsids != null && ledger.keys.any { it.ssid !in installedSsids }
+        fun of(desired: List<WifiNetwork>, ledger: Map<String, Applied>, installedSsids: Set<String>?): SyncPlan {
+            val lost = installedSsids != null && ledger.keys.any { it !in installedSsids }
             if (lost) return SyncPlan(add = desired, update = emptyList(), remove = emptyList(), rebuild = true)
-            val desiredKeys = desired.map { it.key }.toSet()
-            val add = desired.filter { it.key !in ledger }
-            val update = desired.filter { network ->
-                val known = ledger[network.key]
-                known != null && known != fingerprinter.fingerprint(network)
+            val desiredSsids = desired.map { it.ssid }.toSet()
+            val add = desired.filter { it.ssid !in ledger }
+            val update = desired.mapNotNull { n ->
+                ledger[n.ssid]?.takeIf { it.fingerprint != n.fingerprint }?.let { n to it }
             }
-            val remove = ledger.keys.filter { it !in desiredKeys }.sortedWith(compareBy({ it.ssid }, { it.security }))
+            val remove = ledger.filterKeys { it !in desiredSsids }
+                .map { (ssid, applied) -> NetworkKey(ssid, applied.security) }
+                .sortedBy { it.ssid }
             return SyncPlan(add, update, remove, rebuild = false)
         }
     }
 }
 
-/** What a sync did, for the settings screen. */
+/** What a sync did, for the settings screen. Counts only, never a network. */
 data class SyncReport(
     val enabled: Boolean,
     /** Networks Android now holds from OnePass. */
@@ -113,26 +135,27 @@ data class SyncReport(
     /** True exactly once: the first sync that hands Android networks before the user approved. */
     val showApprovalNotice: Boolean,
     val failure: String? = null,
+    /** Vault networks Android cannot take (raw 64 hex digit keys). */
+    val unsupported: Int = 0,
 )
 
 /**
- * Keeps Android's network suggestions equal to the vault's router items.
+ * Keeps Android's network suggestions equal to the vault's Wi-Fi networks.
  *
  * Idempotent: a second sync with the same vault touches nothing. Called with
- * every router item after each unlock and each change of the vault (save,
+ * the vault's networks after each unlock and each change of the vault (save,
  * trash, restore, archive, remote commit, Travel Mode).
  */
 class WifiAutoSync(
     private val port: SuggestionPort,
     private val ledger: SyncLedger,
-    private val fingerprinter: Fingerprinter,
 ) {
     @Synchronized
-    fun sync(records: List<RouterRecord>, enabled: Boolean): SyncReport {
+    fun sync(networks: List<WifiNetwork>, enabled: Boolean): SyncReport {
         if (!enabled) return disable()
-        val desired = WifiSelection.select(records)
+        val (raw, usable) = networks.partition { it.hasRawKey }
         val known = ledger.read()
-        val plan = SyncPlan.of(desired, known, port.installedSsids(), fingerprinter)
+        val plan = SyncPlan.of(usable, known, port.installedSsids())
         val failure = apply(plan, known)
         val installed = ledger.read()
         val approval = port.approval()
@@ -140,15 +163,17 @@ class WifiAutoSync(
             approval != SuggestionApproval.APPROVED &&
             !ledger.approvalNoticeShown
         if (notice) ledger.approvalNoticeShown = true
+        fun current(n: WifiNetwork) = installed[n.ssid]?.fingerprint == n.fingerprint
         return SyncReport(
             enabled = true,
             installed = installed.size,
-            added = if (plan.rebuild) installed.size else plan.add.count { it.key in installed },
-            updated = plan.update.count { it.key in installed },
-            removed = plan.remove.count { it !in installed },
+            added = plan.add.count(::current),
+            updated = plan.update.count { current(it.first) },
+            removed = plan.remove.count { it.ssid !in installed },
             approval = approval,
             showApprovalNotice = notice,
             failure = failure,
+            unsupported = raw.size,
         )
     }
 
@@ -175,40 +200,42 @@ class WifiAutoSync(
         )
     }
 
-    /** Applies the plan, writing the ledger after each step that Android took. */
-    private fun apply(plan: SyncPlan, known: Map<NetworkKey, String>): String? {
-        val ledgerNow = known.toMutableMap()
+    /** Applies the plan, writing the ledger after each step Android took. */
+    private fun apply(plan: SyncPlan, known: Map<String, Applied>): String? {
+        val now = known.toMutableMap()
         var failure: String? = null
+        fun fail(reason: String) {
+            failure = failure ?: reason
+        }
 
         if (plan.rebuild) {
             when (val r = port.removeAll()) {
-                PortResult.Ok -> ledgerNow.clear()
-                is PortResult.Refused -> return r.reason.also { ledger.write(ledgerNow) }
+                PortResult.Ok -> now.clear()
+                is PortResult.Refused -> return r.reason
             }
-            ledger.write(ledgerNow)
+            ledger.write(now)
         }
 
         if (plan.remove.isNotEmpty()) {
             when (val r = port.remove(plan.remove)) {
-                PortResult.Ok -> plan.remove.forEach { ledgerNow.remove(it) }
-                is PortResult.Refused -> failure = r.reason
+                PortResult.Ok -> plan.remove.forEach { now.remove(it.ssid) }
+                is PortResult.Refused -> fail(r.reason)
             }
-            ledger.write(ledgerNow)
+            ledger.write(now)
         }
 
-        if (plan.update.isNotEmpty()) {
-            if (!port.replacesInPlace) {
-                // Android 10: drop the old copy first, or the add is a duplicate.
-                when (val r = port.remove(plan.update.map { it.key })) {
-                    PortResult.Ok -> plan.update.forEach { ledgerNow.remove(it.key) }
-                    is PortResult.Refused -> failure = failure ?: r.reason
-                }
-                ledger.write(ledgerNow)
+        // A changed security is another Android key, and Android 10 refuses a
+        // duplicate: in both cases the old copy goes first.
+        val replaceFirst = plan.update.filter { (n, old) -> !port.replacesInPlace || old.security != n.security }
+        if (replaceFirst.isNotEmpty()) {
+            when (val r = port.remove(replaceFirst.map { (n, old) -> NetworkKey(n.ssid, old.security) })) {
+                PortResult.Ok -> replaceFirst.forEach { now.remove(it.first.ssid) }
+                is PortResult.Refused -> fail(r.reason)
             }
-            addEach(plan.update, ledgerNow)?.let { failure = failure ?: it }
+            ledger.write(now)
         }
 
-        addEach(plan.add, ledgerNow)?.let { failure = failure ?: it }
+        addEach(plan.update.map { it.first } + plan.add, now)?.let(::fail)
         return failure
     }
 
@@ -216,25 +243,30 @@ class WifiAutoSync(
      * Adds in one call; when Android refuses the batch, one by one so a single
      * bad network does not keep the others off the device.
      */
-    private fun addEach(networks: List<WifiNetwork>, ledgerNow: MutableMap<NetworkKey, String>): String? {
+    private fun addEach(networks: List<WifiNetwork>, now: MutableMap<String, Applied>): String? {
         if (networks.isEmpty()) return null
+        fun record(n: WifiNetwork) {
+            now[n.ssid] = Applied(n.security, n.fingerprint)
+        }
         val batch = port.add(networks)
         if (batch == PortResult.Ok) {
-            networks.forEach { ledgerNow[it.key] = fingerprinter.fingerprint(it) }
-            ledger.write(ledgerNow)
+            networks.forEach(::record)
+            ledger.write(now)
             return null
         }
-        var failure: String? = (batch as PortResult.Refused).reason
+        val failure = (batch as PortResult.Refused).reason
         if (networks.size > 1) {
-            failure = null
-            for (network in networks) {
-                when (val r = port.add(listOf(network))) {
-                    PortResult.Ok -> ledgerNow[network.key] = fingerprinter.fingerprint(network)
-                    is PortResult.Refused -> failure = failure ?: r.reason
+            var first: String? = null
+            for (n in networks) {
+                when (val r = port.add(listOf(n))) {
+                    PortResult.Ok -> record(n)
+                    is PortResult.Refused -> first = first ?: r.reason
                 }
             }
+            ledger.write(now)
+            return first
         }
-        ledger.write(ledgerNow)
+        ledger.write(now)
         return failure
     }
 }

@@ -14,12 +14,14 @@ private class FakePort(
     val held = LinkedHashMap<NetworkKey, WifiNetwork>()
     val calls = mutableListOf<String>()
     var refuseSsids = setOf<String>()
+    var refuseAll = false
     var approvalState = SuggestionApproval.PENDING
 
     override fun installedSsids(): Set<String>? = if (listable) held.keys.map { it.ssid }.toSet() else null
 
     override fun add(networks: List<WifiNetwork>): PortResult {
         calls += "add " + networks.joinToString(",") { it.ssid }
+        if (refuseAll) return PortResult.Refused("app disallowed")
         if (networks.any { it.ssid in refuseSsids }) return PortResult.Refused("invalid network")
         if (!replacesInPlace && networks.any { it.key in held }) return PortResult.Refused("duplicate")
         networks.forEach { held[it.key] = it }
@@ -27,7 +29,7 @@ private class FakePort(
     }
 
     override fun remove(keys: List<NetworkKey>): PortResult {
-        calls += "remove " + keys.joinToString(",") { it.ssid }
+        calls += "remove " + keys.joinToString(",") { "${it.ssid}/${it.security}" }
         keys.forEach { held.remove(it) }
         return PortResult.Ok
     }
@@ -42,37 +44,34 @@ private class FakePort(
 }
 
 private class MemoryLedger : SyncLedger {
-    var entries: Map<NetworkKey, String> = emptyMap()
-    override fun read(): Map<NetworkKey, String> = entries
-    override fun write(entries: Map<NetworkKey, String>) {
+    var entries: Map<String, Applied> = emptyMap()
+    override fun read(): Map<String, Applied> = entries
+    override fun write(entries: Map<String, Applied>) {
         this.entries = entries.toMap()
     }
     override var approvalNoticeShown: Boolean = false
 }
 
-/** Stands in for the keyed HMAC: deterministic, and changes with the passphrase. */
-private val fakeFingerprint = Fingerprinter { "${it.security}|${it.ssid}|${it.hidden}|${it.passphrase.hashCode()}" }
-
 class WifiAutoSyncTest {
-    private fun router(ssid: String, password: String = "test-pass-123", security: String = "WPA2", id: String = ssid) =
-        RouterRecord(id, ssid, password, security, "non")
+    /** As the core hands them over; the fingerprint moves with each edit of the item. */
+    private fun net(ssid: String, version: Int = 1, security: WifiSecurity = WifiSecurity.WPA2, pass: String = "test-pass-$version") =
+        WifiNetwork(ssid, pass, security, hidden = false, itemId = "item-$ssid", fingerprint = "$ssid-v$version")
 
-    private val home = router("Home-Test")
-    private val studio = router("Studio-Test", security = "WPA3")
-    private val cafe = router("Cafe-Test", password = "", security = "Ouvert")
+    private val home = net("Home-Test")
+    private val studio = net("Studio-Test", security = WifiSecurity.WPA3)
 
     @Test
     fun installsTheVaultNetworksOnce() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
 
-        val first = sync.sync(listOf(home, studio, cafe), enabled = true)
+        val first = sync.sync(listOf(home, studio), enabled = true)
         assertEquals(2, first.installed)
         assertEquals(2, first.added)
-        assertEquals(setOf("Home-Test", "Studio-Test"), port.held.keys.map { it.ssid }.toSet())
+        assertEquals(setOf(home.key, studio.key), port.held.keys)
 
         port.calls.clear()
-        val second = sync.sync(listOf(home, studio, cafe), enabled = true)
+        val second = sync.sync(listOf(home, studio), enabled = true)
         assertTrue(port.calls.isEmpty(), "a second sync with the same vault touches nothing: ${port.calls}")
         assertEquals(0, second.added + second.updated + second.removed)
         assertEquals(2, second.installed)
@@ -81,42 +80,45 @@ class WifiAutoSyncTest {
     @Test
     fun addsNewRemovesDeletedUpdatesChanged() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
         sync.sync(listOf(home, studio), enabled = true)
 
         port.calls.clear()
-        val office = router("Office-Test")
-        val homeNewPass = router("Home-Test", password = "changed-pass-9")
-        val report = sync.sync(listOf(homeNewPass, office), enabled = true)
+        val office = net("Office-Test")
+        val homeEdited = net("Home-Test", version = 2)
+        val report = sync.sync(listOf(homeEdited, office), enabled = true)
 
         assertEquals(1, report.added)
         assertEquals(1, report.updated)
         assertEquals(1, report.removed)
-        assertEquals(setOf("Home-Test", "Office-Test"), port.held.keys.map { it.ssid }.toSet())
-        assertEquals("changed-pass-9", port.held[NetworkKey("Home-Test", WifiSecurity.WPA2)]!!.passphrase)
+        assertEquals(setOf(home.key, office.key), port.held.keys)
+        assertEquals("test-pass-2", port.held.getValue(home.key).passphrase)
         // Android 11+: the changed network is re-added in place, never removed first.
-        assertEquals(listOf("remove Studio-Test", "add Home-Test", "add Office-Test"), port.calls)
+        assertEquals(listOf("remove Studio-Test/WPA3", "add Home-Test,Office-Test"), port.calls)
     }
 
     @Test
     fun onAndroid10AChangedNetworkIsRemovedThenAdded() {
         val port = FakePort(replacesInPlace = false, listable = false)
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
         sync.sync(listOf(home), enabled = true)
 
         port.calls.clear()
-        val report = sync.sync(listOf(router("Home-Test", password = "changed-pass-9")), enabled = true)
-        assertEquals(listOf("remove Home-Test", "add Home-Test"), port.calls)
+        val report = sync.sync(listOf(net("Home-Test", version = 2)), enabled = true)
+        assertEquals(listOf("remove Home-Test/WPA2", "add Home-Test"), port.calls)
         assertEquals(1, report.updated)
-        assertEquals("changed-pass-9", port.held.values.single().passphrase)
+        assertEquals("test-pass-2", port.held.values.single().passphrase)
     }
 
     @Test
-    fun aSecurityChangeIsANewKey() {
+    fun aSecurityChangeReplacesTheOldAndroidKey() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
         sync.sync(listOf(home), enabled = true)
-        sync.sync(listOf(router("Home-Test", security = "WPA3")), enabled = true)
+
+        port.calls.clear()
+        sync.sync(listOf(net("Home-Test", version = 2, security = WifiSecurity.WPA3)), enabled = true)
+        assertEquals(listOf("remove Home-Test/WPA2", "add Home-Test"), port.calls)
         assertEquals(listOf(NetworkKey("Home-Test", WifiSecurity.WPA3)), port.held.keys.toList())
     }
 
@@ -124,7 +126,7 @@ class WifiAutoSyncTest {
     fun turningTheSwitchOffRemovesEverythingAndOnBringsItBack() {
         val port = FakePort()
         val ledger = MemoryLedger()
-        val sync = WifiAutoSync(port, ledger, fakeFingerprint)
+        val sync = WifiAutoSync(port, ledger)
         sync.sync(listOf(home, studio), enabled = true)
 
         val off = sync.sync(listOf(home, studio), enabled = false)
@@ -145,17 +147,18 @@ class WifiAutoSyncTest {
     @Test
     fun anEmptyVaultLeavesNoSuggestion() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
         sync.sync(listOf(home, studio), enabled = true)
         val report = sync.sync(emptyList(), enabled = true)
         assertEquals(2, report.removed)
+        assertEquals(0, report.installed)
         assertTrue(port.held.isEmpty())
     }
 
     @Test
     fun suggestionsLostByTheSystemAreInstalledAgain() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
         sync.sync(listOf(home, studio), enabled = true)
 
         port.held.clear() // e.g. Android dropped them
@@ -170,12 +173,13 @@ class WifiAutoSyncTest {
     fun oneRefusedNetworkDoesNotKeepTheOthersOff() {
         val port = FakePort().apply { refuseSsids = setOf("Studio-Test") }
         val ledger = MemoryLedger()
-        val sync = WifiAutoSync(port, ledger, fakeFingerprint)
+        val sync = WifiAutoSync(port, ledger)
         val report = sync.sync(listOf(home, studio), enabled = true)
 
         assertEquals(1, report.installed)
+        assertEquals(1, report.added)
         assertEquals("invalid network", report.failure)
-        assertEquals(setOf("Home-Test"), ledger.entries.keys.map { it.ssid }.toSet())
+        assertEquals(setOf("Home-Test"), ledger.entries.keys)
 
         // Once Android accepts it, the next sync installs only the missing one.
         port.refuseSsids = emptySet()
@@ -187,12 +191,30 @@ class WifiAutoSyncTest {
     }
 
     @Test
+    fun aRefusedUpdateIsRetriedAtTheNextSync() {
+        val port = FakePort()
+        val sync = WifiAutoSync(port, MemoryLedger())
+        sync.sync(listOf(home), enabled = true)
+
+        port.refuseAll = true
+        val refused = sync.sync(listOf(net("Home-Test", version = 2)), enabled = true)
+        assertEquals("app disallowed", refused.failure)
+        assertEquals(0, refused.updated)
+
+        port.refuseAll = false
+        port.calls.clear()
+        val retried = sync.sync(listOf(net("Home-Test", version = 2)), enabled = true)
+        assertEquals(listOf("add Home-Test"), port.calls)
+        assertEquals(1, retried.updated)
+    }
+
+    @Test
     fun theApprovalNoticeShowsExactlyOnce() {
         val port = FakePort()
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
+        val sync = WifiAutoSync(port, MemoryLedger())
 
         // Nothing to suggest yet: no notice.
-        assertFalse(sync.sync(listOf(cafe), enabled = true).showApprovalNotice)
+        assertFalse(sync.sync(emptyList(), enabled = true).showApprovalNotice)
         assertTrue(sync.sync(listOf(home), enabled = true).showApprovalNotice)
         assertFalse(sync.sync(listOf(home, studio), enabled = true).showApprovalNotice)
     }
@@ -200,24 +222,46 @@ class WifiAutoSyncTest {
     @Test
     fun noApprovalNoticeOnceAndroidApproved() {
         val port = FakePort().apply { approvalState = SuggestionApproval.APPROVED }
-        val sync = WifiAutoSync(port, MemoryLedger(), fakeFingerprint)
-        val report = sync.sync(listOf(home), enabled = true)
+        val report = WifiAutoSync(port, MemoryLedger()).sync(listOf(home), enabled = true)
         assertFalse(report.showApprovalNotice)
         assertEquals(SuggestionApproval.APPROVED, report.approval)
     }
 
     @Test
     fun planOfIsPureAndOrdered() {
-        val desired = WifiSelection.select(listOf(home, studio))
         val ledger = mapOf(
-            NetworkKey("Zeta-Test", WifiSecurity.WPA2) to "x",
-            NetworkKey("Alpha-Test", WifiSecurity.WPA2) to "y",
+            "Zeta-Test" to Applied(WifiSecurity.WPA2, "x"),
+            "Alpha-Test" to Applied(WifiSecurity.WPA3, "y"),
+            "Home-Test" to Applied(WifiSecurity.WPA2, "Home-Test-v0"),
         )
-        val plan = SyncPlan.of(desired, ledger, installedSsids = null, fingerprinter = fakeFingerprint)
-        assertEquals(listOf("Home-Test", "Studio-Test"), plan.add.map { it.ssid })
-        assertEquals(listOf("Alpha-Test", "Zeta-Test"), plan.remove.map { it.ssid })
-        assertTrue(plan.update.isEmpty())
+        val plan = SyncPlan.of(listOf(home, studio), ledger, installedSsids = null)
+        assertEquals(listOf("Studio-Test"), plan.add.map { it.ssid })
+        assertEquals(listOf("Home-Test"), plan.update.map { it.first.ssid })
+        assertEquals(
+            listOf(NetworkKey("Alpha-Test", WifiSecurity.WPA3), NetworkKey("Zeta-Test", WifiSecurity.WPA2)),
+            plan.remove,
+        )
         assertFalse(plan.rebuild)
-        assertTrue(SyncPlan.of(emptyList(), emptyMap(), emptySet(), fakeFingerprint).isEmpty)
+        assertTrue(SyncPlan.of(emptyList(), emptyMap(), emptySet()).isEmpty)
+    }
+
+    @Test
+    fun aRawHexKeyStaysOffAndroidWithoutFailing() {
+        val port = FakePort()
+        val sync = WifiAutoSync(port, MemoryLedger())
+        val raw = net("Raw-Test", pass = "ab".repeat(32))
+        val report = sync.sync(listOf(home, raw), enabled = true)
+        assertEquals(setOf(home.key), port.held.keys)
+        assertEquals(1, report.unsupported)
+        assertNull(report.failure)
+        // 63 or 65 characters are passphrases (or invalid), not raw keys.
+        assertFalse(net("A", pass = "a".repeat(63)).hasRawKey)
+        assertFalse(net("B", pass = "g".repeat(64)).hasRawKey)
+        assertTrue(raw.hasRawKey)
+    }
+
+    @Test
+    fun neverPrintsThePassphrase() {
+        assertFalse(net("Home-Test", pass = "secret-pass-1").toString().contains("secret-pass-1"))
     }
 }
