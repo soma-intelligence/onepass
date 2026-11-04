@@ -204,7 +204,9 @@ struct IdentityStoreSyncTests {
             return false
         }
         notifier.post()
-        let got = try await withTimeout(.seconds(5)) { await received.value }
+        // Darwin callbacks come on the main run loop, which the @MainActor suites running in
+        // parallel can hold for seconds: this checks delivery, not latency.
+        let got = try await withTimeout(.seconds(30)) { await received.value }
         #expect(got)
     }
 }
