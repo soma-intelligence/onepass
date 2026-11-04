@@ -51,6 +51,7 @@ pub mod vaultlist;
 pub mod wallet_watch;
 pub mod watchtower;
 pub mod webauthn;
+pub mod wifi;
 
 pub use error::{Error, IntegrityError, Result, ValidationError};
 pub use id::Id;
