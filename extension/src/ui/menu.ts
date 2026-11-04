@@ -24,6 +24,7 @@ import {
   hostOf,
   icon,
   mark,
+  markTouch,
   messageBlock,
   mount,
   observeVisibility,
@@ -599,6 +600,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
 
 // Entry point in the extension (not under test, where `ext` is absent).
 if (typeof document !== "undefined" && ext?.runtime?.id) {
+  markTouch(document);
   const root = document.getElementById("root");
   if (root) mountMenu(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash });
 }

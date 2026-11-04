@@ -24,6 +24,7 @@ import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
 import type { ChainPhase, ChainView, OverlayAccount, OverlayInit, StepState, StopReason } from "../shared/ui";
 import {
+  markTouch,
   ClickGuard,
   type FrameDeps,
   autosize,
@@ -662,6 +663,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 }
 
 if (typeof document !== "undefined" && ext?.runtime?.id) {
+  markTouch(document);
   const root = document.getElementById("root");
   if (root) {
     const prefs = {

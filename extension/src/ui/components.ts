@@ -9,6 +9,7 @@
 // - every reply is validated (parse.ts) before anything is rendered.
 import type { ProviderId, UiToBg } from "../shared/messages";
 import { t, tn } from "../shared/i18n";
+import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import { PROVIDERS } from "../shared/providers";
 import { type ArtKind, art } from "./art";
 
@@ -667,11 +668,41 @@ export class ClickGuard {
     };
   }
 
+  private readonly held = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+
   private showHeld(target: EventTarget | null): void {
     if (!(target instanceof Element)) return;
     const left = Math.max(0, CLICK_GUARD_MS - (this.opts.now() - this.shownAt));
+    const prev = this.held.get(target);
+    if (prev !== undefined) globalThis.clearTimeout(prev);
     target.classList.add("held");
-    globalThis.setTimeout(() => target.classList.remove("held"), Math.max(left, HELD_MIN_MS));
+    this.held.set(
+      target,
+      globalThis.setTimeout(() => {
+        this.held.delete(target);
+        target.classList.remove("held");
+      }, Math.max(left, HELD_MIN_MS)),
+    );
+  }
+}
+
+// ---- touch ----
+
+/**
+ * Marks the frame page `touch` (class on `<html>`) by the content script's own rule, kept live:
+ * finger-sized rows exactly when the content script lays the frame out for a finger (IPAD-01). The
+ * CSS also keeps `(pointer: coarse)` for pages that do not call this.
+ */
+export function markTouch(doc: Document): void {
+  const view = doc.defaultView;
+  const apply = () => doc.documentElement.classList.toggle("touch", touchDevice(view));
+  apply();
+  for (const q of POINTER_QUERIES) {
+    try {
+      view?.matchMedia?.(q).addEventListener?.("change", apply);
+    } catch {
+      // No media queries: the first mark stays.
+    }
   }
 }
 

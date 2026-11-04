@@ -226,6 +226,10 @@ describe("shell placement", () => {
       expect(iframe.style.height).toBe("326px");
       expect(iframe.style.top).toBe("0px");
       expect(parseFloat(iframe.style.top) + parseFloat(iframe.style.height)).toBeLessThanOrEqual(330);
+      // A field filling what is visible: the smallest sheet rather than none.
+      field.setAttribute("data-test-rect", "10,0,200,400");
+      frames.reposition();
+      expect(iframe.style.height).toBe(`${FRAME_MIN_HEIGHT}px`);
       // Content shorter than the room under the field: a sheet of its own height, on the keyboard.
       field.setAttribute("data-test-rect", "10,100,200,30");
       frames.resize("menu", 150);
@@ -277,23 +281,30 @@ describe("shell placement", () => {
     const iframe = shell.root.querySelector("iframe")!;
     frames.resize("menu", 200);
     expect(iframe.classList.contains("sheet")).toBe(false);
-    // Slide Over: narrow, the sheet.
+    // Slide Over: narrow, the sheet, as tall as the unlock sheet asks.
     now = PHONE;
-    frames.reposition();
+    frames.resize("menu", 520);
     expect(iframe.classList.contains("sheet")).toBe(true);
-    // A trackpad on a Mac-like layout: the desktop dropdown again.
-    now = { touch: false, sheet: false };
+    expect(iframe.style.height).toBe("520px");
+    // Wide again: the popover's own largest height.
+    now = IPAD;
     frames.reposition();
+    expect(iframe.style.height).toBe(`${FRAME_HEIGHT.menu}px`);
+    // A mouse layout: the desktop dropdown again.
+    now = { touch: false, sheet: false };
+    frames.resize("menu", 200);
     expect(iframe.classList.contains("sheet")).toBe(false);
     expect(iframe.style.top).toBe("134px");
     frames.destroy();
   });
 
-  it("readLayout and watchLayout: touch from pointer or any-pointer coarse, the sheet only on a narrow window", () => {
+  it("readLayout and watchLayout: touch from a coarse pointer (any pointer on an iPad), the sheet only on a narrow window", () => {
     const listeners = new Map<string, () => void>();
     let coarse = { primary: true, any: true };
     let width = 375;
+    const nav = { maxTouchPoints: 5, platform: "MacIntel" };
     const view = {
+      navigator: nav,
       get innerWidth() {
         return width;
       },
@@ -313,10 +324,14 @@ describe("shell placement", () => {
     width = 1024;
     listeners.get("window:resize")!();
     expect(w.current()).toEqual({ touch: true, sheet: false });
-    // A trackpad: the primary pointer turns fine, the touch screen stays.
+    // A trackpad on the iPad: the primary pointer turns fine, the touch screen stays.
     coarse = { primary: false, any: true };
     listeners.get("(pointer: coarse)")!();
     expect(w.current()).toEqual({ touch: true, sheet: false });
+    // The same media on a Windows touch laptop, mouse first: the desktop layout.
+    nav.platform = "Win32";
+    expect(readLayout(view)).toEqual({ touch: false, sheet: false });
+    nav.platform = "MacIntel";
     // A Mac: no coarse pointer at all.
     coarse = { primary: false, any: false };
     listeners.get("(any-pointer: coarse)")!();
@@ -354,11 +369,24 @@ describe("shell placement", () => {
       expect(iframe.style.pointerEvents).toBe("none");
       vi.advanceTimersByTime(MOVE_GUARD_MS);
       expect(iframe.style.pointerEvents).toBe("");
-      // iOS pans the page under the keyboard: same place on the screen, no guard.
-      vv.offsetTop = 60;
-      frames.reposition();
+      // iOS pans the page under the keyboard, a few pixels a frame: same place on the screen, no guard.
+      for (const y of [12, 24, 36, 48, 60]) {
+        vv.offsetTop = y;
+        frames.reposition();
+      }
       expect(iframe.style.top).toBe("260px");
       expect(iframe.style.pointerEvents).toBe("");
+      // A page jumping the visual viewport: the frame drifted on the screen before its placement.
+      vv.offsetTop = 160;
+      frames.reposition();
+      expect(iframe.style.top).toBe("360px");
+      expect(iframe.style.pointerEvents).toBe("none");
+      vi.advanceTimersByTime(MOVE_GUARD_MS);
+      // A zoom: guarded too.
+      (vv as { scale?: number }).scale = 1.5;
+      frames.reposition();
+      expect(iframe.style.pointerEvents).toBe("none");
+      vi.advanceTimersByTime(MOVE_GUARD_MS);
       // The keyboard goes (a page can blur its field): the sheet slides on the screen, guarded.
       vv.height = 700;
       frames.reposition();

@@ -4,6 +4,7 @@
 // the shadow root (`host.shadowRoot` is null) and the frames are of another
 // origin, so it can read neither the menu nor the overlay (S1). References to
 // the root and to the frames live in closures only, never on window/document.
+import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import type { FrameKind } from "../shared/messages";
 import { type Geometry, type Rect } from "./detect/visibility";
 import { stackInCorner } from "./occupants";
@@ -246,9 +247,9 @@ export interface FramesOptions {
 }
 
 /**
- * How the in-page UI is laid out. `touch`: a finger may be used (`(pointer: coarse)` or
- * `(any-pointer: coarse)`: an iPad with a trackpad still has its touch screen), so icons and rows
- * are finger-sized. `sheet`: a touch screen narrower than SHEET_MAX_VIEWPORT, where the menu is a
+ * How the in-page UI is laid out. `touch`: a finger may be used (`touchDevice`: the primary
+ * pointer is coarse, or an iPhone or iPad has any coarse pointer, an iPad with a trackpad still
+ * having its touch screen), so icons and rows are finger-sized. `sheet`: a touch screen narrower than SHEET_MAX_VIEWPORT, where the menu is a
  * bottom sheet; wider (iPad), it is the popover anchored to its field, as on a desktop. A mouse
  * only (Mac, desktop Chromium): neither, the desktop layout.
  */
@@ -259,18 +260,10 @@ export interface Layout {
 
 const DESKTOP: Layout = { touch: false, sheet: false };
 
-function matches(view: Window, query: string): boolean {
-  try {
-    return view.matchMedia?.(query).matches === true;
-  } catch {
-    return false;
-  }
-}
-
-/** The layout of `view` right now (the frame pages' CSS uses the same two media queries). */
+/** The layout of `view` right now (the frame pages mark themselves with the same `touchDevice`). */
 export function readLayout(view: Window | null | undefined): Layout {
   if (!view) return DESKTOP;
-  const touch = matches(view, "(pointer: coarse)") || matches(view, "(any-pointer: coarse)");
+  const touch = touchDevice(view);
   return { touch, sheet: touch && (view.innerWidth ?? Infinity) < SHEET_MAX_VIEWPORT };
 }
 
@@ -293,7 +286,7 @@ export function watchLayout(view: Window | null | undefined): LayoutWatch {
     for (const cb of subs) cb();
   };
   if (view) {
-    for (const q of ["(pointer: coarse)", "(any-pointer: coarse)", "(any-pointer: fine)"]) {
+    for (const q of POINTER_QUERIES) {
       try {
         const mq = view.matchMedia?.(q);
         if (mq && typeof mq.addEventListener === "function") {
@@ -319,6 +312,12 @@ export function watchLayout(view: Window | null | undefined): LayoutWatch {
 
 /** Clicks into a frame are ignored this long after it moved (spec 8.3). */
 export const MOVE_GUARD_MS = 300;
+/**
+ * Touch: how far a frame may have drifted on the screen between a pan of the visual viewport and
+ * its next placement without counting as a move (a third of a row: iOS's own smooth pans move a
+ * few pixels a frame; a page jumping the viewport moves more).
+ */
+export const DRIFT_PX = 16;
 
 export interface Frames {
   /** Shows (or replaces) the `kind` frame at an already checked extension URL. */
@@ -352,7 +351,7 @@ export function createFrames(opts: FramesOptions): Frames {
    * the visual viewport all the time (the keyboard, the page panning under it); a frame that stays
    * at the same place on the screen brings nothing new under the finger.
    */
-  const onScreen = new WeakMap<HTMLIFrameElement, { left: number; top: number; width: number; height: number }>();
+  const onScreen = new WeakMap<HTMLIFrameElement, { left: number; top: number; width: number; height: number; scale: number }>();
   const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
@@ -405,9 +404,10 @@ export function createFrames(opts: FramesOptions): Frames {
     const vv = doc.defaultView?.visualViewport;
     if (!vv || !(vv.height > 0)) {
       const { h } = viewport();
-      return { top: 0, left: 0, h };
+      return { top: 0, left: 0, h, scale: 1 };
     }
-    return { top: vv.offsetTop, left: Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0, h: vv.height };
+    const n = (x: number, d: number) => (Number.isFinite(x) ? x : d);
+    return { top: n(vv.offsetTop, 0), left: n(vv.offsetLeft, 0), h: vv.height, scale: n(vv.scale, 1) };
   };
 
   /** The anchor's box when the user can see it (inside the visible part), else null. */
@@ -427,6 +427,8 @@ export function createFrames(opts: FramesOptions): Frames {
   const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number) => {
     const { w, h: vh } = viewport();
     const { touch } = layout();
+    // A sheet's height, kept after a rotation made it a popover, is the popover's again.
+    height = Math.min(height, maxHeight(kind));
     const width = Math.min(FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
@@ -452,12 +454,13 @@ export function createFrames(opts: FramesOptions): Frames {
         } else {
           // The field sits low (just above the keyboard): the menu goes above it.
           asSheet = false;
-          height = Math.max(0, Math.min(height, above));
+          height = Math.max(FRAME_MIN_HEIGHT, Math.min(height, above));
           top = r.top - GAP - height;
         }
       }
       if (asSheet) {
-        height = Math.min(height, room);
+        // Never a sheet of no height (a field filling the visible part): the smallest one.
+        height = Math.max(FRAME_MIN_HEIGHT, Math.min(height, room));
         top = Math.max(0, bottom - height);
       }
     } else if (kind === "overlay") {
@@ -506,20 +509,39 @@ export function createFrames(opts: FramesOptions): Frames {
     iframe.classList.toggle("corner", !sheet(kind) && kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
+    const prevLeft = parseFloat(s.getPropertyValue("left")) || 0;
+    const prevTop = parseFloat(s.getPropertyValue("top")) || 0;
     const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width2}px`, `${height}px`];
     const props = ["left", "top", "width", "height"];
     let changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
     if (touch) {
       // IOSSAF-09: on a touch screen, a move is a move on the screen. The frame keeps its place
-      // relative to the visual viewport (the page panned under the keyboard): no new guard. A
-      // change of the visual viewport's size (keyboard, toolbar) that moves the frame on the
-      // screen still re-arms it: a page can blur its field to slide the sheet under a finger.
+      // relative to the visual viewport (iOS panned the page under the keyboard): no new guard. A
+      // change of the visual viewport's size (keyboard, toolbar) or zoom that moves the frame on
+      // the screen still re-arms it: a page can blur its field to slide the sheet under a finger.
+      // So does a drift: the frame is fixed to the layout viewport, so between a pan and this
+      // placement it was off its place on the screen; past DRIFT_PX (a page jumping the visual
+      // viewport, not iOS's own smooth pan) that counts as a move.
       const v = visible();
-      const at = { left: Math.round(left) - Math.round(v.left), top: Math.round(top) - Math.round(v.top), width: width2, height };
+      const at = { left: Math.round(left) - Math.round(v.left), top: Math.round(top) - Math.round(v.top), width: width2, height, scale: v.scale };
       const was = onScreen.get(iframe);
       onScreen.set(iframe, at);
-      if (was) changed = was.left !== at.left || was.top !== at.top || was.width !== at.width || at.height > was.height;
+      if (was) {
+        const driftX = Math.abs(prevLeft - Math.round(v.left) - was.left);
+        const driftY = Math.abs(prevTop - Math.round(v.top) - was.top);
+        changed =
+          was.left !== at.left ||
+          was.top !== at.top ||
+          was.width !== at.width ||
+          at.height > was.height ||
+          was.scale !== at.scale ||
+          driftX > DRIFT_PX ||
+          driftY > DRIFT_PX;
+      }
+    } else {
+      // A mouse layout again: the next touch placement starts afresh (and guards).
+      onScreen.delete(iframe);
     }
     return changed;
   };
