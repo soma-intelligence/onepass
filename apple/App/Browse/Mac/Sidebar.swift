@@ -211,6 +211,26 @@ struct Sidebar: View {
                         .padding(.top, 10)
                     #endif
                 }
+                if model.showsSafariSetupCard {
+                    #if os(macOS)
+                    SafariSetupCard()
+                        .padding(12)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        }
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 4)
+                    #else
+                    SafariSetupCard()
+                        .padding(12)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                    #endif
+                }
                 if case .accountChanged = model.syncStatus {
                     AccountChangedCard(compact: true).padding(10)
                 } else {

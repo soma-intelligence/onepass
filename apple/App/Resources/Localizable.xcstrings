@@ -37188,6 +37188,325 @@
         }
       }
     },
+    "safari.setup.ios.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari does not tell OnePass whether the extension is on. This card goes away once the extension has answered on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari no le dice a OnePass si la extensión está activa. Esta tarjeta desaparece en cuanto la extensión responde una vez en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari ne dit pas à OnePass si l'extension est active. Cette carte part dès que l'extension a répondu une fois sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari non dice a OnePass se l'estensione è attiva. Questa scheda sparisce appena l'estensione risponde una volta su questo dispositivo."
+          }
+        }
+      }
+    },
+    "safari.setup.ios.step1" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings > Apps > Safari > Extensions > OnePass: turn on Allow Extension."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes > Apps > Safari > Extensiones > OnePass: activa Permitir extensión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages > Apps > Safari > Extensions > OnePass : active Autoriser l'extension."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostazioni > App > Safari > Estensioni > OnePass: attiva Consenti estensione."
+          }
+        }
+      }
+    },
+    "safari.setup.ios.step2" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Under Permissions, set All Websites to Allow."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Permisos, pon Todos los sitios web en Permitir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sous Autorisations, mets Tous les sites web sur Autoriser."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Autorizzazioni, imposta Tutti i siti web su Consenti."
+          }
+        }
+      }
+    },
+    "safari.setup.ios.step3" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Then Settings > General > AutoFill & Passwords: choose OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luego Ajustes > General > Autorrelleno y contraseñas: elige OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puis Réglages > Général > Remplissage auto et mots de passe : choisis OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poi Impostazioni > Generali > Riempimento automatico e password: scegli OnePass."
+          }
+        }
+      }
+    },
+    "safari.setup.mac.cardDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check OnePass in Safari's extensions, then allow it on every website."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marca OnePass en las extensiones de Safari y luego permítela en todos los sitios web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coche OnePass dans les extensions de Safari, puis autorise-la sur tous les sites web."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona OnePass nelle estensioni di Safari, poi consentila su tutti i siti web."
+          }
+        }
+      }
+    },
+    "safari.setup.mac.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Safari > Settings > Extensions, check OnePass, then in Edit Websites set When visiting other websites to Allow. Otherwise Safari asks site by site and OnePass cannot see the fields."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Safari > Ajustes > Extensiones, marca OnePass y luego en Editar sitios web pon Al visitar otros sitios web en Permitir. Si no, Safari pregunta sitio por sitio y OnePass no ve los campos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dans Safari > Réglages > Extensions, coche OnePass, puis dans Modifier les sites web, mets Sur les autres sites web sur Autoriser. Sinon Safari demande site par site et OnePass ne voit pas les champs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Safari > Impostazioni > Estensioni, seleziona OnePass, poi in Modifica siti web imposta Quando visiti altri siti web su Consenti. Altrimenti Safari chiede sito per sito e OnePass non vede i campi."
+          }
+        }
+      }
+    },
+    "safari.setup.mac.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Safari Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir ajustes de Safari"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir les réglages de Safari"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri impostazioni di Safari"
+          }
+        }
+      }
+    },
+    "safari.setup.mac.state" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari extension"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extensión de Safari"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension Safari"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estensione Safari"
+          }
+        }
+      }
+    },
+    "safari.setup.openSettings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir Réglages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Impostazioni"
+          }
+        }
+      }
+    },
+    "safari.setup.seen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Safari extension has answered on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La extensión de Safari ya respondió en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'extension Safari a déjà répondu sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'estensione Safari ha già risposto su questo dispositivo."
+          }
+        }
+      }
+    },
+    "safari.setup.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on OnePass in Safari"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa OnePass en Safari"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active OnePass dans Safari"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva OnePass in Safari"
+          }
+        }
+      }
+    },
     "settings.about.postQuantum" : {
       "comment" : "Réglages > À propos: post-quantum algorithms row",
       "localizations" : {
@@ -37445,6 +37764,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finestra agenti richiesta"
+          }
+        }
+      }
+    },
+    "settings.browsers.autoPaired %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paired automatically, used %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlazado automáticamente, usado %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Associé automatiquement, utilisé %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbinato automaticamente, usato %@"
+          }
+        }
+      }
+    },
+    "settings.browsers.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The OnePass extensions for Safari, Chrome, Edge, Brave and Firefox connect by themselves when the Mac checks the browser's signature, and fill from the vault open in this app. Locking OnePass locks them too."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las extensiones de OnePass para Safari, Chrome, Edge, Brave y Firefox se conectan solas cuando el Mac verifica la firma del navegador, y rellenan desde la bóveda abierta en esta app. Bloquear OnePass también las bloquea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les extensions OnePass de Safari, Chrome, Edge, Brave et Firefox se connectent seules quand le Mac vérifie la signature du navigateur, et remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le estensioni OnePass per Safari, Chrome, Edge, Brave e Firefox si collegano da sole quando il Mac verifica la firma del browser, e compilano dalla cassaforte aperta in questa app. Bloccare OnePass blocca anche loro."
           }
         }
       }

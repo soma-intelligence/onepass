@@ -55,6 +55,11 @@ struct HomeTab: View {
                                 .padding(16)
                                 .phoneCard()
                         }
+                        if model.showsSafariSetupCard, !searchActive {
+                            SafariSetupCard()
+                                .padding(16)
+                                .phoneCard()
+                        }
                         if showsNearby { HomeNearbyCard() }
                         if showsCrypto { HomeCryptoCard() }
                         if showsProfile, let profile { HomeProfileCard(summary: profile) }

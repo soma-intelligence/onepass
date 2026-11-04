@@ -16,6 +16,7 @@ struct AutoFillSettings: View {
         let _ = model.settingsRevision
         Form {
             providerSection
+            SafariExtensionSection()
             #if os(macOS)
             if let bridge = model.browserBridge {
                 BrowserBridgeSection(bridge: bridge)

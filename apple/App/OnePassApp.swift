@@ -279,6 +279,8 @@ struct MenuBarMenu: View {
     }
 
     private func show() {
+        // Opened by hand: the user stays in the app after the unlock (MS-03).
+        model.cancelReturnToBrowser()
         openWindow(id: "main")
         NSApp.activate()
     }

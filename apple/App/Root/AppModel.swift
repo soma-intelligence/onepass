@@ -498,8 +498,10 @@ final class AppModel {
             browserBridge.start()
             // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
             tasks.append(Task { [weak self] in
-                for await _ in NotificationCenter.default.notifications(named: BrowserBridge.unlockRequestedNotification) {
-                    self?.showForUnlock()
+                for await note in NotificationCenter.default.notifications(named: BrowserBridge.unlockRequestedNotification) {
+                    // A pairing request shows its sheet and stays; only an unlock goes back to the browser.
+                    let unlock = note.userInfo?[BrowserBridge.unlockOpKey] as? Bool == true
+                    self?.showForUnlock(fromBrowser: unlock)
                 }
             })
         }
@@ -1133,6 +1135,9 @@ final class AppModel {
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
             resumeMailboxSetup()
             resumeMigration()
+            #if os(macOS)
+            returnToBrowserIfAsked()
+            #endif
         } else {
             resetNavigation()
         }
@@ -1174,10 +1179,32 @@ final class AppModel {
     /// comes forward on the lock screen, which then asks for biometrics once. The activation alone
     /// is not enough since macOS 14 while the browser is in front; the link, opened through
     /// LaunchServices by the extension's process, is what brings the app forward.
-    func showForUnlock() {
-        if session.state != .unlocked { biometricAutoPrompt.unlockRequested() }
+    /// `fromBrowser`: a paired extension asked the bridge to unlock (MS-03), not the `onepass://unlock`
+    /// link any page or app can open: only then does the app give the front back once unlocked.
+    func showForUnlock(fromBrowser: Bool = false) {
+        if session.state != .unlocked {
+            biometricAutoPrompt.unlockRequested()
+            if fromBrowser { browserReturn.arm() }
+        }
         mainWindowRequest &+= 1
         NSApplication.shared.activate()
+    }
+
+    /// The browser asked for this unlock (MS-03): once unlocked, the app hides itself so Safari (or
+    /// Chrome) comes back to the front and the extension resumes the fill (`BrowserReturn`).
+    @ObservationIgnored private var browserReturn = BrowserReturn()
+
+    /// Unlocked: back to the browser when it asked for the unlock lately. True when it hid.
+    @discardableResult
+    func returnToBrowserIfAsked(now: Date = .now, hide: () -> Void = { NSApplication.shared.hide(nil) }) -> Bool {
+        guard browserReturn.consume(now: now) else { return false }
+        hide()
+        return true
+    }
+
+    /// The user opened the window by hand, or a route of its own came: no hiding after the unlock.
+    func cancelReturnToBrowser() {
+        browserReturn.cancel()
     }
     #endif
 
@@ -1192,6 +1219,10 @@ final class AppModel {
 
     /// Runs the route now when unlocked, else keeps it for after the unlock (the newest wins).
     func handle(_ route: AppRoute) {
+        #if os(macOS)
+        // A route of its own (widget, Control, item or code link): the user stays in the app.
+        cancelReturnToBrowser()
+        #endif
         guard session.state == .unlocked, !onboardingInProgress else {
             pendingRoute = route
             pendingRouteFresh = IntentAuthentication.isFreshUnlockRequest(
@@ -1433,6 +1464,31 @@ final class AppModel {
         let turnedOn = enabled && autofillEnabled != true
         autofillEnabled = enabled
         if turnedOn { session.refreshAutofillIdentities() }
+        await refreshSafariExtensionState()
+    }
+
+    // MARK: - Safari extension setup (MS-02, IOSSAF-13)
+
+    /// The Safari extension: on or off on the Mac (Safari says), answered here once or not yet on
+    /// iOS (a pairing it stored); nil while read or unknown. Read with the provider state.
+    private(set) var safariExtensionOn: Bool?
+
+    func refreshSafariExtensionState() async {
+        safariExtensionOn = await SafariExtensionSetup.isEnabled()
+    }
+
+    /// This device's choice (the extension is per device): the setup card closed for good.
+    static let safariSetupCardDismissedKey = "safariSetupCardDismissed"
+    private(set) var safariSetupCardDismissed = UserDefaults.standard.bool(forKey: AppModel.safariSetupCardDismissedKey)
+
+    /// The one-time Safari card: off or not seen yet, not closed, and never over the AutoFill one.
+    var showsSafariSetupCard: Bool {
+        !showsAutoFillTip && SafariSetup.showsCard(dismissed: safariSetupCardDismissed, extensionOn: safariExtensionOn)
+    }
+
+    func dismissSafariSetupCard() {
+        safariSetupCardDismissed = true
+        UserDefaults.standard.set(true, forKey: Self.safariSetupCardDismissedKey)
     }
 
     /// "Activer OnePass": the system prompt, then the state is read again.

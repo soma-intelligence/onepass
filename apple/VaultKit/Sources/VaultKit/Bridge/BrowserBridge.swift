@@ -206,7 +206,9 @@ public final class BrowserBridge {
     }
 
     fileprivate func unlockRequested() {
-        NotificationCenter.default.post(name: Self.unlockRequestedNotification, object: nil)
+        // An unlock, not a pairing: the app may give the front back to the browser after it (MS-03).
+        NotificationCenter.default.post(
+            name: Self.unlockRequestedNotification, object: nil, userInfo: [Self.unlockOpKey: true])
     }
 
     fileprivate func confirmReprompt() async -> Bool {
@@ -287,6 +289,8 @@ enum BridgeLog {
 extension BrowserBridge {
     /// Posted when an extension asks to unlock or to pair: the app activates its window.
     public static let unlockRequestedNotification = Notification.Name("me.somalabs.onepass.bridge.unlock")
+    /// In `unlockRequestedNotification`'s userInfo when an extension asked to unlock (not to pair).
+    public static let unlockOpKey = "unlockOp"
 
     /// "Déverrouiller dans OnePass": opened by the Safari extension's handler and by the relay of
     /// Chrome and Firefox through LaunchServices, from the process that served the user's click.

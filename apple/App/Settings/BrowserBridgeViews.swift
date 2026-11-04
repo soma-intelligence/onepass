@@ -97,7 +97,7 @@ struct BrowserBridgeSection: View {
                     } label: {
                         Text(p.browser)
                         Text(p.automatic
-                            ? "Associé automatiquement, utilisé \(p.lastUsed.formatted(.relative(presentation: .named)))"
+                            ? "settings.browsers.autoPaired \(p.lastUsed.formatted(.relative(presentation: .named)))"
                             : "\(p.extensionName), utilisé \(p.lastUsed.formatted(.relative(presentation: .named)))")
                     }
                 }
@@ -105,7 +105,7 @@ struct BrowserBridgeSection: View {
         } header: {
             Text("Navigateurs")
         } footer: {
-            Text("Les extensions OnePass de Safari, Chrome, Edge, Brave et Firefox se connectent seules quand le Mac vérifie la signature du navigateur, et remplissent depuis le coffre ouvert dans cette app. Verrouiller OnePass les verrouille aussi.")
+            Text("settings.browsers.footer")
         }
     }
 }
