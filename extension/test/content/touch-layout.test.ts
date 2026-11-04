@@ -1,0 +1,152 @@
+// Touch layout of the in-page UI (fix batch B, 2026-11-04): a live layout (IPAD-01), no menu on a
+// bare tap into a field on a touch screen (IOSSAF-08), an icon on address-only and card-detail
+// forms (IOSSAF-11, MS-07).
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Layout } from "../../src/content/frames";
+import type { PageAnalysis } from "../../src/shared/messages";
+import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick } from "./harness";
+
+const SALT = "ab".repeat(32);
+const LOGIN = `
+<form id="login">
+  <input id="u" name="username" autocomplete="username">
+  <input id="p" type="password" autocomplete="current-password">
+  <button id="go" type="submit">Sign in</button>
+</form>`;
+
+let s: Started | null = null;
+beforeEach(() => {
+  s = null;
+});
+afterEach(() => {
+  s?.cs.stop();
+});
+
+const icons = (st: Started) => Array.from(st.cs.internals.root.querySelectorAll<HTMLElement>(".icon"));
+
+function analysis(st: Started): PageAnalysis {
+  const all = st.ext.ofType("page_analysis");
+  return all[all.length - 1]?.analysis as PageAnalysis;
+}
+
+/** The ref of the field element `id` in the last analysis. */
+function refOf(st: Started, id: string): string {
+  for (const f of analysis(st).forms) {
+    for (const x of f.fields) if ((st.cs.internals.refs.get(x.ref) as HTMLElement | null)?.id === id) return x.ref;
+  }
+  throw new Error(`no field #${id}`);
+}
+
+/** The worker: a salt, a plan outcome, a menu URL. */
+function worker(st: Started, outcome: string) {
+  st.ext.reply = (m) => {
+    switch ((m as { type: string }).type) {
+      case "fill_salt":
+        return { ok: { salt: SALT } };
+      case "plan_context":
+        return { ok: { outcome } };
+      case "open_menu":
+        return { ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } };
+      default:
+        return { ok: null };
+    }
+  };
+}
+
+async function settle(): Promise<void> {
+  for (let i = 0; i < 4; i++) {
+    await flush();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+describe("touch layout", () => {
+  it("IOSSAF-08: on a touch screen a tap into an empty field opens nothing; the icon is one tap to fill", async () => {
+    setPage(LOGIN);
+    s = start(undefined, { layout: () => ({ touch: true, sheet: true }) });
+    worker(s, "filled");
+    await settle();
+    userClick(input("u"));
+    await settle();
+    expect(s.ext.ofType("open_menu")).toHaveLength(0);
+    expect(s.cs.internals.root.querySelector("iframe")).toBeNull();
+    userClick(icons(s)[0]!);
+    await settle();
+    expect(s.ext.ofType("plan_context")).toHaveLength(1);
+    expect(s.ext.ofType("open_menu")).toHaveLength(0);
+  });
+
+  it("a mouse (desktop) keeps the menu on a click into an empty field", async () => {
+    setPage(LOGIN);
+    s = start(undefined, { layout: () => ({ touch: false, sheet: false }) });
+    worker(s, "filled");
+    await settle();
+    userClick(input("u"));
+    await settle();
+    expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ auto: true })]);
+  });
+
+  it("IPAD-01: the icons follow a change of layout mid-page (finger-sized, label on focus)", async () => {
+    setPage(LOGIN);
+    let now: Layout = { touch: false, sheet: false };
+    s = start(undefined, { layout: () => now });
+    await settle();
+    expect(icons(s).every((i) => !i.classList.contains("touch"))).toBe(true);
+    expect(s.cs.internals.root.querySelector(".tip")).toBeNull();
+    now = { touch: true, sheet: false };
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    expect(icons(s).every((i) => i.classList.contains("touch"))).toBe(true);
+    input("u").dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    const tip = s.cs.internals.root.querySelector<HTMLElement>(".tip");
+    expect(tip?.hidden).toBe(false);
+    now = { touch: false, sheet: false };
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    expect(icons(s).every((i) => !i.classList.contains("touch"))).toBe(true);
+    expect(tip?.hidden).toBe(true);
+  });
+});
+
+describe("IOSSAF-11, MS-07: icons on address-only and card-detail forms", () => {
+  it("an address step without a name or an email gets one icon, on its first address field", async () => {
+    setPage(`
+<form id="ship">
+  <input id="a1" name="address" autocomplete="address-line1">
+  <input id="city" name="city" autocomplete="address-level2">
+  <input id="zip" name="zip" autocomplete="postal-code">
+  <input id="tel" name="phone" type="tel" autocomplete="tel">
+  <button type="submit">Continue</button>
+</form>`);
+    s = start();
+    await settle();
+    const all = icons(s);
+    expect(all).toHaveLength(1);
+    expect(s.cs.internals.refs.get(refOf(s, "a1"))).toBe(input("a1"));
+  });
+
+  it("a checkout whose number sits in the payment provider's frame gets its icon on the name on card", async () => {
+    setPage(`
+<form id="pay">
+  <input id="cn" name="ccname" autocomplete="cc-name">
+  <input id="ce" name="ccexp" autocomplete="cc-exp">
+  <button type="submit">Pay</button>
+</form>`);
+    s = start();
+    await settle();
+    expect(icons(s)).toHaveLength(1);
+  });
+
+  it("a form with a main field keeps its icons only there", async () => {
+    setPage(`
+<form id="id">
+  <input id="gn" name="fname" autocomplete="given-name">
+  <input id="a1" name="address" autocomplete="address-line1">
+  <input id="zip" name="zip" autocomplete="postal-code">
+  <button type="submit">Continue</button>
+</form>`);
+    s = start();
+    await settle();
+    expect(icons(s)).toHaveLength(1);
+  });
+});

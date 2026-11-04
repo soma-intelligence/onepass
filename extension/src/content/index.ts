@@ -46,7 +46,7 @@ import {
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
-import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
+import { checkFrameUrl, createFrames, createShell, type Layout, type Shell, watchLayout } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
@@ -86,6 +86,8 @@ export interface ContentOptions {
    * it, else open roots only.
    */
   shadowRootOf?: ShadowRootOf;
+  /** The in-page layout (touch, bottom sheet); a live `watchLayout` of the window by default. */
+  layout?: () => Layout;
 }
 
 export interface ContentScript {
@@ -425,12 +427,22 @@ export function createContentScript(o: ContentOptions): ContentScript {
       const sh = shell;
       // Other password managers' UI: our card and icons go beside it, never under or over.
       const own = { isOwn: (n: Node) => sh.isHost(n) };
-      const frames = createFrames({ shell: sh, doc, geometry, occupants: () => cornerOccupants(doc, own) });
+      // Touch or not, sheet or popover: live (a trackpad, a rotation, Slide Over change it).
+      let layout = o.layout;
+      if (!layout) {
+        const watch = watchLayout(view);
+        watch.onChange(queueLayout);
+        cleanups.push(() => watch.destroy());
+        layout = () => watch.current();
+      }
+      const currentLayout = layout;
+      const frames = createFrames({ shell: sh, doc, geometry, layout: currentLayout, occupants: () => cornerOccupants(doc, own) });
       const icons = createIcons({
         shell: sh,
         doc,
         refs,
         geometry,
+        layout: currentLayout,
         isTrusted,
         onOpen: (t) => void smartFill(t),
         onLayout: queueLayout,
@@ -585,7 +597,10 @@ export function createContentScript(o: ContentOptions): ContentScript {
         (e) => {
           // A click into an empty field offers its logins, as the browser's
           // own autofill does; only when the worker has something for it.
-          if (!isTrusted(e) || parts?.frames.has("menu")) return;
+          // Not on a touch screen (IOSSAF-08, IPAD-01): the tap raises the keyboard and iOS
+          // scrolls the field above it, where a sheet would sit; the field's icon (one tap, the
+          // fill itself) and the keyboard's own bar offer the same there.
+          if (!isTrusted(e) || parts?.frames.has("menu") || currentLayout().touch) return;
           const t = icons.targetOf(e.target);
           if (!t || !(t.el instanceof HTMLInputElement) || t.el.value !== "") return;
           void openMenu(t, true);

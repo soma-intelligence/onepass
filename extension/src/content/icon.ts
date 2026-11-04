@@ -7,7 +7,7 @@ import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry, Rect } from "./detect/visibility";
-import { isTouchScreen, type Shell } from "./frames";
+import { type Layout, readLayout, type Shell } from "./frames";
 
 /** Roles that carry an icon. */
 export const ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>([
@@ -20,6 +20,14 @@ export const ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>([
   "given_name",
   "full_name",
 ]);
+
+/**
+ * Roles that carry an icon only on a form none of whose fields has an ICON_ROLES role, and then on
+ * the first of them only (IOSSAF-11, MS-07): an address step that starts at the street or the
+ * postal code, a checkout whose number sits in the payment provider's frame. One icon per form, so
+ * the page does not fill up with icons.
+ */
+export const SECONDARY_ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["address_line1", "postal_code", "tel", "cc_name", "cc_exp"]);
 
 export const ICON_SIZE = 20;
 /** Inset from the field's right edge. */
@@ -51,10 +59,11 @@ export interface IconsOptions {
    */
   avoid?: (zone: Rect) => Rect[];
   /**
-   * Touch screen (iOS): a larger icon for a finger, and a "OnePass" label beside the icon of
-   * the focused field (spec 2026-11-03-ios-safari-autofill 5). From `(pointer: coarse)` by default.
+   * The layout right now (frames.ts). Touch (iPhone, iPad, with or without a trackpad): a larger
+   * icon for a finger, and a "OnePass" label beside the icon of the focused field (spec
+   * 2026-11-03-ios-safari-autofill 5). Read at every placement; `readLayout` by default.
    */
-  touch?: boolean;
+  layout?: () => Layout;
 }
 
 /** Icon side on a touch screen. */
@@ -98,29 +107,38 @@ function glyph(doc: Document): SVGElement {
 
 export function createIcons(opts: IconsOptions): Icons {
   const { shell, doc, refs, geometry, isTrusted, onOpen } = opts;
-  const touch = opts.touch ?? isTouchScreen(doc);
-  const size = touch ? TOUCH_ICON_SIZE : ICON_SIZE;
-  // The label beside the focused field's icon (touch screens only).
-  const tip = touch ? doc.createElement("div") : null;
-  if (tip) {
+  const layout = opts.layout ?? (() => readLayout(doc.defaultView));
+  /** Touch or not, as of the last placement (a trackpad may come or go). */
+  let touch = layout().touch;
+  let size = touch ? TOUCH_ICON_SIZE : ICON_SIZE;
+  // The label beside the focused field's icon (touch screens only), made when first needed.
+  let tip: HTMLElement | null = null;
+  const tipBox = (): HTMLElement => {
+    if (tip) return tip;
+    tip = doc.createElement("div");
     tip.className = "tip";
     tip.hidden = true;
     tip.textContent = t("icon.tooltip");
     shell.layer.appendChild(tip);
-  }
+    return tip;
+  };
   let focused: Element | null = null;
   const placeTip = () => {
-    if (!tip) return;
+    if (!touch) {
+      if (tip) tip.hidden = true;
+      return;
+    }
+    const box = tipBox();
     const entry = focused ? byField.get(focused) : undefined;
     if (!entry || entry.icon.hidden) {
-      tip.hidden = true;
+      box.hidden = true;
       return;
     }
     const left = parseFloat(entry.icon.style.getPropertyValue("left"));
     const top = parseFloat(entry.icon.style.getPropertyValue("top"));
-    tip.hidden = false;
-    tip.style.setProperty("left", `${Math.round(left + size / 2)}px`);
-    tip.style.setProperty("top", `${Math.round(top - 30)}px`);
+    box.hidden = false;
+    box.style.setProperty("left", `${Math.round(left + size / 2)}px`);
+    box.style.setProperty("top", `${Math.round(top - 30)}px`);
   };
   const onFocusIn = (e: Event) => {
     focused = e.target instanceof Element && byField.has(e.target) ? e.target : null;
@@ -130,10 +148,16 @@ export function createIcons(opts: IconsOptions): Icons {
     focused = null;
     placeTip();
   };
-  if (tip) {
-    doc.addEventListener("focusin", onFocusIn, true);
-    doc.addEventListener("focusout", onFocusOut, true);
-  }
+  doc.addEventListener("focusin", onFocusIn, true);
+  doc.addEventListener("focusout", onFocusOut, true);
+  /** Follows a change of layout: every icon's size, the label. */
+  const relayout = () => {
+    const next = layout().touch;
+    if (next === touch) return;
+    touch = next;
+    size = touch ? TOUCH_ICON_SIZE : ICON_SIZE;
+    for (const e of byField.values()) e.icon.classList.toggle("touch", touch);
+  };
   const byField = new Map<Element, { icon: HTMLElement; target: IconTarget; anchor: Element }>();
   const RO = (doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null)?.ResizeObserver;
   const resize = RO ? new RO(() => opts.onLayout()) : null;
@@ -184,15 +208,28 @@ export function createIcons(opts: IconsOptions): Icons {
   return {
     attachIcons(analysis) {
       shell.ensureAttached();
+      relayout();
       const wanted = new Map<Element, { target: IconTarget; anchor: Element }>();
       for (const form of analysis.forms) {
+        let any = false;
         for (const f of form.fields) {
           if (!ICON_ROLES.has(f.role)) continue;
           const el = refs.get(f.ref);
-          if (!el || wanted.has(el)) continue;
+          if (!el) continue;
+          any = true;
+          if (wanted.has(el)) continue;
           // A split code: the icon follows its last cell.
           const last = f.parts ? refs.get(f.parts[f.parts.length - 1] ?? "") : null;
           wanted.set(el, { target: { el, fieldRef: f.ref, form }, anchor: last ?? el });
+        }
+        if (any) continue;
+        // No main field: the first address, phone or card detail field carries the form's icon.
+        for (const f of form.fields) {
+          if (!SECONDARY_ICON_ROLES.has(f.role)) continue;
+          const el = refs.get(f.ref);
+          if (!el) continue;
+          if (!wanted.has(el)) wanted.set(el, { target: { el, fieldRef: f.ref, form }, anchor: el });
+          break;
         }
       }
       for (const [el, entry] of byField) {
@@ -222,6 +259,7 @@ export function createIcons(opts: IconsOptions): Icons {
       }
     },
     reposition() {
+      relayout();
       for (const e of byField.values()) place(e.icon, e.anchor);
       placeTip();
     },
@@ -233,11 +271,9 @@ export function createIcons(opts: IconsOptions): Icons {
       return [...byField.values()].map((e) => e.target);
     },
     destroy() {
-      if (tip) {
-        doc.removeEventListener("focusin", onFocusIn, true);
-        doc.removeEventListener("focusout", onFocusOut, true);
-        tip.remove();
-      }
+      doc.removeEventListener("focusin", onFocusIn, true);
+      doc.removeEventListener("focusout", onFocusOut, true);
+      tip?.remove();
       resize?.disconnect();
       for (const e of byField.values()) e.icon.remove();
       byField.clear();

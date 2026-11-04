@@ -569,6 +569,8 @@ export function tokenFromHash(hash: string): string | null {
 
 /** Clicks are ignored this long after content appears (spec 8.3). */
 export const CLICK_GUARD_MS = 300;
+/** A held-back tap shows pressed at least this long. */
+const HELD_MIN_MS = 120;
 
 export interface Visibility {
   intersecting: boolean;
@@ -656,10 +658,20 @@ export class ClickGuard {
     return (e) => {
       if (!this.accepts(e)) {
         e.preventDefault();
+        // A real tap held back by the delay only (IOSSAF-09): the control shows it was pressed
+        // until the delay is over, so the user taps again rather than wonder. Nothing runs.
+        if (this.trusted(e)) this.showHeld(e.currentTarget);
         return;
       }
       fn(e);
     };
+  }
+
+  private showHeld(target: EventTarget | null): void {
+    if (!(target instanceof Element)) return;
+    const left = Math.max(0, CLICK_GUARD_MS - (this.opts.now() - this.shownAt));
+    target.classList.add("held");
+    globalThis.setTimeout(() => target.classList.remove("held"), Math.max(left, HELD_MIN_MS));
   }
 }
 

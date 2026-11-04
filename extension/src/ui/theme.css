@@ -783,11 +783,15 @@ button.account:hover { background: var(--glass); }
 .unlock-form .btn { height: 44px; }
 .unlock-sheet .error-line:empty { display: none; }
 
-/* Touch screens: rows and buttons sized for a finger. */
-@media (pointer: coarse) {
+/* Touch screens: rows and buttons sized for a finger. `any-pointer` as well: an iPad with a trackpad
+   keeps its touch screen (the content script decides its layout from the same two queries). */
+@media (pointer: coarse), (any-pointer: coarse) {
   .row { min-height: 52px; }
   .btn { height: 40px; font-size: 15px; }
 }
+/* A tap the anti-clickjacking delay held back (content just appeared): pressed, so the user sees it
+   was taken and taps again. */
+.row.held, .btn.held { opacity: .55; transition: opacity 80ms ease; }
 
 /* ---- save card (2026-11-03): small and quiet, top right ---- */
 .save-card { padding: 12px 12px 10px 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -846,10 +850,23 @@ button.sc-chip:hover { color: var(--text); }
 .pp-pending-row .t1 { font-size: 12.5px; font-weight: 600; white-space: normal; text-wrap: pretty; }
 
 /* Touch screens (iPhone, iPad): the save card keeps its quiet size, its buttons grow to a
-   finger's reach. Last in the file so it wins over the save card rules above. */
-@media (pointer: coarse) {
+   finger's reach; the one-click pill's and the progress card's close and "Sign in" too (44 px).
+   Last in the file so it wins over the rules above. */
+@media (pointer: coarse), (any-pointer: coarse) {
   .btn-text { min-height: 36px; padding: 0 10px; font-size: 15px; }
   .sc-more { width: 36px; height: 36px; }
   .sc-chip { height: 32px; font-size: 13px; }
   .sc-vault { min-height: 44px; font-size: 15px; }
+  .ov-close, .ov-pill .ov-close, .ov-picker .ov-close { width: 44px !important; height: 44px !important; }
+  .ov-close { margin-top: 4px; }
+  .ov-pill .ov-close, .ov-picker .ov-close { margin: 0; }
+  .ov-signin { height: 44px; padding: 0 12px; border-radius: 22px; }
+}
+
+/* Popup in Slide Over or a narrow Split View (320 to 375 pt): the compact states fit the width and
+   grow with their content instead of being cut on the right. Touch only: on a Mac the popover's
+   own viewport is the 380 px body, which must keep its fixed size. */
+@media (max-width: 400px) and (any-pointer: coarse) {
+  body.popup.compact { width: min(380px, 100vw); height: auto; min-height: min(420px, 100vh); max-height: 100vh; overflow-y: auto; }
+  body.popup.compact .center { height: auto; min-height: min(420px, 100vh); padding: 24px 16px; box-sizing: border-box; }
 }

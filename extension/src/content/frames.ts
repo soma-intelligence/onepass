@@ -23,8 +23,14 @@ export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, ov
  * message vouched by the worker) and scrolls inside past these.
  */
 export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520 };
-/** On a touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
+/** On a narrow touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
 export const SHEET_HEIGHT = 560;
+/** The bottom sheet only below this window width (iPhone, Slide Over, narrow Split View); wider, the menu follows its field. */
+export const SHEET_MAX_VIEWPORT = 600;
+/** Widest bottom sheet, centered (a 599 px window does not get a sheet from edge to edge). */
+export const SHEET_MAX_WIDTH = 480;
+/** Under this much room below its field, the sheet goes above the field instead (it never covers it). */
+export const SHEET_MIN_HEIGHT = 160;
 /** Smallest height a page may ask for. */
 export const FRAME_MIN_HEIGHT = 44;
 /**
@@ -139,7 +145,7 @@ iframe.bare { border-radius: 0; box-shadow: none; }
 iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
 iframe.top-center.shown { transform: none; }
 iframe.shown { opacity: 1; transform: none; }
-/* Touch screens: the menu rises from the bottom edge as a sheet. */
+/* Narrow touch screens: the menu rises from the bottom edge as a sheet. */
 iframe.sheet { border-radius: 16px 16px 0 0; transform-origin: bottom center; transform: translateY(24px); box-shadow: 0 -8px 32px rgba(0,0,0,.28); }
 iframe.sheet.shown { transform: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -230,19 +236,85 @@ export interface FramesOptions {
   shell: Shell;
   doc: Document;
   geometry: Geometry;
-  /** Touch screen (iPhone, iPad): the menu is a bottom sheet. From `(pointer: coarse)` by default. */
-  touch?: boolean;
+  /**
+   * The layout right now, read at every placement (it changes with a trackpad, a rotation, Slide
+   * Over). From `readLayout` by default.
+   */
+  layout?: () => Layout;
   /** Other password managers' boxes in the top right corner (occupants.ts): the save card stacks beside them. */
   occupants?: () => Rect[];
 }
 
-/** True on a touch-first screen (`(pointer: coarse)`), the iOS case. */
-export function isTouchScreen(doc: Document): boolean {
+/**
+ * How the in-page UI is laid out. `touch`: a finger may be used (`(pointer: coarse)` or
+ * `(any-pointer: coarse)`: an iPad with a trackpad still has its touch screen), so icons and rows
+ * are finger-sized. `sheet`: a touch screen narrower than SHEET_MAX_VIEWPORT, where the menu is a
+ * bottom sheet; wider (iPad), it is the popover anchored to its field, as on a desktop. A mouse
+ * only (Mac, desktop Chromium): neither, the desktop layout.
+ */
+export interface Layout {
+  touch: boolean;
+  sheet: boolean;
+}
+
+const DESKTOP: Layout = { touch: false, sheet: false };
+
+function matches(view: Window, query: string): boolean {
   try {
-    return doc.defaultView?.matchMedia?.("(pointer: coarse)").matches === true;
+    return view.matchMedia?.(query).matches === true;
   } catch {
     return false;
   }
+}
+
+/** The layout of `view` right now (the frame pages' CSS uses the same two media queries). */
+export function readLayout(view: Window | null | undefined): Layout {
+  if (!view) return DESKTOP;
+  const touch = matches(view, "(pointer: coarse)") || matches(view, "(any-pointer: coarse)");
+  return { touch, sheet: touch && (view.innerWidth ?? Infinity) < SHEET_MAX_VIEWPORT };
+}
+
+/** A live layout: read once, then again when a pointer media query or the window width changes. */
+export interface LayoutWatch {
+  current(): Layout;
+  /** `cb` runs after the layout changed (a trackpad came or went, a rotation, Slide Over). */
+  onChange(cb: () => void): void;
+  destroy(): void;
+}
+
+export function watchLayout(view: Window | null | undefined): LayoutWatch {
+  let now = readLayout(view);
+  const subs: (() => void)[] = [];
+  const offs: (() => void)[] = [];
+  const check = () => {
+    const next = readLayout(view);
+    if (next.touch === now.touch && next.sheet === now.sheet) return;
+    now = next;
+    for (const cb of subs) cb();
+  };
+  if (view) {
+    for (const q of ["(pointer: coarse)", "(any-pointer: coarse)", "(any-pointer: fine)"]) {
+      try {
+        const mq = view.matchMedia?.(q);
+        if (mq && typeof mq.addEventListener === "function") {
+          mq.addEventListener("change", check);
+          offs.push(() => mq.removeEventListener("change", check));
+        }
+      } catch {
+        // No media queries: the resize check still runs.
+      }
+    }
+    view.addEventListener("resize", check, { passive: true });
+    offs.push(() => view.removeEventListener("resize", check));
+  }
+  return {
+    current: () => now,
+    onChange: (cb) => void subs.push(cb),
+    destroy: () => {
+      for (const off of offs.splice(0)) off();
+      subs.length = 0;
+    },
+  };
 }
 
 /** Clicks into a frame are ignored this long after it moved (spec 8.3). */
@@ -272,9 +344,15 @@ export interface Frames {
 
 export function createFrames(opts: FramesOptions): Frames {
   const { shell, doc, geometry } = opts;
-  const touch = opts.touch ?? isTouchScreen(doc);
-  const sheet = (kind: FrameKind) => touch && kind === "menu";
+  const layout = opts.layout ?? (() => readLayout(doc.defaultView));
+  const sheet = (kind: FrameKind) => kind === "menu" && layout().sheet;
   const maxHeight = (kind: FrameKind) => (sheet(kind) ? SHEET_HEIGHT : FRAME_HEIGHT[kind]);
+  /**
+   * Touch: where each frame was last put on the screen, relative to the visual viewport. iOS moves
+   * the visual viewport all the time (the keyboard, the page panning under it); a frame that stays
+   * at the same place on the screen brings nothing new under the finger.
+   */
+  const onScreen = new WeakMap<HTMLIFrameElement, { left: number; top: number; width: number; height: number }>();
   const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
@@ -327,9 +405,17 @@ export function createFrames(opts: FramesOptions): Frames {
     const vv = doc.defaultView?.visualViewport;
     if (!vv || !(vv.height > 0)) {
       const { h } = viewport();
-      return { top: 0, h };
+      return { top: 0, left: 0, h };
     }
-    return { top: vv.offsetTop, h: vv.height };
+    return { top: vv.offsetTop, left: Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0, h: vv.height };
+  };
+
+  /** The anchor's box when the user can see it (inside the visible part), else null. */
+  const seen = (anchor: Element | null, v: { top: number; h: number }): Rect | null => {
+    if (!anchor?.isConnected) return null;
+    const r: Rect = geometry(anchor).rect;
+    if (r.width <= 0 || r.height <= 0 || r.top + r.height <= v.top || r.top >= v.top + v.h) return null;
+    return r;
   };
 
   /**
@@ -340,27 +426,67 @@ export function createFrames(opts: FramesOptions): Frames {
    */
   const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number) => {
     const { w, h: vh } = viewport();
+    const { touch } = layout();
     const width = Math.min(FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
     let width2 = width;
+    /** A bottom sheet (rounded top corners, rising from the bottom edge). */
+    let asSheet = false;
     if (sheet(kind)) {
-      // A bottom sheet across the screen; it does not follow the field.
-      // Its bottom is the top of the keyboard when one is up.
+      // A bottom sheet, centered and at most SHEET_MAX_WIDTH wide. Its bottom is the top of the
+      // keyboard when one is up. It never covers its field (IPAD-02): it stops under the field,
+      // or, with too little room there, it goes above the field.
       const v = visible();
-      width2 = w;
-      left = 0;
-      height = Math.min(height, Math.max(0, Math.floor(v.h)));
-      top = Math.max(0, v.top + v.h - height);
+      const bottom = v.top + v.h;
+      width2 = Math.min(w, SHEET_MAX_WIDTH);
+      left = Math.max(0, Math.round((w - width2) / 2));
+      let room = Math.max(0, Math.floor(v.h));
+      asSheet = true;
+      const r = seen(anchor, v);
+      if (r) {
+        const below = Math.floor(bottom - (r.top + r.height + GAP));
+        const above = Math.floor(r.top - GAP - v.top);
+        if (below >= Math.min(height, SHEET_MIN_HEIGHT) || below >= above) {
+          room = Math.max(0, Math.min(room, below));
+        } else {
+          // The field sits low (just above the keyboard): the menu goes above it.
+          asSheet = false;
+          height = Math.max(0, Math.min(height, above));
+          top = r.top - GAP - height;
+        }
+      }
+      if (asSheet) {
+        height = Math.min(height, room);
+        top = Math.max(0, bottom - height);
+      }
     } else if (kind === "overlay") {
-      // The one-click offer and its progress sit centered at the top of the page.
+      // The one-click offer and its progress sit centered at the top of what the user sees
+      // (touch: the visual viewport, as the save card; the keyboard may have scrolled it).
       left = Math.max(EDGE, Math.round((w - width) / 2));
+      if (touch) top = Math.max(0, Math.round(visible().top)) + EDGE;
     } else if (anchor && kind !== "save") {
       const r: Rect = geometry(anchor).rect;
       left = Math.max(EDGE, Math.min(r.left, w - width - EDGE));
       top = r.top + r.height + GAP;
-      const above = r.top - GAP - height;
-      if (top + height > vh - EDGE && above >= EDGE) top = above;
+      if (touch) {
+        // iPad: the popover follows its field inside what the user sees (the keyboard hides the
+        // bottom of the layout viewport), below it or above it, the larger side when neither
+        // fits; it never covers the field.
+        const v = visible();
+        const below = Math.floor(v.top + v.h - EDGE - top);
+        const above = Math.floor(r.top - GAP - (v.top + EDGE));
+        if (height > below) {
+          if (height <= above) top = r.top - GAP - height;
+          else if (above > below) {
+            height = Math.max(FRAME_MIN_HEIGHT, above);
+            top = r.top - GAP - height;
+          } else height = Math.max(FRAME_MIN_HEIGHT, below);
+        }
+      } else {
+        const above = r.top - GAP - height;
+        if (top + height > vh - EDGE && above >= EDGE) top = above;
+      }
     } else if (kind === "save" && touch) {
       // Touch (iPhone, iPad): centered at the top of what the user sees. Safari's own bars and
       // the keyboard leave the visual viewport, never the layout one; no other manager's box
@@ -376,14 +502,25 @@ export function createFrames(opts: FramesOptions): Frames {
     iframe.classList.toggle("quiet", kind === "save");
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
-    iframe.classList.toggle("sheet", sheet(kind));
+    iframe.classList.toggle("sheet", asSheet);
     iframe.classList.toggle("corner", !sheet(kind) && kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
     const next = [`${Math.round(left)}px`, `${Math.round(top)}px`, `${width2}px`, `${height}px`];
     const props = ["left", "top", "width", "height"];
-    const changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
+    let changed = props.slice(0, 3).some((p, i) => s.getPropertyValue(p) !== next[i]) || height > prevHeight;
     props.forEach((p, i) => s.setProperty(p, next[i] as string));
+    if (touch) {
+      // IOSSAF-09: on a touch screen, a move is a move on the screen. The frame keeps its place
+      // relative to the visual viewport (the page panned under the keyboard): no new guard. A
+      // change of the visual viewport's size (keyboard, toolbar) that moves the frame on the
+      // screen still re-arms it: a page can blur its field to slide the sheet under a finger.
+      const v = visible();
+      const at = { left: Math.round(left) - Math.round(v.left), top: Math.round(top) - Math.round(v.top), width: width2, height };
+      const was = onScreen.get(iframe);
+      onScreen.set(iframe, at);
+      if (was) changed = was.left !== at.left || was.top !== at.top || was.width !== at.width || at.height > was.height;
+    }
     return changed;
   };
 

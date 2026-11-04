@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import { mountMenu } from "../../src/ui/menu";
 import { Clock, FakeVisibility, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
@@ -127,6 +127,23 @@ describe("inline menu", () => {
     button(r, "Atlas Cloud").click();
     await Promise.resolve();
     expect(worker.sent.at(-1)).toEqual({ type: "menu_pick", token: TOKEN, itemId: "it_01" });
+  });
+
+  it("IOSSAF-09: a real tap held back by the delay shows pressed until the delay is over, and runs nothing", async () => {
+    const { r, handle, worker, clock } = setup(def);
+    await handle.ready;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      clock.advance(100);
+      const row = button(r, "Atlas Cloud");
+      row.click();
+      expect(row.classList.contains("held")).toBe(true);
+      vi.advanceTimersByTime(200);
+      expect(row.classList.contains("held")).toBe(false);
+      expect(worker.types()).toEqual(["menu_init"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores untrusted clicks by default", async () => {
