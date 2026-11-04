@@ -1,0 +1,703 @@
+{
+ "about": "Curated brands for scripts/icon_pack.py: they beat the automatic match. use = simple-icons:<slug>, logos:<file>, 2fa:<file> or site (the brand's own site icon, fetched when the pack is built, never by the app). tile = a background color (hex) drawn under the mark. note = how a fuzzy name was resolved. Founder review 2026-11-03.",
+ "tenants": [
+  "substack.com",
+  "wordpress.com",
+  "squarespace.com",
+  "zendesk.com",
+  "freshdesk.com",
+  "okta.com",
+  "oktapreview.com",
+  "auth0.com",
+  "onelogin.com",
+  "force.com",
+  "myshopify.com",
+  "atlassian.net",
+  "notion.site",
+  "gitbook.io",
+  "webflow.io",
+  "wixsite.com",
+  "bubbleapps.io",
+  "readme.io",
+  "typeform.com",
+  "myworkdayjobs.com",
+  "greenhouse.io",
+  "lever.co",
+  "ashbyhq.com",
+  "b2clogin.com",
+  "onmicrosoft.com",
+  "sharepoint.com",
+  "tumblr.com",
+  "ghost.io",
+  "beehiiv.com",
+  "framer.website",
+  "carrd.co",
+  "weebly.com",
+  "blogger.com",
+  "zohosites.com",
+  "service-now.com",
+  "servicenow.com",
+  "jamfcloud.com",
+  "kandji.io",
+  "bitbucket.io",
+  "replit.app",
+  "streamlit.app",
+  "glitch.me",
+  "surge.sh",
+  "amazonaws.com",
+  "azure.com",
+  "cloudflareaccess.com",
+  "duosecurity.com",
+  "europa.eu",
+  "ec.europa.eu"
+ ],
+ "brands": [
+  {
+   "name": "BlaBlaCar",
+   "domains": [
+    "blablacar.fr",
+    "blablacar.com",
+    "blablacar.de",
+    "blablacar.es",
+    "blablacar.it",
+    "blablacar.co.uk"
+   ],
+   "use": "site",
+   "site": "https://www.blablacar.fr/",
+   "app": 341329033,
+   "seller": "Comuto"
+  },
+  {
+   "name": "BNP Paribas",
+   "domains": [
+    "mabanque.bnpparibas",
+    "bnpparibas.com",
+    "bnpparibas.fr",
+    "bnpparibas.net",
+    "group.bnpparibas"
+   ],
+   "use": "site",
+   "site": "https://mabanque.bnpparibas/",
+   "note": "PNP read as BNP Paribas (French bank); Pick n Pay added too",
+   "app": 377884617,
+   "seller": "BNP Paribas"
+  },
+  {
+   "name": "Pick n Pay",
+   "domains": [
+    "pnp.co.za"
+   ],
+   "use": "site",
+   "site": "https://www.pnp.co.za/",
+   "note": "the other reading of PNP"
+  },
+  {
+   "name": "Burger King",
+   "domains": [
+    "bk.com",
+    "burgerking.com",
+    "burgerking.fr",
+    "burgerking.ca",
+    "burgerking.co.uk",
+    "burgerking.de"
+   ],
+   "use": "simple-icons:burgerking"
+  },
+  {
+   "name": "BUT",
+   "domains": [
+    "but.fr"
+   ],
+   "use": "site",
+   "site": "https://www.but.fr/"
+  },
+  {
+   "name": "Butterfly Network",
+   "domains": [
+    "butterflynetwork.com",
+    "cloud.butterflynetwork.com"
+   ],
+   "use": "site",
+   "site": "https://www.butterflynetwork.com/",
+   "note": "Butterfly read as Butterfly Network (iQ ultrasound), the health brand",
+   "app": 1183035589,
+   "seller": "Butterfly Network"
+  },
+  {
+   "name": "Cdiscount",
+   "domains": [
+    "cdiscount.com"
+   ],
+   "use": "site",
+   "site": "https://www.cdiscount.com/",
+   "app": 398364165,
+   "seller": "Cdiscount"
+  },
+  {
+   "name": "ClassPass",
+   "domains": [
+    "classpass.com"
+   ],
+   "use": "site",
+   "site": "https://classpass.com/",
+   "app": 912947244,
+   "seller": "ClassPass"
+  },
+  {
+   "name": "Coinbase Wallet",
+   "domains": [
+    "wallet.coinbase.com",
+    "keys.coinbase.com"
+   ],
+   "use": "site",
+   "site": "https://wallet.coinbase.com/",
+   "app": 1278383455,
+   "seller": "Coinbase"
+  },
+  {
+   "name": "Cosmos",
+   "domains": [
+    "cosmos.so"
+   ],
+   "use": "site",
+   "site": "https://www.cosmos.so/",
+   "note": "Cosmos read as cosmos.so (visual inspiration app)",
+   "app": 1577975475,
+   "seller": "Cosmos"
+  },
+  {
+   "name": "Craigslist",
+   "domains": [
+    "craigslist.org"
+   ],
+   "use": "site",
+   "site": "https://www.craigslist.org/",
+   "app": 1336642410,
+   "seller": "craigslist"
+  },
+  {
+   "name": "Decathlon",
+   "domains": [
+    "decathlon.fr",
+    "decathlon.com",
+    "decathlon.co.uk",
+    "decathlon.de",
+    "decathlon.es",
+    "decathlon.it",
+    "decathlon.ca"
+   ],
+   "use": "site",
+   "site": "https://www.decathlon.fr/",
+   "app": 1168607403,
+   "seller": "Decathlon"
+  },
+  {
+   "name": "Developpez.com",
+   "domains": [
+    "developpez.net",
+    "developpez.com"
+   ],
+   "use": "site",
+   "site": "https://www.developpez.com/",
+   "note": "spoken as Developpe.net"
+  },
+  {
+   "name": "Dex",
+   "domains": [
+    "getdex.com"
+   ],
+   "use": "site",
+   "site": "https://getdex.com/",
+   "note": "Dex read as getdex.com (personal CRM)",
+   "app": 1472132715,
+   "seller": "Dana HQ"
+  },
+  {
+   "name": "Dora",
+   "domains": [
+    "dora.run"
+   ],
+   "use": "site",
+   "site": "https://www.dora.run/",
+   "note": "Dora read as dora.run (AI site builder)"
+  },
+  {
+   "name": "Duro",
+   "domains": [
+    "durolabs.co",
+    "durohub.com"
+   ],
+   "use": "site",
+   "site": "https://durolabs.co/",
+   "note": "Duro read as Duro Labs (hardware PLM)"
+  },
+  {
+   "name": "Erasmus+",
+   "domains": [
+    "erasmus-plus.ec.europa.eu"
+   ],
+   "use": "site",
+   "site": "https://erasmus-plus.ec.europa.eu/",
+   "app": 1234624026,
+   "seller": "European Union"
+  },
+  {
+   "name": "Filoli",
+   "domains": [
+    "filoli.org"
+   ],
+   "use": "site",
+   "site": "https://filoli.org/",
+   "app": 6474118604,
+   "seller": "Filoli"
+  },
+  {
+   "name": "Fox Alpha Tango",
+   "domains": [
+    "foxalphatango.com"
+   ],
+   "use": "site",
+   "site": "https://www.foxalphatango.com/",
+   "note": "unverified name"
+  },
+  {
+   "name": "GrabCAD",
+   "domains": [
+    "grabcad.com"
+   ],
+   "use": "site",
+   "site": "https://grabcad.com/",
+   "app": 1096429932,
+   "seller": "Stratasys",
+   "note": "GrabCAD's app is GrabCAD Print (Stratasys)"
+  },
+  {
+   "name": "GoPro",
+   "domains": [
+    "gopro.com"
+   ],
+   "use": "site",
+   "site": "https://gopro.com/",
+   "app": 561350520,
+   "seller": "GoPro",
+   "note": "GoPro's own app is GoPro Quik: its icon"
+  },
+  {
+   "name": "GuruShots",
+   "domains": [
+    "gurushots.com"
+   ],
+   "use": "site",
+   "site": "https://gurushots.com/",
+   "app": 1111221823,
+   "seller": "Gurushots"
+  },
+  {
+   "name": "HelloFresh",
+   "domains": [
+    "hellofresh.com",
+    "hellofresh.fr",
+    "hellofresh.de",
+    "hellofresh.co.uk",
+    "hellofresh.ca",
+    "hellofresh.be",
+    "hellofresh.nl"
+   ],
+   "use": "simple-icons:hellofresh"
+  },
+  {
+   "name": "Homie",
+   "domains": [
+    "homie.com"
+   ],
+   "use": "site",
+   "site": "https://www.homie.com/",
+   "note": "Homie read as homie.com (real estate)"
+  },
+  {
+   "name": "Humane",
+   "domains": [
+    "humane.com"
+   ],
+   "use": "site",
+   "site": "https://humane.com/"
+  },
+  {
+   "name": "Incogni",
+   "domains": [
+    "incogni.com"
+   ],
+   "use": "site",
+   "site": "https://incogni.com/",
+   "app": 6747801342,
+   "seller": "Incogni"
+  },
+  {
+   "name": "INE",
+   "domains": [
+    "ine.com"
+   ],
+   "use": "site",
+   "site": "https://ine.com/",
+   "note": "INE read as ine.com (IT and security training)"
+  },
+  {
+   "name": "Immersive Labs",
+   "domains": [
+    "immersivelabs.com",
+    "immersivelabs.online"
+   ],
+   "use": "site",
+   "site": "https://www.immersivelabs.com/",
+   "note": "Immersive Tech read as Immersive Labs (guess)"
+  },
+  {
+   "name": "YONO SBI",
+   "domains": [
+    "yonosbi.com",
+    "onlinesbi.sbi",
+    "sbi.co.in"
+   ],
+   "use": "site",
+   "site": "https://www.onlinesbi.sbi/",
+   "note": "Yonos read as YONO by SBI",
+   "app": 1231393474,
+   "seller": "State Bank of India"
+  },
+  {
+   "name": "ipstack",
+   "domains": [
+    "ipstack.com"
+   ],
+   "use": "site",
+   "site": "https://ipstack.com/"
+  },
+  {
+   "name": "Jobright",
+   "domains": [
+    "jobright.ai"
+   ],
+   "use": "site",
+   "site": "https://jobright.ai/",
+   "app": 6738236788,
+   "seller": "Jobright"
+  },
+  {
+   "name": "Maison 21G",
+   "domains": [
+    "maison21g.com"
+   ],
+   "use": "site",
+   "site": "https://www.maison21g.com/"
+  },
+  {
+   "name": "Marmiton",
+   "domains": [
+    "marmiton.org"
+   ],
+   "use": "site",
+   "site": "https://www.marmiton.org/",
+   "app": 318796083,
+   "seller": "aufeminin"
+  },
+  {
+   "name": "Mimi Hearing",
+   "domains": [
+    "mimi.io"
+   ],
+   "use": "site",
+   "site": "https://mimi.io/",
+   "app": 932496645,
+   "seller": "Mimi Hearing"
+  },
+  {
+   "name": "Cozy Cloud",
+   "domains": [
+    "cozy.io",
+    "mycozy.cloud",
+    "twake.app"
+   ],
+   "use": "site",
+   "site": "https://cozy.io/",
+   "app": 1600636174,
+   "seller": "Cozy Cloud",
+   "note": "Cozy Cloud's app is now Twake Workplace"
+  },
+  {
+   "name": "Netgear",
+   "domains": [
+    "netgear.com",
+    "netgear.fr",
+    "accounts.netgear.com"
+   ],
+   "use": "site",
+   "site": "https://www.netgear.com/"
+  },
+  {
+   "name": "Unreal Engine",
+   "domains": [
+    "unrealengine.com"
+   ],
+   "use": "logos:unrealengine-icon.svg"
+  },
+  {
+   "name": "Epic Games",
+   "domains": [
+    "epicgames.com",
+    "store.epicgames.com"
+   ],
+   "use": "simple-icons:epicgames"
+  },
+  {
+   "name": "OpenPerplex",
+   "domains": [
+    "openperplex.com"
+   ],
+   "use": "site",
+   "site": "https://openperplex.com/",
+   "note": "Open Perplex: openperplex.com if it is that one, else Perplexity below"
+  },
+  {
+   "name": "Perplexity",
+   "domains": [
+    "perplexity.ai",
+    "pplx.ai"
+   ],
+   "use": "logos:perplexity-icon.svg"
+  },
+  {
+   "name": "Peak Design",
+   "domains": [
+    "peakdesign.com"
+   ],
+   "use": "simple-icons:peakdesign"
+  },
+  {
+   "name": "Philips Hue",
+   "domains": [
+    "philips-hue.com",
+    "meethue.com",
+    "account.meethue.com"
+   ],
+   "use": "2fa:philips-hue.com.svg"
+  },
+  {
+   "name": "Planoly",
+   "domains": [
+    "planoly.com"
+   ],
+   "use": "site",
+   "site": "https://www.planoly.com/",
+   "note": "spoken as Planou",
+   "app": 1014568284,
+   "seller": "Planogram"
+  },
+  {
+   "name": "Plaud",
+   "domains": [
+    "plaud.ai",
+    "web.plaud.ai"
+   ],
+   "use": "site",
+   "site": "https://www.plaud.ai/",
+   "note": "spoken as Plod",
+   "app": 6450364080,
+   "seller": "PLAUD"
+  },
+  {
+   "name": "Pornhub",
+   "domains": [
+    "pornhub.com"
+   ],
+   "use": "site",
+   "site": "https://www.pornhub.com/"
+  },
+  {
+   "name": "Quick Quack Car Wash",
+   "domains": [
+    "dontdrivedirty.com",
+    "quickquackcarwash.com"
+   ],
+   "use": "site",
+   "site": "https://www.dontdrivedirty.com/",
+   "app": 1618979301,
+   "seller": "Quick Quack"
+  },
+  {
+   "name": "Reddit",
+   "domains": [
+    "reddit.com",
+    "redd.it",
+    "redditinc.com",
+    "reddithelp.com"
+   ],
+   "use": "logos:reddit-icon.svg"
+  },
+  {
+   "name": "Shodan",
+   "domains": [
+    "shodan.io"
+   ],
+   "use": "site",
+   "site": "https://www.shodan.io/"
+  },
+  {
+   "name": "Tailwind UI",
+   "domains": [
+    "tailwindui.com",
+    "tailwindcss.com",
+    "tailwindplus.com"
+   ],
+   "use": "logos:tailwindcss-icon.svg"
+  },
+  {
+   "name": "USCIS",
+   "domains": [
+    "uscis.gov",
+    "myaccount.uscis.gov"
+   ],
+   "use": "site",
+   "site": "https://my.uscis.gov/"
+  },
+  {
+   "name": "Vanta",
+   "domains": [
+    "vanta.com"
+   ],
+   "use": "site",
+   "site": "https://www.vanta.com/"
+  },
+  {
+   "name": "Vivino",
+   "domains": [
+    "vivino.com"
+   ],
+   "use": "site",
+   "site": "https://www.vivino.com/",
+   "app": 414461255,
+   "seller": "Vivino"
+  },
+  {
+   "name": "Voyage Prive",
+   "domains": [
+    "voyage-prive.com",
+    "voyage-prive.it",
+    "voyage-prive.es",
+    "voyage-prive.co.uk"
+   ],
+   "use": "site",
+   "site": "https://www.voyage-prive.com/",
+   "app": 397336553,
+   "seller": "VPG"
+  },
+  {
+   "name": "Zep",
+   "domains": [
+    "getzep.com",
+    "app.getzep.com"
+   ],
+   "use": "site",
+   "site": "https://www.getzep.com/",
+   "note": "Zep read as getzep.com (agent memory)"
+  },
+  {
+   "name": "Instagram",
+   "domains": [
+    "instagram.com"
+   ],
+   "use": "2fa:instagram.com.svg"
+  },
+  {
+   "name": "Intuit",
+   "domains": [
+    "intuit.com",
+    "accounts.intuit.com"
+   ],
+   "use": "site",
+   "site": "https://intuit.com/"
+  },
+  {
+   "name": "La Poste",
+   "domains": [
+    "laposte.fr",
+    "laposte.net"
+   ],
+   "use": "site",
+   "site": "https://www.laposte.fr/",
+   "app": 431602927,
+   "seller": "la poste"
+  },
+  {
+   "name": "Les Arcs",
+   "domains": [
+    "lesarcs.com"
+   ],
+   "use": "site",
+   "site": "https://www.lesarcs.com/",
+   "note": "L'Arc read as Les Arcs (ski resort)"
+  },
+  {
+   "name": "MacPaw",
+   "domains": [
+    "macpaw.com",
+    "my.macpaw.com"
+   ],
+   "use": "simple-icons:macpaw",
+   "note": "MacPo read as MacPaw; its site icon is a plain disc, Simple Icons has the real mark"
+  },
+  {
+   "name": "Snapchat",
+   "domains": [
+    "snapchat.com",
+    "accounts.snapchat.com"
+   ],
+   "use": "2fa:snapchat.com.svg",
+   "tile": "FFFC00"
+  },
+  {
+   "name": "Starbucks",
+   "domains": [
+    "starbucks.com",
+    "app.starbucks.com",
+    "starbucks.fr",
+    "starbucks.co.uk",
+    "starbucks.ca"
+   ],
+   "use": "2fa:starbucks.com.svg"
+  },
+  {
+   "name": "Suno",
+   "domains": [
+    "suno.com",
+    "suno.ai"
+   ],
+   "use": "site",
+   "site": "https://suno.com/"
+  },
+  {
+   "name": "Withings",
+   "domains": [
+    "withings.com",
+    "account.withings.com",
+    "healthmate.withings.com"
+   ],
+   "use": "site",
+   "site": "https://www.withings.com/",
+   "note": "WeThings read as Withings; icon of the Withings app",
+   "app": 542701020,
+   "seller": "Withings"
+  },
+  {
+   "name": "Tritera",
+   "domains": [],
+   "use": "none",
+   "note": "no service of that name found"
+  },
+  {
+   "name": "New Research",
+   "domains": [],
+   "use": "none",
+   "note": "no service of that name found"
+  }
+ ]
+}

@@ -83,6 +83,8 @@ jobs:
           done
           printf '}\n' >> "$RUNNER_TEMP/sources.json"
           cat "$RUNNER_TEMP/sources.json"
+      - name: Brand icons of the hand-picked list (their App Store icon or their site's icon)
+        run: python3 -I scripts/icon_pack.py sites --out "$RUNNER_TEMP/sites"
       - name: Version
         id: version
         run: echo "version=$(date -u +%Y%m%d)$(printf '%02d' $(( GITHUB_RUN_NUMBER % 100 )))" >> "$GITHUB_OUTPUT"
@@ -93,7 +95,7 @@ jobs:
           up="$RUNNER_TEMP/upstream"
           python3 -I scripts/icon_pack.py build --simple-icons "$up/simple-icons.src" --logos "$up/logos.src" \
             --twofa "$up/2fa-directory.src" --sources "$RUNNER_TEMP/sources.json" --version "$VERSION" \
-            --size 256 --out out
+            --size 256 --sites "$RUNNER_TEMP/sites" --out out
           ls -l out
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

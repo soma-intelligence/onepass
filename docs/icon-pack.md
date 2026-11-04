@@ -9,16 +9,25 @@ Les icônes de marques que l'app affiche pour les éléments viennent d'un pack 
 | [Simple Icons](https://github.com/simple-icons/simple-icons) | CC0-1.0 | marques d'une couleur (SVG), dessinées dans la couleur de la marque (`hex`) ; noir et blanc restent une marque d'une couleur que l'app dessine dans la couleur du texte | nom identique à une entrée de 2FA Directory, sinon hôte de `source` quand son nom est celui de la marque |
 | [gilbarbara/logos](https://github.com/gilbarbara/logos) | CC0-1.0 | la variante carrée `-icon.svg` en couleurs, sinon le logo principal s'il est carré | champ `url` |
 | [2FA Directory](https://github.com/2factorauth/twofactorauth) | MIT | `img/` en SVG, carrés seulement (un mot-marque large devient illisible dans une tuile) | `domain` et `additional-domains` |
+| Icône propre de la marque (liste choisie à la main) | marque de son propriétaire, montrée comme un navigateur montre une favicon | l'icône de son app iOS (App Store, 256 px, vendeur vérifié), sinon l'icône de son site (apple-touch-icon, manifeste, favicon.ico ou la copie qu'en garde Google), 180 px au moins | `scripts/icon-pack-curated.json` |
 
 Écartés : les icônes de Simple Icons qui portent une autre licence que CC0, MIT, Apache-2.0, BSD, ISC ou Unlicense (CC-BY-SA, NC, ND, GPL, licences maison) ; aegis-icons (licences mêlées icône par icône, dont GPL et CC-BY) ; dashboard-icons (applications auto-hébergées, peu de sites grand public). Une licence copyleft ou à attribution par icône ne convient ni à l'AGPL distribuée sur l'App Store ni à la licence commerciale.
 
 Les logos restent des marques de leurs propriétaires. Ils servent ici à reconnaître un compte, comme une favicon ; leur présence ne signifie aucune affiliation. Une marque qui demande le retrait de son icône l'obtient en amont (Simple Icons, 2FA Directory) ou par une exclusion dans `scripts/icon_pack.py`. Mentions : [`NOTICE`](../NOTICE).
 
+## Liste choisie à la main
+
+`scripts/icon-pack-curated.json` passe avant toute correspondance automatique. Chaque marque y a ses domaines (alias et pays compris) et sa source : une icône précise d'un des trois jeux (`simple-icons:<slug>`, `logos:<fichier>`, `2fa:<fichier>`), ou `site`, l'icône de la marque elle-même, prise **à la construction du pack** (`icon_pack.py sites`), jamais par l'app. `tile` pose la marque sur un carré de sa couleur (le fantôme de Snapchat sur jaune). `note` dit comment un nom flou a été lu. Les jeux ouverts d'abord ; l'icône de la marque seulement quand aucun ne l'a en couleurs ou la dessine mal. Sans icône de 180 px au moins, la marque n'entre pas dans le pack et l'app dessine sa tuile monogramme.
+
+La même liste nomme les plateformes qui hébergent d'autres marques (`tenants` : Zendesk, Okta, Substack, SharePoint...) : leur icône ne passe pas à leurs sous-domaines (`acme.zendesk.com` est le centre d'aide d'Acme, pas Zendesk).
+
+L'index du pack porte aussi `names` : le nom de chaque marque (lettres et chiffres, sans accents) vers son icône, pour un élément sans adresse dont le titre est le nom de la marque. Un nom que deux icônes réclament n'y entre pas, sauf si la liste choisie ou un domaine au nom de la marque tranche.
+
 ## Construction
 
 `scripts/icon_pack.py build` lit les trois dépôts (données non fiables : chaque archive est dépaquetée dans son propre dossier vide, rien n'y est exécuté, Python tourne avec `-I`), garde pour chaque domaine la meilleure icône (logos `-icon` en couleurs, puis 2FA Directory en couleurs, puis Simple Icons, puis les autres carrées), refuse tout SVG qui lirait autre chose que lui-même (DOCTYPE, entité, script, image, `href` externe, `url()` externe, `@import`, texte), le dessine avec [resvg](https://github.com/linebender/resvg) en carré de 256 px (dossier de ressources vide, polices système ignorées) et l'encode en WebP sans perte (`cwebp -lossless`). Une icône presque vide est écartée et le domaine passe à la suivante.
 
-Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône), puis les icônes. Drapeau 1 : marque d'une couleur. Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
+Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône, et en option `names` et `tenants`, qu'un lecteur plus ancien ignore), puis les icônes. Drapeau 1 : marque d'une couleur. Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
 
 Tests : `python3 -I scripts/test_icon_pack.py` (rendu de bout en bout si `resvg` et `cwebp` sont là, signature si OpenSSL 3 est là) et la suite `IconPack` de VaultKit.
 
@@ -39,7 +48,7 @@ Une clé à part, jamais la clé Sparkle : une fuite de l'une ne doit rien donne
 
 ## Pack livré dans l'app
 
-`apple/IconPack/onepass-icons.bin` est le pack de base, construit par `scripts/icon_pack.py build` (version 2026110303, celle de la planche-contact approuvée ; son manifeste `apple/IconPack/icon-pack-manifest.json` donne le SHA-256 et les commits amont). Il est copié une seule fois dans l'app (iOS, Mac, visionOS ; la cible `OnePass` de `apple/project.yml`). L'extension AutoFill ne l'embarque pas : elle le lit dans l'app qui la contient, ou dans la copie que l'app pose au lancement dans le dossier partagé du groupe d'apps (`SharedContainer.iconPackFolder`, où arrivent aussi les packs téléchargés). La montre et l'hôte de l'extension Safari n'affichent pas d'icônes d'éléments : pas de pack.
+`apple/IconPack/onepass-icons.bin` est le pack de base, construit par `scripts/icon_pack.py sites` puis `build --sites` (version 2026110304, après la revue du fondateur sur ses appareils ; son manifeste `apple/IconPack/icon-pack-manifest.json` donne le SHA-256 et les commits amont). Il est copié une seule fois dans l'app (iOS, Mac, visionOS ; la cible `OnePass` de `apple/project.yml`). L'extension AutoFill ne l'embarque pas : elle le lit dans l'app qui la contient, ou dans la copie que l'app pose au lancement dans le dossier partagé du groupe d'apps (`SharedContainer.iconPackFolder`, où arrivent aussi les packs téléchargés). La montre et l'hôte de l'extension Safari n'affichent pas d'icônes d'éléments : pas de pack.
 
 Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais chaque semaine : les packs hebdomadaires arrivent par la mise à jour signée ci-dessus. Pour le remplacer : construire, vérifier le SHA-256 contre le manifeste, copier les deux fichiers.
 
@@ -48,9 +57,17 @@ Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais ch
 `ItemIconResolver` (VaultKit), utilisé par l'app et par l'extension AutoFill :
 
 1. Icône choisie par la personne pour l'élément. Le cœur la garde (`custom_icon`) mais aucun écran ne la règle et le pont ne l'expose pas encore : le paramètre `chosen` attend ce branchement.
-2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable. Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
-3. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme.
-4. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
+2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable (jamais le parent d'une plateforme `tenants`). Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
+3. Pack, par le titre de l'élément quand c'est le nom d'une marque (« Reddit ») ou une adresse (« reddit.com ») : un élément sans adresse trouve aussi sa marque.
+4. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme.
+5. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
+
+## Rendu dans les listes
+
+Comme dans les listes d'Apple, chaque icône occupe la même tuile carrée aux coins arrondis, avec un filet fin :
+
+- une icône d'app (artwork plein bord, ou carré arrondi sur fond transparent) remplit la tuile ;
+- toute autre marque est posée au centre d'une tuile grise discrète (claire en mode clair, sombre en mode sombre ; claire pour une marque surtout noire en mode sombre, sombre pour une marque presque blanche en mode clair), recadrée sur son encre puis mise à une même taille optique : la racine carrée de l'aire de sa boîte fait 58 % de la tuile, son grand côté au plus 74 %. Une marque d'une couleur prend la couleur du texte.
 
 Le réglage « Icônes des sites » coupé : ni pack ni icône de site, aucune requête.
 

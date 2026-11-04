@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import struct
 import shutil
 import sys
 import tempfile
@@ -103,6 +104,46 @@ class Svg(unittest.TestCase):
         self.assertEqual(icon_pack.colors_in(COLOR_SVG), {"ff0000", "0000ff"})
 
 
+class Raster(unittest.TestCase):
+    def test_sizes_and_ico(self):
+        png = icon_pack.png_from_rgba(3, 2, [b"\xff\x00\x00\xff" * 3, b"\x00\x00\xff\x80" * 3])
+        self.assertEqual(icon_pack.raster_size(png), (3, 2))
+        self.assertEqual(icon_pack.raster_mime(png), "image/png")
+        self.assertEqual(icon_pack.png_rgba(png)[2][:4], b"\xff\x00\x00\xff")
+        jpeg = b"\xff\xd8\xff\xe0\x00\x04ab\xff\xc0\x00\x11\x08\x00\xc8\x01\x2c" + b"\x00" * 12
+        self.assertEqual(icon_pack.raster_size(jpeg), (300, 200))
+        self.assertIsNone(icon_pack.raster_mime(b"<svg/>"))
+        # A .ico holding a 2x2 32-bit bitmap (bottom-up BGRA, then the AND mask).
+        bmp = struct.pack("<IiiHHIIiiII", 40, 2, 4, 1, 32, 0, 0, 0, 0, 0, 0)
+        bmp += b"\x00\x00\xff\xff" * 2 + b"\xff\x00\x00\xff" * 2 + b"\x00" * 8
+        ico = b"\x00\x00\x01\x00\x01\x00" + struct.pack("<BBBBHHII", 2, 2, 0, 0, 1, 32, len(bmp), 22) + bmp
+        out = icon_pack.ico_largest(ico)
+        width, height, pixels = icon_pack.png_rgba(out)
+        self.assertEqual((width, height), (2, 2))
+        self.assertEqual(pixels[:4], b"\x00\x00\xff\xff")  # top row is the bitmap's last: blue
+        self.assertEqual(pixels[8:12], b"\xff\x00\x00\xff")
+        self.assertIsNone(icon_pack.ico_largest(b"not an ico"))
+
+    def test_raster_svg_embeds_the_image(self):
+        png = icon_pack.png_from_rgba(1, 1, [b"\x00\x00\x00\xff"])
+        svg = icon_pack.raster_svg(png)
+        self.assertIn(b'viewBox="0 0 1 1"', svg)
+        self.assertIn(b"data:image/png;base64,", svg)
+
+    def test_icon_links(self):
+        html = ('<link rel="icon" href="/f.ico"><link rel="apple-touch-icon" sizes="180x180" href="/t.png">'
+                '<link rel=manifest href="/m.json">')
+        links, manifest = icon_pack.icon_links(html, "https://brand.test/a/")
+        self.assertIn(("https://brand.test/t.png", 180), links)
+        self.assertIn(("https://brand.test/f.ico", 0), links)
+        self.assertEqual(manifest, "https://brand.test/m.json")
+
+    def test_tiled_draws_a_square_under_the_mark(self):
+        out = icon_pack.tiled(icon_pack.squared(SQUARE_SVG, 100), 100, "FFFC00")
+        self.assertIn(b'<rect width="100" height="100" fill="#FFFC00"/>', out)
+        self.assertIn(b'x="19" y="19" width="62" height="62"', out)
+
+
 class Pack(unittest.TestCase):
     def test_round_trip_and_bounds(self):
         data = icon_pack.pack_bytes(3, 256, [(b"aaa", 0), (b"bb", 1)], {"b.com": 1, "a.com": 0})
@@ -117,6 +158,33 @@ class Pack(unittest.TestCase):
         bad = icon_pack.pack_bytes(3, 256, [(b"a", 0)], {"a.com": 4})
         with self.assertRaises(icon_pack.IconPackError):
             icon_pack.read_pack(bad)
+        bad = icon_pack.pack_bytes(3, 256, [(b"a", 0)], {"a.com": 0}, names={"brand": 2})
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.read_pack(bad)
+
+    def test_names_and_tenants(self):
+        data = icon_pack.pack_bytes(3, 256, [(b"a", 0)], {"zendesk.com": 0}, names={"zendesk": 0},
+                                    tenants=["zendesk.com"])
+        index, _ = icon_pack.read_pack(data)
+        self.assertEqual(index["names"], {"zendesk": 0})
+        self.assertEqual(index["tenants"], ["zendesk.com"])
+        plain, _ = icon_pack.read_pack(icon_pack.pack_bytes(3, 256, [(b"a", 0)], {"a.com": 0}))
+        self.assertNotIn("names", plain)
+
+    def test_brand_names(self):
+        C = icon_pack.Candidate
+        picked = {"reddit.com": C(0, "logos", b"", brand="Reddit"),
+                  "redd.it": C(0, "logos", b"", brand="Reddit"),
+                  "box.com": C(0, "logos", b"", brand="Box"),
+                  "boxhq.net": C(0, "logos", b"", brand="Box"),
+                  "a.com": C(0, "logos", b"", brand="Same"), "b.com": C(0, "logos", b"", brand="Same"),
+                  "x.com": C(0, "logos", b"", brand="X")}
+        domains = {"reddit.com": 0, "redd.it": 0, "box.com": 1, "boxhq.net": 2, "a.com": 3, "b.com": 4, "x.com": 5}
+        names = icon_pack.brand_names(picked, domains)
+        self.assertEqual(names["reddit"], 0)
+        self.assertEqual(names["box"], 1)  # the domain named after the brand settles it
+        self.assertNotIn("same", names)  # two icons, nothing settles it
+        self.assertNotIn("x", names)  # too short
 
 
 def write(path, data):
@@ -168,6 +236,28 @@ class Collect(unittest.TestCase):
         self.assertIn(("license", "simple-icons Restricted (CC-BY-NC-4.0)"), log)
         self.assertIn(("unsafe", "2fa unsafe.com.svg"), log)
 
+    def test_curated_beats_the_automatic_match(self):
+        sites = self.tmp / "sites"
+        write(sites / "brand.test", icon_pack.png_from_rgba(1, 1, [b"\x00\x00\x00\xff"]))
+        curated = {"brands": [
+            {"name": "Withings", "domains": ["withings.com", "account.withings.com"], "use": "simple-icons:withings",
+             "tile": "FFFC00"},
+            {"name": "Brand", "domains": ["brand.test"], "use": "site"},
+            {"name": "Missing", "domains": ["missing.test"], "use": "site"},
+            {"name": "None", "domains": [], "use": "none"},
+        ]}
+        log = []
+        out = icon_pack.curated_candidates(curated, self.roots, sites, lambda k, w: log.append((k, w)))
+        self.assertEqual(out["withings.com"].rank, icon_pack.RANK_CURATED)
+        self.assertEqual(out["withings.com"].fill, "00A2E0")
+        self.assertEqual(out["withings.com"].tile, "FFFC00")
+        self.assertTrue(out["withings.com"].curated)
+        self.assertIs(out["account.withings.com"], out["withings.com"])
+        self.assertEqual(out["brand.test"].source, "brand")
+        self.assertIn(b"data:image/png;base64,", out["brand.test"].svg)
+        self.assertNotIn("missing.test", out)
+        self.assertIn(("curated", "missing.test: no fetched icon"), log)
+
     @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
                          "needs resvg and cwebp")
     def test_build_end_to_end(self):
@@ -176,7 +266,7 @@ class Collect(unittest.TestCase):
         out = self.tmp / "out"
         code = icon_pack.main(["build", "--simple-icons", str(self.roots[0]), "--logos", str(self.roots[1]),
                                "--twofa", str(self.roots[2]), "--sources", str(sources), "--version", "42",
-                               "--size", "128", "--out", str(out),
+                               "--size", "128", "--out", str(out), "--curated", "",
                                "--resvg", os.environ.get("RESVG") or shutil.which("resvg")])
         self.assertEqual(code, 0)
         manifest = json.loads((out / "icon-pack-manifest.json").read_text())
