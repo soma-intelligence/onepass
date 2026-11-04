@@ -394,7 +394,6 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_new_login":
       case "menu_unlock":
       case "menu_vault":
-      case "menu_unlock_biometric":
       case "menu_resume":
       case "menu_close":
       case "menu_keys":
@@ -409,6 +408,10 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+      case "menu_unlock_biometric":
+        // `gesture`: only ever true (a tap on the button); the automatic try sends none.
+        if (o.gesture !== undefined && o.gesture !== true) throw new Invalid();
+        return o.gesture === true ? { type: o.type, token: token(o.token), gesture: true } : { type: o.type, token: token(o.token) };
       case "menu_unlock_password":
         // The master password from the iOS unlock sheet: text, 1 to 1024 UTF-8 bytes.
         return { type: o.type, token: token(o.token), password: masterPassword(o.password) };

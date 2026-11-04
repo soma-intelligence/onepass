@@ -331,11 +331,13 @@ export type UiToBg =
    * browsers); the two others unlock it with Face ID or Touch ID, or the master password.
    */
   | { type: "menu_vault"; token: string }
-  | { type: "menu_unlock_biometric"; token: string }
+  /** `gesture`: a tap on the Face ID button (the fill resumes); absent for the menu's automatic try. */
+  | { type: "menu_unlock_biometric"; token: string; gesture?: true }
   | { type: "menu_unlock_password"; token: string; password: string }
   /**
-   * Unlocked from this menu (the app's Touch ID on the Mac, the sheet on iOS): the fill the user
-   * asked for goes on in the menu's frame (smart fill, once per unlock asked from this menu).
+   * Unlocked in the app after this menu asked (`menu_unlock`, Touch ID on the Mac): the menu's
+   * field runs its plan again in the menu's frame, once. The iOS sheet's unlocks resume in their
+   * own call (`menu_unlock_biometric` with `gesture`, `menu_unlock_password`), never by this.
    */
   | { type: "menu_resume"; token: string }
   | { type: "menu_close"; token: string }
@@ -420,8 +422,12 @@ export type BgToCs =
    * form whose submit control reads as pay or create at click time.
    */
   | { type: "submit"; origin: string; ref: string; planned?: true }
-  /** Run smart fill in this frame as if its user clicked (popup Fill, `fill-smart` command). */
-  | { type: "smart_fill" }
+  /**
+   * Run smart fill in this frame as if its user clicked (popup Fill, `fill-smart` command).
+   * `fieldRef`, `origin`: the field of a menu the user unlocked from, its plan run once after the
+   * unlock (MS-03, IOSSAF-02); only that field, only at that origin.
+   */
+  | { type: "smart_fill"; fieldRef?: string; origin?: string }
   /** The page context of this frame, for a plan made without a click (popup line, chain replan): replied, never sent. */
   | { type: "plan_request" }
   /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */

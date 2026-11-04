@@ -381,7 +381,7 @@ describe("inline menu", () => {
     expect(text(r)).toContain("Atlas Cloud");
   });
 
-  it("MS-03 (iOS): the automatic Face ID loads the menu (no gesture); a tap on Face ID resumes the fill", async () => {
+  it("MS-03 (iOS): the automatic Face ID says no gesture; a tap on Face ID says one (the worker resumes in that call)", async () => {
     let first = true;
     const { r, handle, worker, clock } = setup((m) => {
       if (m.type === "menu_init") return { err: "locked" };
@@ -397,14 +397,16 @@ describe("inline menu", () => {
     });
     await handle.ready;
     for (let i = 0; i < 4; i++) await flush();
-    expect(worker.types()).not.toContain("menu_resume");
+    expect(worker.sent.filter((m) => m.type === "menu_unlock_biometric")).toEqual([{ type: "menu_unlock_biometric", token: TOKEN }]);
     clock.advance(300);
     button(r, "Déverrouiller avec Face ID").click();
     for (let i = 0; i < 3; i++) await flush();
-    expect(worker.types().at(-1)).toBe("menu_resume");
+    expect(worker.sent.filter((m) => m.type === "menu_unlock_biometric").at(-1)).toEqual({ type: "menu_unlock_biometric", token: TOKEN, gesture: true });
+    // One resume per unlock: the menu never asks for a second one after the sheet.
+    expect(worker.types()).not.toContain("menu_resume");
   });
 
-  it("MS-03 (iOS): an automatic Face ID that opens the vault never resumes by itself", async () => {
+  it("MS-03 (iOS): an automatic Face ID that opens the vault never asks to resume", async () => {
     const { handle, worker } = setup((m) => {
       if (m.type === "menu_init") return { err: "locked" };
       if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
@@ -414,6 +416,7 @@ describe("inline menu", () => {
     await handle.ready;
     for (let i = 0; i < 4; i++) await flush();
     expect(worker.types().slice(0, 4)).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(worker.sent.find((m) => m.type === "menu_unlock_biometric")).toEqual({ type: "menu_unlock_biometric", token: TOKEN });
     expect(worker.types()).not.toContain("menu_resume");
   });
 

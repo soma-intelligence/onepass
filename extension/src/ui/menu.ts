@@ -246,8 +246,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   }
 
   /**
-   * Unlocked after this menu asked: the worker closes the menu and runs smart fill in its frame
-   * (one click plus Touch ID or Face ID). Refused (a frame, too late): `fallback`, the menu again.
+   * Unlocked in the app after this menu asked (Touch ID on the Mac): the worker closes the menu
+   * and runs its field's plan in its frame (one click plus Touch ID). Refused (too late, the page
+   * changed): `fallback`, the menu again. The iOS sheet never calls this: the worker resumes
+   * within its unlock call, so one unlock fills once.
    */
   async function resume(fallback: () => void): Promise<void> {
     if (!token) return fallback();
@@ -269,8 +271,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
     const reason = v.error ? unlockErrorText(v) : "";
     if (reason) errLine.textContent = reason;
-    /** The running Face ID is the automatic one (no tap). */
-    let byItself = false;
     const after = (r: Awaited<ReturnType<typeof callVault>>): void => {
       unlocking = false;
       if (!r.ok) {
@@ -278,10 +278,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         return;
       }
       if (!r.value.locked) {
-        // The automatic Face ID of a menu that may have opened by itself is no gesture: the menu
-        // loads and the user picks. A tap or the password resumes the fill.
-        if (byItself) void load();
-        else void resume(() => void load());
+        // A tap or the password: the worker already closed the menu and resumed the fill (the
+        // menu's token died, this load finds nothing). The automatic Face ID of a menu that may
+        // have opened by itself is no gesture: the menu loads and the user picks.
+        void load();
         return;
       }
       renderUnlock(r.value, origin);
@@ -289,8 +289,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const biometric = (auto = false): void => {
       if (unlocking || !token) return;
       unlocking = true;
-      byItself = auto;
-      void callVault({ type: "menu_unlock_biometric", token }).then(after);
+      void callVault(auto ? { type: "menu_unlock_biometric", token } : { type: "menu_unlock_biometric", token, gesture: true }).then(after);
     };
     const input = h("input", {
       class: "input unlock-input",
@@ -308,7 +307,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       e?.preventDefault();
       if (unlocking || !token || input.value.length === 0) return;
       unlocking = true;
-      byItself = false;
       const password = input.value;
       input.value = "";
       void callVault({ type: "menu_unlock_password", token, password }).then(after);

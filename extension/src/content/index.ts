@@ -335,11 +335,23 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "submit":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref, m.planned === true);
         break;
-      case "smart_fill":
+      case "smart_fill": {
         // Our worker, on a click in the popup or the command's key: a gesture of the user.
-        void smartFill(null);
+        if (m.fieldRef === undefined) {
+          void smartFill(null);
+          ok = true;
+          break;
+        }
+        // The field of a menu the user unlocked from (the sheet, or the app): that very field
+        // again, at the origin its menu opened on, or nothing.
+        if (typeof m.fieldRef !== "string" || !pinned(m.origin)) break;
+        const el = refs.get(m.fieldRef);
+        const t = el ? parts.icons.targetOf(el) : undefined;
+        if (!t || !t.el.isConnected) break;
+        void smartFill(t);
         ok = true;
         break;
+      }
       case "plan_request": {
         // A context to plan with (popup line, chain replan): no hash, nothing typed leaves.
         const origin = currentOrigin();

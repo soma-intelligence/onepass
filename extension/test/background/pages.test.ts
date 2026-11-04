@@ -265,7 +265,7 @@ describe("menu extras", () => {
     expect(await ext.send({ type: "menu_vault", token }, ui)).toEqual({ err: "invalid" });
   });
 
-  it("MS-03: after an unlock this menu asked for, menu_resume closes it and runs smart fill once", async () => {
+  it("MS-03: after an unlock this menu asked for in the app, menu_resume closes it and runs its field's plan once", async () => {
     const { ext, clock } = await setup();
     const { token, ui } = await menu(ext);
     // Never without an unlock asked from this menu.
@@ -275,12 +275,17 @@ describe("menu extras", () => {
     expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ ok: {} });
     const sent = ext.sentToTabs.map((x) => x.message as { type: string });
     expect(sent.at(-2)).toEqual({ type: "remove_frame", kind: "menu" });
-    expect(ext.sentToTabs.at(-1)).toEqual({ tabId: 7, message: { type: "smart_fill" }, options: { documentId: "doc-1" } });
+    expect(ext.sentToTabs.at(-1)).toEqual({
+      tabId: 7,
+      message: { type: "smart_fill", fieldRef: "e1", origin: SITE },
+      options: { documentId: "doc-1" },
+    });
     // Once: the token died with the menu, and a second resume is refused.
     expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "smart_fill")).toHaveLength(1);
   });
 
-  it("MS-03: menu_resume is refused too late, from another tab, and in a frame", async () => {
+  it("MS-03: menu_resume is refused too late and from another tab; a frame's menu fills that frame only", async () => {
     const { ext, clock } = await setup();
     const { token, ui } = await menu(ext);
     await ext.send({ type: "menu_unlock", token }, ui);
@@ -297,17 +302,38 @@ describe("menu extras", () => {
     const t3 = hashOf(r.ok.url);
     const ui3 = uiSender(`menu.html#${t3}`, 7);
     await ext.send({ type: "menu_unlock", token: t3 }, ui3);
-    expect(await ext.send({ type: "menu_resume", token: t3 }, ui3)).toEqual({ err: "invalid" });
-    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+    expect(await ext.send({ type: "menu_resume", token: t3 }, ui3)).toEqual({ ok: {} });
+    const fills = ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "smart_fill");
+    // The frame that asked, pinned to its document: never the top frame, never a whole-page fill.
+    expect(fills).toEqual([{ tabId: 7, message: { type: "smart_fill", fieldRef: "e1", origin: SITE }, options: { documentId: "doc-3" } }]);
   });
 
-  it("MS-03: menu_resume is refused once the top document changed", async () => {
+  it("MS-03: menu_resume is refused once the menu's document changed", async () => {
     const { ext } = await setup();
     const { token, ui } = await menu(ext);
     await ext.send({ type: "menu_unlock", token }, ui);
     ext.setFrame(7, 0, "https://other.example/login", "doc-2");
     expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
     expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+  });
+
+  it("MS-03: same origin, new document id: refused too", async () => {
+    const { ext } = await setup();
+    const { token, ui } = await menu(ext);
+    await ext.send({ type: "menu_unlock", token }, ui);
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-2");
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+  });
+
+  it("MS-03: an unlock in the iOS sheet resumes in its own call; menu_resume after it is refused", async () => {
+    const vault = async (call: NativeVaultCall): Promise<NativeVault | null> => ({ locked: call.op === "vault_state", account: "Camille", biometry: "faceID" });
+    const { ext } = await setup(undefined, vault);
+    const { token, ui } = await menu(ext);
+    await ext.send({ type: "menu_unlock", token }, ui);
+    await ext.send({ type: "menu_unlock_biometric", token, gesture: true }, ui);
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "smart_fill")).toHaveLength(1);
   });
 
   it("IOSSAF-01: the popup reads and unlocks the native vault; refused where there is none", async () => {

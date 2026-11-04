@@ -253,6 +253,33 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const planMenus = new Map<string, PlanForMenu>();
 
   /**
+   * The one resume after an unlock the user asked for in a menu (MS-03, IOSSAF-02): the menu goes
+   * and its own field runs its plan again, in the menu's own frame and document (the content
+   * script checks the field and the origin again), so the right form fills, once. Callers check
+   * the vault is open. Only within RESUME_WINDOW_MS of the unlock request, and only while that
+   * frame still holds the https document of the menu's origin (same document id where the
+   * browser gives one): no fill handed to a page that committed meanwhile, none to another frame.
+   * False when refused (the menu stays).
+   */
+  const resumeAfterUnlock = async (rec: MenuRecord, askedAt: number): Promise<boolean> => {
+    const t = now();
+    if (t < askedAt || t - askedAt > RESUME_WINDOW_MS) return false;
+    const f = await frames.details(rec.tabId, rec.frameId);
+    const o = f ? parseOrigin(f.url) : null;
+    if (!f || !o?.https || o.origin !== rec.origin) return false;
+    if (rec.documentId !== undefined && f.documentId !== undefined && f.documentId !== rec.documentId) return false;
+    await menus.revokeFrame(rec.tabId, rec.frameId);
+    await removeFrame(ext.tabs, rec, "menu");
+    const msg: BgToCs = { type: "smart_fill", fieldRef: rec.fieldRef, origin: rec.origin };
+    try {
+      await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: rec.frameId });
+    } catch {
+      // The page went away: nothing to fill.
+    }
+    return true;
+  };
+
+  /**
    * The page context of frame `cs`, asked of its content script
    * (`plan_request`, delivered to that very document) and rebuilt and bounded
    * as a `plan_context` is; null when it does not answer.
@@ -364,8 +391,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   };
 
   /**
-   * Menus whose user asked to unlock (MS-03), by token, with the time: once unlocked, the menu
-   * may resume the fill once (`menu_resume`). Memory only, no secret.
+   * Menus whose user asked to unlock in the app (MS-03, Touch ID on the Mac), by token, with the
+   * time: once unlocked, the menu may resume the fill once (`menu_resume`). The iOS sheet's
+   * unlocks resume in their own call and never land here. Memory only, no secret.
    */
   const unlockAsked = new Map<string, number>();
   const askedUnlock = (token: string): void => {
@@ -622,34 +650,31 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         return vaultCall({ op: "vault_state" });
       },
       menu_unlock_biometric: async (m, from) => {
-        await menuRecord(m.token, from);
-        askedUnlock(m.token);
-        return vaultCall({ op: "unlock_biometric" });
+        const rec = await menuRecord(m.token, from);
+        const at = now();
+        const v = await vaultCall({ op: "unlock_biometric" });
+        // The menu's automatic Face ID is no gesture: it unlocks and the menu loads, nothing fills.
+        // A tap on the Face ID button resumes the fill.
+        if (m.gesture === true && !v.locked) await resumeAfterUnlock(rec, at);
+        return v;
       },
       menu_unlock_password: async (m, from) => {
-        await menuRecord(m.token, from);
-        askedUnlock(m.token);
-        return vaultCall({ op: "unlock_password", password: m.password });
+        const rec = await menuRecord(m.token, from);
+        const at = now();
+        const v = await vaultCall({ op: "unlock_password", password: m.password });
+        if (!v.locked) await resumeAfterUnlock(rec, at);
+        return v;
       },
       menu_resume: async (m, from) => {
+        // The unlock in the app (Touch ID on the Mac) ends out of the worker's sight: the menu that
+        // asked for it says when it sees the vault open. The same resume as the sheet's, once.
         const rec = await menuRecord(m.token, from);
         const at = unlockAsked.get(m.token);
         unlockAsked.delete(m.token);
-        // Only after an unlock this very menu asked for, lately; only in the top frame (a frame's
-        // menu reloads instead: no fill a frame did not ask for).
-        if (at === undefined || now() - at > RESUME_WINDOW_MS || now() < at || rec.frameId !== 0) throw new BgError("invalid");
+        if (at === undefined) throw new BgError("invalid");
         const s = await session.request({ op: "status" });
         if (s.locked) throw new BgError("locked");
-        // The top document must still be the one the menu was opened for (no fill handed to a page
-        // that committed meanwhile, where the browser gives no document id).
-        const top = await frames.details(rec.tabId, 0);
-        const o = top ? parseOrigin(top.url) : null;
-        if (!top || !o?.https || o.origin !== rec.origin) throw new BgError("invalid");
-        if (rec.documentId !== undefined && top.documentId !== undefined && top.documentId !== rec.documentId) throw new BgError("invalid");
-        await menus.revokeFrame(rec.tabId, rec.frameId);
-        await removeFrame(ext.tabs, rec, "menu");
-        const msg: BgToCs = { type: "smart_fill" };
-        await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: 0 });
+        if (!(await resumeAfterUnlock(rec, at))) throw new BgError("invalid");
         return {};
       },
       menu_keys: async (m, from) => {

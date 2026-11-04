@@ -1,11 +1,12 @@
 // Touch layout of the in-page UI (fix batch B, 2026-11-04): a live layout (IPAD-01), no menu on a
 // bare tap into a field on a touch screen (IOSSAF-08), an icon on address-only and card-detail
-// forms (IOSSAF-11, MS-07).
+// forms (IOSSAF-11, MS-07), and the worker's replay of a tap that met a locked vault (IOSSAF-02).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Layout } from "../../src/content/frames";
 import type { PageAnalysis } from "../../src/shared/messages";
 import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick } from "./harness";
 
+const ORIGIN = "https://atlas-cloud.test";
 const SALT = "ab".repeat(32);
 const LOGIN = `
 <form id="login">
@@ -148,5 +149,35 @@ describe("IOSSAF-11, MS-07: icons on address-only and card-detail forms", () => 
     s = start();
     await settle();
     expect(icons(s)).toHaveLength(1);
+  });
+});
+
+describe("IOSSAF-02: the worker replays the tap after an unlock", () => {
+  it("smart_fill with the tapped field and its origin runs that field's plan", async () => {
+    setPage(LOGIN);
+    s = start();
+    worker(s, "filled");
+    await settle();
+    const ref = refOf(s, "u");
+    s.ext.deliver({ type: "smart_fill", fieldRef: ref, origin: ORIGIN });
+    await settle();
+    const plans = s.ext.ofType("plan_context");
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ fieldRef: ref });
+  });
+
+  it("another origin, an unknown field or another sender: nothing", async () => {
+    setPage(LOGIN);
+    s = start();
+    worker(s, "filled");
+    await settle();
+    const ref = refOf(s, "u");
+    s.ext.deliver({ type: "smart_fill", fieldRef: ref, origin: "https://evil.test" });
+    s.ext.deliver({ type: "smart_fill", fieldRef: ref });
+    s.ext.deliver({ type: "smart_fill", fieldRef: "nope", origin: ORIGIN });
+    s.ext.deliver({ type: "smart_fill", fieldRef: ref, origin: ORIGIN }, { id: "other-extension" });
+    await settle();
+    expect(s.ext.ofType("plan_context")).toHaveLength(0);
+    expect(s.ext.ofType("fill_salt")).toHaveLength(0);
   });
 });

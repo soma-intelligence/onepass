@@ -398,6 +398,11 @@ describe("message validation", () => {
     expect(parseUiToBg({ type: "popup_vault", extra: 1 })).toEqual({ type: "popup_vault" });
     expect(parseUiToBg({ type: "menu_resume", token })).toEqual({ type: "menu_resume", token });
     expect(parseUiToBg({ type: "menu_resume", token: "short" })).toBeNull();
+    // The Face ID tap says so; the automatic try says nothing; any other value is refused.
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: true })).toEqual({ type: "menu_unlock_biometric", token, gesture: true });
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token })).toEqual({ type: "menu_unlock_biometric", token });
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: false })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: "yes" })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: "" })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: 3 })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: "é".repeat(513) })).toBeNull();
