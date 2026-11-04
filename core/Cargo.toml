@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["onepass-core", "onepass-mailbox-proto", "onepass-mailbox", "onepass-pairnet", "onepass-sync", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-mcp-relay", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host", "onepass-relay", "onepass-bench"]
+members = ["onepass-core", "onepass-mailbox-proto", "onepass-mailbox", "onepass-pairnet", "onepass-sync", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-mcp-relay", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host", "onepass-relay", "onepass-bench", "onepass-wifi"]
 
 [workspace.package]
 version = "0.2.0"
