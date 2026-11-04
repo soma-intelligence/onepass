@@ -1,9 +1,11 @@
 # Local test login (identifier, password, code) for SafariAutofillUITests. Test data only.
-# Run: python3 -I safari-test-site.py site.pem site.key  (serves https://localhost:8443)
+# Any password signs in, except one starting with "Refuse": the form comes back with an error.
+# Run: python3 -I safari-test-site.py site.pem site.key  (serves https://localhost:8443,
+# or the port in ONEPASS_TEST_PORT)
 # Certificate: a throwaway root CA trusted in the simulator only
 #   (`xcrun simctl keychain <udid> add-root-cert ca.pem`) and a localhost leaf it signs with
 #   subjectAltName=DNS:localhost,IP:127.0.0.1 and extendedKeyUsage=serverAuth. Keep keys out of git.
-import html, ssl, sys, urllib.parse
+import html, os, ssl, sys, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 STYLE = """<meta name=viewport content="width=device-width,initial-scale=1">
@@ -12,7 +14,7 @@ main{max-width:420px;margin:48px auto;padding:0 20px}h1{font-size:28px;margin:0 
 p{color:#6e6e73;margin:0 0 24px}label{display:block;font-size:14px;font-weight:600;margin:0 0 6px}
 input{box-sizing:border-box;width:100%;height:48px;border:1px solid #d2d2d7;border-radius:12px;padding:0 14px;font-size:17px;background:#fff;margin-bottom:16px}
 button{width:100%;height:50px;border:0;border-radius:12px;background:#0071e3;color:#fff;font-size:17px;font-weight:600}
-.who{font-weight:600;color:#1d1d1f}</style>"""
+.who{font-weight:600;color:#1d1d1f}.err{color:#d70015;font-weight:600}</style>"""
 
 def page(title, sub, body):
     return f"<!doctype html><html lang=fr><head><title>{title}</title>{STYLE}</head><body><main><h1>{title}</h1><p>{sub}</p>{body}</main></body></html>"
@@ -41,7 +43,8 @@ class H(BaseHTTPRequestHandler):
                 "<input id=u name=username type=email autocomplete=username placeholder='nom@exemple.com'>"
                 "<button type=submit>Continuer</button></form>"))
         elif u.path == "/password":
-            self.send(page("Mot de passe", f"Compte <span class=who>{who}</span>",
+            wrong = "<p class=err role=alert>Mot de passe incorrect.</p>" if q.get("e") == "1" else ""
+            self.send(page("Mot de passe", f"Compte <span class=who>{who}</span>", wrong +
                 f"<form method=post action=/password><input type=hidden name=username autocomplete=username value='{who}'>"
                 "<label for=p>Mot de passe</label><input id=p name=password type=password autocomplete=current-password>"
                 "<button type=submit>Se connecter</button></form>"))
@@ -60,7 +63,11 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/identifier":
             self.send("", 303, "/password?u=" + urllib.parse.quote(f.get("username", "")))
         elif self.path == "/password":
-            self.send("", 303, "/otp")
+            # A refused sign-in, as on a real site: back to the same form with an error.
+            if f.get("password", "").startswith("Refuse"):
+                self.send("", 303, "/password?e=1&u=" + urllib.parse.quote(f.get("username", "")))
+            else:
+                self.send("", 303, "/otp")
         elif self.path == "/otp":
             self.send("", 303, "/done")
         else:
@@ -71,6 +78,7 @@ class H(BaseHTTPRequestHandler):
 
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain(sys.argv[1], sys.argv[2])
-srv = ThreadingHTTPServer(("127.0.0.1", 8443), H)
+# ONEPASS_TEST_PORT: another port when several simulators run the page at once.
+srv = ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("ONEPASS_TEST_PORT", "8443"))), H)
 srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
 srv.serve_forever()

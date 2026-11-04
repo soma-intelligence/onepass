@@ -13,7 +13,9 @@ import XCTest
 final class SafariAutofillUITests: XCTestCase {
     private static let masterPassword = "ruisseau-tapis-orage-comète"
     private static let title = "Atlas Cloud"
-    private static let site = "https://localhost:8443"
+    /// `TEST_RUNNER_ONEPASS_TEST_PORT` on the xcodebuild line: another port when several
+    /// simulators run the page at once (`safari-test-site.py` reads `ONEPASS_TEST_PORT`).
+    private static let site = "https://localhost:" + (ProcessInfo.processInfo.environment["ONEPASS_TEST_PORT"] ?? "8443")
     private static let username = "camille.durand@exemple.fr"
     private static let password = "Atlas-2026-test"
     private static let otp = "otpauth://totp/Atlas:camille?secret=JBSWY3DPEHPK3PXP&issuer=Atlas"
@@ -25,6 +27,8 @@ final class SafariAutofillUITests: XCTestCase {
     private let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
     private let preferences = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    /// iOS 27 draws the keyboard and its suggestion bar in this process.
+    private let inputUI = XCUIApplication(bundleIdentifier: "com.apple.InputUI")
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -33,6 +37,9 @@ final class SafariAutofillUITests: XCTestCase {
     // MARK: - Preparation
 
     func test1Prepare() throws {
+        // OnePass turned on as the AutoFill provider first: the identities the app publishes
+        // while it is off are dropped by the system store.
+        enableAutoFillProvider()
         onePass.launch()
         if onePass.buttons["onboarding.create"].waitForExistence(timeout: 10) {
             createAccount()
@@ -62,8 +69,13 @@ final class SafariAutofillUITests: XCTestCase {
         } while !waitEnabled(next, 3) && taps < 4
         tap(next, in: onePass)
         // Face ID offered during onboarding: turned on (the simulator is enrolled by the runner).
-        let enable = onePass.buttons.matching(NSPredicate(format: "identifier CONTAINS[c] 'biometric' AND identifier CONTAINS[c] 'enable'")).firstMatch
-        if enable.waitForExistence(timeout: 3) { enable.tap() }
+        // The biometrics step: "Activer Face ID" is the primary button (the runner posts the match).
+        let offerCard = onePass.descendants(matching: .any)["onboarding.biometricsOffer"].firstMatch
+        if offerCard.waitForExistence(timeout: 5) {
+            tap(onePass.buttons["onboarding.primary"], in: onePass)
+            let on = onePass.descendants(matching: .any)["onboarding.biometricsOn"].firstMatch
+            print("Face ID turned on in onboarding: \(on.waitForExistence(timeout: 20))")
+        }
         let later = onePass.buttons["onboarding.skip"]
         if later.waitForExistence(timeout: 3) { tap(later, in: onePass) }
         let open = onePass.buttons["onboarding.primary"]
@@ -134,6 +146,32 @@ final class SafariAutofillUITests: XCTestCase {
         let byLabel = onePass.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'account.lock' OR label IN %@", ["Verrouiller", "Lock"])).firstMatch
         if byLabel.waitForExistence(timeout: 5) { byLabel.tap() }
+    }
+
+    /// Settings > General > AutoFill & Passwords: OnePass on (the switch flipped when off).
+    private func enableAutoFillProvider() {
+        preferences.launch()
+        let any = preferences.descendants(matching: .any)
+        let toggle = preferences.switches.matching(NSPredicate(format: "label CONTAINS 'OnePass'")).firstMatch
+        if !toggle.waitForExistence(timeout: 3) {
+            tap(any.matching(NSPredicate(format: "label IN %@", ["General", "Général"])).firstMatch, in: preferences)
+            tap(any.matching(NSPredicate(format: "label IN %@",
+                ["AutoFill & Passwords", "Remplissage automatique et mots de passe"])).firstMatch, in: preferences)
+        }
+        XCTAssertTrue(toggle.waitForExistence(timeout: Self.uiTimeout), "no OnePass switch in AutoFill & Passwords")
+        if toggle.value as? String == "0" {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+        // iOS may ask which provider fills by default (or to confirm): accepted.
+        for label in ["Use OnePass", "Utiliser OnePass", "OK", "Turn On", "Activer"] {
+            let b = any.matching(NSPredicate(format: "label == %@ AND elementType == %d", label, XCUIElement.ElementType.button.rawValue)).firstMatch
+            if b.waitForExistence(timeout: 1) { b.tap(); break }
+        }
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
+        XCTAssertEqual(XCTWaiter().wait(for: [on], timeout: Self.uiTimeout), .completed, "OnePass not on as the AutoFill provider")
+        attachScreenshot("autofill-provider-on")
+        print("AutoFill settings after:\n\(preferences.debugDescription)")
+        preferences.terminate()
     }
 
     /// Settings > Apps > Safari > Extensions > OnePass: on, and allowed on every website.
@@ -249,6 +287,481 @@ final class SafariAutofillUITests: XCTestCase {
                 .matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", Self.username, Self.title)).firstMatch
             print("QuickType suggestion shown: \(suggestion.exists)")
         }
+    }
+
+    /// The app unlocked once (Face ID, else the master password), then locked: it publishes the
+    /// AutoFill identities on unlock, and they stay for the keyboard while OnePass is locked.
+    func test2bPublishIdentities() throws {
+        onePass.launch()
+        let field = onePass.secureTextFields["lock.password"]
+        let home = onePass.buttons["items.new"]
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, !home.exists { Thread.sleep(forTimeInterval: 0.5) }
+        if !home.exists, field.exists {
+            field.tap()
+            field.typeText(Self.masterPassword + "\n")
+        }
+        // Face ID offered after a password unlock: turned on (the runner posts the match).
+        let offer = onePass.buttons["biometricOffer.enable"]
+        if offer.waitForExistence(timeout: 5) { offer.tap() }
+        XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
+        Thread.sleep(forTimeInterval: 4)
+        lockOnePass()
+        Thread.sleep(forTimeInterval: 2)
+        onePass.terminate()
+    }
+
+    // MARK: - Keyboard (QuickType) and save, vault locked
+
+    /// The identifier page, vault locked: the QuickType suggestion published by OnePass, then our
+    /// unlock screen (Face ID once by itself; the runner posts the match), then the fill.
+    func test3KeyboardFillLocked() throws {
+        openPage("/")
+        let email = safari.webViews.textFields.firstMatch
+        fillFromKeyboard(field: email, step: "identifier")
+        XCTAssertTrue(waitValue(email, contains: Self.username), "identifier not filled from the keyboard")
+        attachScreenshot("keyboard-filled")
+    }
+
+    /// The whole sign-in from the keyboard only: identifier, password, then the one-time code.
+    func test6KeyboardMultiStep() throws {
+        openPage("/")
+        let email = safari.webViews.textFields.firstMatch
+        fillFromKeyboard(field: email, step: "identifier")
+        XCTAssertTrue(waitValue(email, contains: Self.username), "identifier not filled")
+        submitPage(["Continuer"])
+        let password = safari.webViews.secureTextFields.firstMatch
+        XCTAssertTrue(password.waitForExistence(timeout: 20), "password page not reached")
+        fillFromKeyboard(field: password, step: "password")
+        submitPage(["Se connecter"])
+        let code = safari.webViews.textFields.firstMatch
+        XCTAssertTrue(code.waitForExistence(timeout: 20), "code page not reached")
+        Thread.sleep(forTimeInterval: 1)
+        // A code field has no "Passwords" key: iOS offers a code only as a published identity
+        // (ASOneTimeCodeCredentialIdentity). The Simulator cannot publish one (no identity store):
+        // there, the code comes from our icon in the field.
+        code.tap()
+        Thread.sleep(forTimeInterval: 2)
+        if !keyboardOffersOnePass() {
+            attachScreenshot("code-keyboard")
+            fillFromInPageMenu(step: "code")
+        } else {
+            fillFromKeyboard(field: code, step: "code")
+        }
+        let welcome = safari.staticTexts["Bienvenue"]
+        // OnePass sends the code step once filled; else the page's own button.
+        if !welcome.waitForExistence(timeout: 3) {
+            XCTAssertTrue(waitValue(code, matching: "^[0-9]{6}$"), "code not filled")
+            submitPage(["Vérifier"])
+        }
+        dismissSystemSaveSheet()
+        XCTAssertTrue(welcome.waitForExistence(timeout: 20), "sign-in did not reach the end page")
+        attachScreenshot("multistep-done")
+    }
+
+    /// An account OnePass does not know, typed by hand: after the sign-in, our card offers Save.
+    func test4SaveNewLogin() throws {
+        // A new address each run: a login saved by an earlier run would only be "already in OnePass".
+        let run = Int(Date().timeIntervalSince1970) % 100_000
+        typeSignIn(username: "nouveau.compte.\(run)@exemple.fr", password: "Nouveau-2026-test")
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save login for", "Enregistrer le login pour"])
+    }
+
+    /// The known account with a new password, typed by hand: our card offers Update.
+    func test5UpdatePassword() throws {
+        // A new password each run, so there is always something to update.
+        typeSignIn(username: Self.username, password: "Atlas-2026-\(Int(Date().timeIntervalSince1970) % 100_000)")
+        // Unlocked, the card asks to update. Opened while locked it cannot know the login yet: it asks
+        // to save, and Save updates the existing login once Face ID opened the vault.
+        decideOnCard(
+            ["Update", "Mettre à jour", "Save", "Enregistrer"],
+            expect: ["Update password for", "Mettre à jour le mot de passe pour", "Save login for", "Enregistrer le login pour"],
+            outcome: ["updated", "mis à jour"])
+    }
+
+    /// iOS 27's own "Save Password?" sheet, OnePass chosen: our provider unlocks, then saves.
+    func test7SystemSaveSheet() throws {
+        let run = Int(Date().timeIntervalSince1970) % 100_000
+        typeSignIn(username: "systeme.\(run)@exemple.fr", password: "Systeme-2026-test")
+        let onePass = safari.buttons["OnePass"]
+        var found = false
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !found {
+            for app in [safari, springboard] where app.buttons["OnePass"].exists && app.buttons["Not Now"].exists {
+                found = true
+                attachScreenshot("system-save-sheet")
+                app.buttons["OnePass"].tap()
+                break
+            }
+            if !found { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        XCTAssertTrue(found, "no system save sheet offering OnePass")
+        _ = onePass
+        unlockProviderIfAsked(step: "system-save")
+        let provider = XCUIApplication(bundleIdentifier: "me.somalabs.onepass.autofill")
+        let save = [safari, springboard, provider].map { $0.descendants(matching: .any)["autofill.save"].firstMatch }
+        let shown = Date().addingTimeInterval(20)
+        var button: XCUIElement?
+        while Date() < shown, button == nil {
+            button = save.first { $0.exists && $0.isHittable }
+            if button == nil { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        attachScreenshot("system-save-view")
+        guard let button else {
+            print("No save view:\n\(safari.debugDescription)")
+            XCTFail("our save screen did not show")
+            return
+        }
+        button.tap()
+        let gone = Date().addingTimeInterval(20)
+        while Date() < gone, button.exists { Thread.sleep(forTimeInterval: 0.5) }
+        attachScreenshot("system-save-done")
+        XCTAssertFalse(button.exists, "the save screen did not close")
+    }
+
+    // MARK: - Proof recordings (one flow each)
+
+    /// Unknown address and password typed by hand: our card, Save (Face ID), then the login in the app.
+    func test8ProofSaveNewLogin() throws {
+        let user = "inconnu.\(Int(Date().timeIntervalSince1970) % 100_000)@exemple.fr"
+        typeSignIn(username: user, password: "Inconnu-2026-test")
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save login for", "Enregistrer le login pour"], outcome: ["saved", "enregistré"])
+        showInApp(user)
+    }
+
+    /// A login saved on this site, then a sign-in with a changed password: the card offers Update.
+    func test9ProofUpdateCard() throws {
+        let user = "change.\(Int(Date().timeIntervalSince1970) % 100_000)@exemple.fr"
+        typeSignIn(username: user, password: "Change-2026-avant")
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save login for", "Enregistrer le login pour"], outcome: ["saved", "enregistré"])
+        // Same Safari, same site, a new password.
+        typeSignIn(username: user, password: "Change-2026-apres", relaunch: false)
+        decideOnCard(["Update", "Mettre à jour"], expect: ["Update password for", "Mettre à jour le mot de passe pour"], outcome: ["updated", "mis à jour"])
+    }
+
+    /// A refused sign-in (the form comes back with an error): no card at all.
+    func test10ProofFailedLoginNoCard() throws {
+        let user = "refuse.\(Int(Date().timeIntervalSince1970) % 100_000)@exemple.fr"
+        typeSignIn(username: user, password: "Refuse-2026-test")
+        XCTAssertTrue(safari.staticTexts["Mot de passe incorrect."].waitForExistence(timeout: 20), "the site did not refuse")
+        let any = safari.webViews.descendants(matching: .any)
+        let card = any.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@",
+            "Save login for", "Enregistrer le login pour", "Update password for", "Mettre à jour le mot de passe pour")).firstMatch
+        let until = Date().addingTimeInterval(12)
+        while Date() < until {
+            XCTAssertFalse(card.exists, "a OnePass card after a refused sign-in")
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        attachScreenshot("refused-no-card")
+    }
+
+    /// The app, unlocked (Face ID by itself, else the master password), searched for `user`.
+    private func showInApp(_ user: String) {
+        onePass.launch()
+        let home = onePass.buttons["items.new"]
+        let field = onePass.secureTextFields["lock.password"]
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, !home.exists { Thread.sleep(forTimeInterval: 0.5) }
+        if !home.exists, field.exists {
+            field.tap()
+            field.typeText(Self.masterPassword + "\n")
+        }
+        XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
+        let byID = onePass.buttons["tab.search"]
+        let search = byID.exists ? byID : onePass.buttons["Rechercher"]
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search tab")
+        search.tap()
+        let query = onePass.searchFields.firstMatch
+        if !query.waitForExistence(timeout: 3) { search.tap() }
+        XCTAssertTrue(query.waitForExistence(timeout: Self.uiTimeout), "no search field")
+        query.tap()
+        query.typeText(user)
+        let found = onePass.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", user))
+            .matching(NSPredicate(format: "elementType != %d", XCUIElement.ElementType.searchField.rawValue)).firstMatch
+        let ok = found.waitForExistence(timeout: Self.uiTimeout)
+        attachScreenshot(ok ? "app-item" : "app-no-item")
+        if !ok { print("App without the item:\n\(onePass.debugDescription)") }
+        XCTAssertTrue(ok, "the saved login is not in the app")
+        Thread.sleep(forTimeInterval: 3)
+    }
+
+    private func openPage(_ path: String) {
+        safari.launch()
+        safari.open(URL(string: Self.site + path)!)
+        XCTAssertTrue(safari.webViews.firstMatch.waitForExistence(timeout: 30), "test page not loaded")
+        Thread.sleep(forTimeInterval: 1.5)
+    }
+
+    /// Focuses `field`, taps the OnePass suggestion of the keyboard bar, unlocks if asked.
+    private func fillFromKeyboard(field: XCUIElement, step: String) {
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "\(step): no field")
+        field.tap()
+        _ = safari.keyboards.firstMatch.waitForExistence(timeout: Self.uiTimeout)
+        Thread.sleep(forTimeInterval: 2)
+        attachScreenshot("quicktype-\(step)")
+        // The suggestion OnePass published (user name, or the code's label), never our in-page menu.
+        let wanted = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] 'OnePass'",
+                                 Self.username, Self.title)
+        var suggestion: XCUIElement?
+        let deadline = Date().addingTimeInterval(Self.uiTimeout)
+        repeat {
+            for app in [safari, springboard, inputUI] {
+                let found = app.descendants(matching: .any).matching(wanted).allElementsBoundByIndex
+                    .first { $0.isHittable && $0.frame.minY > 400 && $0.elementType != .textField && $0.elementType != .secureTextField && !$0.label.hasPrefix("Ouvrir") && !$0.label.hasPrefix("Open") && $0.label != "OnePass" }
+                if let found { suggestion = found; break }
+            }
+            if suggestion == nil { Thread.sleep(forTimeInterval: 0.5) }
+        } while suggestion == nil && Date() < deadline
+        guard let suggestion else {
+            // No OnePass identity in the bar (the iOS 27.0 Simulator cannot reach the system
+            // identity store): the bar's "Passwords" key, then OnePass, then the account.
+            print("Keyboard without a OnePass suggestion (\(step)):\n\(safari.keyboards.firstMatch.debugDescription)")
+            attachScreenshot("no-suggestion-\(step)")
+            fillFromPasswordsKey(step: step)
+            return
+        }
+        print("QuickType suggestion (\(step)): \(suggestion.label)")
+        suggestion.tap()
+        unlockProviderIfAsked(step: step)
+    }
+
+    private func keyboardOffersOnePass() -> Bool {
+        let wanted = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", Self.username, Self.title)
+        return [safari, springboard, inputUI].contains { app in
+            app.descendants(matching: .any).matching(wanted).allElementsBoundByIndex
+                .contains { $0.isHittable && $0.frame.minY > 400 && $0.elementType != .textField }
+        }
+    }
+
+    /// Our icon in the focused field, the unlock sheet if locked (Face ID once), then the account.
+    private func fillFromInPageMenu(step: String) {
+        let icon = safari.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "\(step): no OnePass icon in the field")
+        icon.tap()
+        let row = safari.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", Self.title, Self.username)).firstMatch
+        let filled = safari.webViews.textFields.firstMatch
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        var typed = false
+        // Filled, or filled and sent: OnePass submits the code step by itself.
+        let welcome = safari.staticTexts["Bienvenue"]
+        while Date() < deadline {
+            if welcome.exists { return }
+            if filled.exists, let v = filled.value as? String, v.range(of: "^[0-9]{6}$", options: .regularExpression) != nil { return }
+            if row.exists, row.isHittable {
+                // The menu ignores a tap in its first moments (anti-clickjacking): wait, tap,
+                // and tap again only if nothing was filled.
+                attachScreenshot("menu-\(step)")
+                Thread.sleep(forTimeInterval: 1)
+                row.tap()
+                Thread.sleep(forTimeInterval: 2)
+                continue
+            }
+            let pw = safari.secureTextFields.matching(NSPredicate(format: "placeholderValue IN %@",
+                ["Mot de passe principal", "Master password", "Mot de passe maître"])).firstMatch
+            if !typed, pw.exists, Date() > deadline.addingTimeInterval(-Self.kdfTimeout + 15) {
+                print("Face ID did not open the sheet (\(step)): master password")
+                pw.tap()
+                pw.typeText(Self.masterPassword + "\n")
+                typed = true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTFail("\(step): the OnePass menu did not fill")
+    }
+
+    /// The key of the keyboard bar, OnePass among the providers, our unlock, then the account.
+    private func fillFromPasswordsKey(step: String) {
+        let keyLabels = ["Passwords", "Mots de passe", "Password", "Mot de passe", "Codes", "Passwords and codes"]
+        var key: XCUIElement?
+        for app in [safari, springboard, inputUI] where key == nil {
+            key = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label IN %@", keyLabels))
+                .allElementsBoundByIndex.first { $0.isHittable && $0.elementType != .secureTextField && $0.elementType != .textField }
+        }
+        if let key {
+            print("Passwords key (\(step)): \(key.label)")
+            key.tap()
+        } else {
+            // The bar is drawn out of process on iOS 27 (not in the tree): its key sits centered
+            // just above the keyboard's letters.
+            let keyboard = safari.keyboards.firstMatch
+            XCTAssertTrue(keyboard.exists, "\(step): no keyboard")
+            let y = keyboard.frame.minY - 19
+            print("Passwords key (\(step)): tapped at the bar, y \(y)")
+            safari.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: keyboard.frame.midX, dy: y)).tap()
+        }
+        Thread.sleep(forTimeInterval: 2)
+        attachScreenshot("passwords-key-\(step)")
+        // A provider chooser when Passwords and OnePass are both on.
+        for app in [safari, springboard] {
+            let choice = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == 'OnePass' OR label BEGINSWITH 'OnePass'")).allElementsBoundByIndex
+                .first { $0.isHittable && $0.elementType != .secureTextField }
+            if let choice {
+                print("Provider chooser (\(step)): \(choice)")
+                choice.tap()
+                break
+            }
+        }
+        unlockProviderIfAsked(step: step)
+        let id = "autofill.candidate.\(Self.title)"
+        var candidate: XCUIElement?
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        repeat {
+            for app in [safari, springboard, XCUIApplication(bundleIdentifier: "me.somalabs.onepass.autofill")] {
+                let el = app.descendants(matching: .any)[id].firstMatch
+                if el.exists { candidate = el; break }
+            }
+            if candidate == nil { Thread.sleep(forTimeInterval: 0.5) }
+        } while candidate == nil && Date() < deadline
+        attachScreenshot("provider-list-\(step)")
+        guard let candidate else {
+            print("Safari without our list (\(step)):\n\(safari.debugDescription)")
+            XCTFail("\(step): the OnePass list did not show \(Self.title)")
+            return
+        }
+        // The list can still be settling: tapped again while it stays.
+        Thread.sleep(forTimeInterval: 1)
+        var taps = 0
+        repeat {
+            candidate.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            taps += 1
+            Thread.sleep(forTimeInterval: 1.5)
+        } while candidate.exists && taps < 3
+        print("Account picked (\(step)) after \(taps) tap(s), list gone: \(!candidate.exists)")
+    }
+
+    /// Our unlock screen in the AutoFill sheet: Face ID runs once by itself (the runner posts a
+    /// match); without it, the master password.
+    private func unlockProviderIfAsked(step: String) {
+        func find(_ id: String) -> XCUIElement {
+            for app in [safari, springboard, XCUIApplication(bundleIdentifier: "me.somalabs.onepass.autofill")] {
+                let el = app.descendants(matching: .any)[id].firstMatch
+                if el.exists { return el }
+            }
+            return safari.descendants(matching: .any)[id].firstMatch
+        }
+        let deadline = Date().addingTimeInterval(8)
+        var sawUnlock = false
+        while Date() < deadline {
+            if find("autofill.password").exists || find("autofill.biometrics").exists { sawUnlock = true; break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        print("Unlock screen shown (\(step)): \(sawUnlock)")
+        guard sawUnlock else { return }
+        attachScreenshot("provider-unlock-\(step)")
+        // Face ID: one automatic attempt; the sheet goes away by itself once it succeeds.
+        let gone = Date().addingTimeInterval(15)
+        while Date() < gone, find("autofill.password").exists || find("autofill.biometrics").exists {
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let field = find("autofill.password")
+        if field.exists {
+            print("Face ID did not unlock (\(step)): master password")
+            field.tap()
+            field.typeText(Self.masterPassword + "\n")
+            let after = Date().addingTimeInterval(Self.kdfTimeout)
+            while Date() < after, find("autofill.password").exists { Thread.sleep(forTimeInterval: 0.5) }
+        }
+    }
+
+    private func typeSignIn(username: String, password: String, relaunch: Bool = true) {
+        if relaunch {
+            openPage("/")
+        } else {
+            safari.open(URL(string: Self.site + "/")!)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        let email = safari.webViews.textFields.firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 20))
+        email.tap()
+        closeOnePassMenuIfShown()
+        email.typeText(username)
+        submitPage(["Continuer"])
+        let field = safari.webViews.secureTextFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "password page not reached")
+        field.tap()
+        closeOnePassMenuIfShown()
+        field.typeText(password)
+        dismissStrongPasswordOffer()
+        submitPage(["Se connecter"])
+    }
+
+    /// Our in-page sheet can open on focus: put away, typing goes on in the page.
+    private func closeOnePassMenuIfShown() {
+        let cancel = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", ["Annuler", "Cancel", "Fermer", "Close"])).firstMatch
+        if cancel.waitForExistence(timeout: 1.5), cancel.isHittable { cancel.tap() }
+    }
+
+    private func dismissStrongPasswordOffer() {
+        let other = safari.buttons.matching(NSPredicate(format: "label IN %@", ["Other Options…", "Choose My Own Password", "Choisir mon mot de passe"])).firstMatch
+        if other.waitForExistence(timeout: 1), other.isHittable { other.tap() }
+    }
+
+    private func submitPage(_ labels: [String]) {
+        let button = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 20), "no \(labels) button")
+        // The keyboard can cover it: Return submits the form as well.
+        if button.isHittable { button.tap() } else { safari.typeText("\n") }
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// The card at the top of the page: its question, then `button`.
+    /// Waits for our card asking one of `question`, taps one of `button`, expects one of `outcome`.
+    private func decideOnCard(
+        _ button: [String], expect question: [String],
+        outcome: [String] = ["saved", "enregistré", "updated", "mis à jour"]
+    ) {
+        let any = safari.webViews.descendants(matching: .any)
+        let asks = NSCompoundPredicate(orPredicateWithSubpredicates: question.map { NSPredicate(format: "label BEGINSWITH %@", $0) })
+        let title = any.matching(asks).firstMatch
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !title.exists {
+            dismissSystemSaveSheet()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        attachScreenshot("save-card")
+        guard title.exists else {
+            print("Safari without our card:\n\(safari.debugDescription)")
+            XCTFail("no OnePass save card (\(question[0]))")
+            return
+        }
+        print("Card: \(title.label)")
+        Thread.sleep(forTimeInterval: 1.5)
+        let primary = any.matching(NSPredicate(format: "label IN %@ AND elementType == %d", button, XCUIElement.ElementType.button.rawValue)).firstMatch
+        XCTAssertTrue(primary.waitForExistence(timeout: 5), "no \(button) on the card")
+        primary.tap()
+        let done = any.matching(NSCompoundPredicate(orPredicateWithSubpredicates: outcome.map { NSPredicate(format: "label CONTAINS[c] %@", $0) })).firstMatch
+        let ok = done.waitForExistence(timeout: 30)
+        attachScreenshot(ok ? "card-done" : "card-not-done")
+        if !ok { print("Card after the tap:\n\(safari.debugDescription)") }
+        XCTAssertTrue(ok, "the card did not confirm")
+        Thread.sleep(forTimeInterval: 2)
+    }
+
+    /// The system "Save Password?" offer, if iOS shows one: noted, then put away.
+    private func dismissSystemSaveSheet() {
+        for app in [safari, springboard] {
+            let notNow = app.buttons.matching(NSPredicate(format: "label IN %@", ["Not Now", "Plus tard", "Pas maintenant"])).firstMatch
+            if notNow.exists, notNow.isHittable {
+                print("System save offer shown")
+                attachScreenshot("system-save-offer")
+                notNow.tap()
+            }
+        }
+    }
+
+    private func waitValue(_ el: XCUIElement, contains text: String) -> Bool {
+        let e = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: el)
+        return XCTWaiter().wait(for: [e], timeout: Self.uiTimeout) == .completed
+    }
+
+    private func waitValue(_ el: XCUIElement, matching regex: String) -> Bool {
+        let e = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value MATCHES %@", regex), object: el)
+        return XCTWaiter().wait(for: [e], timeout: Self.uiTimeout) == .completed
     }
 
     private func allowExtensionIfAsked() {
