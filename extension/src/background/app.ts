@@ -640,6 +640,12 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (at === undefined || now() - at > RESUME_WINDOW_MS || now() < at || rec.frameId !== 0) throw new BgError("invalid");
         const s = await session.request({ op: "status" });
         if (s.locked) throw new BgError("locked");
+        // The top document must still be the one the menu was opened for (no fill handed to a page
+        // that committed meanwhile, where the browser gives no document id).
+        const top = await frames.details(rec.tabId, 0);
+        const o = top ? parseOrigin(top.url) : null;
+        if (!top || !o?.https || o.origin !== rec.origin) throw new BgError("invalid");
+        if (rec.documentId !== undefined && top.documentId !== undefined && top.documentId !== rec.documentId) throw new BgError("invalid");
         await menus.revokeFrame(rec.tabId, rec.frameId);
         await removeFrame(ext.tabs, rec, "menu");
         const msg: BgToCs = { type: "smart_fill" };

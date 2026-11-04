@@ -301,6 +301,15 @@ describe("menu extras", () => {
     expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
   });
 
+  it("MS-03: menu_resume is refused once the top document changed", async () => {
+    const { ext } = await setup();
+    const { token, ui } = await menu(ext);
+    await ext.send({ type: "menu_unlock", token }, ui);
+    ext.setFrame(7, 0, "https://other.example/login", "doc-2");
+    expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
+  });
+
   it("IOSSAF-01: the popup reads and unlocks the native vault; refused where there is none", async () => {
     const calls: NativeVaultCall[] = [];
     const vault = async (call: NativeVaultCall): Promise<NativeVault | null> => {

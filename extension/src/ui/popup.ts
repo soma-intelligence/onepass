@@ -448,6 +448,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     const submit = (e?: Event): void => {
       e?.preventDefault();
       if (unlocking || input.value.length === 0) return;
+      // The native unlock takes 1 to 1024 UTF-8 bytes (RelayRequest.maxPassword): said, not dropped.
+      if (new TextEncoder().encode(input.value).length > 1024) {
+        input.value = "";
+        errLine.textContent = t("unlock.wrongPassword");
+        return;
+      }
       unlocking = true;
       const password = input.value;
       input.value = "";

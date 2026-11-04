@@ -269,6 +269,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
     const reason = v.error ? unlockErrorText(v) : "";
     if (reason) errLine.textContent = reason;
+    /** The running Face ID is the automatic one (no tap). */
+    let byItself = false;
     const after = (r: Awaited<ReturnType<typeof callVault>>): void => {
       unlocking = false;
       if (!r.ok) {
@@ -276,14 +278,18 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         return;
       }
       if (!r.value.locked) {
-        void resume(() => void load());
+        // The automatic Face ID of a menu that may have opened by itself is no gesture: the menu
+        // loads and the user picks. A tap or the password resumes the fill.
+        if (byItself) void load();
+        else void resume(() => void load());
         return;
       }
       renderUnlock(r.value, origin);
     };
-    const biometric = (): void => {
+    const biometric = (auto = false): void => {
       if (unlocking || !token) return;
       unlocking = true;
+      byItself = auto;
       void callVault({ type: "menu_unlock_biometric", token }).then(after);
     };
     const input = h("input", {
@@ -302,6 +308,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       e?.preventDefault();
       if (unlocking || !token || input.value.length === 0) return;
       unlocking = true;
+      byItself = false;
       const password = input.value;
       input.value = "";
       void callVault({ type: "menu_unlock_password", token, password }).then(after);
@@ -310,7 +317,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const bioButton = kind
       ? h(
           "button",
-          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: guard.wrap(biometric) } },
+          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: guard.wrap(() => biometric()) } },
           icon(kind === "touchID" ? "touchid" : "faceid", 18),
           t(kind === "touchID" ? "unlock.withTouchId" : kind === "opticID" ? "unlock.withOpticId" : "unlock.withFaceId"),
         )
@@ -339,7 +346,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // One automatic try per menu, and never after the policy asked for the password.
     if (kind && !autoBiometricDone && !v.error) {
       autoBiometricDone = true;
-      biometric();
+      biometric(true);
     } else if (!kind) input.focus();
   }
 

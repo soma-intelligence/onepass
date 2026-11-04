@@ -360,11 +360,34 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     await flush();
-    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_resume", "menu_init"]);
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
   });
 
-  it("MS-03 (iOS): unlocked from the sheet, the worker resumes the fill: no reload, one Face ID", async () => {
+  it("MS-03 (iOS): the automatic Face ID loads the menu (no gesture); a tap on Face ID resumes the fill", async () => {
+    let first = true;
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") {
+        if (first) {
+          first = false;
+          return ok({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+        }
+        return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      }
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 4; i++) await flush();
+    expect(worker.types()).not.toContain("menu_resume");
+    clock.advance(300);
+    button(r, "Déverrouiller avec Face ID").click();
+    for (let i = 0; i < 3; i++) await flush();
+    expect(worker.types().at(-1)).toBe("menu_resume");
+  });
+
+  it("MS-03 (iOS): an automatic Face ID that opens the vault never resumes by itself", async () => {
     const { handle, worker } = setup((m) => {
       if (m.type === "menu_init") return { err: "locked" };
       if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
@@ -373,7 +396,8 @@ describe("inline menu", () => {
     });
     await handle.ready;
     for (let i = 0; i < 4; i++) await flush();
-    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_resume"]);
+    expect(worker.types().slice(0, 4)).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(worker.types()).not.toContain("menu_resume");
   });
 
   it("MS-03 (Mac): Touch ID in the app, then the menu resumes the fill by itself", async () => {
