@@ -63,6 +63,8 @@ FLAG_MONO = 1
 MAX_SVG_BYTES = 512 * 1024
 # Marks within this width to height ratio fit a square tile; wider ones are wordmarks.
 SQUARE = (0.6, 1.6)
+# A hand-picked wordmark ("Aēsop") may be this wide for 1 high, no wider.
+WORDMARK_MAX = 4.5
 
 # Simple Icons entries that carry their own license are kept only under these.
 PERMISSIVE = {"CC0-1.0", "MIT", "Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", "Unlicense", "ISC"}
@@ -231,6 +233,27 @@ def squared(data, size, fill=None):
     return data[: root.start()] + body + attributes.encode() + closing + data[root.end():]
 
 
+def cropped(data, view):
+    """The SVG with its root's box set to `view` ("x y width height"): the part of a logo that
+    is the mark, without what sits beside it (a registered sign that is noise at list size)."""
+    numbers = view.split() if isinstance(view, str) else []
+    try:
+        x, y, w, h = (float(n) for n in numbers)
+    except ValueError:
+        raise IconPackError(f"bad view {view!r}") from None
+    if w <= 0 or h <= 0:
+        raise IconPackError(f"bad view {view!r}")
+    root = ROOT_TAG.search(data)
+    if not root:
+        raise IconPackError("no <svg> root")
+    tag = root.group(0)
+    cleaned = re.sub(rb"\s(?:width|height|viewBox|preserveAspectRatio|x|y)\s*=\s*(\"[^\"]*\"|'[^']*')", b"", tag,
+                     flags=re.I)
+    closing = b"/>" if cleaned.endswith(b"/>") else b">"
+    body = cleaned[: -len(closing)].rstrip() + f' viewBox="{x:g} {y:g} {w:g} {h:g}"'.encode() + closing
+    return data[: root.start()] + body + data[root.end():]
+
+
 def colors_in(data):
     found = set()
     for m in re.finditer(rb"#([0-9a-f]{6}|[0-9a-f]{3})\b", data, re.I):
@@ -311,6 +334,8 @@ class Candidate:
         # brand: the brand's name in its set (a title with no URL finds its icon by it); tile: a
         # background color drawn under the mark; curated: chosen by hand (scripts/icon-pack-curated.json).
         self.brand, self.tile, self.curated = brand, tile, curated
+        # wordmark: a hand-picked brand whose whole name is its mark ("Aēsop"), kept wider than a tile.
+        self.wordmark = False
 
 
 def twofa_entries(root):
@@ -439,7 +464,8 @@ def collect(simple_root, logos_root, twofa_root, log):
 
 RANK_CURATED = -1
 LICENSES = {"simple-icons": "CC0-1.0", "logos": "CC0-1.0", "2fa-directory": "MIT",
-            "brand": "trademark of its owner, the brand's own icon (app or site) as a browser or the App Store shows it"}
+            "brand": "trademark of its owner, the brand's own icon (app or site) as a browser or the App Store shows it",
+            "commons": "public domain (Wikimedia Commons, PD-textlogo), trademark of its owner"}
 
 
 def simple_icon(simple_root, slug):
@@ -461,7 +487,18 @@ def curated_candidates(curated, roots, sites, log):
             continue
         kind, _, ref = use.partition(":")
         candidate = None
-        if kind == "site":
+        if kind == "commons":
+            # A vector logo from Wikimedia Commons, fetched by `sites` (hash pinned there).
+            path = sites / domains[0] if sites else None
+            data = path.read_bytes() if path and path.is_file() else b""
+            if not data:
+                log("curated", f"{domains[0]}: no fetched icon")
+                continue
+            if not is_safe_svg(data):
+                log("curated", f"{domains[0]}: fetched file is not a safe SVG")
+                continue
+            candidate = Candidate(RANK_CURATED, "commons", data, name=f"brand:{domains[0]}")
+        elif kind == "site":
             path = sites / domains[0] if sites else None
             if path and path.is_file():
                 data = path.read_bytes()
@@ -501,6 +538,17 @@ def curated_candidates(curated, roots, sites, log):
             continue
         if candidate:
             candidate.brand, candidate.curated = entry.get("name", ""), True
+            view = entry.get("view")
+            if view:
+                try:
+                    candidate.svg = cropped(candidate.svg, view)
+                except IconPackError as error:
+                    log("curated", f"{domains[0]}: {error}")
+                    continue
+            if entry.get("mono") is True:
+                # A black mark drawn in the text color by the app, like a one color Simple Icons mark.
+                candidate.fill, candidate.mono = "000000", True
+            candidate.wordmark = entry.get("wordmark") is True
             tile = entry.get("tile")
             if tile and re.fullmatch(r"[0-9A-Fa-f]{6}", tile):
                 candidate.tile, candidate.mono = tile.upper(), False
@@ -721,15 +769,54 @@ def app_icon(track_id, seller):
     return url, image, min(size)
 
 
+COMMONS_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _().,'-]*\.svg")
+COMMONS_UPLOAD = re.compile(r"https://upload\.wikimedia\.org/wikipedia/commons/[0-9a-f]/[0-9a-f]{2}/[^?#/]+\.svg")
+
+
+def commons_svg(name, sha1):
+    """A logo file of Wikimedia Commons (a text logo there is public domain), pinned by the SHA-1
+    Commons lists for it: a new upload of the file is refused until someone looks at it and moves
+    the pin. Returns (url, bytes)."""
+    import urllib.parse
+    if not COMMONS_FILE.fullmatch(name) or not re.fullmatch(r"[0-9a-f]{40}", sha1 or ""):
+        raise IconPackError(f"commons:{name}: needs a file name and its sha1")
+    query = urllib.parse.urlencode({"action": "query", "titles": "File:" + name, "prop": "imageinfo",
+                                    "iiprop": "url|sha1", "format": "json"})
+    pages = json.loads(fetch("https://commons.wikimedia.org/w/api.php?" + query, 512 * 1024))["query"]["pages"]
+    info = (list(pages.values())[0].get("imageinfo") or [{}])[0]
+    url = str(info.get("url", "")).split("?")[0]
+    if not COMMONS_UPLOAD.fullmatch(url):
+        raise IconPackError(f"commons:{name}: unexpected file URL")
+    data = fetch(url, MAX_SVG_BYTES)
+    if hashlib.sha1(data).hexdigest() != sha1:
+        raise IconPackError(f"commons:{name}: the file changed on Commons (sha1 pin)")
+    if not is_safe_svg(data):
+        raise IconPackError(f"commons:{name}: not a safe SVG")
+    return url, data
+
+
 def fetch_sites(curated, out, log):
     """Fetches the icon of every curated entry that uses its site, into `out` (one file per entry
     and sites.json: where each came from, its hash and size)."""
     out.mkdir(parents=True, exist_ok=True)
     record = {}
     for entry in curated["brands"]:
-        if entry.get("use") != "site" or not entry.get("domains"):
+        if not entry.get("domains"):
             continue
         key = entry["domains"][0]
+        if str(entry.get("use", "")).startswith("commons:"):
+            try:
+                url, data = commons_svg(entry["use"].partition(":")[2], entry.get("sha1", ""))
+            except (IconPackError, OSError, ValueError, KeyError) as error:
+                log("site", f"{key}: {error}")
+                continue
+            (out / key).write_bytes(data)
+            record[key] = {"url": url, "sha256": hashlib.sha256(data).hexdigest(), "license": LICENSES["commons"],
+                           "fetched": datetime.date.today().isoformat()}
+            print(f"{key}: {url} (vector)")
+            continue
+        if entry.get("use") != "site":
+            continue
         got, errors = None, []
         # The brand's own app icon first (square, made for a tile), then its site's icon.
         if entry.get("app"):
@@ -798,8 +885,11 @@ def render(candidate, size, resvg, cwebp, work):
     # A square SVG may still hold a wordmark ("gusto" on a 24 px box): a long word shrunk into a
     # tile reads as noise, the site's own icon or a monogram does better.
     ratio = ink_aspect(width, height, pixels)
-    # A hand-picked mark may be a short word ("hue"); a long one is still refused.
+    # A hand-picked mark may be a short word ("hue"); a long one is still refused, unless the
+    # whole name is the brand's mark (curated `wordmark`), set wide in the tile by the app.
     low, high = (0.4, 2.6) if candidate.curated else (SQUARE[0], SQUARE[1] * 1.4)
+    if candidate.curated and candidate.wordmark:
+        high = WORDMARK_MAX
     if not low <= ratio <= high:
         raise IconPackError(f"wordmark (ink {ratio:.2f} wide for 1 high)")
     if png.read_bytes()[16:24] != struct.pack(">II", size, size):

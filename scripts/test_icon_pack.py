@@ -258,6 +258,48 @@ class Collect(unittest.TestCase):
         self.assertNotIn("missing.test", out)
         self.assertIn(("curated", "missing.test: no fetched icon"), log)
 
+    def test_curated_commons_wordmark(self):
+        sites = self.tmp / "sites"
+        # A 4 by 1 wordmark with a registered sign to its right, outside the cropped view.
+        logo = (b'<svg xmlns="http://www.w3.org/2000/svg" width="500" height="100" viewBox="0 0 500 100">'
+                b'<path fill="#000" d="M0 30h400v40H0z"/><path d="M450 40h20v20h-20z"/></svg>')
+        write(sites / "wordmark.test", logo)
+        write(sites / "unsafe.test", b"<svg><script/></svg>")
+        curated = {"brands": [
+            {"name": "Wordmark", "domains": ["wordmark.test"], "use": "commons:Wordmark.svg", "mono": True,
+             "wordmark": True, "view": "0 0 410 100"},
+            {"name": "Unsafe", "domains": ["unsafe.test"], "use": "commons:Unsafe.svg"},
+            {"name": "Bad view", "domains": ["wordmark.test"], "use": "commons:Wordmark.svg", "view": "0 0 -1"},
+        ]}
+        log = []
+        out = icon_pack.curated_candidates(curated, self.roots, sites, lambda k, w: log.append((k, w)))
+        mark = out["wordmark.test"]
+        self.assertEqual((mark.source, mark.fill, mark.mono, mark.wordmark, mark.curated),
+                         ("commons", "000000", True, True, True))
+        root = icon_pack.ROOT_TAG.search(mark.svg).group(0)
+        self.assertIn(b'viewBox="0 0 410 100"', root)
+        self.assertNotIn(b"width=", root)
+        self.assertNotIn("unsafe.test", out)
+        self.assertIn(("curated", "unsafe.test: fetched file is not a safe SVG"), log)
+        self.assertIn(("curated", "wordmark.test: bad view '0 0 -1'"), log)
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.commons_svg("../x.svg", "0" * 40)
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.commons_svg("Aesop_logo_2013.svg", "")
+
+    @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
+                         "needs resvg and cwebp")
+    def test_wordmark_renders_only_when_marked(self):
+        resvg = os.environ.get("RESVG") or shutil.which("resvg")
+        logo = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><path d="M0 0h400v100H0z"/></svg>'
+        work = self.tmp / "work"
+        work.mkdir()
+        mark = icon_pack.Candidate(icon_pack.RANK_CURATED, "commons", logo, fill="000000", mono=True, curated=True)
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.render(mark, 128, resvg, shutil.which("cwebp"), work)
+        mark.wordmark = True
+        self.assertEqual(icon_pack.render(mark, 128, resvg, shutil.which("cwebp"), work)[:4], b"RIFF")
+
     @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
                          "needs resvg and cwebp")
     def test_build_end_to_end(self):

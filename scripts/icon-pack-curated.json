@@ -1,5 +1,5 @@
 {
- "about": "Curated brands for scripts/icon_pack.py: they beat the automatic match. use = simple-icons:<slug>, logos:<file>, 2fa:<file> or site (the brand's own site icon, fetched when the pack is built, never by the app). tile = a background color (hex) drawn under the mark. note = how a fuzzy name was resolved. Founder review 2026-11-03.",
+ "about": "Curated brands for scripts/icon_pack.py: they beat the automatic match. use = simple-icons:<slug>, logos:<file>, 2fa:<file>, site (the brand's own site icon, fetched when the pack is built, never by the app) or commons:<file> (a Wikimedia Commons SVG logo, fetched when the pack is built, pinned by its sha1). mono = drawn in the text color. wordmark = a whole-name mark kept wide. view = the logo's box cropped to the mark (x y width height). tile = a background color (hex) drawn under the mark. note = how a fuzzy name was resolved. Founder review 2026-11-03.",
  "tenants": [
   "substack.com",
   "wordpress.com",
@@ -686,6 +686,18 @@
    "note": "WeThings read as Withings; icon of the Withings app",
    "app": 542701020,
    "seller": "Withings"
+  },
+  {
+   "name": "Aesop",
+   "domains": [
+    "aesop.com"
+   ],
+   "use": "commons:Aesop_logo_2013.svg",
+   "sha1": "34665135432a6083086999449715d730702ae227",
+   "mono": true,
+   "wordmark": true,
+   "view": "0 0 905 307",
+   "note": "founder review 2026-11-04: the whole Aēsop wordmark, not the cropped Aē favicon of 2FA Directory; Commons file is PD-textlogo, the registered sign is cropped out (noise at list size)"
   },
   {
    "name": "Tritera",

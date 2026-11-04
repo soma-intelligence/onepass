@@ -1,12 +1,12 @@
 {
-  "created": "2026-11-04T00:31:15+00:00",
+  "created": "2026-11-04T15:24:00+00:00",
   "domains": 5024,
   "format": 1,
   "icons": 4212,
   "pack": {
-    "file": "onepass-icons-2026110304.bin",
-    "sha256": "42bfe48954426abc19d7e974036f6f304138092d49a48b53c66441edcc6b7aaa",
-    "size": 11369455
+    "file": "onepass-icons-2026110401.bin",
+    "sha256": "f2db04b2bd9691c6f4ef785b93a0d480b9c55fd4d37a597061a82a6561eae9cf",
+    "size": 11369425
   },
   "pixels": 256,
   "sources": {
@@ -17,6 +17,12 @@
     },
     "brand-sites": {
       "icons": {
+        "aesop.com": {
+          "fetched": "2026-11-04",
+          "license": "public domain (Wikimedia Commons, PD-textlogo), trademark of its owner",
+          "sha256": "0e173e22e574e46ac9aa3809b2402a1d23402a4d5b0c95520268ff8f9c4df24a",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/4/4d/Aesop_logo_2013.svg"
+        },
         "blablacar.fr": {
           "fetched": "2026-11-03",
           "pixels": 256,
@@ -283,5 +289,5 @@
       "repository": "simple-icons/simple-icons"
     }
   },
-  "version": 2026110304
+  "version": 2026110401
 }
