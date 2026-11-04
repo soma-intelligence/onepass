@@ -33,6 +33,7 @@ use commands::ssh_key::SshKeyCmd;
 use commands::travel::TravelCmd;
 use commands::vault::VaultCmd;
 use commands::watchtower::WatchtowerArgs;
+use commands::wifi::WifiCmd;
 use session::{CliError, Ctx};
 
 #[derive(Parser)]
@@ -104,6 +105,10 @@ enum Command {
     /// (development stand-in for the sync).
     #[command(subcommand)]
     Travel(TravelCmd),
+    /// Wi-Fi of the vault on Windows and Linux: sync, import, and a login
+    /// agent that keeps both in step on its own.
+    #[command(subcommand)]
+    Wifi(WifiCmd),
 }
 
 #[derive(Subcommand)]
@@ -172,6 +177,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::SshKey(c) => commands::ssh_key::run(&ctx, c),
         Command::SshAgent(a) => commands::ssh_agent::run(&ctx, a),
         Command::Travel(c) => commands::travel::run(&ctx, c),
+        Command::Wifi(c) => commands::wifi::run(&ctx, c),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

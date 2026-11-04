@@ -14,3 +14,4 @@ pub mod totp;
 pub mod travel;
 pub mod vault;
 pub mod watchtower;
+pub mod wifi;
