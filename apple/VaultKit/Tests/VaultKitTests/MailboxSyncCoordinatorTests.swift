@@ -6,6 +6,10 @@ import Testing
 /// X1b Task 4: the scheduler of the mailbox rounds. The round is the core's; a scripted
 /// `FakeMailboxSync` stands for it.
 @Suite struct MailboxSyncCoordinatorTests {
+    /// The statuses carry localized text: read it in French before any other suite pins it
+    /// mid-test, or the status and the expected message can come from two languages.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     private func coordinator(_ fake: FakeMailboxSync, sleeper: ManualSleeper = ManualSleeper()) -> MailboxSyncCoordinator {
         MailboxSyncCoordinator(sync: fake, serverName: "Serveur OnePass", sleep: { try await sleeper.sleep($0) })
     }
@@ -85,7 +89,7 @@ import Testing
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("onepass-mbx-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let created = try createAccountWithKdf(
+        let created = try createAccountOnCoreStack(
             dbPath: dir.appendingPathComponent("v.db").path, password: "Lanterne vive 77 sur le quai !",
             kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1))
         await c.sessionUnlocked(created.session)
