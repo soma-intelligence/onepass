@@ -20,7 +20,7 @@ struct MailboxSetupTests {
             dir = FileManager.default.temporaryDirectory.appendingPathComponent("onepass-setup-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let db = dir.appendingPathComponent("v.db").path
-            let created = try createAccountWithKdf(
+            let created = try createAccountOnCoreStack(
                 dbPath: db, password: "Lanterne vive 77 sur le quai !", kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1))
             session = created.session
             secretKey = SecretBytes(copying: Data(created.secretKey.utf8))

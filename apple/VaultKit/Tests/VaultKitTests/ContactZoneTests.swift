@@ -13,7 +13,7 @@ import Testing
     private func session() throws -> (Session, URL) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("onepass-contact-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let created = try createAccountWithKdf(
+        let created = try createAccountOnCoreStack(
             dbPath: dir.appendingPathComponent("v.db").path, password: testPassword, kdf: sharingFastKdf)
         return (created.session, dir)
     }

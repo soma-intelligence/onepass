@@ -52,7 +52,7 @@ struct MailboxRestoreTests {
     private func store() throws -> (SyncStoreHandle, URL) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("onepass-restore-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let created = try createAccountWithKdf(
+        let created = try createAccountOnCoreStack(
             dbPath: dir.appendingPathComponent("v.db").path, password: "Lanterne vive 77 sur le quai !",
             kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1))
         _ = created
@@ -62,7 +62,7 @@ struct MailboxRestoreTests {
     @Test func restoredDeviceUsesOwnCredential() async throws {
         let (store, dir) = try store()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let session = try createAccountWithKdf(
+        let session = try createAccountOnCoreStack(
             dbPath: dir.appendingPathComponent("other.db").path, password: "Lanterne vive 77 sur le quai !",
             kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1)).session
         let home = MailboxHome(baseURL: Self.hosted, mailboxID: Self.mailboxID)

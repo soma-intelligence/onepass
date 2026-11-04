@@ -17,7 +17,7 @@ import Testing
     }
 
     private func session(in dir: URL) throws -> Session {
-        try createAccountWithKdf(
+        try createAccountOnCoreStack(
             dbPath: dir.appendingPathComponent("s.db").path, password: "Lanterne vive 77 sur le quai !",
             kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1)
         ).session
