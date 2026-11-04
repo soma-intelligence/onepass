@@ -29,7 +29,7 @@ struct ItemListRow: View {
 
     /// The icon already on this device: shown on the first frame, before the task answers.
     private var cachedIcon: Data? {
-        summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }
+        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
     }
 
     var body: some View {
@@ -64,7 +64,7 @@ struct ItemListRow: View {
                 siteIcon = nil
                 return
             }
-            siteIcon = await model.iconLoader.icon(for: url)
+            siteIcon = await model.iconLoader.icon(for: url, title: summary.title)
         }
     }
 }

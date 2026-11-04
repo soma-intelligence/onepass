@@ -247,13 +247,13 @@ struct AutoFillIcon: View {
     @State private var icon: Data?
 
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon ?? url.flatMap { loader?.cachedIcon(for: $0) }, size: size)
+        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title), size: size)
             .task(id: url) {
                 guard let url, let loader else {
                     icon = nil
                     return
                 }
-                let loaded = await loader.icon(for: url)
+                let loaded = await loader.icon(for: url, title: title)
                 withAnimation(.easeOut(duration: 0.15)) { icon = loaded }
             }
     }

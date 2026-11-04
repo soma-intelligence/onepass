@@ -11,7 +11,9 @@ import Synchronization
 ///
 /// Format 1 (big-endian): `OPIP`, a format byte (1), the index length (u32), the index (JSON:
 /// `format`, `version`, `size`, `icons` as `[offset, length, flags]` into the bytes that follow,
-/// `domains` as domain to icon number), then the icons (square lossless WebP, `size` pixels).
+/// `domains` as domain to icon number; optional `names`, a brand name squashed to lowercase letters
+/// and digits to icon number, and `tenants`, domains whose icon is not inherited by their
+/// subdomains), then the icons (square lossless WebP, `size` pixels).
 public struct IconPack: Sendable {
     public static let magic = Data("OPIP".utf8)
     public static let format: UInt8 = 1
@@ -30,6 +32,8 @@ public struct IconPack: Sendable {
     public let pixels: Int
     let icons: [(offset: Int, length: Int, flags: Int)]
     let domains: [String: Int]
+    let names: [String: Int]
+    let tenants: Set<String>
     /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
     let data: Data
     let iconsStart: Int
@@ -50,6 +54,8 @@ public struct IconPack: Sendable {
         let size: Int
         let icons: [[Int]]
         let domains: [String: Int]
+        let names: [String: Int]?
+        let tenants: [String]?
     }
 
     /// Parses a pack, every offset and every domain's icon number checked.
@@ -73,19 +79,24 @@ public struct IconPack: Sendable {
             guard offset >= 0, size > 0, offset <= blobCount - size else { throw .outOfBounds }
             icons.append((offset, size, flags))
         }
-        for number in index.domains.values where !(0..<icons.count).contains(number) {
+        for number in Array(index.domains.values) + Array((index.names ?? [:]).values)
+        where !(0..<icons.count).contains(number) {
             throw .outOfBounds
         }
         self.version = index.version
         self.pixels = index.size
         self.icons = icons.map { (offset: $0.0, length: $0.1, flags: $0.2) }
         self.domains = index.domains
+        self.names = index.names ?? [:]
+        self.tenants = Set(index.tenants ?? [])
         self.data = data
         self.iconsStart = iconsStart
     }
 
     /// The icon of `host`: the host itself without `www.`, then each parent name down to two
-    /// labels (`accounts.firefox.com`, then `firefox.com`), never a bare public suffix.
+    /// labels (`accounts.firefox.com`, then `firefox.com`), never a bare public suffix. A tenant
+    /// domain (a platform that hosts other brands: `acme.zendesk.com` is Acme's help desk) gives its
+    /// icon to itself only, never to its subdomains.
     public func icon(forHost host: String) -> Icon? {
         var name = host.lowercased()
         if name.hasSuffix(".") { name.removeLast() }
@@ -93,11 +104,37 @@ public struct IconPack: Sendable {
         var labels = name.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
         guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else { return nil }
         let floor = SiteIconLoader.registrableDomain(of: name)?.split(separator: ".").count ?? 2
+        var first = true
         while labels.count >= floor {
-            if let number = domains[labels.joined(separator: ".")] { return icon(number) }
+            let candidate = labels.joined(separator: ".")
+            if let number = domains[candidate], first || !tenants.contains(candidate) { return icon(number) }
             labels.removeFirst()
+            first = false
         }
         return nil
+    }
+
+    /// The icon of a brand named `title` ("Reddit", "Burger King"), for an item with no web
+    /// address: the whole title, squashed like the pack's names (lowercase letters and digits,
+    /// accents dropped, "&" read "and"), at least three characters. A title that is itself a web
+    /// address ("reddit.com") is looked up as a host.
+    public func icon(forTitle title: String) -> Icon? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !trimmed.contains(" "), trimmed.contains("."), let host = ItemIconResolver.host(of: trimmed),
+            let found = icon(forHost: host)
+        {
+            return found
+        }
+        let key = Self.squash(trimmed)
+        guard key.count >= 3, let number = names[key] else { return nil }
+        return icon(number)
+    }
+
+    /// `scripts/icon_pack.py squash`: letters and digits only, accents dropped.
+    static func squash(_ text: String) -> String {
+        let folded = text.lowercased().replacingOccurrences(of: "&", with: "and")
+            .applyingTransform(.stripDiacritics, reverse: false) ?? text
+        return String(folded.unicodeScalars.filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) }.map(Character.init))
     }
 
     func icon(_ number: Int) -> Icon {
@@ -209,6 +246,10 @@ public actor IconPackStore {
 
     public nonisolated func icon(forHost host: String) -> IconPack.Icon? {
         pack()?.icon(forHost: host)
+    }
+
+    public nonisolated func icon(forTitle title: String) -> IconPack.Icon? {
+        pack()?.icon(forTitle: title)
     }
 
     private nonisolated var downloaded: URL { directory.appending(path: Self.packName) }

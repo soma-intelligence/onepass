@@ -10,7 +10,8 @@ import VaultKit
     /// and the detail header size (72 pt), to `ONEPASS_FEEDBACK_DIR/icon-pack-contact-sheet.png`
     /// (captures only). `ONEPASS_ICON_SHEET` holds `before/` and `after/`, one file per row named
     /// `<order>-<title>.<png|webp|ico>`; a row with no file in a column shows what the app shows
-    /// with no icon (the category artwork).
+    /// with no icon (the monogram tile). An optional `notes.json` (row name to text) adds a last
+    /// column, and `ONEPASS_ICON_SHEET_NAME` names the PNG (default `icon-pack-contact-sheet`).
     @MainActor @Test func render() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let sheet = environment["ONEPASS_ICON_SHEET"], let folder = environment["ONEPASS_FEEDBACK_DIR"]
@@ -25,6 +26,8 @@ import VaultKit
             return out
         }
         let before = files("before"), after = files("after")
+        let notes = FileManager.default.contents(atPath: sheet + "/notes.json")
+            .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
         let rows = Set(before.keys).union(after.keys).union(files("none").keys).sorted()
         func title(_ row: String) -> String {
             row.split(separator: "-", maxSplits: 1).last.map(String.init) ?? row
@@ -41,6 +44,9 @@ import VaultKit
                 Text(verbatim: label).font(.headline)
                     .frame(width: label == "After, header" ? 2 * 88 : 2 * 56, alignment: .center)
                     .padding(.horizontal, 8)
+            }
+            if !notes.isEmpty {
+                Text(verbatim: "Status").font(.headline).frame(width: 300, alignment: .leading).padding(.leading, 8)
             }
         }
         let view = VStack(alignment: .leading, spacing: 2) {
@@ -60,6 +66,10 @@ import VaultKit
                         cell(after[row], row, .light, size: 72)
                         cell(after[row], row, .dark, size: 72)
                     }.padding(.horizontal, 8)
+                    if !notes.isEmpty {
+                        Text(verbatim: notes[row] ?? "").font(.callout).lineLimit(4)
+                            .frame(width: 300, alignment: .leading).padding(.leading, 8)
+                    }
                 }
             }
         }
@@ -69,7 +79,8 @@ import VaultKit
         let renderer = ImageRenderer(content: view)
         renderer.scale = 3
         let image = try #require(renderer.cgImage)
-        let url = URL(fileURLWithPath: folder).appendingPathComponent("icon-pack-contact-sheet.png")
+        let name = environment["ONEPASS_ICON_SHEET_NAME"] ?? "icon-pack-contact-sheet"
+        let url = URL(fileURLWithPath: folder).appendingPathComponent(name + ".png")
         let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)
         #expect(CGImageDestinationFinalize(destination))

@@ -229,12 +229,71 @@ import SwiftUI
 
     @Test func tileBackgroundKeepsTheMarkReadable() {
         // Navy mark in dark mode: a light tile. Pale mark in light mode: a dark tile. Any other mark,
-        // and every one color mark, sits bare with no tile.
-        #expect(ItemIcon.markBackground(monochrome: true, pale: 0, dark: 1, darkMode: true) == nil)
+        // and every one color mark, sits on the quiet grey tile of the appearance.
+        #expect(ItemIcon.markBackground(monochrome: true, pale: 0, dark: 1, darkMode: true) == Color(white: 0.2))
+        #expect(ItemIcon.markBackground(monochrome: true, pale: 0, dark: 1, darkMode: false) == Color(white: 0.95))
         #expect(ItemIcon.markBackground(monochrome: false, pale: 0, dark: 0.8, darkMode: true) == Color(white: 0.94))
         #expect(ItemIcon.markBackground(monochrome: false, pale: 0.95, dark: 0, darkMode: false) == Color(white: 0.19))
-        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.7, dark: 0, darkMode: false) == nil)
-        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.5, dark: 0, darkMode: true) == nil)
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.7, dark: 0, darkMode: false) == Color(white: 0.95))
+        #expect(ItemIcon.markBackground(monochrome: false, pale: 0.5, dark: 0, darkMode: true) == Color(white: 0.2))
+    }
+}
+
+@Suite struct MarkFramingTests {
+    /// Every mark ends up the same optical size, whatever margin its source had.
+    @Test func marksShareOneOpticalSize() throws {
+        func framedSide(_ fraction: Double) throws -> Double {
+            let source = SiteIconTreatmentTests.icon(side: 256, background: nil, markColor: (0.9, 0.1, 0.1), markFraction: fraction)
+            let ink = try #require(ItemIcon.Ink(source))
+            let framed = try #require(ItemIcon.framedMark(source, ink: ink))
+            return try #require(ItemIcon.Ink(framed)).width
+        }
+        let small = try framedSide(0.2), large = try framedSide(0.95)
+        #expect(abs(small - large) < 0.03)
+        #expect(abs(large - Double(ItemIcon.markOpticalSide)) < 0.03)
+    }
+
+    /// A wide mark is held by its long side.
+    @Test func wideMarksStayInsideTheTile() throws {
+        let context = CGContext(
+            data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 100, width: 256, height: 56))
+        let source = context.makeImage()!
+        let sourceInk = try #require(ItemIcon.Ink(source))
+        let framed = try #require(ItemIcon.framedMark(source, ink: sourceInk))
+        let ink = try #require(ItemIcon.Ink(framed))
+        #expect(ink.width <= Double(ItemIcon.markMaxSide) + 0.02)
+        #expect(ink.width > 0.6)
+    }
+
+    /// A rounded square on a transparent canvas is an app icon (full-bleed); a disc is a mark.
+    @Test func appIconShapesFillTheTile() throws {
+        func shape(_ draw: (CGContext) -> Void) -> CGImage {
+            let context = CGContext(
+                data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.setFillColor(red: 0.95, green: 0.3, blue: 0.4, alpha: 1)
+            draw(context)
+            return context.makeImage()!
+        }
+        let rounded = shape { context in
+            context.addPath(CGPath(roundedRect: CGRect(x: 8, y: 8, width: 240, height: 240), cornerWidth: 54, cornerHeight: 54, transform: nil))
+            context.fillPath()
+        }
+        let disc = shape { $0.fillEllipse(in: CGRect(x: 8, y: 8, width: 240, height: 240)) }
+        let fourSquares = shape { context in
+            for (x, y) in [(8, 8), (132, 8), (8, 132), (132, 132)] {
+                context.fill(CGRect(x: x, y: y, width: 116, height: 116))
+            }
+        }
+        let roundedInk = try #require(ItemIcon.Ink(rounded))
+        let discInk = try #require(ItemIcon.Ink(disc))
+        #expect(roundedInk.isAppIcon)
+        #expect(!discInk.isAppIcon)
+        let squaresInk = try #require(ItemIcon.Ink(fourSquares))
+        #expect(!squaresInk.isAppIcon)
     }
 }
 

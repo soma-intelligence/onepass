@@ -6,14 +6,19 @@ import Testing
 @testable import VaultKit
 
 /// A pack in format 1, as `scripts/icon_pack.py` writes it.
-func makeIconPack(version: Int, icons: [(Data, Int)], domains: [String: Int], size: Int = 256) -> Data {
+func makeIconPack(
+    version: Int, icons: [(Data, Int)], domains: [String: Int], size: Int = 256, names: [String: Int]? = nil,
+    tenants: [String]? = nil
+) -> Data {
     var offsets: [[Int]] = []
     var blob = Data()
     for (data, flags) in icons {
         offsets.append([blob.count, data.count, flags])
         blob.append(data)
     }
-    let index: [String: Any] = ["format": 1, "version": version, "size": size, "icons": offsets, "domains": domains]
+    var index: [String: Any] = ["format": 1, "version": version, "size": size, "icons": offsets, "domains": domains]
+    if let names { index["names"] = names }
+    if let tenants { index["tenants"] = tenants }
     let json = try! JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
     var out = Data("OPIP".utf8)
     out.append(1)
@@ -213,9 +218,63 @@ struct IconPackTests {
     }
 }
 
+/// Same as `IconPackStub`, its own state: the two suites run in parallel and must not reset
+/// each other's bodies.
+final class ResolverStub: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var bodies: [String: Data] = [:]
+    nonisolated(unsafe) static var requests: [String] = []
+    static let lock = NSLock()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url?.lastPathComponent ?? ""
+        Self.lock.lock()
+        Self.requests.append(request.url?.absoluteString ?? "")
+        let body = Self.bodies[path]
+        Self.lock.unlock()
+        let status = body == nil ? 404 : 200
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body ?? Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 @Suite("ItemIconResolver", .serialized)
 struct ItemIconResolverTests {
     let packIcon = Data("pack-webp".utf8)
+    let red = Data("red-webp".utf8)
+    let mark = Data("mark-webp".utf8)
+
+    @Test func tenantPlatformsKeepTheirIconToThemselves() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 7, icons: [(red, 0), (mark, 0)], domains: ["zendesk.com": 0, "reddit.com": 1],
+            tenants: ["zendesk.com"]))
+        #expect(pack.icon(forHost: "zendesk.com")?.data == red)
+        #expect(pack.icon(forHost: "www.zendesk.com")?.data == red)
+        // acme.zendesk.com is Acme's help desk, not Zendesk.
+        #expect(pack.icon(forHost: "acme.zendesk.com") == nil)
+        #expect(pack.icon(forHost: "old.reddit.com")?.data == mark)
+    }
+
+    @Test func titlesFindTheirBrand() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 7, icons: [(red, 0), (mark, 0)], domains: ["reddit.com": 0, "burgerking.com": 1],
+            names: ["reddit": 0, "burgerking": 1, "voyageprive": 1]))
+        #expect(pack.icon(forTitle: "Reddit")?.data == red)
+        #expect(pack.icon(forTitle: " Burger King ")?.data == mark)
+        #expect(pack.icon(forTitle: "Voyage Privé")?.data == mark)
+        #expect(pack.icon(forTitle: "reddit.com")?.data == red)
+        #expect(pack.icon(forTitle: "Reddit perso") == nil)
+        #expect(pack.icon(forTitle: "") == nil)
+        #expect(IconPack.squash("AT&T Wi-Fi") == "atandtwifi")
+        // A name pointing past the icons is refused like a domain.
+        #expect(throws: IconPack.Problem.outOfBounds) {
+            try IconPack(data: makeIconPack(version: 7, icons: [(red, 0)], domains: [:], names: ["x": 3]))
+        }
+    }
 
     func png(side: Int) -> Data {
         SiteIconLoader.squarePNG(side: side, aspect: CGSize(width: 1, height: 1)) { context, rect in
@@ -229,11 +288,11 @@ struct ItemIconResolverTests {
         let baseline = directory.appending(path: "baseline.bin")
         try makeIconPack(version: 3, icons: [(packIcon, 0)], domains: ["withings.com": 0]).write(to: baseline)
         let configuration = URLSession.ephemeralNoCookiesConfiguration
-        configuration.protocolClasses = [IconPackStub.self]
-        IconPackStub.lock.lock()
-        IconPackStub.bodies = [:]
-        IconPackStub.requests = []
-        IconPackStub.lock.unlock()
+        configuration.protocolClasses = [ResolverStub.self]
+        ResolverStub.lock.lock()
+        ResolverStub.bodies = [:]
+        ResolverStub.requests = []
+        ResolverStub.lock.unlock()
         let site = SiteIconLoader(
             cacheDirectory: directory.appending(path: "site"), session: URLSession(configuration: configuration),
             resolver: StaticResolver(), enabled: { enabled })
@@ -263,7 +322,7 @@ struct ItemIconResolverTests {
         #expect(icons.cachedIcon(for: "http://www.withings.com") == packIcon)
         #expect(await icons.icon(for: "https://app.withings.com") == packIcon)
         await icons.prefetch(["https://withings.com", "https://account.withings.com"])
-        let requests = IconPackStub.lock.withLock { IconPackStub.requests }
+        let requests = ResolverStub.lock.withLock { ResolverStub.requests }
         #expect(requests.isEmpty)
     }
 
@@ -275,6 +334,24 @@ struct ItemIconResolverTests {
         #expect(await icons.icon(for: "https://withings.com") == nil)
         let chosen = Data("chosen".utf8)
         #expect(icons.cachedIcon(for: "https://withings.com", chosen: chosen) == chosen)
+    }
+
+    @Test func itemsWithoutAnAddressFindTheirBrandByTitle() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "resolver-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let baseline = directory.appending(path: "baseline.bin")
+        try makeIconPack(version: 3, icons: [(packIcon, 0)], domains: ["withings.com": 0], names: ["withings": 0])
+            .write(to: baseline)
+        let site = SiteIconLoader(cacheDirectory: directory.appending(path: "site"), enabled: { true })
+        let icons = ItemIconResolver(
+            pack: IconPackStore(baseline: baseline, directory: directory.appending(path: "pack"), publicKey: ""),
+            site: site, enabled: { true })
+        #expect(icons.cachedIcon(for: nil, title: "Withings") == packIcon)
+        #expect(icons.cachedIcon(for: nil, title: "Bank") == nil)
+        #expect(await icons.icon(for: nil, title: "withings") == packIcon)
+        let off = ItemIconResolver(pack: icons.pack, site: site, enabled: { false })
+        #expect(off.cachedIcon(for: nil, title: "Withings") == nil)
     }
 
     @Test func hostParsing() {

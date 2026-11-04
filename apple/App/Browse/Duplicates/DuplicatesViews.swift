@@ -417,7 +417,7 @@ private struct DuplicateCopyRow: View {
         HStack(alignment: .top, spacing: 12) {
             ItemIcon(
                 type: copy.summary.itemType, title: copy.summary.title,
-                siteIcon: copy.summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) },
+                siteIcon: model.iconLoader.cachedIcon(for: copy.summary.primaryUrl, title: copy.summary.title),
                 size: 40, brand: copy.summary.cardBrand)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -590,7 +590,7 @@ struct DuplicateMergeSheet: View {
     }
 
     private func siteIcon(_ summary: FfiItemSummary) -> Data? {
-        summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }
+        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
     }
 
     private func resultHeader(_ item: FfiItem) -> some View {

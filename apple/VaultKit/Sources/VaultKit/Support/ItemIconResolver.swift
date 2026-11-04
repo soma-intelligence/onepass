@@ -6,10 +6,12 @@ import Foundation
 ///    sets it and the bridge does not expose it yet: callers pass it as `chosen` once it is.
 /// 2. The icon pack (`IconPackStore`): the item's host, then its parent names down to the
 ///    registrable domain. Read from a file on this device: no request at all.
-/// 3. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
+/// 3. The icon pack by the item's title, when it is a brand's name ("Reddit", "Burger King") or a
+///    web address: an item with no address, or one the pack does not know, still finds its brand.
+/// 4. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
 ///    its source was at least `minSitePixels` on its longest side. A smaller one stretched to a
 ///    tile is a blur.
-/// 4. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
+/// 5. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
 ///    artwork.
 ///
 /// A host the pack covers is never fetched from its site, not even to prefetch. With
@@ -51,17 +53,31 @@ public final class ItemIconResolver: Sendable {
     /// The icon already on this device (chosen, pack, else the cached site icon), without waiting
     /// and without any request: what a row shows on its first frame.
     public func cachedIcon(for url: String, chosen: Data? = nil) -> Data? {
+        cachedIcon(for: url, title: "", chosen: chosen)
+    }
+
+    /// Same, with the item's title for the pack's brand names (an item without a web address too).
+    public func cachedIcon(for url: String?, title: String, chosen: Data? = nil) -> Data? {
         if let chosen { return chosen }
         guard enabled() else { return nil }
-        if let packed = packIcon(for: url) { return packed }
+        if let url, let packed = packIcon(for: url) { return packed }
+        if let named = pack?.icon(forTitle: title)?.data { return named }
+        guard let url else { return nil }
         return Self.pick(chosen: nil, pack: nil, site: site.cachedIcon(for: url))
     }
 
     /// The icon of `url`, fetching the site's own icon only when the pack has none.
     public func icon(for url: String, chosen: Data? = nil) async -> Data? {
+        await icon(for: url, title: "", chosen: chosen)
+    }
+
+    /// Same, with the item's title (`cachedIcon(for:title:chosen:)`).
+    public func icon(for url: String?, title: String, chosen: Data? = nil) async -> Data? {
         if let chosen { return chosen }
         guard enabled() else { return nil }
-        if let packed = packIcon(for: url) { return packed }
+        if let url, let packed = packIcon(for: url) { return packed }
+        if let named = pack?.icon(forTitle: title)?.data { return named }
+        guard let url else { return nil }
         return Self.pick(chosen: nil, pack: nil, site: await site.icon(for: url))
     }
 

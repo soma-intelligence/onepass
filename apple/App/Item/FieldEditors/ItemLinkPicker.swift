@@ -65,7 +65,7 @@ struct ItemPickerList: View {
                     onPick(summary)
                 } label: {
                     HStack(spacing: 12) {
-                        ItemIcon(type: summary.itemType, title: summary.title, siteIcon: summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 30)
+                        ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
                         VStack(alignment: .leading) {
                             Text(summary.title).foregroundStyle(.primary)
                             if !summary.listSubtitle.isEmpty {
@@ -379,7 +379,7 @@ private struct SignInAccountChooser: View {
                             onPick(summary.id)
                         } label: {
                             HStack(spacing: 12) {
-                                ItemIcon(type: summary.itemType, title: summary.title, siteIcon: summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 30)
+                                ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
                                 VStack(alignment: .leading) {
                                     Text(summary.title).foregroundStyle(.primary)
                                     if !summary.listSubtitle.isEmpty {

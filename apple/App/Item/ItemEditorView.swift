@@ -212,7 +212,7 @@ struct ItemEditorView: View {
                 .tracking(0.6)
             #endif
             HStack(alignment: .center, spacing: 16) {
-                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? primaryURL.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 64, brand: item.cardBrandName)
+                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title), size: 64, brand: item.cardBrandName)
                     .favoriteBadge(item.favorite, iconSize: 64)
                     // Follows the website being typed: a new address loads its icon.
                     .task(id: primaryURL) {
@@ -220,7 +220,7 @@ struct ItemEditorView: View {
                             siteIcon = nil
                             return
                         }
-                        siteIcon = await model.iconLoader.icon(for: url)
+                        siteIcon = await model.iconLoader.icon(for: url, title: item.title)
                     }
                 TextField("app.title", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
                     .textFieldStyle(.plain)
