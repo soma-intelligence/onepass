@@ -160,6 +160,31 @@ describe("shell placement", () => {
     }
   });
 
+  it("touch screen: the save card sits centered at the top of the visible part of the page", () => {
+    const vv = { offsetTop: 120, height: 400 };
+    const desc = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    Object.defineProperty(window, "visualViewport", { configurable: true, get: () => vv });
+    try {
+      shell = createShell(document);
+      const frames = createFrames({ shell, doc: document, geometry: testGeometry, touch: true, occupants: () => [] });
+      frames.showFrame("save", `${CHROME}save.html#${TOKEN}`);
+      const iframe = shell.root.querySelector("iframe")!;
+      const width = Math.min(340, window.innerWidth - 24);
+      expect(iframe.style.top).toBe("132px");
+      expect(iframe.style.width).toBe(`${width}px`);
+      expect(iframe.style.left).toBe(`${Math.max(12, Math.round((window.innerWidth - width) / 2))}px`);
+      expect(iframe.classList.contains("sheet")).toBe(false);
+      // The page scrolled (or the keyboard went away): the card follows the visible top.
+      vv.offsetTop = 0;
+      frames.reposition();
+      expect(iframe.style.top).toBe("12px");
+      frames.destroy();
+    } finally {
+      if (desc) Object.defineProperty(window, "visualViewport", desc);
+      else delete (window as { visualViewport?: unknown }).visualViewport;
+    }
+  });
+
   it("ignores clicks into a frame for 300 ms after it moves or the host comes back", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setPage(`<input id="f" data-test-rect="10,10,200,30">`);

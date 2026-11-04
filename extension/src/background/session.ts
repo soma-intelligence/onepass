@@ -111,7 +111,7 @@ function retryable(e: unknown): boolean {
 export const RECONNECT_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export interface SessionDeps {
-  store: Pick<Store, "getPairing">;
+  store: Pick<Store, "getPairing"> & Partial<Pick<Store, "clearPairing">>;
   /** A client on a fresh native port. */
   newClient: () => BridgeLike;
   sleep?: (ms: number) => Promise<void>;
@@ -256,7 +256,17 @@ export class Session {
           await client.open(record);
         } catch (e) {
           client?.close();
-          if (!retryable(e)) throw toBgError(e);
+          const err = toBgError(e);
+          if (err.code === "unpaired" && this.deps.autoPair && this.deps.store.clearPairing) {
+            // The app no longer knows this pairing (reinstalled, its data reset, or revoked):
+            // the stale record goes, and the app is asked once to vouch for this browser again.
+            // A revoked browser stays refused by the app (`not_allowed`).
+            await this.deps.store.clearPairing();
+            if (generation !== this.generation) throw SUPERSEDED;
+            if (await this.deps.autoPair()) throw SUPERSEDED;
+            throw err;
+          }
+          if (!retryable(e)) throw err;
           const delay = RECONNECT_DELAYS_MS[attempt];
           if (delay === undefined) throw new BgError("host_missing");
           await this.sleep(delay);

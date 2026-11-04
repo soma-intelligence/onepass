@@ -195,6 +195,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     onSaved: (tabId, origin, itemId) => notes.onSaved(tabId, origin, itemId),
     area: ext.storage.local,
     openApp,
+    nativeUnlock: async () => {
+      const state = await vaultOf({ op: "vault_state" });
+      if (!state) return null;
+      if (!state.locked) return true;
+      const after = await vaultOf({ op: "unlock_biometric" });
+      return after !== null && !after.locked;
+    },
     ...(opts.now ? { now: opts.now } : {}),
   });
   // One surface: a save prompt takes the place of an offered overlay (both sit at the top right).

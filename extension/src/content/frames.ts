@@ -361,6 +361,13 @@ export function createFrames(opts: FramesOptions): Frames {
       top = r.top + r.height + GAP;
       const above = r.top - GAP - height;
       if (top + height > vh - EDGE && above >= EDGE) top = above;
+    } else if (kind === "save" && touch) {
+      // Touch (iPhone, iPad): centered at the top of what the user sees. Safari's own bars and
+      // the keyboard leave the visual viewport, never the layout one; no other manager's box
+      // stacks in a corner there.
+      const v = visible();
+      left = Math.max(EDGE, Math.round((w - width) / 2));
+      top = Math.max(0, Math.round(v.top)) + EDGE;
     } else if (kind === "save" && opts.occupants) {
       // Another manager's prompt in the corner: below it, or to its left.
       const taken = opts.occupants();

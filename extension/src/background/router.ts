@@ -355,7 +355,8 @@ function edits(v: unknown): SaveEdits {
     title: str(o.title, MAX_TITLE),
     username: str(o.username, MAX_USERNAME),
     password: str(o.password, MAX_PASSWORD),
-    vaultId: str(o.vaultId, MAX_ITEM_ID, 1),
+    // Empty from a card opened while locked: it had no vault list, the worker picks the default one.
+    vaultId: str(o.vaultId, MAX_ITEM_ID),
     rule: member<SaveEdits["rule"]>(o.rule, new Set(["domain", "exact_host", "exact_url", "never"])),
     tags: list(o.tags, MAX_TAGS, (t) => str(t, MAX_TAG, 1)),
   };

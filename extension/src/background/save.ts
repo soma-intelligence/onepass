@@ -111,6 +111,13 @@ export interface SaveDeps {
   area?: StorageArea;
   /** Brings the app forward before an unlock (a card opened while locked). */
   openApp?: () => Promise<boolean>;
+  /**
+   * iOS: the vault lives in the Safari extension's own process (no app to bring forward). Save
+   * on a card opened while locked unlocks it there with Face ID or Touch ID, the user's tap
+   * being the one attempt. True: unlocked; false: still locked; null: no native vault (macOS,
+   * other browsers), the app unlocks.
+   */
+  nativeUnlock?: () => Promise<boolean | null>;
 }
 
 interface VaultMemory {
@@ -316,9 +323,13 @@ export class SavePrompts {
     let status: "save" | "update" = decision;
     let update = h.update;
     if (h.locked) {
-      await this.deps.openApp?.().catch(() => false);
-      const u = await this.deps.session.request({ op: "unlock" });
-      if (u.locked) throw new BgError("locked");
+      const native = this.deps.nativeUnlock ? await this.deps.nativeUnlock().catch(() => false) : null;
+      if (native === false) throw new BgError("locked");
+      if (native === null) {
+        await this.deps.openApp?.().catch(() => false);
+        const u = await this.deps.session.request({ op: "unlock" });
+        if (u.locked) throw new BgError("locked");
+      }
       const r = await this.deps.session.request({
         op: "check_credentials",
         ctx: "save_prompt",

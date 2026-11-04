@@ -326,6 +326,15 @@ describe("message validation", () => {
         edits: { title: "Atlas", username: "alex@atlas.dev", password: "p", vaultId: "v1", rule: "domain", tags: ["web"] },
       }),
     ).not.toBeNull();
+    // A card opened while locked has no vault list yet: no vault chosen, the default one is used.
+    expect(
+      parseUiToBg({
+        type: "save_decide",
+        token,
+        decision: "save",
+        edits: { title: "Atlas", username: "alex@atlas.dev", password: "", vaultId: "", rule: "domain", tags: [] },
+      }),
+    ).not.toBeNull();
     expect(parseUiToBg({ type: "popup_search", query: "q".repeat(300) })).toBeNull();
   });
 

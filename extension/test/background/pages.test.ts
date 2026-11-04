@@ -666,6 +666,32 @@ describe("save prompt", () => {
     }
   });
 
+  it("iOS, opened while locked: Save unlocks the native vault with Face ID once, never the app", async () => {
+    const calls: NativeVaultCall[] = [];
+    let unlocked = false;
+    const vault = async (call: NativeVaultCall): Promise<NativeVault | null> => {
+      calls.push(call);
+      if (call.op === "unlock_biometric") unlocked = true;
+      return { locked: !unlocked, account: "Camille", biometry: "faceID" };
+    };
+    const { ext, bg, client, opened } = await setup(undefined, vault);
+    const token = await bg.saves.open({ ...pending, locked: true });
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toMatchObject({ ok: { outcome: "saved" } });
+    expect(calls).toEqual([{ op: "vault_state" }, { op: "unlock_biometric" }]);
+    expect(opened.n).toBe(0);
+    expect(client.requests.some((r) => r.op === "unlock")).toBe(false);
+    expect(client.requests.map((r) => r.op)).toEqual(expect.arrayContaining(["check_credentials", "save_login"]));
+  });
+
+  it("iOS, opened while locked: Face ID refused leaves the card locked, nothing saved", async () => {
+    const vault = async (): Promise<NativeVault | null> => ({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+    const { ext, bg, client, opened } = await setup(undefined, vault);
+    const token = await bg.saves.open({ ...pending, locked: true });
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ err: "locked" });
+    expect(opened.n).toBe(0);
+    expect(client.requests.some((r) => r.op === "save_login" || r.op === "unlock")).toBe(false);
+  });
+
   it("provider link variant calls link_provider", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open({

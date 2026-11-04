@@ -844,3 +844,12 @@ button.sc-chip:hover { color: var(--text); }
 .pp-pending-row .stack { flex: 1 1 calc(100% - 40px); min-width: 0; }
 .pp-pending-row .sc-quiet { margin-left: auto; }
 .pp-pending-row .t1 { font-size: 12.5px; font-weight: 600; white-space: normal; text-wrap: pretty; }
+
+/* Touch screens (iPhone, iPad): the save card keeps its quiet size, its buttons grow to a
+   finger's reach. Last in the file so it wins over the save card rules above. */
+@media (pointer: coarse) {
+  .btn-text { min-height: 36px; padding: 0 10px; font-size: 15px; }
+  .sc-more { width: 36px; height: 36px; }
+  .sc-chip { height: 32px; font-size: 13px; }
+  .sc-vault { min-height: 44px; font-size: 15px; }
+}
