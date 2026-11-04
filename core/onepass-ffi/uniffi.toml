@@ -4,3 +4,9 @@
 [bindings.kotlin]
 # The generated Kotlin package of the Android app (android/vaultkit-android).
 package_name = "me.somalabs.onepass.core"
+
+# Kotlin objects already have close() (AutoCloseable, frees the Rust
+# object): the Rust methods named close are renamed here, Kotlin only.
+[bindings.kotlin.rename]
+"PairingHost.close" = "close_codes"
+"RendezvousTransport.close" = "close_transport"

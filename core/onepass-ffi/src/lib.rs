@@ -33,6 +33,7 @@ mod travel;
 mod types;
 mod wallet_watch;
 pub mod watchtower;
+mod wifi;
 mod zones;
 
 use std::path::Path;
