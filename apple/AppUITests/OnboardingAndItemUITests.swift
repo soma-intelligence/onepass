@@ -182,14 +182,16 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: Self.kdfTimeout), "debug account not unlocked")
         let seeded = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
         tap(search)
-        XCTAssertTrue(seeded.waitForExistence(timeout: Self.kdfTimeout), "debug items not seeded")
+        // Before a query the search screen shows its category tiles (f09227ed), no rows.
+        let loginTile = app.descendants(matching: .any)["search.browse.login"].firstMatch
+        XCTAssertTrue(loginTile.waitForExistence(timeout: Self.kdfTimeout), "search screen not shown")
 
         let field = app.searchFields.firstMatch
         if !field.waitForExistence(timeout: 3) { search.tap() }
         tap(field)
         field.typeText("atlas")
         let other = app.descendants(matching: .any)["list.row.Codes du portail"].firstMatch
-        XCTAssertTrue(seeded.waitForExistence(timeout: Self.uiTimeout), "search did not find the item")
+        XCTAssertTrue(seeded.waitForExistence(timeout: Self.kdfTimeout), "debug items not seeded or not found")
         XCTAssertTrue(other.waitForNonExistence(timeout: Self.uiTimeout), "query not applied")
 
         // Open the result, then come back with the navigation bar's back button.
@@ -237,7 +239,14 @@ final class OnboardingAndItemUITests: XCTestCase {
         }
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(menu.waitForExistence(timeout: Self.uiTimeout), "Accueil not shown after coming back")
+        // iPhone locks as soon as the app leaves the screen (default since d8e39c80): unlock the
+        // debug account (`AppModel.debugPassword`), then Accueil, never the search, comes back.
+        let lockField = app.secureTextFields["lock.password"]
+        if lockField.waitForExistence(timeout: Self.uiTimeout) {
+            type("ruisseau-tapis-orage-comete", into: lockField)
+            tap(app.buttons["lock.unlock"])
+        }
+        XCTAssertTrue(menu.waitForExistence(timeout: Self.kdfTimeout), "Accueil not shown after coming back")
         let again = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         again.name = "accueil-after-item-and-background"
         again.lifetime = .keepAlways
