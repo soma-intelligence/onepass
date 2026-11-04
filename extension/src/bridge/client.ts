@@ -147,7 +147,8 @@ export interface PasskeyRegistration {
 interface Ops {
   status: { req: object; res: { locked: boolean; account: string; vaults: number } };
   unlock: { req: object; res: { locked: boolean } };
-  vaults: { req: object; res: { vaults: { id: string; name: string; color: string | null }[] } };
+  /** `account`: the OnePass account of the vault, when the host names one (several accounts). */
+  vaults: { req: object; res: { vaults: { id: string; name: string; color: string | null; account?: string }[] } };
   list_for_origin: { req: { ctx: Ctx; origin: string }; res: { items: Summary[] } };
   search: { req: { ctx: Ctx; query: string }; res: { items: Summary[] } };
   list_fillable: { req: { ctx: Ctx; origin: string; kind: "card" | "identity" }; res: { items: Summary[] } };

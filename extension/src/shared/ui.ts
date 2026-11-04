@@ -148,7 +148,12 @@ export interface SaveInit {
   username: string;
   /** The login to update (status `update`). */
   update?: { itemId: string; title: string };
-  vaults: { id: string; name: string }[];
+  /** `account`: the OnePass account the vault belongs to, when the host names one. */
+  vaults: { id: string; name: string; account?: string }[];
+  /** The vault picked first: the last one used for this site, else the last one used, else the first. */
+  defaultVault?: string;
+  /** OnePass was locked when the sign-in was sent: Save unlocks first. */
+  locked?: boolean;
   /** Provider link: the provider account (its own item) the site signs in with. */
   provider?: { id: ProviderId; email: string; title?: string };
   /** Open in the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). */
@@ -161,6 +166,19 @@ export interface PopupStatus {
   vaults: number;
   /** The extension just paired itself with the app (no code): the popup says "Connected". */
   connected?: boolean;
+}
+
+/** A sign-in the save card offered and nobody answered: waits in the popup (no password here). */
+export interface PendingSave {
+  id: string;
+  origin: string;
+  site: string;
+  username: string;
+  status: "new" | "update";
+  /** Status `update`: the login whose password changes. */
+  title?: string;
+  /** The vault Save uses (status `new`). */
+  vault?: string;
 }
 
 export interface PopupSuggestions {

@@ -193,6 +193,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     generator,
     neverSave,
     onSaved: (tabId, origin, itemId) => notes.onSaved(tabId, origin, itemId),
+    area: ext.storage.local,
+    openApp,
     ...(opts.now ? { now: opts.now } : {}),
   });
   // One surface: a save prompt takes the place of an offered overlay (both sit at the top right).
@@ -383,6 +385,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       submitted_credentials: async (m, from) => {
         await saveFlow.onSubmitted(m, from);
+        return {};
+      },
+      submitted_identifier: async (m, from) => {
+        saveFlow.onIdentifier(m, from);
         return {};
       },
       provider_click: async (m, from) => {
@@ -631,6 +637,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_close: async (m, from) => savePrompts.close(m.token, from),
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height),
       ...popup.handlers(),
+      popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
+      popup_pending_decide: async (m) => savePrompts.decidePending(m.id, m.decision),
     },
   };
 
@@ -694,9 +702,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       analyses.install(ext);
       runner?.install(ext);
       analyses.onAnalysis((a, cs) => {
+        // The sign that a sign-in worked (or failed) comes from the submitting frame too.
+        saveFlow.onAnalysis(a, cs);
         if (cs.frameId !== 0) return;
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
-        void saveFlow.onReady(cs.tabId).catch(() => undefined);
       });
       ext.webNavigation.onCommitted.addListener((d) => {
         if (d.frameId !== 0) return;
@@ -705,10 +714,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
       });
       ext.webNavigation.onCompleted.addListener((d) => {
-        if (d.frameId === 0) void saveFlow.onReady(d.tabId).catch(() => undefined);
+        if (d.frameId === 0) saveFlow.onReady(d.tabId);
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
+        savePrompts.forgetTab(tabId);
         notes.onTabRemoved(tabId);
         for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
         void providerFlows.drop(tabId).catch(() => undefined);

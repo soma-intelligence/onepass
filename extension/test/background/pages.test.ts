@@ -54,6 +54,8 @@ const answer: Answer = (r) => {
       return { password: "Gen-Pass-123", entropy_bits: 90 };
     case "unlock":
       return { locked: false };
+    case "check_credentials":
+      return checkAnswer;
     case "save_login":
     case "link_provider":
       return { item_id: "it_new" };
@@ -69,6 +71,9 @@ const answer: Answer = (r) => {
       return {};
   }
 };
+
+/** What `check_credentials` answers (the save prompt's locked path asks again after unlocking). */
+let checkAnswer: Record<string, unknown> = { status: "new" };
 
 class FakeChain implements ChainDriver {
   readonly calls: unknown[][] = [];
@@ -457,6 +462,7 @@ describe("save prompt", () => {
           { id: "v1", name: "Personnel" },
           { id: "v2", name: "Projet Atlas" },
         ],
+        defaultVault: "v1",
       },
     });
     expect(JSON.stringify(init)).not.toContain("typed-Secret-1");
@@ -482,7 +488,7 @@ describe("save prompt", () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
     const ui = uiSender(`save.html#${token}`, 7);
-    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
     expect(client.requests.at(-1)).toEqual({
       op: "save_login",
       ctx: "save_prompt",
@@ -511,7 +517,7 @@ describe("save prompt", () => {
     const token = await bg.saves.open(pending);
     const ui = uiSender(`save.html#${token}`, 7);
     const tags = ["Travail", "onepass:pending", " onepass:weak-by-site "];
-    expect(await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, tags } }, ui)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, tags } }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
     expect(client.requests.at(-1)).toMatchObject({ op: "save_login", tags: ["Travail"] });
   });
 
@@ -519,7 +525,7 @@ describe("save prompt", () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open({ ...pending, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
     const ui = uiSender(`save.html#${token}`, 7);
-    expect(await ext.send({ type: "save_decide", token, decision: "update", itemId: "it_evil" }, ui)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "save_decide", token, decision: "update", itemId: "it_evil" }, ui)).toEqual({ ok: { outcome: "updated" } });
     expect(client.requests.at(-1)).toEqual({
       op: "update_password",
       ctx: "save_prompt",
@@ -532,7 +538,7 @@ describe("save prompt", () => {
   it("never stores the registrable domain in storage.local neverSave", async () => {
     const { ext, bg } = await setup();
     const token = await bg.saves.open({ ...pending, origin: "https://admin.atlas-cloud.test" });
-    expect(await ext.send({ type: "save_decide", token, decision: "never" }, uiSender("save.html", 7))).toEqual({ ok: {} });
+    expect(await ext.send({ type: "save_decide", token, decision: "never" }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "done" } });
     expect(ext.local.data.get(NEVER_SAVE_KEY)).toEqual(["atlas-cloud.test"]);
     expect(await bg.neverSave.has("atlas-cloud.test")).toBe(true);
   });
@@ -543,7 +549,7 @@ describe("save prompt", () => {
     const ui = uiSender(`save.html#${token}`, 7);
     const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
     expect(rec?.password).toBe("typed-Secret-1");
-    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: {} });
+    expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
     expect(rec?.password).toBe("");
   });
 
@@ -606,6 +612,57 @@ describe("save prompt", () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("the vault used last for the site is picked first next time", async () => {
+    const { ext, bg } = await setup();
+    let token = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7));
+    expect(ext.local.data.get("saveVaults")).toEqual({ last: "v2", sites: { "atlas-cloud.test": "v2" } });
+    token = await bg.saves.open(pending);
+    expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "v2" } });
+  });
+
+  it("left unanswered: the sign-in waits in the popup (no password there), Save from the popup saves it", async () => {
+    const { ext, bg, client } = await setup();
+    const token = await bg.saves.open(pending);
+    const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+    expect(await ext.send({ type: "save_decide", token, decision: "later" }, uiSender("save.html", 7))).toEqual({ ok: {} });
+    expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "save" });
+    expect(rec?.password).toBe("");
+    const popup = uiSender("popup.html");
+    const list = (await ext.send({ type: "popup_pending" }, popup)) as { ok: { pending: { id: string }[] } };
+    expect(list.ok.pending).toEqual([
+      { id: expect.any(String), origin: SITE, site: "atlas-cloud.test", username: "alex@atlas.dev", status: "new", vault: "Personnel" },
+    ]);
+    expect(JSON.stringify(list)).not.toContain("typed-Secret-1");
+    const id = list.ok.pending[0]!.id;
+    expect(await ext.send({ type: "popup_pending_decide", id, decision: "save" }, popup)).toEqual({ ok: { outcome: "saved", vault: "Personnel" } });
+    expect(client.requests.at(-1)).toMatchObject({ op: "save_login", password: "typed-Secret-1", username: "alex@atlas.dev", vault_id: "v1", title: "Atlas Cloud" });
+    expect(await ext.send({ type: "popup_pending" }, popup)).toEqual({ ok: { pending: [] } });
+    // Gone with its tab too.
+    const t2 = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token: t2, decision: "later" }, uiSender("save.html", 7));
+    ext.onRemoved.emit(7);
+    expect(await ext.send({ type: "popup_pending" }, popup)).toEqual({ ok: { pending: [] } });
+  });
+
+  it("opened while locked: Save unlocks, asks again, and says when the login is already there", async () => {
+    const { ext, bg, client, opened } = await setup();
+    const token = await bg.saves.open({ ...pending, locked: true });
+    checkAnswer = { status: "same", item_id: "it_01" };
+    try {
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "already" } });
+      expect(opened.n).toBe(1);
+      expect(client.requests.map((r) => r.op)).toEqual(expect.arrayContaining(["unlock", "check_credentials"]));
+      expect(client.requests.some((r) => r.op === "save_login")).toBe(false);
+      const t2 = await bg.saves.open({ ...pending, locked: true });
+      checkAnswer = { status: "update", item_id: "it_01", title: "Atlas Cloud" };
+      expect(await ext.send({ type: "save_decide", token: t2, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "updated" } });
+      expect(client.requests.at(-1)).toEqual({ op: "update_password", ctx: "save_prompt", item_id: "it_01", origin: SITE, password: "typed-Secret-1" });
+    } finally {
+      checkAnswer = { status: "new" };
     }
   });
 

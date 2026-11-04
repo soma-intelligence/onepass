@@ -14,6 +14,7 @@ import {
   type GeneratorEntry,
   type GeneratorKind,
   type GeneratorProfile,
+  type PendingSave,
   type PopupPlanLine,
   type PopupStatus,
   type Summary,
@@ -33,6 +34,7 @@ import {
   UNLOCK_POLL_MS,
   UNLOCK_WAIT_TRIES,
   siteIcon,
+  siteTile,
   srOnly,
 } from "./components";
 import {
@@ -44,7 +46,9 @@ import {
   parseItem,
   parseItems,
   parseLocked,
+  parseOutcome,
   parsePaired,
+  parsePending,
   parseSas,
   parseStatus,
   parseSuggestions,
@@ -409,6 +413,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   let domain: string | null = null;
   let suggestions: Summary[] = [];
   let plan: PopupPlanLine | null = null;
+  /** Sign-ins whose save card went away unanswered (no password here). */
+  let waiting: PendingSave[] = [];
   let results: Summary[] | null = null;
   let selected: string | null = null;
   let view: "detail" | "gen" | "none" = "none";
@@ -504,6 +510,30 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             button(t("common.fill"), "btn btn-primary", () => void track(smartFill())),
           )
         : null;
+    const toSave =
+      waiting.length > 0 && !results
+        ? h(
+            "div",
+            { class: "pp-pending glass", attrs: { role: "group", "aria-label": t("popup.toSave") } },
+            ...waiting.map((w) =>
+              h(
+                "div",
+                { class: "pp-pending-row" },
+                siteTile(w.origin, w.site, 28),
+                h(
+                  "span",
+                  { class: "stack" },
+                  h("span", { class: "t1" }, w.status === "update" ? t("save.updatePasswordFor", { site: w.site }) : t("save.saveLoginFor", { site: w.site })),
+                  h("span", { class: "t2" }, w.vault !== undefined ? `${w.username} · ${w.vault}` : w.username),
+                ),
+                button(t("save.notNow"), "btn-text sc-quiet", () => void track(decideWaiting(w, "dismiss"))),
+                button(w.status === "update" ? t("save.update") : t("common.save"), "btn-text sc-primary", () =>
+                  void track(decideWaiting(w, w.status === "update" ? "update" : "save")),
+                ),
+              ),
+            ),
+          )
+        : null;
     for (const it of items) {
       list.append(
         h(
@@ -520,6 +550,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     }
     mount(
       side,
+      toSave,
       h("h1", { class: "pp-side-title" }, icon(results ? "search" : "star", 13), title),
       line,
       list,
@@ -532,6 +563,27 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             button(t("popup.forgetMyChoicesOn"), "btn-link", () => void track(forgetSite())),
           )
         : null,
+    );
+  }
+
+  async function decideWaiting(w: PendingSave, decision: "save" | "update" | "dismiss"): Promise<void> {
+    const r = await call(deps.send, { type: "popup_pending_decide", id: w.id, decision }, parseOutcome);
+    waiting = waiting.filter((x) => x.id !== w.id);
+    renderSide();
+    if (!r.ok) {
+      toast(errorText(r.code), "error");
+      return;
+    }
+    if (decision === "dismiss") return;
+    const o = r.value;
+    toast(
+      o.outcome === "already"
+        ? t("save.alreadyInOnepass")
+        : o.outcome === "updated"
+          ? t("save.passwordUpdated")
+          : o.vault !== undefined
+            ? t("save.savedIn", { vault: o.vault })
+            : t("save.loginSaved"),
     );
   }
 
@@ -936,6 +988,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     domain = s.value.domain;
     suggestions = s.value.items;
     plan = s.value.plan ?? null;
+    const p = await call(deps.send, { type: "popup_pending" }, parsePending);
+    waiting = p.ok ? p.value : [];
     results = null;
     view = "none";
     renderMain();

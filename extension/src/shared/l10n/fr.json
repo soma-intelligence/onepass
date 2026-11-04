@@ -279,5 +279,18 @@
   "unlock.lockedOut": "Trop d'essais. Réessaie plus tard.",
   "unlock.passwordRequired": "Saisis ton mot de passe principal.",
   "unlock.noAccount": "Ouvre l'app OnePass pour créer ton compte.",
-  "icon.tooltip": "OnePass"
+  "icon.tooltip": "OnePass",
+  "save.saveLoginFor": "Enregistrer le login pour {site} ?",
+  "save.updatePasswordFor": "Mettre à jour le mot de passe pour {site} ?",
+  "save.neverForSite": "Ne jamais proposer pour ce site",
+  "save.editBeforeSaving": "Modifier avant d'enregistrer",
+  "save.saveAsNew": "Enregistrer comme nouveau login",
+  "save.vaultChip": "Coffre : {name}",
+  "save.chooseVault": "Choisir le coffre",
+  "save.lockedChip": "Verrouillé",
+  "save.savedIn": "Enregistré dans {vault}",
+  "save.loginSaved": "Login enregistré",
+  "save.passwordUpdated": "Mot de passe mis à jour",
+  "save.alreadyInOnepass": "Déjà dans OnePass",
+  "popup.toSave": "À enregistrer"
 }

@@ -323,6 +323,8 @@ export function parseCsToBg(m: unknown): CsToBg | null {
           password: str(o.password, MAX_PASSWORD, 1),
           isNew: bool(o.isNew),
         };
+      case "submitted_identifier":
+        return { type: "submitted_identifier", formRef: ref(o.formRef), username: str(o.username, MAX_USERNAME, 1) };
       case "provider_click":
         return { type: "provider_click", provider: member<ProviderId>(o.provider, PROVIDER_IDS), ref: ref(o.ref) };
       case "account_click":
@@ -433,13 +435,16 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         const d: UiToBg = {
           type: "save_decide",
           token: token(o.token),
-          decision: member(o.decision, new Set(["save", "update", "never", "dismiss"])),
+          decision: member(o.decision, new Set(["save", "update", "never", "dismiss", "later"])),
         };
         if (o.edits !== undefined) d.edits = edits(o.edits);
         if (o.itemId !== undefined) d.itemId = itemId(o.itemId);
         return d;
       }
+      case "popup_pending_decide":
+        return { type: o.type, id: token(o.id), decision: member(o.decision, new Set(["save", "update", "never", "dismiss"])) };
       case "popup_status":
+      case "popup_pending":
       case "popup_unlock":
       case "popup_suggestions":
       case "popup_history":

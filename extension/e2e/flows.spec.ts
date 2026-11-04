@@ -70,10 +70,11 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login ?")).toBeVisible();
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
   await ext.settle();
   await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/enregistré$/)).toBeVisible();
+  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
 
   await page.goto(`${ATLAS}/logout`);
   const menu = await ext.openMenu(page, "#email");
@@ -83,6 +84,74 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await ext.pickRow(menu, title, "alex.new@atlas.dev");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText("alex.new@atlas.dev");
+});
+
+// ---- founder bug 2026-11-03: no prompt after signing in with credentials OnePass did not know ----
+
+paired("save_after_identifier_then_password", async ({ ext }) => {
+  const { page } = ext;
+  // Identifier first, password on the next page (most large sites): the password page has no identifier field.
+  await page.goto(`${ATLAS}/multistep`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#next").click();
+  await expect(page).toHaveURL(`${ATLAS}/multistep/password`);
+  await page.locator("#password").fill("Nouv-Pass-0042");
+  await page.locator("#submit").click();
+  await expect(page).toHaveURL(`${ATLAS}/multistep/otp`);
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
+  await ext.settle();
+  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
+  expect(ext.audit()).toContain('"op":"save_login"');
+  expect(ext.audit()).not.toContain("Nouv-Pass-0042");
+});
+
+paired("failed_login_offers_nothing", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Mauvais-Pass-1");
+  await page.locator("#submit").click();
+  await expect(page.locator("#error")).toHaveText("Identifiant ou mot de passe incorrect");
+  // Well past every settle delay: still nothing (the site asked for the password again).
+  await ext.settle(4000);
+  expect(ext.findExtFrame(page, "save")).toBeUndefined();
+  // The right password then: proposed.
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Nouv-Pass-0042");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Connecté");
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+});
+
+paired("save_card_stacks_beside_another_manager", async ({ ext }) => {
+  const { page } = ext;
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.goto(`${ATLAS}/login-other-manager`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Nouv-Pass-0042");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Connecté");
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await ext.settle();
+  const theirs = await page.locator("#other-manager-notification").boundingBox();
+  const ours = await (await save.frameElement()).boundingBox();
+  expect(theirs).not.toBeNull();
+  expect(ours).not.toBeNull();
+  const a = theirs!;
+  const b = ours!;
+  const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  expect(overlap).toBe(false);
+  // Right under theirs, a small gap, same corner.
+  expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+  expect(b.y - (a.y + a.height)).toBeLessThanOrEqual(16);
+  // Theirs goes away: ours moves back up to the corner.
+  await page.evaluate(() => document.getElementById("other-manager-notification")?.remove());
+  await expect.poll(async () => (await (await save.frameElement()).boundingBox())?.y ?? -1, { timeout: 5000 }).toBeLessThan(a.y + a.height);
 });
 
 paired("change_password_updates_item", async ({ ext }) => {
@@ -102,12 +171,11 @@ paired("change_password_updates_item", async ({ ext }) => {
   await expect(page.locator("#status")).toHaveText("Mot de passe modifié");
 
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByRole("tab", { name: "Mettre à jour (1)" })).toBeVisible();
-  await ext.settle();
-  await save.getByRole("tab", { name: "Mettre à jour (1)" }).click();
+  await expect(save.getByText("Mettre à jour le mot de passe pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText(`Atlas Cloud (multi) · ${FX.ops.email}`)).toBeVisible();
   await ext.settle();
   await save.getByRole("button", { name: "Mettre à jour", exact: true }).click();
-  await expect(save.getByText("Atlas Cloud (multi) mis à jour")).toBeVisible();
+  await expect(save.getByText("Mot de passe mis à jour")).toBeVisible();
 
   // The item now fills the new password, which the site accepts.
   await page.goto(`${ATLAS}/login`);
@@ -131,12 +199,11 @@ paired("signup_generates_password", async ({ ext }) => {
   await expect(page.locator("#status")).toHaveText("Connecté");
   expect(ext.server.users.get("alex.signup@atlas.dev")).toBe(generated);
 
-  // The generated password feeds the save proposal.
-  const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login ?")).toBeVisible();
-  await ext.settle();
-  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/enregistré$/)).toBeVisible();
+  // The generated password was saved as a pending login at fill time; the
+  // signed-in page confirms it with the username, no prompt to answer.
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"confirm_pending"');
+  expect(ext.findExtFrame(page, "save")).toBeUndefined();
+  expect(ext.audit()).not.toContain(generated);
   await page.goto(`${ATLAS}/logout`);
   const again = await ext.openMenu(page, "#email");
   await expect(again.locator("button.row").filter({ hasText: "alex.signup@atlas.dev" })).toHaveCount(1);

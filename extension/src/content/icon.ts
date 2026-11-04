@@ -6,7 +6,7 @@
 import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
-import type { Geometry } from "./detect/visibility";
+import type { Geometry, Rect } from "./detect/visibility";
 import { isTouchScreen, type Shell } from "./frames";
 
 /** Roles that carry an icon. */
@@ -45,6 +45,11 @@ export interface IconsOptions {
   onOpen: (t: IconTarget) => void;
   /** Called when a field's box changes (ResizeObserver). */
   onLayout: () => void;
+  /**
+   * Other password managers' boxes over `zone` (their in-field buttons,
+   * occupants.ts): our icon moves left of them instead of sitting under.
+   */
+  avoid?: (zone: Rect) => Rect[];
   /**
    * Touch screen (iOS): a larger icon for a finger, and a "OnePass" label beside the icon of
    * the focused field (spec 2026-11-03-ios-safari-autofill 5). From `(pointer: coarse)` by default.
@@ -160,8 +165,18 @@ export function createIcons(opts: IconsOptions): Icons {
       !anchor.isConnected || r.width < 4 || r.height < 4 || r.top + r.height < 0 || r.left + r.width < 0 || r.top > vh || r.left > vw;
     icon.hidden = off;
     if (off) return;
-    const left = r.width < NARROW_FIELD ? r.left + r.width + ICON_INSET : r.left + r.width - size - ICON_INSET;
+    let left = r.width < NARROW_FIELD ? r.left + r.width + ICON_INSET : r.left + r.width - size - ICON_INSET;
     const top = r.top + (r.height - size) / 2;
+    if (opts.avoid) {
+      // Their icon in the same field: ours goes just left of it (never under, never over).
+      const theirs = opts.avoid({ left: r.left, top: r.top, width: r.width + size + 2 * ICON_INSET, height: r.height });
+      for (let i = 0; i < theirs.length; i++) {
+        const me = { left, top, width: size, height: size };
+        const hit = theirs.filter((o) => o.left < me.left + me.width + 2 && me.left < o.left + o.width + 2 && o.top < me.top + me.height && me.top < o.top + o.height);
+        if (hit.length === 0) break;
+        left = Math.min(...hit.map((o) => o.left)) - size - 4;
+      }
+    }
     icon.style.setProperty("left", `${Math.round(left)}px`);
     icon.style.setProperty("top", `${Math.round(top)}px`);
   };

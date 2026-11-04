@@ -279,5 +279,18 @@
   "unlock.lockedOut": "Too many tries. Try again later.",
   "unlock.passwordRequired": "Enter your master password.",
   "unlock.noAccount": "Open the OnePass app to create your account.",
-  "icon.tooltip": "OnePass"
+  "icon.tooltip": "OnePass",
+  "save.saveLoginFor": "Save login for {site}?",
+  "save.updatePasswordFor": "Update password for {site}?",
+  "save.neverForSite": "Never for this site",
+  "save.editBeforeSaving": "Edit before saving",
+  "save.saveAsNew": "Save as a new login",
+  "save.vaultChip": "Vault: {name}",
+  "save.chooseVault": "Choose the vault",
+  "save.lockedChip": "Locked",
+  "save.savedIn": "Saved in {vault}",
+  "save.loginSaved": "Login saved",
+  "save.passwordUpdated": "Password updated",
+  "save.alreadyInOnepass": "Already in OnePass",
+  "popup.toSave": "To save"
 }

@@ -279,5 +279,18 @@
   "unlock.lockedOut": "Demasiados intentos. Vuelve a intentarlo más tarde.",
   "unlock.passwordRequired": "Introduce tu contraseña maestra.",
   "unlock.noAccount": "Abre la app OnePass para crear tu cuenta.",
-  "icon.tooltip": "OnePass"
+  "icon.tooltip": "OnePass",
+  "save.saveLoginFor": "¿Guardar el inicio de sesión de {site}?",
+  "save.updatePasswordFor": "¿Actualizar la contraseña de {site}?",
+  "save.neverForSite": "Nunca para este sitio",
+  "save.editBeforeSaving": "Editar antes de guardar",
+  "save.saveAsNew": "Guardar como nuevo inicio de sesión",
+  "save.vaultChip": "Bóveda: {name}",
+  "save.chooseVault": "Elegir la bóveda",
+  "save.lockedChip": "Bloqueado",
+  "save.savedIn": "Guardado en {vault}",
+  "save.loginSaved": "Inicio de sesión guardado",
+  "save.passwordUpdated": "Contraseña actualizada",
+  "save.alreadyInOnepass": "Ya está en OnePass",
+  "popup.toSave": "Por guardar"
 }

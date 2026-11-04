@@ -5,10 +5,22 @@
 // password reaches the page only on "Afficher" (`save_reveal`) or as a value
 // it asked to generate. Task 17 (save-flow) decides when to prompt and calls
 // `open`.
-import type { BgToCs, ProviderId, SaveDecision, SaveEdits } from "../shared/messages";
+//
+// A card left unanswered goes away by itself ("later"): the submission then
+// waits in the toolbar popup (`pendingList`, `decidePending`), in memory
+// only, for PENDING_SAVE_TTL_MS, its password wiped on decision, expiry or
+// tab close. A card opened while the vault was locked (`locked`) unlocks
+// first on Save, asks `check_credentials` again, then saves, updates the
+// login the host names, or says it is already there.
+//
+// The vault picked first: the last one used to save for that site, else the
+// last one used anywhere, else the first the host lists (`storage.local`
+// key `saveVaults`, vault ids and sites only, no secret).
+import type { BgToCs, ProviderId, SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import { parseOrigin } from "../shared/domain";
-import type { SaveInit } from "../shared/ui";
-import type { BgExt } from "./ext";
+import { newToken } from "../shared/tokens";
+import type { PendingSave, SaveInit } from "../shared/ui";
+import type { BgExt, StorageArea } from "./ext";
 import type { FormGenerator } from "./generate";
 import type { UiContext } from "./frames";
 import type { NeverSave } from "./never-save";
@@ -17,6 +29,12 @@ import { BgError, type Session } from "./session";
 import { type BoundRecord, FrameTokens } from "./tokens";
 
 export const SAVE_TTL_MS = 2 * 60 * 1000;
+/** A submission whose card went away unanswered waits this long in the popup. */
+export const PENDING_SAVE_TTL_MS = 10 * 60 * 1000;
+/** At most this many waiting submissions (the oldest goes first). */
+export const MAX_PENDING_SAVES = 8;
+export const SAVE_VAULTS_KEY = "saveVaults";
+const MAX_VAULT_SITES = 200;
 
 export interface SavePending {
   tabId: number;
@@ -38,6 +56,26 @@ export interface SavePending {
    * `documentId` is known (the content script shows the prompt only there).
    */
   topOrigin?: string;
+  /** The vault was locked when the host was asked: Save unlocks first. */
+  locked?: boolean;
+}
+
+/** What a save needs, from a card or from the popup's waiting list. */
+interface Held {
+  tabId: number;
+  origin: string;
+  status: "new" | "update";
+  username: string;
+  password: string;
+  update?: { itemId: string; title: string };
+  locked?: boolean;
+}
+
+interface Waiting extends Held {
+  id: string;
+  site: string;
+  at: number;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" | "documentId"> {
@@ -69,10 +107,20 @@ export interface SaveDeps {
   now?: () => number;
   /** A login was saved or updated from the prompt of `tabId` (the site memory notes it, notes.ts). */
   onSaved?: (tabId: number, origin: string, itemId: string) => Promise<void>;
+  /** `storage.local`: the vault last used per site (no secret). None: the first vault. */
+  area?: StorageArea;
+  /** Brings the app forward before an unlock (a card opened while locked). */
+  openApp?: () => Promise<boolean>;
+}
+
+interface VaultMemory {
+  last?: string;
+  sites: Record<string, string>;
 }
 
 export class SavePrompts {
   readonly tokens: FrameTokens<SaveRecord>;
+  private readonly waiting = new Map<string, Waiting>();
 
   constructor(private readonly deps: SaveDeps) {
     this.tokens = new FrameTokens<SaveRecord>({
@@ -107,6 +155,7 @@ export class SavePrompts {
     if (p.update) rec.update = { ...p.update };
     if (p.provider) rec.provider = { ...p.provider };
     if (p.view) rec.view = p.view;
+    if (p.locked) rec.locked = true;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
     if (p.documentId === undefined && p.topOrigin !== undefined) msg.origin = p.topOrigin;
@@ -132,9 +181,20 @@ export class SavePrompts {
     const rec = await this.record(token, ui);
     const site = parseOrigin(rec.origin)?.site ?? rec.origin;
     let vaults: SaveInit["vaults"] = [];
+    let locked = rec.locked === true;
     if (rec.kind === "login") {
-      const r = await this.deps.session.request({ op: "vaults" });
-      vaults = r.vaults.map((v) => ({ id: v.id, name: v.name }));
+      try {
+        const r = await this.deps.session.request({ op: "vaults" });
+        vaults = r.vaults.map((v) => {
+          const out: SaveInit["vaults"][number] = { id: v.id, name: v.name };
+          if (typeof v.account === "string" && v.account !== "") out.account = v.account;
+          return out;
+        });
+      } catch (e) {
+        // Locked since the check: the card still offers Save (it unlocks first).
+        if (!(e instanceof BgError) || e.code !== "locked") throw e;
+        locked = true;
+      }
     }
     const out: SaveInit = {
       origin: rec.origin,
@@ -151,7 +211,42 @@ export class SavePrompts {
       if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
     }
     if (rec.view) out.view = rec.view;
+    if (locked) out.locked = true;
+    const vault = await this.defaultVault(site, vaults);
+    if (vault !== undefined) out.defaultVault = vault;
     return out;
+  }
+
+  // ---- vault memory ----
+
+  private async vaultMemory(): Promise<VaultMemory> {
+    const raw = this.deps.area ? (await this.deps.area.get(SAVE_VAULTS_KEY).catch((): Record<string, unknown> => ({})))[SAVE_VAULTS_KEY] : undefined;
+    const out: VaultMemory = { sites: {} };
+    if (typeof raw !== "object" || raw === null) return out;
+    const r = raw as { last?: unknown; sites?: unknown };
+    if (typeof r.last === "string") out.last = r.last;
+    if (typeof r.sites === "object" && r.sites !== null) {
+      for (const [k, v] of Object.entries(r.sites)) if (typeof v === "string") out.sites[k] = v;
+    }
+    return out;
+  }
+
+  /** The vault Save picks first among `vaults`: this site's last, the last one, the first. */
+  async defaultVault(site: string, vaults: readonly { id: string }[]): Promise<string | undefined> {
+    const m = await this.vaultMemory();
+    const ids = new Set(vaults.map((v) => v.id));
+    for (const id of [m.sites[site], m.last]) if (id !== undefined && ids.has(id)) return id;
+    return vaults[0]?.id;
+  }
+
+  private async rememberVault(site: string, vaultId: string): Promise<void> {
+    if (!this.deps.area) return;
+    const m = await this.vaultMemory();
+    delete m.sites[site];
+    m.sites[site] = vaultId;
+    const keys = Object.keys(m.sites);
+    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_VAULT_SITES))) delete m.sites[k];
+    await this.deps.area.set({ [SAVE_VAULTS_KEY]: { last: vaultId, sites: m.sites } }).catch(() => undefined);
   }
 
   async reveal(token: string, ui: UiContext): Promise<{ password: string }> {
@@ -167,12 +262,18 @@ export class SavePrompts {
     return { password: g.password };
   }
 
-  async decide(token: string, ui: UiContext, decision: SaveDecision, edits?: SaveEdits): Promise<object> {
+  async decide(token: string, ui: UiContext, decision: SaveDecision, edits?: SaveEdits): Promise<SaveOutcome | object> {
     const rec = await this.record(token, ui);
     /** The login saved or updated (a confirmed save). */
-    let savedItem: string | undefined;
+    let out: SaveOutcome = { outcome: "done" };
     switch (decision) {
       case "dismiss":
+        await this.tokens.drop(token);
+        await removeFrame(this.deps.ext.tabs, rec, "save");
+        return {};
+      case "later":
+        // Unanswered: it waits in the popup (a sign-in the card offered, not the menu's blank login).
+        if (rec.kind === "login" && rec.view !== "edit" && rec.password !== "") this.hold(rec);
         await this.tokens.drop(token);
         await removeFrame(this.deps.ext.tabs, rec, "save");
         return {};
@@ -191,42 +292,182 @@ export class SavePrompts {
           });
         } else {
           if (!edits) throw new BgError("invalid");
-          // Empty: the password typed on the page (never sent to the prompt unless revealed).
-          const password = edits.password === "" ? rec.password : edits.password;
-          // A login without a password is never saved (new login from the menu, nothing typed).
-          if (password === "") throw new BgError("invalid");
-          const saved = await this.deps.session.request({
-            op: "save_login",
-            ctx: "save_prompt",
-            origin: rec.origin,
-            title: edits.title.trim() === "" ? titleFromSite(parseOrigin(rec.origin)?.site ?? rec.origin) : edits.title,
-            username: edits.username,
-            password,
-            vault_id: edits.vaultId,
-            rule: edits.rule,
-            tags: edits.tags.filter((t) => !RESERVED_TAGS.has(t.trim())),
-          });
-          savedItem = saved.item_id;
+          out = await this.commit(rec, "save", edits);
         }
         break;
       case "update":
         // Only the item check_credentials named; the page cannot pick another.
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
-        await this.deps.session.request({
-          op: "update_password",
-          ctx: "save_prompt",
-          item_id: rec.update.itemId,
-          origin: rec.origin,
-          password: edits && edits.password !== "" ? edits.password : rec.password,
-        });
-        savedItem = rec.update.itemId;
+        out = await this.commit(rec, "update", edits);
         break;
     }
     rec.password = "";
     rec.decided = true;
     await this.tokens.update(token, rec);
-    if (savedItem !== undefined) await this.deps.onSaved?.(rec.tabId, rec.origin, savedItem).catch(() => undefined);
-    return {};
+    return out;
+  }
+
+  /**
+   * Saves or updates `h`. A card opened while locked unlocks first and asks
+   * the host again: the login may already be there, or be one to update.
+   */
+  private async commit(h: Held, decision: "save" | "update", edits?: SaveEdits): Promise<SaveOutcome> {
+    const site = parseOrigin(h.origin)?.site ?? h.origin;
+    let status: "save" | "update" = decision;
+    let update = h.update;
+    if (h.locked) {
+      await this.deps.openApp?.().catch(() => false);
+      const u = await this.deps.session.request({ op: "unlock" });
+      if (u.locked) throw new BgError("locked");
+      const r = await this.deps.session.request({
+        op: "check_credentials",
+        ctx: "save_prompt",
+        origin: h.origin,
+        username: edits && edits.username.trim() !== "" ? edits.username : h.username,
+        password: edits && edits.password !== "" ? edits.password : h.password,
+      });
+      if (r.status === "same" || r.status === "pending") return { outcome: "already" };
+      if (r.status === "update" && r.item_id !== undefined) {
+        status = "update";
+        update = { itemId: r.item_id, title: r.title ?? "" };
+      }
+    }
+    let saved: string;
+    let vaultName: string | undefined;
+    if (status === "update") {
+      if (!update) throw new BgError("invalid");
+      await this.deps.session.request({
+        op: "update_password",
+        ctx: "save_prompt",
+        item_id: update.itemId,
+        origin: h.origin,
+        password: edits && edits.password !== "" ? edits.password : h.password,
+      });
+      saved = update.itemId;
+    } else {
+      if (!edits) throw new BgError("invalid");
+      // Empty: the password typed on the page (never sent to the prompt unless revealed).
+      const password = edits.password === "" ? h.password : edits.password;
+      // A login without a password is never saved (new login from the menu, nothing typed).
+      if (password === "") throw new BgError("invalid");
+      // The vault list names the vault in the outcome; a card opened locked had none: the default one now.
+      // A host that cannot list (yet) leaves the choice as is: save_login answers for it.
+      const listed = await this.deps.session.request({ op: "vaults" }).catch(() => ({ vaults: [] }));
+      const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
+      const vaultId =
+        vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId) ? edits.vaultId : await this.defaultVault(site, vaults);
+      if (vaultId === undefined) throw new BgError("not_found");
+      vaultName = vaults.find((v) => v.id === vaultId)?.name;
+      const r = await this.deps.session.request({
+        op: "save_login",
+        ctx: "save_prompt",
+        origin: h.origin,
+        title: edits.title.trim() === "" ? titleFromSite(site) : edits.title,
+        username: edits.username,
+        password,
+        vault_id: vaultId,
+        rule: edits.rule,
+        tags: edits.tags.filter((t) => !RESERVED_TAGS.has(t.trim())),
+      });
+      saved = r.item_id;
+      await this.rememberVault(site, vaultId);
+    }
+    await this.deps.onSaved?.(h.tabId, h.origin, saved).catch(() => undefined);
+    const out: SaveOutcome = { outcome: status === "update" ? "updated" : "saved" };
+    if (vaultName !== undefined) out.vault = vaultName;
+    return out;
+  }
+
+  // ---- waiting in the popup ----
+
+  private hold(rec: SaveRecord): void {
+    const id = newToken();
+    const site = parseOrigin(rec.origin)?.site ?? rec.origin;
+    // One per tab and site: a newer sign-in replaces the older one.
+    for (const w of [...this.waiting.values()]) if (w.tabId === rec.tabId && w.site === site) this.forget(w.id);
+    while (this.waiting.size >= MAX_PENDING_SAVES) {
+      const oldest = this.waiting.keys().next().value;
+      if (oldest === undefined) break;
+      this.forget(oldest);
+    }
+    const w: Waiting = {
+      id,
+      site,
+      at: (this.deps.now ?? Date.now)(),
+      tabId: rec.tabId,
+      origin: rec.origin,
+      status: rec.status,
+      username: rec.username,
+      password: rec.password,
+      timer: setTimeout(() => this.forget(id), PENDING_SAVE_TTL_MS),
+    };
+    if (rec.update) w.update = { ...rec.update };
+    if (rec.locked) w.locked = true;
+    this.waiting.set(id, w);
+  }
+
+  private forget(id: string): void {
+    const w = this.waiting.get(id);
+    if (!w) return;
+    clearTimeout(w.timer);
+    w.password = "";
+    this.waiting.delete(id);
+  }
+
+  /** The tab closed: its waiting sign-ins go. */
+  forgetTab(tabId: number): void {
+    for (const w of [...this.waiting.values()]) if (w.tabId === tabId) this.forget(w.id);
+  }
+
+  /** Waiting sign-ins, newest first (no password). */
+  async pendingList(): Promise<PendingSave[]> {
+    const now = (this.deps.now ?? Date.now)();
+    const out: PendingSave[] = [];
+    let vaults: { id: string; name: string }[] | null = null;
+    for (const w of [...this.waiting.values()].reverse()) {
+      if (now - w.at > PENDING_SAVE_TTL_MS) {
+        this.forget(w.id);
+        continue;
+      }
+      const p: PendingSave = { id: w.id, origin: w.origin, site: w.site, username: w.username, status: w.update ? w.status : "new" };
+      if (w.update) p.title = w.update.title;
+      else if (!w.locked) {
+        vaults ??= await this.deps.session.request({ op: "vaults" }).then((r) => r.vaults, () => []);
+        const id = await this.defaultVault(w.site, vaults);
+        const name = vaults.find((v) => v.id === id)?.name;
+        if (name !== undefined) p.vault = name;
+      }
+      out.push(p);
+    }
+    return out;
+  }
+
+  /** The popup's answer to a waiting sign-in. */
+  async decidePending(id: string, decision: "save" | "update" | "never" | "dismiss"): Promise<SaveOutcome | object> {
+    const w = this.waiting.get(id);
+    if (!w) throw new BgError("not_found");
+    if (decision === "dismiss") {
+      this.forget(id);
+      return {};
+    }
+    if (decision === "never") {
+      await this.deps.neverSave.add(w.site);
+      this.forget(id);
+      return {};
+    }
+    if (decision === "update" && !w.update) throw new BgError("invalid");
+    const vaults = w.locked || decision === "update" ? [] : (await this.deps.session.request({ op: "vaults" })).vaults;
+    const edits: SaveEdits = {
+      title: titleFromSite(w.site),
+      username: w.username,
+      password: "",
+      vaultId: (await this.defaultVault(w.site, vaults)) ?? "",
+      rule: "domain",
+      tags: [],
+    };
+    const out = await this.commit(w, decision === "update" ? "update" : "save", edits);
+    this.forget(id);
+    return out;
   }
 
   async close(token: string, ui: UiContext): Promise<object> {

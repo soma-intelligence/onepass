@@ -274,6 +274,11 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
       res.end(file("style.css"));
       return;
     }
+    if (path === "/other-manager.js") {
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+      res.end(file("other-manager.js"));
+      return;
+    }
     if (path === "/favicon.ico") {
       res.writeHead(404);
       res.end();
@@ -390,6 +395,15 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           if (!post) return send(loginPage("", extra));
           if (state.users.get((body.email ?? "").trim().toLowerCase()) === body.password) return signedIn(body.email ?? "");
           return send(loginPage("Identifiant ou mot de passe incorrect", extra));
+        }
+        case "/login-other-manager": {
+          // Another password manager is installed too: its UI sits in the corner and in the field.
+          const withOther = (html: string) => html.replace("</body>", '<script src="/other-manager.js"></script></body>');
+          if (!post) return send(withOther(loginPage()));
+          const email = (body.email ?? "").trim().toLowerCase();
+          if (state.users.get(email) !== body.password) return send(withOther(loginPage("Identifiant ou mot de passe incorrect")));
+          session().email = email;
+          return send(withOther(page("Atlas Cloud", "atlas/status.html", { brand, status: "Connecté", detail: email })));
         }
         case "/login-fake-provider":
           return send(

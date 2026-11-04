@@ -53,6 +53,25 @@ function setup(w = worker()) {
 }
 
 describe("popup", () => {
+  it("a save prompt that left by itself waits here: Save sends the decision, the row goes", async () => {
+    const id = "AbCdEfGhIjKlMnOpQrStUw";
+    const w = worker((m) =>
+      m.type === "popup_pending"
+        ? { ok: { pending: [{ id, origin: "https://linear.app", site: "linear.app", username: "alex.new@atlas.dev", status: "new" }] } }
+        : m.type === "popup_pending_decide"
+          ? { ok: { outcome: "saved", vault: "Personnel" } }
+          : null,
+    );
+    const { r, handle } = setup(w);
+    await handle.ready;
+    expect(text(r)).toContain("Enregistrer le login pour linear.app ?");
+    expect(text(r)).toContain("alex.new@atlas.dev");
+    button(r, "Enregistrer").click();
+    await handle.settled();
+    expect(w.sent.find((m) => m.type === "popup_pending_decide")).toEqual({ type: "popup_pending_decide", id, decision: "save" });
+    expect(text(r)).not.toContain("Enregistrer le login pour linear.app ?");
+  });
+
   it("unpaired: Appairer avec OnePass, then the code and its two buttons", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { err: "unpaired" } : null));
     const { r, handle } = setup(w);
@@ -86,7 +105,7 @@ describe("popup", () => {
     await handle.settled();
     button(r, "Les codes sont identiques").click();
     await handle.settled();
-    expect(w.types()).toEqual(["popup_status", "popup_pair_auto", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions"]);
+    expect(w.types()).toEqual(["popup_status", "popup_pair_auto", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions", "popup_pending"]);
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 

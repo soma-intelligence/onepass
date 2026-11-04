@@ -1,6 +1,6 @@
 // Validation of service worker replies before rendering. A malformed reply
 // renders as an internal error, never partially.
-import type { FormKind, ProviderId } from "../shared/messages";
+import type { FormKind, ProviderId, SaveOutcome } from "../shared/messages";
 import {
   CHAIN_PHASES,
   STEP_WHATS,
@@ -16,6 +16,7 @@ import {
   type OverlayInit,
   type PopupItem,
   type PopupPlanLine,
+  type PendingSave,
   type PopupStatus,
   type PopupSuggestions,
   type ProviderChoice,
@@ -197,9 +198,13 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       username: str(o.username),
       vaults: list(o.vaults, (x) => {
         const vv = obj(x);
-        return { id: str(vv.id, 128), name: str(vv.name, 256) };
+        const out: SaveInit["vaults"][number] = { id: str(vv.id, 128), name: str(vv.name, 256) };
+        if (vv.account !== undefined) out.account = str(vv.account, 256);
+        return out;
       }, 64),
     };
+    if (o.defaultVault !== undefined) s.defaultVault = str(o.defaultVault, 128);
+    if (o.locked !== undefined) s.locked = o.locked === true;
     if (o.update !== undefined) {
       const u = obj(o.update);
       s.update = { itemId: str(u.itemId, 128), title: str(u.title, 256) };
@@ -222,6 +227,32 @@ export const parseKeys = (v: unknown): { keys: ("down" | "up" | "enter")[] } | n
   guard(() => ({ keys: list(obj(v).keys, (k) => oneOf<"down" | "up" | "enter">(k, MENU_KEYS), 8) }));
 
 export const parseEmpty = (v: unknown): object | null => guard(() => obj(v));
+
+/** Reply of a save or an update: what it did (an empty reply reads as "done"). */
+export const parseOutcome = (v: unknown): SaveOutcome | null =>
+  guard(() => {
+    const o = obj(v);
+    const out: SaveOutcome = { outcome: o.outcome === undefined ? "done" : oneOf<SaveOutcome["outcome"]>(o.outcome, ["saved", "updated", "already", "done"]) };
+    if (o.vault !== undefined) out.vault = str(o.vault, 256);
+    return out;
+  });
+
+export const parsePending = (v: unknown): PendingSave[] | null =>
+  guard(() =>
+    list(obj(v).pending, (x) => {
+      const o = obj(x);
+      const p: PendingSave = {
+        id: str(o.id, 22),
+        origin: origin(o.origin),
+        site: str(o.site, 253),
+        username: str(o.username),
+        status: oneOf(o.status, ["new", "update"]),
+      };
+      if (o.title !== undefined) p.title = str(o.title, 256);
+      if (o.vault !== undefined) p.vault = str(o.vault, 256);
+      return p;
+    }, 16),
+  );
 
 /** The iOS native vault for the unlock sheet (background/safari.ts `NativeVault`). */
 export interface NativeVaultState {

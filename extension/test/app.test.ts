@@ -307,7 +307,7 @@ describe("site memory (note_fill)", () => {
     expect(await t.ext.send({ type: "plan_context", formRef: "f1", context: signup }, t.top)).toEqual({ ok: { outcome: "filled" } });
     const token = await t.b.saves.open({ tabId: 7, origin: SITE, documentId: "doc-1", kind: "login", status: "new", username: "alex@atlas.dev", password: "Gen-Secret-42!" });
     const edits = { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain", tags: [] };
-    expect(await t.ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender(`save.html#${token}`, 7))).toEqual({ ok: {} });
+    expect(await t.ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender(`save.html#${token}`, 7))).toEqual({ ok: { outcome: "saved" } });
     expect(t.notes()).toEqual([
       { op: "note_fill", ctx: "save_prompt", item_id: NEW_LOGIN, origin: SITE, roles: ["email", "new_password"], intent: "signup", steps: ["fill"] },
     ]);

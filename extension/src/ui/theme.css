@@ -788,3 +788,59 @@ button.account:hover { background: var(--glass); }
   .row { min-height: 52px; }
   .btn { height: 40px; font-size: 15px; }
 }
+
+/* ---- save card (2026-11-03): small and quiet, top right ---- */
+.save-card { padding: 12px 12px 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.sc-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sc-row .site-tile { border-radius: 7px; }
+.sc-row .stack { flex-grow: 1; min-width: 0; gap: 1px; }
+.sc-title { font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; text-wrap: pretty; }
+.sc-site { white-space: nowrap; }
+.sc-sub { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-more { align-self: flex-start; width: 24px; height: 24px; color: var(--text3); }
+.sc-foot { display: flex; align-items: center; gap: 4px; min-height: 28px; }
+.sc-gap { flex-grow: 1; }
+.sc-note:empty { display: none; }
+.sc-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 1; min-width: 0; max-width: 180px; height: 24px; padding: 0 8px;
+  white-space: nowrap;
+  border: 0; border-radius: 12px; background: var(--fill-2); color: var(--text2);
+  font: inherit; font-size: 11.5px; font-weight: 500; cursor: default;
+}
+button.sc-chip { cursor: pointer; }
+button.sc-chip:hover { color: var(--text); }
+.sc-chip svg { flex-shrink: 0; opacity: .7; }
+.sc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-chip-locked { color: var(--text3); }
+.btn-text {
+  min-height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent;
+  flex-shrink: 0; white-space: nowrap;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer;
+}
+.btn-text:hover { background: var(--hover); color: var(--text); }
+.btn-text:disabled { opacity: .45; cursor: default; }
+.btn-text.sc-primary { color: var(--accent-label); font-weight: 600; }
+.btn-text.sc-primary:hover { color: var(--accent-label); }
+.sc-vaults { display: flex; flex-direction: column; padding: 4px; border-radius: var(--r-m); background: var(--fill-2); }
+.sc-vault {
+  display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; font: inherit; font-size: 12.5px; color: var(--text); text-align: left; cursor: pointer;
+}
+.sc-vault:hover { background: var(--hover); }
+.sc-vault-name { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-vault svg { color: var(--accent-label); }
+.save-card .more { padding: 3px; }
+.save-card .more button { min-height: 30px; font-size: 12.5px; text-align: left; }
+.saved.quiet { margin: 0; padding: 12px 14px; flex-direction: row; align-items: center; gap: 10px; text-align: left; }
+.saved.quiet .stack { align-items: flex-start; gap: 1px; }
+.saved.quiet .t1 { font-size: 13px; font-weight: 600; }
+.saved.quiet .t2 { font-size: 12px; }
+.saved.quiet .btn-link { margin-left: auto; min-height: 26px; padding: 0 8px; font-size: 12px; color: var(--text3); }
+.ok-dot { width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: var(--fill-2); color: var(--ok); display: inline-flex; align-items: center; justify-content: center; }
+/* Popup: sign-ins waiting to be saved (the card went away unanswered). */
+.pp-pending { display: flex; flex: none; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 8px; border-radius: var(--r-m); }
+/* Narrow side column: the site and the question on one line, the two answers under them. */
+.pp-pending-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 2px; padding: 2px 4px; }
+.pp-pending-row .stack { flex: 1 1 calc(100% - 40px); min-width: 0; }
+.pp-pending-row .sc-quiet { margin-left: auto; }
+.pp-pending-row .t1 { font-size: 12.5px; font-weight: 600; white-space: normal; text-wrap: pretty; }

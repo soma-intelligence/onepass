@@ -5,7 +5,11 @@
 // - a trusted click on the form's submit control (or any submit-type button);
 // - a trusted Enter keydown in one of its fields;
 // - single-page apps: a trusted click on any other button of the form, after
-//   which the password field disappears within 2 s.
+//   which the password field disappears within 10 s (a real server round
+//   trip often takes more than a second or two).
+// A lone identifier step (identifier first, password on the next page) is
+// reported the same way, without a password (`submitted_identifier`): the
+// worker then knows whose password the next step sends.
 // The identifier and password are read when the gesture happens (the page
 // often clears the fields right after) and sent once per submission:
 // identical reports within 2 s are dropped.
@@ -31,7 +35,7 @@ import { type Geometry, isRendered } from "./detect/visibility";
 import { nativeValue } from "./filler";
 
 export const DEDUPE_MS = 2000;
-export const SPA_WINDOW_MS = 2000;
+export const SPA_WINDOW_MS = 10_000;
 const SPA_POLL_MS = 250;
 /** A `submit` event counts only after a trusted gesture in that form this recent. */
 export const GESTURE_MS = 5000;
@@ -59,6 +63,8 @@ export interface SubmitOptions {
   /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
+  /** A lone identifier step was sent. */
+  onIdentifier?: (c: Extract<CsToBg, { type: "submitted_identifier" }>) => void;
   /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
   onStep?: (container: Element) => void;
   /**
@@ -157,6 +163,35 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return { formRef: f.ref, username, password, isNew: f.kind !== "login" };
   };
 
+  /** A sign-in step that asks for the identifier alone: its value, else null. */
+  const readIdentifier = (f: FormInfo): string | null => {
+    if (f.kind !== "login") return null;
+    if (f.fields.some((x) => x.role === "current_password" || x.role === "new_password")) return null;
+    for (const role of ["username", "email"] as const) {
+      for (const fi of f.fields) {
+        if (fi.role !== role) continue;
+        const el = refs.get(fi.ref);
+        const v = el ? nativeValue(el).trim() : "";
+        if (v !== "") return v;
+      }
+    }
+    return null;
+  };
+  let lastIdentifier: string | null = null;
+  const reportIdentifier = (f: FormInfo) => {
+    const username = readIdentifier(f);
+    if (username === null) return;
+    const key = `${f.ref}\u0000${username}`;
+    if (lastIdentifier === key) return;
+    lastIdentifier = key;
+    opts.onIdentifier?.({ type: "submitted_identifier", formRef: f.ref, username });
+  };
+  /** The identifier field of a lone identifier step. */
+  const identifierField = (f: FormInfo): Element | null => {
+    const fi = f.fields.find((x) => x.role === "username" || x.role === "email");
+    return fi ? refs.get(fi.ref) : null;
+  };
+
   const report = (c: Credentials | null) => {
     if (!c) return;
     const key = `${c.formRef}\u0000${c.username}\u0000${c.password.length}`;
@@ -178,14 +213,14 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     opts.onCredentials({ type: "submitted_credentials", ...c });
   };
 
-  /** SPA: report the snapshot if the password field goes away within 2 s. */
-  const watchDisappearance = (f: FormInfo, snapshot: Credentials) => {
-    const pw = passwordField(f);
+  /** SPA: `then` once `el` goes away within the window. */
+  const watchDisappearance = (el: Element | null, then: () => void) => {
+    const pw = el;
     if (!pw) return;
     const deadline = Date.now() + SPA_WINDOW_MS;
     const tick = () => {
       if (!pw.isConnected || !isRendered(pw, geometry)) {
-        report(snapshot);
+        then();
         return;
       }
       if (Date.now() >= deadline) return;
@@ -222,7 +257,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
     if (e.target instanceof HTMLFormElement) opts.onStep?.(e.target);
     const f = formOf(e.target);
-    if (f && activated(f)) report(read(f));
+    if (!f || !activated(f)) return;
+    report(read(f));
+    reportIdentifier(f);
   };
 
   const onClick = (e: Event) => {
@@ -233,10 +270,16 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
     const f = formOf(button);
     if (!f) return;
+    const sends = (f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button);
     const snapshot = read(f);
-    if (!snapshot) return;
-    if ((f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button)) report(snapshot);
-    else watchDisappearance(f, snapshot);
+    if (!snapshot) {
+      if (readIdentifier(f) === null) return;
+      if (sends) reportIdentifier(f);
+      else watchDisappearance(identifierField(f), () => reportIdentifier(f));
+      return;
+    }
+    if (sends) report(snapshot);
+    else watchDisappearance(passwordField(f), () => report(snapshot));
   };
 
   const onKey = (e: Event) => {
@@ -246,7 +289,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!(e.target instanceof HTMLInputElement)) return;
     opts.onStep?.(stepContainer(e.target));
     const f = formOf(e.target);
-    if (f) report(read(f));
+    if (!f) return;
+    report(read(f));
+    reportIdentifier(f);
   };
 
   const target: EventTarget = view ?? doc;
@@ -273,6 +318,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       timers.clear();
       last = null;
       lastTimer = null;
+      lastIdentifier = null;
       gesture = null;
     },
     clickRef(ref) {

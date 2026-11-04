@@ -223,7 +223,9 @@ const STATES = {
     replies: {},
     steps: async (p) => {
       await p.waitForTimeout(350);
-      await p.getByRole("button", { name: L("Modifier", "Edit") }).click();
+      await p.getByRole("button", { name: "Options" }).click();
+      await p.waitForTimeout(350);
+      await p.getByRole("menuitem", { name: L("Modifier avant d'enregistrer", "Edit before saving") }).click();
       await p.waitForTimeout(350);
       await p.getByRole("button", { name: L("Afficher", "Show") }).click();
       await p.getByText("pw-Atlas-2026").waitFor();
@@ -252,7 +254,75 @@ const STATES = {
     steps: async (p) => {
       await p.waitForTimeout(350);
       await p.getByRole("button", { name: L("Enregistrer", "Save"), exact: true }).click();
-      await p.getByText(L(/enregistré$/, /saved$/)).waitFor();
+      await p.getByText(L(/^Enregistré dans /, /^Saved in /)).waitFor();
+    },
+  },
+  "save-vaults": {
+    page: "save",
+    replies: {},
+    steps: async (p) => {
+      await p.waitForTimeout(350);
+      await p.getByRole("button", { name: L("Coffre : Personnel", "Vault: Personnel") }).click();
+      await p.getByRole("listbox").waitFor();
+    },
+  },
+  "save-accounts": {
+    page: "save",
+    replies: {
+      save_init: {
+        ok: {
+          origin: "https://linear.app",
+          site: "linear.app",
+          kind: "login",
+          status: "new",
+          title: "Linear",
+          username: "alex@atlas.dev",
+          vaults: [
+            { id: "v1", name: "Personnel", account: "alex@atlas.dev" },
+            { id: "v2", name: "Atlas (travail)", account: "alex@atlas.dev" },
+            { id: "v3", name: "Equipe", account: "alex@atlas-cloud.test" },
+          ],
+          defaultVault: "v2",
+        },
+      },
+    },
+    steps: async (p) => {
+      await p.waitForTimeout(350);
+      await p.getByRole("button", { name: /Atlas \(travail\)/ }).click();
+      await p.getByRole("listbox").waitFor();
+    },
+  },
+  "save-locked": {
+    page: "save",
+    replies: {
+      save_init: {
+        ok: {
+          origin: "https://atlas-cloud.test",
+          site: "atlas-cloud.test",
+          kind: "login",
+          status: "new",
+          title: "Atlas Cloud",
+          username: "alex.new@atlas.dev",
+          vaults: [],
+          locked: true,
+        },
+      },
+    },
+  },
+  "popup-pending": {
+    page: "popup",
+    replies: {
+      popup_pending: {
+        ok: {
+          pending: [
+            { id: "AbCdEfGhIjKlMnOpQrStUw", origin: "https://linear.app", site: "linear.app", username: "alex.new@atlas.dev", status: "new" },
+            { id: "AbCdEfGhIjKlMnOpQrStUx", origin: "https://atlas-cloud.test", site: "atlas-cloud.test", username: "alex@atlas.dev", status: "update", title: "Atlas Cloud" },
+          ],
+        },
+      },
+    },
+    steps: async (p) => {
+      await p.getByText(L("Enregistrer le login pour linear.app ?", "Save login for linear.app?")).waitFor();
     },
   },
 };
@@ -329,6 +399,7 @@ const stub = (replies) => `"use strict";
   globalThis.chrome = {
     runtime: { id: "harness", sendMessage: async (m) => structuredClone(replies[m.type] ?? { ok: {} }) },
     i18n: { getUILanguage: () => ${JSON.stringify(lang === "en" ? "en-US" : "fr-FR")} },
+    storage: { local: { get: async () => ({}), set: async () => undefined } },
   };
   history.replaceState(null, "", "#${TOKEN}");
 })();

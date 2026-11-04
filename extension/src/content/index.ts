@@ -50,6 +50,10 @@ import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
+import { cornerOccupants, knownOccupantsIn } from "./occupants";
+
+/** While the save card shows, other managers' corner UI is looked at this often. */
+const OCCUPANT_POLL_MS = 750;
 import type { RecorderHooks } from "../dev/recorder-content";
 
 type Sender = { id?: string };
@@ -419,7 +423,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
       if (parts || stopped || currentOrigin() === null) return;
       shell ??= createShell(doc);
       const sh = shell;
-      const frames = createFrames({ shell: sh, doc, geometry });
+      // Other password managers' UI: our card and icons go beside it, never under or over.
+      const own = { isOwn: (n: Node) => sh.isHost(n) };
+      const frames = createFrames({ shell: sh, doc, geometry, occupants: () => cornerOccupants(doc, own) });
       const icons = createIcons({
         shell: sh,
         doc,
@@ -428,7 +434,21 @@ export function createContentScript(o: ContentOptions): ContentScript {
         isTrusted,
         onOpen: (t) => void smartFill(t),
         onLayout: queueLayout,
+        avoid: (zone) => knownOccupantsIn(doc, zone, own),
       });
+      // They come, move and go: what is added to or removed from the top of the document, and,
+      // while our save card shows, a cheap look every OCCUPANT_POLL_MS (theirs may move inside a shadow root).
+      const MO = view?.MutationObserver;
+      if (MO) {
+        const mo = new MO(() => queueLayout());
+        if (doc.documentElement) mo.observe(doc.documentElement, { childList: true });
+        if (doc.body) mo.observe(doc.body, { childList: true });
+        cleanups.push(() => mo.disconnect());
+      }
+      const poll = setInterval(() => {
+        if (parts?.frames.has("save")) queueLayout();
+      }, OCCUPANT_POLL_MS);
+      cleanups.push(() => clearInterval(poll));
       const observer = createObserver({
         doc,
         analyze,
@@ -473,6 +493,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         analyze: () => observer.refresh(),
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
+        onIdentifier: (c) => void send(c),
         onStep: (c) => recorder?.step(c),
         listen: (t, type, fn, options) => tree.listen(t, type, fn, options),
       });

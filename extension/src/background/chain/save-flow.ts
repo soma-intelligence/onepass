@@ -1,14 +1,24 @@
 // When to propose saving a login (spec 8.5, 8.8): submitted credentials are
 // kept in memory (never in a storage area) for at most 2 minutes, with the
-// origin given by `sender`. After the top frame navigated and finished
-// loading, or 1.5 s without navigation, the host is asked `check_credentials`;
+// origin given by `sender`. The prompt waits for a sign that the sign-in
+// worked, never a mere delay: the next page of the submitting frame (a new
+// document, or the same one for a single-page app) shows no credential form
+// with a password field any more. A new document that shows one again is a
+// failed sign-in (the site's form with its error): the submission is
+// dropped. The same document must stay without it for SETTLE_MS (a page
+// that hides its form behind a spinner, then shows it again with an error,
+// is not a success). A new top document that never reports an analysis
+// counts after NAV_SETTLE_MS. Then the host is asked `check_credentials`;
 // `new` or `update` opens the save prompt (save.ts) in the top frame, unless
-// the site is in the "Ne jamais proposer" list.
+// the site is in the "Ne jamais proposer" list. A locked vault opens it too
+// (`locked`): Save unlocks first.
 //
-// A submission without an identifier is not proposed (the password step of a
-// multi-step sign-in would always look `new`), except when its password is
-// one OnePass just generated and filled in this tab (spec 8.8): a signup or
-// change-password form often has no identifier field.
+// A submission without an identifier takes the one of the lone identifier
+// step just sent in this tab on the same site (`submitted_identifier`, kept
+// IDENTIFIER_TTL_MS in memory): identifier first, password on the next page.
+// Without one it is not proposed (it would always look `new`), except when
+// its password is one OnePass just generated and filled in this tab (spec
+// 8.8): a signup or change-password form often has no identifier field.
 //
 // Pending save (spec 7): right after a generated password went into a signup
 // form, `savePending` writes it to the vault as a Login tagged
@@ -29,7 +39,7 @@
 // Also here: the per item auto-submit preference of the chain (R-12), in
 // `storage.local` key `autoSubmit:<itemId>`, true unless set to false.
 import { parseOrigin, sameSite } from "../../shared/domain";
-import type { CsToBg } from "../../shared/messages";
+import type { CsToBg, FormKind, PageAnalysis } from "../../shared/messages";
 import type { StorageArea } from "../ext";
 import type { CsContext } from "../frames";
 import type { NeverSave } from "../never-save";
@@ -37,7 +47,19 @@ import { PENDING_TAG, type SavePending, type SavePrompts, WEAK_BY_SITE_TAG, titl
 import { BgError, type Session } from "../session";
 
 export const SUBMIT_TTL_MS = 2 * 60 * 1000;
-export const CHECK_DELAY_MS = 1500;
+/** The same document stays without its password form this long before it counts as signed in. */
+export const SETTLE_MS = 1000;
+/** A new top document without any analysis (no form, no content script) counts after this. */
+export const NAV_SETTLE_MS = 2000;
+/** The identifier of a lone identifier step feeds the next password step this long. */
+export const IDENTIFIER_TTL_MS = 10 * 60 * 1000;
+
+const CREDENTIAL_FORMS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
+
+/** The page still asks for a password: a credential form with a password field. */
+export function asksPassword(a: PageAnalysis): boolean {
+  return a.forms.some((f) => CREDENTIAL_FORMS.has(f.kind) && f.fields.some((x) => x.role === "current_password" || x.role === "new_password"));
+}
 /** A generated password feeds the proposal of a submission this recent. */
 export const GENERATED_TTL_MS = 10 * 60 * 1000;
 
@@ -68,9 +90,20 @@ interface Pending {
   username: string;
   password: string;
   at: number;
+  /** The submitting frame, and its document where the browser reports it. */
+  frameId: number;
+  documentId?: string;
+  /** The top frame committed a new document since the submission. */
   navigated: boolean;
+  /** Timer of the success check (settle), or null. */
   check: unknown;
   expire: unknown;
+}
+
+interface Identifier {
+  site: string;
+  username: string;
+  at: number;
 }
 
 interface Generated {
@@ -112,6 +145,7 @@ export class SaveFlow {
   private readonly pending = new Map<number, Pending>();
   private readonly generated = new Map<number, Generated>();
   private readonly saved = new Map<number, Saved>();
+  private readonly identifiers = new Map<number, Identifier>();
   private readonly now: () => number;
   private readonly timers: Timers;
 
@@ -225,27 +259,48 @@ export class SaveFlow {
     return match;
   }
 
+  /** A lone identifier step was sent: its identifier names the next password step of this site. */
+  onIdentifier(m: Extract<CsToBg, { type: "submitted_identifier" }>, cs: CsContext): void {
+    const page = parseOrigin(cs.origin);
+    const username = m.username.trim();
+    if (page?.https !== true || username === "") return;
+    this.identifiers.set(cs.tabId, { site: page.site, username, at: this.now() });
+  }
+
+  /** The identifier of the last identifier step of this tab, if it was on the site of `origin` and recent. */
+  private identifierFor(tabId: number, origin: string): string {
+    const id = this.identifiers.get(tabId);
+    if (!id) return "";
+    if (this.now() - id.at > IDENTIFIER_TTL_MS) {
+      this.identifiers.delete(tabId);
+      return "";
+    }
+    return id.site === parseOrigin(origin)?.site ? id.username : "";
+  }
+
   async onSubmitted(m: Extract<CsToBg, { type: "submitted_credentials" }>, cs: CsContext): Promise<void> {
     if (parseOrigin(cs.origin)?.https !== true) return;
+    const username = m.username.trim() !== "" ? m.username : this.identifierFor(cs.tabId, cs.origin);
     const generated = this.takeGenerated(cs.tabId, cs.origin, m.password);
     // The password OnePass generated and already saved: confirmed, no prompt.
-    if (generated && (await this.confirm(cs.tabId, cs.origin, m.username))) {
+    if (generated && (await this.confirm(cs.tabId, cs.origin, username))) {
       this.drop(cs.tabId);
       return;
     }
-    if (m.username.trim() === "" && !generated) return;
+    if (username.trim() === "" && !generated) return;
     if (await this.deps.chainRunning?.(cs.tabId)) return;
     this.drop(cs.tabId);
     const p: Pending = {
       origin: cs.origin,
-      username: m.username,
+      username,
       password: m.password,
       at: this.now(),
+      frameId: cs.frameId,
       navigated: false,
       check: null,
       expire: null,
     };
-    p.check = this.timers.setTimeout(() => void this.check(cs.tabId), CHECK_DELAY_MS);
+    if (cs.documentId !== undefined) p.documentId = cs.documentId;
     // Spec 8.5: kept at most 2 minutes.
     p.expire = this.timers.setTimeout(() => this.drop(cs.tabId), SUBMIT_TTL_MS);
     this.pending.set(cs.tabId, p);
@@ -253,28 +308,61 @@ export class SaveFlow {
 
   /**
    * The top frame of `tabId` committed a new document (at `url`): wait for
-   * it to load. Another site: the tab's pending item is no longer followed.
+   * its analysis. Another site: the tab's pending item and identifier are
+   * no longer followed.
    */
   onNavigation(tabId: number, url?: string): void {
+    const site = url !== undefined ? parseOrigin(url)?.site : undefined;
     const s = this.saved.get(tabId);
-    if (s && url !== undefined && parseOrigin(url)?.site !== s.site) this.saved.delete(tabId);
+    if (s && url !== undefined && site !== s.site) this.saved.delete(tabId);
+    const id = this.identifiers.get(tabId);
+    if (id && url !== undefined && site !== id.site) this.identifiers.delete(tabId);
     const p = this.pending.get(tabId);
-    if (!p || p.navigated) return;
+    if (!p) return;
     p.navigated = true;
     this.timers.clearTimeout(p.check);
     p.check = null;
   }
 
-  /** The new top document is loaded (its content script can show the prompt). */
-  async onReady(tabId: number): Promise<void> {
+  /**
+   * A page analysis of `cs`: the sign of success (or failure) the pending
+   * submission of its tab waits for. Only the submitting frame, or the top
+   * frame once it navigated, counts.
+   */
+  onAnalysis(a: PageAnalysis, cs: CsContext): void {
+    const p = this.pending.get(cs.tabId);
+    if (!p) return;
+    // A new document of the submitting frame (the browser says so), or the top frame after a commit.
+    const newDoc =
+      (cs.frameId === p.frameId && cs.documentId !== undefined && p.documentId !== undefined && cs.documentId !== p.documentId) ||
+      (p.navigated && cs.frameId === 0 && !(cs.documentId !== undefined && cs.documentId === p.documentId));
+    if (cs.frameId !== p.frameId && !newDoc) return;
+    this.timers.clearTimeout(p.check);
+    p.check = null;
+    if (asksPassword(a)) {
+      // The site asks again on a new page: the sign-in failed. Same page: still waiting.
+      if (newDoc) this.drop(cs.tabId);
+      return;
+    }
+    if (newDoc) {
+      void this.check(cs.tabId);
+      return;
+    }
+    p.check = this.timers.setTimeout(() => void this.check(cs.tabId), SETTLE_MS);
+  }
+
+  /** The new top document finished loading: counts after NAV_SETTLE_MS unless an analysis decides first. */
+  onReady(tabId: number): void {
     const p = this.pending.get(tabId);
-    if (p?.navigated) await this.check(tabId);
+    if (!p?.navigated || p.check !== null) return;
+    p.check = this.timers.setTimeout(() => void this.check(tabId), NAV_SETTLE_MS);
   }
 
   onTabRemoved(tabId: number): void {
     this.drop(tabId);
     this.generated.delete(tabId);
     this.saved.delete(tabId);
+    this.identifiers.delete(tabId);
   }
 
   private drop(tabId: number): void {
@@ -299,10 +387,14 @@ export class SaveFlow {
     // again below, after the host answered).
     if (!(await this.verifiedTop(tabId, origin))) return;
     let r: { status: "new" | "same" | "update" | "pending"; item_id?: string; title?: string };
+    let locked = false;
     try {
       r = await this.deps.session.request({ op: "check_credentials", ctx: "save_prompt", origin, username, password });
-    } catch {
-      return;
+    } catch (e) {
+      // Locked in the app: the card still shows, Save unlocks and checks again.
+      if (!(e instanceof BgError) || e.code !== "locked") return;
+      r = { status: "new" };
+      locked = true;
     }
     if (r.status === "same") return;
     // A pending item of this site holds this password (memory of it lost
@@ -327,6 +419,7 @@ export class SaveFlow {
     const pending: SavePending = { tabId, origin, kind: "login", status: r.status, username, password, topOrigin: top.origin };
     if (top.documentId !== undefined) pending.documentId = top.documentId;
     if (r.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
+    if (locked) pending.locked = true;
     try {
       await this.deps.saves.open(pending);
     } catch {

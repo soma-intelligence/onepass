@@ -6,6 +6,7 @@
 // the root and to the frames live in closures only, never on window/document.
 import type { FrameKind } from "../shared/messages";
 import { type Geometry, type Rect } from "./detect/visibility";
+import { stackInCorner } from "./occupants";
 
 /** Highest z-index a page can use. */
 export const Z_MAX = "2147483647";
@@ -16,7 +17,7 @@ export const FRAME_WIDTH = 360;
  * transparent frame holding the capsule, its detached close button and the
  * room their shadows need.
  */
-export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: FRAME_WIDTH };
+export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340 };
 /**
  * Largest frame heights: each page asks for its content height (a resize
  * message vouched by the worker) and scrolls inside past these.
@@ -34,6 +35,8 @@ export const REVEAL_TIMEOUT_MS = 400;
 /** Gap between the anchor field and the menu, and from the viewport edges. */
 const GAP = 4;
 const EDGE = 12;
+/** Between our save card and another manager's prompt. */
+const CARD_GAP = 8;
 const ACCENT = "#5856D6";
 
 const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html" };
@@ -129,6 +132,8 @@ iframe {
   transition: opacity 160ms cubic-bezier(.23, 1, .32, 1), transform 200ms cubic-bezier(.23, 1, .32, 1);
 }
 iframe.corner { transform-origin: top right; }
+/* The save card: quiet, a light shadow, no movement beyond a fade. */
+iframe.quiet { border-radius: 14px; box-shadow: 0 0 0 .5px rgba(0,0,0,.16), 0 6px 20px rgba(0,0,0,.16); transform: none; transition: opacity 140ms ease; }
 /* The one-click card draws its own shape and shadow inside a transparent frame. */
 iframe.bare { border-radius: 0; box-shadow: none; }
 iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
@@ -162,7 +167,7 @@ export interface Shell {
 export function createShell(doc: Document): Shell {
   const host = doc.createElement("onepass-root");
   // Inline as well: some pages style unknown elements globally.
-  host.setAttribute("style", `all: initial !important; position: fixed !important; z-index: ${Z_MAX} !important;`);
+  host.setAttribute("style", `all: initial !important; position: fixed !important; z-index: ${Z_MAX} !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important;`);
   const root = host.attachShadow({ mode: "closed" });
   const style = doc.createElement("style");
   style.textContent = STYLE;
@@ -227,6 +232,8 @@ export interface FramesOptions {
   geometry: Geometry;
   /** Touch screen (iPhone, iPad): the menu is a bottom sheet. From `(pointer: coarse)` by default. */
   touch?: boolean;
+  /** Other password managers' boxes in the top right corner (occupants.ts): the save card stacks beside them. */
+  occupants?: () => Rect[];
 }
 
 /** True on a touch-first screen (`(pointer: coarse)`), the iOS case. */
@@ -354,7 +361,12 @@ export function createFrames(opts: FramesOptions): Frames {
       top = r.top + r.height + GAP;
       const above = r.top - GAP - height;
       if (top + height > vh - EDGE && above >= EDGE) top = above;
+    } else if (kind === "save" && opts.occupants) {
+      // Another manager's prompt in the corner: below it, or to its left.
+      const taken = opts.occupants();
+      if (taken.length > 0) ({ left, top } = stackInCorner({ left, top }, { width, height }, taken, { w, h: vh }, CARD_GAP, EDGE));
     }
+    iframe.classList.toggle("quiet", kind === "save");
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
     iframe.classList.toggle("sheet", sheet(kind));

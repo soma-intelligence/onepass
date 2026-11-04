@@ -252,6 +252,11 @@ export type CsToBg =
       /** Password typed in the "new password" field of a signup or change form. */
       isNew: boolean;
     }
+  /**
+   * A lone identifier step of a sign-in was sent (identifier first, password on the next page):
+   * the identifier only, so the password step can be proposed with it.
+   */
+  | { type: "submitted_identifier"; formRef: string; username: string }
   | { type: "provider_click"; provider: ProviderId; ref: string }
   | { type: "account_click"; email: string; ref: string }
   /**
@@ -283,7 +288,18 @@ export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">
 /** Keys the content script relays to an open menu. */
 export type MenuKey = "down" | "up" | "enter";
 
-export type SaveDecision = "save" | "update" | "never" | "dismiss";
+/**
+ * "later": the card went away by itself (no action for a while); the submission waits in the
+ * toolbar popup instead.
+ */
+export type SaveDecision = "save" | "update" | "never" | "dismiss" | "later";
+
+/** What a save or an update did (the card and the popup say it). */
+export interface SaveOutcome {
+  outcome: "saved" | "updated" | "already" | "done";
+  /** The vault the login went to. */
+  vault?: string;
+}
 
 export interface SaveEdits {
   title: string;
@@ -339,6 +355,9 @@ export type UiToBg =
   | { type: "save_close"; token: string }
   | { type: "save_resize"; token: string; height: number }
   | { type: "popup_status" }
+  /** Sign-ins whose save card went away unanswered. */
+  | { type: "popup_pending" }
+  | { type: "popup_pending_decide"; id: string; decision: "save" | "update" | "never" | "dismiss" }
   | { type: "popup_unlock" }
   | { type: "popup_search"; query: string }
   | { type: "popup_suggestions" }
@@ -442,6 +461,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "open_menu",
   "close_menu",
   "submitted_credentials",
+  "submitted_identifier",
   "provider_click",
   "account_click",
   "menu_key",

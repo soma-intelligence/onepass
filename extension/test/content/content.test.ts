@@ -239,7 +239,7 @@ describe("show_frame / remove_frame", () => {
     const f = root.querySelector("iframe")!;
     expect(f.getAttribute("src")).toBe(`${EXT_BASE}save.html#${TOKEN}`);
     expect(f.getAttribute("referrerpolicy")).toBe("no-referrer");
-    expect(f.style.width).toBe("360px");
+    expect(f.style.width).toBe("340px");
     s.ext.deliver({ type: "remove_frame", kind: "save" });
     expect(root.querySelector("iframe")).toBeNull();
   });
@@ -609,6 +609,33 @@ describe("submission watcher", () => {
     input("p").value = "stay-pw";
     userClick(document.getElementById("other")!);
     vi.advanceTimersByTime(2500);
+    expect(creds(s)).toHaveLength(0);
+  });
+
+  it("slow single-page sign-in: the form goes away 6 s after the click, still reported", async () => {
+    useTimers();
+    setPage(`<div id="app"><div id="box"><input id="u" autocomplete="username"><input id="p" type="password" autocomplete="current-password"><button type="button" id="other">Go</button></div></div>`);
+    s = start();
+    vi.advanceTimersByTime(3000);
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "slow-pw";
+    userClick(document.getElementById("other")!);
+    vi.advanceTimersByTime(6000);
+    expect(creds(s)).toHaveLength(0);
+    document.getElementById("box")!.remove();
+    vi.advanceTimersByTime(500);
+    expect(creds(s)).toEqual([["alex@atlas.dev", "slow-pw", false]]);
+  });
+
+  it("identifier step: the identifier alone is reported when the step is sent", async () => {
+    useTimers();
+    setPage(`<h1>Connexion</h1><form id="ident"><label for="u">Adresse e-mail</label><input id="u" name="email" type="email" autocomplete="username"><button id="next" type="submit">Suivant</button></form>`);
+    s = start();
+    vi.advanceTimersByTime(3000);
+    input("u").value = "alex.new@atlas.dev";
+    document.getElementById("ident")!.addEventListener("submit", (e) => e.preventDefault());
+    userClick(document.getElementById("next")!);
+    expect(s.ext.ofType("submitted_identifier").map((m) => m.username)).toEqual(["alex.new@atlas.dev"]);
     expect(creds(s)).toHaveLength(0);
   });
 

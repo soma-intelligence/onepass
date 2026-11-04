@@ -1,7 +1,9 @@
 // Save flow (spec 8.5, 8.8): submitted credentials -> check -> prompt.
 import { describe, expect, it } from "vitest";
 import {
-  CHECK_DELAY_MS,
+  IDENTIFIER_TTL_MS,
+  NAV_SETTLE_MS,
+  SETTLE_MS,
   SUBMIT_TTL_MS,
   SaveFlow,
   type Timers,
@@ -11,12 +13,20 @@ import {
 import type { FillTarget } from "../../../src/background/fill";
 import type { CsContext } from "../../../src/background/frames";
 import { Planner } from "../../../src/background/planner";
-import type { PlanOut } from "../../../src/shared/messages";
+import type { FormInfo, PageAnalysis, PlanOut } from "../../../src/shared/messages";
 import { PENDING_TAG, type SavePending, WEAK_BY_SITE_TAG } from "../../../src/background/save";
 import { BgError } from "../../../src/background/session";
 import { FakeArea } from "../fake-ext";
 
 const SITE = "https://atlas-cloud.test";
+
+/** A page as the content script reports it: with or without a sign-in form asking for a password. */
+function page(withPassword: boolean): PageAnalysis {
+  const forms: FormInfo[] = withPassword
+    ? [{ ref: "f1", kind: "login", fields: [{ ref: "u", role: "email" }, { ref: "p", role: "current_password" }] } as FormInfo]
+    : [];
+  return { url: `${SITE}/x`, forms, captcha: false, push: false, providerButtons: [], accountChooser: [] };
+}
 
 class FakeTimers implements Timers {
   t = 0;
@@ -89,14 +99,31 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = [], 
     setTopDoc: (d: string | null) => (topDoc = d),
     /** Runs while the host answers check_credentials. */
     duringCheck: (fn: () => void) => (onCheck = fn),
+    /** The submitting document drops its password form and stays so (a single-page app signed in). */
+    succeed: async () => {
+      flow.onAnalysis(page(false), cs);
+      await timers.advance(SETTLE_MS);
+    },
+    /** The analysis of the top document the browser reports now (after a navigation). */
+    landed: async (withPassword = false) => {
+      const now: CsContext = { tabId: 7, frameId: 0, origin: SITE };
+      if (topDoc !== null) now.documentId = topDoc;
+      flow.onAnalysis(page(withPassword), now);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    },
+    page,
+    cs,
   };
 }
 
 describe("save flow", () => {
-  it("new: checks after 1.5 s without navigation and opens the prompt on the submitting document", async () => {
+  it("new: no prompt on a mere delay; once the form is gone for 1 s, checks and opens the prompt on the submitting document", async () => {
     const t = setup("new");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS - 1);
+    await t.timers.advance(SUBMIT_TTL_MS / 2);
+    expect(t.requests).toEqual([]);
+    t.flow.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS - 1);
     expect(t.requests).toEqual([]);
     await t.timers.advance(1);
     expect(t.requests).toEqual([
@@ -121,11 +148,11 @@ describe("save flow", () => {
     const t = setup("update");
     await t.submit("alex@atlas.dev", "New-Pass-2");
     t.flow.onNavigation(7);
-    await t.timers.advance(CHECK_DELAY_MS * 2);
+    await t.timers.advance(SETTLE_MS * 2);
     expect(t.requests).toEqual([]);
     t.setTop(`${SITE}/home`);
     t.setTopDoc("doc-2");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
     // The old document is gone: pinned to the new, verified one.
@@ -139,7 +166,7 @@ describe("save flow", () => {
     t.setTop(`${SITE}/home`);
     t.setTopDoc("doc-2");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     // Not pinned to doc-1, which is gone: to the verified new document.
     expect(t.opened[0]?.documentId).toBe("doc-2");
@@ -149,7 +176,7 @@ describe("save flow", () => {
     const t = setup("new");
     t.setTopDoc(null);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened[0]?.documentId).toBeUndefined();
     expect(t.opened[0]?.topOrigin).toBe(SITE);
   });
@@ -161,7 +188,7 @@ describe("save flow", () => {
       t.setTop("https://evil.test/");
       t.setTopDoc("doc-evil");
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests.filter((r) => r.op === "check_credentials")).toHaveLength(1);
     expect(t.opened).toEqual([]);
   });
@@ -173,7 +200,7 @@ describe("save flow", () => {
       t.setTop(`${SITE}/home`);
       t.setTopDoc("doc-3");
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ documentId: "doc-3", topOrigin: SITE, status: "update" });
   });
@@ -184,7 +211,7 @@ describe("save flow", () => {
     t.flow.onNavigation(7);
     t.setTop("https://evil.test/");
     t.setTopDoc("doc-evil");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -192,7 +219,7 @@ describe("save flow", () => {
   it("same: nothing", async () => {
     const t = setup("same");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toHaveLength(1);
     expect(t.opened).toEqual([]);
   });
@@ -200,7 +227,7 @@ describe("save flow", () => {
   it("never: a site in the list is not proposed, and the host is not asked", async () => {
     const t = setup("new", ["atlas-cloud.test"]);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -211,7 +238,7 @@ describe("save flow", () => {
     t.flow.onNavigation(7);
     await t.timers.advance(SUBMIT_TTL_MS);
     expect(t.flow.size).toBe(0);
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -221,19 +248,19 @@ describe("save flow", () => {
     await t.submit();
     t.flow.onNavigation(7);
     t.setTop("https://evil.test/");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
   });
 
   it("no identifier: not proposed, unless the password is the one just generated here", async () => {
     const t = setup("new");
     await t.submit("", "Some-Pass");
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
 
     t.flow.rememberGenerated(7, `${SITE}/signup`, "Gen-Pass-123");
     await t.submit("", "Gen-Pass-123", true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ username: "", password: "Gen-Pass-123", status: "new" });
   });
@@ -242,7 +269,7 @@ describe("save flow", () => {
     const t = setup("new");
     t.flow.rememberGenerated(7, "https://other.test", "Gen-Pass-123");
     await t.submit("", "Gen-Pass-123", true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toEqual([]);
   });
 
@@ -250,14 +277,14 @@ describe("save flow", () => {
     const t = setup("new");
     t.setChain(true);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
   });
 
   it("plain HTTP submissions are ignored", async () => {
     const t = setup("new");
     await t.submit("alex@atlas.dev", "x", false, { tabId: 7, frameId: 0, origin: "http://atlas-cloud.test" });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
   });
 
@@ -276,8 +303,93 @@ describe("save flow", () => {
       frameId: 0,
       origin: SITE,
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    flow.onAnalysis(t.page(false), { tabId: 1, frameId: 0, origin: SITE });
+    await t.timers.advance(SETTLE_MS);
     expect(flow.size).toBe(0);
+  });
+
+  // ---- founder bug 2026-11-03: the prompt waits for success, follows identifier-first sign-ins ----
+
+  it("failed sign-in: the next page asks for the password again, nothing is proposed", async () => {
+    const t = setup("new");
+    await t.submit("alex@atlas.dev", "Wrong-Pass-1");
+    t.flow.onNavigation(7, `${SITE}/login`);
+    t.setTopDoc("doc-2");
+    await t.landed(true);
+    await t.timers.advance(NAV_SETTLE_MS * 2);
+    expect(t.requests).toEqual([]);
+    expect(t.opened).toEqual([]);
+    expect(t.flow.size).toBe(0);
+  });
+
+  it("single-page app: the form flickers away and back with an error, nothing is proposed", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.flow.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS / 2);
+    t.flow.onAnalysis(t.page(true), t.cs);
+    await t.timers.advance(SETTLE_MS * 4);
+    expect(t.requests).toEqual([]);
+    expect(t.flow.size).toBe(1);
+  });
+
+  it("identifier first, password on the next page: proposed with the identifier of the first step", async () => {
+    const t = setup("new");
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex.new@atlas.dev" }, t.cs);
+    t.flow.onNavigation(7, `${SITE}/multistep/password`);
+    t.setTopDoc("doc-2");
+    await t.submit("", "Nouv-Pass-0042", false, { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-2" });
+    t.flow.onNavigation(7, `${SITE}/multistep/otp`);
+    t.setTopDoc("doc-3");
+    await t.landed();
+    expect(t.requests).toEqual([
+      { op: "check_credentials", ctx: "save_prompt", origin: SITE, username: "alex.new@atlas.dev", password: "Nouv-Pass-0042" },
+    ]);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ username: "alex.new@atlas.dev", status: "new", documentId: "doc-3" });
+  });
+
+  it("an identifier of another site, or too old, is not used", async () => {
+    const t = setup("new");
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex@other.test" }, { tabId: 7, frameId: 0, origin: "https://other.test" });
+    await t.submit("", "Some-Pass");
+    await t.succeed();
+    expect(t.requests).toEqual([]);
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex@atlas.dev" }, t.cs);
+    await t.timers.advance(IDENTIFIER_TTL_MS + 1);
+    await t.submit("", "Some-Pass");
+    await t.succeed();
+    expect(t.requests).toEqual([]);
+  });
+
+  it("vault locked in the app: the card opens anyway, marked locked", async () => {
+    const t = setup("new", [], (r) => (r.op === "check_credentials" ? new BgError("locked") : undefined));
+    await t.submit();
+    await t.succeed();
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ status: "new", locked: true, username: "alex@atlas.dev" });
+  });
+
+  it("Safari order (no documentId, commit before the submission): the new page's analysis decides", async () => {
+    const t = setup("new");
+    t.setTopDoc(null);
+    const safari: CsContext = { tabId: 7, frameId: 0, origin: SITE };
+    t.flow.onNavigation(7, `${SITE}/home`);
+    await t.submit("alex@atlas.dev", "Atlas-Pass-1", false, safari);
+    t.flow.onAnalysis(t.page(false), safari);
+    await t.timers.advance(SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.topOrigin).toBe(SITE);
+  });
+
+  it("a new page with no analysis at all counts once loaded", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.flow.onNavigation(7, `${SITE}/home`);
+    t.setTopDoc("doc-2");
+    t.flow.onReady(7);
+    await t.timers.advance(NAV_SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
   });
 
   it("menu new login: edit view, site prefilled, nothing typed", async () => {
@@ -396,7 +508,7 @@ describe("pending save of a generated password (spec 7)", () => {
     await plannerFor(t).run(target, { ...signup(), intent: "reset" });
     expect(t.requests).toEqual([]);
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["check_credentials"]);
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01" } });
@@ -463,7 +575,8 @@ describe("pending save of a generated password (spec 7)", () => {
       frameId: 0,
       origin: SITE,
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    fresh.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS);
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials", "confirm_pending"]);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
     expect(t.opened).toEqual([]);
@@ -476,7 +589,7 @@ describe("pending save of a generated password (spec 7)", () => {
     t.flow.rememberGenerated(7, SITE, GEN);
     (t.flow as unknown as { saved: Map<number, unknown> }).saved.clear();
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
     expect(t.opened).toEqual([]);
   });
@@ -498,7 +611,7 @@ describe("pending save of a generated password (spec 7)", () => {
     await t.submit("alex@atlas.dev", GEN, true);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
     // Confirmed instead of a new save prompt; the pending entry is gone.
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
     expect(t.opened).toEqual([]);
     expect(t.flow.size).toBe(0);
@@ -510,7 +623,7 @@ describe("pending save of a generated password (spec 7)", () => {
     const t = setup();
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", "Typed-Instead-9");
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
     expect(t.opened).toHaveLength(1);
   });
@@ -522,7 +635,7 @@ describe("pending save of a generated password (spec 7)", () => {
     expect(events).toEqual(["filled"]);
     expect(ops(t)).toEqual(["vaults"]);
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "check_credentials"]);
     expect(t.opened[0]).toMatchObject({ status: "new", username: "", password: GEN });
   });
@@ -531,7 +644,7 @@ describe("pending save of a generated password (spec 7)", () => {
     const t = setup("new", [], (r) => (r.op === "confirm_pending" ? new Error("invalid") : undefined));
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending", "check_credentials"]);
     expect(t.opened).toHaveLength(1);
   });

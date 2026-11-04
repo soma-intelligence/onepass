@@ -55,74 +55,125 @@ function setup(init: SaveInit | { err: string }, extra?: (m: UiToBg) => Reply | 
 }
 
 describe("save prompt", () => {
-  it("prompt (new): title, username, vault, Enregistrer; password never shown", async () => {
-    const { r, handle, worker, click, timers } = setup(base);
+  it("card (new): site, username, vault chip, Enregistrer; password never shown", async () => {
+    const { r, handle, worker, click, timers } = setup({ ...base, defaultVault: "v2" });
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "save_init", token: TOKEN });
-    expect(text(r)).toContain("Enregistrer le login ?");
-    expect(text(r)).toContain("Atlas Cloud");
+    expect(text(r)).toContain("Enregistrer le login pour atlas-cloud.test ?");
     expect(text(r)).toContain("alex@atlas.dev");
-    expect(text(r)).not.toContain("Mettre à jour (1)");
-    expect(r.querySelector<HTMLSelectElement>("select[aria-label=Coffre]")!.options).toHaveLength(2);
     expect(text(r)).not.toContain("typed-Secret-1");
-    const sel = r.querySelector<HTMLSelectElement>("select[aria-label=Coffre]")!;
-    sel.value = "v2";
-    sel.dispatchEvent(new Event("change"));
+    // The default vault is the one the worker picked (last used for the site).
+    const chip = r.querySelector<HTMLButtonElement>("button.sc-chip")!;
+    expect(chip.getAttribute("aria-label")).toBe("Coffre : Projet Atlas");
+    // Pick the other vault from the chip.
+    await click("Projet Atlas");
+    expect([...r.querySelectorAll(".sc-vault")].map((x) => x.textContent)).toEqual(["Personnel", "Projet Atlas"]);
+    await click("Personnel");
+    expect(r.querySelector("button.sc-chip")!.getAttribute("aria-label")).toBe("Coffre : Personnel");
     await click("Enregistrer");
     expect(worker.sent.at(-1)).toEqual({
       type: "save_decide",
       token: TOKEN,
       decision: "save",
-      edits: { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v2", rule: "domain", tags: [] },
+      edits: { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain", tags: [] },
     });
-    // Saved view, then it closes itself.
-    expect(text(r)).toContain("Atlas Cloud enregistré");
-    expect(text(r)).toContain("Dans Projet Atlas");
+    // One quiet line, then it closes itself.
+    expect(text(r)).toContain("Enregistré dans Personnel");
     timers.pending.forEach((f) => f());
     await flush();
     expect(worker.sent.at(-1)).toEqual({ type: "save_close", token: TOKEN });
+    expect(worker.types()).not.toContain("save_decide_later");
   });
 
-  it("prompt (update): Mettre à jour (1) selected, then update", async () => {
-    const { r, handle, worker, click } = setup({ ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
+  it("the vault name the worker reports wins, and an already saved login says so", async () => {
+    let s = setup(base, (m) => (m.type === "save_decide" ? { ok: { outcome: "saved", vault: "Projet Atlas" } } : null));
+    await s.handle.ready;
+    await s.click("Enregistrer");
+    expect(text(s.r)).toContain("Enregistré dans Projet Atlas");
+    s = setup({ ...base, locked: true, vaults: [] }, (m) => (m.type === "save_decide" ? { ok: { outcome: "already" } } : null));
+    await s.handle.ready;
+    expect(text(s.r)).toContain("Verrouillé");
+    // Locked: Save is offered (it unlocks first in the worker).
+    expect(button(s.r, "Enregistrer").disabled).toBe(false);
+    await s.click("Enregistrer");
+    expect(text(s.r)).toContain("Déjà dans OnePass");
+  });
+
+  it("several OnePass accounts: the chip names the account too", async () => {
+    const { r, handle } = setup({
+      ...base,
+      vaults: [
+        { id: "v1", name: "Personnel", account: "Perso" },
+        { id: "v2", name: "Équipe", account: "Augura" },
+      ],
+    });
     await handle.ready;
-    expect(button(r, "Mettre à jour (1)").getAttribute("aria-selected")).toBe("true");
-    expect(text(r)).toContain("L'ancien mot de passe reste dans l'historique de l'élément.");
-    await click("Nouvel élément");
-    expect(button(r, "Nouvel élément").getAttribute("aria-selected")).toBe("true");
-    await click("Mettre à jour (1)");
+    expect(r.querySelector("button.sc-chip")!.getAttribute("aria-label")).toBe("Coffre : Perso · Personnel");
+  });
+
+  it("card (update): Mettre à jour le mot de passe, the item named, then update", async () => {
+    const { r, handle, worker, click } = setup({ ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud (multi)" } });
+    await handle.ready;
+    expect(text(r)).toContain("Mettre à jour le mot de passe pour atlas-cloud.test ?");
+    expect(text(r)).toContain("Atlas Cloud (multi) · alex@atlas.dev");
+    expect(r.querySelector("button.sc-chip")).toBeNull();
     await click("Mettre à jour");
     expect(worker.sent.filter((m) => m.type === "save_decide").at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "update" });
-    expect(text(r)).toContain("Atlas Cloud mis à jour");
+    expect(text(r)).toContain("Mot de passe mis à jour");
   });
 
-  it("more menu: Ne jamais proposer pour <domaine>, Pas maintenant", async () => {
+  it("update: the menu saves it as a new login instead", async () => {
+    const { r, handle, worker, click, clock } = setup({ ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
+    await handle.ready;
+    clock.advance(300);
+    r.querySelector<HTMLButtonElement>("button[aria-label=Options]")!.click();
+    await flush();
+    await click("Enregistrer comme nouveau login");
+    expect(text(r)).toContain("Enregistrer le login pour atlas-cloud.test ?");
+    await click("Enregistrer");
+    expect((worker.sent.at(-1) as { decision: string }).decision).toBe("save");
+  });
+
+  it("menu: Ne jamais proposer pour ce site", async () => {
     const { r, handle, worker, click, clock } = setup(base);
     await handle.ready;
     clock.advance(300);
     r.querySelector<HTMLButtonElement>("button[aria-label=Options]")!.click();
     await flush();
-    expect(text(r)).toContain("Ne jamais proposer pour atlas-cloud.test");
-    expect(text(r)).toContain("Pas maintenant");
-    await click("Ne jamais proposer pour atlas-cloud.test");
+    expect(text(r)).toContain("Modifier avant d'enregistrer");
+    await click("Ne jamais proposer pour ce site");
     expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "never" });
     expect(text(r)).toContain("OnePass ne proposera plus rien ici");
   });
 
   it("Pas maintenant dismisses", async () => {
+    const { handle, worker, click } = setup(base);
+    await handle.ready;
+    await click("Pas maintenant");
+    expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
+  });
+
+  it("left alone 20 s, the card goes and the sign-in waits in the popup; not while hovered", async () => {
+    const { r, handle, worker, timers } = setup(base);
+    await handle.ready;
+    // Hovered: the timer is stopped (its callback does nothing).
+    r.querySelector(".save")!.dispatchEvent(new Event("pointerenter"));
+    timers.pending.splice(0).forEach((f) => f());
+    await flush();
+    expect(worker.types()).not.toContain("save_decide");
+    r.querySelector(".save")!.dispatchEvent(new Event("pointerleave"));
+    timers.pending.splice(0).forEach((f) => f());
+    await flush();
+    expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "later" });
+  });
+
+  it("edit view: fields, reveal on click only, Générer, rule and tags", async () => {
     const { r, handle, worker, click, clock } = setup(base);
     await handle.ready;
     clock.advance(300);
     r.querySelector<HTMLButtonElement>("button[aria-label=Options]")!.click();
     await flush();
-    await click("Pas maintenant");
-    expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
-  });
-
-  it("edit view: fields, reveal on click only, Générer, rule and tags", async () => {
-    const { r, handle, worker, click } = setup(base);
-    await handle.ready;
-    await click("Modifier");
+    await click("Modifier avant d'enregistrer");
     expect(text(r)).toContain("Enregistrer l'élément");
     expect(text(r)).toContain("nom d'utilisateur");
     expect(text(r)).toContain("site web");
@@ -181,14 +232,16 @@ describe("save prompt", () => {
     expect(text(r)).toContain("Lien enregistré");
   });
 
-  it("no vault: Aucun coffre disponible, Enregistrer disabled", async () => {
-    const { r, handle, worker, click } = setup({ ...base, vaults: [] });
+  it("no vault: Enregistrer disabled, Aucun coffre disponible in the edit view", async () => {
+    const { r, handle, worker, click, clock } = setup({ ...base, vaults: [] });
     await handle.ready;
-    expect(text(r)).toContain("Aucun coffre disponible");
     expect(button(r, "Enregistrer").disabled).toBe(true);
     await click("Enregistrer");
     expect(worker.types()).not.toContain("save_decide");
-    await click("Modifier");
+    clock.advance(300);
+    r.querySelector<HTMLButtonElement>("button[aria-label=Options]")!.click();
+    await flush();
+    await click("Modifier avant d'enregistrer");
     expect(text(r)).toContain("Aucun coffre disponible");
     expect(button(r, "Enregistrer").disabled).toBe(true);
   });
