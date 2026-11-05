@@ -127,7 +127,12 @@ pub fn card_last4(number: &str) -> Option<String> {
     if d.len() < 8 {
         return None;
     }
-    Some(d[d.len() - 4..].iter().map(|x| char::from(b'0' + x)).collect())
+    Some(
+        d[d.len() - 4..]
+            .iter()
+            .map(|x| char::from(b'0' + x))
+            .collect(),
+    )
 }
 
 /// IBAN total length by country code (SWIFT registry).

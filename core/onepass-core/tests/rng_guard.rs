@@ -101,6 +101,11 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "Secure Enclave key: made and kept inside the enclave, which takes no outside \
          randomness",
     ),
+    (
+        "apple/VaultKit/Sources/VaultKit/Biometrics/SimulatorBiometricKeyring.swift",
+        1,
+        "Simulator Debug builds only: stand-in for the Secure Enclave key, never on a device",
+    ),
     ("apple/App/Root/DemoData.swift", 1, "Debug demo data only"),
     (
         "apple/VaultKit/Sources/VaultKit/Sync/PushRegistration.swift",
