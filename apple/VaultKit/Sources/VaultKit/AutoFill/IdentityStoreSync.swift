@@ -31,6 +31,11 @@ public struct SystemIdentityStore: IdentityStoreClient {
             try await ASCredentialIdentityStore.shared.replaceCredentialIdentities(
                 AutoFillIdentityBuilder.credentialIdentities(identities))
             Self.log.info("identity store replaced: \(identities.count, privacy: .public) identities")
+        } catch let error where identities.contains(where: \.serviceIsApp) {
+            // App identities are new (26.2): a store that refuses them still gets the sites.
+            Self.log.error(
+                "identity store refused app identities (\(String(describing: error), privacy: .public)), sites only")
+            try await replaceAll(identities.filter { !$0.serviceIsApp })
         } catch {
             Self.log.error("identity store replace failed: \(String(describing: error), privacy: .public)")
             throw error

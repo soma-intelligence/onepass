@@ -9,9 +9,9 @@ extension AutoFillRequest {
     public var routingHost: String? {
         switch self {
         case .credentialList(let services, let passkey):
-            passkey?.rpID ?? services.lazy.compactMap(Self.host(of:)).first
+            passkey?.rpID ?? Self.firstHost(services)
         case .oneTimeCodeList(let services):
-            services.lazy.compactMap(Self.host(of:)).first
+            Self.firstHost(services)
         case .passkeyRegistration(let registration):
             registration.rpID
         case .savePassword(let save):
@@ -19,6 +19,11 @@ extension AutoFillRequest {
         case .credential, .textToInsert, .configuration:
             nil
         }
+    }
+
+    /// The host of the first site among `services`: an app identifier has none (never a work domain).
+    static func firstHost(_ services: [AutoFillService]) -> String? {
+        services.lazy.filter { !$0.isApp }.compactMap { host(of: $0.identifier) }.first
     }
 
     /// The host of a service as the system gives it: a URL or a bare domain.
@@ -37,10 +42,23 @@ extension AccountDirectoryStore {
         guard let host = request.routingHost else { return Self.primarySlot }
         let slot = route(host: host)
         guard slot != Self.primarySlot else { return slot }
+        return isOpenable(slot) ? slot : Self.primarySlot
+    }
+
+    /// An added account AutoFill may open: bound to its store (M4), and the store exists.
+    func isOpenable(_ slot: String) -> Bool {
+        guard slot != Self.primarySlot else { return true }
         guard (try? checkBinding(slot: slot)) != nil,
             let url = try? databaseURL(slot: slot), FileManager.default.fileExists(atPath: url.path)
-        else { return Self.primarySlot }
-        return slot
+        else { return false }
+        return true
+    }
+
+    /// The accounts the provider's account switcher offers (MACAPP-06), in the directory's order:
+    /// the primary account and every openable added one. Fewer than two: no switcher.
+    public func autoFillAccounts() -> [AccountProfile] {
+        guard let directory = try? load() else { return [] }
+        return directory.entries.map(AccountProfile.init).filter { isOpenable($0.slot) }
     }
 }
 
@@ -52,8 +70,16 @@ extension VaultEnvironment {
         for request: AutoFillRequest, container: SharedContainer = .resolve()
     ) -> VaultEnvironment {
         let store = AccountDirectoryStore(container: container)
-        let slot = store.slot(for: request)
-        guard slot != AccountDirectoryStore.primarySlot, let url = try? store.databaseURL(slot: slot) else {
+        return autoFill(slot: store.slot(for: request), container: container)
+    }
+
+    /// The environment of the account `slot`, picked in the provider's account switcher (an account
+    /// that cannot be opened gives the primary one). One account per session, as for routing (M6).
+    public static func autoFill(slot: String, container: SharedContainer = .resolve()) -> VaultEnvironment {
+        let store = AccountDirectoryStore(container: container)
+        guard slot != AccountDirectoryStore.primarySlot, store.isOpenable(slot),
+            let url = try? store.databaseURL(slot: slot)
+        else {
             return .live(sync: NoSync(), container: container)
         }
         var environment = VaultEnvironment.live(

@@ -38,6 +38,11 @@ public final class AutoFillModel {
     public private(set) var screen: Screen = .starting
     /// `complete` was called: the request is over.
     public private(set) var isFinished = false
+    /// The list was asked without any service (an app without associated domain, G8): every Login is
+    /// a manual choice, so the list opens on the search with the Logins used last first.
+    public private(set) var listWithoutService = false
+    /// The configuration screen published the suggestions after an unlock (G10).
+    public private(set) var suggestionsPublished = false
 
     @ObservationIgnored private let session: VaultSession
     @ObservationIgnored private let request: AutoFillRequest
@@ -46,7 +51,11 @@ public final class AutoFillModel {
     @ObservationIgnored private var wrote = false
     /// The service each Login of the current list matched (`"<vault id>:<item id>"` to service): what a
     /// fill from the list remembers. `others` are not in it.
-    @ObservationIgnored private var listedServices: [String: String] = [:]
+    @ObservationIgnored private var listedServices: [String: AutoFillService] = [:]
+    /// The configuration screen asked for an unlock to publish the suggestions.
+    @ObservationIgnored private var publishingFromConfiguration = false
+    /// Where the generated passwords filled but not saved yet wait (G3).
+    private var drafts: GeneratedPasswordDrafts { GeneratedPasswordDrafts(environment: session.environment) }
     /// The language dates and country names are inserted in (text insertion).
     @ObservationIgnored public var locale: Locale = .autoupdatingCurrent
 
@@ -66,11 +75,18 @@ public final class AutoFillModel {
     /// ends as saved without writing; a conditional passkey registration (automatic upgrade by the
     /// site) fails, since a passkey is never created without an explicit choice (ruling A9); everything
     /// else asks for the interface. Never nil today.
+    ///
+    /// A generated password just filled is kept in `drafts` (G3) until a Login holds it: the save
+    /// request that should follow may never come.
     nonisolated public static func resultWithoutUserInteraction(
-        for request: AutoFillRequest, ownAppIDs: Set<String>
+        for request: AutoFillRequest, ownAppIDs: Set<String>, drafts: GeneratedPasswordDrafts? = nil,
+        now: Date = Date()
     ) -> AutoFillResult? {
         switch request {
-        case .savePassword(let save) where isOwnApp(save, ownAppIDs) || save.event == .generatedPasswordFilled:
+        case .savePassword(let save) where isOwnApp(save, ownAppIDs):
+            return .saved
+        case .savePassword(let save) where save.event == .generatedPasswordFilled:
+            keepDraft(save, in: drafts, now: now)
             return .saved
         case .passkeyRegistration:
             return .cancelled(.failed)
@@ -79,11 +95,18 @@ public final class AutoFillModel {
         }
     }
 
-    /// Default title of a saved Login: the system's suggestion, else the service host.
+    /// A filled generated password with something to keep (never an empty one).
+    nonisolated private static func keepDraft(_ save: SavePasswordRequest, in drafts: GeneratedPasswordDrafts?, now: Date) {
+        guard let drafts, !save.password.isEmpty, !save.service.isEmpty else { return }
+        drafts.add(GeneratedPasswordDraft(save, at: now), now: now)
+    }
+
+    /// Default title of a saved Login: the system's suggestion, else the app's name or the service host.
     nonisolated public static func defaultTitle(for request: SavePasswordRequest) -> String {
         if let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
+        if request.serviceIsApp { return request.typedService.shownName }
         return host(of: request.service)
     }
 
@@ -97,8 +120,12 @@ public final class AutoFillModel {
         case .configuration:
             screen = .configuration
             return
-        case .savePassword(let save) where Self.isOwnApp(save, ownAppIDs) || save.event == .generatedPasswordFilled:
-            // Own app, or a generated password just filled (the next event carries the same value).
+        case .savePassword(let save) where Self.isOwnApp(save, ownAppIDs):
+            finish(.saved)
+            return
+        case .savePassword(let save) where save.event == .generatedPasswordFilled:
+            // Kept until a Login holds it (G3): the next event should carry the same value.
+            Self.keepDraft(save, in: drafts, now: session.environment.clock.now)
             finish(.saved)
             return
         case .passkeyRegistration(let registration) where !registration.supportsES256:
@@ -159,8 +186,16 @@ public final class AutoFillModel {
         }
     }
 
-    /// Unlocked: the screen of the request, or a direct answer.
+    /// Unlocked: the screen of the request, or a direct answer. First the generated passwords still
+    /// waiting are saved (G3), and the identities are published if this provider has not done so for
+    /// a while (G10: QuickType works without opening the app).
     private func proceed() async {
+        await saveWaitingDrafts()
+        await publishIdentitiesIfStale()
+        guard !isFinished, session.state == .unlocked else {
+            recover(finishing: false)
+            return
+        }
         do {
             switch request {
             case .credentialList(let services, let passkey):
@@ -176,10 +211,73 @@ public final class AutoFillModel {
             case .textToInsert:
                 screen = .textItems(try await textItems())
             case .configuration:
+                if publishingFromConfiguration {
+                    await session.publishAutofillIdentitiesNow()
+                    suggestionsPublished = true
+                    publishingFromConfiguration = false
+                }
                 screen = .configuration
             }
         } catch {
             recover(finishing: true)
+        }
+    }
+
+    // MARK: - Identities (G10, MACAPP-11)
+
+    /// How long a publication from the provider holds before an unlock publishes again.
+    nonisolated static let publishInterval: TimeInterval = 600
+    nonisolated static let publishedAtKey = "onepass.autofill.providerPublishedAt"
+
+    /// Publishes the identities (metadata only, the core's `autofillIdentities`) once per
+    /// `publishInterval` after an unlock in the provider. An added account publishes nothing (its
+    /// environment has `NoIdentityStore`, ruling P6, unchanged).
+    private func publishIdentitiesIfStale() async {
+        guard !isFinished, session.state == .unlocked, session.environment.settings.quickTypeSuggestions else { return }
+        let defaults = session.environment.settings.baseDefaults
+        let key = Self.publishedAtKey + (session.environment.settings.scope.map { ".\($0)" } ?? "")
+        let now = session.environment.clock.now
+        let last = defaults.object(forKey: key) as? Date
+        if let last, last <= now, now.timeIntervalSince(last) < Self.publishInterval { return }
+        defaults.set(now, forKey: key)
+        await session.publishAutofillIdentitiesSoon()
+    }
+
+    /// "Afficher mes comptes au-dessus du clavier" on the configuration screen: unlocks (Face ID /
+    /// Touch ID first), publishes the identities, then shows the configuration screen again.
+    public func publishSuggestionsFromConfiguration() async {
+        guard !isFinished, case .configuration = request, screen == .configuration else { return }
+        publishingFromConfiguration = true
+        if session.state == .unlocked {
+            await proceed()
+            return
+        }
+        showUnlockScreen()
+        if screen == .locked, session.canUseBiometrics {
+            await unlockWithBiometrics()
+        }
+    }
+
+    // MARK: - Generated passwords waiting (G3)
+
+    /// Every live draft of this account but the one the current save request carries (its sheet
+    /// decides): a Login of the same service and username with that password ends it; otherwise a
+    /// new Login in the first visible vault. A Login with the same username and another password is
+    /// never overwritten without the user (the site may have refused the change): the draft becomes
+    /// a Login of its own, "<site> (mot de passe généré)". Best effort, never blocks the request.
+    private func saveWaitingDrafts() async {
+        let now = session.environment.clock.now
+        var pending = drafts.load(now: now)
+        if case .savePassword(let save) = request { pending.removeAll { $0.password == save.password } }
+        guard !pending.isEmpty, let vaultID = session.vaults.first?.id else { return }
+        for draft in pending {
+            guard !isFinished, session.state == .unlocked else { return }
+            do {
+                try await store(draft.saveRequest, title: nil, vaultID: vaultID)
+                drafts.remove(password: draft.password, service: draft.service, now: now)
+            } catch {
+                if session.state == .unlocked { session.lastError = nil }
+            }
         }
     }
 
@@ -198,18 +296,20 @@ public final class AutoFillModel {
 
     /// The matches of each service follow the core's plan for it (the Login used last there first),
     /// then the rest in the candidates' order.
-    private func listScreen(services: [String], passkey: PasskeyRequest?, oneTimeCode: Bool) async throws -> Screen {
+    private func listScreen(
+        services: [AutoFillService], passkey: PasskeyRequest?, oneTimeCode: Bool
+    ) async throws -> Screen {
         var matches: [FfiAutofillCandidate] = []
         var seen = Set<String>()
-        var served: [String: String] = [:]
+        var served: [String: AutoFillService] = [:]
         if let passkey {
-            for candidate in try await session.autofillCandidates(service: passkey.rpID, includeAll: false) {
+            for candidate in try await session.autofillCandidates(for: .site(passkey.rpID), includeAll: false) {
                 let offered = offering(candidate)
                 if !offered.passkeys.isEmpty, seen.insert(offered.itemId).inserted { matches.append(offered) }
             }
         }
         for service in services {
-            let candidates = try await session.autofillCandidates(service: service, includeAll: false)
+            let candidates = try await session.autofillCandidates(for: service, includeAll: false)
             // The plan only orders: without it, the candidates' order.
             let ranked = await plan(service: service, oneTimeCode: oneTimeCode).map { Self.ordered(candidates, by: $0) }
             for candidate in ranked ?? candidates where seen.insert(candidate.itemId).inserted {
@@ -217,8 +317,9 @@ public final class AutoFillModel {
                 served["\(candidate.vaultId):\(candidate.itemId)"] = service
             }
         }
-        let anchor = services.first ?? passkey?.rpID ?? ""
-        var others = try await session.autofillCandidates(service: anchor, includeAll: true)
+        let anchor: AutoFillService = services.first ?? passkey.map { AutoFillService.site($0.rpID) } ?? .site("")
+        listWithoutService = services.isEmpty && passkey == nil
+        var others = try await session.autofillCandidates(for: anchor, includeAll: true)
             .filter { !seen.contains($0.itemId) }
             .map(offering)
         if oneTimeCode {
@@ -231,9 +332,9 @@ public final class AutoFillModel {
 
     /// The core's plan for `service`, nil when it fails (the list then keeps the candidates' order).
     /// An integrity failure or a lock still shows through the session's state.
-    private func plan(service: String, oneTimeCode: Bool) async -> FfiAutofillPlan? {
+    private func plan(service: AutoFillService, oneTimeCode: Bool) async -> FfiAutofillPlan? {
         do {
-            return try await session.autofillPlan(service: service, request: oneTimeCode ? .oneTimeCode : .password)
+            return try await session.autofillPlan(for: service, request: oneTimeCode ? .oneTimeCode : .password)
         } catch {
             if session.state == .unlocked { session.lastError = nil }
             return nil
@@ -308,6 +409,63 @@ public final class AutoFillModel {
         }
     }
 
+    // MARK: - New Login from the list (MACAPP-03)
+
+    /// The list fills passwords (not codes): "Nouveau login" may be offered.
+    public var canCreateLogin: Bool {
+        guard case .list = screen, listKind == .password else { return false }
+        return !session.vaults.isEmpty
+    }
+
+    /// A password for a new Login, with the generator profile chosen in the app ("Fort" by default).
+    /// The list never sees the page's rules: the profile alone.
+    public func generatedPassword() -> String? {
+        let profile = GeneratorProfileStore(defaults: session.environment.settings.baseDefaults).profile
+        let context = FfiPasswordContext(rules: [], quirkRules: nil, minLength: nil, maxLength: nil, hintText: nil)
+        return try? passwordForContext(context: context, profile: profile.ffi).password
+    }
+
+    /// The e-mail of the first Identity, to prefill the username of a new Login (nil without one).
+    public var suggestedUsername: String? {
+        session.items(filter: .all, query: "", sort: .title)
+            .first { $0.itemType == .identity && $0.subtitle.contains("@") }?
+            .subtitle
+    }
+
+    /// "Nouveau login": writes a Login for the request's service (its host's URL, or the App ID for
+    /// an app) with `user` and `password` in `vaultID`, then fills both, in one sheet and one unlock.
+    /// Ignored (nothing written) unless the list fills passwords, `vaultID` is visible and
+    /// `password` is not empty.
+    public func createLogin(title: String, user: String, password: String, vaultID: String) async {
+        guard !isFinished, session.state == .unlocked, canCreateLogin, isVisibleVault(vaultID),
+            !password.isEmpty
+        else { return }
+        let service = request.primaryService.flatMap { $0.identifier.isEmpty ? nil : $0 }
+        do {
+            var item = try session.newItem(type: .login, vaultID: vaultID)
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            item.title = trimmed.isEmpty ? (service?.shownName ?? Self.untitled) : trimmed
+            Self.setField("username", to: .text(value: user), in: &item)
+            Self.setField("password", to: .password(value: password), in: &item)
+            if let service {
+                if service.isApp {
+                    item.apps = [service.identifier]
+                } else {
+                    let url = "https://\(Self.host(of: service.identifier))"
+                    item.urls = [FfiUrl(label: "", url: url, rule: .domain, primary: true)]
+                }
+            }
+            _ = try await session.save(item)
+            wrote = true
+            await session.publishAutofillIdentitiesNow()
+            finish(.password(user: user, password: password))
+        } catch {
+            recover(finishing: false)
+        }
+    }
+
+    nonisolated static let untitled = String(localized: "autoFill.newLogin", bundle: VaultKitStrings.bundle)
+
     /// A passkey of the list: the core signs the assertion. Ignored unless `ref` is offered for
     /// `candidate` on the current `list` screen.
     public func choosePasskey(_ ref: FfiPasskeyRef, in candidate: FfiAutofillCandidate) async {
@@ -339,12 +497,12 @@ public final class AutoFillModel {
     /// the Login still matches the identity's `service` (a stale identity store entry, for a Login
     /// whose URL changed since it was published, goes back to the list of that service).
     private func fillDirectly(
-        recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: String?
+        recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: AutoFillService?
     ) async throws {
         var item = try await fillableLogin(recordID: recordID)
-        let services = [service].compactMap { $0 }.filter { !$0.isEmpty }
+        let services = [service].compactMap { $0 }.filter { !$0.identifier.isEmpty }
         if kind != .passkey, let found = item, let service = services.first {
-            let matching = try await session.autofillCandidates(service: service, includeAll: false)
+            let matching = try await session.autofillCandidates(for: service, includeAll: false)
             if !matching.contains(where: { $0.itemId == found.id && $0.vaultId == found.vaultId }) { item = nil }
         }
         switch kind {
@@ -368,7 +526,7 @@ public final class AutoFillModel {
                 finish(.cancelled(.credentialNotFound))
                 return
             }
-            let candidates = try await session.autofillCandidates(service: passkey.rpID, includeAll: false)
+            let candidates = try await session.autofillCandidates(for: .site(passkey.rpID), includeAll: false)
             guard let candidate = candidates.first(where: { $0.itemId == item.id && $0.vaultId == item.vaultId }),
                 let ref = Self.offered(candidate.passkeys, for: passkey).first
             else {
@@ -407,11 +565,11 @@ public final class AutoFillModel {
     /// session locks. Best effort: a failure never stops the fill; an integrity failure leaves its
     /// state as for any other call, any other error is cleared. Nil `service` (a Login from `others`,
     /// or a direct request without a service) remembers nothing.
-    private func noteUse(_ item: FfiItem, service: String?) async {
-        guard let service, !service.isEmpty, !isFinished else { return }
+    private func noteUse(_ item: FfiItem, service: AutoFillService?) async {
+        guard let service, !service.identifier.isEmpty, !isFinished else { return }
         let written: Bool
         do {
-            written = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: service)
+            written = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", for: service)
         } catch {
             if session.state == .unlocked { session.lastError = nil }
             return
@@ -464,7 +622,7 @@ public final class AutoFillModel {
     // MARK: - Passkey registration
 
     private func prepareRegistration(_ registration: PasskeyRegistrationRequest) async throws {
-        let candidates = try await session.autofillCandidates(service: registration.rpID, includeAll: false)
+        let candidates = try await session.autofillCandidates(for: .site(registration.rpID), includeAll: false)
         let excluded = Set(registration.excludedCredentialIDs)
         let holdsExcluded = candidates.contains { candidate in
             candidate.passkeys.contains { excluded.contains($0.credentialId) }
@@ -507,22 +665,72 @@ public final class AutoFillModel {
 
     /// Identical to a stored Login (same host, username and password): saved without a sheet (spec 7).
     /// Same site and username with another password: update sheet. Otherwise: new Login sheet.
+    /// An app matches the Logins whose `apps` hold its App ID (G1), never a site.
     private func prepareSave(_ save: SavePasswordRequest) async throws {
-        // An app identifier is no domain: no site match for it.
-        let candidates =
-            save.serviceIsApp ? [] : try await session.autofillCandidates(service: save.service, includeAll: false)
+        let match = try await existingLogin(for: save)
+        if match.identical {
+            drafts.remove(password: save.password, now: session.environment.clock.now)
+            finish(.saved)
+            return
+        }
+        screen = .save(existing: match.sameUser)
+    }
+
+    /// The Logins of the save's service with its username: `identical` when one already holds the
+    /// password (a site Login must also have a URL of that very host), else the first of them.
+    private func existingLogin(for save: SavePasswordRequest) async throws
+        -> (identical: Bool, sameUser: FfiAutofillCandidate?)
+    {
+        let candidates = try await session.autofillCandidates(for: save.typedService, includeAll: false)
         let user = Self.normalizedUser(save.user)
         let sameUser = candidates.filter { Self.normalizedUser($0.user) == user }
         let host = Self.host(of: save.service)
         for candidate in sameUser {
             let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
             let password = Self.fieldValue("password", in: item).flatMap(Self.plainText)
-            if password == save.password, item.urls.contains(where: { Self.host(of: $0.url) == host }) {
-                finish(.saved)
-                return
-            }
+            let sameService = save.serviceIsApp || item.urls.contains { Self.host(of: $0.url) == host }
+            if password == save.password, sameService { return (true, nil) }
         }
-        screen = .save(existing: sameUser.first)
+        return (false, sameUser.first)
+    }
+
+    /// Writes `save` without a sheet (a waiting generated password): nothing when a Login already
+    /// holds it, else always a new Login (never an overwrite), titled apart when a Login of the same
+    /// service and username exists.
+    private func store(_ save: SavePasswordRequest, title: String?, vaultID: String) async throws {
+        let match = try await existingLogin(for: save)
+        if match.identical { return }
+        var title = title ?? ""
+        if match.sameUser != nil {
+            let base = title.isEmpty ? Self.defaultTitle(for: save) : title
+            title = String(localized: "autoFill.generatedPasswordTitle \(base)", bundle: VaultKitStrings.bundle)
+        }
+        try await write(save, title: title, vaultID: vaultID, updating: nil)
+    }
+
+    /// The Login write of a save: the new password into `updating` (its old one goes to the history),
+    /// or a new Login with the URL of the host (or the App ID for an app) in `vaultID`.
+    private func write(_ save: SavePasswordRequest, title: String, vaultID: String, updating itemID: String?) async throws {
+        if let itemID {
+            var item = try await session.loadItem(vaultID: vaultID, itemID: itemID)
+            Self.setField("password", to: .password(value: save.password), in: &item)
+            _ = try await session.save(item)
+        } else {
+            var item = try session.newItem(type: .login, vaultID: vaultID)
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            item.title = trimmed.isEmpty ? Self.defaultTitle(for: save) : trimmed
+            Self.setField("username", to: .text(value: save.user), in: &item)
+            Self.setField("password", to: .password(value: save.password), in: &item)
+            if save.serviceIsApp {
+                item.apps = [save.service]
+            } else {
+                let url = "https://\(Self.host(of: save.service))"
+                item.urls = [FfiUrl(label: "", url: url, rule: .domain, primary: true)]
+            }
+            _ = try await session.save(item)
+        }
+        wrote = true
+        await session.publishAutofillIdentitiesNow()
     }
 
     /// New Login (`updating` nil): `title` (default `defaultTitle`), URL `https://<host>` (or the app
@@ -536,26 +744,8 @@ public final class AutoFillModel {
         else { return }
         if let itemID, existing?.itemId != itemID || existing?.vaultId != vaultID { return }
         do {
-            if let itemID {
-                var item = try await session.loadItem(vaultID: vaultID, itemID: itemID)
-                Self.setField("password", to: .password(value: save.password), in: &item)
-                _ = try await session.save(item)
-            } else {
-                var item = try session.newItem(type: .login, vaultID: vaultID)
-                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                item.title = trimmed.isEmpty ? Self.defaultTitle(for: save) : trimmed
-                Self.setField("username", to: .text(value: save.user), in: &item)
-                Self.setField("password", to: .password(value: save.password), in: &item)
-                if save.serviceIsApp {
-                    item.apps = [save.service]
-                } else {
-                    let url = "https://\(Self.host(of: save.service))"
-                    item.urls = [FfiUrl(label: "", url: url, rule: .domain, primary: true)]
-                }
-                _ = try await session.save(item)
-            }
-            wrote = true
-            await session.publishAutofillIdentitiesNow()
+            try await write(save, title: title, vaultID: vaultID, updating: itemID)
+            drafts.remove(password: save.password, now: session.environment.clock.now)
             finish(.saved)
         } catch {
             recover(finishing: false)
@@ -681,7 +871,11 @@ public final class AutoFillModel {
     // MARK: - End
 
     /// Cancel button (and the end of the configuration screen).
+    /// On the save sheet, the user's no also drops a waiting generated password of that value (G3).
     public func cancel() {
+        if case .savePassword(let save) = request, case .save = screen {
+            drafts.remove(password: save.password, service: save.service, now: session.environment.clock.now)
+        }
         finish(.cancelled(.userCanceled))
     }
 

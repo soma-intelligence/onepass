@@ -8,11 +8,11 @@ import Testing
 func identity(
     _ kind: FfiAutofillKind = .password, service: String = "exemple.fr", user: String = "camille@exemple.fr",
     record: String = "aa:bb", favorite: Bool = false, rank: UInt32 = 0, credential: Data = Data(),
-    handle: Data = Data(), signInWith: String = ""
+    handle: Data = Data(), signInWith: String = "", app: Bool = false
 ) -> FfiAutofillIdentity {
     FfiAutofillIdentity(
         kind: kind, service: service, user: user, recordId: record, favorite: favorite, rank: rank,
-        credentialId: credential, userHandle: handle, signInWith: signInWith)
+        credentialId: credential, userHandle: handle, signInWith: signInWith, serviceIsApp: app)
 }
 
 @Suite("Identity store sync")
@@ -194,6 +194,21 @@ struct IdentityStoreSyncTests {
         #expect(custom.user.hasSuffix("sso.corp.test"))
         #expect(AutoFillIdentityBuilder.providerName("entra_id") == "Microsoft Entra ID")
         #expect(AutoFillIdentityBuilder.providerName("github") == "GitHub")
+    }
+
+    /// G1: a Login's app is published with the app service type, never as a domain.
+    @available(iOS 26.2, macOS 26.2, visionOS 26.2, *)
+    @Test func builderPublishesAppsAsApps() throws {
+        let built = AutoFillIdentityBuilder.credentialIdentities([
+            identity(.password, service: "com.example.app", user: "camille", record: "v:5", app: true),
+            identity(.password, service: "example.app", user: "camille", record: "v:6"),
+        ])
+        #expect(built.count == 2)
+        let app = try #require(built[0] as? ASPasswordCredentialIdentity)
+        #expect(app.serviceIdentifier.identifier == "com.example.app")
+        #expect(app.serviceIdentifier.type == .app)
+        let site = try #require(built[1] as? ASPasswordCredentialIdentity)
+        #expect(site.serviceIdentifier.type == .domain)
     }
 
     @Test func notifierDeliversPosts() async throws {

@@ -45,6 +45,31 @@ struct AccountRoutingTests {
         #expect(h.store.slot(for: other) == AccountDirectoryStore.primarySlot)
         #expect(h.store.slot(for: lookalike) == AccountDirectoryStore.primarySlot)
     }
+
+    /// An App ID is never a host: it never routes to a work account by a domain read from it (G2).
+    @Test func anAppServiceHasNoHost() {
+        let app = AutoFillRequest.credentialList(services: [.app("me.somalabs.chat")], passkey: nil)
+        #expect(app.routingHost == nil)
+        let mixed = AutoFillRequest.oneTimeCodeList(services: [.app("com.acme.app"), "mail.acme.com"])
+        #expect(mixed.routingHost == "mail.acme.com")
+    }
+
+    /// The switcher offers the primary account and the added accounts that can be opened, and only
+    /// with two of them or more (MACAPP-06).
+    @Test func theSwitcherListsOpenableAccountsOnly() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        #expect(h.store.autoFillAccounts().count <= 1)
+        let slot = try h.accounts.beginAdding(kind: .business, label: "Soma Labs", color: .orange)
+        let url = try h.store.databaseURL(slot: slot)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            #expect(!h.store.autoFillAccounts().contains { $0.slot == slot })
+        }
+        try await h.createAccount(in: slot, name: "Quentin")
+        let listed = h.store.autoFillAccounts().map(\.slot)
+        #expect(listed.contains(AccountDirectoryStore.primarySlot))
+        #expect(listed.contains(slot))
+    }
 }
 
 /// Signing in to an account on a new device picks the iCloud zone of that account (ruling P8).

@@ -41,6 +41,50 @@ public struct PasskeyRegistrationRequest: Sendable, Equatable {
     }
 }
 
+/// A service the system names: a site (domain or URL), or an app (its App ID, iOS and macOS 26.2+).
+/// The type is kept end to end: an app identifier is never read as a host (`com.example.app` is not
+/// the site `example.app`), it only matches a Login's `apps` (G1, G2). A string literal is a site.
+public struct AutoFillService: Sendable, Hashable, ExpressibleByStringLiteral {
+    public var identifier: String
+    public var isApp: Bool
+    /// The name the system gives for display ("Instagram"), never used to match.
+    public var displayName: String?
+
+    public init(identifier: String, isApp: Bool, displayName: String? = nil) {
+        self.identifier = identifier
+        self.isApp = isApp
+        self.displayName = displayName
+    }
+
+    public init(stringLiteral value: String) {
+        self.init(identifier: value, isApp: false)
+    }
+
+    public static func site(_ value: String) -> AutoFillService { AutoFillService(identifier: value, isApp: false) }
+
+    public static func app(_ id: String, displayName: String? = nil) -> AutoFillService {
+        AutoFillService(identifier: id, isApp: true, displayName: displayName)
+    }
+
+    /// The core's typed service.
+    public var ffi: FfiAutofillService {
+        isApp ? .app(id: identifier) : .site(value: identifier)
+    }
+
+    /// What headings show: the app's name (else the last part of its App ID, `instagram` for
+    /// `com.burbn.instagram`), or the site's host without `www.` (G12).
+    public var shownName: String {
+        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isApp {
+            if let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+            let last = trimmed.split(separator: ".").last.map(String.init) ?? trimmed
+            return last.prefix(1).uppercased() + last.dropFirst()
+        }
+        let host = URL(string: trimmed.contains("://") ? trimmed : "https://\(trimmed)")?.host() ?? trimmed
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+}
+
 /// Why the system asks to save a password (iOS 26.2+).
 public enum SaveEvent: Sendable, Equatable {
     case userInitiated
@@ -59,9 +103,12 @@ public struct SavePasswordRequest: Sendable, Equatable {
     /// Title suggested by the system, if any.
     public var title: String?
     public var event: SaveEvent
+    /// The app's name from the system (an app service), for display only.
+    public var displayName: String?
 
     public init(
-        service: String, serviceIsApp: Bool, user: String, password: String, title: String?, event: SaveEvent
+        service: String, serviceIsApp: Bool, user: String, password: String, title: String?, event: SaveEvent,
+        displayName: String? = nil
     ) {
         self.service = service
         self.serviceIsApp = serviceIsApp
@@ -69,6 +116,12 @@ public struct SavePasswordRequest: Sendable, Equatable {
         self.password = password
         self.title = title
         self.event = event
+        self.displayName = displayName
+    }
+
+    /// The typed service of the request.
+    public var typedService: AutoFillService {
+        AutoFillService(identifier: service, isApp: serviceIsApp, displayName: displayName)
     }
 }
 
@@ -77,16 +130,31 @@ public struct SavePasswordRequest: Sendable, Equatable {
 /// `passwordForContext`, no vault data read).
 public enum AutoFillRequest: Sendable, Equatable {
     /// Manual choice (key button): passwords of `services`, and passkeys of `passkey.rpID` if asked.
-    case credentialList(services: [String], passkey: PasskeyRequest?)
+    case credentialList(services: [AutoFillService], passkey: PasskeyRequest?)
     /// A QuickType suggestion: the record `"<vault id>:<item id>"` from the identity store, and the
     /// identity's service (host) for a password or a one-time code: the Login must still match it
     /// (a stale identity store entry falls back to the list). Nil skips that check.
-    case credential(recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: String? = nil)
-    case oneTimeCodeList(services: [String])
+    case credential(
+        recordID: String, kind: FfiAutofillKind, passkey: PasskeyRequest?, service: AutoFillService? = nil)
+    case oneTimeCodeList(services: [AutoFillService])
     case passkeyRegistration(PasskeyRegistrationRequest)
     case savePassword(SavePasswordRequest)
     case textToInsert
     case configuration
+}
+
+extension AutoFillRequest {
+    /// The first service the request names (the passkey's relying party first), for headings.
+    public var primaryService: AutoFillService? {
+        switch self {
+        case .credentialList(let services, let passkey): passkey.map { AutoFillService.site($0.rpID) } ?? services.first
+        case .oneTimeCodeList(let services): services.first
+        case .credential(_, _, let passkey, let service): passkey.map { AutoFillService.site($0.rpID) } ?? service
+        case .passkeyRegistration(let registration): .site(registration.rpID)
+        case .savePassword(let save): save.typedService
+        case .textToInsert, .configuration: nil
+        }
+    }
 }
 
 /// Why a request ended without a credential. The controller maps it to `ASExtensionError`.

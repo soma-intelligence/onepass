@@ -5,12 +5,13 @@ import Foundation
 /// suggestions, passkey sheet). Only metadata: host, user name, record id, passkey credential id and
 /// user handle (ruling A8). Never a password, a code or a key.
 public enum AutoFillIdentityBuilder {
-    /// Service identifiers are domains (`.domain`). The rank is the core's (`FfiAutofillIdentity.rank`:
-    /// the Login used last on the site first, then favorites): the system shows a higher rank first
-    /// for the same service.
+    /// Service identifiers are domains (`.domain`), or App IDs (`.app`, iOS and macOS 26.2+) for the
+    /// apps of a Login (G1); before 26.2 app identities are left out. The rank is the core's
+    /// (`FfiAutofillIdentity.rank`: the Login used last on the site first, then favorites): the system
+    /// shows a higher rank first for the same service.
     public static func credentialIdentities(_ identities: [FfiAutofillIdentity]) -> [any ASCredentialIdentity] {
-        identities.map { identity -> any ASCredentialIdentity in
-            let service = ASCredentialServiceIdentifier(identifier: identity.service, type: .domain)
+        identities.compactMap { identity -> (any ASCredentialIdentity)? in
+            guard let service = serviceIdentifier(identity) else { return nil }
             let built: any ASCredentialIdentity
             switch identity.kind {
             case .password:
@@ -29,6 +30,17 @@ public enum AutoFillIdentityBuilder {
             built.rank = Int(identity.rank)
             return built
         }
+    }
+
+    /// The identity's service: a domain, or an App ID where the OS has the app type.
+    static func serviceIdentifier(_ identity: FfiAutofillIdentity) -> ASCredentialServiceIdentifier? {
+        guard identity.serviceIsApp else {
+            return ASCredentialServiceIdentifier(identifier: identity.service, type: .domain)
+        }
+        if #available(iOS 26.2, macOS 26.2, visionOS 26.2, *) {
+            return ASCredentialServiceIdentifier(identifier: identity.service, type: .app)
+        }
+        return nil
     }
 
     /// The line the system shows for a password identity: the user (or, from the core, the title

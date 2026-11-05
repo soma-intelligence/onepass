@@ -1312,6 +1312,41 @@ public final class VaultSession {
         return written
     }
 
+    /// `autofillCandidates(service:includeAll:)` for a typed service: an app matches only the Logins
+    /// whose `apps` hold its App ID (never a site by a domain read from it).
+    public func autofillCandidates(for service: AutoFillService, includeAll: Bool) async throws
+        -> [FfiAutofillCandidate]
+    {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        return try await read {
+            try $0.autofillServiceCandidates(service: typed, includeAll: includeAll, excludedVaultIds: excluded)
+        }
+    }
+
+    /// `autofillPlan(service:request:)` for a typed service.
+    public func autofillPlan(for service: AutoFillService, request: FfiAutofillRequest) async throws
+        -> FfiAutofillPlan
+    {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        return try await read {
+            try $0.autofillServicePlan(service: typed, request: request, excludedVaultIds: excluded)
+        }
+    }
+
+    /// `noteAutofillUse(recordID:service:)` for a typed service (an app is remembered as an app).
+    @discardableResult
+    public func noteAutofillUse(recordID: String, for service: AutoFillService) async throws -> Bool {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        let written = try await read {
+            try $0.noteAutofillServiceUse(recordId: recordID, service: typed, excludedVaultIds: excluded)
+        }
+        if written { notifySync { await $0.localChangesWritten() } }
+        return written
+    }
+
     /// The sites the visible vaults remember a choice for (registrable domains, sorted).
     public func knownUsageSites() async throws -> [String] {
         let excluded = excludedVaultIDs
@@ -1453,6 +1488,19 @@ public final class VaultSession {
         }
         guard let chain = identityChain else { return }
         await Self.wait(for: chain, atMost: limit)
+    }
+
+    /// Reads the AutoFill identities now (metadata only) and queues their publication without waiting
+    /// for the system store: for the AutoFill extension right after an unlock (G10), so QuickType
+    /// works without opening the app, at no cost to the request. Does nothing unless unlocked with
+    /// the "Suggestions au-dessus du clavier" setting on; a disabled store is left alone.
+    public func publishAutofillIdentitiesSoon() async {
+        guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
+        let excluded = excludedVaultIDs
+        guard let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
+        else { return }
+        let sync = identitySync
+        enqueueIdentity { await sync.replaceSoon(list) }
     }
 
     /// Returns when `task` ends or after `limit`, whichever comes first (the task keeps running).
