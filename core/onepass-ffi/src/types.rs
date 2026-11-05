@@ -615,6 +615,20 @@ pub struct FfiAutofillIdentity {
     /// (`google`, `apple`, `oidc:<domain>`...): the system menu shows "Signs
     /// in with <provider>". Empty otherwise, and for codes and passkeys.
     pub sign_in_with: String,
+    /// `service` is an app identifier (a Login's `apps`), published with
+    /// the app service type: never a domain.
+    #[uniffi(default = false)]
+    pub service_is_app: bool,
+}
+
+/// What the system names when it asks to fill: a site (a domain or a URL)
+/// or an app (its App ID). An app only ever matches a Login's `apps`,
+/// exactly: it is never read as a host (`com.example.app` is not the site
+/// `example.app`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiAutofillService {
+    Site { value: String },
+    App { id: String },
 }
 
 /// How well a Login matches the requested site, best first.

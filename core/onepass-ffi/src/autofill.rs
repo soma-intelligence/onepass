@@ -128,6 +128,76 @@ fn item_quality<'a>(service: &Site, item: &'a Item) -> Option<(FfiMatchQuality, 
     }
 }
 
+/// An App ID as compared for AutoFill: trimmed, lower-case ASCII, without
+/// the team prefix (`ABCDE12345.com.example.app` is `com.example.app`: a
+/// bundle id is unique across teams). Only letters, digits, `.`, `-` and
+/// `_`, with at least one dot: anything else (a URL, a path) is no app.
+fn app_key(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let bare = match raw.split_once('.') {
+        Some((team, rest))
+            if team.len() == 10
+                && team
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                && rest.contains('.') =>
+        {
+            rest
+        }
+        _ => raw,
+    };
+    let ok = !bare.is_empty()
+        && bare.contains('.')
+        && !bare.starts_with('.')
+        && !bare.ends_with('.')
+        && bare
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    ok.then(|| bare.to_ascii_lowercase())
+}
+
+/// What a request names, once checked: a site, or an app (its `app_key`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Target {
+    Site(Site),
+    App(String),
+}
+
+fn target(service: &FfiAutofillService) -> Option<Target> {
+    match service {
+        FfiAutofillService::Site { value } => site(value).map(Target::Site),
+        FfiAutofillService::App { id } => app_key(id).map(Target::App),
+    }
+}
+
+/// The key of a target in the usage memory: the registrable domain of a
+/// site, `app:<app key>` for an app (a colon never appears in a domain, so
+/// the two never meet).
+fn usage_key(t: &Target) -> String {
+    match t {
+        Target::Site(s) => usage_site(s),
+        Target::App(a) => format!("app:{a}"),
+    }
+}
+
+/// An app matches a Login only through its `apps`, exactly (`ExactHost`).
+/// The URL returned is the Login's first (its icon), never a match.
+fn target_quality<'a>(t: &Target, item: &'a Item) -> Option<(FfiMatchQuality, Option<&'a str>)> {
+    match t {
+        Target::Site(s) => item_quality(s, item),
+        Target::App(a) => item
+            .apps
+            .iter()
+            .any(|x| app_key(x).as_deref() == Some(a.as_str()))
+            .then(|| {
+                (
+                    FfiMatchQuality::ExactHost,
+                    item.urls.first().map(|u| u.url.as_str()),
+                )
+            }),
+    }
+}
+
 fn filled(item: &Item, id: &str) -> bool {
     match item.field(id).map(|f| &f.value) {
         Some(FieldValue::Password(v) | FieldValue::Otp(v) | FieldValue::Concealed(v)) => {
@@ -257,6 +327,13 @@ impl Learned {
             .filter(|u| u.rule != MatchRule::Never)
             .filter_map(|u| site(&u.url))
             .map(|s| usage_site(&s))
+            .chain(
+                items
+                    .iter()
+                    .flat_map(|i| i.apps.iter())
+                    .filter_map(|a| app_key(a))
+                    .map(|a| usage_key(&Target::App(a))),
+            )
             .collect();
         let now = OffsetDateTime::now_utc();
         let client = ClientContext::system_autofill();
@@ -311,8 +388,12 @@ fn identities_of(
     out: &mut Vec<FfiAutofillIdentity>,
 ) {
     let user = item.subtitle();
-    let rank = |kind: FfiAutofillKind, service: &str| {
-        let key = site(service).map(|s| usage_site(&s));
+    let rank = |kind: FfiAutofillKind, service: &str, is_app: bool| {
+        let key = if is_app {
+            app_key(service).map(|a| usage_key(&Target::App(a)))
+        } else {
+            site(service).map(|s| usage_site(&s))
+        };
         let last = key.as_ref().and_then(|s| last_used.get(kind, s));
         let base = if last == Some(item.id) {
             RANK_LAST_USED
@@ -328,10 +409,10 @@ fn identities_of(
     } else {
         String::new()
     };
-    let entry =
-        |kind, service: String, credential_id, user_handle, user: &str| FfiAutofillIdentity {
+    let entry = |kind, service: String, is_app: bool, credential_id, user_handle, user: &str| {
+        FfiAutofillIdentity {
             kind,
-            rank: rank(kind, &service),
+            rank: rank(kind, &service, is_app),
             service,
             user: user.to_owned(),
             record_id: record_id(item),
@@ -343,24 +424,34 @@ fn identities_of(
             } else {
                 String::new()
             },
-        };
-    let hosts: Vec<String> = item
+            service_is_app: is_app,
+        }
+    };
+    // The URL hosts, then the apps (as stored: the system gave that App ID).
+    let mut services: Vec<(String, bool)> = item
         .urls
         .iter()
         .filter(|u| u.rule != MatchRule::Never)
         .filter_map(|u| site(&u.url))
-        .map(|s| s.host)
+        .map(|s| (s.host, false))
         .collect();
+    services.extend(
+        item.apps
+            .iter()
+            .filter(|a| app_key(a).is_some())
+            .map(|a| (a.trim().to_owned(), true)),
+    );
     let shown = if user.trim().is_empty() {
         item.title.as_str()
     } else {
         user.as_str()
     };
     if !user.trim().is_empty() || filled(item, "password") || !sign_in_with.is_empty() {
-        for h in &hosts {
+        for (h, app) in &services {
             out.push(entry(
                 FfiAutofillKind::Password,
                 h.clone(),
+                *app,
                 Vec::new(),
                 Vec::new(),
                 if sign_in_with.is_empty() { shown } else { "" },
@@ -368,10 +459,11 @@ fn identities_of(
         }
     }
     if filled(item, "totp") {
-        for h in &hosts {
+        for (h, app) in &services {
             out.push(entry(
                 FfiAutofillKind::OneTimeCode,
                 h.clone(),
+                *app,
                 Vec::new(),
                 Vec::new(),
                 &user,
@@ -382,6 +474,7 @@ fn identities_of(
         out.push(entry(
             FfiAutofillKind::Passkey,
             p.rp_id.clone(),
+            false,
             p.credential_id.clone(),
             p.user_handle.clone(),
             &p.user_name,
@@ -429,6 +522,15 @@ pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
         has_totp: filled(item, "totp"),
         affinity: 0,
     }
+}
+
+/// When the Login was last filled anywhere (nanoseconds, 0 for never).
+fn last_use_nanos(item: &Item) -> i64 {
+    item.usage
+        .iter()
+        .map(|u| i64::try_from(u.last_at.unix_timestamp_nanos()).unwrap_or(i64::MAX))
+        .max()
+        .unwrap_or(0)
 }
 
 /// Puts the passkey in the first empty `passkeys` field, or in a copy right
@@ -582,8 +684,25 @@ impl Session {
         include_all: bool,
         excluded_vault_ids: Vec<String>,
     ) -> Result<Vec<FfiAutofillCandidate>, OnePassError> {
+        self.autofill_service_candidates(
+            FfiAutofillService::Site { value: service },
+            include_all,
+            excluded_vault_ids,
+        )
+    }
+
+    /// `autofill_candidates` for a typed service: a site as there, an app
+    /// matched only by the Logins' `apps` (exact App ID, team prefix and
+    /// case aside), never as a domain. `include_all` appends the rest as
+    /// `Other`, the ones used last first (no service at all: recent first).
+    pub fn autofill_service_candidates(
+        &self,
+        service: FfiAutofillService,
+        include_all: bool,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<Vec<FfiAutofillCandidate>, OnePassError> {
         let excluded = parse_ids(&excluded_vault_ids)?;
-        let target = site(&service);
+        let target = target(&service);
         self.with(|repo| {
             let mut by_id: HashMap<Id, VecDeque<FfiAutofillCandidate>> = HashMap::new();
             let mut cands = Vec::new();
@@ -591,7 +710,7 @@ impl Session {
                 if !live_login(&item) || item.hide_from_autofill {
                     continue;
                 }
-                let best = target.as_ref().and_then(|t| item_quality(t, &item));
+                let best = target.as_ref().and_then(|t| target_quality(t, &item));
                 let (q, url) = match best {
                     Some((q, url)) => (q, url),
                     None if include_all => (
@@ -604,7 +723,12 @@ impl Session {
                     .entry(item.id)
                     .or_default()
                     .push_back(candidate(&item, q, url));
-                cands.push(to_candidate(&item, q));
+                let mut c = to_candidate(&item, q);
+                if q == FfiMatchQuality::Other {
+                    // A manual choice: the Login used last anywhere first.
+                    c.updated_at = c.updated_at.max(last_use_nanos(&item));
+                }
+                cands.push(c);
             }
             // No usage and no typed username, so `now` never enters a score.
             order(&mut cands, None, 0, Tiebreak::FavoriteThenRecent);
@@ -629,21 +753,36 @@ impl Session {
         request: FfiAutofillRequest,
         excluded_vault_ids: Vec<String>,
     ) -> Result<FfiAutofillPlan, OnePassError> {
+        self.autofill_service_plan(
+            FfiAutofillService::Site { value: service },
+            request,
+            excluded_vault_ids,
+        )
+    }
+
+    /// `autofill_plan` for a typed service (an app: its Logins by `apps`,
+    /// its memory under `app:<id>`).
+    pub fn autofill_service_plan(
+        &self,
+        service: FfiAutofillService,
+        request: FfiAutofillRequest,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<FfiAutofillPlan, OnePassError> {
         let excluded = parse_ids(&excluded_vault_ids)?;
-        let Some(target) = site(&service) else {
+        let Some(target) = target(&service) else {
             return Ok(FfiAutofillPlan {
                 item_ids: Vec::new(),
                 confidence: FfiConfidence::Low,
             });
         };
-        let key = usage_site(&target);
+        let key = usage_key(&target);
         self.with(|repo| {
             let items = visible_items(repo, &excluded)?;
             let matched: Vec<(&Item, FfiMatchQuality)> = items
                 .iter()
                 .filter(|i| offerable(i))
                 .filter(|i| request == FfiAutofillRequest::Password || filled(i, "totp"))
-                .filter_map(|i| item_quality(&target, i).map(|(q, _)| (i, q)))
+                .filter_map(|i| target_quality(&target, i).map(|(q, _)| (i, q)))
                 .collect();
             let last = last_used_on(matched.iter().map(|(i, _)| *i), &key);
             // The choices made in the system AutoFill on this device; a
@@ -695,20 +834,35 @@ impl Session {
         service: String,
         excluded_vault_ids: Vec<String>,
     ) -> Result<bool, OnePassError> {
+        self.note_autofill_service_use(
+            record_id,
+            FfiAutofillService::Site { value: service },
+            excluded_vault_ids,
+        )
+    }
+
+    /// `note_autofill_use` for a typed service: an app is remembered under
+    /// `app:<id>`, and only for a Login whose `apps` hold it.
+    pub fn note_autofill_service_use(
+        &self,
+        record_id: String,
+        service: FfiAutofillService,
+        excluded_vault_ids: Vec<String>,
+    ) -> Result<bool, OnePassError> {
         let (vault_id, item_id) = parse_record_id(&record_id)?;
         let excluded = parse_ids(&excluded_vault_ids)?;
         if excluded.contains(&vault_id) {
             return Err(OnePassError::NotFound);
         }
-        let target = site(&service).ok_or_else(|| invalid("service"))?;
-        let key = usage_site(&target);
+        let target = target(&service).ok_or_else(|| invalid("service"))?;
+        let key = usage_key(&target);
         self.with(|repo| {
             let items = visible_items(repo, &excluded)?;
             let item = items
                 .iter()
                 .find(|i| i.id == item_id && i.vault_id == vault_id && offerable(i))
                 .ok_or(OnePassError::NotFound)?;
-            if item_quality(&target, item).is_none() {
+            if target_quality(&target, item).is_none() {
                 return Err(invalid("service"));
             }
             let force = item.used_later_by_another(&key, items.iter().filter(|i| offerable(i)));
@@ -1017,6 +1171,148 @@ mod tests {
         assert!(note(b));
         let u = usage_of(&session, vault_id, b);
         assert_eq!((u.form_shape_hash, u.count), (shape, 2));
+    }
+
+    /// Sets the `apps` and the URL of a saved Login.
+    fn set_login(session: &Session, vault: Id, item: Id, apps: &[&str], url: Option<&str>) {
+        let mut it = session.item(id_hex(vault), id_hex(item)).unwrap();
+        it.apps = apps.iter().map(|a| (*a).to_owned()).collect();
+        it.urls = url
+            .map(|u| {
+                vec![FfiUrl {
+                    label: String::new(),
+                    url: u.into(),
+                    rule: FfiMatchRule::Domain,
+                    primary: true,
+                }]
+            })
+            .unwrap_or_default();
+        session.save_item(it).unwrap();
+    }
+
+    fn app(id: &str) -> FfiAutofillService {
+        FfiAutofillService::App { id: id.into() }
+    }
+
+    #[test]
+    fn app_ids_are_normalized() {
+        assert_eq!(
+            app_key(" com.Example.App ").as_deref(),
+            Some("com.example.app")
+        );
+        assert_eq!(
+            app_key("ABCDE12345.com.example.app").as_deref(),
+            Some("com.example.app")
+        );
+        assert_eq!(app_key("ABCDE12345.com").as_deref(), Some("abcde12345.com"));
+        assert_eq!(app_key("https://example.app"), None);
+        assert_eq!(app_key("example"), None);
+        assert_eq!(app_key(""), None);
+        assert_eq!(app_key(".com.x"), None);
+    }
+
+    /// G1, G2: an app request matches only the Logins whose `apps` hold that
+    /// App ID, never a site whose domain looks like it (`example.app`).
+    #[test]
+    fn an_app_matches_only_its_apps_never_a_lookalike_domain() {
+        let (_dir, session, vault, a, b) = two_logins();
+        set_login(&session, vault, a, &["com.example.app"], None);
+        set_login(&session, vault, b, &[], Some("https://example.app"));
+        let ids = |svc: FfiAutofillService, all: bool| -> Vec<(String, FfiMatchQuality)> {
+            session
+                .autofill_service_candidates(svc, all, vec![])
+                .unwrap()
+                .into_iter()
+                .map(|c| (c.item_id, c.quality))
+                .collect()
+        };
+        assert_eq!(
+            ids(app("com.example.app"), false),
+            vec![(id_hex(a), FfiMatchQuality::ExactHost)]
+        );
+        // Team prefix and case aside, the same App ID.
+        assert_eq!(ids(app("ABCDE12345.COM.example.app"), false).len(), 1);
+        // Another app, or no app at all: nothing.
+        assert!(ids(app("com.example.other"), false).is_empty());
+        assert!(ids(app("not an app"), false).is_empty());
+        // The site item is only an explicit other choice for the app.
+        assert_eq!(
+            ids(app("com.example.app"), true),
+            vec![
+                (id_hex(a), FfiMatchQuality::ExactHost),
+                (id_hex(b), FfiMatchQuality::Other)
+            ]
+        );
+        // And the site never gets the app item.
+        let site_ids = ids(
+            FfiAutofillService::Site {
+                value: "example.app".into(),
+            },
+            false,
+        );
+        assert_eq!(site_ids, vec![(id_hex(b), FfiMatchQuality::ExactHost)]);
+
+        let plan = session
+            .autofill_service_plan(app("com.example.app"), FfiAutofillRequest::Password, vec![])
+            .unwrap();
+        assert_eq!(plan.item_ids, vec![id_hex(a)]);
+
+        // A use is remembered under the app, for a Login that holds it only.
+        let record = |id: Id| format!("{}:{}", id_hex(vault), id_hex(id));
+        assert!(
+            session
+                .note_autofill_service_use(record(a), app("com.example.app"), vec![])
+                .unwrap()
+        );
+        let err = session.note_autofill_service_use(record(b), app("com.example.app"), vec![]);
+        assert!(matches!(err, Err(OnePassError::InvalidInput { .. })));
+        let item = session
+            .with(|repo| {
+                let v = find_vault(repo, vault)?;
+                find_item(repo, &v, a)
+            })
+            .unwrap();
+        assert!(item.usage_on("app:com.example.app").is_some());
+
+        // Its identity is published as an app, ranked by that use.
+        let ids = session.autofill_identities(vec![]).unwrap();
+        let mine: Vec<_> = ids
+            .iter()
+            .filter(|i| i.record_id == record(a) && i.kind == FfiAutofillKind::Password)
+            .collect();
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].service, "com.example.app");
+        assert!(mine[0].service_is_app);
+        assert_eq!(mine[0].rank, RANK_LAST_USED);
+        assert!(
+            ids.iter()
+                .filter(|i| i.record_id == record(b))
+                .all(|i| !i.service_is_app && i.service == "example.app")
+        );
+    }
+
+    /// G8: without a service, the Login used last comes first.
+    #[test]
+    fn other_logins_are_ordered_by_last_use() {
+        let (_dir, session, vault, a, b) = two_logins();
+        let record = |id: Id| format!("{}:{}", id_hex(vault), id_hex(id));
+        // B was saved last; A was filled since.
+        session
+            .note_autofill_use(record(a), "example.com".into(), vec![])
+            .unwrap();
+        let order: Vec<String> = session
+            .autofill_service_candidates(
+                FfiAutofillService::Site {
+                    value: String::new(),
+                },
+                true,
+                vec![],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|c| c.item_id)
+            .collect();
+        assert_eq!(order, vec![id_hex(a), id_hex(b)]);
     }
 
     #[test]
