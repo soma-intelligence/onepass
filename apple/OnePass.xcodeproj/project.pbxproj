@@ -19,6 +19,7 @@
 		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
 		0653DC989198E82BBBFF45B3 /* OnePassWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */; };
 		0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49841660587A002A57EE289D /* PublicSessionMonitor.swift */; };
+		0810BE8E5A9F50A6D568D9FD /* NewLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766D5CFC89128E356E135A97 /* NewLoginView.swift */; };
 		0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */; };
 		0C1F0AF7291B0BE18AD31812 /* IntentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */; };
 		0C3A47427E3A471666F650B4 /* OnePassNotifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BC80221CE7ABDFFC4E080905 /* OnePassNotifications.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -437,6 +438,7 @@
 		73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
 		73396E5534184EF7CE76A170 /* SecuritySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettings.swift; sourceTree = "<group>"; };
 		75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTab.swift; sourceTree = "<group>"; };
+		766D5CFC89128E356E135A97 /* NewLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewLoginView.swift; sourceTree = "<group>"; };
 		76BD2E7EC1ED66DE899B55F0 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		7787CB5F5A9CEEF470689AF5 /* AccountsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSection.swift; sourceTree = "<group>"; };
 		782CA900B64928632D2B1890 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1018,6 +1020,7 @@
 				A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */,
 				8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */,
 				EC56C781305F7023C4148362 /* ConfigurationView.swift */,
+				766D5CFC89128E356E135A97 /* NewLoginView.swift */,
 				9ABC26729FF5D1EFA4922176 /* PasskeyRegistrationView.swift */,
 				28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */,
 				D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */,
@@ -1941,6 +1944,7 @@
 				D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */,
 				FA3F1D0B10908B378CF4ADDF /* ConfigurationView.swift in Sources */,
 				6A373D25175955A17E5FA4D5 /* CredentialProviderViewController.swift in Sources */,
+				0810BE8E5A9F50A6D568D9FD /* NewLoginView.swift in Sources */,
 				93543E3F4F3947F82537D4EA /* PasskeyRegistrationView.swift in Sources */,
 				291F8E1E5A64CAF3599FA6B0 /* SavePasswordView.swift in Sources */,
 				4A8E2165E6F9C4ABCF0D37D2 /* TextInsertionView.swift in Sources */,

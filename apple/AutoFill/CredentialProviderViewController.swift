@@ -36,13 +36,12 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     private var requestToken = 0
     /// The current request was answered or abandoned: nothing more goes to `extensionContext`.
     private var requestEnded = true
-    #if os(iOS)
-    /// On screen: Face ID may start. Before that, iOS cancels it (systemCancel), which used up the
-    /// one automatic attempt and left the password field (seen on the second sign-in step).
+    /// On screen: Face ID / Touch ID may start. Before that, iOS cancels it (systemCancel), which used
+    /// up the one automatic attempt and left the password field (seen on the second sign-in step).
+    /// The Mac waits the same way (MACAPP-10).
     private var appeared = false
     /// The `start` of a request prepared before the sheet came up.
     private var pendingStart: (() -> Void)?
-    #endif
 
     #if os(macOS)
     /// No nib: an `NSViewController` without one must create its own view.
@@ -51,17 +50,20 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         preferredContentSize = NSSize(width: 440, height: 560)
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        appearedNow()
+    }
+
     override func viewDidDisappear() {
         super.viewDidDisappear()
+        appeared = false
         tearDown()
     }
     #else
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        appeared = true
-        let start = pendingStart
-        pendingStart = nil
-        start?()
+        appearedNow()
     }
 
     /// Dismissed by the system (or after completion): lock and forget the session.
@@ -71,6 +73,13 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         tearDown()
     }
     #endif
+
+    private func appearedNow() {
+        appeared = true
+        let start = pendingStart
+        pendingStart = nil
+        start?()
+    }
 
     // MARK: - Lists
 
@@ -193,45 +202,74 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     // MARK: - Request lifecycle
 
-    /// A request with an interface: a fresh session and model, the root view, then `start`.
-    private func begin(_ request: AutoFillRequest) {
+    /// A request with an interface: a fresh session and model, the root view, then `start` once the
+    /// sheet is on screen. `slot`: the account picked in the switcher (nil: routing decides).
+    private func begin(_ request: AutoFillRequest, slot: String? = nil) {
         tearDown()
         requestToken &+= 1
         requestEnded = false
         let token = requestToken
-        let session = VaultSession(environment: Self.environment(for: request))
+        let environment = Self.environment(for: request, slot: slot)
+        let session = VaultSession(environment: environment)
         let model = AutoFillModel(session: session, request: request, ownAppIDs: Self.ownAppIDs()) {
             [weak self] result in
             self?.finish(result, for: request, token: token)
         }
         self.session = session
         self.model = model
-        host(AutoFillRootView(model: model, session: session, request: request))
-        #if os(iOS)
+        host(AutoFillRootView(
+            model: model, session: session, request: request,
+            accounts: Self.accountChoices(for: request, current: slot)
+        ) { [weak self] picked in
+            // Another account: this session is locked and dropped first (one account at a time, M6).
+            guard let self, token == self.requestToken, !self.requestEnded else { return }
+            self.begin(request, slot: picked)
+        })
         let start = { Task { await model.start() } }
         if appeared {
             _ = start()
         } else {
             pendingStart = { _ = start() }
         }
-        #else
-        Task { await model.start() }
-        #endif
     }
 
     /// The shared store, settings and keychain service of the account that answers the request: the
-    /// one whose work domains claim its host, else the primary account (multi-account spec 8). In a
-    /// Debug build after an isolated launch of the app (UI tests), the isolated ones (`UITestIsolation`).
-    private static func environment(for request: AutoFillRequest) -> VaultEnvironment {
+    /// one picked in the switcher, else the one whose work domains claim its host, else the primary
+    /// account (multi-account spec 8). In a Debug build after an isolated launch of the app (UI tests),
+    /// the isolated ones (`UITestIsolation`).
+    private static func environment(for request: AutoFillRequest, slot: String? = nil) -> VaultEnvironment {
         #if DEBUG
         if let isolated = UITestIsolation.extensionEnvironment() { return isolated }
         #endif
+        if let slot { return VaultEnvironment.autoFill(slot: slot) }
         return VaultEnvironment.autoFill(for: request)
     }
 
+    /// The accounts of the switcher (lists only, two accounts or more), the current one marked.
+    private static func accountChoices(for request: AutoFillRequest, current: String?) -> AutoFillAccounts? {
+        switch request {
+        case .credentialList, .oneTimeCodeList, .credential(_, .password, _, _), .credential(_, .oneTimeCode, _, _):
+            break
+        default:
+            return nil
+        }
+        #if DEBUG
+        if UITestIsolation.extensionEnvironment() != nil { return nil }
+        #endif
+        let store = AccountDirectoryStore(container: .resolve())
+        let accounts = store.autoFillAccounts()
+        guard accounts.count > 1 else { return nil }
+        return AutoFillAccounts(accounts: accounts, current: current ?? store.slot(for: request))
+    }
+
     private func answerWithoutInterface(_ request: AutoFillRequest) {
+        // A filled generated password waits in the account's keychain until a Login holds it (G3).
+        var drafts: GeneratedPasswordDrafts?
+        if case .savePassword(let save) = request, save.event == .generatedPasswordFilled {
+            drafts = GeneratedPasswordDrafts(environment: Self.environment(for: request))
+        }
         let result =
-            AutoFillModel.resultWithoutUserInteraction(for: request, ownAppIDs: Self.ownAppIDs())
+            AutoFillModel.resultWithoutUserInteraction(for: request, ownAppIDs: Self.ownAppIDs(), drafts: drafts)
             ?? .cancelled(.userInteractionRequired)
         answer(result, for: request)
     }
@@ -240,9 +278,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// locked, no completion), the session is locked and dropped, and the view is removed.
     private func tearDown() {
         requestEnded = true
-        #if os(iOS)
         pendingStart = nil
-        #endif
         model?.abandon()
         model = nil
         session?.lock(publishPending: false)
@@ -359,9 +395,17 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     // MARK: - System requests to AutoFillRequest
 
-    /// Domains or URLs as the system gives them: the model matches them with the core.
-    private static func services(_ identifiers: [ASCredentialServiceIdentifier]) -> [String] {
-        identifiers.map(\.identifier).filter { !$0.isEmpty }
+    /// Domains, URLs or App IDs as the system gives them, with their type (G2: an App ID is never
+    /// read as a host) and display name (G12). The model matches them with the core.
+    private static func services(_ identifiers: [ASCredentialServiceIdentifier]) -> [AutoFillService] {
+        identifiers.filter { !$0.identifier.isEmpty }.map(service)
+    }
+
+    private static func service(_ identifier: ASCredentialServiceIdentifier) -> AutoFillService {
+        if #available(iOS 26.2, macOS 26.2, *), identifier.type == .app {
+            return .app(identifier.identifier, displayName: identifier.displayName)
+        }
+        return .site(identifier.identifier)
     }
 
     /// A QuickType suggestion. `recordIdentifier` is `"<vault id>:<item id>"`; a password or code
@@ -369,8 +413,8 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     /// carries the identity's credential id (the model refuses an empty allow list).
     private static func directRequest(_ request: any ASCredentialRequest) -> AutoFillRequest? {
         let recordID = request.credentialIdentity.recordIdentifier ?? ""
-        // The host the identity was published for: the model checks the Login still matches it.
-        let service = request.credentialIdentity.serviceIdentifier.identifier
+        // The host or app the identity was published for: the model checks the Login still matches it.
+        let service = Self.service(request.credentialIdentity.serviceIdentifier)
         switch request.type {
         case .password:
             return .credential(recordID: recordID, kind: .password, passkey: nil, service: service)
@@ -431,7 +475,8 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         let title = request.title ?? (isApp ? identifier.displayName : nil)
         return SavePasswordRequest(
             service: service, serviceIsApp: isApp, user: request.credential.user,
-            password: request.credential.password, title: title, event: event)
+            password: request.credential.password, title: title, event: event,
+            displayName: isApp ? identifier.displayName : nil)
     }
     #endif
 

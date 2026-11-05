@@ -35,7 +35,7 @@ struct SavePasswordView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     AutoFillHeader(
                         type: .login, iconTitle: updating?.title ?? title, url: serviceURL, title: heading,
-                        subtitle: request.service)
+                        subtitle: request.typedService.shownName)
                         .padding(.bottom, 14)
                     if let updating {
                         AutoFillLabel("views.itemUpdated")
@@ -64,7 +64,8 @@ struct SavePasswordView: View {
                     AutoFillLabel("views.login")
                     AutoFillCardRows {
                         AutoFillFieldRow(label: request.serviceIsApp ? Text("views.app") : Text("views.site")) {
-                            Text(verbatim: request.service).lineLimit(1).truncationMode(.middle)
+                            Text(verbatim: request.serviceIsApp ? request.typedService.shownName : request.service)
+                                .lineLimit(1).truncationMode(.middle)
                         }
                         AutoFillFieldRow(label: Text("views.username")) {
                             Text(verbatim: request.user.isEmpty ? String(localized: "views.none") : request.user)
