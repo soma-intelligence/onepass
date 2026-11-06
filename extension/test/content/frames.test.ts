@@ -205,6 +205,37 @@ describe("shell placement", () => {
     }
   });
 
+  it("iOS 27, keyboard up, page scrolled: the sheet and the save card sit in what the user sees", () => {
+    // Client coordinates follow the visual viewport there, position: fixed the layout viewport,
+    // which starts 330 px above (simulator: fixed layer at client top -330, offsetTop 330).
+    setPage(`<input id="f" data-test-rect="10,100,200,30">`);
+    withViewport({ offsetTop: 330, height: 384 }, () => {
+      shell = createShell(document);
+      shell.layer.getBoundingClientRect = () => ({ left: 0, top: -330, right: 0, bottom: -330, width: 0, height: 0, x: 0, y: -330, toJSON: () => ({}) }) as DOMRect;
+      const frames = createFrames({ shell, doc: document, geometry: testGeometry, layout: () => PHONE, occupants: () => [] });
+      frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, document.getElementById("f"));
+      const menu = shell.root.querySelector("iframe")!;
+      frames.resize("menu", 200);
+      // On the screen: the sheet ends on the keyboard (client 384) and stays under the field.
+      let top = parseFloat(menu.style.top) - 330;
+      expect(menu.classList.contains("sheet")).toBe(true);
+      expect(top + parseFloat(menu.style.height)).toBe(384);
+      expect(top).toBeGreaterThanOrEqual(130);
+      // The field just above the keyboard: the menu goes above it and never covers it.
+      document.getElementById("f")!.setAttribute("data-test-rect", "10,300,200,30");
+      frames.reposition();
+      top = parseFloat(menu.style.top) - 330;
+      expect(top + parseFloat(menu.style.height)).toBeLessThanOrEqual(300);
+      expect(top).toBeGreaterThanOrEqual(0);
+      frames.removeFrame("menu");
+      frames.showFrame("save", `${CHROME}save.html#${TOKEN}`);
+      const save = shell.root.querySelector("iframe")!;
+      // At the top of what the user sees (client 0), 12 px in.
+      expect(parseFloat(save.style.top) - 330).toBe(12);
+      frames.destroy();
+    });
+  });
+
   it("IPAD-02: the sheet never covers its field; a field sitting low gets the menu above it", () => {
     setPage(`<input id="f" data-test-rect="10,100,200,30">`);
     withViewport({ offsetTop: 0, height: 400 }, () => {

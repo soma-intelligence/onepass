@@ -159,6 +159,15 @@ export interface Shell {
   readonly root: ShadowRoot;
   /** Container of icons, highlight ring and frames. */
   readonly layer: HTMLElement;
+  /**
+   * Where `top: 0; left: 0` of the fixed layer sits in client coordinates
+   * (`getBoundingClientRect`). Zero on desktop. iOS 27 Safari with the keyboard
+   * up and the page scrolled: client coordinates follow the visual viewport while
+   * `position: fixed` follows the layout viewport, which then starts above the
+   * screen (top = -visualViewport.offsetTop). A box placed at a field's client
+   * position must subtract this.
+   */
+  origin(): { left: number; top: number };
   /** True for the host element (events retargeted out of the shadow root). */
   isHost(node: EventTarget | null): boolean;
   /**
@@ -193,6 +202,10 @@ export function createShell(doc: Document): Shell {
     root,
     layer,
     isHost: (node) => node === host,
+    origin: () => {
+      const r = layer.getBoundingClientRect();
+      return { left: Number.isFinite(r.left) ? r.left : 0, top: Number.isFinite(r.top) ? r.top : 0 };
+    },
     ensureAttached: () => {
       const moved = attach();
       if (moved) for (const cb of reattached) cb();
@@ -396,6 +409,15 @@ export function createFrames(opts: FramesOptions): Frames {
     return { w: view?.innerWidth ?? 1024, h: view?.innerHeight ?? 768 };
   };
   /**
+   * The element's box in the fixed layer's coordinates, the ones `left` and `top`
+   * of our frames take and the visual viewport's offsets are counted in.
+   */
+  const fixedRect = (el: Element): Rect => {
+    const r = geometry(el).rect;
+    const o = shell.origin();
+    return { left: r.left - o.left, top: r.top - o.top, width: r.width, height: r.height };
+  };
+  /**
    * The part of the page the user sees. On iOS the keyboard shrinks the
    * visual viewport and not the layout one, so a sheet placed on innerHeight
    * lands under the keyboard.
@@ -413,7 +435,7 @@ export function createFrames(opts: FramesOptions): Frames {
   /** The anchor's box when the user can see it (inside the visible part), else null. */
   const seen = (anchor: Element | null, v: { top: number; h: number }): Rect | null => {
     if (!anchor?.isConnected) return null;
-    const r: Rect = geometry(anchor).rect;
+    const r = fixedRect(anchor);
     if (r.width <= 0 || r.height <= 0 || r.top + r.height <= v.top || r.top >= v.top + v.h) return null;
     return r;
   };
@@ -469,7 +491,7 @@ export function createFrames(opts: FramesOptions): Frames {
       left = Math.max(EDGE, Math.round((w - width) / 2));
       if (touch) top = Math.max(0, Math.round(visible().top)) + EDGE;
     } else if (anchor && kind !== "save") {
-      const r: Rect = geometry(anchor).rect;
+      const r = fixedRect(anchor);
       left = Math.max(EDGE, Math.min(r.left, w - width - EDGE));
       top = r.top + r.height + GAP;
       if (touch) {
@@ -548,7 +570,7 @@ export function createFrames(opts: FramesOptions): Frames {
 
   const placeRing = () => {
     if (!ring) return;
-    const r = geometry(ring.el).rect;
+    const r = fixedRect(ring.el);
     const s = ring.box.style;
     ring.box.hidden = !ring.el.isConnected || r.width === 0;
     s.setProperty("left", `${Math.round(r.left)}px`);
