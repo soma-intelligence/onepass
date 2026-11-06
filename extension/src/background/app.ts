@@ -213,6 +213,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       await overlays.yieldTo(p.tabId).catch(() => false);
       return savePrompts.open(p);
     },
+    recentlyDismissed: (origin: string, key: string) => savePrompts.recentlyDismissed(origin, key),
   };
   const saveFlow = new SaveFlow({
     session,
@@ -222,6 +223,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });
+  filler.onFilled = (tabId, origin, kind, itemId) => saveFlow.noteFilled(tabId, origin, kind, itemId);
   const providerFlows = new ProviderFlows({
     area: store.session,
     session,
@@ -438,6 +440,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       submitted_identifier: async (m, from) => {
         saveFlow.onIdentifier(m, from);
+        return {};
+      },
+      submitted_form: async (m, from) => {
+        saveFlow.onForm(m, from);
         return {};
       },
       provider_click: async (m, from) => {

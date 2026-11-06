@@ -1,0 +1,11 @@
+<div class="brand">Atlas Cloud</div>
+<h1>Livraison</h1>
+<p class="error" id="error">{{error}}</p>
+<form id="shipping" action="/shipping" method="post">
+  <label for="given-name">Prénom</label><input id="given-name" name="given" type="text" autocomplete="shipping given-name">
+  <label for="family-name">Nom</label><input id="family-name" name="family" type="text" autocomplete="shipping family-name">
+  <label for="address-line1">Adresse</label><input id="address-line1" name="a1" type="text" autocomplete="shipping address-line1">
+  <label for="postal-code">Code postal</label><input id="postal-code" name="zip" type="text" autocomplete="shipping postal-code">
+  <label for="city">Ville</label><input id="city" name="city" type="text" autocomplete="shipping address-level2">
+  <button id="submit" type="submit">Continuer</button>
+</form>

@@ -111,6 +111,16 @@ export interface Address {
   country: string;
 }
 
+/** What `check_identity` and `save_identity` take: values typed in a form, "" when absent. */
+export interface IdentityValues {
+  given_name: string;
+  family_name: string;
+  email: string;
+  tel: string;
+  organization: string;
+  address?: Address;
+}
+
 /** A passkey as `passkey_list` gives it: no key, no user handle. `credential_id` is base64url. */
 export interface PasskeySummary {
   item_id: string;
@@ -191,6 +201,38 @@ interface Ops {
       rule: MatchRule;
       tags: string[];
     };
+    res: { item_id: string };
+  };
+  /**
+   * A card typed by hand in a checkout (`save_prompt` only): `same` when a card with this number
+   * is there (expiry equal or unknown), `update` when only its expiry differs.
+   */
+  check_card: {
+    req: { ctx: Ctx; origin: string; number: string; exp_month: string; exp_year: string };
+    res: { status: "new" | "same" | "update"; item_id?: string; title?: string };
+  };
+  /** A new card, or with `item_id` the expiry of that card (same number). Never a security code. */
+  save_card: {
+    req: {
+      ctx: Ctx;
+      origin: string;
+      vault_id: string;
+      title: string;
+      cardholder: string;
+      number: string;
+      exp_month: string;
+      exp_year: string;
+      item_id?: string;
+    };
+    res: { item_id: string };
+  };
+  /** An identity or address typed by hand: `same` when one item already holds every value. */
+  check_identity: {
+    req: { ctx: Ctx; origin: string } & IdentityValues;
+    res: { status: "new" | "same"; item_id?: string; title?: string };
+  };
+  save_identity: {
+    req: { ctx: Ctx; origin: string; vault_id: string; title: string } & IdentityValues;
     res: { item_id: string };
   };
   update_password: {

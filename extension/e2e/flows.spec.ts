@@ -200,13 +200,69 @@ paired("signup_generates_password", async ({ ext }) => {
   expect(ext.server.users.get("alex.signup@atlas.dev")).toBe(generated);
 
   // The generated password was saved as a pending login at fill time; the
-  // signed-in page confirms it with the username, no prompt to answer.
+  // submission confirms it with the username, no question asked: the card
+  // only says it is saved.
   await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"confirm_pending"');
-  expect(ext.findExtFrame(page, "save")).toBeUndefined();
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText("alex.signup@atlas.dev");
+  await expect(card.locator("button", { hasText: "Enregistrer" })).toHaveCount(0);
   expect(ext.audit()).not.toContain(generated);
   await page.goto(`${ATLAS}/logout`);
   const again = await ext.openMenu(page, "#email");
   await expect(again.locator("button.row").filter({ hasText: "alex.signup@atlas.dev" })).toHaveCount(1);
+});
+
+paired("save_card_after_checkout", async ({ ext }) => {
+  const { page } = ext;
+  // A test card number (Luhn valid, not a real card), typed by hand.
+  const typeCard = async () => {
+    await page.goto(`${ATLAS}/checkout`);
+    await page.locator("#cc-name").fill("Sam Leroy");
+    await page.locator("#cc-number").fill("5555 5555 5555 4444");
+    await page.locator("#cc-exp").fill("07/31");
+    await page.locator("#cc-csc").fill("987");
+    await page.locator("#submit").click();
+    await expect(page.locator("#status")).toHaveText("Paiement accepté");
+  };
+  await typeCard();
+  const card = await ext.extFrame(page, "save");
+  await expect(card.getByText("Enregistrer cette carte ?")).toBeVisible();
+  await expect(card.getByText("Carte •••• 4444 · exp. 07/31")).toBeVisible();
+  await ext.settle();
+  await card.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(card.getByText("Carte enregistrée")).toBeVisible();
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"save_card"');
+  expect(ext.audit()).not.toContain("5555555555554444");
+  const saves = () => (ext.audit().match(/"op":"save_card"/g) ?? []).length;
+  expect(saves()).toBe(1);
+  // The same card typed again by hand: the card still shows (a page must not learn what the
+  // vault holds), and its Save writes nothing.
+  await typeCard();
+  const again = await ext.extFrame(page, "save");
+  await expect(again.getByText("Enregistrer cette carte ?")).toBeVisible();
+  await ext.settle();
+  await again.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(again.getByText("Déjà dans OnePass")).toBeVisible();
+  expect(saves()).toBe(1);
+});
+
+paired("save_address_after_shipping", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/shipping`);
+  await page.locator("#given-name").fill("Sam");
+  await page.locator("#family-name").fill("Leroy");
+  await page.locator("#address-line1").fill("8 avenue des Tilleuls");
+  await page.locator("#postal-code").fill("69003");
+  await page.locator("#city").fill("Lyon");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Adresse enregistrée");
+  const card = await ext.extFrame(page, "save");
+  await expect(card.getByText("Enregistrer cette adresse ?")).toBeVisible();
+  await expect(card.getByText("8 avenue des Tilleuls, 69003, Lyon")).toBeVisible();
+  await ext.settle();
+  await card.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(card.getByText("Identité enregistrée")).toBeVisible();
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"save_identity"');
 });
 
 paired("chain_single_page", async ({ ext }) => {

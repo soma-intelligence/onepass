@@ -6,7 +6,7 @@ import { createBackground } from "../../src/background/app";
 import type { ChainDriver } from "../../src/background/chain/types";
 import { contentSender } from "../../src/background/frames";
 import { NEVER_SAVE_KEY } from "../../src/background/never-save";
-import { SAVE_TTL_MS, titleFromSite } from "../../src/background/save";
+import { DISMISS_QUIET_MS, SAVE_TTL_MS, cardQuietKey, loginQuietKey, titleFromSite } from "../../src/background/save";
 import { BgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import type { ChainView } from "../../src/shared/ui";
@@ -781,6 +781,131 @@ describe("save prompt", () => {
     expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ err: "locked" });
     expect(opened.n).toBe(0);
     expect(client.requests.some((r) => r.op === "save_login" || r.op === "unlock")).toBe(false);
+  });
+
+  it("'Pas maintenant' quiets that very credential only, for a few minutes", async () => {
+    const { ext, bg, clock } = await setup();
+    const token = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+    const same = loginQuietKey("ALEX@atlas.dev ", "typed-Secret-1");
+    expect(await bg.saves.recentlyDismissed(SITE, same)).toBe(true);
+    // Another password, another account, another site: asked as usual.
+    expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-2"))).toBe(false);
+    expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("sam@atlas.dev", "typed-Secret-1"))).toBe(false);
+    expect(await bg.saves.recentlyDismissed("https://borealis.test", same)).toBe(false);
+    // Same site, another subdomain: the same registrable domain, still quiet.
+    expect(await bg.saves.recentlyDismissed("https://app.atlas-cloud.test", same)).toBe(true);
+    clock.t += DISMISS_QUIET_MS + 1;
+    expect(await bg.saves.recentlyDismissed(SITE, same)).toBe(false);
+  });
+
+  it("a card left alone or saved does not quiet anything; nothing secret is kept for the quiet rule", async () => {
+    const { ext, bg } = await setup();
+    const token = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token, decision: "later" }, uiSender("save.html", 7));
+    expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(false);
+    const t2 = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token: t2, decision: "save", edits }, uiSender("save.html", 7));
+    expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(false);
+    const t3 = await bg.saves.open(pending);
+    await ext.send({ type: "save_decide", token: t3, decision: "dismiss" }, uiSender("save.html", 7));
+    const held = JSON.stringify([...(bg.saves as unknown as { dismissed: Map<string, number> }).dismissed.keys()]);
+    expect(held).not.toContain("typed-Secret-1");
+    expect(held).not.toContain("alex");
+  });
+
+  it("IOSSAF-10: a login saved meanwhile (iOS's own sheet through OnePass) is not saved twice", async () => {
+    const { ext, bg, client } = await setup();
+    const token = await bg.saves.open(pending);
+    checkAnswer = { status: "same", item_id: "it_01" };
+    try {
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "already" } });
+      expect(client.requests.some((r) => r.op === "save_login")).toBe(false);
+    } finally {
+      checkAnswer = { status: "new" };
+    }
+  });
+
+  describe("card and identity typed by hand (MS-04)", () => {
+    const card = { cardholder: "Alex Martin", number: "4111111111111111", exp_month: "04", exp_year: "2029" };
+    const cardPending = { tabId: 7, origin: SITE, documentId: "doc-1", kind: "card" as const, status: "new" as const, username: "", password: "", card };
+    const identity = {
+      given_name: "Alex",
+      family_name: "Martin",
+      email: "alex@atlas.dev",
+      tel: "",
+      organization: "",
+      address: { line1: "1 rue de la Paix", line2: "", city: "Paris", postal_code: "75002", region: "", country: "FR" },
+    };
+    const vaultOnly = { title: "", username: "", password: "", vaultId: "v2", rule: "domain", tags: [] };
+
+    it("the card shows the last four digits and expiry, never the number; Save writes the card, no security code", async () => {
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open(cardPending);
+      const ui = uiSender(`save.html#${token}`, 7);
+      const init = await ext.send({ type: "save_init", token }, ui);
+      expect(init).toMatchObject({ ok: { kind: "card", status: "new", card: { last4: "1111", exp: "04/29", holder: "Alex Martin" } } });
+      expect(JSON.stringify(init)).not.toContain("4111111111111111");
+      expect(await ext.send({ type: "save_reveal", token }, ui)).toEqual({ ok: { password: "" } });
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits: vaultOnly }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
+      expect(client.requests.at(-1)).toEqual({
+        op: "save_card",
+        ctx: "save_prompt",
+        origin: SITE,
+        vault_id: "v2",
+        title: "",
+        cardholder: "Alex Martin",
+        number: "4111111111111111",
+        exp_month: "04",
+        exp_year: "2029",
+      });
+      expect(JSON.stringify(client.requests.at(-1))).not.toContain("cvv");
+    });
+
+    it("update: only the card check_card named gets the new expiry", async () => {
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open({ ...cardPending, status: "update", update: { itemId: "card_1", title: "Visa" } });
+      const ui = uiSender(`save.html#${token}`, 7);
+      expect(await ext.send({ type: "save_decide", token, decision: "update" }, ui)).toEqual({ ok: { outcome: "updated" } });
+      expect(client.requests.at(-1)).toMatchObject({ op: "save_card", item_id: "card_1", number: "4111111111111111", exp_month: "04" });
+    });
+
+    it("the card number is dropped with the card; 'Pas maintenant' quiets that card only", async () => {
+      const { ext, bg } = await setup();
+      const token = await bg.saves.open(cardPending);
+      const rec = await bg.saves.tokens.resolve(token, { tabId: 7 } as never);
+      await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+      expect(rec?.card).toBeUndefined();
+      expect(await bg.saves.recentlyDismissed(SITE, cardQuietKey("4111 1111 1111 1111", "04", "2029"))).toBe(true);
+      // Another card, or the same with another expiry (an update): asked.
+      expect(await bg.saves.recentlyDismissed(SITE, cardQuietKey("5555555555554444", "04", "2029"))).toBe(false);
+      expect(await bg.saves.recentlyDismissed(SITE, cardQuietKey("4111111111111111", "05", "2031"))).toBe(false);
+    });
+
+    it("an identity: name, e-mail and city on the card; Save writes the identity", async () => {
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open({ ...cardPending, kind: "identity", card: undefined, identity } as never);
+      const ui = uiSender(`save.html#${token}`, 7);
+      expect(await ext.send({ type: "save_init", token }, ui)).toMatchObject({
+        ok: { kind: "identity", identity: { name: "Alex Martin", email: "alex@atlas.dev", place: "1 rue de la Paix, 75002, Paris" } },
+      });
+      await ext.send({ type: "save_decide", token, decision: "save", edits: vaultOnly }, ui);
+      expect(client.requests.at(-1)).toEqual({ op: "save_identity", ctx: "save_prompt", origin: SITE, vault_id: "v2", title: "", ...identity });
+    });
+
+    it("a card OnePass already holds but did not fill here: shown, Save writes nothing and says so", async () => {
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open({ ...cardPending, known: true });
+      const n = client.requests.length;
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits: vaultOnly }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "already" } });
+      expect(client.requests.slice(n).some((r) => r.op === "save_card")).toBe(false);
+    });
+
+    it("update is refused for an identity (nothing named to update)", async () => {
+      const { ext, bg } = await setup();
+      const token = await bg.saves.open({ ...cardPending, kind: "identity", card: undefined, identity } as never);
+      expect(await ext.send({ type: "save_decide", token, decision: "update" }, uiSender("save.html", 7))).toEqual({ err: "invalid" });
+    });
   });
 
   it("provider link variant calls link_provider", async () => {

@@ -46,6 +46,7 @@ import {
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
+import { usernameFits } from "./username-fit";
 import { checkFrameUrl, createFrames, createShell, type Layout, type Shell, watchLayout } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
@@ -378,6 +379,17 @@ export function createContentScript(o: ContentOptions): ContentScript {
         sendResponse({ ok: true, matches: patternMatches(pattern, m.candidate) });
         return undefined;
       }
+      case "username_check": {
+        // A sign-up identifier against the username field's own attributes (MS-06).
+        if (!pinned(m.origin) || typeof m.formRef !== "string" || typeof m.candidate !== "string" || !parts) break;
+        const form = lineage.resolve(m.formRef, parts.observer.refresh());
+        const fi = form?.fields.find((x) => x.role === "username");
+        const el = fi ? refs.get(fi.ref) : null;
+        if (!el) break;
+        const fit = usernameFits(el, m.candidate);
+        sendResponse(fit.maxLength !== undefined ? { ok: true, matches: fit.matches, max_length: fit.maxLength } : { ok: true, matches: fit.matches });
+        return undefined;
+      }
       case "show_frame": {
         if (typeof m.kind !== "string" || !FRAME_KINDS.has(m.kind) || typeof m.url !== "string") break;
         // An origin pin (delivery by frameId only) must match this document.
@@ -518,6 +530,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
         onIdentifier: (c) => void send(c),
+        onForm: (c) => void send(c),
         onStep: (c) => recorder?.step(c),
         listen: (t, type, fn, options) => tree.listen(t, type, fn, options),
       });

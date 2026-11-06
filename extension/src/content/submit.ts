@@ -23,10 +23,24 @@
 // page could make OnePass report credentials of its choosing at will (save
 // prompt spoofing, probing for stored credentials).
 //
+// A card, identity or address form sent the same ways (submit event after a
+// gesture in it, its submit control, Enter) is reported as `submitted_form`:
+// the values of its card or identity roles, never a security code, so the
+// worker can offer to save a card or address typed by hand (MS-04).
+//
 // Forms in shadow roots (spec D1, D2): the caller's `listen` also listens on
 // every watched root, so a gesture is read from its real target (a `submit`
 // never leaves its root); a button's own shadow root is crossed to its host.
-import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
+import {
+  CARD_SUBMIT_ROLES,
+  type CsToBg,
+  type FormInfo,
+  type FormKind,
+  IDENTITY_SUBMIT_ROLES,
+  type PageAnalysis,
+  type SavedFormKind,
+  type SubmittedValues,
+} from "../shared/messages";
 import { buttonClass } from "./context";
 import { BUTTON_SELECTOR } from "./detect/forms";
 import type { RefRegistry } from "./detect/refs";
@@ -41,6 +55,14 @@ const SPA_POLL_MS = 250;
 export const GESTURE_MS = 5000;
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
+/** Forms whose values may be offered for saving, and as what. */
+const SAVED_KINDS: ReadonlyMap<FormKind, SavedFormKind> = new Map<FormKind, SavedFormKind>([
+  ["card", "card"],
+  ["identity", "identity"],
+  ["address", "identity"],
+]);
+const SAVED_FORM_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(SAVED_KINDS.keys());
+const GESTURE_KINDS: ReadonlySet<FormKind> = new Set<FormKind>([...CREDENTIAL_KINDS, ...SAVED_KINDS.keys()]);
 const BUTTONS =
   'button, input[type="submit" i], input[type="image" i], input[type="button" i], [role="button"], a:not([href]), a[href^="#"]';
 
@@ -63,6 +85,8 @@ export interface SubmitOptions {
   /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
+  /** A card, identity or address form was sent by the user. */
+  onForm?: (c: Extract<CsToBg, { type: "submitted_form" }>) => void;
   /** A lone identifier step was sent. */
   onIdentifier?: (c: Extract<CsToBg, { type: "submitted_identifier" }>) => void;
   /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
@@ -126,12 +150,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       ? el.form
       : (composedClosest(el, "form") as HTMLFormElement | null);
 
-  /** The credential form that `el` belongs to (field, button, or the form itself). */
-  const formOf = (el: Element): FormInfo | null => {
+  /** The credential form (or, with `kinds`, a form of those kinds) that `el` belongs to (field, button, or the form itself). */
+  const formOf = (el: Element, kinds: ReadonlySet<FormKind> = CREDENTIAL_KINDS): FormInfo | null => {
     const a = opts.latest();
     if (!a) return null;
     for (const f of a.forms) {
-      if (!CREDENTIAL_KINDS.has(f.kind)) continue;
+      if (!kinds.has(f.kind)) continue;
       const container = refs.get(f.ref);
       if (!container) continue;
       if (el === container) return f;
@@ -192,6 +216,39 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return fi ? refs.get(fi.ref) : null;
   };
 
+  /** The card or identity values of a sent form; null when there is nothing to offer. */
+  const readForm = (f: FormInfo): Extract<CsToBg, { type: "submitted_form" }> | null => {
+    const kind = SAVED_KINDS.get(f.kind);
+    if (!kind) return null;
+    const roles: readonly string[] = kind === "card" ? CARD_SUBMIT_ROLES : IDENTITY_SUBMIT_ROLES;
+    const values: Record<string, string> = {};
+    for (const fi of f.fields) {
+      if (!roles.includes(fi.role) || values[fi.role] !== undefined) continue;
+      const cells = (fi.parts ?? [fi.ref]).map((r) => refs.get(r)).filter((el): el is Element => el !== null && el !== undefined);
+      const v = cells.map((el) => nativeValue(el)).join("").trim();
+      if (v !== "") values[fi.role] = v.slice(0, 256);
+    }
+    if (kind === "card" && values.cc_number === undefined) return null;
+    if (Object.keys(values).length === 0) return null;
+    return { type: "submitted_form", formRef: f.ref, kind, values: values as SubmittedValues };
+  };
+  let lastForm: string | null = null;
+  const reportForm = (f: FormInfo | null) => {
+    if (!f || !opts.onForm) return;
+    const m = readForm(f);
+    if (!m) return;
+    // Same dedupe as a sign-in: the form and its value lengths only, cleared after 2 s.
+    const key = `${f.ref}\u0000${Object.entries(m.values).map(([k, v]) => `${k}:${v.length}`).join(",")}`;
+    if (lastForm === key) return;
+    lastForm = key;
+    const t = setTimeout(() => {
+      timers.delete(t);
+      if (lastForm === key) lastForm = null;
+    }, DEDUPE_MS);
+    timers.add(t);
+    opts.onForm(m);
+  };
+
   const report = (c: Credentials | null) => {
     if (!c) return;
     const key = `${c.formRef}\u0000${c.username}\u0000${c.password.length}`;
@@ -244,9 +301,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return !(ua && typeof ua.isActive === "boolean") || ua.isActive;
   };
 
-  /** Remembers a trusted click or keydown inside a credential form. */
+  /** Remembers a trusted click or keydown inside a credential, card or identity form. */
   const noteGesture = (target: Element) => {
-    const f = formOf(target);
+    const f = formOf(target, GESTURE_KINDS);
     if (f) gesture = { formRef: f.ref, at: Date.now() };
   };
 
@@ -257,7 +314,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
     if (e.target instanceof HTMLFormElement) opts.onStep?.(e.target);
     const f = formOf(e.target);
-    if (!f || !activated(f)) return;
+    if (!f) {
+      const saved = formOf(e.target, SAVED_FORM_KINDS);
+      if (saved && activated(saved)) reportForm(saved);
+      return;
+    }
+    if (!activated(f)) return;
     report(read(f));
     reportIdentifier(f);
   };
@@ -269,7 +331,11 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!button) return;
     if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
     const f = formOf(button);
-    if (!f) return;
+    if (!f) {
+      const saved = formOf(button, SAVED_FORM_KINDS);
+      if (saved && ((saved.submitRef !== undefined && refs.get(saved.submitRef) === button) || isSubmitType(button))) reportForm(saved);
+      return;
+    }
     const sends = (f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button);
     const snapshot = read(f);
     if (!snapshot) {
@@ -289,7 +355,10 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!(e.target instanceof HTMLInputElement)) return;
     opts.onStep?.(stepContainer(e.target));
     const f = formOf(e.target);
-    if (!f) return;
+    if (!f) {
+      reportForm(formOf(e.target, SAVED_FORM_KINDS));
+      return;
+    }
     report(read(f));
     reportIdentifier(f);
   };
@@ -319,6 +388,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       last = null;
       lastTimer = null;
       lastIdentifier = null;
+      lastForm = null;
       gesture = null;
     },
     clickRef(ref) {

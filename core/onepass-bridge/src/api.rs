@@ -191,6 +191,19 @@ pub struct Recipe {
     pub narrow: Option<u8>,
 }
 
+/// Address typed in a page form (`check_identity`, `save_identity`).
+/// Every part may be left out or empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AddressIn {
+    pub line1: String,
+    pub line2: String,
+    pub city: String,
+    pub postal_code: String,
+    pub region: String,
+    pub country: String,
+}
+
 /// An application request. Every operation carries the request `id`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -269,6 +282,81 @@ pub enum Request {
         vault_id: String,
         rule: Rule,
         tags: Vec<String>,
+    },
+    /// A card typed by hand in a checkout form: is it stored already?
+    /// `exp_month` and `exp_year` (2 or 4 digits) may be empty. Same reply
+    /// as `check_credentials`. Context `save_prompt` only.
+    CheckCard {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        number: SecretString,
+        #[serde(default)]
+        exp_month: String,
+        #[serde(default)]
+        exp_year: String,
+    },
+    /// Saves a typed card: a new CreditCard in `vault_id`, or, with
+    /// `item_id`, the expiry (and a missing cardholder) of the stored card
+    /// holding this number. Never a CVV. Context `save_prompt` only.
+    SaveCard {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        vault_id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        cardholder: String,
+        number: SecretString,
+        #[serde(default)]
+        exp_month: String,
+        #[serde(default)]
+        exp_year: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+    },
+    /// An identity typed in a shipping or contact form: does a stored
+    /// Identity hold every non-empty value already? Context `save_prompt`
+    /// only.
+    CheckIdentity {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        #[serde(default)]
+        given_name: String,
+        #[serde(default)]
+        family_name: String,
+        #[serde(default)]
+        email: String,
+        #[serde(default)]
+        tel: String,
+        #[serde(default)]
+        organization: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        address: Option<AddressIn>,
+    },
+    /// Saves a typed identity as a new Identity in `vault_id`. Context
+    /// `save_prompt` only.
+    SaveIdentity {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        vault_id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        given_name: String,
+        #[serde(default)]
+        family_name: String,
+        #[serde(default)]
+        email: String,
+        #[serde(default)]
+        tel: String,
+        #[serde(default)]
+        organization: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        address: Option<AddressIn>,
     },
     UpdatePassword {
         id: u64,
@@ -434,6 +522,10 @@ impl Request {
             | Self::Reveal { id, .. }
             | Self::CheckCredentials { id, .. }
             | Self::SaveLogin { id, .. }
+            | Self::CheckCard { id, .. }
+            | Self::SaveCard { id, .. }
+            | Self::CheckIdentity { id, .. }
+            | Self::SaveIdentity { id, .. }
             | Self::UpdatePassword { id, .. }
             | Self::ConfirmPending { id, .. }
             | Self::Generate { id, .. }
@@ -468,6 +560,10 @@ impl Request {
             Self::Reveal { .. } => "reveal",
             Self::CheckCredentials { .. } => "check_credentials",
             Self::SaveLogin { .. } => "save_login",
+            Self::CheckCard { .. } => "check_card",
+            Self::SaveCard { .. } => "save_card",
+            Self::CheckIdentity { .. } => "check_identity",
+            Self::SaveIdentity { .. } => "save_identity",
             Self::UpdatePassword { .. } => "update_password",
             Self::ConfirmPending { .. } => "confirm_pending",
             Self::Generate { .. } => "generate",
@@ -917,6 +1013,98 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn request_json_round_trip_check_card() {
+        let r = round_trip(
+            r#"{"id":31,"op":"check_card","ctx":"save_prompt","origin":"https://shop.test","number":"4242 4242 4242 4242","exp_month":"04","exp_year":"29"}"#,
+            31,
+            "check_card",
+        );
+        assert!(!format!("{r:?}").contains("4242"));
+        // The expiry may be left out.
+        let r: Request = serde_json::from_str(
+            r#"{"id":32,"op":"check_card","ctx":"save_prompt","origin":"https://shop.test","number":"4242424242424242"}"#,
+        )
+        .unwrap();
+        assert!(matches!(r, Request::CheckCard { ref exp_month, .. } if exp_month.is_empty()));
+        // A CVV is never taken.
+        assert!(
+            serde_json::from_str::<Request>(
+                r#"{"id":33,"op":"check_card","ctx":"save_prompt","origin":"https://shop.test","number":"4242424242424242","cvv":"737"}"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_card() {
+        let r = round_trip(
+            r#"{"id":34,"op":"save_card","ctx":"save_prompt","origin":"https://shop.test","vault_id":"v","title":"","cardholder":"Alex Martin","number":"4242424242424242","exp_month":"4","exp_year":"2029"}"#,
+            34,
+            "save_card",
+        );
+        assert!(!format!("{r:?}").contains("4242"));
+        let r = round_trip(
+            r#"{"id":35,"op":"save_card","ctx":"save_prompt","origin":"https://shop.test","vault_id":"v","title":"Visa","cardholder":"","number":"4242424242424242","exp_month":"","exp_year":"","item_id":"x"}"#,
+            35,
+            "save_card",
+        );
+        assert!(matches!(
+            r,
+            Request::SaveCard {
+                item_id: Some(_),
+                ..
+            }
+        ));
+        assert!(
+            serde_json::from_str::<Request>(
+                r#"{"id":36,"op":"save_card","ctx":"save_prompt","origin":"https://shop.test","vault_id":"v","title":"","cardholder":"","number":"4242424242424242","exp_month":"","exp_year":"","cvv":"737"}"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_check_identity() {
+        let r = round_trip(
+            r#"{"id":37,"op":"check_identity","ctx":"save_prompt","origin":"https://shop.test","given_name":"Alex","family_name":"Martin","email":"alex@atlas.dev","tel":"+33 6 00 00 00 00","organization":"","address":{"line1":"1 rue de l'Exemple","line2":"","city":"Lyon","postal_code":"69000","region":"","country":"FR"}}"#,
+            37,
+            "check_identity",
+        );
+        let Request::CheckIdentity { address, .. } = r else {
+            panic!()
+        };
+        assert_eq!(address.unwrap().city, "Lyon");
+        round_trip(
+            r#"{"id":38,"op":"check_identity","ctx":"save_prompt","origin":"https://shop.test","given_name":"","family_name":"","email":"alex@atlas.dev","tel":"","organization":""}"#,
+            38,
+            "check_identity",
+        );
+        // Address parts may be left out; unknown parts are refused.
+        let r: Request = serde_json::from_str(
+            r#"{"id":39,"op":"check_identity","ctx":"save_prompt","origin":"https://shop.test","address":{"city":"Lyon"}}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(r, Request::CheckIdentity { address: Some(ref a), .. } if a.line1.is_empty())
+        );
+        assert!(
+            serde_json::from_str::<Request>(
+                r#"{"id":40,"op":"check_identity","ctx":"save_prompt","origin":"https://shop.test","address":{"street":"x"}}"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_identity() {
+        round_trip(
+            r#"{"id":41,"op":"save_identity","ctx":"save_prompt","origin":"https://shop.test","vault_id":"v","title":"","given_name":"Alex","family_name":"Martin","email":"","tel":"","organization":"Atlas","address":{"line1":"1 rue","line2":"","city":"Lyon","postal_code":"69000","region":"","country":"FR"}}"#,
+            41,
+            "save_identity",
+        );
     }
 
     #[test]

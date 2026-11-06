@@ -42,6 +42,29 @@ export type FieldRole =
   | "remember_me"
   | "unknown";
 
+/** What a card, identity or address form sent by hand can be saved as. */
+export type SavedFormKind = "card" | "identity";
+
+/** Roles a sent card form may report (no `cc_csc`: a security code is never saved from a page). */
+export const CARD_SUBMIT_ROLES = ["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year"] as const;
+/** Roles a sent identity or address form may report. */
+export const IDENTITY_SUBMIT_ROLES = [
+  "given_name",
+  "family_name",
+  "full_name",
+  "email",
+  "tel",
+  "organization",
+  "address_line1",
+  "address_line2",
+  "city",
+  "postal_code",
+  "region",
+  "country",
+] as const;
+export type SubmittedRole = (typeof CARD_SUBMIT_ROLES)[number] | (typeof IDENTITY_SUBMIT_ROLES)[number];
+export type SubmittedValues = Partial<Record<SubmittedRole, string>>;
+
 export type FormKind = "login" | "signup" | "change_password" | "otp" | "card" | "identity" | "address";
 
 export interface FieldInfo {
@@ -257,6 +280,11 @@ export type CsToBg =
    * the identifier only, so the password step can be proposed with it.
    */
   | { type: "submitted_identifier"; formRef: string; username: string }
+  /**
+   * A card, identity or address form sent by the user (trusted gesture, like a sign-in): the
+   * values of its card or identity roles (never a security code), to offer saving them.
+   */
+  | { type: "submitted_form"; formRef: string; kind: SavedFormKind; values: SubmittedValues }
   | { type: "provider_click"; provider: ProviderId; ref: string }
   | { type: "account_click"; email: string; ref: string }
   /**
@@ -447,7 +475,12 @@ export type BgToCs =
    * `formRef`? Tested in the page's tab, never in the worker (spec 6.3);
    * replied `{ ok, matches }`. The candidate is neither kept nor logged.
    */
-  | { type: "pattern_check"; origin: string; formRef: string; candidate: string };
+  | { type: "pattern_check"; origin: string; formRef: string; candidate: string }
+  /**
+   * Does `candidate` fit the `username` field of `formRef` (its type, `maxlength`, `minlength`,
+   * `pattern`)? Replied as `UsernameCheckReply`; tested in the page's tab, not kept.
+   */
+  | { type: "username_check"; origin: string; formRef: string; candidate: string };
 
 /**
  * The page's password rules as the bridge's `generate` takes them
@@ -468,6 +501,13 @@ export interface PasswordContextReply {
   has_pattern?: boolean;
 }
 
+/** Reply of the content script to `username_check`; `max_length`: the field's `maxlength`. */
+export interface UsernameCheckReply {
+  ok: boolean;
+  matches?: boolean;
+  max_length?: number;
+}
+
 /** Reply of the content script to `pattern_check`. */
 export interface PatternCheckReply {
   ok: boolean;
@@ -480,6 +520,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "close_menu",
   "submitted_credentials",
   "submitted_identifier",
+  "submitted_form",
   "provider_click",
   "account_click",
   "menu_key",

@@ -45,7 +45,7 @@ final class SafariAutofillUITests: XCTestCase {
             createAccount()
             addLogin()
         }
-        let offer = onePass.buttons["biometricOffer.enable"]
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
         if offer.waitForExistence(timeout: 3) { offer.tap() }
         lockOnePass()
         onePass.terminate()
@@ -302,7 +302,7 @@ final class SafariAutofillUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         // Face ID offered after a password unlock: turned on (the runner posts the match).
-        let offer = onePass.buttons["biometricOffer.enable"]
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
         if offer.waitForExistence(timeout: 5) { offer.tap() }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
         Thread.sleep(forTimeInterval: 4)
@@ -453,6 +453,384 @@ final class SafariAutofillUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
         attachScreenshot("refused-no-card")
+    }
+
+    // MARK: - Proofs 2026-11-04: save every time, signup, AutoFill in another app
+
+    /// `https://<name>.localhost:<port>`: one site per name (*.localhost is loopback in the
+    /// simulator; the certificate names each of them).
+    private static func host(_ name: String) -> String {
+        "https://\(name).localhost:" + (ProcessInfo.processInfo.environment["ONEPASS_TEST_PORT"] ?? "8443")
+    }
+
+    private static let saveQuestion = ["Save login for", "Enregistrer le login pour"]
+    private static let updateQuestion = ["Update password for", "Mettre à jour le mot de passe pour"]
+
+    /// Three sites OnePass never saw, each with an unknown account: the card each time, Save. Then a
+    /// second unknown account on one of them (a new login, not an update), the first account there
+    /// with a new password (Update), and on a fourth site "Not now" followed by another new account
+    /// (the card again). The logins are then found in the app.
+    func test11ProofSaveEveryTime() throws {
+        let run = Int(Date().timeIntervalSince1970) % 100_000
+        safari.launch()
+        for site in ["atlas", "borealis", "cobalt"] {
+            typeLogin(site, username: "\(site).\(run)@exemple.fr", password: "\(site.capitalized)-\(run)-un")
+            decideOnCard(["Save", "Enregistrer"], expect: Self.saveQuestion, outcome: ["saved", "enregistré"])
+        }
+        // Same site, another account never seen: a new login.
+        typeLogin("borealis", username: "autre.\(run)@exemple.fr", password: "Autre-\(run)-un")
+        decideOnCard(["Save", "Enregistrer"], expect: Self.saveQuestion, outcome: ["saved", "enregistré"])
+        // Same site, the first account with a new password: an update.
+        typeLogin("borealis", username: "borealis.\(run)@exemple.fr", password: "Borealis-\(run)-deux")
+        decideOnCard(["Update", "Mettre à jour"], expect: Self.updateQuestion, outcome: ["updated", "mis à jour"])
+        // "Not now" on a site never silences the next new account there.
+        typeLogin("dune", username: "dune.\(run)@exemple.fr", password: "Dune-\(run)-un")
+        decideOnCard(["Not now", "Pas maintenant"], expect: Self.saveQuestion, outcome: [])
+        typeLogin("dune", username: "dune2.\(run)@exemple.fr", password: "Dune-\(run)-deux")
+        decideOnCard(["Save", "Enregistrer"], expect: Self.saveQuestion, outcome: ["saved", "enregistré"])
+        showInApp("\(run)@exemple.fr")
+    }
+
+    /// Face ID on from Réglages > Sécurité when onboarding could not turn it on (the simulator was
+    /// enrolled after it ran), then the vault locked again.
+    func test12aEnableFaceID() throws {
+        onePass.launchArguments += ["-OnePassDemoSettingsPage", "security"]
+        onePass.launch()
+        let home = onePass.buttons["items.new"]
+        let field = onePass.secureTextFields["lock.password"]
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, !home.exists { Thread.sleep(forTimeInterval: 0.5) }
+        if !home.exists, field.exists {
+            field.tap()
+            field.typeText(Self.masterPassword + "\n")
+        }
+        XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
+        // The app's own offer after a password unlock turns Face ID on in one tap.
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
+        if offer.waitForExistence(timeout: 5) {
+            offer.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        tap(onePass.descendants(matching: .any)["account.menu"].firstMatch, in: onePass)
+        tap(onePass.descendants(matching: .any)["account.settings"].firstMatch, in: onePass)
+        let toggle = onePass.switches["settings.biometrics"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 30), "no Face ID switch")
+        print("Face ID switch before: \(String(describing: toggle.value))")
+        if toggle.value as? String == "0" {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+            let pw = onePass.secureTextFields.firstMatch
+            if pw.waitForExistence(timeout: 5) {
+                pw.tap()
+                pw.typeText(Self.masterPassword + "\n")
+            }
+        }
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
+        let ok = XCTWaiter().wait(for: [on], timeout: Self.kdfTimeout) == .completed
+        attachScreenshot("faceid-switch")
+        if !ok { print("Settings:\n\(onePass.debugDescription)") }
+        XCTAssertTrue(ok, "Face ID not turned on")
+        onePass.terminate()
+    }
+
+    /// The demo identity (fictional) the signup fill takes its name and e-mail from.
+    func test12PrepareIdentity() throws {
+        onePass.launch()
+        let home = onePass.buttons["items.new"]
+        let field = onePass.secureTextFields["lock.password"]
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, !home.exists { Thread.sleep(forTimeInterval: 0.5) }
+        if !home.exists, field.exists {
+            field.tap()
+            field.typeText(Self.masterPassword + "\n")
+        }
+        XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
+        tap(home, in: onePass)
+        tap(onePass.buttons["newItem.identity"], in: onePass)
+        type("Camille Durand\n", into: onePass.textFields["editor.title"], in: onePass)
+        type("Camille\n", into: onePass.textFields["editor.field.first_name"], in: onePass)
+        addIdentityField(["Last name", "Nom"], id: "last_name", value: "Durand")
+        addIdentityField(["Email", "E-mail"], id: "email", value: "camille.durand@exemple.fr")
+        attachScreenshot("identity-editor")
+        tap(onePass.buttons["editor.save"], in: onePass)
+        XCTAssertTrue(onePass.staticTexts["item.title"].waitForExistence(timeout: Self.uiTimeout), "identity not saved")
+        lockOnePass()
+        onePass.terminate()
+    }
+
+    /// A field of the identity shown on demand: typed in place if there, else "add more", searched.
+    private func addIdentityField(_ labels: [String], id: String, value: String) {
+        let field = onePass.textFields["editor.field.\(id)"]
+        if !field.waitForExistence(timeout: 1) {
+            var closes = 0
+            while onePass.keyboards.count > 0, closes < 3 {
+                onePass.swipeDown()
+                closes += 1
+            }
+            let more = onePass.descendants(matching: .any)["editor.addField"].firstMatch
+            var swipes = 0
+            while !(more.exists && more.isHittable), swipes < 6 {
+                onePass.swipeUp()
+                swipes += 1
+            }
+            tap(more, in: onePass)
+            let search = onePass.textFields["editor.addField.search"]
+            if search.waitForExistence(timeout: 5) { search.typeText(labels[0]) }
+            let row = onePass.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+            if row.waitForExistence(timeout: 3) { row.tap() } else { print("Add field popover:\n\(onePass.debugDescription)") }
+        }
+        type(value + "\n", into: field, in: onePass)
+    }
+
+    /// A create-account page OnePass never saw: the OnePass menu creates the account (identity, a
+    /// username handle the field's pattern accepts, and a generated password in both password
+    /// fields), the form is sent by hand, the card shows the login saved, and the app has it.
+    func test13ProofSignup() throws {
+        safari.launch()
+        safari.open(URL(string: Self.host("eden") + "/signup")!)
+        let name = safari.webViews.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 30), "signup page not loaded")
+        Thread.sleep(forTimeInterval: 1.5)
+        let pw = safari.webViews.secureTextFields.firstMatch
+        pw.tap()
+        dismissStrongPasswordOffer()
+        Thread.sleep(forTimeInterval: 1)
+        let row = safari.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
+            "Create the account with a strong password", "Créer le compte avec un mot de passe fort")).firstMatch
+        let icon = safari.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
+        if !row.waitForExistence(timeout: 3) {
+            XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "no OnePass icon in the field")
+            // The page has one icon per field: the one on screen (the password field's) is tapped.
+            let icons = safari.descendants(matching: .any)
+                .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"]))
+            let visible = (0..<icons.count).map { icons.element(boundBy: $0) }.last { $0.isHittable }
+            XCTAssertNotNil(visible, "no OnePass icon on screen")
+            visible?.tap()
+        }
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        var typed = false
+        while Date() < deadline, !(row.exists && row.isHittable) {
+            let master = safari.secureTextFields.matching(NSPredicate(format: "placeholderValue IN %@",
+                ["Mot de passe principal", "Master password", "Mot de passe maître"])).firstMatch
+            if !typed, master.exists, Date() > deadline.addingTimeInterval(-Self.kdfTimeout + 15) {
+                master.tap()
+                master.typeText(Self.masterPassword + "\n")
+                typed = true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        attachScreenshot("signup-menu")
+        guard row.exists else {
+            print("Safari without the signup row:\n\(safari.debugDescription)")
+            XCTFail("no signup row in the OnePass menu")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1)
+        row.tap()
+        let confirm = safari.webViews.secureTextFields.element(boundBy: 1)
+        let filled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != nil AND value != ''"), object: confirm)
+        XCTAssertEqual(XCTWaiter().wait(for: [filled], timeout: 20), .completed, "confirmation not filled")
+        Thread.sleep(forTimeInterval: 2)
+        attachScreenshot("signup-filled")
+        let email = safari.webViews.textFields.element(boundBy: 1)
+        let address = (email.value as? String) ?? ""
+        // The username field takes no '@' (pattern, maxlength 20): a handle made from the identity.
+        let handle = (safari.webViews.textFields.element(boundBy: 2).value as? String) ?? ""
+        print("Signup filled: name \(String(describing: name.value)), e-mail \(address), username \(handle)")
+        XCTAssertTrue(address.contains("@"), "e-mail not filled")
+        XCTAssertFalse(handle.isEmpty || handle.contains("@"), "username not a handle: \(handle)")
+        submitPage(["Créer mon compte"])
+        decideSavedCard()
+        showInApp(handle)
+    }
+
+    /// MS-04: a shipping address and a card typed by hand on a site OnePass never saw: our card offers
+    /// to save each (the card shows the last four digits only), Save, then the same card typed again
+    /// by hand: the card shows (no oracle for the page) and Save says it is already in OnePass.
+    func test15ProofAddressAndCard() throws {
+        let run = Int(Date().timeIntervalSince1970) % 100_000
+        safari.launch()
+        safari.open(URL(string: Self.host("cobalt") + "/address")!)
+        let first = safari.webViews.textFields.firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 30), "address page not loaded")
+        Thread.sleep(forTimeInterval: 1)
+        allowExtensionIfAsked()
+        let values = ["Camille", "Durand \(run)", "\(run % 90 + 1) rue de la Paix", "", "75002", "Paris"]
+        for (i, v) in values.enumerated() where !v.isEmpty {
+            let field = safari.webViews.textFields.element(boundBy: i)
+            focus(field)
+            field.typeText(v)
+        }
+        submitPage(["Continuer vers le paiement"])
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save this address", "Enregistrer cette adresse"])
+
+        // A test card number (Luhn valid, never a real card), typed by hand.
+        let typeCard = { [self] in
+            safari.open(URL(string: Self.host("cobalt") + "/card")!)
+            let holder = safari.webViews.textFields.firstMatch
+            XCTAssertTrue(holder.waitForExistence(timeout: 30), "card page not loaded")
+            Thread.sleep(forTimeInterval: 1)
+            for (i, v) in ["Camille Durand", "4111 1111 1111 1111", "04/\(29 + run % 5)", "123"].enumerated() {
+                let field = safari.webViews.textFields.element(boundBy: i)
+                focus(field)
+                field.typeText(v)
+            }
+            submitPage(["Payer 12,00 €"])
+        }
+        typeCard()
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save this card", "Enregistrer cette carte"])
+        typeCard()
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save this card", "Enregistrer cette carte"], outcome: ["Already in OnePass", "Déjà dans OnePass"])
+    }
+
+    /// The card that only says a login is saved (a generated signup password, already confirmed).
+    private func decideSavedCard() {
+        let any = safari.webViews.descendants(matching: .any)
+        let saved = any.matching(NSPredicate(format: "label ENDSWITH %@ OR label ENDSWITH %@", " saved", " enregistré")).firstMatch
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !saved.exists {
+            dismissSystemSaveSheet()
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        attachScreenshot(saved.exists ? "signup-saved-card" : "signup-no-card")
+        if !saved.exists { print("Safari without the saved card:\n\(safari.debugDescription)") }
+        XCTAssertTrue(saved.exists, "no saved card after the signup")
+        print("Card: \(saved.label)")
+        Thread.sleep(forTimeInterval: 3)
+    }
+
+    /// AutoFill in an app that is not Safari (AutoFillHost): the keyboard's Passwords key, OnePass,
+    /// Face ID, the account, both fields filled; then a new account typed by hand and iOS's own
+    /// "Save Password?" offer, if the simulator shows it.
+    func test14ProofOtherApp() throws {
+        let host = XCUIApplication()
+        host.launch()
+        let user = host.textFields["host.username"]
+        let password = host.secureTextFields["host.password"]
+        XCTAssertTrue(user.waitForExistence(timeout: Self.uiTimeout), "host app not shown")
+        Thread.sleep(forTimeInterval: 1.5)
+        user.tap()
+        _ = host.keyboards.firstMatch.waitForExistence(timeout: Self.uiTimeout)
+        Thread.sleep(forTimeInterval: 2)
+        attachScreenshot("host-keyboard")
+        let keyLabels = ["Passwords", "Mots de passe", "Password", "Mot de passe"]
+        var key: XCUIElement?
+        for app in [host, springboard, inputUI] where key == nil {
+            key = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", keyLabels))
+                .allElementsBoundByIndex.first { $0.isHittable && $0.elementType != .secureTextField && $0.elementType != .textField }
+        }
+        if let key {
+            key.tap()
+        } else {
+            let keyboard = host.keyboards.firstMatch
+            host.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: keyboard.frame.midX, dy: keyboard.frame.minY - 19)).tap()
+        }
+        Thread.sleep(forTimeInterval: 2)
+        for app in [host, springboard] {
+            let choice = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'OnePass' OR label BEGINSWITH 'OnePass'"))
+                .allElementsBoundByIndex.first { $0.isHittable && $0.elementType != .secureTextField }
+            if let choice { choice.tap(); break }
+        }
+        unlockProviderIfAsked(step: "host")
+        let provider = XCUIApplication(bundleIdentifier: "me.somalabs.onepass.autofill")
+        let candidate = [host, springboard, provider].map { $0.descendants(matching: .any)["autofill.candidate.\(Self.title)"].firstMatch }
+        let others = [host, springboard, provider].map { $0.buttons["autofill.others"] }
+        var found: XCUIElement?
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        while Date() < deadline, found == nil {
+            found = candidate.first { $0.exists }
+            if found == nil, let more = others.first(where: { $0.exists && $0.isHittable }) {
+                attachScreenshot("host-list")
+                more.tap()
+            }
+            if found == nil { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        attachScreenshot("host-candidates")
+        guard let found else {
+            print("No candidate:\n\(host.debugDescription)")
+            XCTFail("the OnePass list did not show \(Self.title)")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1)
+        found.tap()
+        let filled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", Self.username), object: user)
+        XCTAssertEqual(XCTWaiter().wait(for: [filled], timeout: Self.uiTimeout), .completed, "username not filled")
+        let masked = password.value as? String ?? ""
+        XCTAssertFalse(masked.isEmpty || masked == "Mot de passe", "password not filled")
+        Thread.sleep(forTimeInterval: 2)
+        attachScreenshot("host-filled")
+        host.buttons["host.signIn"].tap()
+        let report = host.staticTexts["host.status"]
+        XCTAssertTrue(report.waitForExistence(timeout: Self.uiTimeout))
+        XCTAssertTrue(report.label.contains("mot de passe : \(Self.password.count) caractères"), report.label)
+        Thread.sleep(forTimeInterval: 3)
+
+        // A new account typed by hand: iOS's own "Save Password?" offer, OnePass chosen, if shown.
+        host.terminate()
+        host.launch()
+        let run = Int(Date().timeIntervalSince1970) % 100_000
+        XCTAssertTrue(user.waitForExistence(timeout: Self.uiTimeout))
+        user.tap()
+        user.typeText("app.\(run)@exemple.fr")
+        password.tap()
+        dismissStrongPasswordOfferIn(host)
+        password.typeText("App-\(run)-test")
+        host.buttons["host.signIn"].tap()
+        var sheet = false
+        let until = Date().addingTimeInterval(15)
+        while Date() < until, !sheet {
+            for app in [host, springboard] where app.buttons["OnePass"].exists {
+                sheet = true
+                attachScreenshot("host-system-save-sheet")
+                Thread.sleep(forTimeInterval: 1.5)
+                app.buttons["OnePass"].tap()
+                break
+            }
+            if !sheet { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        print("System save sheet in the host app: \(sheet)")
+        guard sheet else {
+            attachScreenshot("host-no-system-sheet")
+            return
+        }
+        unlockProviderIfAsked(step: "host-save")
+        let save = [host, springboard, provider].map { $0.descendants(matching: .any)["autofill.save"].firstMatch }
+        var button: XCUIElement?
+        let shown = Date().addingTimeInterval(20)
+        while Date() < shown, button == nil {
+            button = save.first { $0.exists && $0.isHittable }
+            if button == nil { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        attachScreenshot("host-save-view")
+        guard let button else {
+            XCTFail("our save screen did not show")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+        button.tap()
+        Thread.sleep(forTimeInterval: 3)
+        attachScreenshot("host-save-done")
+    }
+
+    private func dismissStrongPasswordOfferIn(_ app: XCUIApplication) {
+        let other = app.buttons.matching(NSPredicate(format: "label IN %@", ["Other Options…", "Choose My Own Password", "Choisir mon mot de passe"])).firstMatch
+        if other.waitForExistence(timeout: 1), other.isHittable { other.tap() }
+    }
+
+    /// `site`/login: e-mail and password typed by hand on one page, then sent.
+    private func typeLogin(_ site: String, username: String, password: String) {
+        safari.open(URL(string: Self.host(site) + "/login")!)
+        let email = safari.webViews.textFields.firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 30), "\(site): login page not loaded")
+        Thread.sleep(forTimeInterval: 1)
+        allowExtensionIfAsked()
+        focus(email)
+        email.typeText(username)
+        let field = safari.webViews.secureTextFields.firstMatch
+        focus(field)
+        field.typeText(password)
+        dismissStrongPasswordOffer()
+        submitPage(["Se connecter"])
     }
 
     /// The app, unlocked (Face ID by itself, else the master password), searched for `user`.
@@ -691,6 +1069,17 @@ final class SafariAutofillUITests: XCTestCase {
     }
 
     /// Our in-page sheet can open on focus: put away, typing goes on in the page.
+    /// A page field tapped until it has the keyboard (a card or sheet left from the previous page
+    /// can take the first tap while it goes away).
+    private func focus(_ field: XCUIElement) {
+        for _ in 0..<3 {
+            field.tap()
+            closeOnePassMenuIfShown()
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
+            Thread.sleep(forTimeInterval: 1)
+        }
+    }
+
     private func closeOnePassMenuIfShown() {
         let cancel = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", ["Annuler", "Cancel", "Fermer", "Close"])).firstMatch
         if cancel.waitForExistence(timeout: 1.5), cancel.isHittable { cancel.tap() }
@@ -698,14 +1087,22 @@ final class SafariAutofillUITests: XCTestCase {
 
     private func dismissStrongPasswordOffer() {
         let other = safari.buttons.matching(NSPredicate(format: "label IN %@", ["Other Options…", "Choose My Own Password", "Choisir mon mot de passe"])).firstMatch
-        if other.waitForExistence(timeout: 1), other.isHittable { other.tap() }
+        if other.waitForExistence(timeout: 1), other.isHittable { other.tap(); return }
+        // iOS 27 "Use Strong Password?" sheet: closed with its X (the OnePass menu is what is proved).
+        let sheet = safari.staticTexts.matching(NSPredicate(format: "label IN %@", ["Use Strong Password?", "Utiliser un mot de passe fort ?"])).firstMatch
+        if sheet.exists {
+            let close = safari.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@", ["Close", "Fermer"], ["Close", "xmark"])).firstMatch
+            if close.waitForExistence(timeout: 2), close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
     }
 
     private func submitPage(_ labels: [String]) {
         let button = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 20), "no \(labels) button")
-        // The keyboard can cover it: Return submits the form as well.
-        if button.isHittable { button.tap() } else { safari.typeText("\n") }
+        // With the keyboard up, XCTest may call a covered button hittable: Return (Go) submits the
+        // form from its focused field instead.
+        if safari.keyboards.count > 0 || !button.isHittable { safari.typeText("\n") } else { button.tap() }
         Thread.sleep(forTimeInterval: 1)
     }
 
@@ -730,10 +1127,29 @@ final class SafariAutofillUITests: XCTestCase {
             return
         }
         print("Card: \(title.label)")
+        // iOS's own "Save Password?" alert can come up over our card a moment later: put away
+        // first, then a pause (the card ignores a tap right after it was covered: click guard).
+        let quiet = Date().addingTimeInterval(3)
+        while Date() < quiet {
+            if safari.alerts.count > 0 || springboard.alerts.count > 0 {
+                Thread.sleep(forTimeInterval: 1)
+                dismissSystemSaveSheet()
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
         Thread.sleep(forTimeInterval: 1.5)
         let primary = any.matching(NSPredicate(format: "label IN %@ AND elementType == %d", button, XCUIElement.ElementType.button.rawValue)).firstMatch
         XCTAssertTrue(primary.waitForExistence(timeout: 5), "no \(button) on the card")
         primary.tap()
+        if outcome.isEmpty {
+            // Put away: the card leaves.
+            let gone = Date().addingTimeInterval(10)
+            while Date() < gone, title.exists { Thread.sleep(forTimeInterval: 0.3) }
+            XCTAssertFalse(title.exists, "the card did not go away")
+            Thread.sleep(forTimeInterval: 1)
+            return
+        }
         let done = any.matching(NSCompoundPredicate(orPredicateWithSubpredicates: outcome.map { NSPredicate(format: "label CONTAINS[c] %@", $0) })).firstMatch
         let ok = done.waitForExistence(timeout: 30)
         attachScreenshot(ok ? "card-done" : "card-not-done")

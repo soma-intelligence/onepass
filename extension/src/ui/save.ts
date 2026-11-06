@@ -10,6 +10,10 @@
 // "Enregistrer le login pour <site> ?" and the username, the vault as a
 // compact chip, "Pas maintenant" and "Enregistrer"; "Ne jamais proposer",
 // the edit view and "Enregistrer comme nouveau login" sit in a small menu.
+// A card or an identity typed by hand in a checkout (kinds `card` and
+// `identity`) gets the same card: "Enregistrer cette carte ?" with its last
+// four digits and expiry (never the number), or "Enregistrer cette adresse ?"
+// with the name and city; the vault chip, "Pas maintenant", "Enregistrer".
 // No sound, no motion of its own. Left alone AUTO_DISMISS_MS (no pointer or
 // focus in it, no menu open), it goes away by itself and the sign-in waits
 // in the toolbar popup ("later").
@@ -167,7 +171,10 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       token,
       decision,
     };
-    if (decision === "save" && init.kind === "login") {
+    if (decision === "save" && (init.kind === "card" || init.kind === "identity")) {
+      // Only the vault: the worker holds what was typed in the page.
+      msg.edits = { title: "", username: "", password: "", vaultId: draft.vaultId, rule: "domain", tags: [] };
+    } else if (decision === "save" && init.kind === "login") {
       msg.edits = {
         title: draft.title,
         username: draft.username,
@@ -408,11 +415,85 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       }),
     );
 
+  /** A card or identity typed in the page: what it is, the vault, "Pas maintenant", "Enregistrer". */
+  function renderForm(i: SaveInit, d: Draft): void {
+    setFit(true);
+    const err = errLine();
+    const isCard = i.kind === "card";
+    const updating = isCard && i.status === "update" && i.update !== undefined;
+    const title = isCard
+      ? t(updating ? "save.updateCard" : "save.saveCard")
+      : t(i.identity?.place !== undefined ? "save.saveAddress" : "save.saveIdentity");
+    const c = i.card;
+    const line1 = isCard
+      ? [c ? t("save.cardEnding", { last4: c.last4 }) : "", c?.exp !== undefined ? t("save.cardExpires", { exp: c.exp }) : ""].filter((x) => x !== "").join(" · ")
+      : [i.identity?.name, i.identity?.email].filter((x): x is string => x !== undefined && x !== "").join(" · ");
+    const line2 = isCard ? (c?.holder ?? "") : (i.identity?.place ?? "");
+    const done = (o: SaveOutcome) =>
+      o.outcome === "already" ? renderSaved(t("save.alreadyInOnepass"), line1) : renderSaved(
+        updating ? t("save.cardUpdated") : isCard ? t("save.cardSaved") : t("save.identitySaved"),
+        o.outcome === "updated" || updating ? line1 : o.vault !== undefined ? t("save.inValue", { value: o.vault }) : line1,
+      );
+    const primary = updating
+      ? btn(t("save.update"), "btn-text sc-primary", () => void decide("update", err, done))
+      : btn(t("common.save"), "btn-text sc-primary", () => void decide("save", err, done));
+    if (!updating && i.vaults.length === 0) primary.disabled = true;
+    show(
+      h(
+        "div",
+        { class: "save-card", attrs: { role: "dialog", "aria-label": title } },
+        h(
+          "div",
+          { class: "sc-row" },
+          siteTile(i.origin, i.title, 28),
+          h(
+            "span",
+            { class: "stack" },
+            h("span", { class: "sc-title" }, title),
+            line1 !== "" ? h("span", { class: "sc-sub" }, line1) : null,
+            line2 !== "" ? h("span", { class: "sc-sub" }, line2) : null,
+          ),
+          h(
+            "button",
+            {
+              class: "btn-icon sc-more",
+              attrs: { type: "button", "aria-label": t("save.options"), "aria-haspopup": "menu", "aria-expanded": String(more) },
+              on: {
+                click: guard.wrap(() => {
+                  more = !more;
+                  picking = false;
+                  renderPrompt();
+                }),
+              },
+            },
+            icon("more", 12),
+          ),
+        ),
+        more ? h("div", { class: "more", attrs: { role: "menu" } }, btn(t("save.neverForSite"), "", never, { role: "menuitem" })) : null,
+        picking && !updating ? picker(d) : null,
+        h(
+          "div",
+          { class: "sc-foot" },
+          updating ? h("span", { class: "sc-note" }, "") : chip(d) ?? h("span", { class: "sc-note" }, ""),
+          h("span", { class: "sc-gap" }),
+          btn(t("save.notNow"), "btn-text sc-quiet", () => void decide("dismiss", err, () => undefined)),
+          primary,
+        ),
+        err,
+      ),
+    );
+    armQuiet();
+  }
+
   function renderPrompt(): void {
     if (!init || !draft) return;
     const i = init;
     if (i.kind === "provider_link") {
       renderProviderLink(i);
+      return;
+    }
+    if (i.kind === "card" || i.kind === "identity") {
+      renderForm(i, draft);
       return;
     }
     setFit(true);
@@ -625,8 +706,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       typed: "",
     };
     if (init.view === "edit") renderEdit();
+    else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
     else {
-      quietOn = init.kind === "login";
+      quietOn = init.kind !== "provider_link";
       renderPrompt();
     }
   }

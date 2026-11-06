@@ -292,5 +292,14 @@
   "save.loginSaved": "Login salvato",
   "save.passwordUpdated": "Password aggiornata",
   "save.alreadyInOnepass": "Già in OnePass",
-  "popup.toSave": "Da salvare"
+  "popup.toSave": "Da salvare",
+  "save.saveCard": "Salvare questa carta?",
+  "save.updateCard": "Aggiornare questa carta?",
+  "save.saveAddress": "Salvare questo indirizzo?",
+  "save.saveIdentity": "Salvare questa identità?",
+  "save.cardSaved": "Carta salvata",
+  "save.cardUpdated": "Carta aggiornata",
+  "save.identitySaved": "Identità salvata",
+  "save.cardEnding": "Carta •••• {last4}",
+  "save.cardExpires": "scad. {exp}"
 }

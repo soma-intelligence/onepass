@@ -137,8 +137,9 @@ fn wants(intent: Intent, kind: GroupKind, role: FieldRole) -> bool {
             matches!(role, R::Username | R::Email | R::CurrentPassword)
         }
         (Intent::Reset | Intent::Signup, GroupKind::GeneratedPassword) => generated,
-        // A signup's identifier is the identity's e-mail, also in a field
-        // marked `username`.
+        // A signup's identifier field marked `username` goes with the
+        // identity: the extension puts the e-mail there, or a handle when the
+        // form has its own e-mail field or the field refuses an address.
         (Intent::Signup, GroupKind::Identity) => identity || role == R::Username,
         (Intent::Checkout | Intent::Address, GroupKind::Identity) => identity,
         (Intent::Checkout, GroupKind::Card) => role.is_card(),

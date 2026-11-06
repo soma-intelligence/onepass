@@ -307,6 +307,21 @@ describe("message validation", () => {
     expect(parseCsToBg({ type: "account_click", email: "x".repeat(400), ref: "c1" })).toBeNull();
   });
 
+  it("submitted_form: only its kind's roles, bounded, a card needs its number, never a security code", () => {
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_number: "4111111111111111", cc_exp: " ", cc_name: "A" } })).toEqual({
+      type: "submitted_form",
+      formRef: "f1",
+      kind: "card",
+      values: { cc_number: "4111111111111111", cc_name: "A" },
+    });
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_number: "4111111111111111", cc_csc: "123" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_name: "A" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: { city: "Paris", password: "x" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: { city: "x".repeat(300) } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "login", values: { city: "Paris" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: {} })).toBeNull();
+  });
+
   it("validates UI messages", () => {
     const token = "A".repeat(22);
     expect(parseUiToBg({ type: "menu_pick", token, itemId: "it_01", extra: 1 })).toEqual({
