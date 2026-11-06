@@ -39,6 +39,8 @@ export interface Summary {
   wrongItem: Result[];
   /** auto_submit_outside_login failures (OnePass sent a form whose true intent is not a sign-in). */
   autoSubmitOutsideLogin: Result[];
+  /** other_person_filled failures (a passenger 2 or later filled by the extension). */
+  otherPersonFilled: Result[];
   /** One-click success per flow, current drivers against smart_fill. */
   oneClick: Record<string, OneClickPair>;
   oneClickTotal: OneClickPair;
@@ -110,12 +112,12 @@ function pairRates(results: Result[], hit: (r: Result) => boolean): { byFlow: Re
 }
 
 /**
- * The run is red on any leak, any wrong item and any auto-submit outside a sign-in (spec 10),
+ * The run is red on any leak, any wrong item, any auto-submit outside a sign-in (spec 10) and any other person filled (spec 11.4),
  * and when every scenario is a lab error, since such a run measured nothing.
  */
 export function isRed(s: Summary): boolean {
   const benchFailed = s.overall.total > 0 && s.overall.labError === s.overall.total;
-  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || benchFailed;
+  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || s.otherPersonFilled.length > 0 || benchFailed;
 }
 
 export function summarize(all: Result[]): Summary {
@@ -146,6 +148,7 @@ export function summarize(all: Result[]): Summary {
     flaky: bySiteDriver(results.filter((r) => r.verdict === "flaky")),
     wrongItem: bySiteDriver(all.filter((r) => r.cause === "wrong_item")),
     autoSubmitOutsideLogin: bySiteDriver(all.filter((r) => r.cause === "auto_submit_outside_login")),
+    otherPersonFilled: bySiteDriver(all.filter((r) => r.cause === "other_person_filled")),
     oneClick: oneClick.byFlow,
     oneClickTotal: oneClick.total,
     goalMet: goalMet.byFlow,
@@ -237,7 +240,9 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   const wrong = s.wrongItem.length;
   l.push(`- Mauvais élément (\`wrong_item\`) : ${wrong}${wrong > 0 ? " (le passage est rouge)" : ""}`);
   const auto = s.autoSubmitOutsideLogin.length;
-  l.push(`- Envois automatiques hors connexion (\`auto_submit_outside_login\`) : ${auto}${auto > 0 ? " (le passage est rouge)" : ""}`, "");
+  l.push(`- Envois automatiques hors connexion (\`auto_submit_outside_login\`) : ${auto}${auto > 0 ? " (le passage est rouge)" : ""}`);
+  const other = s.otherPersonFilled.length;
+  l.push(`- Autre personne remplie (\`other_person_filled\`) : ${other}${other > 0 ? " (le passage est rouge)" : ""}`, "");
   l.push("## Réussite en un clic", "", ...oneClickTable(s));
   l.push("## Taux de réussite", "");
   l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver), ...table("Par profil", s.byProfile), ...profileLines(world.profiles));
@@ -291,6 +296,10 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   l.push("## Envois automatiques hors connexion", "");
   if (s.autoSubmitOutsideLogin.length === 0) l.push("Aucun.", "");
   else l.push(...s.autoSubmitOutsideLogin.map(scenarioLine), "");
+
+  l.push("## Autre personne remplie", "");
+  if (s.otherPersonFilled.length === 0) l.push("Aucune.", "");
+  else l.push(...s.otherPersonFilled.map(scenarioLine), "");
 
   l.push("## Instables", "");
   if (s.flaky.length === 0) l.push("Aucun.", "");

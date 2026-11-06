@@ -22,7 +22,7 @@ import { Rng } from "../../lab/gen/rng.ts";
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-const PINNED_DIGEST_V4 = "d22b8d6e1801e97110c8cf87574b3c95f7be3011c97959de79863c2f1cd078ff";
+const PINNED_DIGEST_V4 = "6a1ad8812201a0d288148268cd8a3d2960cfceaa7da0c9ae159e2874284277e5";
 const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
 const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];

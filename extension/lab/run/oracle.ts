@@ -11,7 +11,8 @@
 // value of another vault item, or the site signed in another account) and
 // `auto_submit_outside_login` (a post of the site that the user did not send,
 // on a flow whose true intent is not a sign-in; the code step of a sign-in is
-// part of the login family, spec 8.1).
+// part of the login family, spec 8.1). A third, `other_person_filled` (spec
+// 11.4), fails a forms page whose passenger 2 or later the extension filled.
 // Results carry field names, hosts and verdicts, never a value.
 import type { DriverId, Expect, FixtureFile, FlowId, Lang, Scenario, Site, TraitId, World } from "../gen/model.ts";
 import type { LabEvent } from "../server/ledger.ts";
@@ -57,7 +58,8 @@ export interface Result {
   oneClick?: boolean;
 }
 
-const FORM_FLOWS = new Set<FlowId>(["checkout_card", "address", "identity"]);
+/** Flows whose goal is a form the relying party accepts (the forms flows of spec 11 included). */
+export const FORM_FLOWS = new Set<FlowId>(["checkout_card", "address", "identity", "travel_booking", "company_b2b", "car_rental", "admin_identity"]);
 /** Flows whose true intent is a sign-in (code step included): the only ones OnePass may send. */
 export const LOGIN_FAMILY = new Set<FlowId>(["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso"]);
@@ -111,7 +113,10 @@ export function fillCheck(world: World, site: Site, vault: FixtureFile): FillChe
 
 /** Whether every field the scenario's page(s) asked for held a value after the fill (abandons_step: step 1 only). */
 function fillMet(s: Scenario, site: Site, o: Observation): boolean {
-  const fields = s.behaviour === "abandons_step" && site.steps ? site.steps[0]! : site.fields;
+  const all = s.behaviour === "abandons_step" && site.steps ? site.steps[0]! : site.fields;
+  // Fields the vault must leave empty: a shipping block hidden behind "same as billing", the birth country, a loyalty program it lacks.
+  const fields = all.filter((f) => !(f.block === "shipping" && site.forms?.shippingSame) && f.role !== "birth_country"
+    && !(f.role === "loyalty_number" && site.forms?.loyaltyTitle === undefined));
   const typed = new Set(o.typed ?? []);
   return fields.length > 0 && fields.every((f) => o.filled[f.name] === true || typed.has(f.name));
 }
@@ -154,6 +159,14 @@ function wrongAccount(site: Site, events: LabEvent[]): boolean {
   return events.some((e) => e.kind === "signin" && hosts.has(e.host) && e.user.trim().toLowerCase() !== want.trim().toLowerCase());
 }
 
+/**
+ * A field of passenger 2 or later (another person than the vault's) held a value in the snapshot of
+ * the fill (spec 11.4). The drivers take that snapshot before the user types those passengers.
+ */
+function otherPersonFilled(site: Site, o: Observation): boolean {
+  return site.fields.some((f) => (f.person ?? 0) > 0 && o.filled[f.name] === true);
+}
+
 /** A post of the site (or its frame) before the user sent the form, on a flow that is not a sign-in. */
 function autoSubmitOutsideLogin(site: Site, o: Observation): boolean {
   if (LOGIN_FAMILY.has(site.flow)) return false;
@@ -167,6 +180,7 @@ export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
   if (autoSubmitOutsideLogin(site, o)) return { verdict: "fail", cause: "auto_submit_outside_login" };
   if ((o.foreign?.length ?? 0) > 0 || wrongAccount(site, o.events)) return { verdict: "fail", cause: "wrong_item" };
+  if (otherPersonFilled(site, o)) return { verdict: "fail", cause: "other_person_filled" };
   if (o.error !== undefined && (o.error.startsWith("lab:") || o.error.includes("rate_limited"))) {
     return { verdict: "lab_error", cause: o.error };
   }
@@ -204,7 +218,7 @@ export function oneClickOf(s: Scenario, verdict: Verdict, o: Observation): boole
 }
 
 /** Causes that are safety failures: never replayed, never hidden by a replay. */
-export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login"]);
+export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login", "other_person_filled"]);
 
 /**
  * Whether a first attempt gets one replay in a fresh profile: a plain

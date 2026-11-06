@@ -19,8 +19,8 @@ describe("lab account rows", () => {
   });
 
   it("sso rows are picked by provider, never a provider's other account", () => {
-    expect(overlayRowSelector({ title: "Plush Orchard", provider: "microsoft" })).toBe('.ov-account:not(.ov-sub)[data-provider="microsoft"]');
-    expect(overlayRowSelector({ title: "Plush Orchard" })).toBe(".ov-account:not(.ov-sub)");
+    expect(overlayRowSelector({ title: "Plush Orchard", provider: "microsoft" })).toBe('.ov-pill[data-provider="microsoft"]');
+    expect(overlayRowSelector({ title: "Plush Orchard" })).toBe(".ov-pill");
   });
 
   it("every sso site of a world maps to its vault item's title and provider", () => {

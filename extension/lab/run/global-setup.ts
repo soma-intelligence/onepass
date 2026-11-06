@@ -20,7 +20,7 @@ export const EXT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // spa_rerender and split_otp, keep a lookalike, and show at least four layouts and three frameworks,
 // so the smoke plays the structural traps and the version 2 looks in a browser (multi_step is site 10).
 export const SMOKE_SEED = "lab-smoke-17";
-export const SMOKE_SITES = 12;
+export const SMOKE_SITES = 16;
 
 export interface LabRunConfig {
   seed: string;

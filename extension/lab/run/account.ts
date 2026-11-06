@@ -17,7 +17,11 @@ export function accountRow(itemTitle: string): AccountRow {
   return { title: itemTitle.slice(0, m.index), provider: VIA[m[1]!]! };
 }
 
-/** CSS selector of the overlay's account rows that can match `row` (the title is matched on `.t1`). */
+/**
+ * CSS selector of the overlay's account rows that can match `row` (the title is matched on `.t1`):
+ * the one-login pill (7fa30700), whose own button signs in; the logins behind "Other logins" are
+ * not looked at.
+ */
 export function overlayRowSelector(row: AccountRow): string {
-  return row.provider ? `.ov-account:not(.ov-sub)[data-provider="${row.provider}"]` : ".ov-account:not(.ov-sub)";
+  return row.provider ? `.ov-pill[data-provider="${row.provider}"]` : ".ov-pill";
 }

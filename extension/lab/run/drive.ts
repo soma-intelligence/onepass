@@ -83,13 +83,23 @@ async function snapshotFilled(page: Page, site: Site, acc: Record<string, boolea
         const sel = `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
         for (const r of roots) {
           const el = r.querySelector(sel) as HTMLInputElement | null;
+          // A radio or a checkbox holds a value only once checked.
+          if (el && (el.type === "radio" || el.type === "checkbox") && !el.checked) continue;
           if (el && "value" in el && el.value !== "") return el.value;
+        }
+        return undefined;
+      };
+      // A radio group (forms flows): its fieldset carries the field id, its radios "<id>-<k>".
+      const radio = (id: string): string | undefined => {
+        for (let k = 1; k <= 8; k++) {
+          const v = read(`${id}-${k}`);
+          if (v !== undefined) return v;
         }
         return undefined;
       };
       const value = (id: string) => read(id) !== undefined || hook?.(`[id="${id.replace(/["\\]/g, "\\$&")}"]`)?.filled === true;
       return list.filter((f) => value(f.id) || [1, 2, 3, 4, 5, 6].some((k) => value(`${f.id}-${k}`)))
-        .map((f) => [f.name, read(f.id) ?? ""] as [string, string]);
+        .map((f) => [f.name, read(f.id) ?? radio(f.id) ?? ""] as [string, string]);
     }, fields).catch(() => [] as [string, string][]);
     for (const [name, v] of seen) {
       acc[name] = true;
@@ -243,7 +253,30 @@ async function passkeyStep(env: ScenarioEnv, page: Page, site: Site, o: Observat
  */
 function menuTarget(site: Site): { fields: FieldSpec[]; title: string | undefined } {
   if (site.flow === "signup") return { fields: site.fields.filter((f) => f.role === "new_password").slice(0, 1), title: GENERATE_ROW };
-  return { fields: site.fields, title: site.cardTitle ?? site.identityTitle ?? site.itemTitle };
+  const title = site.cardTitle ?? site.identityTitle ?? site.itemTitle;
+  // A forms page: the first passenger's (driver's, contact's) given name first, then the others in page order.
+  const first = site.forms ? site.fields.find((f) => f.role === "given_name" && (f.person ?? 0) === 0) : undefined;
+  return { fields: first ? [first, ...site.fields.filter((f) => f !== first)] : site.fields, title };
+}
+
+/**
+ * The user fills passengers 2 and later herself (forms flows, spec 11.4):
+ * after the snapshot of the fill, a made-up value in each of their fields
+ * (the first radio, the first real option of a list), listed in `typed`.
+ */
+async function userTypesPersons(page: Page, scope: Frame, site: Site, o: Observation): Promise<void> {
+  const others = site.fields.filter((f) => (f.person ?? 0) > 0);
+  for (const f of others) {
+    o.typed = [...(o.typed ?? []), f.name];
+    if (f.render?.choice?.kind === "radio") {
+      await scope.locator(byId(`${f.id}-1`)).first().check({ timeout: 5_000 }).catch(() => undefined);
+    } else if (f.type === "select" || f.render?.date?.kind === "part" && f.render.date.select) {
+      await scope.locator(byId(f.id)).first().selectOption({ index: 1 }, { timeout: 5_000 }).catch(() => undefined);
+    } else {
+      const v = f.type === "email" ? "voyageur@lab.test" : f.render?.date ? "01/01/1990" : "Lab";
+      await typeField(page, scope, f.id, v, 5_000).catch(() => undefined);
+    }
+  }
 }
 
 /** How long a field of `site` may take to show: its delayed_fields delay plus a margin. */
@@ -368,6 +401,7 @@ export async function menuFill(env: ScenarioEnv, site: Site, behaviour: Behaviou
     o.clicks = (menu.shown ? 1 : 0) + (menu.offered ? 1 : 0);
     if (menu.offered) await debugDump(page, o);
     await snapshotFilled(page, site, o.filled, values);
+    await userTypesPersons(page, scope, site, o);
     // abandons_step has no step to abandon on a one-page form: the user goes on.
     if (behaviour === "partial" || behaviour === "corrects_field") await userEdits(page, scope, site.fields, behaviour);
     await userSubmit(env, page, scope, site, o);
@@ -463,13 +497,17 @@ export async function smartFill(env: ScenarioEnv, site: Site, expectation: Expec
         o.clicks = 2;
         await sleep(1_500);
         await snapshotFilled(page, site, o.filled, values);
+        await userTypesPersons(page, scope, site, o);
         await userSubmit(env, page, scope, site, o);
       } else {
         await page.keyboard.press("Escape");
         await snapshotFilled(page, site, o.filled, values);
       }
     } else if (outcome === "filled") {
-      if (expectation !== "nofill") await userSubmit(env, page, scope, site, o);
+      if (expectation !== "nofill") {
+        await userTypesPersons(page, scope, site, o);
+        await userSubmit(env, page, scope, site, o);
+      }
     }
     // A passkey-only page has nothing to fill: the user goes on with the site's passkey button.
     if (site.passkeyOnly && expectation !== "nofill" && !signedIn(site)(env.server.events())) {

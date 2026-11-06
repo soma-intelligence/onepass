@@ -105,3 +105,16 @@ describe("foreign fields on forms sites (generator version 4)", () => {
     expect(foreignFields(fw, site, { [field("family_name")]: d.last_name! })).toEqual([field("family_name")]);
   });
 });
+
+describe("smart target on forms sites", () => {
+  const fw = generate("items-forms", { sites: 400, patterns: loadPatterns() });
+  it("clicks the first person's given name, before the contact block", () => {
+    const travel = fw.sites.filter((s) => s.flow === "travel_booking");
+    expect(travel.length).toBeGreaterThan(0);
+    for (const s of fw.sites.filter((x) => x.forms !== undefined)) {
+      const t = smartTarget(s)!;
+      expect(t.role, `${s.index}`).toBe("given_name");
+      expect(t.person ?? 0).toBe(0);
+    }
+  });
+});

@@ -46,7 +46,7 @@ Le passage du laboratoire lui-même n'utilise aucun réseau externe : tous les h
 | Commande | Effet |
 | --- | --- |
 | `npm run check` | typage, tests unitaires (dont `test/lab/`), compilation. Sans navigateur. |
-| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-17`, 12 sites couvrant chaque flux et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie) ; compare au résultat épinglé `smoke-expected.json` |
+| `npm run lab:smoke` | navigateur, graine fixe `lab-smoke-17`, 16 sites couvrant chacun des quinze flux et les pièges structurels (cadre inter-sites, shadow DOM fermé, rerendu SPA, OTP découpé, sosie) ; compare au résultat épinglé `smoke-expected.json` |
 | `npm run lab -- --seed <s> [--sites <n>] [--drivers current,smart_fill] [--workers 4] [--report <md>]` | passage complet (200 sites par défaut, pilotes actuels par défaut) ; rapport dans `lab/out/<s>/report.md`, copié dans `<md>` si demandé. Code de sortie 1 si le passage est rouge (fuite, mauvais élément ou envoi automatique hors connexion). |
 | `npm run lab:repro -- --seed <s> --site <i> [--sites <n>] [--drivers ...]` | rejoue un seul site du monde ; résultats dans `lab/out/<s>-repro-<i>/` |
 | `npm run lab -- --seed <s> --sites <n> --profiles <p>` | même passage joué par `p` utilisateurs simulés (défaut 1, le profil historique). Chaque profil a son coffre et son navigateur : le temps de passage est multiplié par `p`. Le rapport ajoute le tableau « Par profil ». |
@@ -67,6 +67,7 @@ Le passage complet demande Chromium (Playwright), `cargo` pour l'hôte natif et 
 - **Réussite en un clic** : par flux, les pilotes actuels (overlay pour la connexion, menu du champ pour les formulaires) face à `smart_fill` (clic de confiance sur l'icône OnePass du champ, ou le bouton Remplir de la barre d'outils quand la page n'a pas de champ, puis ce que fait le plan). Un clic = le but atteint avec un seul geste vers OnePass ; ouvrir le menu puis choisir une ligne fait deux gestes ; la frappe de l'utilisateur et son appui sur le bouton du formulaire ne comptent pas. Ainsi, quand un clic `smart_fill` remplit un formulaire (paiement, adresse, identité, inscription), l'utilisateur appuie lui-même sur le bouton du formulaire et cet envoi ne compte pas ; il ne compte pas non plus après le menu des pilotes actuels. Le rapport donne à côté le taux de but atteint par flux pour les deux ensembles de pilotes, quel que soit le nombre de gestes. Les deux ensembles de pilotes ne partagent jamais un profil : la mémoire du site de l'un n'aide pas l'autre.
 - **Mauvais élément** (`wrong_item`) : un champ contient une valeur d'un autre élément du coffre que celui du scénario, ou le site a connecté un autre compte. Les valeurs sont lues par le pilote dans la page et restent dans sa mémoire ; seuls les noms des champs sortent. Échec, et le passage est rouge.
 - **Envoi automatique hors connexion** (`auto_submit_outside_login`) : le site a reçu un envoi avant que le pilote (l'utilisateur) n'appuie sur le bouton, sur un flux dont l'intention vraie n'est pas la connexion (l'étape du code fait partie de la connexion). Échec, et le passage est rouge.
+- **Autre personne remplie** (`other_person_filled`) : sur une page de formulaire à plusieurs personnes, un champ du passager 2 ou suivant est non vide dans l'instantané pris après le remplissage, avant que l'utilisateur ne tape ces passagers. Échec définitif, jamais rejoué, et le passage est rouge.
 - **Échecs** : chaque ligne donne le site, le flux, le pilote, les traits, la cause et la commande de rejeu.
 - **Réussites inattendues** (`xpass`) : une capacité attendue manquante est arrivée ; retirer l'attente d'échec dans `gen/capabilities.ts`.
 - **Ce que l'extension ne fait pas encore** : échecs attendus (`xfail`) regroupés par cause, puis causes d'échec récurrentes.
@@ -75,6 +76,38 @@ Le passage complet demande Chromium (Playwright), `cargo` pour l'hôte natif et 
 - `lab_error` : erreur du banc (préfixe `lab:`, limite de débit de l'hôte natif), exclue du taux.
 
 Le rapport ne contient aucune valeur secrète, même fictive : seulement des noms de champs, des hôtes et des verdicts.
+
+## Flux de formulaires (spec 11)
+
+Quatre flux de formulaires s'ajoutent aux onze premiers (générateur version 4, environ 25 % des sites au-delà des quinze premiers) :
+
+- `travel_booking` : réservation de voyage, bloc de contact puis un à trois passagers (passeport, nationalité, numéro de fidélité) ; un passeport leurre d'une autre personne est parfois au coffre.
+- `company_b2b` : compte professionnel, société, fonction, service, numéro de TVA et immatriculation, adresse de facturation et de livraison (cachée derrière « identique à la facturation »).
+- `car_rental` : location de voiture, conducteur et permis de conduire.
+- `admin_identity` : démarche administrative, civilité, sexe, nom de naissance, lieu et pays de naissance, nationalité.
+
+Les dates y sont en champ date, en texte (format de la langue du site, avec ou sans indication) ou en trois listes ; civilité et sexe en liste ou en boutons radio. Le serveur compare chaque champ dans le format que la page affiche ; les passagers 2 et suivants doivent être tapés par l'utilisateur (le pilote le fait après l'instantané), le bloc de livraison caché, le pays de naissance et un programme de fidélité absent du coffre doivent rester vides.
+
+Capacités (`gen/capabilities.ts`) : chaque site de ces flux liste ce qu'il exige de l'extension ; tant qu'une capacité est dans `PENDING`, le scénario attend `xfail` (raison `forms: <capacité>`, la première en attente). Un cadre d'un autre site garde `nofill`.
+
+| Capacité | Exigée quand la page a |
+| --- | --- |
+| `persons` | un passager 2 ou suivant, ou un bloc de livraison |
+| `intent_contact` | un bloc de contact distinct des personnes |
+| `roles_person` | deuxième prénom, nom de naissance, lieu ou pays de naissance |
+| `roles_document` | un champ de passeport ou de permis |
+| `roles_company` | TVA, immatriculation, fonction, service ou site web |
+| `document_source` | une valeur à prendre dans un passeport ou un permis |
+| `loyalty` | un numéro de fidélité |
+| `work_tel` | un téléphone professionnel |
+| `honorific_sex` | une civilité ou un sexe |
+| `nationality` | une nationalité |
+| `issuing_country` | un pays de délivrance |
+| `date_parts` | une date en trois listes ou champs |
+| `date_text` | une date en texte |
+| `radio_group` | un groupe de boutons radio |
+
+Registre de fuites : le type de secret `document` couvre les numéros de passeport, de permis et de fidélité, propriété du site dont le formulaire les demande (comparés sans espaces, points ni tirets). Un passeport leurre n'appartient à aucun hôte : tout envoi est une fuite, sur son propre site aussi. Le chargeur de coffre de l'hôte natif accepte les types `passport`, `driver_license`, `id_card`, `reward_program` et `membership`.
 
 ## Rejouer une graine
 

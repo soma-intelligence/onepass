@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
-import { afterReplay, judge, type Observation, oneClickOf, replayable, type Result, type Verdict } from "../../lab/run/oracle.ts";
+import { afterReplay, FORM_FLOWS, judge, LOGIN_FAMILY, type Observation, oneClickOf, replayable, type Result, SAFETY_CAUSES, type Verdict } from "../../lab/run/oracle.ts";
 import type { LabEvent } from "../../lab/server/ledger.ts";
 
 function res(n: number, verdict: Verdict, over: Partial<Result> = {}): Result {
@@ -300,3 +300,40 @@ describe("smart fill metrics", () => {
     expect(section).toContain("| Total | 1/3 (33.3 %) | 3/3 (100.0 %) |");
   });
 });
+
+describe("other_person_filled (forms flows)", () => {
+  const travel: Site = {
+    ...checkout, index: 20, host: "sky-port-4.test", flow: "travel_booking", cardTitle: undefined, identityTitle: "Lea Martin (Sky Port)",
+    fields: [
+      { role: "given_name", name: "p1_given", id: "p1_given", label: "First name", type: "text", person: 0, block: "passenger" },
+      { role: "given_name", name: "p2_given", id: "p2_given", label: "First name", type: "text", person: 1, block: "passenger" },
+    ],
+    buttons: { submit: "Book" },
+  };
+
+  it("forms flows are form flows and never in the login family", () => {
+    for (const f of ["travel_booking", "company_b2b", "car_rental", "admin_identity"] as const) {
+      expect(FORM_FLOWS.has(f)).toBe(true);
+      expect(LOGIN_FAMILY.has(f)).toBe(false);
+    }
+  });
+
+  it("a passenger 2 field filled by the extension is a final safety failure that makes the run red", () => {
+    const o = ob({ filled: { p1_given: true, p2_given: true } });
+    for (const e of ["pass", "xfail"] as const) {
+      expect(judge(sc(travel, "menu_fill", e), travel, o)).toEqual({ verdict: "fail", cause: "other_person_filled" });
+    }
+    expect(SAFETY_CAUSES.has("other_person_filled")).toBe(true);
+    expect(replayable(sc(travel), { verdict: "fail", cause: "other_person_filled" })).toBe(false);
+    expect(afterReplay({ verdict: "fail", cause: "timeout" }, { verdict: "fail", cause: "other_person_filled" }).replay).toBe(true);
+    // The first passenger alone is fine.
+    expect(judge(sc(travel, "menu_fill", "xfail"), travel, ob({ filled: { p1_given: true, p2_given: false } })).cause).not.toBe("other_person_filled");
+    const s = summarize([res(0, "pass"), res(1, "fail", { flow: "travel_booking", cause: "other_person_filled" })]);
+    expect(s.otherPersonFilled).toHaveLength(1);
+    expect(isRed(s)).toBe(true);
+    const md = renderReport(world, s, meta);
+    expect(md).toContain("- Autre personne remplie (`other_person_filled`) : 1 (le passage est rouge)");
+    expect(md).toMatch(/## Autre personne remplie\n\n- site 1 \(travel_booking/);
+  });
+});
+
