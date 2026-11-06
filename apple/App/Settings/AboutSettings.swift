@@ -1,5 +1,5 @@
 import SwiftUI
-#if os(macOS)
+#if os(macOS) && !ONEPASS_APP_STORE
 import UpdateKit
 #endif
 
@@ -8,7 +8,7 @@ struct AboutSettings: View {
     /// Placeholder until the repository is public (architecture spec, section 11).
     static let sourceURL = URL(string: "https://github.com/soma-intelligence/onepass")!
 
-    #if os(macOS)
+    #if os(macOS) && !ONEPASS_APP_STORE
     /// `nil` in builds without the update key: no updates section then.
     @Environment(AppUpdater.self) private var updater: AppUpdater?
     #endif
@@ -35,7 +35,7 @@ struct AboutSettings: View {
                 }
                 .accessibilityIdentifier("settings.about.source")
             }
-            #if os(macOS)
+            #if os(macOS) && !ONEPASS_APP_STORE
             if let updater {
                 UpdatesSection(updater: updater)
             }
@@ -51,7 +51,7 @@ struct AboutSettings: View {
     }
 }
 
-#if os(macOS)
+#if os(macOS) && !ONEPASS_APP_STORE
 /// Réglages > À propos on the Mac (Developer ID build): automatic checks at launch and every 24 hours,
 /// a check now, and what the check sends (spec 2026-11-02-mac-updater-design.md, section 7).
 private struct UpdatesSection: View {

@@ -2,7 +2,8 @@ import DesignKit
 import SwiftUI
 import UserNotifications
 import VaultKit
-#if os(macOS)
+// The Mac App Store build (ONEPASS_APP_STORE) updates through the store: no Sparkle.
+#if os(macOS) && !ONEPASS_APP_STORE
 import UpdateKit
 #endif
 
@@ -14,7 +15,7 @@ struct OnePassApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
     @State private var model = AppModel()
-    #if os(macOS)
+    #if os(macOS) && !ONEPASS_APP_STORE
     /// Updates from GitHub Releases (Sparkle): `nil` in builds without the update key.
     @State private var updater = AppUpdater()
     #endif
@@ -49,12 +50,14 @@ struct OnePassApp: App {
             BrowseCommands(model: model)
             // View > Show/Hide Sidebar (⌃⌘S): the toolbar has no sidebar button on the Mac.
             SidebarCommands()
+            #if !ONEPASS_APP_STORE
             // OnePass > Rechercher les mises à jour…, after À propos.
             CommandGroup(after: .appInfo) {
                 if let updater {
                     CheckForUpdatesButton(updater: updater)
                 }
             }
+            #endif
         }
         // "Ouvrir dans une nouvelle fenêtre" of the item menu: one read-only detail per item.
         WindowGroup(id: ItemWindow.id, for: String.self) { $key in
@@ -66,7 +69,9 @@ struct OnePassApp: App {
         Settings {
             MacSettingsView()
                 .environment(model)
+                #if !ONEPASS_APP_STORE
                 .environment(updater)
+                #endif
                 .tint(Theme.accent)
         }
         // Menu bar icon: opens the window from anywhere, and the app stays there once the window is
@@ -228,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
+#if !ONEPASS_APP_STORE
 /// OnePass > Rechercher les mises à jour…: Sparkle's window shows what it finds. A view, so the menu
 /// item follows `canCheckForUpdates` (disabled while a check or an install runs).
 struct CheckForUpdatesButton: View {
@@ -238,6 +244,7 @@ struct CheckForUpdatesButton: View {
             .disabled(!updater.canCheckForUpdates)
     }
 }
+#endif
 
 /// The menu bar icon. It lives while no window is open, so it reopens the main window when the
 /// model asks (`mainWindowRequest`: "Déverrouiller dans OnePass" from an extension).
