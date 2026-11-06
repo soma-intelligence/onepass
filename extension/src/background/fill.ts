@@ -234,6 +234,16 @@ export class Filler {
     put(values, "tel", r.tel);
     put(values, "organization", r.organization);
     put(values, "bday", r.birthday);
+    // Person and company values written as they are (forms coverage, ruling R39). Civility, sex,
+    // nationality, the work phone and the documents need their own choice rules (Tasks 11, 12).
+    put(values, "additional_name", r.middle_name);
+    put(values, "birth_name", r.birth_name);
+    put(values, "birth_place", r.birth_place);
+    put(values, "job_title", r.job_title);
+    put(values, "department", r.department);
+    put(values, "website", r.website);
+    put(values, "vat_number", r.vat_number);
+    put(values, "company_id", r.company_registration);
     const a = r.address;
     if (a) {
       put(values, "address_line1", a.line1);

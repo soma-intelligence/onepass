@@ -40,7 +40,108 @@ export type FieldRole =
   | "region"
   | "country"
   | "remember_me"
+  | FormsRole
   | "unknown";
+
+/**
+ * Roles of travel, company, car rental and administrative identity forms (forms coverage spec,
+ * section 3), in the order of Rust `FieldRole` (onepass-core fill_plan, after `RememberMe`).
+ * Heuristic only: the models never yield them (ruling R13).
+ */
+export const FORMS_ROLES = [
+  "honorific_prefix",
+  "additional_name",
+  "birth_name",
+  "sex",
+  "birth_place",
+  "birth_country",
+  "nationality",
+  "passport_number",
+  "passport_issue_date",
+  "passport_expiry",
+  "passport_issuing_country",
+  "license_number",
+  "license_issue_date",
+  "license_expiry",
+  "license_issuing_country",
+  "loyalty_number",
+  "job_title",
+  "department",
+  "vat_number",
+  "company_id",
+  "website",
+] as const;
+export type FormsRole = (typeof FORMS_ROLES)[number];
+
+// ---- fill_identity (mirror of onepass_bridge::api) ----
+
+/** What `fill_identity` may add to the identity's own values, asked only for the roles a form has. */
+export type Extra = "passport" | "driver_license" | "loyalty";
+
+/** The passport associated with the identity. Dates `YYYY-MM-DD`, sex `f`, `m` or `x`; absent: unknown. */
+export interface PassportOut {
+  first_names?: string;
+  last_name?: string;
+  number?: string;
+  issuing_country?: string;
+  issued_on?: string;
+  expiry?: string;
+  nationality?: string;
+  sex?: string;
+  birth_date?: string;
+  birth_place?: string;
+}
+
+/** The driver license associated with the identity. */
+export interface LicenseOut {
+  number?: string;
+  country?: string;
+  issued_on?: string;
+  expiry?: string;
+}
+
+/** The site's loyalty program. */
+export interface LoyaltyOut {
+  number: string;
+  program?: string;
+}
+
+/** Address of `fill_identity`. */
+export interface AddressOut {
+  line1: string;
+  line2: string;
+  city: string;
+  postal_code: string;
+  region: string;
+  country: string;
+}
+
+/** `fill_identity` reply: every value optional (absent when empty); documents and loyalty only on request. */
+export interface IdentityFill {
+  given_name?: string;
+  family_name?: string;
+  email?: string;
+  tel?: string;
+  organization?: string;
+  birthday?: string;
+  address?: AddressOut;
+  honorific?: string;
+  middle_name?: string;
+  birth_name?: string;
+  /** `f`, `m` or `x`. */
+  sex?: string;
+  birth_place?: string;
+  nationality?: string;
+  job_title?: string;
+  department?: string;
+  website?: string;
+  work_tel?: string;
+  vat_number?: string;
+  company_registration?: string;
+  passport?: PassportOut;
+  driver_license?: LicenseOut;
+  loyalty?: LoyaltyOut;
+}
 
 /** What a card, identity or address form sent by hand can be saved as. */
 export type SavedFormKind = "card" | "identity";

@@ -384,3 +384,21 @@ describe("round 1 fixes", () => {
     expect(f).toBeDefined();
   });
 });
+
+describe("buildPageContext: forms roles (forms coverage, Task 8)", () => {
+  it("a passport page sends its new roles by name, a resolved expiry and department with their evidence's confidence", () => {
+    const { ctx, refs } = page(`<form id="f">
+      <label for="g">Prénom</label><input id="g" name="g">
+      <label for="fa">Nom</label><input id="fa" name="fa">
+      <label for="pn">Numéro de passeport</label><input id="pn" name="pn">
+      <label for="pe">Date d'expiration</label><input id="pe" name="pe">
+      <label for="o">Société</label><input id="o" name="o">
+      <label for="dp">Département</label><input id="dp" name="dp">
+      <button type="submit">Réserver</button></form>`);
+    const byId = Object.fromEntries(ctx.forms[0]!.fields.map((f) => [(refs.get(f.field_ref) as HTMLElement).id, f]));
+    expect(byId.pn?.role).toBe("passport_number");
+    expect(byId.pe?.role).toBe("passport_expiry");
+    expect(byId.dp?.role).toBe("department");
+    for (const id of ["pn", "pe", "dp"]) expect(byId[id]?.confidence, id).toBeGreaterThanOrEqual(0.6);
+  });
+});

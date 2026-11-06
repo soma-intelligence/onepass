@@ -15,6 +15,7 @@ import {
   type ButtonClass,
   type ButtonContext,
   CARD_SUBMIT_ROLES,
+  FORMS_ROLES,
   IDENTITY_SUBMIT_ROLES,
   type SavedFormKind,
   type SubmittedValues,
@@ -102,6 +103,7 @@ const FIELD_ROLES: ReadonlySet<string> = new Set<FieldRole>([
   "region",
   "country",
   "remember_me",
+  ...FORMS_ROLES,
   "unknown",
 ]);
 

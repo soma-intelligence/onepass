@@ -3,6 +3,7 @@ import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
 import { parseCsToBg, parseUiToBg } from "../../src/background/router";
 import { MemoryPairingStore, Store } from "../../src/background/store";
+import { FORMS_ROLES } from "../../src/shared/messages";
 import { MAX_CLASSIFY_FIELDS } from "../../src/shared/model-labels";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
@@ -289,6 +290,15 @@ describe("message validation", () => {
       type: "page_analysis",
       analysis,
     });
+  });
+
+  it("accepts every forms role (Task 8), still rejects an unknown string", () => {
+    for (const role of FORMS_ROLES) {
+      const a = { ...analysis, forms: [{ ref: "f1", kind: "identity", fields: [{ ref: "e1", role }] }] };
+      expect(parseCsToBg({ type: "page_analysis", analysis: a }), role).toEqual({ type: "page_analysis", analysis: a });
+    }
+    const bad = { ...analysis, forms: [{ ref: "f1", kind: "identity", fields: [{ ref: "e1", role: "passport" }] }] };
+    expect(parseCsToBg({ type: "page_analysis", analysis: bad })).toBeNull();
   });
 
   it("rejects bad roles, kinds, booleans, providers and oversize lists", () => {

@@ -10,6 +10,8 @@
 // every pending request and closes the transport.
 import type {
   ClientInfoRequest,
+  Extra,
+  IdentityFill,
   NoteAutofillRequest,
   NoteFillRequest,
   NoteFillResponse,
@@ -171,17 +173,10 @@ interface Ops {
     /** `exp_month` "04", `exp_year` "2029": zero-padded strings, empty when unknown. */
     res: { cardholder: string; number: string; exp_month: string; exp_year: string; cvv?: string };
   };
+  /** `extras`: only the documents and loyalty the form has roles for (left out when empty). */
   fill_identity: {
-    req: { ctx: Ctx; item_id: string; origin: string };
-    res: {
-      given_name?: string;
-      family_name?: string;
-      email?: string;
-      tel?: string;
-      organization?: string;
-      birthday?: string;
-      address?: Address;
-    };
+    req: { ctx: Ctx; item_id: string; origin: string; extras?: Extra[] };
+    res: IdentityFill;
   };
   totp: { req: { ctx: Ctx; item_id: string; origin?: string }; res: { code: string; remaining: number } };
   reveal: { req: { ctx: Ctx; item_id: string; field: string }; res: { value: string } };

@@ -21,7 +21,7 @@ import { classifyField, type FieldElement, isFieldCandidate } from "../../src/co
 import { PASSWORD_TYPE_ROLES, type ScoredRole } from "../../src/content/detect/lexicon";
 import { analyzeDocument } from "../../src/content/detect/forms";
 import { RefRegistry } from "../../src/content/detect/refs";
-import type { FieldRole, PageAnalysis } from "../../src/shared/messages";
+import { FORMS_ROLES, type FieldRole, type PageAnalysis } from "../../src/shared/messages";
 import { MODEL_LABELS, MODEL_ROLES, type ModelLabel } from "../../src/shared/model-labels";
 import type { Role } from "../../lab/gen/model";
 import { testGeometry } from "./helpers";
@@ -92,6 +92,10 @@ describe("toFieldRole", () => {
       }
     }
     expect(toFieldRole("birth_date", { signup: false })).toBe("bday");
+    // The forms roles are heuristic only (ruling R13): no model label maps to one.
+    for (const signup of [true, false]) {
+      for (const l of MODEL_LABELS) expect(FORMS_ROLES as readonly string[]).not.toContain(toFieldRole(l, { signup }));
+    }
     expect(toFieldRole("new_password", { signup: false })).toBe("new_password");
     expect(toFieldRole("cc_csc", { signup: true })).toBe("cc_csc");
   });

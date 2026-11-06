@@ -112,6 +112,36 @@ describe("fill pipeline", () => {
     });
   });
 
+  it("maps the identity's person and company text values to the forms roles (Task 8)", async () => {
+    const ext = new FakeExt();
+    const store = new Store(ext, new MemoryPairingStore());
+    await store.setPairing(record());
+    const client = new FakeClient((r) => (r.op === "fill_identity"
+      ? {
+        given_name: "Alex", family_name: "Martin", middle_name: "Marie", birth_name: "Durand", birth_place: "Lyon",
+        job_title: "Chef de projet", department: "Achats", website: "https://atlas.example", vat_number: "FR32123456789",
+        company_registration: "12345678900011", organization: "Atlas", nationality: "FR", sex: "f", honorific: "Mme",
+      }
+      : {}));
+    const filler = new Filler(ext.tabs, new Frames(ext.webNavigation), new Session({ store, newClient: () => client }));
+    ext.setFrame(7, 0, `${SITE}/account`, "doc-1");
+    await filler.fillIdentity(target(), "it_03");
+    expect((ext.sentToTabs[0]?.message as { values: unknown }).values).toEqual({
+      given_name: "Alex",
+      family_name: "Martin",
+      full_name: "Alex Martin",
+      additional_name: "Marie",
+      birth_name: "Durand",
+      birth_place: "Lyon",
+      organization: "Atlas",
+      job_title: "Chef de projet",
+      department: "Achats",
+      website: "https://atlas.example",
+      vat_number: "FR32123456789",
+      company_id: "12345678900011",
+    });
+  });
+
   const fills = (ext: FakeExt) => ext.sentToTabs.map((x) => x.message as { type: string; values?: Record<string, string> }).filter((m) => m.type === "fill");
   /** The page's username field: a handle field (letters, digits, dot or underscore, at most `max`). */
   const handleField = (ext: FakeExt, max = 30, pattern = /^[a-z0-9._]+$/) => {

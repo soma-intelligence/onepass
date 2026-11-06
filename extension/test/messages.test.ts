@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BgToCs, CsToBg, FieldRole, FormKind, PageAnalysis, ProviderId, UiToBg } from "../src/shared/messages";
-import { isCsToBg } from "../src/shared/messages";
+import { type Extra, FORMS_ROLES, type IdentityFill, isCsToBg } from "../src/shared/messages";
 
 describe("messages types", () => {
   it("accepts a well-formed page analysis", () => {
@@ -23,6 +23,23 @@ describe("messages types", () => {
     const ui: UiToBg = { type: "menu_init", token: "t" };
     const bg: BgToCs = { type: "show_frame", kind: "menu", ref: "e1", url: "chrome-extension://x/menu.html#t" };
     expect([m.type, ui.type, bg.type]).toEqual(["page_analysis", "menu_init", "show_frame"]);
+  });
+
+  it("mirrors the bridge's fill_identity types (forms coverage)", () => {
+    const extras: Extra[] = ["passport", "driver_license", "loyalty"];
+    const r: IdentityFill = {
+      given_name: "Alex",
+      sex: "f",
+      vat_number: "FR32123456789",
+      company_registration: "12345678900011",
+      passport: { first_names: "Alex Marie", last_name: "Martin", number: "12AB34567", expiry: "2031-04-01" },
+      driver_license: { number: "120175300123", country: "FR" },
+      loyalty: { number: "123456789", program: "Atlas Miles" },
+    };
+    expect(extras).toHaveLength(3);
+    expect(r.loyalty?.number).toBe("123456789");
+    expect(FORMS_ROLES).toHaveLength(21);
+    expect(new Set(FORMS_ROLES).size).toBe(21);
   });
 
   it("isCsToBg validates the discriminant", () => {

@@ -3,7 +3,7 @@
 // testable. Texts are matched after `normalizeText` (lowercase, accents
 // stripped, camelCase split, separators turned into spaces).
 
-import type { FieldRole } from "../../shared/messages";
+import { FORMS_ROLES, type FieldRole } from "../../shared/messages";
 
 export type ScoredRole = Exclude<FieldRole, "unknown">;
 export type Weights = Partial<Record<ScoredRole, number>>;
@@ -35,7 +35,29 @@ export const SCORED_ROLES: readonly ScoredRole[] = [
   "region",
   "country",
   "remember_me",
+  // Forms coverage (spec section 3): after today's roles, so a tie keeps today's role.
+  ...FORMS_ROLES,
 ];
+
+/**
+ * Scores a resolved role also reads (forms.ts, ruling R6): a document expiry is scored as a card
+ * expiry until the form shows a document number, a license date or country as the passport's
+ * terms, a department as a region. The confidence of the resolved role is the best of them.
+ */
+export const ROLE_EVIDENCE: Readonly<Partial<Record<FieldRole, readonly ScoredRole[]>>> = {
+  passport_expiry: ["cc_exp", "cc_exp_month", "cc_exp_year"],
+  license_expiry: ["cc_exp", "cc_exp_month", "cc_exp_year", "passport_expiry"],
+  license_issue_date: ["passport_issue_date"],
+  license_issuing_country: ["passport_issuing_country"],
+  department: ["region"],
+};
+
+/** Score of `role` in `scores`, or the best score of its evidence roles (ROLE_EVIDENCE). */
+export function evidenceScore(scores: Readonly<Record<FieldRole, number>>, role: FieldRole): number {
+  let best = scores[role] ?? 0;
+  for (const r of ROLE_EVIDENCE[role] ?? []) best = Math.max(best, scores[r] ?? 0);
+  return best;
+}
 
 /** Minimum score for a field to get a role; below it the field is `unknown`. */
 export const SCORE_THRESHOLD = 2.5;
@@ -65,6 +87,11 @@ export const AUTOCOMPLETE_ROLES: Readonly<Record<string, ScoredRole>> = {
   "tel-national": "tel",
   organization: "organization",
   bday: "bday",
+  "honorific-prefix": "honorific_prefix",
+  "additional-name": "additional_name",
+  sex: "sex",
+  "organization-title": "job_title",
+  url: "website",
   // One role for the whole date and each of its parts: the filler reads
   // which part a field takes (content/date.ts).
   "bday-day": "bday",
@@ -196,7 +223,7 @@ export const TERMS: readonly Term[] = [
     w: { given_name: 5, full_name: -3, family_name: -3 },
   },
   {
-    re: /\b(last ?name|family ?name|surname|lname|nom de famille|nom de naissance)\b/,
+    re: /\b(last ?name|family ?name|surname|lname|nom de famille)\b/,
     w: { family_name: 5, full_name: -3 },
   },
   { re: /\bnom\b/, w: { family_name: 2.5 } },
@@ -225,7 +252,10 @@ export const TERMS: readonly Term[] = [
     w: { postal_code: 5, otp: -5 },
   },
   { re: /\b(city|ville|town|locality|localite|commune)\b/, w: { city: 5 } },
-  { re: /\b(state|region|province|county|departement)\b/, w: { region: 4 } },
+  { re: /\b(state|region|province|county)\b/, w: { region: 4 } },
+  // A French "département" (or a Spanish or Portuguese "departamento") is a region, or a company's
+  // department next to a company name with no address in its block (forms.ts, ruling R6).
+  { re: /\b(departement|departamento)\b/, w: { region: 4 } },
   { re: /\b(country|pays)\b/, w: { country: 5 } },
 
   // German, Spanish, Italian, Portuguese and Dutch. Kept in terms of their own
@@ -358,6 +388,80 @@ export const TERMS: readonly Term[] = [
     w: { remember_me: 5 },
   },
 
+  // Forms coverage (spec section 3): administrative identity, travel, car rental, company, in
+  // fr, en, de, es, it, pt and nl. Negative weights keep the words they share with today's roles
+  // ("nom", "naissance", "pays", "expiration", "company") from taking these fields.
+  {
+    re: /\b(civilite|titre|title|salutation|honorific|prefix|anrede|titel|tratamiento|titulo|titolo|appellativo|tratamento|aanhef)\b/,
+    w: { honorific_prefix: 5 },
+  },
+  {
+    re: /\b(job ?title|job|position|role|poste|fonction|intitule du poste|titre du poste|berufsbezeichnung|funktion|cargo|puesto|ruolo|posizione|qualifica|funcao|functie|functietitel)\b/,
+    w: { job_title: 6, honorific_prefix: -6 },
+  },
+  {
+    re: /\b(deuxieme prenom|autres prenoms|second prenom|middle ?name|middle ?initial|zweiter vorname|weitere vornamen|segundo nombre|secondo nome|nome do meio|segundo nome|tweede voornaam|tweede voornamen)\b/,
+    w: { additional_name: 9, given_name: -6, full_name: -3 },
+  },
+  {
+    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|geburtsname|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
+    w: { birth_name: 10, family_name: -6, given_name: -4, full_name: -4, bday: -7 },
+  },
+  { re: /\b(sexe|genre|sex|gender|geschlecht|sexo|genero|sesso|genere|geslacht)\b/, w: { sex: 6 } },
+  {
+    re: /\b(lieu de naissance|ville de naissance|commune de naissance|place of birth|birth ?place|city of birth|town of birth|geburtsort|lugar de nacimiento|ciudad de nacimiento|luogo di nascita|comune di nascita|local de nascimento|naturalidade|geboorteplaats)\b/,
+    w: { birth_place: 10, bday: -7, city: -6 },
+  },
+  {
+    re: /\b(pays de naissance|country of birth|birth ?country|geburtsland|pais de nacimiento|paese di nascita|stato di nascita|pais de nascimento|geboorteland)\b/,
+    w: { birth_country: 11, country: -8, bday: -7 },
+  },
+  {
+    re: /\b(nationalite|citoyennete|nationality|citizenship|staatsangehorigkeit|staatsburgerschaft|nationalitat|nacionalidad|nazionalita|cittadinanza|nacionalidade|nationaliteit)\b/,
+    w: { nationality: 7, country: -5 },
+  },
+  {
+    re: /\b(numero de passeport|n ?passeport|no passeport|passeport|passport ?(number|no|num|nr)?|reisepass ?(nummer|nr)?|reisepassnummer|passnummer|pass ?nr|numero de pasaporte|pasaporte|numero di passaporto|passaporto|numero do passaporte|passaporte|paspoort ?nummer|paspoortnummer|paspoort)\b/,
+    w: { passport_number: 7 },
+  },
+  {
+    re: /\b(numero de permis|n ?permis|permis de conduire|drivers? ?s? licen[cs]e( number| no)?|driving licen[cs]e( number| no)?|licen[cs]e (number|no|nr)|fuhrerschein\w*|numero de (permiso|carne) de conducir|permiso de conducir|carne de conducir|numero (di |della )?patente|patente|numero (da|de) carta de conducao|carta de conducao|rijbewijs\w*)\b/,
+    w: { license_number: 7 },
+  },
+  // Date and issue words: a document's date or country is never its number.
+  {
+    re: /\b(date|datum|fecha|data|expir\w*|valable|valid|validite|validade|valido|gultig|ablauf\w*|scadenza|caducidad|vencimiento|vervaldatum|geldig|delivr\w*|ausgestellt|ausstellung\w*|rilascio|emissao|emision|emissione|expedicion|afgifte\w*|issue|issued|issuing|emissor|emisor|emetteur)\b/,
+    w: { passport_number: -9, license_number: -9, loyalty_number: -9 },
+  },
+  {
+    re: /\b(date de delivrance|delivre le|delivree le|date of issue|issue date|issued on|date issued|ausstellungsdatum|ausgestellt am|fecha de expedicion|fecha de emision|data di rilascio|data di emissione|data de emissao|data de expedicao|afgiftedatum|datum van afgifte)\b/,
+    w: { passport_issue_date: 9, bday: -5, cc_exp: -6 },
+  },
+  {
+    re: /\b(pays de delivrance|pays d emission|pays emetteur|issuing country|country of issue|issuing state|ausstellungsland|ausstellender staat|pais de expedicion|pais emisor|pais de emision|paese di rilascio|stato di rilascio|pais emissor|pais de emissao|land van afgifte)\b/,
+    w: { passport_issuing_country: 10, country: -8, passport_issue_date: -9 },
+  },
+  {
+    re: /\b(numero de fidelite|carte de fidelite|fidelite|grand voyageur|frequent ?flyer|loyalty|rewards? (number|no|id)|membership (number|no)|vielflieger\w*|bonusnummer|kundenkartennummer|viajero frecuente|numero de socio|codice fedelta|fedelta|numero socio|passageiro frequente|fidelidade|lidmaatschapsnummer|lidmaatschap)\b/,
+    w: { loyalty_number: 8, otp: -5, username: -4 },
+  },
+  { re: /\b(service|department|dept|division|abteilung|reparto|dipartimento|afdeling)\b/, w: { department: 6 } },
+  {
+    re: /\b(numero de tva|tva intracommunautaire|tva|vat ?(number|id|no|registration number)?|ust ?id ?nr|ust ?idnr|ust ?id|umsatzsteuer\w*|numero de iva|nif iva|iva|partita iva|p ?iva|btw ?(nummer|id|nr)?|nif)\b/,
+    w: { vat_number: 8 },
+  },
+  {
+    re: /\b(siret|siren|numero rcs|rcs|numero d immatriculation|immatriculation|company (registration )?(number|no)|company reg\w*|registration (number|no)|crn|handelsregister\w*|hrb|cif|registro mercantil|numero rea|rea|codice fiscale azienda|nipc|numero de matricula|matricula|kv ?k ?(nummer|nr)?|kamer van koophandel)\b/,
+    w: { company_id: 9, organization: -6 },
+  },
+  {
+    re: /\b(site web|site internet|website|web ?site|homepage|home page|webseite|internetseite|sitio web|pagina web|sito web|sito internet)\b/,
+    w: { website: 7 },
+  },
+  { re: /^site$/, w: { website: 5 } },
+  // The Dutch "tussenvoegsel" (van, de) is no middle name: nothing fills it (ruling R14).
+  { re: /\btussenvoegsel\w*\b/, w: { additional_name: -20, given_name: -20, family_name: -20, full_name: -20 } },
+
   // "Remember me" (checkboxes only, see TYPE rules in fields.ts).
   {
     re: /\b(remember|stay signed|keep me|trust this|se souvenir|souviens|rester connecte|memoriser|faire confiance)\b/,
@@ -372,6 +476,7 @@ export const TYPE_WEIGHTS: Readonly<Record<string, Weights>> = {
   tel: { tel: 4, otp: 0.5 },
   number: { otp: 0.5, cc_number: 0.5, postal_code: 0.5 },
   date: { bday: 3 },
+  url: { website: 3 },
 };
 
 /** Added to the three password roles when the control is not type=password. */

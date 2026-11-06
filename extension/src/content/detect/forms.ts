@@ -1,6 +1,6 @@
 // Form grouping and classification (spec 8.2), and the page analysis entry point.
 
-import type { FieldInfo, FieldRole, FormInfo, FormKind, PageAnalysis } from "../../shared/messages";
+import { FORMS_ROLES, type FieldInfo, type FieldRole, type FormInfo, type FormKind, type PageAnalysis } from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
 import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
@@ -69,7 +69,11 @@ const IDENTITY: ReadonlySet<FieldRole> = new Set([
   "organization",
   "bday",
   "email",
+  // Forms coverage: people, documents and companies are identity forms too.
+  ...FORMS_ROLES,
 ]);
+/** Roles the models never yield (ruling R13): a model answer never replaces them. */
+const HEURISTIC_ONLY: ReadonlySet<FieldRole> = new Set(FORMS_ROLES);
 const ADDRESS: ReadonlySet<FieldRole> = new Set([
   "address_line1",
   "address_line2",
@@ -352,6 +356,88 @@ function resolvePasswords(fields: Classified[]): void {
   });
 }
 
+const CARD_EXPIRY: ReadonlySet<FieldRole> = new Set(["cc_exp", "cc_exp_month", "cc_exp_year"]);
+/** Card fields other than the expiry: with one of them, an unqualified expiry is the card's. */
+const CARD_OWN: ReadonlySet<FieldRole> = new Set(["cc_number", "cc_name", "cc_csc"]);
+const PASSPORT_WORDS = /\b(passeport|passport|reisepass|pass|pasaporte|passaporto|passaporte|paspoort)\b/;
+const LICENSE_WORDS =
+  /\b(permis|licen[cs]e|fuhrerschein\w*|permiso|carne|patente|carta|conducao|conducir|rijbewijs\w*)\b/;
+
+type Doc = "passport" | "license";
+
+/** The words of a field that name it (names, label, placeholder), normalized; never its value. */
+function fieldWords(el: FieldElement): string {
+  const parts = ["name", "id", "placeholder", "aria-label", "title"].map((a) => el.getAttribute(a) ?? "");
+  for (const l of Array.from(el.labels ?? []).slice(0, 3)) parts.push(ownText(l));
+  const fs = el.closest("fieldset");
+  const legend = fs?.querySelector(":scope > legend");
+  if (legend) parts.push(ownText(legend, 100));
+  return normalizeText(parts.join(" ").slice(0, 400));
+}
+
+/**
+ * Dates and countries of a document (spec section 3.2, ruling R6): an expiry, an issue date or an
+ * issuing country belongs to the passport when the group has a passport number, to the license
+ * when it has a license number; with both, the field's own words (or legend) say which, else the
+ * nearest number before it. An expiry stays the card's next to another card field unless its
+ * words name a document; an issue date or issuing country with no document number is dropped.
+ */
+function resolveDocuments(fields: Classified[]): void {
+  const passport = fields.some((f) => f.role === "passport_number");
+  const license = fields.some((f) => f.role === "license_number");
+  const card = fields.some((f) => CARD_OWN.has(f.role));
+  const docOf = (f: Classified, i: number): Doc | null => {
+    const words = fieldWords(f.el);
+    const p = passport && PASSPORT_WORDS.test(words);
+    const l = license && LICENSE_WORDS.test(words);
+    if (p !== l) return p ? "passport" : "license";
+    if (passport !== license) return passport ? "passport" : license ? "license" : null;
+    if (!passport) return null;
+    for (let k = i - 1; k >= 0; k--) {
+      const r = (fields[k] as Classified).role;
+      if (r === "passport_number") return "passport";
+      if (r === "license_number") return "license";
+    }
+    return "passport";
+  };
+  fields.forEach((f, i) => {
+    if (f.direct || f.cell) return;
+    if (CARD_EXPIRY.has(f.role)) {
+      if (!passport && !license) return;
+      const words = fieldWords(f.el);
+      const named = (passport && PASSPORT_WORDS.test(words)) || (license && LICENSE_WORDS.test(words));
+      if (card && !named) return;
+      f.role = docOf(f, i) === "license" ? "license_expiry" : "passport_expiry";
+      return;
+    }
+    if (f.role === "passport_issue_date" || f.role === "passport_issuing_country") {
+      const doc = docOf(f, i);
+      const date = f.role === "passport_issue_date";
+      f.role = doc === null ? "unknown" : doc === "license" ? (date ? "license_issue_date" : "license_issuing_country") : f.role;
+    }
+  });
+}
+
+/** The block of a field: its nearest fieldset, else the whole group. */
+function blockOf(el: Element, group: Element): Element {
+  const fs = el.closest("fieldset");
+  return fs !== null && group.contains(fs) ? fs : group;
+}
+
+/**
+ * A "département" or "departamento" read as a region is a company's department when its block
+ * holds a company name or a job title and no other address field (spec section 3.4, ruling R6).
+ */
+function resolveDepartments(fields: Classified[], container: Element): void {
+  for (const f of fields) {
+    if (f.role !== "region" || f.direct || !/\b(departement|departamento)\b/.test(fieldWords(f.el))) continue;
+    const block = blockOf(f.el, container);
+    const mates = fields.filter((x) => x !== f && block.contains(x.el));
+    const company = mates.some((x) => x.role === "organization" || x.role === "job_title");
+    if (company && !mates.some((x) => ADDRESS.has(x.role))) f.role = "department";
+  }
+}
+
 /**
  * A guessed full name followed by a family name, with no given name in the
  * group, is the given name ("Name" then "Family name").
@@ -467,8 +553,9 @@ export function detectForms(
     }
     const heuristic = classifyField(el);
     const direct = heuristic.score === AUTOCOMPLETE_SCORE;
-    // R21: an autocomplete-decided role is never replaced by the model.
-    const { role } = (direct ? undefined : fromModel?.get(el)) ?? heuristic;
+    // R21: an autocomplete-decided role is never replaced by the model, nor a role no model has (R13).
+    const keep = direct || HEURISTIC_ONLY.has(heuristic.role);
+    const { role } = (keep ? undefined : fromModel?.get(el)) ?? heuristic;
     if (role !== "unknown") classified.push({ el, role, direct, cell: false });
   }
 
@@ -495,6 +582,10 @@ export function detectForms(
     resolveSecurityCodes(group.fields);
     resolvePasswords(group.fields);
     resolveNames(group.fields);
+    resolveDocuments(group.fields);
+    resolveDepartments(group.fields, group.container);
+    group.fields = group.fields.filter((f) => f.role !== "unknown");
+    if (group.fields.length === 0) continue;
     const submit =
       findSubmit(group, buttons, isForm) ??
       (isForm ? trailingNext(group.container, buttons, groups.map((g) => g.group)) : undefined);

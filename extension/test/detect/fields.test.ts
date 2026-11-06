@@ -192,3 +192,21 @@ describe("classifyField: weighted scoring", () => {
     expect(role("g")).toBe("address_line1");
   });
 });
+
+describe("classifyField: forms autocomplete tokens (forms coverage, Task 8)", () => {
+  it.each([
+    ["honorific-prefix", "honorific_prefix"],
+    ["additional-name", "additional_name"],
+    ["sex", "sex"],
+    ["bday-day", "bday"],
+    ["bday-month", "bday"],
+    ["bday-year", "bday"],
+    ["organization-title", "job_title"],
+    ["url", "website"],
+    ["work tel", "tel"],
+    ["section-b work tel", "tel"],
+  ])("%s -> %s", (ac, expected) => {
+    document.body.innerHTML = `<input id="f" type="text" name="zzz" autocomplete="${ac}">`;
+    expect(role("f")).toBe(expected);
+  });
+});

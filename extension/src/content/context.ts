@@ -34,6 +34,7 @@ import {
   AUTOCOMPLETE_SCORE,
   CHECKOUT_WORDS,
   CREATE_WORDS,
+  evidenceScore,
   NEWSLETTER_WORDS,
   NEXT_WORDS,
   normalizeText,
@@ -262,7 +263,8 @@ function fieldContexts(form: PageAnalysis["forms"][number], refs: RefRegistry, g
     const split = f.parts !== undefined && f.parts.length > 0;
     const el = first as FieldElement;
     const typeWeight = (f.role === "unknown" ? undefined : TYPE_WEIGHTS[controlType(el)]?.[f.role]) ?? 0;
-    const confidence = split ? SPLIT_OTP_CONFIDENCE : confidenceOf(scoreField(el, cardForm)[f.role], typeWeight);
+    // A role the form resolved (a document expiry, a department) has the confidence of its evidence.
+    const confidence = split ? SPLIT_OTP_CONFIDENCE : confidenceOf(evidenceScore(scoreField(el, cardForm), f.role), typeWeight);
     out.push({
       field_ref: f.ref,
       role: f.role,
