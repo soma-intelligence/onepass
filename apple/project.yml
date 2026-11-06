@@ -222,6 +222,9 @@ targets:
         # Contents/Frameworks, next to Contents/MacOS.
         "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iPhone and iPad: every AppIcon-<slug> set is an alternate icon (docs/assets/brand/family.py).
+        "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]": YES
+        "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]": YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         ENABLE_HARDENED_RUNTIME: YES

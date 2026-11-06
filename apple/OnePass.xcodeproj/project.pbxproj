@@ -183,6 +183,7 @@
 		CB5FED7E67C849940E609196 /* ConcealedValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46D1ACF819F71AF4273989AD /* ConcealedValueView.swift */; };
 		CE1A294285A89599FB6323B3 /* AddAccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AA46BB707E6DFF25141F358 /* AddAccountSheet.swift */; };
 		D09283BD32DDA65DBC4BD2BE /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */; };
+		D1E20AAFA715394200DE33E0 /* AppIconSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0440AEC79751525D4647513 /* AppIconSettings.swift */; };
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
@@ -521,6 +522,7 @@
 		DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyShield.swift; sourceTree = "<group>"; };
 		DE732F4D473E8768C899CD4A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnePassWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E0440AEC79751525D4647513 /* AppIconSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconSettings.swift; sourceTree = "<group>"; };
 		E1C5D9F63AB4E2FAD9DE9780 /* WatchtowerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerModel.swift; sourceTree = "<group>"; };
 		E364C6482B7E724032103715 /* onepass-icons.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "onepass-icons.bin"; sourceTree = "<group>"; };
 		E41252F90FFDB8A0F0C5E4E3 /* SharingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingSupport.swift; sourceTree = "<group>"; };
@@ -1060,6 +1062,7 @@
 			children = (
 				89863609CCDE5B045CFDE000 /* AboutSettings.swift */,
 				37A148525A5253544CE1AB8D /* AgentsSettings.swift */,
+				E0440AEC79751525D4647513 /* AppIconSettings.swift */,
 				46BB0DFE499C7B52D15F7EA0 /* AutoFillSettings.swift */,
 				158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */,
 				815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */,
@@ -1774,6 +1777,7 @@
 				AC97612BBB4918DE3AF1B3FE /* AgentRequestView.swift in Sources */,
 				88855E27AFF53DF2C4EA1589 /* AgentsSettings.swift in Sources */,
 				E1F9ECC90A514F5FE2FE9875 /* AllAccountsSearch.swift in Sources */,
+				D1E20AAFA715394200DE33E0 /* AppIconSettings.swift in Sources */,
 				0E9D6B125A12F9AEA3FC361B /* AppModel+Accounts.swift in Sources */,
 				19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */,
 				9320F3B7178A6EBB186C26AA /* AppRoute.swift in Sources */,
@@ -2053,6 +2057,8 @@
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]" = YES;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-Signed-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Support/OnePass-Signed-macOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=xr*]" = "App/Support/OnePass-Signed-iOS.entitlements";
@@ -2277,6 +2283,8 @@
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]" = YES;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Support/OnePass.entitlements;
 				CODE_SIGN_IDENTITY = "-";
@@ -2841,6 +2849,8 @@
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]" = YES;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Support/OnePass.entitlements;
 				CODE_SIGN_IDENTITY = "-";
@@ -3245,6 +3255,8 @@
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]" = YES;
+				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]" = YES;
 				CODE_SIGN_ENTITLEMENTS = "App/Support/OnePass-CloudKit.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-CloudKit.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Support/OnePass-CloudKit-macOS.entitlements";

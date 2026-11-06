@@ -38,6 +38,7 @@ struct GeneralSettings: View {
             #endif
             #if os(iOS)
             AppearanceSection()
+            AppIconSection()
             #endif
             Section {
                 Picker("settings.general.autoLock", selection: Binding(
