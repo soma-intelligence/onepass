@@ -60,9 +60,13 @@ export interface Result {
 
 /** Flows whose goal is a form the relying party accepts (the forms flows of spec 11 included). */
 export const FORM_FLOWS = new Set<FlowId>(["checkout_card", "address", "identity", "travel_booking", "company_b2b", "car_rental", "admin_identity"]);
-/** Flows whose true intent is a sign-in (code step included): the only ones OnePass may send. */
+/**
+ * Flows whose true intent is a sign-in (code step included): the only ones OnePass may send.
+ * multi_step is a sign-in split over pages (identifier, then password or code), which the menu
+ * pick and the one-click chain run to its end (ruling R31).
+ */
 export const LOGIN_FAMILY = new Set<FlowId>(["login_single", "login_username_first", "login_email_then_password", "login_totp",
-  "login_passkey", "sso"]);
+  "login_passkey", "sso", "multi_step"]);
 /** Drivers whose one-click success the report compares. */
 export const ONE_CLICK_DRIVERS = new Set<DriverId>(["one_click", "menu_fill", "smart_fill"]);
 

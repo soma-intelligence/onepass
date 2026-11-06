@@ -1,7 +1,7 @@
 {
   "0:lookalike": "pass",
   "0:one_click": "pass",
-  "10:menu_fill": "fail",
+  "10:menu_fill": "pass",
   "11:menu_fill": "xfail",
   "12:menu_fill": "xfail",
   "13:menu_fill": "xfail",

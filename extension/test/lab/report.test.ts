@@ -207,6 +207,14 @@ describe("smart fill metrics", () => {
       .toEqual({ verdict: "pass" });
     expect(judge(sc(totpSite), totpSite, ob({ events: [ev.submit(totpSite.host, 5, true, "otp"), ev.signin(totpSite.host, 6, "ada")] })))
       .toEqual({ verdict: "pass" });
+    // A multi-step sign-in (identifier page, then password page, then signed in) is a sign-in too:
+    // OnePass may send its steps (ruling R31, the menu pick runs the chain to its end).
+    const multiStep: Site = { ...signinSite, index: 10, host: "ivory-dune-57.test", flow: "multi_step",
+      steps: [[signinSite.fields[0]!], [signinSite.fields[1]!]] };
+    expect(LOGIN_FAMILY.has("multi_step")).toBe(true);
+    expect(judge(sc(multiStep, "menu_fill"), multiStep, ob({ driver: "menu_fill", userSubmitAt: 50, events: [
+      ev.submit(multiStep.host, 5, true, "multi_step"), ev.submit(multiStep.host, 6, true, "step"), ev.signin(multiStep.host, 6, "ada")] })))
+      .toEqual({ verdict: "pass" });
     // A leak still wins.
     const leak: LabEvent = { at: 41, host: "evil.test", kind: "leak", secret: "card", field: "ccnum", owner: checkout.host };
     expect(judge(sc(checkout), checkout, ob({ events: [ev.submit(checkout.host, 40), leak] })).verdict).toBe("leak");
