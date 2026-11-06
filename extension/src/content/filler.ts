@@ -21,7 +21,7 @@
 // (bounded wait); ARIA comboboxes are typed into and their option pressed.
 import type { FieldInfo, FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import { backingSelect, isCombobox, optionLike, optionsOf, press } from "./combobox";
-import { birthdayOption, birthdayText, leadingInt, monthOf } from "./date";
+import { dateOption, datePart, dateText, leadingInt, monthOf } from "./date";
 import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
@@ -149,7 +149,13 @@ function typedRegion(wanted: readonly string[], raw: string): string[] {
 }
 
 /** Roles whose value is a date `YYYY-MM-DD` (spec section 6). */
-const DATE_ROLES: ReadonlySet<FieldRole> = new Set(["bday"]);
+const DATE_ROLES: ReadonlySet<FieldRole> = new Set([
+  "bday",
+  "passport_issue_date",
+  "passport_expiry",
+  "license_issue_date",
+  "license_expiry",
+]);
 
 const autocompleteTokens = (el: Element) => (el.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
 
@@ -166,15 +172,15 @@ function textValue(el: FieldElement, v: string, role: FieldRole, geo: GeoContext
 /** Writes `v` into one control, as a user would. False when nothing matched. */
 function write(el: FieldElement, v: string, role: FieldRole, geo: GeoContext = DEFAULT_GEO): boolean {
   let value = v;
-  if (role === "bday") {
+  if (DATE_ROLES.has(role)) {
     // The date input, the part, or the written format the field wants (date.ts).
     if (el instanceof HTMLSelectElement) {
-      const i = birthdayOption(el, v);
+      const i = dateOption(el, v);
       const opt = i >= 0 ? el.options[i] : undefined;
       if (!opt) return false;
       value = opt.value;
     } else {
-      const text = birthdayText(el, v, geo.lang ?? null);
+      const text = dateText(el, v, geo.lang ?? null);
       if (text === null) return false;
       value = text;
     }
@@ -488,8 +494,12 @@ export function createFiller(opts: FillerOptions): Filler {
           continue;
         }
         if (field.parts && field.parts.length > 0 && DATE_ROLES.has(slot.role)) {
-          // A date in parts: each control takes its own part of the date (date.ts).
-          for (let i = 0; i < field.parts.length; i++) if (put(slot, i, v)) n++;
+          // A date in parts: each control takes its own part of the date (date.ts); a control no
+          // sign designates as a day, a month or a year stays empty (ruling R9).
+          for (let i = 0; i < field.parts.length; i++) {
+            const el = target(slot, i);
+            if (el && datePart(el) !== null && put(slot, i, v)) n++;
+          }
         } else if (field.parts && field.parts.length > 0) {
           // A radio group is chosen by its own rules (Task 11), never one character per button.
           if (slot.role === "honorific_prefix" || slot.role === "sex") continue;
