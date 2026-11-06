@@ -26,7 +26,7 @@ export const isFormsFlow = (f: FlowId): boolean => FORMS_FLOWS.includes(f);
  * Whether the vault template has the Identity work fields `vat_number` and `company_registration` (plan Task 5):
  * until then the fixture leaves them out (the native host refuses unknown fields) and the site keeps them in `forms`.
  */
-export const VAULT_COMPANY_IDS = false;
+export const VAULT_COMPANY_IDS = true;
 
 /** Roles of version 3 the forms flows reuse, labelled from the corpus. */
 export interface CoreLabel { label: string; token: string; autocompleteRate: number }

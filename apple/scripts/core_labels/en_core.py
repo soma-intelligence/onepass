@@ -6,6 +6,7 @@ OVERRIDE = {
     ("Base", "database"): "Database",
 }
 LABEL = {
+"Numéro de TVA": "VAT number", "Immatriculation (SIRET, RCS)": "Company registration number",
 "Abonnement": "Subscription", "Accès API": "API access", "Acheté le": "Purchased on", "Adhésion": "Membership",
 "Adhésion le": "Member since", "Admin": "Admin", "Adresse": "Address", "Adresse MAC": "MAC address",
 "Adresse de facturation": "Billing address", "Adresse de l'agence": "Branch address",

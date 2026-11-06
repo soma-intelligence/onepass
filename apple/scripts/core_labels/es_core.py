@@ -6,6 +6,8 @@ OVERRIDE = {
     ("Base", "database"): "Base de datos",
 }
 LABEL = {
+    "Numéro de TVA": "Número de IVA",
+    "Immatriculation (SIRET, RCS)": "Número de registro mercantil",
     "Abonnement": "Suscripción",
     "Accès API": "Acceso a la API",
     "Acheté le": "Comprado el",

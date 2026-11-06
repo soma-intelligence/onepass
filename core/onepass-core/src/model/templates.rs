@@ -584,6 +584,8 @@ fn identity() -> Vec<Section> {
                 tx("company", "Entreprise"),
                 tx("job_title", "Poste"),
                 tx("department", "Service"),
+                tx("vat_number", "Numéro de TVA"),
+                tx("company_registration", "Immatriculation (SIRET, RCS)"),
                 url("website", "Site web"),
                 tx("handles", "Pseudos (réseau, pseudo)").rep(),
             ],
@@ -1171,6 +1173,37 @@ mod tests {
             crate::model::field::FieldType::Concealed
         );
         assert!(f("security_answer").repeatable);
+    }
+
+    #[test]
+    fn identity_work_section_holds_vat_number_and_company_registration() {
+        let t = template(ItemType::Identity);
+        let work = t.iter().find(|s| s.id == "work").unwrap();
+        let ids: Vec<&str> = work.fields.iter().map(|f| f.id.as_str()).collect();
+        let at = ids.iter().position(|id| *id == "department").unwrap();
+        assert_eq!(ids[at + 1], "vat_number");
+        assert_eq!(ids[at + 2], "company_registration");
+        for f in &work.fields[at + 1..at + 3] {
+            assert_eq!(f.kind, crate::model::field::FieldType::Text, "{}", f.id);
+            assert!(!f.required, "{}", f.id);
+            assert!(f.autofill, "{}", f.id);
+        }
+        assert_eq!(work.fields[at + 1].label, "Numéro de TVA");
+        assert_eq!(work.fields[at + 2].label, "Immatriculation (SIRET, RCS)");
+    }
+
+    #[test]
+    fn identity_built_before_the_company_ids_still_validates() {
+        // An item saved before the two fields existed has none of them.
+        let mut item = new_item(ItemType::Identity, Id::new(), "Me");
+        for s in &mut item.sections {
+            s.fields
+                .retain(|f| f.id != "vat_number" && f.id != "company_registration");
+        }
+        item.field_mut("first_name").unwrap().value = tx("Q");
+        validate(&item).unwrap();
+        assert!(item.field("vat_number").is_none());
+        assert!(item.field("company_registration").is_none());
     }
 
     #[test]

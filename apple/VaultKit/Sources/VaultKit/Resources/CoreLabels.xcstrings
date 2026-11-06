@@ -4561,6 +4561,36 @@
         }
       }
     },
+    "field.identity.company_registration" : {
+      "comment" : "Field of the identity template (core id company_registration).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Company registration number"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número de registro mercantil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immatriculation (SIRET, RCS)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numero di iscrizione al registro delle imprese"
+          }
+        }
+      }
+    },
     "field.identity.department" : {
       "comment" : "Field of the identity template (core id department).",
       "extractionState" : "manual",
@@ -4917,6 +4947,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sesso"
+          }
+        }
+      }
+    },
+    "field.identity.vat_number" : {
+      "comment" : "Field of the identity template (core id vat_number).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VAT number"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número de IVA"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numéro de TVA"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partita IVA"
           }
         }
       }
