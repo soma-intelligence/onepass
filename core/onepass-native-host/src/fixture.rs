@@ -119,6 +119,11 @@ fn item_type(s: &str) -> Result<ItemType, HostError> {
         "identity" => ItemType::Identity,
         "secure_note" => ItemType::SecureNote,
         "crypto_wallet" => ItemType::CryptoWallet,
+        "passport" => ItemType::Passport,
+        "driver_license" => ItemType::DriverLicense,
+        "id_card" => ItemType::IdCard,
+        "reward_program" => ItemType::RewardProgram,
+        "membership" => ItemType::Membership,
         other => return Err(bad(format!("unsupported item type {other:?}"))),
     })
 }
@@ -576,6 +581,53 @@ mod tests {
         let names: Vec<_> = v.vaults().unwrap().into_iter().map(|v| v.name).collect();
         assert!(names.contains(&"Personnel".to_owned()));
         assert!(names.contains(&"Atlas".to_owned()));
+    }
+
+    #[test]
+    fn fixture_loads_documents_and_loyalty_programs() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.json");
+        let doc = serde_json::json!({"vaults":[{"name":"Personnel"}],"items":[
+            {"type":"passport","title":"Passeport Lea Martin","vault":"Personnel","fields":{
+                "issuing_country":"FR","number":"12AB34567","expiry":"2031-04-07","last_name":"Martin",
+                "first_names":"Lea Claire","nationality":"FR","birth_date":"1990-04-12",
+                "birth_place":"Lyon","sex":"Féminin","issued_on":"2021-04-08"}},
+            {"type":"driver_license","title":"Permis Lea Martin","vault":"Personnel","fields":{
+                "full_name":"Lea Martin","number":"120475301234","country":"FR",
+                "birth_date":"1990-04-12","issued_on":"2010-06-01","expiry":"2033-06-01"}},
+            {"type":"reward_program","title":"Volair Miles","vault":"Personnel",
+                "urls":[{"url":"https://volair.test","rule":"domain"}],
+                "fields":{"company":"Volair Miles","member_number":"482910374","member_name":"Lea Martin"}},
+            {"type":"id_card","title":"CNI Lea Martin","vault":"Personnel","fields":{"country":"FR","number":"X4RTBPFW4","expiry":"2032-01-01"}},
+            {"type":"membership","title":"Club","vault":"Personnel","fields":{"organization":"Club","member_number":"77"}}
+        ]});
+        std::fs::write(&p, serde_json::to_vec(&doc).unwrap()).unwrap();
+        let mut v = load_fixture(&p).unwrap();
+        let items = v.items().unwrap();
+        let get = |t: &str| &items.iter().find(|(_, i)| i.title == t).unwrap().1;
+        let passport = get("Passeport Lea Martin");
+        assert_eq!(passport.item_type, ItemType::Passport);
+        assert!(
+            matches!(&passport.field("number").unwrap().value, FieldValue::Concealed(n) if n.as_str() == "12AB34567")
+        );
+        assert!(matches!(
+            passport.field("expiry").unwrap().value,
+            FieldValue::Date(_)
+        ));
+        assert!(
+            matches!(&passport.field("sex").unwrap().value, FieldValue::Menu(s) if s == "Féminin")
+        );
+        let license = get("Permis Lea Martin");
+        assert_eq!(license.item_type, ItemType::DriverLicense);
+        assert!(matches!(
+            license.field("issued_on").unwrap().value,
+            FieldValue::Date(_)
+        ));
+        let reward = get("Volair Miles");
+        assert_eq!(reward.item_type, ItemType::RewardProgram);
+        assert_eq!(reward.urls.len(), 1);
+        assert_eq!(get("CNI Lea Martin").item_type, ItemType::IdCard);
+        assert_eq!(get("Club").item_type, ItemType::Membership);
     }
 
     #[test]
