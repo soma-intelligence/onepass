@@ -465,12 +465,12 @@ private struct BigTypeTile: View {
 
     // iPhone: three narrow tiles a row, the name on up to two lines.
     #if os(iOS)
-    private static let art: CGFloat = 40
-    private static let spacing: CGFloat = 12
+    private static let art: CGFloat = 32
+    private static let spacing: CGFloat = 8
     private static let font = Font.subheadline.weight(.semibold)
     private static let lines = 2
-    private static let padding: CGFloat = 12
-    private static let height: CGFloat = 104
+    private static let padding: CGFloat = 10
+    private static let height: CGFloat = 84
     #else
     private static let art: CGFloat = 44
     private static let spacing: CGFloat = 18
@@ -495,7 +495,9 @@ private struct BigTypeTile: View {
                 Text(category.singular)
                     .font(Self.font)
                     .foregroundStyle(.primary)
-                    .lineLimit(Self.lines)
+                    // Every tile reserves the same lines: a name on two lines ("API credential")
+                    // no longer makes its tile taller than its neighbours.
+                    .lineLimit(Self.lines, reservesSpace: true)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
             }
