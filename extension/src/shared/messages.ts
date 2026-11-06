@@ -143,6 +143,18 @@ export interface IdentityFill {
   loyalty?: LoyaltyOut;
 }
 
+/**
+ * What an identity fill knows besides the values of its roles, never written as such (forms
+ * coverage, spec sections 4 and 7): the identity's sex (`f`, `m`, `x`) for a nationality's gender,
+ * whether a civility may come from it (the civility role was asked and the vault has none), the
+ * work phone for a `work` tel field (the tel role was asked).
+ */
+export interface FillHints {
+  sex?: string;
+  civility_from_sex?: true;
+  work_tel?: string;
+}
+
 /** What a card, identity or address form sent by hand can be saved as. */
 export type SavedFormKind = "card" | "identity";
 
@@ -551,7 +563,7 @@ export type UiToBg =
  */
 export type BgToCs =
   /** Values keyed by role; the content script writes them into the fields of `formRef` only. */
-  | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>> }
+  | { type: "fill"; origin: string; formRef: string; values: Partial<Record<FieldRole, string>>; hints?: FillHints }
   | { type: "click"; origin: string; ref: string }
   /** The user chose a passkey: click this button only if it still reads as a passkey button. */
   | { type: "click_passkey"; origin: string; ref: string }

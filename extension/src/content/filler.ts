@@ -19,15 +19,17 @@
 // codes and names (`geo/`), a tie picks nothing, the region is filled after
 // the country and, when the country changed, once the page reloaded its list
 // (bounded wait); ARIA comboboxes are typed into and their option pressed.
-import type { FieldInfo, FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
+import type { FieldInfo, FieldRole, FillHints, FormInfo, PageAnalysis } from "../shared/messages";
 import { backingSelect, isCombobox, optionLike, optionsOf, press } from "./combobox";
+import { pickChoice } from "./choice";
 import { dateOption, datePart, dateText, leadingInt, monthOf } from "./date";
 import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
 import { type Geometry, isVisible } from "./detect/visibility";
 import { countryName, nameLangs, resolveCountry, resolveCountryValue } from "./geo/countries";
-import { type OptionLike, pickCountry, pickRegion, postalFallback, regionWanted } from "./geo/options";
+import { demonym, demonymCountry } from "./geo/demonyms";
+import { type OptionLike, pickCountry, pickNationality, pickRegion, postalFallback, regionWanted } from "./geo/options";
 import { parentRegion, REGIONS, regionText } from "./geo/regions";
 import { OBSERVER_DELAY_MS } from "./observer";
 import { settle } from "./settle";
@@ -73,7 +75,18 @@ export interface GeoContext {
   postal?: string | null;
   /** The page's language as it declares it (`en-US`): the written order of a birth date. */
   lang?: string | null;
+  /** The identity's sex (`f`, `m`, `x`): a nationality's gender, a civility from the sex. */
+  sex?: string | undefined;
+  /** A civility list with no vault civility picks the one of the sex (spec section 7). */
+  civilityFromSex?: boolean;
 }
+
+export type { FillHints };
+
+/** Civility and sex: chosen by their tables (choice.ts). */
+const CHOICE_ROLES: ReadonlySet<FieldRole> = new Set(["honorific_prefix", "sex"]);
+/** Countries of a document: the country path (pickCountry), never the region nor the postal code. */
+const ISSUING_ROLES: ReadonlySet<FieldRole> = new Set(["passport_issuing_country", "license_issuing_country"]);
 
 const DEFAULT_GEO: GeoContext = { langs: nameLangs(null), country: null };
 
@@ -82,7 +95,9 @@ const optionsOfSelect = (sel: HTMLSelectElement): OptionLike[] =>
 
 /** Index of the option matching `v` for `role`, or -1. */
 export function matchOption(sel: HTMLSelectElement, v: string, role: FieldRole, geo: GeoContext = DEFAULT_GEO): number {
-  if (role === "country") return pickCountry(optionsOfSelect(sel), v, geo.langs);
+  if (role === "country" || ISSUING_ROLES.has(role)) return pickCountry(optionsOfSelect(sel), v, geo.langs);
+  if (role === "nationality") return pickNationality(optionsOfSelect(sel), v, geo.langs);
+  if (CHOICE_ROLES.has(role)) return pickChoice(optionsOfSelect(sel), role, { value: v, sex: role === "sex" || geo.civilityFromSex ? geo.sex : undefined });
   if (role === "region") {
     const country = geo.country ?? null;
     const os = optionsOfSelect(sel);
@@ -166,7 +181,26 @@ function textValue(el: FieldElement, v: string, role: FieldRole, geo: GeoContext
     const cc = resolveCountry(v, geo.langs);
     if (cc) return countryName(cc, geo.langs[0] ?? "en");
   }
+  const lang = geo.langs[0] ?? "en";
+  if (ISSUING_ROLES.has(role)) {
+    // A person writes the country's name.
+    const cc = resolveCountry(v, geo.langs);
+    return cc ? countryName(cc, lang) : v;
+  }
+  if (role === "nationality") {
+    // The demonym in the page's language, of the identity's gender; else the country's name.
+    const cc = resolveCountry(v, geo.langs) ?? demonymCountry(v);
+    if (!cc) return v;
+    return demonym(cc, lang, geo.sex === "f") ?? countryName(cc, lang);
+  }
   return v;
+}
+
+/** What a radio button says: its labels, else its ARIA label, else its value. */
+function radioLabel(b: HTMLInputElement): string {
+  const own = Array.from(b.labels ?? [], (l) => (l.textContent ?? "").replace(/\s+/g, " ").trim()).filter((t) => t !== "");
+  if (own.length > 0) return own.join(" ");
+  return (b.getAttribute("aria-label") ?? b.value).trim();
 }
 
 /** Writes `v` into one control, as a user would. False when nothing matched. */
@@ -192,9 +226,12 @@ function write(el: FieldElement, v: string, role: FieldRole, geo: GeoContext = D
     // value alone: no change event, so the page reloads nothing.
     if ((role === "country" || role === "region") && el.selectedIndex === i) return true;
     value = opt.value;
-  } else if (role === "country" || role === "region") {
+  } else if (role === "country" || role === "region" || role === "nationality" || ISSUING_ROLES.has(role)) {
     value = textValue(el, v, role, geo);
     if (value === "") return false;
+  } else if (CHOICE_ROLES.has(role)) {
+    // A civility typed as the vault writes it; a sex is never typed (its words differ by page).
+    if (role === "sex" || v === "") return false;
   }
   if (el instanceof HTMLElement) el.focus({ preventScroll: true });
   setNative(el, value);
@@ -245,9 +282,9 @@ export interface Filler {
    * was picked, a region that waits for its list once it is written: both
    * come later, in `done`.
    */
-  fill(formRef: string, values: Partial<Record<FieldRole, string>>): FillResult;
+  fill(formRef: string, values: Partial<Record<FieldRole, string>>, hints?: FillHints): FillResult;
   /** `fill(...).now`: how many controls were written at once. */
-  fillForm(formRef: string, values: Partial<Record<FieldRole, string>>): number;
+  fillForm(formRef: string, values: Partial<Record<FieldRole, string>>, hints?: FillHints): number;
   /** Resolves when every later write (region wait, combobox pick) is over. */
   settled(): Promise<void>;
 }
@@ -275,7 +312,8 @@ export function createFiller(opts: FillerOptions): Filler {
 
   const usable = (ref: string, container: Element): FieldElement | null => {
     const el = refs.get(ref);
-    if (!el || !el.isConnected || !isFieldCandidate(el)) return null;
+    const radio = el instanceof HTMLInputElement && el.type === "radio";
+    if (!el || !el.isConnected || !(isFieldCandidate(el) || radio)) return null;
     const owner = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.form : null;
     if (owner !== container && !(owner === null && container.contains(el))) return null;
     return isVisible(el, geometry) ? el : null;
@@ -393,19 +431,19 @@ export function createFiller(opts: FillerOptions): Filler {
     } while (seen !== chain);
   };
 
-  const fill = (formRef: string, values: Partial<Record<FieldRole, string>>): FillResult => {
+  const fill = (formRef: string, values: Partial<Record<FieldRole, string>>, hints: FillHints = {}): FillResult => {
     const tally: FieldRole[] = [];
     const before = chain;
-    const now = keepFocus(() => fillOnce(formRef, values, tally));
+    const now = keepFocus(() => fillOnce(formRef, values, tally, hints));
     const unique = () => [...new Set(tally)];
     const filled = unique();
     const pending = chain !== before;
     return { now, filled, pending, done: pending ? settled().then(unique) : Promise.resolve(filled), soFar: unique };
   };
 
-  return { fill, fillForm: (formRef, values) => fill(formRef, values).now, settled };
+  return { fill, fillForm: (formRef, values, hints) => fill(formRef, values, hints).now, settled };
 
-  function fillOnce(formRef: string, values: Partial<Record<FieldRole, string>>, tally: FieldRole[]): number {
+  function fillOnce(formRef: string, values: Partial<Record<FieldRole, string>>, tally: FieldRole[], hints: FillHints): number {
     {
       const first = opts.resolve(formRef, opts.analyze());
       if (!first) return 0;
@@ -447,9 +485,40 @@ export function createFiller(opts: FillerOptions): Filler {
         }
         return el instanceof HTMLInputElement ? resolveCountry(nativeValue(el), langs) : null;
       };
-      const geoNow = (): GeoContext => ({ langs, country: countryNow(), postal, lang });
+      const sex = typeof hints.sex === "string" && hints.sex !== "" ? hints.sex : undefined;
+      const civilityFromSex = hints.civility_from_sex === true;
+      const geoNow = (): GeoContext => ({ langs, country: countryNow(), postal, lang, sex, civilityFromSex });
 
       const written: Written[] = [];
+      /**
+       * Checks the radio of a civility or sex group that means `v` (spec section 7), with click,
+       * input and change as a person's click. A group the user (or the page) already checked is
+       * left alone; a tie or no match: nothing.
+       */
+      const pickRadio = (slot: Slot, count: number, v: string): boolean => {
+        const buttons: HTMLInputElement[] = [];
+        for (let i = 0; i < count; i++) {
+          const el = target(slot, i);
+          if (el instanceof HTMLInputElement && el.type === "radio") buttons.push(el);
+        }
+        if (buttons.length < 2 || buttons.some((b) => b.checked)) return false;
+        const choices = buttons.map((b) => ({ value: b.value, text: radioLabel(b) }));
+        const i = pickChoice(choices, slot.role, { value: v, sex: slot.role === "sex" || civilityFromSex ? sex : undefined });
+        const b = i >= 0 ? buttons[i] : undefined;
+        if (!b) return false;
+        b.focus({ preventScroll: true });
+        b.click();
+        if (!b.checked) {
+          // A page that cancelled the click: a person's click would not check it either.
+          b.blur();
+          return false;
+        }
+        b.blur();
+        // The control's own events already ran with the click (input, change).
+        opts.onFill?.(b, slot.role);
+        tally.push(slot.role);
+        return true;
+      };
       const put = (slot: Slot, part: number | undefined, value: string): boolean => {
         const el = target(slot, part);
         if (!el || !write(el, value, slot.role, geoNow())) return false;
@@ -475,8 +544,10 @@ export function createFiller(opts: FillerOptions): Filler {
       let countryPending = false;
       for (const { slot, field } of slots) {
         if (slot.role === "region") continue;
-        const v = values[slot.role];
-        if (typeof v !== "string" || v === "") continue;
+        // A civility the vault does not hold comes from the sex, when the civility was asked.
+        const fromSex = slot.role === "honorific_prefix" && civilityFromSex && sex !== undefined;
+        const v = values[slot.role] ?? (fromSex ? "" : undefined);
+        if (typeof v !== "string" || (v === "" && !fromSex)) continue;
         if (slot.role === "country") {
           const el = target(slot, undefined);
           if (el && isCombobox(el)) {
@@ -501,8 +572,11 @@ export function createFiller(opts: FillerOptions): Filler {
             if (el && datePart(el) !== null && put(slot, i, v)) n++;
           }
         } else if (field.parts && field.parts.length > 0) {
-          // A radio group is chosen by its own rules (Task 11), never one character per button.
-          if (slot.role === "honorific_prefix" || slot.role === "sex") continue;
+          // A radio group: the button whose label means the value (choice.ts), never one character per button.
+          if (CHOICE_ROLES.has(slot.role)) {
+            if (pickRadio(slot, field.parts.length, v)) n++;
+            continue;
+          }
           // Split code: one character per cell, in order.
           const chars = Array.from(v);
           for (let i = 0; i < field.parts.length; i++) {

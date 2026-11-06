@@ -139,7 +139,43 @@ describe("fill pipeline", () => {
       website: "https://atlas.example",
       vat_number: "FR32123456789",
       company_id: "12345678900011",
+      honorific_prefix: "Mme",
+      sex: "f",
+      nationality: "FR",
     });
+  });
+
+  const identityWith = async (answer: Record<string, unknown>) => {
+    const ext = new FakeExt();
+    const store = new Store(ext, new MemoryPairingStore());
+    await store.setPairing(record());
+    const client = new FakeClient((r) => (r.op === "fill_identity" ? answer : {}));
+    const filler = new Filler(ext.tabs, new Frames(ext.webNavigation), new Session({ store, newClient: () => client }));
+    ext.setFrame(7, 0, `${SITE}/account`, "doc-1");
+    return { ext, client, filler };
+  };
+  const sent = (ext: FakeExt, k = 0) => ext.sentToTabs.map((x) => x.message as { type: string; values?: Record<string, string>; hints?: unknown }).filter((m) => m.type === "fill")[k];
+
+  it("Task 11: civility, sex and nationality; the sex as a hint, a civility from the sex only when the vault has none", async () => {
+    const { ext, filler } = await identityWith({ given_name: "Léa", family_name: "Martin", sex: "f", nationality: "FR" });
+    await filler.fillIdentity(target(), "it_03");
+    expect(sent(ext)?.values).toMatchObject({ sex: "f", nationality: "FR" });
+    expect(sent(ext)?.values).not.toHaveProperty("honorific_prefix");
+    expect(sent(ext)?.hints).toEqual({ sex: "f", civility_from_sex: true });
+    const b = await identityWith({ given_name: "Léa", honorific: "Mme", sex: "f" });
+    await b.filler.fillIdentity(target(), "it_03");
+    expect(sent(b.ext)?.values).toMatchObject({ honorific_prefix: "Mme" });
+    expect(sent(b.ext)?.hints).toEqual({ sex: "f" });
+  });
+
+  it("Task 11: a planned group gets the hints of its own roles only", async () => {
+    const { ext, filler } = await identityWith({ given_name: "Léa", family_name: "Martin", sex: "f", nationality: "FR" });
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "family_name"]);
+    expect(sent(ext)?.hints).toBeUndefined();
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "honorific_prefix"]);
+    expect(sent(ext, 1)?.hints).toEqual({ sex: "f", civility_from_sex: true });
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "nationality"]);
+    expect(sent(ext, 2)?.hints).toEqual({ sex: "f" });
   });
 
   const fills = (ext: FakeExt) => ext.sentToTabs.map((x) => x.message as { type: string; values?: Record<string, string> }).filter((m) => m.type === "fill");

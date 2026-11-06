@@ -2,7 +2,7 @@
 // (which redoes the origin match), verify again, then hand the values to the
 // content script of that exact frame. Values are not kept anywhere.
 import type { Ctx, FillField, LoginFill } from "../bridge/client";
-import type { BgToCs, FieldRole, ProviderId, UsernameCheckReply } from "../shared/messages";
+import type { BgToCs, FieldRole, FillHints, ProviderId, UsernameCheckReply } from "../shared/messages";
 import type { BgExt } from "./ext";
 import type { Frames } from "./frames";
 import { BgError, type Session } from "./session";
@@ -42,6 +42,20 @@ function loginValues(r: LoginFill): FillValues {
   put(values, "current_password", r.password);
   put(values, "otp", r.totp);
   return values;
+}
+
+/**
+ * The hints a fill may carry (`FillHints`), for the roles it writes: the sex for a civility, a sex or
+ * a nationality, a civility from the sex only when the civility is asked, the work phone with the
+ * phone. Undefined when none is left.
+ */
+function hintsFor(h: FillHints, roles: readonly FieldRole[] | undefined): FillHints | undefined {
+  const asks = (r: FieldRole) => roles === undefined || roles.includes(r);
+  const out: FillHints = {};
+  if (h.sex !== undefined && (asks("honorific_prefix") || asks("sex") || asks("nationality"))) out.sex = h.sex;
+  if (h.civility_from_sex && out.sex !== undefined && asks("honorific_prefix")) out.civility_from_sex = true;
+  if (h.work_tel !== undefined && asks("tel")) out.work_tel = h.work_tel;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** Most candidates a sign-up username is tested with in the page. */
@@ -144,14 +158,16 @@ export class Filler {
   }
 
   /** Sends the values; resolves with how many roles had one (0: nothing sent). */
-  private async deliver(t: FillTarget, all: FillValues, roles?: readonly FieldRole[]): Promise<number> {
+  private async deliver(t: FillTarget, all: FillValues, roles?: readonly FieldRole[], hints: FillHints = {}): Promise<number> {
     const values = only(all, roles);
+    const h = hintsFor(hints, roles);
     const written = Object.keys(values).length;
     // A planned group whose roles got no value: nothing to write.
     if (roles !== undefined && written === 0) return 0;
     // The host may have taken seconds (Touch ID): the page could have moved.
     await this.verify(t);
     const msg: BgToCs = { type: "fill", origin: t.origin, formRef: t.formRef, values };
+    if (h) msg.hints = h;
     // documentId pins the exact document; frameId alone where unsupported.
     const opts = t.documentId !== undefined ? { documentId: t.documentId } : { frameId: t.frameId };
     await this.tabs.sendMessage(t.tabId, msg, opts);
@@ -234,8 +250,8 @@ export class Filler {
     put(values, "tel", r.tel);
     put(values, "organization", r.organization);
     put(values, "bday", r.birthday);
-    // Person and company values written as they are (forms coverage, ruling R39). Civility, sex,
-    // nationality, the work phone and the documents need their own choice rules (Tasks 11, 12).
+    // Person and company values written as they are (forms coverage, ruling R39); civility, sex
+    // and nationality are chosen in the page by their tables (spec sections 7 and 8).
     put(values, "additional_name", r.middle_name);
     put(values, "birth_name", r.birth_name);
     put(values, "birth_place", r.birth_place);
@@ -244,6 +260,12 @@ export class Filler {
     put(values, "website", r.website);
     put(values, "vat_number", r.vat_number);
     put(values, "company_id", r.company_registration);
+    put(values, "honorific_prefix", r.honorific);
+    put(values, "sex", r.sex);
+    put(values, "nationality", r.nationality);
+    const hints: FillHints = {};
+    if (r.sex) hints.sex = r.sex;
+    if (r.sex && !r.honorific) hints.civility_from_sex = true;
     const a = r.address;
     if (a) {
       put(values, "address_line1", a.line1);
@@ -253,7 +275,7 @@ export class Filler {
       put(values, "region", a.region);
       put(values, "country", a.country);
     }
-    const written = await this.deliver(t, values, roles);
+    const written = await this.deliver(t, values, roles, hints);
     if (written > 0) this.onFilled?.(t.tabId, t.origin, "identity", itemId);
     // The pending signup Login's identifier: the username the site gets, else the e-mail.
     const email = values.username ?? values.email;

@@ -409,7 +409,7 @@ export const TERMS: readonly Term[] = [
     w: { additional_name: 9, given_name: -6, full_name: -3 },
   },
   {
-    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|geburtsname|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
+    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|birth ?surname|birth (?:last|family) ?name|surname at birth|geburtsname|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
     w: { birth_name: 10, family_name: -6, given_name: -4, full_name: -4, bday: -7 },
   },
   { re: /\b(sexe|genre|sex|gender|geschlecht|sexo|genero|sesso|genere|geslacht)\b/, w: { sex: 6 } },
@@ -418,7 +418,7 @@ export const TERMS: readonly Term[] = [
     w: { birth_place: 10, bday: -7, city: -6 },
   },
   {
-    re: /\b(pays de naissance|country of birth|birth ?country|geburtsland|pais de nacimiento|paese di nascita|stato di nascita|pais de nascimento|geboorteland)\b/,
+    re: /\b(pays de naissance|pays naiss|pays de naiss|country of birth|birth ?country|geburtsland|pais de nacimiento|paese di nascita|stato di nascita|pais de nascimento|geboorteland)\b/,
     w: { birth_country: 11, country: -8, bday: -7 },
   },
   {
@@ -473,7 +473,7 @@ export const TERMS: readonly Term[] = [
     re: /\b(pays ou vous etes ne e|pays ou vous etes nee?|country (where|in which) you were born|land waar u geboren bent|pais (donde|en el que) nacio)\b/,
     w: { birth_country: 11, country: -8, bday: -7, birth_place: -8 },
   },
-  { re: /\b(trat|tit|sr sra)\b/, w: { honorific_prefix: 5 } },
+  { re: /\b(trat|tit|sr sra|civ)\b/, w: { honorific_prefix: 5 } },
   { re: /\b(n socio|no socio|nr socio|socio n)\b/, w: { loyalty_number: 8 } },
   { re: /\b(n carne|no carne|n permis|n permiso|dl|dl no|dl number|dl nr)\b/, w: { license_number: 7 } },
   { re: /\b(delivr|afgifte|ausgest|expedido|rilasciat[oa]|emitid[oa])\b/, w: { passport_issue_date: 9, bday: -5, cc_exp: -6 } },

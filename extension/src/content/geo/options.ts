@@ -2,6 +2,7 @@
 // (spec 2026-10-31, section 3). Each option gets a score; the best wins, and
 // best options with different values are a tie: nothing is picked.
 import { resolveCountry, resolveCountryValue } from "./countries";
+import { demonymCountry } from "./demonyms";
 import { fold } from "./fold";
 import { regionFromPostal } from "./postal";
 import { parentRegion, resolveRegion } from "./regions";
@@ -47,6 +48,22 @@ export function pickCountry(opts: readonly OptionLike[], want: string, langs: re
       return c === cc ? 2 : 0;
     }
     return folded !== "" && fold(o.text) === folded ? 1 : 0;
+  });
+}
+
+/**
+ * Index of the option of a nationality list meaning `want` (an alpha-2 code, a country name or a
+ * demonym), or -1 (spec section 8): the option's own text or value first, then its country by
+ * name or code, then by demonym in any of the seven languages; a tie picks nothing.
+ */
+export function pickNationality(opts: readonly OptionLike[], want: string, langs: readonly string[]): number {
+  if (want.trim() === "") return -1;
+  const cc = resolveCountry(want, langs) ?? demonymCountry(want);
+  return best(opts, (o) => {
+    if (same(o.value, want) || same(o.text, want)) return 3;
+    if (placeholder(o) || cc === null) return 0;
+    const c = resolveCountry(o.text, langs) ?? demonymCountry(o.text) ?? resolveCountryValue(o.value, langs) ?? demonymCountry(o.value);
+    return c === cc ? 2 : 0;
   });
 }
 

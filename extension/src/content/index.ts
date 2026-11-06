@@ -29,7 +29,7 @@
 // trusted focus or ArrowDown into its host.
 import { ext as browserExt, openOrClosedShadowRoot } from "../shared/browser";
 import { parseOrigin } from "../shared/domain";
-import type { BgToCs, CsToBg, FieldRole, FrameKind, PageAnalysis } from "../shared/messages";
+import type { BgToCs, CsToBg, FieldRole, FillHints, FrameKind, PageAnalysis } from "../shared/messages";
 import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
 import { classifierFor, createModelHook, type ModelHook, remoteSession } from "./detect/classifier";
 import { analyzeDocument } from "./detect/forms";
@@ -110,6 +110,17 @@ function fillValues(v: unknown): Partial<Record<FieldRole, string>> | null {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
   const out: Partial<Record<FieldRole, string>> = {};
   for (const [k, x] of Object.entries(v)) if (str(x)) out[k as FieldRole] = x;
+  return out;
+}
+
+/** The hints of a fill message: known keys of the right type only. */
+function fillHints(v: unknown): FillHints {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const h = v as Record<string, unknown>;
+  const out: FillHints = {};
+  if (typeof h.sex === "string" && /^[fmx]$/.test(h.sex)) out.sex = h.sex;
+  if (h.civility_from_sex === true) out.civility_from_sex = true;
+  if (str(h.work_tel)) out.work_tel = h.work_tel;
   return out;
 }
 
@@ -300,7 +311,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "fill": {
         const values = fillValues(m.values);
         if (pinned(m.origin) && typeof m.formRef === "string" && values) {
-          const r = parts.filler.fill(m.formRef, values);
+          const r = parts.filler.fill(m.formRef, values, fillHints(m.hints));
           const reply = (filled: FieldRole[]) => {
             const done = filled.length > 0;
             if (done && parts && !stopped) closeMenu(true);

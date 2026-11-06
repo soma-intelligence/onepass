@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pickCountry, pickRegion, regionWanted } from "../../src/content/geo/options";
+import { nameLangs } from "../../src/content/geo/countries";
+import { pickCountry, pickNationality, pickRegion, regionWanted } from "../../src/content/geo/options";
 
 const o = (...pairs: [string, string][]) => pairs.map(([value, text]) => ({ value, text }));
 const names = (...texts: string[]) => texts.map((text) => ({ value: text, text }));
@@ -90,5 +91,21 @@ describe("region options", () => {
     expect(pickRegion(o(["US-GA", "Georgia"], ["GE", "Georgia"]), regionWanted("Georgia", null, null), null)).toBe(-1);
     // Two options for one state, with different values.
     expect(pickRegion(o(["5", "California"], ["6", "CA - California"]), regionWanted("CA", "US", null), "US")).toBe(-1);
+  });
+});
+
+describe("pickNationality (forms coverage, spec section 8)", () => {
+  const list = (xs: string[], codes = false) => xs.map((t, i) => ({ value: codes ? ["FR", "DE", "ES"][i] ?? String(i) : t, text: t }));
+  it("FR picks France, Française, French, Frankreich (page de), Francesa (page es)", () => {
+    expect(pickNationality(list(["Allemagne", "France", "Espagne"]), "FR", nameLangs("fr"))).toBe(1);
+    expect(pickNationality(list(["Allemande", "Française", "Espagnole"]), "FR", nameLangs("fr"))).toBe(1);
+    expect(pickNationality(list(["German", "French", "Spanish"]), "FR", nameLangs("en"))).toBe(1);
+    expect(pickNationality(list(["Deutschland", "Frankreich", "Spanien"]), "FR", nameLangs("de"))).toBe(1);
+    expect(pickNationality(list(["Alemana", "Francesa", "Española"]), "FR", nameLangs("es"))).toBe(1);
+  });
+  it("a code value and a demonym label meet; a tie picks nothing", () => {
+    expect(pickNationality(list(["Française", "Allemande", "Espagnole"], true), "FR", nameLangs("fr"))).toBe(0);
+    expect(pickNationality([{ value: "a", text: "Français" }, { value: "b", text: "Française" }], "FR", nameLangs("fr"))).toBe(-1);
+    expect(pickNationality(list(["Allemande", "Espagnole"]), "FR", nameLangs("fr"))).toBe(-1);
   });
 });

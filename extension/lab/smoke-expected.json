@@ -5,7 +5,7 @@
   "11:menu_fill": "xfail",
   "12:menu_fill": "xfail",
   "13:menu_fill": "xfail",
-  "14:menu_fill": "xfail",
+  "14:menu_fill": "pass",
   "15:one_click": "pass",
   "1:lookalike": "pass",
   "1:one_click": "pass",

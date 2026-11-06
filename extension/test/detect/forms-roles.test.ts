@@ -217,8 +217,20 @@ describe("forms roles: short forms", () => {
     ["Délivr. permis", [["g", "Prénom"], ["ln", "Numéro de permis"], ["x", "Délivr. permis"]], "license_issue_date"],
     ["Afgifte rijb.", [["g", "Voornaam"], ["ln", "Rijbewijsnummer"], ["x", "Afgifte rijb."]], "license_issue_date"],
     ["Issued", [["g", "First name"], ["pn", "Passport number"], ["x", "Issued"]], "passport_issue_date"],
+    // Task 11 witnesses (seed forms-2026-11-06-a sites 61, 87, 167).
+    ["Birth surname", [["g", "First name"], ["fa", "Surname"], ["x", "Birth surname"]], "birth_name"],
+    ["Last name at birth", [["g", "First name"], ["fa", "Last name"], ["x", "Last name at birth"]], "birth_name"],
+    ["Pays naiss.", [["g", "Prénom"], ["fa", "Nom"], ["x", "Pays naiss."]], "birth_country"],
+    ["Civ.", [["x", "Civ."], ["g", "Prénom"], ["fa", "Nom"]], "honorific_prefix"],
   ] as [string, Row[], FieldRole][])("%s", (_name, rs, role) => {
     expect(form(rs).roles.x).toBe(role);
+  });
+
+  it("a radio group under the legend Civ. is the civility", () => {
+    const r = analyze('<form id="f"><fieldset><legend>Civ.</legend><label><input type="radio" id="c1" name="civ" value="1"> M.</label>'
+      + '<label><input type="radio" id="c2" name="civ" value="2"> Mme</label></fieldset>'
+      + `${rowHtml(["g", "Prénom"])}${rowHtml(["fa", "Nom"])}<button type="submit">OK</button></form>`);
+    expect(r.roles.c1).toBe("honorific_prefix");
   });
 
   it("three lists under the legend Délivr. next to a passport number are its issue date", () => {

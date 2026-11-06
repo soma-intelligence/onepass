@@ -23,7 +23,7 @@ export type Capability = (typeof CAPABILITIES)[number];
  * the forms plan removes its own; a scenario that passes while one it needs
  * is still listed shows as xpass, the sign to remove it. Empty at the end.
  */
-export const PENDING: ReadonlySet<Capability> = new Set<Capability>(CAPABILITIES);
+export const PENDING: ReadonlySet<Capability> = new Set<Capability>(["persons", "intent_contact", "roles_document", "document_source", "loyalty", "work_tel"]);
 
 const PERSON_ROLES = new Set<LabRole>(["additional_name", "birth_name", "birth_place", "birth_country"]);
 const COMPANY_ROLES = new Set<LabRole>(["vat_number", "company_id", "job_title", "department", "website"]);

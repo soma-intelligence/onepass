@@ -38,16 +38,20 @@ describe("needs", () => {
 
 describe("expectations of the forms flows", () => {
   it("every forms scenario expects xfail with its first pending capability, a cross-site frame keeps nofill", () => {
-    expect(new Set(PENDING)).toEqual(new Set(CAPABILITIES));
+    // Removed by the forms tasks so far: Tasks 8 to 11 (person and company roles, dates, civility, sex, countries, radios).
+    expect(new Set(PENDING)).toEqual(new Set(["persons", "intent_contact", "roles_document", "document_source", "loyalty", "work_tel"]));
     const scenarios = world.scenarios.filter((sc) => isFormsFlow(world.sites[sc.site]!.flow));
     expect(scenarios.length).toBeGreaterThan(0);
     for (const sc of scenarios) {
       const site = world.sites[sc.site]!;
+      const first = needs(site).find((c) => PENDING.has(c));
       if (site.traits.includes("iframe_cross_site")) {
         expect(sc).toMatchObject({ expect: "nofill", reason: "R-10" });
-      } else {
+      } else if (first !== undefined) {
         expect(sc.expect).toBe("xfail");
-        expect(sc.reason).toBe(`forms: ${needs(site)[0]}`);
+        expect(sc.reason).toBe(`forms: ${first}`);
+      } else {
+        expect(sc.reason ?? "").not.toMatch(/^forms:/);
       }
     }
   });
