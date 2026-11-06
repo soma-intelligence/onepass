@@ -157,6 +157,9 @@ struct NewItemSheet: View {
             .padding(.vertical, 16)
             .accessibilityIdentifier("newItem.import")
         }
+        // A violet and indigo glow behind the title, fading out a third of the way down. It lies
+        // over the header and the tiles alike, so whatever scrolls up under the title takes it.
+        .overlay(alignment: .top) { SheetGlow() }
         #if os(macOS)
         .frame(width: 600, height: 620)
         #endif
@@ -420,6 +423,41 @@ struct NewItemSheet: View {
 }
 
 /// A large tile of the common types: the type's glyph, its name, a "+" on hover.
+/// The "+" sheet's top glow: an indigo light from the top left and a violet one from the top right,
+/// both gone a third of the way down. Screen blend in dark mode (it lights what lies under it, cards
+/// included), a light tint in light mode. Never takes a touch.
+private struct SheetGlow: View {
+    @Environment(\.colorScheme) private var scheme
+
+    private static let indigo = Color(red: 0.36, green: 0.40, blue: 0.86)
+    private static let violet = Color(red: 0.58, green: 0.42, blue: 0.86)
+
+    var body: some View {
+        let dark = scheme == .dark
+        GeometryReader { proxy in
+            let height = max(proxy.size.height * 0.42, 260)
+            ZStack {
+                EllipticalGradient(
+                    colors: [Self.indigo.opacity(dark ? 0.70 : 0.22), .clear],
+                    center: UnitPoint(x: 0.18, y: 0.0), startRadiusFraction: 0, endRadiusFraction: 0.75)
+                EllipticalGradient(
+                    colors: [Self.violet.opacity(dark ? 0.65 : 0.20), .clear],
+                    center: UnitPoint(x: 0.80, y: 0.05), startRadiusFraction: 0, endRadiusFraction: 0.70)
+            }
+            .frame(height: height)
+            // Eased out at the bottom so no edge shows where the glow ends.
+            .mask(LinearGradient(stops: [
+                .init(color: .black, location: 0), .init(color: .black, location: 0.45),
+                .init(color: .black.opacity(0.4), location: 0.75), .init(color: .clear, location: 1),
+            ], startPoint: .top, endPoint: .bottom))
+            .blendMode(dark ? .screen : .normal)
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct BigTypeTile: View {
     let type: FfiItemType
     let action: () -> Void
