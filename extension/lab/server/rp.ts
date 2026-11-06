@@ -14,7 +14,7 @@
 // session that passed the previous one.
 import { randomBytes } from "node:crypto";
 import { totp } from "../../e2e/server.ts";
-import type { Role, Site, World } from "../gen/model.ts";
+import type { LabRole, Site, World } from "../gen/model.ts";
 import { policyViolation } from "../gen/policy.ts";
 import { PAGE_PATH, renderSitePage, stepPath } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
@@ -52,7 +52,7 @@ interface IdentityFields {
 interface Item { type: string; title: string; fields: unknown }
 
 /** The fixture value each role of the site's form should receive (card expiry as "MM/YYYY"). */
-export function expectedValues(world: World, site: Site): Partial<Record<Role, string>> {
+export function expectedValues(world: World, site: Site): Partial<Record<LabRole, string>> {
   const items = world.fixture.items as Item[];
   if (site.cardTitle) {
     const c = items.find((i) => i.type === "credit_card" && i.title === site.cardTitle)?.fields as CardFields | undefined;
@@ -98,7 +98,7 @@ function countryMatches(posted: string, code: string, lang: string): boolean {
 }
 
 /** Whether a posted value is the fixture value `want` of `role` (formats as the site accepts them). */
-export function matches(role: Role, posted: string, want: string, lang: string): boolean {
+export function matches(role: LabRole, posted: string, want: string, lang: string): boolean {
   switch (role) {
     case "cc_number": return posted.replace(/\D/g, "") === want.replace(/\D/g, "");
     case "cc_exp": {
@@ -136,7 +136,7 @@ const MSG = {
 
 const styleOf = (site: Site) => site.flow === "login_username_first" ? "username_first"
   : site.flow === "login_email_then_password" ? "email_then_password" : site.loginStyle ?? "single";
-const nameOf = (site: Site, ...roles: Role[]) => site.fields.find((f) => roles.includes(f.role))?.name;
+const nameOf = (site: Site, ...roles: LabRole[]) => site.fields.find((f) => roles.includes(f.role))?.name;
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** The account a login site checks against: the generated one, or the one created by signup. */

@@ -10,10 +10,10 @@ import type { Rng } from "./rng.ts";
 /** Card numbers published by payment providers for testing; never real cards. */
 export const PUBLIC_TEST_CARDS = ["4242424242424242", "4000056655665556", "5555555555554444", "2223003122003222", "378282246310005"];
 
-const GIVEN = ["Alix", "Bastien", "Camille", "Dorian", "Elise", "Fabien", "Gaelle", "Hugo", "Ines", "Jules", "Katell", "Loris",
+export const GIVEN: readonly string[] = ["Alix", "Bastien", "Camille", "Dorian", "Elise", "Fabien", "Gaelle", "Hugo", "Ines", "Jules", "Katell", "Loris",
   "Maelys", "Nolan", "Oriane", "Paco", "Quitterie", "Romane", "Soren", "Tilda", "Ulysse", "Vianney", "Wendel", "Yanis", "Zelie",
   "Ansel", "Brielle", "Corwin", "Delphine", "Emeric"];
-const FAMILY = ["Abrial", "Bellanger", "Corvasier", "Dumarest", "Esquerre", "Fontanil", "Guivarch", "Hautecoeur", "Isambert",
+export const FAMILY: readonly string[] = ["Abrial", "Bellanger", "Corvasier", "Dumarest", "Esquerre", "Fontanil", "Guivarch", "Hautecoeur", "Isambert",
   "Jolibois", "Kervella", "Lamarque", "Montclar", "Noirclerc", "Orsenne", "Pellegarde", "Quenard", "Rossignac", "Saintrond",
   "Tavernel", "Ubertin", "Valcourt", "Wassermann", "Ybarnegaray", "Zellweg"];
 const MAIL_DOMAINS = ["mail.test", "inbox.test", "example.com", "example.org"];
@@ -66,6 +66,16 @@ export function person(rng: Rng, lang: Lang = "en"): Person {
     birthDate: `${rng.int(1960, 2002)}-${month}-${day}`,
     company: rng.pick(COMPANIES),
   };
+}
+
+/** A fictional phone number written the way `lang`'s country writes it. */
+export function phoneOf(rng: Rng, lang: Lang): string {
+  return (LOCALES[lang] ?? LOCALES.en!).phone(rng);
+}
+
+/** A city of `lang`'s country. */
+export function cityOf(rng: Rng, lang: Lang): string {
+  return rng.pick((LOCALES[lang] ?? LOCALES.en!).cities);
 }
 
 export function address(rng: Rng, lang: Lang): Address {

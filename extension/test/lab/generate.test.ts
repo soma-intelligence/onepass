@@ -12,7 +12,7 @@ import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { PUBLIC_TEST_CARDS, card, passkey, passkeyPkcs8, password, totpSecret, userHandle } from "../../lab/gen/data.ts";
 import { generate, loadPatterns } from "../../lab/gen/generate.ts";
 import { LAYOUTS } from "../../lab/gen/layouts.ts";
-import type { FieldSpec, FlowId, Site } from "../../lab/gen/model.ts";
+import type { FieldSpec, FlowId, Role, Site } from "../../lab/gen/model.ts";
 import { formHtml, type FormSpec } from "../../lab/gen/render-forms.ts";
 import { extractFeatures } from "../../src/content/detect/features.ts";
 import { Rng } from "../../lab/gen/rng.ts";
@@ -182,7 +182,7 @@ describe("generate", () => {
       expect(sites.length / 1000).toBeGreaterThan(0.02);
       // Their own labels and buttons (seed-lexicon.json), never the English fallback.
       for (const s of sites.filter((x) => !x.traits.includes("mixed_language"))) {
-        for (const f of s.fields) expect(FIXED.roles[f.role === "new_password" ? "new_password" : f.role]?.labels[l]).toContain(f.label);
+        for (const f of s.fields) expect(FIXED.roles[(f.role === "new_password" ? "new_password" : f.role) as Role]?.labels[l]).toContain(f.label);
       }
     }
   });

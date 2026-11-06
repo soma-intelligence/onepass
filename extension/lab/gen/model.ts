@@ -9,20 +9,75 @@ export const GENERATOR_VERSION = 3;
 export type Lang = string; // BCP 47 primary subtag: "fr", "en", "de", "es", ...
 export type ProviderId = "google" | "apple" | "microsoft";
 export type FlowId = "login_single" | "login_username_first" | "login_email_then_password" | "login_totp"
-  | "login_passkey" | "sso" | "signup" | "checkout_card" | "address" | "identity" | "multi_step";
+  | "login_passkey" | "sso" | "signup" | "checkout_card" | "address" | "identity" | "multi_step"
+  | "travel_booking" | "company_b2b" | "car_rental" | "admin_identity";
 export type TraitId = "iframe_same_origin" | "iframe_cross_site" | "shadow_open" | "shadow_closed" | "spa_rerender"
   | "delayed_fields" | "no_autocomplete" | "obfuscated_names" | "split_otp" | "honeypot" | "decoy_form"
   | "lookalike" | "mixed_language";
 export type Role = "username" | "email" | "password" | "new_password" | "otp" | "cc_name" | "cc_number" | "cc_exp"
   | "cc_exp_month" | "cc_exp_year" | "cc_csc" | "given_name" | "family_name" | "tel" | "birth_date" | "organization"
   | "address_line1" | "address_line2" | "postal_code" | "city" | "country";
+/**
+ * Roles of the forms flows (travel, company, car rental, admin identity), outside the 21 model classes (ruling R13):
+ * the dataset labels them "none". `bday_*` are the parts of a birth date split in three controls; a document date
+ * split the same way keeps its document role and says its part in `FieldRender.date`.
+ */
+export type FormsRole = "honorific" | "additional_name" | "birth_name" | "sex" | "birth_place" | "birth_country"
+  | "nationality" | "bday_day" | "bday_month" | "bday_year" | "passport_number" | "passport_issuing_country"
+  | "passport_issue_date" | "passport_expiry" | "loyalty_number" | "license_number" | "license_issuing_country"
+  | "license_issue_date" | "license_expiry" | "job_title" | "department" | "vat_number" | "company_id" | "website"
+  | "tel_work";
+/** Any role a generated field can have. */
+export type LabRole = Role | FormsRole;
+/** Block of a forms page a field sits in. */
+export type Block = "billing" | "shipping" | "contact" | "passenger";
+export type DatePart = "day" | "month" | "year";
+/**
+ * How a date field is rendered: a date input, a text field written in `format` (tokens DD, MM, YYYY, any
+ * separator; `placeholder` says whether the page shows the format), or one part of a date split in three
+ * controls (`group` is the shared legend; months as numbers or names in the label language; days with or without
+ * a leading zero; `select` false for a text part).
+ */
+export type DateRender =
+  | { kind: "input" }
+  | { kind: "text"; format: string; placeholder: boolean }
+  | { kind: "part"; part: DatePart; group: string; select: boolean; months?: "number" | "name"; pad?: boolean };
+export interface ChoiceOption { value: string; label: string }
+/** A choice field (civility, sex, nationality, issuing country): a list, a radio group (same name), or free text. */
+export type ChoiceRender = { kind: "select" | "radio"; options: ChoiceOption[] } | { kind: "text" };
+export interface FieldRender { date?: DateRender; choice?: ChoiceRender }
 export type HoneypotStyle = "display_none" | "offscreen" | "opacity" | "one_pixel" | "aria_hidden";
 export type LookalikeKind = "suffix" | "typo" | "hyphen" | "idn";
 export type LoginStyle = "single" | "username_first" | "email_then_password";
 export type LayoutId = "stacked" | "floating" | "placeholder_only" | "side_label" | "grid" | "inline" | "card";
 export type FrameworkId = "static" | "react" | "vue" | "angular";
-export interface FieldSpec { role: Role; name: string; id: string; label: string; type: string; autocomplete?: string; }
-export interface Honeypot { role: Role; name: string; style: HoneypotStyle; }
+export interface FieldSpec {
+  role: LabRole; name: string; id: string; label: string; type: string; autocomplete?: string;
+  /** Forms flows: the traveller the field belongs to (0 or absent: the vault's person; 1 and up: passengers 2 and up). */
+  person?: number;
+  /** Forms flows: the block of the page the field sits in. */
+  block?: Block;
+  /** Forms flows: date and choice rendering (absent: a plain control of `type`). */
+  render?: FieldRender;
+}
+export interface Honeypot { role: LabRole; name: string; style: HoneypotStyle; }
+/**
+ * What a forms site holds besides its fields (forms flows only): the titles of the vault items it reads (the
+ * identity is `Site.identityTitle`), the company ids the identity carries (kept here too: the vault template gets
+ * them in plan Task 5), whether the shipping block is hidden by "same as billing", the date format the page writes.
+ */
+export interface SiteForms {
+  passportTitle?: string; licenseTitle?: string;
+  /** The site's loyalty program in the vault (absent: the site asks for one the vault does not have). */
+  loyaltyTitle?: string;
+  /** A passport of another person in the vault (about 30 % of travel sites): it must never come out. */
+  decoyPassportTitle?: string;
+  vatNumber?: string; companyId?: string;
+  /** company_b2b with a shipping block: whether "same as billing" is checked (block hidden, expected empty). */
+  shippingSame?: boolean;
+  /** Text date format of the site (tokens DD, MM, YYYY), when its date fields are text. */
+  dateFormat?: string;
+}
 export interface Passkey { credentialId: string /* base64url */; d: string /* hex scalar */; x: string; y: string /* base64url */; }
 export interface Account { username: string; password: string; totpSecret?: string; passkey?: Passkey; }
 /**
@@ -57,6 +112,7 @@ export interface Site {
   delayMs?: number;               // delayed_fields
   cardTitle?: string; identityTitle?: string;  // menu item titles (checkout_card / address, identity)
   itemTitle?: string;             // overlay title of the login item ("<brand>" or "<brand> via <Provider>")
+  forms?: SiteForms;              // forms flows only (generator version 4)
 }
 export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control" | "smart_fill";
 /** Driver sets a run plays: "current" (overlay, menu, lookalike, passkey control) and "smart_fill" (field icon, plan). */

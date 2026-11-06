@@ -6,13 +6,13 @@
 // field that matches no item at all is a fill problem (wrong_fill), not a
 // wrong item. Short or shared values (expiry, CVC, country, code) are not
 // telling and are left out.
-import type { Role, Site, World } from "../gen/model.ts";
+import type { LabRole, Site, World } from "../gen/model.ts";
 import { expectedValues, matches } from "../server/rp.ts";
 
-type Values = Partial<Record<Role, string>>;
+type Values = Partial<Record<LabRole, string>>;
 
 /** Roles whose value tells one item from another. */
-const TELLING = new Set<Role>(["username", "email", "password", "cc_name", "cc_number", "given_name", "family_name", "tel",
+const TELLING = new Set<LabRole>(["username", "email", "password", "cc_name", "cc_number", "given_name", "family_name", "tel",
   "birth_date", "organization", "address_line1", "address_line2", "postal_code", "city"]);
 
 /** The values the vault holds for `site`'s own item (login, card or identity). */

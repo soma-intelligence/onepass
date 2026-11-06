@@ -23,3 +23,17 @@ describe("sample types", () => {
     expect(s.extractor).toBe(2);
   });
 });
+
+describe("forms roles", () => {
+  it("a field spec takes a forms role, a person, a block and a rendering; Role keeps the 21 model classes", async () => {
+    const { MODEL_ROLES } = await import("../../src/shared/model-labels.ts");
+    const { isModelRole } = await import("../../lab/dataset/rows.ts");
+    const f: import("../../lab/gen/model.ts").FieldSpec = {
+      role: "passport_expiry", name: "pax[1][exp_m]", id: "pax-1-exp-m", label: "Mois", type: "select", person: 1,
+      block: "passenger", render: { date: { kind: "part", part: "month", group: "Date d'expiration", select: true, months: "name" } },
+    };
+    expect(isModelRole(f.role)).toBe(false);
+    expect(MODEL_ROLES.every((r) => isModelRole(r))).toBe(true);
+    expect(MODEL_ROLES).toHaveLength(21);
+  });
+});

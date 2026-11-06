@@ -8,8 +8,9 @@
 // generator's lexicon strings, not account data.
 import { FEATURE_VERSION } from "../../src/content/detect/features.ts";
 import type { FieldFeatures, PageFeatures } from "../../src/content/detect/features.ts";
+import { MODEL_ROLES } from "../../src/shared/model-labels.ts";
 import { GENERATOR_VERSION } from "../gen/model.ts";
-import type { FieldSpec, Lang, Role, Site, TraitId } from "../gen/model.ts";
+import type { FieldSpec, LabRole, Lang, Role, Site, TraitId } from "../gen/model.ts";
 import { pageFields, styleOf } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
 import { splitOf } from "./split.ts";
@@ -31,6 +32,10 @@ export interface DatasetRow extends Omit<FieldFeatures, "lab"> {
   /** The target: the role the generator drew for the field, or "none". `label` (inherited) stays the label text of the page. */
   target: Role | "none";
 }
+
+const MODEL_ROLE_SET: ReadonlySet<string> = new Set(MODEL_ROLES);
+/** Whether a generated role is one of the 21 model classes. */
+export const isModelRole = (r: LabRole): r is Role => MODEL_ROLE_SET.has(r);
 
 export interface DatasetPage { page: PageId; ctx: PageContext; fields: FieldSpec[] }
 
@@ -81,7 +86,8 @@ export function rowsFor(site: Site, step: number, page: PageFeatures, seed: stri
         const at = Number(f.lab);
         const field = Number.isInteger(at) ? spec.fields[at] : undefined;
         if (!field) throw new Error(`site ${site.index} page ${step}: mark ${f.lab} has no field`);
-        target = field.role;
+        // Roles of the forms flows are not model classes (ruling R13): "none" for training.
+        target = isModelRole(field.role) ? field.role : "none";
       }
       const { lab: _lab, ...features } = f;
       rows.push({

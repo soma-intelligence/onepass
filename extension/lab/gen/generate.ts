@@ -233,6 +233,8 @@ function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: bool
     case "address": return ["given_name", "family_name", "address_line1", "address_line2", "postal_code", "city", "country"];
     case "identity": return ["given_name", "family_name", "email", "tel", "birth_date", "organization"];
     case "multi_step": return steps.flat();
+    case "travel_booking": case "company_b2b": case "car_rental": case "admin_identity":
+      throw new Error(`generate: ${flow} is drawn from generator version 4`);
   }
 }
 

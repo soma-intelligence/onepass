@@ -7,7 +7,7 @@
 // also the server's event log; events carry field names, hosts and verdict
 // reasons only, never a value.
 import { totp } from "../../e2e/server.ts";
-import type { FixtureFile, ProviderId, Role, Site, World } from "../gen/model.ts";
+import type { FixtureFile, LabRole, ProviderId, Site, World } from "../gen/model.ts";
 import { archiveHostOf } from "../gen/population.ts";
 import { IDP_HOST, PAGE_PATH } from "../gen/render.ts";
 
@@ -30,7 +30,7 @@ function own(index: Map<string, Owned>, value: string, kind: SecretKind, owner: 
 const digitsOf = (s: string) => s.replace(/\D/g, "");
 // A card number as typed or pasted: digits with optional spaces or dashes.
 const CARD_SHAPE = /^[\d\s-]{12,}$/;
-const CARD_ROLES = new Set<Role>(["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year", "cc_csc"]);
+const CARD_ROLES = new Set<LabRole>(["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year", "cc_csc"]);
 /** Below this length a run-time secret only matches a whole field value (short strings occur by chance). */
 const MIN_SUBSTRING = 8;
 const TOTP_PERIOD_MS = 30_000;
@@ -127,7 +127,7 @@ export class Ledger {
     return out;
   }
 
-  private match(value: string, role: Role | undefined): Owned | undefined {
+  private match(value: string, role: LabRole | undefined): Owned | undefined {
     const runtime = new Set(this.added.map((a) => a.value));
     for (const [secret, owned] of this.passwords) {
       const whole = runtime.has(secret) && secret.length < MIN_SUBSTRING;
