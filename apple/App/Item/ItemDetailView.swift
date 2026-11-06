@@ -155,9 +155,6 @@ struct ItemDetailView: View {
                             DocumentCard(attachment: attachment)
                         }
                     }
-                    if let link = item.signInProvider {
-                        SignInWithCard(provider: link.provider, accountItemID: link.accountItemID)
-                    }
                     content(item)
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
                         self.item = $0
@@ -226,8 +223,12 @@ struct ItemDetailView: View {
     }
 
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
+        // A login's first card always shows: its sign-in account and "Ajouter une passkey" live there.
+        let loginCardID = item.itemType == .login ? item.sections.first?.id : nil
+        let signIn = item.signInProvider
         let sections = item.sections.filter {
-            $0.fields.contains { !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file) }
+            $0.id == loginCardID
+                || $0.fields.contains { !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file) }
         }
         ForEach(sections, id: \.id) { section in
             VStack(alignment: .leading, spacing: 6) {
@@ -242,12 +243,22 @@ struct ItemDetailView: View {
                 }
                 EditorCard {
                     // A Document's files have their own preview card at the top.
+                    let isLoginCard = section.id == loginCardID
+                    // A login that signs in through a provider shows that account in place of its username.
                     let fields = section.fields.filter {
                         !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file)
+                            && !(isLoginCard && signIn != nil && $0.id == "username")
+                    }
+                    if isLoginCard, let signIn {
+                        SignInWithRow(provider: signIn.provider, accountItemID: signIn.accountItemID)
                     }
                     ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-                        if index > 0 { CardDivider() }
+                        if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
                         FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
+                    }
+                    if isLoginCard, item.trashedAt == nil, !item.archived {
+                        if signIn != nil || !fields.isEmpty { CardDivider() }
+                        AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
                     }
                 }
             }
@@ -1490,7 +1501,7 @@ struct ItemWindowRoot: View {
 /// "Se connecter avec": the login signs in through another account (Apple, Google...). The card shows
 /// that account as its own row (site icon, favorite star, title, username) and opens it on a click.
 /// When the account item is gone, the provider's mark and name stand in.
-private struct SignInWithCard: View {
+private struct SignInWithRow: View {
     @Environment(AppModel.self) private var model
     let provider: String
     let accountItemID: String
@@ -1501,11 +1512,8 @@ private struct SignInWithCard: View {
     }
 
     var body: some View {
-        EditorCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("item.signInWith")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.accent.mix(with: .white, by: 0.35))
+        VStack(alignment: .leading, spacing: 8) {
+                EditorLabel(String(localized: "item.signInWith").detailLabelCase)
                 if let account {
                     Button {
                         model.selectedItem = ItemRef(vaultID: account.vaultId, itemID: account.id)
@@ -1531,8 +1539,7 @@ private struct SignInWithCard: View {
                     }
                     .accessibilityIdentifier("item.signInWith.provider")
                 }
-            }
-            .editorRowPadding()
         }
+        .editorRowPadding()
     }
 }

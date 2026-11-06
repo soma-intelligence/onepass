@@ -63,9 +63,6 @@ struct ItemEditorView: View {
                     ForEach(Array(item.sections.enumerated()), id: \.element.id) { _, section in
                         if !visibleRows(section).isEmpty { fieldSection(section) }
                     }
-                    if item.itemType == .login {
-                        LoginMethodCard(item: $editor.draft.item)
-                    }
                     // Websites and the folded fields share one block: two lone "+" rows read as clutter.
                     EditorCard {
                         UrlListEditor(editor: editor)
@@ -281,8 +278,18 @@ struct ItemEditorView: View {
                         }
                     }
                 }
+                // The login's passkeys sit in its card, like the username: the last row adds one.
+                if isLoginCard(section) {
+                    if !rows.isEmpty { CardDivider() }
+                    AddPasskeyRow(item: item) { editor.addURL() }
+                }
             }
         }
+    }
+
+    /// The first card of a login (username, password, passkeys).
+    private func isLoginCard(_ section: FfiSection) -> Bool {
+        item.itemType == .login && section.id == item.sections.first?.id
     }
 
     @ViewBuilder private func fieldRow(sectionID: String, key: UUID, field: FfiField, isCustom: Bool) -> some View {
@@ -297,6 +304,15 @@ struct ItemEditorView: View {
                         .accessibilityIdentifier("editor.label.\(field.id)")
                     FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
                     errorText(sectionID, index)
+                }
+            } else if item.itemType == .login, field.id == "username", sectionID == item.sections.first?.id {
+                // "Se connecter avec" lives in the username row: a provider stands in for it.
+                LoginUsernameRow(
+                    item: $editor.draft.item,
+                    label: isRequired(field) ? "\(field.displayLabel(itemType: item.itemType).lowercasedFirst) *" : field.displayLabel(itemType: item.itemType).lowercasedFirst,
+                    message: editor.message(sectionID: sectionID, fieldIndex: index)
+                ) {
+                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
                 }
             } else {
                 EditorRow(

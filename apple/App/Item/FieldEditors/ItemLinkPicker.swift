@@ -242,41 +242,38 @@ struct ProviderMark: View {
     }
 }
 
-/// Editor card of a login: "Se connecte avec" a provider (chips) or "Aucun (mot de passe)". A chosen
-/// provider asks which account item it uses: the logins that look like that provider's account,
-/// or any other item.
-struct LoginMethodCard: View {
+/// The username row of a login in the editor. With no sign-in provider: the username field and an
+/// "Avec…" menu at its end (Google, Apple, GitHub, Microsoft, then the others). With one: the
+/// provider and the account item it uses, "Changer" to pick another account and a cross back to a
+/// typed username. Picking a provider asks which account item it uses (`SignInAccountChooser`).
+struct LoginUsernameRow<Field: View>: View {
     @Environment(AppModel.self) private var model
     @Binding var item: FfiItem
+    let label: String
+    var message: String?
+    @ViewBuilder var field: Field
     @State private var choosing: LoginProvider?
 
-    private var current: (provider: String, accountItemID: String)? { item.signInProvider }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            EditorLabel(String(localized: "item.signsInWith")).padding(.leading, 16)
-            EditorCard {
-                ChipFlow(spacing: 8) {
-                    chip(nil)
-                    ForEach(LoginProvider.primary) { provider in chip(provider) }
-                    otherProviders
-                }
-                .editorRowPadding()
-                if let current {
-                    CardDivider()
-                    HStack(spacing: 10) {
-                        Text("item.accountUsed")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            choosing = LoginProvider(rawValue: current.provider)
-                        } label: {
-                            Label(ItemLinkPicker.title(of: current.accountItemID, in: model.session), systemImage: "link")
-                        }
+        Group {
+            if let current = item.signInProvider {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        EditorLabel(label)
+                        SignInAccountLine(provider: current.provider, accountItemID: current.accountItemID)
+                    }
+                    Spacer(minLength: 8)
+                    Button("item.changeAccount") { choosing = LoginProvider(rawValue: current.provider) }
                         .buttonStyle(.borderless)
                         .accessibilityIdentifier("editor.signIn.account")
-                    }
-                    .editorRowPadding()
+                    RemoveRowButton { item.setSignInProvider(nil, accountItemID: nil) }
+                        .accessibilityLabel(Text("item.useUsernameInstead"))
+                        .accessibilityIdentifier("editor.signIn.none")
+                }
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    EditorRow(label: label, message: message) { field }
+                    providerMenu
                 }
             }
         }
@@ -295,63 +292,59 @@ struct LoginMethodCard: View {
         }
     }
 
-    private func isCurrent(_ provider: LoginProvider?) -> Bool {
-        current?.provider == provider?.rawValue
-    }
-
-    private func chip(_ provider: LoginProvider?) -> some View {
-        let selected = isCurrent(provider)
-        return Button {
-            if let provider { choosing = provider } else { item.setSignInProvider(nil, accountItemID: nil) }
-        } label: {
-            HStack(spacing: 7) {
-                ProviderMark(provider: provider, size: 20)
-                Text(provider?.name ?? String(localized: "item.nonePassword"))
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
+    /// "Avec…": the providers a login can sign in through.
+    private var providerMenu: some View {
+        Menu {
+            Section("item.signsInWith") {
+                ForEach(LoginProvider.primary) { provider in
+                    Button(provider.name) { choosing = provider }
+                }
             }
-            .padding(.leading, 5)
-            .padding(.trailing, 11)
-            .padding(.vertical, 5)
-            .background(selected ? AnyShapeStyle(Theme.accent.opacity(0.22)) : AnyShapeStyle(.fill.tertiary), in: Capsule())
-            .overlay {
-                Capsule().strokeBorder(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.08)))
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("editor.signIn.\(provider?.rawValue ?? "none")")
-    }
-
-    /// The other providers, behind one chip (or the chosen one when it is among them).
-    private var otherProviders: some View {
-        let others = LoginProvider.allCases.filter { !LoginProvider.primary.contains($0) }
-        let chosen = others.first { isCurrent($0) }
-        return Menu {
-            ForEach(others) { provider in
-                Button(provider.name) { choosing = provider }
+            Menu("item.other") {
+                ForEach(LoginProvider.allCases.filter { !LoginProvider.primary.contains($0) }) { provider in
+                    Button(provider.name) { choosing = provider }
+                }
             }
         } label: {
-            HStack(spacing: 7) {
-                if let chosen { ProviderMark(provider: chosen, size: 20) }
-                Text(chosen?.name ?? String(localized: "item.other")).font(.callout.weight(.medium))
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-            }
-            .padding(.leading, chosen == nil ? 11 : 5)
-            .padding(.trailing, 11)
-            .padding(.vertical, 5)
-            .background(chosen != nil ? AnyShapeStyle(Theme.accent.opacity(0.22)) : AnyShapeStyle(.fill.tertiary), in: Capsule())
-            .overlay {
-                Capsule().strokeBorder(chosen != nil ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.08)))
-            }
-            .contentShape(Capsule())
+            Label("item.signInWithShort", systemImage: "person.crop.circle.badge.checkmark")
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.fill.tertiary, in: Capsule())
+                .contentShape(Capsule())
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityIdentifier("editor.signIn.other")
+        .accessibilityIdentifier("editor.signIn.menu")
+    }
+}
+
+/// A sign-in provider and its account: the provider's mark, "Google", and the account item's title
+/// under it (or nothing when that item is gone).
+struct SignInAccountLine: View {
+    @Environment(AppModel.self) private var model
+    let provider: String
+    let accountItemID: String
+
+    var body: some View {
+        let account = model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
+        HStack(spacing: 10) {
+            ProviderMark(provider: LoginProvider(rawValue: provider), size: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: LoginProvider.displayName(provider))
+                    .font(.body.weight(.medium))
+                if let account {
+                    Text(account.listSubtitle.isEmpty ? account.title : account.listSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

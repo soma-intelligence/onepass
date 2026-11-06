@@ -107,6 +107,7 @@
 		6D9B777BFD825F05E7617B23 /* ItemZoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */; };
 		727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */; };
 		7345B42DF21289CAABCA9089 /* VerifyContactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8235DE3F072DFB74641CC857 /* VerifyContactView.swift */; };
+		7465E409D50F89C2A535D645 /* AddPasskeyRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 218BF8191B2971D4ABBF3136 /* AddPasskeyRow.swift */; };
 		7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C58541193889A75520499FE /* HostDeviceSheet.swift */; };
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
 		7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */; };
@@ -382,6 +383,7 @@
 		1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseRoot.swift; sourceTree = "<group>"; };
 		20B8451FA00D38A8278D9655 /* DebugItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugItems.swift; sourceTree = "<group>"; };
 		214B39B3C661A8FF88275223 /* OnboardingSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSteps.swift; sourceTree = "<group>"; };
+		218BF8191B2971D4ABBF3136 /* AddPasskeyRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPasskeyRow.swift; sourceTree = "<group>"; };
 		2276FC48964520BC441BFD23 /* TotpRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotpRing.swift; sourceTree = "<group>"; };
 		257C8A4056D753F50F27FF62 /* GeneralSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettings.swift; sourceTree = "<group>"; };
 		28F8B7B44189B3BB3D964112 /* SavePasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavePasswordView.swift; sourceTree = "<group>"; };
@@ -1155,6 +1157,7 @@
 			children = (
 				62D4DDCD9735058F9697F671 /* FieldEditors */,
 				5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */,
+				218BF8191B2971D4ABBF3136 /* AddPasskeyRow.swift */,
 				8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */,
 				F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */,
 				A3F2B5C4E147CBDF5F09CD14 /* GeneratorSheet.swift */,
@@ -1832,6 +1835,7 @@
 				5A3B3C0264919DA7784F2977 /* AccountsSettings.swift in Sources */,
 				CE1A294285A89599FB6323B3 /* AddAccountSheet.swift in Sources */,
 				9134B8DC3B113088C8113371 /* AddOtpSheet.swift in Sources */,
+				7465E409D50F89C2A535D645 /* AddPasskeyRow.swift in Sources */,
 				9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */,
 				AC97612BBB4918DE3AF1B3FE /* AgentRequestView.swift in Sources */,
 				88855E27AFF53DF2C4EA1589 /* AgentsSettings.swift in Sources */,
