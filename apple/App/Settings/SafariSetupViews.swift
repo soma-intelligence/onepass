@@ -1,4 +1,5 @@
 import DesignKit
+import ObjectiveC
 import SafariServices
 import SwiftUI
 import VaultKit
@@ -18,16 +19,33 @@ enum SafariExtensionSetup {
     /// On, off, or nil when Safari does not answer (no extension in this build, Safari missing).
     static func isEnabled() async -> Bool? {
         guard let identifier else { return nil }
-        return await withCheckedContinuation { done in
-            SFSafariExtensionManager.getStateOfSafariExtension(withIdentifier: identifier) { state, error in
-                done.resume(returning: error == nil ? state?.isEnabled : nil)
-            }
-        }
+        return await withCheckedContinuation { readState(identifier, into: $0) }
     }
 
     /// Safari > Réglages > Extensions, on OnePass.
     static func openSettings() {
         guard let identifier else { return }
+        showSettings(identifier)
+    }
+
+    /// The SDK marks this reply `NS_SWIFT_UI_ACTOR`, yet Safari calls it on its XPC queue: a Swift
+    /// closure passed there gets a main-actor check that traps (a crash at every launch on the
+    /// Mac, macOS 27 SDK). The call goes through the Objective-C runtime instead, with a plain block
+    /// that has no actor.
+    private nonisolated static func readState(_ identifier: String, into done: CheckedContinuation<Bool?, Never>) {
+        let reply: @convention(block) (SFSafariExtensionState?, NSError?) -> Void = { state, error in
+            done.resume(returning: error == nil ? state?.isEnabled : nil)
+        }
+        typealias Call = @convention(c) (AnyClass, Selector, NSString, @convention(block) (SFSafariExtensionState?, NSError?) -> Void) -> Void
+        let selector = NSSelectorFromString("getStateOfSafariExtensionWithIdentifier:completionHandler:")
+        guard let method = class_getClassMethod(SFSafariExtensionManager.self, selector) else {
+            return done.resume(returning: nil)
+        }
+        let call = unsafeBitCast(method_getImplementation(method), to: Call.self)
+        call(SFSafariExtensionManager.self, selector, identifier as NSString, reply)
+    }
+
+    private nonisolated static func showSettings(_ identifier: String) {
         SFSafariApplication.showPreferencesForExtension(withIdentifier: identifier) { _ in }
     }
     #else
