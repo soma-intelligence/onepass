@@ -292,5 +292,14 @@
   "save.loginSaved": "Login enregistré",
   "save.passwordUpdated": "Mot de passe mis à jour",
   "save.alreadyInOnepass": "Déjà dans OnePass",
-  "popup.toSave": "À enregistrer"
+  "popup.toSave": "À enregistrer",
+  "save.saveCard": "Enregistrer cette carte ?",
+  "save.updateCard": "Mettre à jour cette carte ?",
+  "save.saveAddress": "Enregistrer cette adresse ?",
+  "save.saveIdentity": "Enregistrer cette identité ?",
+  "save.cardSaved": "Carte enregistrée",
+  "save.cardUpdated": "Carte mise à jour",
+  "save.identitySaved": "Identité enregistrée",
+  "save.cardEnding": "Carte •••• {last4}",
+  "save.cardExpires": "exp. {exp}"
 }

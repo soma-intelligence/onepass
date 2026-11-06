@@ -192,7 +192,7 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
     const s: SaveInit = {
       origin: origin(o.origin),
       site: str(o.site, 253),
-      kind: oneOf(o.kind, ["login", "provider_link"]),
+      kind: oneOf(o.kind, ["login", "provider_link", "card", "identity"]),
       status: oneOf(o.status, ["new", "update"]),
       title: str(o.title, 256),
       username: str(o.username),
@@ -214,7 +214,20 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };
       if (p.title !== undefined) s.provider.title = str(p.title, 256);
     }
-    if (o.view !== undefined) s.view = oneOf<"edit">(o.view, ["edit"]);
+    if (o.view !== undefined) s.view = oneOf<"edit" | "saved">(o.view, ["edit", "saved"]);
+    if (o.card !== undefined) {
+      const c = obj(o.card);
+      s.card = { last4: str(c.last4, 4) };
+      if (c.exp !== undefined) s.card.exp = str(c.exp, 8);
+      if (c.holder !== undefined) s.card.holder = str(c.holder, 256);
+    }
+    if (o.identity !== undefined) {
+      const i = obj(o.identity);
+      s.identity = {};
+      if (i.name !== undefined) s.identity.name = str(i.name, 512);
+      if (i.email !== undefined) s.identity.email = str(i.email, 320);
+      if (i.place !== undefined) s.identity.place = str(i.place, 800);
+    }
     return s;
   });
 

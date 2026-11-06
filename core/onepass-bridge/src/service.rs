@@ -18,9 +18,10 @@ use onepass_core::fill_plan::intent::{Intent, intent_of};
 use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tiebreak, order};
 use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
+use onepass_core::model::checks::luhn_valid;
 use onepass_core::model::usage::{SiteUsage, form_shape_hash};
 use onepass_core::model::{
-    EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
+    Address, EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
     PasswordHistoryEntry, WEAK_BY_SITE_TAG, new_item, validate,
 };
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
@@ -30,8 +31,9 @@ use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::api::{
-    CredentialStatus, Ctx, ErrorBody, FillField, FillKind, PasskeySummary, Recipe, RecipeKind,
-    RecipeProfile, Reply, Request, Response, SecretString, Step, Summary, SummaryKind, VaultEntry,
+    AddressIn, CredentialStatus, Ctx, ErrorBody, FillField, FillKind, PasskeySummary, Recipe,
+    RecipeKind, RecipeProfile, Reply, Request, Response, SecretString, Step, Summary, SummaryKind,
+    VaultEntry,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
@@ -485,6 +487,9 @@ impl<V: VaultAccess> Service<V> {
                 | Request::Totp { .. }
                 | Request::Reveal { .. }
                 | Request::CheckCredentials { .. }
+                | Request::CheckCard { .. }
+                | Request::SaveCard { .. }
+                | Request::CheckIdentity { .. }
                 | Request::UpdatePassword { .. }
                 | Request::ConfirmPending { .. }
                 | Request::LinkProvider { .. }
@@ -560,6 +565,81 @@ impl<V: VaultAccess> Service<V> {
                     tags,
                 };
                 self.save_login(*ctx, o, new, now)
+            }
+            Request::CheckCard {
+                ctx,
+                origin: o,
+                number,
+                exp_month,
+                exp_year,
+                ..
+            } => self.check_card(*ctx, o, number, exp_month, exp_year),
+            Request::SaveCard {
+                ctx,
+                origin: o,
+                vault_id,
+                title,
+                cardholder,
+                number,
+                exp_month,
+                exp_year,
+                item_id,
+                ..
+            } => {
+                let card = NewCard {
+                    vault_id,
+                    title,
+                    cardholder,
+                    number,
+                    exp_month,
+                    exp_year,
+                    item_id: item_id.as_deref(),
+                };
+                self.save_card(*ctx, o, card, now)
+            }
+            Request::CheckIdentity {
+                ctx,
+                origin: o,
+                given_name,
+                family_name,
+                email,
+                tel,
+                organization,
+                address,
+                ..
+            } => {
+                let typed = TypedIdentity {
+                    given_name,
+                    family_name,
+                    email,
+                    tel,
+                    organization,
+                    address: address.as_ref(),
+                };
+                self.check_identity(*ctx, o, &typed)
+            }
+            Request::SaveIdentity {
+                ctx,
+                origin: o,
+                vault_id,
+                title,
+                given_name,
+                family_name,
+                email,
+                tel,
+                organization,
+                address,
+                ..
+            } => {
+                let typed = TypedIdentity {
+                    given_name,
+                    family_name,
+                    email,
+                    tel,
+                    organization,
+                    address: address.as_ref(),
+                };
+                self.save_identity(*ctx, o, vault_id, title, &typed, now)
             }
             Request::UpdatePassword {
                 ctx,
@@ -969,6 +1049,208 @@ impl<V: VaultAccess> Service<V> {
         let id = item.id;
         self.vault.save(vault_id, item).map_err(app_code)?;
         self.record("save_login", id, Some(o), ctx, now);
+        Ok(Response::ItemId {
+            item_id: id.to_string(),
+        })
+    }
+
+    /// Is `vault_id` a vault of the account? `not_found` otherwise.
+    fn known_vault(&mut self, vault_id: &str) -> OpResult<Id> {
+        let vault_id = parse_id(vault_id)?;
+        if !self
+            .vault
+            .vaults()
+            .map_err(app_code)?
+            .iter()
+            .any(|v| v.id == vault_id)
+        {
+            return Err(AppErrorCode::NotFound);
+        }
+        Ok(vault_id)
+    }
+
+    /// `same`: an eligible card holds this number and its expiry (or one
+    /// of the two expiries is unknown); `update`: it holds the number with
+    /// another expiry; `new` otherwise. Cards are not bound to a site:
+    /// the origin is only checked.
+    fn check_card(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        number: &SecretString,
+        exp_month: &str,
+        exp_year: &str,
+    ) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        origin(o)?;
+        let digits = card_digits(number)?;
+        let expiry = parse_expiry(exp_month, exp_year)?;
+        let all = self.items()?;
+        let cards: Vec<&Item> = all
+            .iter()
+            .map(|(_, i)| i)
+            .filter(|i| eligible(i) && i.item_type == ItemType::CreditCard)
+            .filter(|i| stored_card_digits(i).is_some_and(|d| same_secret(&d, &digits)))
+            .collect();
+        let same = cards.iter().find(|i| match (expiry, stored_expiry(i)) {
+            (Some(e), Some(s)) => e == s,
+            _ => true,
+        });
+        Ok(match (same, cards.first()) {
+            (Some(i), _) => verdict(CredentialStatus::Same, Some(i)),
+            (None, Some(i)) => verdict(CredentialStatus::Update, Some(i)),
+            (None, None) => verdict(CredentialStatus::New, None),
+        })
+    }
+
+    fn save_card(&mut self, ctx: Ctx, o: &str, card: NewCard<'_>, now: u64) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        origin(o)?;
+        let digits = card_digits(card.number)?;
+        let expiry = parse_expiry(card.exp_month, card.exp_year)?;
+        let cardholder = card.cardholder.trim();
+        let item = match card.item_id {
+            Some(item_id) => {
+                let (_, mut item) = self.eligible_item(item_id)?;
+                if item.item_type != ItemType::CreditCard {
+                    return Err(AppErrorCode::NotFound);
+                }
+                // The item must hold the very number typed: an item id
+                // alone never rewrites another card.
+                if !stored_card_digits(&item).is_some_and(|d| same_secret(&d, &digits)) {
+                    return Err(AppErrorCode::Invalid);
+                }
+                self.reprompt(&item)?;
+                if let Some((year, month)) = expiry {
+                    set_value(&mut item, "expiry", FieldValue::MonthYear { year, month })?;
+                }
+                if !cardholder.is_empty() && field_text(&item, "cardholder").is_none() {
+                    set_value(
+                        &mut item,
+                        "cardholder",
+                        FieldValue::Text(cardholder.to_owned()),
+                    )?;
+                }
+                item.updated_at = unix(now);
+                item
+            }
+            None => {
+                let vault_id = self.known_vault(card.vault_id)?;
+                let title = match card.title.trim() {
+                    "" => format!("Carte \u{2022}\u{2022}\u{2022}\u{2022} {}", last4(&digits)),
+                    t => t.to_owned(),
+                };
+                let mut item = new_item(ItemType::CreditCard, vault_id, &title);
+                if !cardholder.is_empty() {
+                    set_value(
+                        &mut item,
+                        "cardholder",
+                        FieldValue::Text(cardholder.to_owned()),
+                    )?;
+                }
+                set_value(&mut item, "number", FieldValue::Concealed(digits.clone()))?;
+                if let Some((year, month)) = expiry {
+                    set_value(&mut item, "expiry", FieldValue::MonthYear { year, month })?;
+                }
+                item
+            }
+        };
+        validate_typed(&item, &["cardholder", "expiry"])?;
+        let (id, vault_id) = (item.id, item.vault_id);
+        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.record("save_card", id, Some(o), ctx, now);
+        Ok(Response::ItemId {
+            item_id: id.to_string(),
+        })
+    }
+
+    /// `same` when an eligible Identity holds every non-empty typed value,
+    /// `new` otherwise.
+    fn check_identity(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        typed: &TypedIdentity<'_>,
+    ) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        origin(o)?;
+        if typed.is_empty() {
+            return Err(AppErrorCode::Invalid);
+        }
+        let all = self.items()?;
+        let found = all
+            .iter()
+            .map(|(_, i)| i)
+            .filter(|i| eligible(i) && i.item_type == ItemType::Identity)
+            .find(|i| typed.held_by(i));
+        Ok(match found {
+            Some(i) => verdict(CredentialStatus::Same, Some(i)),
+            None => verdict(CredentialStatus::New, None),
+        })
+    }
+
+    fn save_identity(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        vault_id: &str,
+        title: &str,
+        typed: &TypedIdentity<'_>,
+        now: u64,
+    ) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        let page = origin(o)?;
+        if typed.is_empty() {
+            return Err(AppErrorCode::Invalid);
+        }
+        let vault_id = self.known_vault(vault_id)?;
+        let (given, family, email) = (
+            typed.given_name.trim(),
+            typed.family_name.trim(),
+            typed.email.trim(),
+        );
+        let name = format!("{given} {family}").trim().to_owned();
+        let title = match title.trim() {
+            "" if !name.is_empty() => name,
+            "" if !email.is_empty() => email.to_owned(),
+            "" => page.site(),
+            t => t.to_owned(),
+        };
+        let mut item = new_item(ItemType::Identity, vault_id, &title);
+        let texts = [
+            (
+                "first_name",
+                given,
+                FieldValue::Text as fn(String) -> FieldValue,
+            ),
+            ("last_name", family, FieldValue::Text),
+            ("email", email, FieldValue::Email),
+            ("mobile_phone", typed.tel.trim(), FieldValue::Phone),
+            ("company", typed.organization.trim(), FieldValue::Text),
+        ];
+        for (field, value, kind) in texts {
+            if !value.is_empty() {
+                set_value(&mut item, field, kind(value.to_owned()))?;
+            }
+        }
+        if let Some(a) = typed.address.filter(|a| !address_is_empty(a)) {
+            set_value(
+                &mut item,
+                "address",
+                FieldValue::Address(Address {
+                    line1: a.line1.trim().to_owned(),
+                    line2: a.line2.trim().to_owned(),
+                    city: a.city.trim().to_owned(),
+                    postal_code: a.postal_code.trim().to_owned(),
+                    region: a.region.trim().to_owned(),
+                    country: a.country.trim().to_owned(),
+                }),
+            )?;
+        }
+        validate_typed(&item, &["first_name"])?;
+        let id = item.id;
+        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.record("save_identity", id, Some(o), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
         })
@@ -1699,6 +1981,209 @@ struct NewLogin<'a> {
     vault_id: &'a str,
     rule: MatchRule,
     tags: &'a [String],
+}
+
+/// A card typed in a page, for `save_card`.
+struct NewCard<'a> {
+    vault_id: &'a str,
+    title: &'a str,
+    cardholder: &'a str,
+    number: &'a SecretString,
+    exp_month: &'a str,
+    exp_year: &'a str,
+    item_id: Option<&'a str>,
+}
+
+/// An identity typed in a page, for `check_identity` and `save_identity`.
+struct TypedIdentity<'a> {
+    given_name: &'a str,
+    family_name: &'a str,
+    email: &'a str,
+    tel: &'a str,
+    organization: &'a str,
+    address: Option<&'a AddressIn>,
+}
+
+impl TypedIdentity<'_> {
+    /// No value worth saving or comparing.
+    fn is_empty(&self) -> bool {
+        [
+            self.given_name,
+            self.family_name,
+            self.email,
+            self.organization,
+        ]
+        .iter()
+        .all(|v| norm(v).is_empty())
+            && phone_digits(self.tel).is_empty()
+            && self.address.is_none_or(address_is_empty)
+    }
+
+    /// Does `item` hold every non-empty value typed?
+    fn held_by(&self, item: &Item) -> bool {
+        let text = |field: &str, typed: &str| {
+            let t = norm(typed);
+            t.is_empty() || field_text(item, field).is_some_and(|s| norm(s) == t)
+        };
+        let tel = phone_digits(self.tel);
+        let tel_ok = tel.is_empty()
+            || ["mobile_phone", "home_phone", "work_phone"]
+                .iter()
+                .any(|f| field_text(item, f).is_some_and(|s| phone_digits(s) == tel));
+        let address_ok = match self.address.filter(|a| !address_is_empty(a)) {
+            None => true,
+            Some(a) => match item.field("address").map(|f| &f.value) {
+                Some(FieldValue::Address(s)) => [
+                    (&a.line1, &s.line1),
+                    (&a.line2, &s.line2),
+                    (&a.city, &s.city),
+                    (&a.postal_code, &s.postal_code),
+                    (&a.region, &s.region),
+                    (&a.country, &s.country),
+                ]
+                .iter()
+                .all(|(t, s)| norm(t).is_empty() || norm(t) == norm(s)),
+                _ => false,
+            },
+        };
+        text("first_name", self.given_name)
+            && text("last_name", self.family_name)
+            && text("email", self.email)
+            && text("company", self.organization)
+            && tel_ok
+            && address_ok
+    }
+}
+
+/// Lower case, trimmed, inner whitespace collapsed to one space.
+fn norm(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn phone_digits(s: &str) -> String {
+    s.chars().filter(char::is_ascii_digit).collect()
+}
+
+fn address_is_empty(a: &AddressIn) -> bool {
+    [
+        &a.line1,
+        &a.line2,
+        &a.city,
+        &a.postal_code,
+        &a.region,
+        &a.country,
+    ]
+    .iter()
+    .all(|p| p.trim().is_empty())
+}
+
+/// Non-blank text of a text-like field, whatever its autofill flag.
+fn field_text<'a>(item: &'a Item, id: &str) -> Option<&'a str> {
+    match item.field(id).map(|f| &f.value) {
+        Some(
+            FieldValue::Text(s)
+            | FieldValue::Email(s)
+            | FieldValue::Phone(s)
+            | FieldValue::Url(s)
+            | FieldValue::Menu(s),
+        ) => {
+            let t = s.trim();
+            (!t.is_empty()).then_some(t)
+        }
+        _ => None,
+    }
+}
+
+/// Only `save_prompt` saves or compares what a page form held.
+fn save_ctx(ctx: Ctx) -> OpResult<()> {
+    if ctx != Ctx::SavePrompt {
+        return Err(AppErrorCode::NotAllowed);
+    }
+    Ok(())
+}
+
+/// Digits of a typed card number (spaces and dashes dropped): 12 to 19
+/// digits with a valid check digit, or `invalid`.
+fn card_digits(number: &SecretString) -> OpResult<Zeroizing<String>> {
+    let raw = number.expose();
+    if raw
+        .chars()
+        .any(|c| !(c.is_ascii_digit() || c == ' ' || c == '-'))
+    {
+        return Err(AppErrorCode::Invalid);
+    }
+    let digits: Zeroizing<String> =
+        Zeroizing::new(raw.chars().filter(char::is_ascii_digit).collect());
+    if !(12..=19).contains(&digits.len()) || !luhn_valid(&digits) {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(digits)
+}
+
+/// Digits of the number a stored card holds.
+fn stored_card_digits(item: &Item) -> Option<Zeroizing<String>> {
+    let s = match item.field("number").map(|f| &f.value) {
+        Some(FieldValue::Concealed(n)) => n.as_str(),
+        Some(FieldValue::Text(n)) => n.as_str(),
+        _ => return None,
+    };
+    let d: Zeroizing<String> = Zeroizing::new(s.chars().filter(char::is_ascii_digit).collect());
+    (!d.is_empty()).then_some(d)
+}
+
+/// `(year, month)` of a stored card, `None` when unknown.
+fn stored_expiry(item: &Item) -> Option<(u16, u8)> {
+    match item.field("expiry").map(|f| &f.value) {
+        Some(FieldValue::MonthYear { year, month }) if (1..=12).contains(month) && *year > 0 => {
+            Some((*year, *month))
+        }
+        _ => None,
+    }
+}
+
+/// A typed expiry: month 1 to 12, year of 2 (20YY) or 4 digits. `None`
+/// when either part is empty; `invalid` when both are given and one is
+/// wrong.
+fn parse_expiry(month: &str, year: &str) -> OpResult<Option<(u16, u8)>> {
+    let (month, year) = (month.trim(), year.trim());
+    if month.is_empty() || year.is_empty() {
+        return Ok(None);
+    }
+    let digits = |s: &str| !s.is_empty() && s.len() <= 4 && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(month) || !digits(year) {
+        return Err(AppErrorCode::Invalid);
+    }
+    let m: u8 = month.parse().map_err(|_| AppErrorCode::Invalid)?;
+    let y: u16 = year.parse().map_err(|_| AppErrorCode::Invalid)?;
+    let y = match year.len() {
+        2 => 2000 + y,
+        4 => y,
+        _ => return Err(AppErrorCode::Invalid),
+    };
+    if !(1..=12).contains(&m) {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(Some((y, m)))
+}
+
+fn last4(digits: &str) -> &str {
+    &digits[digits.len().saturating_sub(4)..]
+}
+
+/// `validate`, with `waived` required fields allowed blank: a page form
+/// may lack them (a checkout without a cardholder, a shipping form
+/// without a first name), the user completes them in the app.
+fn validate_typed(item: &Item, waived: &[&str]) -> OpResult<()> {
+    let mut probe = item.clone();
+    for f in probe.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if waived.contains(&f.id.as_str()) {
+            f.required = false;
+        }
+    }
+    validate(&probe).map_err(|_| AppErrorCode::Invalid)
 }
 
 fn verdict(status: CredentialStatus, item: Option<&Item>) -> Response {

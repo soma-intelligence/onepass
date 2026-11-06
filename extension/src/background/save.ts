@@ -13,9 +13,22 @@
 // first on Save, asks `check_credentials` again, then saves, updates the
 // login the host names, or says it is already there.
 //
+// "Pas maintenant" (or the close button) puts away that very card, nothing
+// more: the same credential (site, identifier, password; or the same card or
+// identity) sent again within DISMISS_QUIET_MS gets no card, any other one
+// does, every time. Only a keyed hash of it is kept in memory (random key per
+// worker life), never the password or the card number.
+//
+// A card or an identity typed by hand in a checkout or shipping form (kinds
+// `card` and `identity`) uses the same card: its values stay in memory with
+// the record, wiped like a password; the page gets only the card's last four
+// digits and expiry, or the identity's name, e-mail and city. A security code
+// is never saved from a page.
+//
 // The vault picked first: the last one used to save for that site, else the
 // last one used anywhere, else the first the host lists (`storage.local`
 // key `saveVaults`, vault ids and sites only, no secret).
+import type { Address, IdentityValues } from "../bridge/client";
 import type { BgToCs, ProviderId, SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import { parseOrigin } from "../shared/domain";
 import { newToken } from "../shared/tokens";
@@ -34,6 +47,10 @@ export const PENDING_SAVE_TTL_MS = 10 * 60 * 1000;
 /** At most this many waiting submissions (the oldest goes first). */
 export const MAX_PENDING_SAVES = 8;
 export const SAVE_VAULTS_KEY = "saveVaults";
+/** A card put away ("Pas maintenant") is not offered again for the very same credential this long. */
+export const DISMISS_QUIET_MS = 10 * 60 * 1000;
+/** At most this many put-away credentials remembered (the oldest goes first). */
+const MAX_DISMISSED = 64;
 const MAX_VAULT_SITES = 200;
 
 export interface SavePending {
@@ -41,16 +58,29 @@ export interface SavePending {
   /** Origin given by `sender` when the credentials were submitted. */
   origin: string;
   documentId?: string;
-  kind: "login" | "provider_link";
+  kind: SaveKind;
   status: "new" | "update";
   username: string;
   password: string;
-  /** The login to update (from `check_credentials`). */
+  /**
+   * Kinds `card` and `identity`: OnePass already holds it (`check_card` or `check_identity` said
+   * `same`). The card shows anyway (a page must not learn what the vault holds from whether a
+   * card appears); Save then says it is already there, nothing written.
+   */
+  known?: boolean;
+  /** Kind `card`: the card typed in the page (held like a password). */
+  card?: CardDraft;
+  /** Kind `identity`: the identity or address typed in the page. */
+  identity?: IdentityValues;
+  /** The login (or card, `check_card`) to update (from `check_credentials`). */
   update?: { itemId: string; title: string };
   /** Provider link variant: the provider account used on this site. */
   provider?: { id: ProviderId; accountItemId: string; email: string; title?: string };
-  /** Open straight in the edit view (menu "Enregistrer un nouveau login"). */
-  view?: "edit";
+  /**
+   * Open straight in the edit view (menu "Enregistrer un nouveau login"), or as done (`saved`: a
+   * generated signup password OnePass saved and the submission confirmed).
+   */
+  view?: "edit" | "saved";
   /**
    * Verified origin of the top document, sent as an origin pin when no
    * `documentId` is known (the content script shows the prompt only there).
@@ -58,6 +88,53 @@ export interface SavePending {
   topOrigin?: string;
   /** The vault was locked when the host was asked: Save unlocks first. */
   locked?: boolean;
+}
+
+export type SaveKind = "login" | "provider_link" | "card" | "identity";
+
+/** A card typed by hand: `exp_month` "04" and `exp_year` "2029" (or "29"), "" when unknown. */
+export interface CardDraft {
+  cardholder: string;
+  number: string;
+  exp_month: string;
+  exp_year: string;
+}
+
+/** What `recentlyDismissed` compares for a login: its identifier (any case) and password. */
+export function loginQuietKey(username: string, password: string): string {
+  return `login\u0000${username.trim().toLowerCase()}\u0000${password}`;
+}
+
+/** The same for a card: its digits and expiry. */
+export function cardQuietKey(number: string, expMonth = "", expYear = ""): string {
+  return `card\u0000${number.replace(/\D/g, "")}\u0000${expMonth}/${expYear.slice(-2)}`;
+}
+
+/** The same for an identity: every value, normalized. */
+export function identityQuietKey(v: IdentityValues): string {
+  const a: Partial<Address> = v.address ?? {};
+  const parts = [v.given_name, v.family_name, v.email, v.tel, v.organization, a.line1, a.line2, a.city, a.postal_code, a.region, a.country];
+  return `identity\u0000${parts.map((x) => (x ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("\u0000")}`;
+}
+
+/** The quiet key of a record, or null when nothing was typed in the page (menu, provider link). */
+function quietKey(rec: { kind: SaveKind; username: string; password: string; card?: CardDraft; identity?: IdentityValues; view?: string }): string | null {
+  if (rec.view !== undefined) return null;
+  if (rec.kind === "login") return rec.password !== "" ? loginQuietKey(rec.username, rec.password) : null;
+  if (rec.kind === "card") return rec.card && rec.card.number !== "" ? cardQuietKey(rec.card.number, rec.card.exp_month, rec.card.exp_year) : null;
+  if (rec.kind === "identity") return rec.identity ? identityQuietKey(rec.identity) : null;
+  return null;
+}
+
+function wipeDrafts(rec: { card?: CardDraft; identity?: IdentityValues }): void {
+  if (rec.card) rec.card.number = "";
+  delete rec.card;
+  delete rec.identity;
+}
+
+/** "•••• 4242". */
+export function cardLast4(number: string): string {
+  return number.replace(/\D/g, "").slice(-4);
 }
 
 /** What a save needs, from a card or from the popup's waiting list. */
@@ -128,6 +205,9 @@ interface VaultMemory {
 export class SavePrompts {
   readonly tokens: FrameTokens<SaveRecord>;
   private readonly waiting = new Map<string, Waiting>();
+  /** Keyed hashes of put-away credentials, with when. */
+  private readonly dismissed = new Map<string, number>();
+  private quietKeyHmac: Promise<CryptoKey> | null = null;
 
   constructor(private readonly deps: SaveDeps) {
     this.tokens = new FrameTokens<SaveRecord>({
@@ -136,10 +216,12 @@ export class SavePrompts {
       // Dismiss, close, navigation and tab removal all end in a drop.
       onDrop: (rec) => {
         rec.password = "";
+        wipeDrafts(rec);
       },
       // Spec 8.5: the submitted password is kept at most 2 minutes.
       onExpire: async (rec) => {
         rec.password = "";
+        wipeDrafts(rec);
         await removeFrame(this.deps.ext.tabs, rec, "save");
       },
       ...(deps.now ? { now: deps.now } : {}),
@@ -161,6 +243,9 @@ export class SavePrompts {
     if (p.documentId !== undefined) rec.documentId = p.documentId;
     if (p.update) rec.update = { ...p.update };
     if (p.provider) rec.provider = { ...p.provider };
+    if (p.card) rec.card = { ...p.card };
+    if (p.known) rec.known = true;
+    if (p.identity) rec.identity = { ...p.identity, ...(p.identity.address ? { address: { ...p.identity.address } } : {}) };
     if (p.view) rec.view = p.view;
     if (p.locked) rec.locked = true;
     const token = await this.tokens.register(rec);
@@ -189,7 +274,7 @@ export class SavePrompts {
     const site = parseOrigin(rec.origin)?.site ?? rec.origin;
     let vaults: SaveInit["vaults"] = [];
     let locked = rec.locked === true;
-    if (rec.kind === "login") {
+    if (rec.kind !== "provider_link") {
       try {
         const r = await this.deps.session.request({ op: "vaults" });
         vaults = r.vaults.map((v) => {
@@ -218,6 +303,20 @@ export class SavePrompts {
       if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
     }
     if (rec.view) out.view = rec.view;
+    if (rec.card) {
+      out.card = { last4: cardLast4(rec.card.number) };
+      if (rec.card.exp_month !== "" && rec.card.exp_year !== "") out.card.exp = `${rec.card.exp_month.padStart(2, "0")}/${rec.card.exp_year.slice(-2)}`;
+      if (rec.card.cardholder.trim() !== "") out.card.holder = rec.card.cardholder.trim();
+    }
+    if (rec.identity) {
+      const v = rec.identity;
+      out.identity = {};
+      const name = [v.given_name, v.family_name].map((x) => x.trim()).filter((x) => x !== "").join(" ");
+      if (name !== "") out.identity.name = name;
+      if (v.email.trim() !== "") out.identity.email = v.email.trim();
+      const place = [v.address?.line1, v.address?.postal_code, v.address?.city].map((x) => (x ?? "").trim()).filter((x) => x !== "").join(", ");
+      if (place !== "") out.identity.place = place;
+    }
     if (locked) out.locked = true;
     const vault = await this.defaultVault(site, vaults);
     if (vault !== undefined) out.defaultVault = vault;
@@ -274,10 +373,13 @@ export class SavePrompts {
     /** The login saved or updated (a confirmed save). */
     let out: SaveOutcome = { outcome: "done" };
     switch (decision) {
-      case "dismiss":
+      case "dismiss": {
+        const key = quietKey(rec);
+        if (key !== null) await this.noteDismissed(rec.origin, key);
         await this.tokens.drop(token);
         await removeFrame(this.deps.ext.tabs, rec, "save");
         return {};
+      }
       case "later":
         // Unanswered: it waits in the popup (a sign-in the card offered, not the menu's blank login).
         if (rec.kind === "login" && rec.view !== "edit" && rec.password !== "") this.hold(rec);
@@ -288,7 +390,10 @@ export class SavePrompts {
         await this.deps.neverSave.add(parseOrigin(rec.origin)?.site ?? rec.origin);
         break;
       case "save":
-        if (rec.kind === "provider_link") {
+        if (rec.kind === "card" || rec.kind === "identity") {
+          if (!edits) throw new BgError("invalid");
+          out = rec.known ? { outcome: "already" } : await this.commitForm(rec, edits);
+        } else if (rec.kind === "provider_link") {
           if (!rec.provider) throw new BgError("invalid");
           await this.deps.session.request({
             op: "link_provider",
@@ -303,12 +408,17 @@ export class SavePrompts {
         }
         break;
       case "update":
-        // Only the item check_credentials named; the page cannot pick another.
+        // Only the item check_credentials (or check_card) named; the page cannot pick another.
+        if (rec.kind === "card" && rec.update) {
+          out = await this.commitForm(rec, edits ?? { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [] });
+          break;
+        }
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
         out = await this.commit(rec, "update", edits);
         break;
     }
     rec.password = "";
+    wipeDrafts(rec);
     rec.decided = true;
     await this.tokens.update(token, rec);
     return out;
@@ -322,6 +432,14 @@ export class SavePrompts {
     const site = parseOrigin(h.origin)?.site ?? h.origin;
     let status: "save" | "update" = decision;
     let update = h.update;
+    if (!h.locked && decision === "save" && h.password !== "" && (!edits || edits.password === "")) {
+      // The card may have waited: the same login can have been saved since (iOS's own "Save
+      // Password?" sheet through OnePass's AutoFill, another tab). Never a second copy.
+      const r = await this.deps.session
+        .request({ op: "check_credentials", ctx: "save_prompt", origin: h.origin, username: edits && edits.username.trim() !== "" ? edits.username : h.username, password: h.password })
+        .catch(() => null);
+      if (r && (r.status === "same" || r.status === "pending")) return { outcome: "already" };
+    }
     if (h.locked) {
       const native = this.deps.nativeUnlock ? await this.deps.nativeUnlock().catch(() => false) : null;
       if (native === false) throw new BgError("locked");
@@ -387,6 +505,103 @@ export class SavePrompts {
     const out: SaveOutcome = { outcome: status === "update" ? "updated" : "saved" };
     if (vaultName !== undefined) out.vault = vaultName;
     return out;
+  }
+
+  /** Saves the card or identity of `rec` (a new item, or the expiry of the card `check_card` named). */
+  private async commitForm(rec: SaveRecord, edits: SaveEdits): Promise<SaveOutcome> {
+    const site = parseOrigin(rec.origin)?.site ?? rec.origin;
+    let vaultName: string | undefined;
+    const vaultFor = async (): Promise<string> => {
+      const listed = await this.deps.session.request({ op: "vaults" }).catch(() => ({ vaults: [] }));
+      const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
+      const id = vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId) ? edits.vaultId : await this.defaultVault(site, vaults);
+      if (id === undefined || id === "") throw new BgError("not_found");
+      vaultName = vaults.find((v) => v.id === id)?.name;
+      return id;
+    };
+    if (rec.kind === "card") {
+      const c = rec.card;
+      if (!c || c.number === "") throw new BgError("invalid");
+      if (rec.update) {
+        await this.deps.session.request({
+          op: "save_card",
+          ctx: "save_prompt",
+          origin: rec.origin,
+          vault_id: "",
+          title: "",
+          cardholder: c.cardholder,
+          number: c.number,
+          exp_month: c.exp_month,
+          exp_year: c.exp_year,
+          item_id: rec.update.itemId,
+        });
+        return { outcome: "updated" };
+      }
+      const vaultId = await vaultFor();
+      await this.deps.session.request({
+        op: "save_card",
+        ctx: "save_prompt",
+        origin: rec.origin,
+        vault_id: vaultId,
+        title: edits.title.trim(),
+        cardholder: c.cardholder,
+        number: c.number,
+        exp_month: c.exp_month,
+        exp_year: c.exp_year,
+      });
+      await this.rememberVault(site, vaultId);
+    } else {
+      const v = rec.identity;
+      if (!v) throw new BgError("invalid");
+      const vaultId = await vaultFor();
+      await this.deps.session.request({ op: "save_identity", ctx: "save_prompt", origin: rec.origin, vault_id: vaultId, title: edits.title.trim(), ...v });
+      await this.rememberVault(site, vaultId);
+    }
+    // Cards and identities are not logins of this site: no site memory note.
+    const out: SaveOutcome = { outcome: "saved" };
+    if (vaultName !== undefined) out.vault = vaultName;
+    return out;
+  }
+
+  // ---- "Pas maintenant": that very credential, briefly ----
+
+  private async quietHash(origin: string, key: string): Promise<string | null> {
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return null;
+    try {
+      this.quietKeyHmac ??= subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]) as Promise<CryptoKey>;
+      const site = parseOrigin(origin)?.site ?? origin;
+      const sig = await subtle.sign("HMAC", await this.quietKeyHmac, new TextEncoder().encode(`${site}\u0000${key}`));
+      return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+    } catch {
+      return null;
+    }
+  }
+
+  private async noteDismissed(origin: string, key: string): Promise<void> {
+    const h = await this.quietHash(origin, key);
+    if (h === null) return;
+    this.dismissed.delete(h);
+    this.dismissed.set(h, (this.deps.now ?? Date.now)());
+    while (this.dismissed.size > MAX_DISMISSED) {
+      const oldest = this.dismissed.keys().next().value;
+      if (oldest === undefined) break;
+      this.dismissed.delete(oldest);
+    }
+  }
+
+  /** This very credential (`loginQuietKey`, `cardQuietKey`, `identityQuietKey`) was put away on this site moments ago. */
+  async recentlyDismissed(origin: string, key: string): Promise<boolean> {
+    if (this.dismissed.size === 0) return false;
+    const h = await this.quietHash(origin, key);
+    if (h === null) return false;
+    const at = this.dismissed.get(h);
+    if (at === undefined) return false;
+    if ((this.deps.now ?? Date.now)() - at > DISMISS_QUIET_MS) {
+      this.dismissed.delete(h);
+      return false;
+    }
+    return true;
   }
 
   // ---- waiting in the popup ----

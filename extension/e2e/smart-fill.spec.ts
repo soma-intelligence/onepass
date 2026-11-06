@@ -100,13 +100,31 @@ paired("smart_fill_signup_generates_password_never_submits_then_saves_it", async
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 15_000 });
   // The generated password was saved as a pending Login before the submit
   // (save-before-submit): the submission confirms that item, with the
-  // submitted address, and asks nothing.
+  // submitted address, and asks nothing (the card only says it is saved).
   const saved = audited(ext, "save_login");
   expect(saved).toHaveLength(1);
   await expect.poll(() => audited(ext, "confirm_pending").length, { timeout: 15_000 }).toBe(1);
   expect(audited(ext, "confirm_pending")[0]?.item_id).toBe(saved[0]?.item_id);
-  await ext.settle(1500);
-  expect(page.frames().some((f) => f.url().startsWith("chrome-extension://") && f.url().includes("/save.html"))).toBe(false);
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText("new.user@atlas.dev");
+  await expect(card.locator("button", { hasText: "Enregistrer" })).toHaveCount(0);
+});
+
+paired("smart_fill_signup_handle_username", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/signup-handle`);
+  await clickIcon(ext, page, "#new-password");
+  await expect(page.locator("#new-password")).not.toHaveValue("", { timeout: 15_000 });
+  // MS-06: the e-mail in its own field, the username a handle the field's pattern accepts.
+  await expect(page.locator("#email")).toHaveValue(FX.identity.email);
+  const handle = await page.locator("#username").inputValue();
+  expect(handle).toMatch(/^[a-z0-9_.]{3,20}$/);
+  expect(handle).toContain("alex");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 15_000 });
+  await expect.poll(() => audited(ext, "confirm_pending").length, { timeout: 15_000 }).toBe(1);
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText(handle);
 });
 
 paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {

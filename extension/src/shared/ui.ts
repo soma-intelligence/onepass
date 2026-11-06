@@ -142,11 +142,15 @@ export interface SaveInit {
   origin: string;
   /** Registrable domain, as shown in "Ne jamais proposer pour <domaine>". */
   site: string;
-  kind: "login" | "provider_link";
+  kind: "login" | "provider_link" | "card" | "identity";
   status: "new" | "update";
   title: string;
   username: string;
-  /** The login to update (status `update`). */
+  /** Kind `card`: what the card shows of the card typed in the page (never its number). */
+  card?: { last4: string; exp?: string; holder?: string };
+  /** Kind `identity`: what the card shows of the identity or address typed in the page. */
+  identity?: { name?: string; email?: string; place?: string };
+  /** The login (or card) to update (status `update`). */
   update?: { itemId: string; title: string };
   /** `account`: the OnePass account the vault belongs to, when the host names one. */
   vaults: { id: string; name: string; account?: string }[];
@@ -156,8 +160,12 @@ export interface SaveInit {
   locked?: boolean;
   /** Provider link: the provider account (its own item) the site signs in with. */
   provider?: { id: ProviderId; email: string; title?: string };
-  /** Open in the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). */
-  view?: "edit";
+  /**
+   * `edit`: the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). `saved`: a
+   * login OnePass already saved (a generated signup password, confirmed at the submission),
+   * shown as done, nothing to answer.
+   */
+  view?: "edit" | "saved";
 }
 
 export interface PopupStatus {

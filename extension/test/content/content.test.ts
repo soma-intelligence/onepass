@@ -818,3 +818,73 @@ describe("provider and account clicks (spec 8.7)", () => {
     expect(sent[0]).toMatchObject({ type: "account_click", email: "alex.pro@example.com" });
   });
 });
+
+describe("card and address forms sent by hand (MS-04)", () => {
+  const CHECKOUT = `
+<form id="pay">
+  <input id="cn" autocomplete="cc-name">
+  <input id="num" autocomplete="cc-number">
+  <input id="exp" autocomplete="cc-exp">
+  <input id="csc" autocomplete="cc-csc">
+  <button id="buy" type="submit">Payer</button>
+</form>`;
+  const SHIP = `
+<form id="ship">
+  <input id="gn" autocomplete="given-name">
+  <input id="fn" autocomplete="family-name">
+  <input id="a1" autocomplete="address-line1">
+  <input id="pc" autocomplete="postal-code">
+  <input id="ci" autocomplete="address-level2">
+  <button id="next" type="submit">Continuer</button>
+</form>`;
+
+  it("a card form sent by its button reports the card, never the security code; a forged submit nothing", async () => {
+    useTimers();
+    setPage(CHECKOUT);
+    s = start();
+    await flush();
+    (document.getElementById("pay") as HTMLFormElement).addEventListener("submit", (e) => e.preventDefault());
+    input("cn").value = "Alex Martin";
+    input("num").value = "4111 1111 1111 1111";
+    input("exp").value = "04/29";
+    input("csc").value = "123";
+    document.getElementById("pay")!.dispatchEvent(new Event("submit", { bubbles: true }));
+    expect(s.ext.ofType("submitted_form")).toEqual([]);
+    userClick(document.getElementById("buy")!);
+    const sent = s.ext.ofType("submitted_form");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: "card", values: { cc_name: "Alex Martin", cc_number: "4111 1111 1111 1111", cc_exp: "04/29" } });
+    expect(JSON.stringify(sent)).not.toContain("123\"");
+    expect(s.ext.ofType("submitted_credentials")).toEqual([]);
+  });
+
+  it("an address form sent with Enter reports the identity values", async () => {
+    useTimers();
+    setPage(SHIP);
+    s = start();
+    await flush();
+    input("gn").value = "Camille";
+    input("fn").value = "Durand";
+    input("a1").value = "1 rue de la Paix";
+    input("pc").value = "75002";
+    input("ci").value = "Paris";
+    userKey(input("ci"), "Enter");
+    expect(s.ext.ofType("submitted_form")[0]).toMatchObject({
+      kind: "identity",
+      values: { given_name: "Camille", family_name: "Durand", address_line1: "1 rue de la Paix", postal_code: "75002", city: "Paris" },
+    });
+  });
+
+  it("MS-06: username_check tests a candidate against the username field's own pattern and maxlength", async () => {
+    setPage(`<form id="su"><input id="em" type="email" autocomplete="email"><input id="un" name="username" autocomplete="username" pattern="[a-z0-9_]{3,15}" maxlength="15"><input id="np" type="password" autocomplete="new-password"><button type="submit">Créer</button></form>`);
+    s = start();
+    await flush();
+    const f = formById(s, "su");
+    const ask = (candidate: string, origin = ORIGIN) => s!.ext.deliver({ type: "username_check", origin, formRef: f.ref, candidate });
+    expect(ask("camille@exemple.fr")).toEqual({ ok: true, matches: false, max_length: 15 });
+    expect(ask("camille_durand")).toEqual({ ok: true, matches: true, max_length: 15 });
+    expect(ask("camille_durand_1234")).toEqual({ ok: true, matches: false, max_length: 15 });
+    // Another origin: no answer.
+    expect(ask("camille", "https://evil.test")).toEqual({ ok: false });
+  });
+});

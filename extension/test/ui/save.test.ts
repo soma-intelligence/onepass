@@ -256,6 +256,49 @@ describe("save prompt", () => {
     expect(text(s.r)).toContain("Trop de demandes. Réessaie dans une minute.");
   });
 
+  it("saved view: a confirmed signup shows done, nothing to answer, and closes itself", async () => {
+    const { r, handle, worker, timers } = setup({ ...base, username: "alex@atlas.dev", view: "saved" });
+    await handle.ready;
+    expect(text(r)).toContain("Atlas Cloud enregistré");
+    expect(text(r)).toContain("alex@atlas.dev");
+    expect(() => button(r, "Enregistrer")).toThrow();
+    expect(worker.sent.some((m) => (m as { type?: string }).type === "save_decide")).toBe(false);
+    timers.pending.forEach((f) => f());
+    expect(worker.sent.at(-1)).toEqual({ type: "save_close", token: TOKEN });
+  });
+
+  it("MS-04 card: 'Enregistrer cette carte ?', last four digits and expiry, Save sends only the vault", async () => {
+    const init: SaveInit = { ...base, kind: "card", username: "", card: { last4: "1111", exp: "04/29", holder: "Alex Martin" }, defaultVault: "v2" };
+    const { r, handle, worker, click } = setup(init, (m) => (m.type === "save_decide" ? { ok: { outcome: "saved", vault: "Projet Atlas" } } : null));
+    await handle.ready;
+    expect(text(r)).toContain("Enregistrer cette carte ?");
+    expect(text(r)).toContain("Carte •••• 1111 · exp. 04/29");
+    expect(text(r)).toContain("Alex Martin");
+    await click("Enregistrer");
+    expect(worker.sent.at(-1)).toEqual({
+      type: "save_decide",
+      token: TOKEN,
+      decision: "save",
+      edits: { title: "", username: "", password: "", vaultId: "v2", rule: "domain", tags: [] },
+    });
+    expect(text(r)).toContain("Carte enregistrée");
+  });
+
+  it("MS-04 card update and address: their own titles; 'Pas maintenant' dismisses", async () => {
+    const up = setup({ ...base, kind: "card", status: "update", username: "", update: { itemId: "card_1", title: "Visa" }, card: { last4: "1111", exp: "05/31" } });
+    await up.handle.ready;
+    expect(text(up.r)).toContain("Mettre à jour cette carte ?");
+    await up.click("Mettre à jour");
+    expect(up.worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "update" });
+
+    const ad = setup({ ...base, kind: "identity", username: "", identity: { name: "Camille Durand", place: "1 rue de la Paix, 75002, Paris" } });
+    await ad.handle.ready;
+    expect(text(ad.r)).toContain("Enregistrer cette adresse ?");
+    expect(text(ad.r)).toContain("1 rue de la Paix, 75002, Paris");
+    await ad.click("Pas maintenant");
+    expect(ad.worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
+  });
+
   it("new login from the menu: edit view at once, site prefilled, identifier and password typed", async () => {
     const { r, handle, worker, click } = setup({ ...base, username: "", view: "edit" });
     await handle.ready;

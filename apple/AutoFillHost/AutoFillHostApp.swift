@@ -84,5 +84,8 @@ final class SignInViewController: UIViewController {
         let length = password.text?.count ?? 0
         let otp = code.text ?? ""
         status.text = "Identifiant : \(user) ; mot de passe : \(length) caractères ; code : \(otp)"
+        // Signed in, as a real app does: the form goes away, which is when iOS offers to save a
+        // password typed by hand ("Save Password?").
+        for field in [username, password, code] { field.removeFromSuperview() }
     }
 }

@@ -480,7 +480,26 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Mot de passe modifié", detail: email }));
         }
         case "/checkout":
+          // A payment sent by hand goes through (MS-04: the card is then offered for saving).
+          if (post) return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Paiement accepté", detail: "" }));
           return send(page("Atlas Cloud - Paiement", "atlas/checkout.html"));
+        case "/shipping": {
+          const show = (error = "") => send(page("Atlas Cloud - Livraison", "atlas/shipping.html", { error }));
+          if (!post) return show();
+          if (!body.a1 || !body.zip || !body.city) return show("Adresse incomplète");
+          return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Adresse enregistrée", detail: "" }));
+        }
+        case "/signup-handle": {
+          // MS-06: e-mail and username apart, the username a handle (no '@', at most 20).
+          const show = (error = "") => send(page("Atlas Cloud - Inscription", "atlas/signup-handle.html", { error }));
+          if (!post) return show();
+          const username = (body.username ?? "").trim();
+          if (!/^[a-z0-9_.]{3,20}$/.test(username)) return show("Nom d'utilisateur refusé");
+          if (!body.password || body.password !== body.confirm) return show("Les mots de passe ne correspondent pas");
+          if (state.users.has(username)) return show("Ce compte existe déjà");
+          state.users.set(username, body.password);
+          return signedIn(username);
+        }
         case "/checkout-full":
           // Card, identity and e-mail in one form (smart fill); a POST is recorded, never expected.
           if (post) state.captured.push({ host, path, body });
