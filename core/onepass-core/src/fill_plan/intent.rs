@@ -80,15 +80,27 @@ pub fn intent_of(form: &FormContext) -> Intent {
     if !fillable.is_empty() && fillable.iter().all(|r| *r == FieldRole::Otp) {
         return Intent::Otp;
     }
+    // 5 bis. No password and no code: two identity, address or document
+    // roles besides the identifiers make a form to fill with a person (a
+    // booking with a contact e-mail, R12), never a sign-in. A card already
+    // made it a checkout (rule 2).
+    let person = roles
+        .iter()
+        .filter(|r| r.is_identity_or_address() || r.is_document())
+        .count();
+    if !secret && person >= 2 {
+        return Intent::Address;
+    }
     // 6. A current password, or an identifier alone.
     if current >= 1 || roles.iter().any(|r| r.is_identifier()) {
         return Intent::Login;
     }
-    // 7. Address or identity fields only.
-    if roles.iter().any(|r| r.is_identity_or_address())
+    // 7. Address, identity or document fields only.
+    let filled = |r: &FieldRole| r.is_identity_or_address() || r.is_document();
+    if roles.iter().any(filled)
         && roles
             .iter()
-            .all(|r| r.is_identity_or_address() || *r == FieldRole::RememberMe)
+            .all(|r| filled(r) || *r == FieldRole::RememberMe)
     {
         return Intent::Address;
     }
@@ -325,6 +337,83 @@ mod tests {
         let mut f = form(&[FieldRole::Email]);
         f.intent_hints.signup_words = true;
         assert_eq!(intent_of(&f), Intent::Login);
+    }
+
+    #[test]
+    fn contact_email_with_identity_and_passport_is_address() {
+        // A booking: contact e-mail, the traveller's names and passport (rule 5 bis, R12).
+        let f = form(&[
+            FieldRole::Email,
+            FieldRole::GivenName,
+            FieldRole::FamilyName,
+            FieldRole::PassportNumber,
+        ]);
+        assert_eq!(intent_of(&f), Intent::Address);
+        // With a "Next" button too.
+        assert_eq!(
+            intent_of(&with_button(f, ButtonClass::Next)),
+            Intent::Address
+        );
+        // Two person roles besides the e-mail are enough.
+        let f = form(&[FieldRole::Email, FieldRole::GivenName, FieldRole::Sex]);
+        assert_eq!(intent_of(&f), Intent::Address);
+        let f = form(&[
+            FieldRole::Email,
+            FieldRole::LicenseNumber,
+            FieldRole::LicenseExpiry,
+        ]);
+        assert_eq!(intent_of(&f), Intent::Address);
+    }
+
+    #[test]
+    fn contact_form_with_a_card_is_checkout() {
+        let f = form(&[
+            FieldRole::Email,
+            FieldRole::GivenName,
+            FieldRole::FamilyName,
+            FieldRole::PassportNumber,
+            FieldRole::CcNumber,
+        ]);
+        assert_eq!(intent_of(&f), Intent::Checkout);
+    }
+
+    #[test]
+    fn identifier_with_one_identity_role_or_a_secret_stays_login() {
+        assert_eq!(
+            intent_of(&with_button(form(&[FieldRole::Email]), ButtonClass::Next)),
+            Intent::Login
+        );
+        assert_eq!(
+            intent_of(&form(&[FieldRole::Email, FieldRole::CurrentPassword])),
+            Intent::Login
+        );
+        // One identity role besides the identifier is not enough.
+        assert_eq!(
+            intent_of(&form(&[FieldRole::Email, FieldRole::GivenName])),
+            Intent::Login
+        );
+        // A password or a code wins over any number of identity roles.
+        let f = form(&[
+            FieldRole::Email,
+            FieldRole::CurrentPassword,
+            FieldRole::GivenName,
+            FieldRole::FamilyName,
+        ]);
+        assert_eq!(intent_of(&f), Intent::Login);
+        let f = form(&[FieldRole::Otp, FieldRole::GivenName, FieldRole::FamilyName]);
+        assert_ne!(intent_of(&f), Intent::Address);
+    }
+
+    #[test]
+    fn documents_without_identifier_are_address() {
+        let f = form(&[FieldRole::PassportNumber, FieldRole::PassportExpiry]);
+        assert_eq!(intent_of(&f), Intent::Address);
+        assert_eq!(
+            intent_of(&form(&[FieldRole::LoyaltyNumber])),
+            Intent::Address
+        );
+        let f = form(&[FieldRole::Organization, FieldRole::VatNumber]);
+        assert_eq!(intent_of(&f), Intent::Address);
     }
 
     #[test]

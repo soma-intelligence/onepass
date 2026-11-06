@@ -506,6 +506,123 @@ fn address_fills_identity_only() {
     assert_eq!(refs(&p.groups[0]), ["name", "street", "city"]);
 }
 
+// Forms coverage (spec 2026-11-06 section 10.1).
+
+#[test]
+fn booking_form_plans_documents_in_the_identity_group() {
+    let f = form(
+        "book",
+        vec![
+            field("mail", FieldRole::Email),
+            field("civ", FieldRole::HonorificPrefix),
+            field("first", FieldRole::GivenName),
+            field("last", FieldRole::FamilyName),
+            field("dob", FieldRole::Bday),
+            field("nat", FieldRole::Nationality),
+            field("pass", FieldRole::PassportNumber),
+            field("exp", FieldRole::PassportExpiry),
+            field("ctry", FieldRole::PassportIssuingCountry),
+            field("ffp", FieldRole::LoyaltyNumber),
+        ],
+        vec![button("next", ButtonClass::Next)],
+    );
+    let pl = Pool {
+        identities: vec![identity(20)],
+        logins: vec![login(1)],
+        ..pool()
+    };
+    let p = plan(&page(vec![f]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Address);
+    assert_eq!(p.groups.len(), 1);
+    let g = group(&p, GroupKind::Identity);
+    assert_eq!(g.item, GroupItem::Item(id(20)));
+    assert_eq!(
+        refs(g),
+        [
+            "mail", "civ", "first", "last", "dob", "nat", "pass", "exp", "ctry", "ffp"
+        ]
+    );
+}
+
+#[test]
+fn company_form_plans_work_fields_in_the_identity_group() {
+    let f = form(
+        "b2b",
+        vec![
+            field("org", FieldRole::Organization),
+            field("title", FieldRole::JobTitle),
+            field("dept", FieldRole::Department),
+            field("vat", FieldRole::VatNumber),
+            field("siret", FieldRole::CompanyId),
+            field("web", FieldRole::Website),
+        ],
+        vec![button("go", ButtonClass::Submit)],
+    );
+    let pl = Pool {
+        identities: vec![identity(20)],
+        ..pool()
+    };
+    let p = plan(&page(vec![f]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Address);
+    assert_eq!(
+        refs(group(&p, GroupKind::Identity)),
+        ["org", "title", "dept", "vat", "siret", "web"]
+    );
+}
+
+#[test]
+fn checkout_plans_documents_with_the_identity() {
+    let f = form(
+        "pay",
+        vec![
+            field("num", FieldRole::CcNumber),
+            field("name", FieldRole::FullName),
+            field("lic", FieldRole::LicenseNumber),
+        ],
+        vec![button("buy", ButtonClass::Pay)],
+    );
+    let pl = Pool {
+        cards: vec![card(10)],
+        identities: vec![identity(20)],
+        ..pool()
+    };
+    let p = plan(&page(vec![f]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Checkout);
+    assert_eq!(refs(group(&p, GroupKind::Card)), ["num"]);
+    assert_eq!(refs(group(&p, GroupKind::Identity)), ["name", "lic"]);
+}
+
+#[test]
+fn signup_never_wants_a_document() {
+    let f = form(
+        "signup",
+        vec![
+            field("mail", FieldRole::Email),
+            field("first", FieldRole::GivenName),
+            field("sex", FieldRole::Sex),
+            field("title", FieldRole::JobTitle),
+            field("pass", FieldRole::PassportNumber),
+            field("lic", FieldRole::LicenseNumber),
+            field("ffp", FieldRole::LoyaltyNumber),
+            field("pw", FieldRole::NewPassword),
+        ],
+        vec![button("create", ButtonClass::Create)],
+    );
+    let pl = Pool {
+        identities: vec![identity(5)],
+        ..pool()
+    };
+    let p = plan(&page(vec![f]), pl).unwrap();
+    assert_eq!(p.intent, Intent::Signup);
+    assert_eq!(
+        refs(group(&p, GroupKind::Identity)),
+        ["mail", "first", "sex", "title"]
+    );
+    for g in &p.groups {
+        assert!(g.fields.iter().all(|(_, r)| !r.is_document()), "{g:?}");
+    }
+}
+
 // Final review fixes.
 
 fn address_form() -> FormContext {

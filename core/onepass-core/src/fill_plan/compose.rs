@@ -126,7 +126,9 @@ pub fn page_intent(ctx: &PageContext) -> Intent {
 /// Which roles of a form of `intent` a group of `kind` fills.
 fn wants(intent: Intent, kind: GroupKind, role: FieldRole) -> bool {
     use FieldRole as R;
-    let identity = role.is_identity_or_address() || role == R::Email;
+    let person = role.is_identity_or_address() || role == R::Email;
+    // Papers and loyalty go with the identity, never at a signup.
+    let identity = person || role.is_document();
     let generated = matches!(role, R::NewPassword | R::ConfirmPassword);
     match (intent, kind) {
         (Intent::Login, GroupKind::Login) => {
@@ -140,7 +142,7 @@ fn wants(intent: Intent, kind: GroupKind, role: FieldRole) -> bool {
         // A signup's identifier field marked `username` goes with the
         // identity: the extension puts the e-mail there, or a handle when the
         // form has its own e-mail field or the field refuses an address.
-        (Intent::Signup, GroupKind::Identity) => identity || role == R::Username,
+        (Intent::Signup, GroupKind::Identity) => person || role == R::Username,
         (Intent::Checkout | Intent::Address, GroupKind::Identity) => identity,
         (Intent::Checkout, GroupKind::Card) => role.is_card(),
         _ => false,

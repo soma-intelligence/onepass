@@ -1272,6 +1272,37 @@ mod tests {
     }
 
     #[test]
+    fn request_json_round_trip_plan_fill_with_forms_roles() {
+        let r = round_trip(
+            r#"{"id":22,"op":"plan_fill","ctx":"menu","origin":"https://volair.test","context":{"origin":"https://volair.test","top_origin":"https://volair.test","frame_kind":"top","forms":[{"form_ref":"f","intent_hints":{"kind":null,"signup_words":false,"reset_words":false,"checkout_words":false,"ignore":false},"step_index":null,"fields":[{"field_ref":"a","role":"honorific_prefix","confidence":0.5,"visible":true,"prefilled":"empty"},{"field_ref":"b","role":"passport_number","confidence":0.5,"visible":true,"prefilled":"empty"},{"field_ref":"c","role":"vat_number","confidence":0.5,"visible":true,"prefilled":"empty"}],"buttons":[]}],"typed_username_hash":null}}"#,
+            22,
+            "plan_fill",
+        );
+        let Request::PlanFill { context, .. } = r else {
+            panic!()
+        };
+        let roles: Vec<_> = context.forms[0].fields.iter().map(|f| f.role).collect();
+        assert_eq!(
+            roles,
+            [
+                Some(FieldRole::HonorificPrefix),
+                Some(FieldRole::PassportNumber),
+                Some(FieldRole::VatNumber)
+            ]
+        );
+        let r = round_trip(
+            r#"{"id":23,"op":"note_fill","ctx":"menu","item_id":"x","origin":"https://volair.test","roles":["email","given_name","license_number","loyalty_number"],"intent":"address","steps":["fill"]}"#,
+            23,
+            "note_fill",
+        );
+        let Request::NoteFill { roles, .. } = r else {
+            panic!()
+        };
+        assert_eq!(roles[2], FieldRole::LicenseNumber);
+        assert_eq!(roles[3], FieldRole::LoyaltyNumber);
+    }
+
+    #[test]
     fn request_json_round_trip_note_fill() {
         let r = round_trip(
             r#"{"id":23,"op":"note_fill","ctx":"chain","item_id":"x","origin":"https://atlas-cloud.test","roles":["username","current_password"],"intent":"login","steps":["fill","provider_click"]}"#,

@@ -39,6 +39,29 @@ pub enum FieldRole {
     Region,
     Country,
     RememberMe,
+    // Forms coverage (2026-11-06): appended, so no existing name moves.
+    HonorificPrefix,
+    AdditionalName,
+    BirthName,
+    Sex,
+    BirthPlace,
+    /// Detected so the address country stays out; never filled (R5).
+    BirthCountry,
+    Nationality,
+    PassportNumber,
+    PassportIssueDate,
+    PassportExpiry,
+    PassportIssuingCountry,
+    LicenseNumber,
+    LicenseIssueDate,
+    LicenseExpiry,
+    LicenseIssuingCountry,
+    LoyaltyNumber,
+    JobTitle,
+    Department,
+    VatNumber,
+    CompanyId,
+    Website,
     Unknown,
 }
 
@@ -59,7 +82,8 @@ impl FieldRole {
         matches!(self, Self::Username | Self::Email)
     }
 
-    /// Name, contact and postal address roles.
+    /// Name, contact, postal address, person (civility, birth,
+    /// nationality) and company roles.
     pub fn is_identity_or_address(self) -> bool {
         matches!(
             self,
@@ -75,6 +99,35 @@ impl FieldRole {
                 | Self::PostalCode
                 | Self::Region
                 | Self::Country
+                | Self::HonorificPrefix
+                | Self::AdditionalName
+                | Self::BirthName
+                | Self::Sex
+                | Self::BirthPlace
+                | Self::BirthCountry
+                | Self::Nationality
+                | Self::JobTitle
+                | Self::Department
+                | Self::VatNumber
+                | Self::CompanyId
+                | Self::Website
+        )
+    }
+
+    /// Roles a passport, a driver license or a loyalty program fills:
+    /// numbers, dates and issuing countries. Never wanted by a signup.
+    pub fn is_document(self) -> bool {
+        matches!(
+            self,
+            Self::PassportNumber
+                | Self::PassportIssueDate
+                | Self::PassportExpiry
+                | Self::PassportIssuingCountry
+                | Self::LicenseNumber
+                | Self::LicenseIssueDate
+                | Self::LicenseExpiry
+                | Self::LicenseIssuingCountry
+                | Self::LoyaltyNumber
         )
     }
 }
@@ -385,6 +438,97 @@ mod tests {
         let json = r#"{"origin":"https://a.b","top_origin":"https://a.b","frame_kind":"top",
             "forms":[],"typed_username_hash":null,"extra":1}"#;
         assert!(serde_json::from_str::<PageContext>(json).is_err());
+    }
+
+    /// The forms roles (spec 2026-11-06 section 10.1), in enum order.
+    const FORMS_ROLES: [(&str, FieldRole); 21] = [
+        ("honorific_prefix", FieldRole::HonorificPrefix),
+        ("additional_name", FieldRole::AdditionalName),
+        ("birth_name", FieldRole::BirthName),
+        ("sex", FieldRole::Sex),
+        ("birth_place", FieldRole::BirthPlace),
+        ("birth_country", FieldRole::BirthCountry),
+        ("nationality", FieldRole::Nationality),
+        ("passport_number", FieldRole::PassportNumber),
+        ("passport_issue_date", FieldRole::PassportIssueDate),
+        ("passport_expiry", FieldRole::PassportExpiry),
+        (
+            "passport_issuing_country",
+            FieldRole::PassportIssuingCountry,
+        ),
+        ("license_number", FieldRole::LicenseNumber),
+        ("license_issue_date", FieldRole::LicenseIssueDate),
+        ("license_expiry", FieldRole::LicenseExpiry),
+        ("license_issuing_country", FieldRole::LicenseIssuingCountry),
+        ("loyalty_number", FieldRole::LoyaltyNumber),
+        ("job_title", FieldRole::JobTitle),
+        ("department", FieldRole::Department),
+        ("vat_number", FieldRole::VatNumber),
+        ("company_id", FieldRole::CompanyId),
+        ("website", FieldRole::Website),
+    ];
+
+    #[test]
+    fn forms_roles_round_trip_by_snake_case_name() {
+        for (name, role) in FORMS_ROLES {
+            let r: FieldRole = serde_json::from_str(&format!("\"{name}\"")).unwrap();
+            assert_eq!(r, role, "{name}");
+            assert_eq!(serde_json::to_string(&role).unwrap(), format!("\"{name}\""));
+        }
+    }
+
+    #[test]
+    fn documents_and_person_roles_are_told_apart() {
+        let documents = [
+            FieldRole::PassportNumber,
+            FieldRole::PassportIssueDate,
+            FieldRole::PassportExpiry,
+            FieldRole::PassportIssuingCountry,
+            FieldRole::LicenseNumber,
+            FieldRole::LicenseIssueDate,
+            FieldRole::LicenseExpiry,
+            FieldRole::LicenseIssuingCountry,
+            FieldRole::LoyaltyNumber,
+        ];
+        for (name, role) in FORMS_ROLES {
+            let doc = documents.contains(&role);
+            assert_eq!(role.is_document(), doc, "{name}");
+            assert_eq!(role.is_identity_or_address(), !doc, "{name}");
+            assert!(!role.is_card() && !role.is_identifier(), "{name}");
+        }
+        for role in [
+            FieldRole::GivenName,
+            FieldRole::Tel,
+            FieldRole::Country,
+            FieldRole::Email,
+            FieldRole::CcExp,
+            FieldRole::Unknown,
+        ] {
+            assert!(!role.is_document(), "{role:?}");
+        }
+        assert!(!FieldRole::Email.is_identity_or_address());
+    }
+
+    #[test]
+    fn shape_hash_of_existing_roles_is_unchanged() {
+        use crate::model::usage::form_shape_hash;
+        let roles = [
+            FieldRole::Email,
+            FieldRole::GivenName,
+            FieldRole::FamilyName,
+            FieldRole::Tel,
+            FieldRole::Bday,
+            FieldRole::AddressLine1,
+            FieldRole::PostalCode,
+            FieldRole::City,
+            FieldRole::Country,
+            FieldRole::CcNumber,
+        ];
+        let hex: String = form_shape_hash(&roles)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(hex, "ee3cf992e4cd58dc8555e09314bc9c21");
     }
 
     #[test]

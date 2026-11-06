@@ -26,6 +26,7 @@ fn candidate(n: u8, kind: CandidateKind, quality: MatchQuality) -> Candidate {
         username_hash: None,
         usage: None,
         has_totp: n == 1,
+        affinity: 0,
     }
 }
 
