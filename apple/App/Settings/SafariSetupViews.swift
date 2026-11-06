@@ -86,7 +86,8 @@ struct SafariExtensionSection: View {
     }
 }
 
-#if os(iOS)
+// iPhone, iPad and visionOS: the views that show the steps compile there (`#else` of the Mac).
+#if os(iOS) || os(visionOS)
 /// The three steps of Réglages, numbered.
 struct SafariSetupSteps: View {
     var body: some View {

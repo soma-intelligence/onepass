@@ -8,7 +8,8 @@ options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "26.0"
-    watchOS: "26.0"
+    # watchOS 27: arm64 only. Below 27 the store wants an arm64_32 slice the core cannot build.
+    watchOS: "27.0"
     visionOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
@@ -173,8 +174,9 @@ targets:
         SUEnableInstallerLauncherService: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # The app ships its own cryptography; export compliance is settled before submission (README).
-        ITSAppUsesNonExemptEncryption: true
+        # The app ships its own cryptography. No ITSAppUsesNonExemptEncryption key: without an
+        # export compliance code the store refuses the upload, so each build answers it in App Store
+        # Connect until the classification is settled.
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
@@ -530,7 +532,6 @@ targets:
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        ITSAppUsesNonExemptEncryption: true
         WKApplication: true
         WKCompanionAppBundleIdentifier: $(ONEPASS_BUNDLE_ID_PREFIX)
     settings:
