@@ -10,13 +10,14 @@ import { fileURLToPath } from "node:url";
 import type { Patterns } from "../corpus/types.ts";
 import { expectationFor } from "./capabilities.ts";
 import { countryCases } from "./cases.ts";
+import { buildForms, FORMS_FLOWS, isFormsFlow, type CoreLabeler } from "./forms-flows.ts";
 import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, passkeyPkcs8, password, person, totpSecret, userHandle } from "./data.ts";
 import { GENERATOR_VERSION } from "./model.ts";
 import { LAYOUTS } from "./layouts.ts";
 import { drawPolicy, POLICY_RATE } from "./policy.ts";
 import { DEFAULT_PROFILE_ID, drawProfiles, type Profile } from "./population.ts";
 import type {
-  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, HoneypotStyle, IdpAccount, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, Scenario, Site, TraitId, World,
+  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, HoneypotStyle, IdpAccount, LabRole, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, Scenario, Site, TraitId, World,
 } from "./model.ts";
 import { Rng } from "./rng.ts";
 import { pickSteps } from "./steps.ts";
@@ -27,13 +28,16 @@ export function loadPatterns(): Patterns {
   return JSON.parse(readFileSync(join(here, "..", "corpus", "patterns.json"), "utf8")) as Patterns;
 }
 
-const FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey",
-  "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-// After the first eleven sites: login 45 % (split over the five login flows), sso 15 %, the rest 10 % each,
-// multi_step 10 more (relative weights: the shares above shrink by a tenth).
-const FLOW_WEIGHTS: [FlowId, number][] = [["login_single", 9], ["login_username_first", 9], ["login_email_then_password", 9],
+/** The flows of the first sites, one each, in order (the four forms flows since version 4). */
+export const FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey",
+  "sso", "signup", "checkout_card", "address", "identity", "multi_step", ...FORMS_FLOWS];
+// After the first sites: login 45 % (split over the five login flows), sso 15 %, the rest 10 % each,
+// multi_step 10 more (relative weights: the shares above shrink by a tenth). Since version 4 a site's own
+// "forms-flow" stream replaces this draw by one of the forms flows with probability FORMS_FLOW_RATE.
+export const FLOW_WEIGHTS: [FlowId, number][] = [["login_single", 9], ["login_username_first", 9], ["login_email_then_password", 9],
   ["login_totp", 9], ["login_passkey", 9], ["sso", 15], ["signup", 10], ["checkout_card", 10], ["address", 10], ["identity", 10],
   ["multi_step", 10]];
+export const FORMS_FLOW_RATE = 0.25;
 const PASSWORD_LOGIN: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp"];
 const ONE_CLICK: FlowId[] = [...PASSWORD_LOGIN, "login_passkey", "sso"];
 
@@ -87,6 +91,8 @@ export function generate(seed: string, opts: GenerateOptions): World {
   const langs = selectableLangs();
   const used = new Set<string>();
   const brands = new Set<string>();
+  // Full names of the passport and license holders: unique, so a document matches one identity only.
+  const holders = new Set<string>();
   const idp = makeIdp(root.fork("idp"));
   const sites: Site[] = [];
   const items: unknown[] = [];
@@ -101,9 +107,9 @@ export function generate(seed: string, opts: GenerateOptions): World {
     let brand = brandOf(host);
     if (brands.has(brand)) brand = `${brand} ${i}`;
     brands.add(brand);
-    const built = buildSite(r, { index: i, seed: `${seed}/site:${i}`, host, brand }, patterns, langs, used, idp);
+    const built = buildSite(r, { index: i, seed: `${seed}/site:${i}`, host, brand }, patterns, langs, used, idp, holders);
     sites.push(built.site);
-    if (built.item) items.push(built.item);
+    items.push(...built.items);
   }
   const base: Scenario[] = [];
   for (const s of sites) {
@@ -238,7 +244,7 @@ function rolesFor(flow: FlowId, style: LoginStyle | undefined, passkeyOnly: bool
   }
 }
 
-function traitAllowed(t: TraitId, flow: FlowId, roles: Role[], langCount: number): boolean {
+function traitAllowed(t: TraitId, flow: FlowId, roles: LabRole[], langCount: number): boolean {
   switch (t) {
     case "split_otp": return false; // drawn in the site shape (login_totp), never from the pool
     case "lookalike": case "decoy_form": return PASSWORD_LOGIN.includes(flow);
@@ -259,7 +265,7 @@ function traitWeight(patterns: Patterns, t: TraitId): number {
   return w !== undefined ? w * 100 : TRAIT_WEIGHTS[t];
 }
 
-function pickTraits(r: Rng, patterns: Patterns, flow: FlowId, roles: Role[], langCount: number, splitOtp: boolean): TraitId[] {
+function pickTraits(r: Rng, patterns: Patterns, flow: FlowId, roles: LabRole[], langCount: number, splitOtp: boolean): TraitId[] {
   const chosen = new Set<TraitId>(splitOtp ? ["split_otp"] : []);
   const count = Math.min(r.weighted(TRAIT_COUNT), 3 - chosen.size);
   for (let k = 0; k < count; k++) {
@@ -324,9 +330,29 @@ function frameworkWeights(patterns: Patterns): [FrameworkId, number][] {
 
 interface SiteBase { index: number; seed: string; host: string; brand: string }
 
+/** The flow of site `index` drawn from its Rng `r`: the forced first ones, else the forms stream, else the version 3 draw. */
+export function flowOf(r: Rng, index: number): FlowId {
+  if (index < FLOWS.length) return FLOWS[index]!;
+  const rf = r.fork("forms-flow");
+  return rf.chance(FORMS_FLOW_RATE) ? rf.pick(FORMS_FLOWS) : r.fork("flow").weighted(FLOW_WEIGHTS);
+}
+
+/** Labels, names and autocomplete rates of the corpus for a version 3 role in `labelLang`. */
+function coreLabeler(patterns: Patterns, labelLang: Lang): CoreLabeler {
+  return (r, role) => {
+    const labels = labelsFor(patterns, role, labelLang);
+    const tokens = (patterns.roles[role]?.tokens ?? []).filter((t) => SAFE_TOKEN.test(t));
+    return {
+      label: labels.length > 0 ? r.pick(labels) : role, token: r.pick(tokens.length > 0 ? tokens : [role]),
+      autocompleteRate: patterns.roles[role]?.autocompleteRate ?? 0.5,
+    };
+  };
+}
+
 function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, number][], used: Set<string>,
-  idp: Record<ProviderId, IdpAccount[]>): { site: Site; item?: unknown } {
-  const flow = base.index < FLOWS.length ? FLOWS[base.index]! : r.fork("flow").weighted(FLOW_WEIGHTS);
+  idp: Record<ProviderId, IdpAccount[]>, holders: Set<string>): { site: Site; items: unknown[] } {
+  const flow = flowOf(r, base.index);
+  const formsFlow = isFormsFlow(flow);
   const lang = r.fork("lang").weighted(langs);
   const rs = r.fork("shape");
   const loginStyle: LoginStyle | undefined = flow === "login_totp" || flow === "login_passkey"
@@ -337,12 +363,16 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   // Half the sso sites also show an identifier + password form next to the provider button (own fork: nothing shifts).
   const ssoForm = flow === "sso" && r.fork("sso-form").chance(0.5);
   const stepRoles = flow === "multi_step" ? pickSteps(r.fork("steps"), patterns, lang) : [];
-  const roles = ssoForm ? rolesFor("login_single", undefined, false, false, []) : rolesFor(flow, loginStyle, passkeyOnly, splitExp, stepRoles);
-  // Field traits stay off sso sites, form or not: the provider button is what they test.
-  const traits = pickTraits(r.fork("traits"), patterns, flow, flow === "sso" ? [] : roles, langs.length, splitOtp);
+  const coreRoles = formsFlow ? [] : ssoForm ? rolesFor("login_single", undefined, false, false, []) : rolesFor(flow, loginStyle, passkeyOnly, splitExp, stepRoles);
+  // Field traits stay off sso sites, form or not: the provider button is what they test. A forms page always has fields.
+  const traits = pickTraits(r.fork("traits"), patterns, flow, flow === "sso" ? [] : formsFlow ? ["given_name"] : coreRoles, langs.length, splitOtp);
   const labelLang = traits.includes("mixed_language")
     ? r.fork("label-lang").weighted(langs.filter(([l]) => l !== lang)) : lang;
-  const fields = buildFields(r.fork("fields"), roles, patterns, labelLang, traits);
+  const formsBuild = formsFlow
+    ? buildForms(r, flow, { host: base.host, brand: base.brand, lang, labelLang, traits }, coreLabeler(patterns, labelLang), holders)
+    : undefined;
+  const fields = formsBuild?.fields ?? buildFields(r.fork("fields"), coreRoles, patterns, labelLang, traits);
+  const roles: LabRole[] = fields.map((f) => f.role);
 
   const rb = r.fork("buttons");
   const site: Site = { ...base, lang, labelLang, flow, traits, fields, buttons: { submit: "" } };
@@ -358,7 +388,9 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   switch (flow) {
     case "signup": site.buttons.submit = buttonLabel(rb, patterns, "signup", labelLang, "Sign up"); break;
     case "checkout_card": site.buttons.submit = buttonLabel(rb, patterns, "pay", labelLang, "Pay"); break;
-    case "address": case "identity": site.buttons.submit = buttonLabel(rb, patterns, "save", labelLang, "Save"); break;
+    case "address": case "identity": case "travel_booking": case "company_b2b": case "car_rental": case "admin_identity":
+      site.buttons.submit = buttonLabel(rb, patterns, "save", labelLang, "Save");
+      break;
     default:
       site.buttons.submit = buttonLabel(rb, patterns, "signin", labelLang, "Sign in");
       if (nextStep) site.buttons.next = buttonLabel(rb, patterns, "next", labelLang, "Next");
@@ -369,7 +401,10 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   const who = person(ra, lang);
   const url = `https://${base.host}`;
   let item: unknown;
-  if (PASSWORD_LOGIN.includes(flow) || flow === "login_passkey" || flow === "multi_step") {
+  if (formsBuild) {
+    site.identityTitle = formsBuild.identityTitle;
+    site.forms = formsBuild.forms;
+  } else if (PASSWORD_LOGIN.includes(flow) || flow === "login_passkey" || flow === "multi_step") {
     const usesEmail = roles.includes("email");
     const account: Account = { username: usesEmail ? who.email : who.email.split("@")[0]!, password: password(ra) };
     const extra: Record<string, unknown> = {};
@@ -432,9 +467,11 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
   if (traits.includes("delayed_fields")) site.delayMs = rx.int(500, 6000);
   if (traits.includes("honeypot")) {
     const bait = roles.filter((x) => x === "email" || x === "password" || x === "username");
-    const role = rx.pick(bait.length > 0 ? bait : roles);
+    // Forms flows: half the honeypots imitate the document number (spec 11.1).
+    const document = roles.find((x) => x === "passport_number" || x === "license_number");
+    const role = formsFlow && document && rx.chance(0.5) ? document : rx.pick(bait.length > 0 ? bait : roles);
     const taken = new Set(fields.map((f) => f.name));
-    const tokens = (patterns.roles[role]?.tokens ?? []).filter((t) => SAFE_TOKEN.test(t));
+    const tokens = (patterns.roles[role as Role]?.tokens ?? []).filter((t) => SAFE_TOKEN.test(t));
     const name = unique(traits.includes("obfuscated_names") ? randomToken(rx) : rx.pick(tokens.length > 0 ? tokens : [role]), taken);
     site.honeypot = { role, name, style: rx.pick(HONEYPOT_STYLES) };
   }
@@ -450,5 +487,5 @@ function buildSite(r: Rng, base: SiteBase, patterns: Patterns, langs: [Lang, num
     }
     if (!site.lookalike) throw new Error(`generate: no free lookalike host for ${base.host}`);
   }
-  return { site, item };
+  return { site, items: formsBuild ? formsBuild.items : item !== undefined ? [item] : [] };
 }

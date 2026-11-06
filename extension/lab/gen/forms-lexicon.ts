@@ -252,3 +252,140 @@ export function formsLabels(role: FormsRole, lang: Lang): string[] {
   const l = FORMS_LABELS[role][isFormsLang(lang) ? lang : "en"];
   return [...l.full, ...l.short];
 }
+
+// ---- page vocabulary of the forms flows (lab's own words) ----
+
+const pick = <T>(table: Record<FormsLang, T>, lang: Lang): T => table[isFormsLang(lang) ? lang : "en"];
+
+/** Month names (full, then abbreviated) per language, January first. */
+export const MONTH_NAMES: Record<FormsLang, { full: string[]; short: string[] }> = {
+  fr: { full: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
+    short: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."] },
+  en: { full: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    short: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] },
+  de: { full: ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+    short: ["Jan.", "Feb.", "Mär.", "Apr.", "Mai", "Jun.", "Jul.", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."] },
+  es: { full: ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+    short: ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] },
+  it: { full: ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"],
+    short: ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"] },
+  pt: { full: ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"],
+    short: ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"] },
+  nl: { full: ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"],
+    short: ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"] },
+};
+export const monthNames = (lang: Lang) => pick(MONTH_NAMES, lang);
+
+/** Date order and separator of a site language for text dates (tokens DD, MM, YYYY). */
+const DATE_FORMAT: Record<FormsLang, string> = { fr: "DD/MM/YYYY", en: "MM/DD/YYYY", de: "DD.MM.YYYY", es: "DD/MM/YYYY", it: "DD/MM/YYYY", pt: "DD/MM/YYYY", nl: "DD-MM-YYYY" };
+export const dateFormatOf = (lang: Lang) => pick(DATE_FORMAT, lang);
+/** The letters a page of each language writes its date placeholder with (day, month, year). */
+const DATE_LETTERS: Record<FormsLang, [string, string, string]> = {
+  fr: ["JJ", "MM", "AAAA"], en: ["DD", "MM", "YYYY"], de: ["TT", "MM", "JJJJ"], es: ["DD", "MM", "AAAA"],
+  it: ["gg", "mm", "aaaa"], pt: ["dd", "mm", "aaaa"], nl: ["dd", "mm", "jjjj"],
+};
+/** The placeholder of `format` in `lang`'s letters ("DD/MM/YYYY" in French: "JJ/MM/AAAA"). */
+export function datePlaceholder(format: string, lang: Lang): string {
+  const [d, m, y] = pick(DATE_LETTERS, lang);
+  return format.replace("YYYY", y).replace("DD", d).replace("MM", m);
+}
+
+/** Legend of passenger `n` (1-based) of a booking: several wordings per language. */
+const PASSENGER: Record<FormsLang, ((n: number) => string)[]> = {
+  fr: [(n) => `Passager ${n}`, (n) => `Voyageur ${n}`, (n) => `Adulte ${n}`],
+  en: [(n) => `Passenger ${n}`, (n) => `Traveller ${n}`, (n) => `Adult ${n}`],
+  de: [(n) => `Reisender ${n}`, (n) => `Passagier ${n}`, (n) => `Erwachsener ${n}`],
+  es: [(n) => `Pasajero ${n}`, (n) => `Viajero ${n}`, (n) => `Adulto ${n}`],
+  it: [(n) => `Passeggero ${n}`, (n) => `Viaggiatore ${n}`, (n) => `Adulto ${n}`],
+  pt: [(n) => `Passageiro ${n}`, (n) => `Viajante ${n}`, (n) => `Adulto ${n}`],
+  nl: [(n) => `Passagier ${n}`, (n) => `Reiziger ${n}`, (n) => `Volwassene ${n}`],
+};
+export const passengerLegends = (lang: Lang) => pick(PASSENGER, lang);
+
+export type BlockWord = "contact" | "billing" | "shipping" | "sameAsBilling" | "driver" | "company" | "person";
+const BLOCK_WORDS: Record<FormsLang, Record<BlockWord, string>> = {
+  fr: { contact: "Coordonnées", billing: "Adresse de facturation", shipping: "Adresse de livraison", sameAsBilling: "Identique à l'adresse de facturation",
+    driver: "Conducteur principal", company: "Votre entreprise", person: "Vos informations" },
+  en: { contact: "Contact details", billing: "Billing address", shipping: "Shipping address", sameAsBilling: "Same as billing address",
+    driver: "Main driver", company: "Your company", person: "Your details" },
+  de: { contact: "Kontaktdaten", billing: "Rechnungsadresse", shipping: "Lieferadresse", sameAsBilling: "Wie Rechnungsadresse",
+    driver: "Hauptfahrer", company: "Ihr Unternehmen", person: "Ihre Angaben" },
+  es: { contact: "Datos de contacto", billing: "Dirección de facturación", shipping: "Dirección de envío", sameAsBilling: "Igual que la dirección de facturación",
+    driver: "Conductor principal", company: "Su empresa", person: "Sus datos" },
+  it: { contact: "Recapiti", billing: "Indirizzo di fatturazione", shipping: "Indirizzo di spedizione", sameAsBilling: "Uguale all'indirizzo di fatturazione",
+    driver: "Conducente principale", company: "La tua azienda", person: "I tuoi dati" },
+  pt: { contact: "Dados de contacto", billing: "Morada de faturação", shipping: "Morada de entrega", sameAsBilling: "Igual à morada de faturação",
+    driver: "Condutor principal", company: "A sua empresa", person: "Os seus dados" },
+  nl: { contact: "Contactgegevens", billing: "Factuuradres", shipping: "Bezorgadres", sameAsBilling: "Zelfde als factuuradres",
+    driver: "Hoofdbestuurder", company: "Uw bedrijf", person: "Uw gegevens" },
+};
+export const blockWord = (lang: Lang, w: BlockWord) => pick(BLOCK_WORDS, lang)[w];
+
+/** Page headings of the four flows. */
+const HEADINGS: Record<FormsLang, Record<"travel_booking" | "company_b2b" | "car_rental" | "admin_identity", string>> = {
+  fr: { travel_booking: "Informations passagers", company_b2b: "Compte professionnel", car_rental: "Location de voiture", admin_identity: "Demande en ligne" },
+  en: { travel_booking: "Passenger details", company_b2b: "Business account", car_rental: "Car rental", admin_identity: "Online application" },
+  de: { travel_booking: "Reisende", company_b2b: "Geschäftskonto", car_rental: "Mietwagen", admin_identity: "Online-Antrag" },
+  es: { travel_booking: "Datos de los pasajeros", company_b2b: "Cuenta de empresa", car_rental: "Alquiler de coche", admin_identity: "Solicitud en línea" },
+  it: { travel_booking: "Dati dei passeggeri", company_b2b: "Account aziendale", car_rental: "Noleggio auto", admin_identity: "Domanda online" },
+  pt: { travel_booking: "Dados dos passageiros", company_b2b: "Conta empresarial", car_rental: "Aluguer de carro", admin_identity: "Pedido online" },
+  nl: { travel_booking: "Gegevens van de reizigers", company_b2b: "Zakelijk account", car_rental: "Autohuur", admin_identity: "Online aanvraag" },
+};
+export const formsHeading = (lang: Lang, flow: keyof (typeof HEADINGS)["fr"]) => pick(HEADINGS, lang)[flow];
+
+/** Canonical civility (lab's own table, spec section 7): mr, mrs, ms, miss, mx, dr. */
+export type Civility = "mr" | "mrs" | "ms" | "miss" | "mx" | "dr";
+/** Civility options a page of each language lists, with their canonical value; the first two always, the others drawn. */
+export const CIVILITY_OPTIONS: Record<FormsLang, [string, Civility][]> = {
+  fr: [["M.", "mr"], ["Mme", "mrs"], ["Mlle", "miss"], ["Dr", "dr"]],
+  en: [["Mr", "mr"], ["Ms", "ms"], ["Mrs", "mrs"], ["Miss", "miss"], ["Mx", "mx"], ["Dr", "dr"]],
+  de: [["Herr", "mr"], ["Frau", "mrs"], ["Dr.", "dr"]],
+  es: [["Sr.", "mr"], ["Sra.", "mrs"], ["Srta.", "miss"], ["Dr.", "dr"]],
+  it: [["Sig.", "mr"], ["Sig.ra", "mrs"], ["Sig.na", "miss"], ["Dott.", "dr"]],
+  pt: [["Sr.", "mr"], ["Sra.", "mrs"], ["Menina", "miss"], ["Dr.", "dr"]],
+  nl: [["Dhr.", "mr"], ["Mevr.", "mrs"], ["Mej.", "miss"], ["Dr.", "dr"]],
+};
+/** Canonical civility of a vault honorific (the lab writes them: forms-data.ts HONORIFIC). */
+export const CIVILITY_OF: Readonly<Record<string, Civility>> = {
+  "M.": "mr", Mme: "mrs", Mr: "mr", Ms: "ms", Herr: "mr", Frau: "mrs", "Sr.": "mr", "Sra.": "mrs", "Sig.": "mr", "Sig.ra": "mrs",
+  "Dhr.": "mr", "Mevr.": "mrs",
+};
+
+export type SexCode = "f" | "m" | "x";
+/** Sex options per language with their canonical code; the third (other) is drawn. */
+export const SEX_OPTIONS: Record<FormsLang, [string, SexCode][]> = {
+  fr: [["Homme", "m"], ["Femme", "f"], ["Autre", "x"]],
+  en: [["Male", "m"], ["Female", "f"], ["Other", "x"]],
+  de: [["Männlich", "m"], ["Weiblich", "f"], ["Divers", "x"]],
+  es: [["Hombre", "m"], ["Mujer", "f"], ["Otro", "x"]],
+  it: [["Maschio", "m"], ["Femmina", "f"], ["Altro", "x"]],
+  pt: [["Masculino", "m"], ["Feminino", "f"], ["Outro", "x"]],
+  nl: [["Man", "m"], ["Vrouw", "f"], ["Anders", "x"]],
+};
+
+/** Countries the nationality and issuing country lists show. */
+export const LIST_COUNTRIES = ["FR", "DE", "ES", "IT", "PT", "NL", "BE", "CH", "GB", "US", "CA", "MA"] as const;
+/** Demonyms (masculine, feminine) of the list countries per language: the lab's own table. */
+export const DEMONYMS: Record<FormsLang, Record<(typeof LIST_COUNTRIES)[number], [string, string]>> = {
+  fr: { FR: ["Français", "Française"], DE: ["Allemand", "Allemande"], ES: ["Espagnol", "Espagnole"], IT: ["Italien", "Italienne"],
+    PT: ["Portugais", "Portugaise"], NL: ["Néerlandais", "Néerlandaise"], BE: ["Belge", "Belge"], CH: ["Suisse", "Suisse"],
+    GB: ["Britannique", "Britannique"], US: ["Américain", "Américaine"], CA: ["Canadien", "Canadienne"], MA: ["Marocain", "Marocaine"] },
+  en: { FR: ["French", "French"], DE: ["German", "German"], ES: ["Spanish", "Spanish"], IT: ["Italian", "Italian"],
+    PT: ["Portuguese", "Portuguese"], NL: ["Dutch", "Dutch"], BE: ["Belgian", "Belgian"], CH: ["Swiss", "Swiss"],
+    GB: ["British", "British"], US: ["American", "American"], CA: ["Canadian", "Canadian"], MA: ["Moroccan", "Moroccan"] },
+  de: { FR: ["Französisch", "Französisch"], DE: ["Deutsch", "Deutsch"], ES: ["Spanisch", "Spanisch"], IT: ["Italienisch", "Italienisch"],
+    PT: ["Portugiesisch", "Portugiesisch"], NL: ["Niederländisch", "Niederländisch"], BE: ["Belgisch", "Belgisch"], CH: ["Schweizerisch", "Schweizerisch"],
+    GB: ["Britisch", "Britisch"], US: ["Amerikanisch", "Amerikanisch"], CA: ["Kanadisch", "Kanadisch"], MA: ["Marokkanisch", "Marokkanisch"] },
+  es: { FR: ["Francés", "Francesa"], DE: ["Alemán", "Alemana"], ES: ["Español", "Española"], IT: ["Italiano", "Italiana"],
+    PT: ["Portugués", "Portuguesa"], NL: ["Neerlandés", "Neerlandesa"], BE: ["Belga", "Belga"], CH: ["Suizo", "Suiza"],
+    GB: ["Británico", "Británica"], US: ["Estadounidense", "Estadounidense"], CA: ["Canadiense", "Canadiense"], MA: ["Marroquí", "Marroquí"] },
+  it: { FR: ["Francese", "Francese"], DE: ["Tedesco", "Tedesca"], ES: ["Spagnolo", "Spagnola"], IT: ["Italiano", "Italiana"],
+    PT: ["Portoghese", "Portoghese"], NL: ["Olandese", "Olandese"], BE: ["Belga", "Belga"], CH: ["Svizzero", "Svizzera"],
+    GB: ["Britannico", "Britannica"], US: ["Statunitense", "Statunitense"], CA: ["Canadese", "Canadese"], MA: ["Marocchino", "Marocchina"] },
+  pt: { FR: ["Francês", "Francesa"], DE: ["Alemão", "Alemã"], ES: ["Espanhol", "Espanhola"], IT: ["Italiano", "Italiana"],
+    PT: ["Português", "Portuguesa"], NL: ["Neerlandês", "Neerlandesa"], BE: ["Belga", "Belga"], CH: ["Suíço", "Suíça"],
+    GB: ["Britânico", "Britânica"], US: ["Americano", "Americana"], CA: ["Canadiano", "Canadiana"], MA: ["Marroquino", "Marroquina"] },
+  nl: { FR: ["Frans", "Franse"], DE: ["Duits", "Duitse"], ES: ["Spaans", "Spaanse"], IT: ["Italiaans", "Italiaanse"],
+    PT: ["Portugees", "Portugese"], NL: ["Nederlands", "Nederlandse"], BE: ["Belgisch", "Belgische"], CH: ["Zwitsers", "Zwitserse"],
+    GB: ["Brits", "Britse"], US: ["Amerikaans", "Amerikaanse"], CA: ["Canadees", "Canadese"], MA: ["Marokkaans", "Marokkaanse"] },
+};

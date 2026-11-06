@@ -10,9 +10,11 @@ import { expectationFor } from "../../lab/gen/capabilities.ts";
 import { countryCases } from "../../lab/gen/cases.ts";
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { PUBLIC_TEST_CARDS, card, passkey, passkeyPkcs8, password, totpSecret, userHandle } from "../../lab/gen/data.ts";
-import { generate, loadPatterns } from "../../lab/gen/generate.ts";
+import { FLOWS, FLOW_WEIGHTS, generate, loadPatterns } from "../../lab/gen/generate.ts";
+import { FORMS_FLOWS, VAULT_COMPANY_IDS } from "../../lab/gen/forms-flows.ts";
+import { formsLabels } from "../../lab/gen/forms-lexicon.ts";
 import { LAYOUTS } from "../../lab/gen/layouts.ts";
-import type { FieldSpec, FlowId, Role, Site } from "../../lab/gen/model.ts";
+import type { FieldSpec, FlowId, FormsRole, Role, Site } from "../../lab/gen/model.ts";
 import { formHtml, type FormSpec } from "../../lab/gen/render-forms.ts";
 import { extractFeatures } from "../../src/content/detect/features.ts";
 import { Rng } from "../../lab/gen/rng.ts";
@@ -20,7 +22,7 @@ import { Rng } from "../../lab/gen/rng.ts";
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-const PINNED_DIGEST_V3 = "7660c34725bac84d8b59a524a31983bb05924b9152ab251dce4c0cd0edf28abf";
+const PINNED_DIGEST_V4 = "d22b8d6e1801e97110c8cf87574b3c95f7be3011c97959de79863c2f1cd078ff";
 const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
 const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];
@@ -50,10 +52,10 @@ describe("generate", () => {
     expect(JSON.stringify(generate("y", { sites: 40, patterns: FIXED }))).not.toBe(JSON.stringify(a));
   });
 
-  it("same seed, same world, version 3", () => {
+  it("same seed, same world, version 4", () => {
     const w = generate("g2", { sites: 50, patterns: FIXED });
-    expect(w.version).toBe(3);
-    expect(digest(w)).toBe(PINNED_DIGEST_V3);
+    expect(w.version).toBe(4);
+    expect(digest(w)).toBe(PINNED_DIGEST_V4);
   });
 
   it("multi_step sites have at least 2 steps drawn from patterns", () => {
@@ -182,7 +184,12 @@ describe("generate", () => {
       expect(sites.length / 1000).toBeGreaterThan(0.02);
       // Their own labels and buttons (seed-lexicon.json), never the English fallback.
       for (const s of sites.filter((x) => !x.traits.includes("mixed_language"))) {
-        for (const f of s.fields) expect(FIXED.roles[(f.role === "new_password" ? "new_password" : f.role) as Role]?.labels[l]).toContain(f.label);
+        for (const f of s.fields) {
+          // Forms roles are labelled from the forms lexicon (split document dates: their part labels).
+          const part = f.render?.date?.kind === "part" ? `bday_${f.render.date.part}` as FormsRole : undefined;
+          if (part || f.role in FIXED.roles === false) expect(formsLabels(part ?? f.role as FormsRole, l)).toContain(f.label);
+          else expect(FIXED.roles[f.role as Role]?.labels[l]).toContain(f.label);
+        }
       }
     }
   });
@@ -390,5 +397,108 @@ describe("formHtml layouts and frameworks", () => {
   it("label_marks_number_the_fields", () => {
     const fields = extractFeatures(dom(formHtml(spec, { labelMarks: true })), { labField: true }).forms[0]!.fields;
     expect(fields.map((x) => x.lab)).toEqual(["0", "1"]);
+  });
+});
+
+describe("forms flows (generator version 4)", () => {
+  interface Item { type: string; title: string; urls?: { url: string }[]; fields: Record<string, unknown> }
+  const wide = generate("forms-wide", { sites: 600, patterns: FIXED });
+  const itemsOf = (w: typeof big) => w.fixture.items as Item[];
+  const formsSites = (w: typeof big) => w.sites.filter((s) => FORMS_FLOWS.includes(s.flow));
+
+  it("the first fifteen sites are the fifteen flows in order", () => {
+    const w = generate("first", { sites: 15, patterns: FIXED });
+    expect(FLOWS).toHaveLength(15);
+    expect(w.sites.map((s) => s.flow)).toEqual([...ALL_FLOWS, "travel_booking", "company_b2b", "car_rental", "admin_identity"]);
+  });
+
+  it("each forms flow appears at least 8 times on a 200-site seed", () => {
+    for (const f of FORMS_FLOWS) expect(big.sites.filter((s) => s.flow === f).length, f).toBeGreaterThanOrEqual(8);
+  });
+
+  it("a site the forms-flow stream leaves alone keeps the flow a version 3 draw gives its seed", () => {
+    const later = wide.sites.filter((s) => s.index >= 15);
+    const forms = later.filter((s) => FORMS_FLOWS.includes(s.flow));
+    expect(forms.length / later.length).toBeGreaterThan(0.18);
+    expect(forms.length / later.length).toBeLessThan(0.32);
+    for (const s of later.filter((x) => !FORMS_FLOWS.includes(x.flow))) {
+      expect(s.flow).toBe(new Rng(`forms-wide/site:${s.index}`).fork("flow").weighted(FLOW_WEIGHTS));
+    }
+  });
+
+  it("the vault holds the site's full identity, its passport or license, its loyalty program and decoy passports", () => {
+    const items = itemsOf(wide);
+    const holders: string[] = [];
+    let travel = 0;
+    let decoys = 0;
+    for (const s of formsSites(wide)) {
+      const id = items.find((i) => i.type === "identity" && i.title === s.identityTitle)!;
+      expect(id, s.identityTitle).toBeDefined();
+      for (const k of ["honorific", "first_name", "last_name", "birth_name", "sex", "birth_date", "birth_place", "nationality",
+        "job_title", "department", "website", "work_phone", "email", "company"]) expect(id.fields[k], `${s.index} ${k}`).toBeTruthy();
+      expect(id.fields.nationality).toMatch(/^[A-Z]{2}$/);
+      expect("vat_number" in id.fields).toBe(VAULT_COMPANY_IDS);
+      expect(s.forms?.vatNumber).toBeTruthy();
+      expect(s.forms?.companyId).toBeTruthy();
+      if (s.flow === "travel_booking") {
+        travel++;
+        const p = items.find((i) => i.type === "passport" && i.title === s.forms?.passportTitle)!;
+        expect(p.fields.last_name).toBe(id.fields.last_name);
+        expect(String(p.fields.first_names).split(" ")[0]).toBe(id.fields.first_name);
+        holders.push(`${id.fields.first_name} ${id.fields.last_name}`);
+        if (s.forms?.loyaltyTitle) {
+          expect(s.fields.some((f) => f.role === "loyalty_number")).toBe(true);
+          const l = items.find((i) => i.type === "reward_program" && i.title === s.forms?.loyaltyTitle)!;
+          expect(l.urls?.[0]?.url).toBe(`https://${s.host}`);
+        }
+        if (s.forms?.decoyPassportTitle) {
+          decoys++;
+          const d = items.find((i) => i.type === "passport" && i.title === s.forms?.decoyPassportTitle)!;
+          expect(`${d.fields.first_names} ${d.fields.last_name}`).not.toContain(`${id.fields.first_name} ${id.fields.last_name}`);
+          holders.push(`${String(d.fields.first_names).split(" ")[0]} ${d.fields.last_name}`);
+        }
+      } else if (s.flow === "car_rental") {
+        const l = items.find((i) => i.type === "driver_license" && i.title === s.forms?.licenseTitle)!;
+        expect(l.fields.full_name).toBe(`${id.fields.first_name} ${id.fields.last_name}`);
+        holders.push(String(l.fields.full_name));
+      }
+    }
+    expect(decoys / travel).toBeGreaterThan(0.15);
+    expect(decoys / travel).toBeLessThan(0.45);
+    // A holder name names one document only: a document matches one identity.
+    expect(new Set(holders).size).toBe(holders.length);
+  });
+
+  it("travel sites: about 40 % show passengers 2 or 3 with the roles of passenger 1, the contact block first", () => {
+    const travel = wide.sites.filter((s) => s.flow === "travel_booking");
+    const multi = travel.filter((s) => s.fields.some((f) => (f.person ?? 0) > 0));
+    expect(multi.length / travel.length).toBeGreaterThan(0.25);
+    expect(multi.length / travel.length).toBeLessThan(0.55);
+    for (const s of travel) {
+      expect(s.fields.slice(0, 2).map((f) => f.block)).toEqual(["contact", "contact"]);
+      const roles = (p: number) => s.fields.filter((f) => f.block === "passenger" && (f.person ?? 0) === p).map((f) => f.role);
+      for (let p = 1; roles(p).length > 0; p++) expect(roles(p)).toEqual(roles(0));
+      expect(roles(0)).toContain("passport_number");
+    }
+  });
+
+  it("company sites: a shipping block on about half, hidden by same as billing on half of those", () => {
+    const company = wide.sites.filter((s) => s.flow === "company_b2b");
+    const shipping = company.filter((s) => s.fields.some((f) => f.block === "shipping"));
+    expect(shipping.length / company.length).toBeGreaterThan(0.3);
+    expect(shipping.length / company.length).toBeLessThan(0.7);
+    for (const s of shipping) expect(typeof s.forms?.shippingSame).toBe("boolean");
+    const same = shipping.filter((s) => s.forms?.shippingSame).length / shipping.length;
+    expect(same).toBeGreaterThan(0.25);
+    expect(same).toBeLessThan(0.75);
+  });
+
+  it("half the honeypots of travel and rental sites imitate the document number", () => {
+    const many = generate("forms-traps", { sites: 1500, patterns: FIXED });
+    const traps = many.sites.filter((s) => (s.flow === "travel_booking" || s.flow === "car_rental") && s.honeypot);
+    const doc = traps.filter((s) => s.honeypot!.role === "passport_number" || s.honeypot!.role === "license_number");
+    expect(traps.length).toBeGreaterThan(5);
+    expect(doc.length).toBeGreaterThan(0);
+    expect(doc.length).toBeLessThan(traps.length);
   });
 });

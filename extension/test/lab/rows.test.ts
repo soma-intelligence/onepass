@@ -13,7 +13,7 @@ import type { PageFeatures } from "../../src/content/detect/features.ts";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { EXTRACT, buildDataset, withFastTimers } from "../../lab/dataset/build.ts";
-import { datasetPages, originOf, rowsFor } from "../../lab/dataset/rows.ts";
+import { datasetPages, isModelRole, originOf, rowsFor } from "../../lab/dataset/rows.ts";
 import type { DatasetRow } from "../../lab/dataset/rows.ts";
 import { splitOf } from "../../lab/dataset/split.ts";
 import { generate } from "../../lab/gen/generate.ts";
@@ -40,12 +40,14 @@ describe("rowsFor", () => {
         expect(got).toHaveLength(flat.length);
         // exactly one label per rendered input, and it is the role of the spec at its mark
         flat.forEach((f, i) => {
-          const expected = f.lab === undefined ? "none" : p.fields[Number(f.lab)]!.role;
+          // Forms roles are not model classes (ruling R13): "none".
+          const role = f.lab === undefined ? undefined : p.fields[Number(f.lab)]!.role;
+          const expected = role === undefined || !isModelRole(role) ? "none" : role;
           expect(got[i]!.target).toBe(expected);
         });
         // every field of the page is rendered once at least (split OTP cells share a mark)
         const labelled = new Set(flat.filter((f) => f.lab !== undefined).map((f) => Number(f.lab)));
-        if (!s.traits.includes("decoy_form")) expect([...labelled].sort()).toEqual(p.fields.map((_, k) => k).filter((k) => labelled.has(k)));
+        if (!s.traits.includes("decoy_form")) expect([...labelled].sort((a, b) => a - b)).toEqual(p.fields.map((_, k) => k).filter((k) => labelled.has(k)));
         marked += labelled.size;
         rows.push(...got);
       });
@@ -53,7 +55,7 @@ describe("rowsFor", () => {
     expect(rows.length).toBeGreaterThan(100);
     expect(marked).toBeGreaterThan(50);
     expect(rows.every((r) => typeof r.target === "string")).toBe(true);
-    expect(rows.every((r) => !("lab" in r) && r.featureVersion >= 1 && r.generator === 3 && r.seed === "ds")).toBe(true);
+    expect(rows.every((r) => !("lab" in r) && r.featureVersion >= 1 && r.generator === 4 && r.seed === "ds")).toBe(true);
     const json = JSON.stringify(rows);
     for (const s of world.sites) {
       for (const secret of [s.account?.password, s.account?.totpSecret]) if (secret && secret.length >= 6) expect(json).not.toContain(secret);
@@ -167,6 +169,24 @@ describe("label marks", () => {
   });
 });
 
+describe("forms roles in the dataset", () => {
+  it("a field of a forms role is a row targeted none, its version 3 neighbours keep their role", () => {
+    const forms = generate("ds-forms", { sites: 40, patterns }).sites.filter((s) => s.flow === "travel_booking" && staticSite(s));
+    expect(forms.length).toBeGreaterThan(0);
+    const s = forms[0]!;
+    const html = renderSitePage(s, s.traits.some((t) => t.startsWith("iframe_")) ? "frame" : "entry", {}, { labelMarks: true });
+    const page = extractFeatures(dom(html), { labField: true });
+    const rows = rowsFor(s, 0, page, "ds-forms");
+    const flat = page.forms.flatMap((f) => f.fields);
+    const targetOf = (role: string) => rows.filter((_, i) => flat[i]!.lab !== undefined && s.fields[Number(flat[i]!.lab)]!.role === role).map((r) => r.target);
+    const doc = targetOf("passport_number");
+    const given = targetOf("given_name");
+    expect(doc.length).toBeGreaterThan(0);
+    expect(new Set(doc)).toEqual(new Set(["none"]));
+    expect(new Set(given)).toEqual(new Set(["given_name"]));
+  });
+});
+
 describe("buildDataset", () => {
   const readRows = (dir: string): { text: string; rows: DatasetRow[]; files: string[] } => {
     const files = readdirSync(dir).filter((f) => /^part-\d{4}\.jsonl\.gz$/.test(f)).sort();
@@ -179,7 +199,7 @@ describe("buildDataset", () => {
     try {
       const m = await buildDataset({ seed: "t9", forms: 120, workers: 2, out, patterns });
       expect(m.forms).toBe(120);
-      const dir = join(out, "t9-g3");
+      const dir = join(out, "t9-g4");
       const { text, rows } = readRows(dir);
       expect(rows.length).toBe(m.rows);
       expect(Object.values(m.byTarget).reduce((a, b) => a + b, 0)).toBe(rows.length);
@@ -217,11 +237,11 @@ describe("buildDataset", () => {
     try {
       const ma = await buildDataset({ seed: "ord", forms: 150, workers: 1, out: a, patterns });
       const mb = await buildDataset({ seed: "ord", forms: 150, workers: 4, out: b, patterns });
-      const ra = readRows(join(a, "ord-g3"));
-      const rb = readRows(join(b, "ord-g3"));
+      const ra = readRows(join(a, "ord-g4"));
+      const rb = readRows(join(b, "ord-g4"));
       expect(ra.files).toEqual(rb.files);
       expect(ra.text).toBe(rb.text);
-      for (const f of ra.files) expect(readFileSync(join(a, "ord-g3", f)).equals(readFileSync(join(b, "ord-g3", f)))).toBe(true);
+      for (const f of ra.files) expect(readFileSync(join(a, "ord-g4", f)).equals(readFileSync(join(b, "ord-g4", f)))).toBe(true);
       expect(ma.byTarget).toEqual(mb.byTarget);
       expect(ma.skippedForms).toBe(mb.skippedForms);
     } finally {
@@ -237,7 +257,7 @@ describe("buildDataset", () => {
       expect(m.failedForms).toBe(1);
       expect(m.forms).toBe(40);
       expect(m.rows).toBeGreaterThan(0);
-      expect(JSON.parse(readFileSync(join(out, "fail-g3", "manifest.json"), "utf8")).failedForms).toBe(1);
+      expect(JSON.parse(readFileSync(join(out, "fail-g4", "manifest.json"), "utf8")).failedForms).toBe(1);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

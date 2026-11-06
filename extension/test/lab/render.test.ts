@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import patternsJson from "../../lab/corpus/patterns.json";
 import type { Patterns } from "../../lab/corpus/types.ts";
 import { generate } from "../../lab/gen/generate.ts";
+import { FORMS_FLOWS } from "../../lab/gen/forms-flows.ts";
+import { blockWord, DEMONYMS, formsLabels, isFormsLang, monthNames, passengerLegends } from "../../lab/gen/forms-lexicon.ts";
 import type { FieldSpec, HoneypotStyle, LoginStyle, Site } from "../../lab/gen/model.ts";
 import { PAGE_PATH, renderIdpPage, renderSitePage } from "../../lab/gen/render.ts";
 import type { PageContext, PageId } from "../../lab/gen/render.ts";
@@ -23,13 +25,17 @@ function scope(doc: Document): ParentNode {
   return tpl ? tpl.content : doc;
 }
 
-/** Named, user-facing controls of the main form (no honeypot, no decoy, no relay, no hidden OTP carrier). */
+/**
+ * Named, user-facing controls of the main form (no honeypot, no decoy, no relay, no hidden OTP carrier, no
+ * "same as billing" checkbox), a radio group once.
+ */
 function visibleNames(root: ParentNode): string[] {
   const form = root.querySelector("form#lab-form");
   if (!form) return [];
-  return [...form.querySelectorAll<HTMLInputElement>("input[name], select[name]")]
-    .filter((el) => !el.hasAttribute("data-lab-honeypot") && el.type !== "hidden")
-    .map((el) => el.name);
+  const names = [...form.querySelectorAll<HTMLInputElement>("input[name], select[name]")]
+    .filter((el) => !el.hasAttribute("data-lab-honeypot") && el.type !== "hidden" && el.name !== "same_as_billing")
+    .map((el) => (el.type === "radio" ? `radio:${el.name}` : el.name));
+  return names.filter((n, k) => !n.startsWith("radio:") || names.indexOf(n) === k).map((n) => n.replace(/^radio:/, ""));
 }
 
 function styleOf(site: Site): LoginStyle {
@@ -45,6 +51,8 @@ function shownLabel(root: ParentNode, f: FieldSpec): string | undefined {
   const el = root.querySelector(`[id="${f.id}"]`);
   const before = el?.previousElementSibling;
   if (before?.classList.contains("lab-text")) return before.textContent ?? undefined;
+  // A radio group: the legend of its fieldset.
+  if (el?.tagName === "FIELDSET") return el.querySelector("legend")?.textContent ?? undefined;
   return el?.getAttribute("placeholder") ?? el?.getAttribute("aria-label") ?? undefined;
 }
 
@@ -444,5 +452,119 @@ describe("renderIdpPage", () => {
     expect(pw.querySelector<HTMLInputElement>("input[name=password]")!.type).toBe("password");
     expect(pw.querySelector("#lab-status")!.textContent).toBe("<b>x</b>");
     expect(pw.querySelector("#lab-submit")).not.toBeNull();
+  });
+});
+
+describe("forms pages (generator version 4)", () => {
+  const formsWorld = generate("render-forms", { sites: 400, patterns: FIXED });
+  const forms = formsWorld.sites.filter((s) => FORMS_FLOWS.includes(s.flow));
+  const framed = (s: Site) => s.traits.some((t) => t.startsWith("iframe_"));
+  const rootOf = (s: Site) => scope(parse(renderSitePage(s, framed(s) ? "frame" : "entry", {})));
+  const L = (s: Site) => (isFormsLang(s.labelLang) ? s.labelLang : "en");
+
+  it("renders every field of a forms site in order with its label", () => {
+    expect(forms.length).toBeGreaterThan(60);
+    for (const s of forms) {
+      const root = rootOf(s);
+      expect(visibleNames(root), `${s.index} ${s.flow}`).toEqual(s.fields.map((f) => f.name));
+      for (const f of s.fields) expect(shownLabel(root, f), `${s.index} ${f.id}`).toBeTruthy();
+    }
+  });
+
+  it("passengers 2 and 3 sit in fieldsets whose legend gives their rank", () => {
+    const multi = forms.filter((s) => s.fields.some((f) => (f.person ?? 0) > 0));
+    expect(multi.length).toBeGreaterThan(2);
+    for (const s of multi) {
+      const root = rootOf(s);
+      for (const f of s.fields.filter((x) => (x.person ?? 0) > 0)) {
+        const legend = root.querySelector(`[id="${f.id}"]`)!.closest("fieldset.lab-block")!.querySelector(":scope > legend")!.textContent!;
+        expect(passengerLegends(L(s)).map((w) => w(f.person! + 1)), `${s.index} ${f.id}`).toContain(legend);
+      }
+    }
+  });
+
+  it("the shipping block is hidden behind a checked same-as-billing box, shown otherwise", () => {
+    const shipping = forms.filter((s) => s.fields.some((f) => f.block === "shipping"));
+    expect(shipping.some((s) => s.forms?.shippingSame)).toBe(true);
+    expect(shipping.some((s) => !s.forms?.shippingSame)).toBe(true);
+    for (const s of shipping) {
+      const root = rootOf(s);
+      const box = root.querySelector<HTMLInputElement>("#lab-same")!;
+      expect(box.checked).toBe(s.forms?.shippingSame === true);
+      expect(box.parentElement!.textContent).toContain(blockWord(L(s), "sameAsBilling"));
+      const block = root.querySelector("#lab-ship")!;
+      expect(block.hasAttribute("hidden")).toBe(s.forms?.shippingSame === true);
+      for (const f of s.fields.filter((x) => x.block === "shipping")) expect(block.querySelector(`[id="${f.id}"]`)).not.toBeNull();
+    }
+  });
+
+  it("dates render as date inputs, placeholder text, bare text or three parts, month names in the label language", () => {
+    const kinds = new Set<string>();
+    for (const s of forms) {
+      const root = rootOf(s);
+      for (const f of s.fields) {
+        const d = f.render?.date;
+        if (!d) continue;
+        const el = root.querySelector<HTMLInputElement>(`[id="${f.id}"]`)!;
+        if (d.kind === "input") {
+          kinds.add("input");
+          expect(el.type).toBe("date");
+        } else if (d.kind === "text") {
+          kinds.add(d.placeholder ? "text_hint" : "text_bare");
+          expect(el.type).toBe("text");
+          const shown = `${el.getAttribute("placeholder") ?? ""} ${shownLabel(root, f) ?? ""}`;
+          if (d.placeholder) expect(shown, `${s.index} ${f.id}`).toMatch(/[A-Za-z]{2}[./-][A-Za-z]{2}[./-][A-Za-z]{4}/);
+          // A floating label's blank placeholder, or the placeholder that is the label, is not a format.
+          else expect(["", f.label]).toContain((el.getAttribute("placeholder") ?? "").trim());
+        } else {
+          kinds.add("parts");
+          expect(el.closest("fieldset.lab-date")!.querySelector("legend")!.textContent).toBe(d.group);
+          if (d.part === "month" && d.select && d.months === "name") {
+            kinds.add("month_names");
+            const texts = [...(el as unknown as HTMLSelectElement).options].slice(1).map((o) => o.textContent);
+            expect(texts).toEqual(monthNames(s.labelLang).full);
+          }
+        }
+      }
+    }
+    expect([...kinds].sort()).toEqual(["input", "month_names", "parts", "text_bare", "text_hint"]);
+  });
+
+  it("civility and sex render as lists or radio groups; nationality as country names, demonyms or text", () => {
+    const seen = new Set<string>();
+    for (const s of forms) {
+      const root = rootOf(s);
+      for (const f of s.fields) {
+        const c = f.render?.choice;
+        if (!c) continue;
+        if (f.role === "honorific" || f.role === "sex") {
+          seen.add(`${f.role}:${c.kind}`);
+          if (c.kind === "radio") {
+            const radios = [...root.querySelectorAll<HTMLInputElement>(`input[type=radio][name="${f.name}"]`)];
+            expect(radios.map((r) => r.value)).toEqual(c.options.map((o) => o.value));
+          } else expect(root.querySelector(`[id="${f.id}"]`)!.tagName).toBe("SELECT");
+        }
+        if (f.role === "nationality" && c.kind === "select") {
+          const demonyms = Object.values(DEMONYMS[L(s) === s.lang ? L(s) : isFormsLang(s.lang) ? s.lang : "en"]).flat();
+          seen.add(c.options.every((o) => demonyms.includes(o.label)) ? "nationality:demonyms" : "nationality:names");
+        }
+        if (f.role === "nationality" && c.kind === "text") seen.add("nationality:text");
+      }
+    }
+    for (const k of ["honorific:select", "honorific:radio", "sex:select", "sex:radio", "nationality:names", "nationality:demonyms", "nationality:text"]) {
+      expect(seen.has(k), k).toBe(true);
+    }
+  });
+
+  it("forms roles carry labels of the forms lexicon in the label language", () => {
+    for (const s of forms.filter((x) => !x.traits.includes("mixed_language"))) {
+      for (const f of s.fields) {
+        const d = f.render?.date;
+        if (d?.kind === "part") expect(formsLabels(`bday_${d.part}`, s.labelLang)).toContain(f.label);
+        else if (["honorific", "passport_number", "license_number", "vat_number", "birth_name", "job_title"].includes(f.role)) {
+          expect(formsLabels(f.role as "vat_number", s.labelLang), `${s.index} ${f.role}`).toContain(f.label);
+        }
+      }
+    }
   });
 });

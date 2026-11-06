@@ -106,7 +106,9 @@ function consistent(site: Site, step: number, page: PageFeatures): boolean {
   const spec = datasetPages(site)[step]!;
   const marks = new Set(page.forms.flatMap((f) => f.fields).filter((f) => f.lab !== undefined).map((f) => Number(f.lab)));
   if (site.traits.includes("shadow_open") || site.traits.includes("shadow_closed")) return marks.size === 0;
-  return marks.size === spec.fields.length && spec.fields.every((_, k) => marks.has(k));
+  // Radio groups (forms flows) are not extracted as fields: no row, no mark expected.
+  const want = spec.fields.map((f, k) => (f.render?.choice?.kind === "radio" ? -1 : k)).filter((k) => k >= 0);
+  return marks.size === want.length && want.every((k) => marks.has(k));
 }
 
 class PartWriter {

@@ -8,6 +8,8 @@
 // `#lab-sso`, passkey button `#lab-passkey`. A multi_step site serves its
 // first step at "/" and step k (k >= 1) at `/step/<k>`, one form per page,
 // each submitted by `#lab-submit` (labelled "next" before the last step).
+import { blockLegends, isFormsFlow } from "./forms-flows.ts";
+import { blockWord, formsHeading, passengerLegends } from "./forms-lexicon.ts";
 import type { FieldSpec, IdpAccount, Lang, LoginStyle, ProviderId, Site } from "./model.ts";
 import { frameworkScript } from "./frameworks.ts";
 import {
@@ -144,6 +146,7 @@ function headingOf(site: Site, page: PageId, step = 0): string {
         case "checkout_card": return t(site.lang, "checkout");
         case "address": return t(site.lang, "address");
         case "identity": return t(site.lang, "identity");
+        case "travel_booking": case "company_b2b": case "car_rental": case "admin_identity": return formsHeading(site.lang, site.flow);
         default: return t(site.lang, "signin");
       }
   }
@@ -174,6 +177,26 @@ ${body}
 `;
 }
 
+/** The blocks of a forms page: legends (passenger wording drawn from the site seed), the shipping toggle. */
+function formsBlocks(site: Site, fields: FieldSpec[]): NonNullable<FormSpec["forms"]> {
+  const wordings = passengerLegends(site.labelLang);
+  const wording = wordings[hashIndex(site.seed, wordings.length)]!;
+  return {
+    legends: blockLegends(fields, site.labelLang, wording, site.flow),
+    sameLabel: blockWord(site.labelLang, "sameAsBilling"),
+    ...(site.forms?.shippingSame !== undefined ? { shippingSame: site.forms.shippingSame } : {}),
+    lang: site.lang,
+    labelLang: site.labelLang,
+  };
+}
+
+/** A stable index in [0, n) from a string (rendering is a pure function of the site: no Rng here). */
+function hashIndex(s: string, n: number): number {
+  let h = 0;
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % n;
+}
+
 /** The form of a page with its structural traits (delay, shadow root, rerender) and traps (honeypot, decoy). */
 function mountedForm(site: Site, page: PageId, action: string, step = 0, labelMarks = false): string {
   const fields = pageFields(site, page, step);
@@ -192,6 +215,7 @@ function mountedForm(site: Site, page: PageId, action: string, step = 0, labelMa
     submit: page === "otp" ? t(site.lang, "verify") : firstStep ? site.buttons.next ?? site.buttons.submit
       : site.steps && step < site.steps.length - 1 ? site.buttons.next ?? site.buttons.submit : site.buttons.submit,
     next: site.buttons.next,
+    ...(isFormsFlow(site.flow) ? { forms: formsBlocks(site, fields) } : {}),
   };
   const framework = site.framework ?? "static";
   const form = formHtml(spec, { layout: site.layout ?? "stacked", framework, labelMarks });

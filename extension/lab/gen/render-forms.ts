@@ -4,8 +4,10 @@
 // frameworks (generator version 2) live in layouts.ts and frameworks.ts.
 // Pure string builders: no DOM, no clock, no randomness.
 import { frameworkAttrs, frameworkRoot, hashOf } from "./frameworks.ts";
+import { datePartOptions } from "./forms-flows.ts";
+import { datePlaceholder } from "./forms-lexicon.ts";
 import { layoutCss, layoutField, layoutGroup } from "./layouts.ts";
-import type { FieldSpec, FrameworkId, Honeypot, LayoutId, PasswordPolicy, Role } from "./model.ts";
+import type { ChoiceOption, FieldSpec, FrameworkId, Honeypot, Lang, LayoutId, PasswordPolicy, Role } from "./model.ts";
 import { policyAttrs, policyHint } from "./policy.ts";
 
 /** Roles a step of a multi-step form can hold: identifier, password, one-time code. */
@@ -43,12 +45,17 @@ iframe{display:block;width:100%;height:1000px;border:0}
 lab-shell{display:block}
 footer{margin:24px 0;color:#86868b;font-size:12px;text-align:center}
 .hint{display:block;margin:4px 0 0;color:#6e6e73;font-size:12px}
+fieldset{margin:0 0 14px;padding:10px 12px;border:1px solid #e3e3e8;border-radius:8px}
+legend{padding:0 4px;font-size:13px;font-weight:700}
+.lab-date .field{display:inline-block;width:32%;margin-right:1%}
+.lab-radio label,.lab-same{display:inline-flex;gap:6px;align-items:center;margin:0 12px 0 0;font-weight:400}
+.lab-radio input,.lab-same input{width:auto}
 [hidden]{display:none!important}`;
 
 const MONTHS = Array.from({ length: 12 }, (_, k) => String(k + 1).padStart(2, "0"));
 // Fixed range (rendering is clock-free): covers every expiry the generator draws (2028..2033).
 const YEARS = Array.from({ length: 16 }, (_, k) => String(2025 + k));
-const NUMERIC = new Set(["otp", "cc_number", "cc_csc", "postal_code"]);
+const NUMERIC = new Set<string>(["otp", "cc_number", "cc_csc", "postal_code"]);
 
 const HONEYPOT_CSS: Record<Honeypot["style"], string> = {
   display_none: "display:none",
@@ -83,6 +90,18 @@ export function honeypotHtml(hp: Honeypot): string {
   return `<input type="${type}" name="${esc(hp.name)}" data-lab-honeypot style="${HONEYPOT_CSS[hp.style]}"${aria}>`;
 }
 
+/** The blocks of a forms page (generator version 4): legends by "<person>|<block>", the shipping toggle, the page language. */
+export interface FormsBlocks {
+  legends: Record<string, string>;
+  /** Label of the "same as billing" checkbox, and whether it is checked (shipping block hidden). */
+  sameLabel: string;
+  shippingSame?: boolean;
+  /** Site language: placeholder letters of text dates. */
+  lang: Lang;
+  /** Label language: month names of date lists. */
+  labelLang: Lang;
+}
+
 export interface FormSpec {
   action: string;
   fields: FieldSpec[];             // visible fields of this page, in order
@@ -95,12 +114,108 @@ export interface FormSpec {
   reveal: boolean;                 // email then password: password step hidden until "next"
   submit: string;
   next?: string;                   // label of the reveal button, or of the submit of a first step
+  forms?: FormsBlocks;             // forms flows: fields grouped in blocks, dates and choices rendered
 }
 
 export interface FormLook {
   layout?: LayoutId;                 // default "stacked": the version 1 markup
   framework?: FrameworkId;           // default "static": no framework markers
   labelMarks?: boolean;              // data-lab-field="<index>" on each control (dataset only, Task 9)
+}
+
+const options = (xs: ChoiceOption[]) => xs.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("");
+
+/** The control of a forms field: choice and date-part lists, date-part text boxes, plain inputs. */
+function formsControl(f: FieldSpec, autocomplete: string | undefined, extra: string, monthLang: Lang): string {
+  const common = `id="${esc(f.id)}" name="${esc(f.name)}"${attr("autocomplete", autocomplete)}${extra}`;
+  const choice = f.render?.choice;
+  const date = f.render?.date;
+  if (choice && choice.kind === "select") return `<select ${common}><option value="">--</option>${options(choice.options)}</select>`;
+  if (date?.kind === "part") {
+    if (date.select) return `<select ${common}><option value="">--</option>${options(datePartOptions(f.role, date, monthLang))}</select>`;
+    return `<input type="text" ${common} inputmode="numeric" maxlength="${date.part === "year" ? 4 : 2}">`;
+  }
+  return `<input type="${esc(f.type)}" ${common}${NUMERIC.has(f.role) ? ' inputmode="numeric"' : ""}>`;
+}
+
+/** A radio group: one fieldset whose legend is the question, one radio per option (ids "<id>-<k>"). */
+function radioGroup(f: FieldSpec, extra: string): string {
+  const choice = f.render?.choice;
+  const opts = choice && choice.kind === "radio" ? choice.options : [];
+  const radios = opts.map((o, k) => `<label><input type="radio" id="${esc(f.id)}-${k + 1}" name="${esc(f.name)}" value="${esc(o.value)}"${extra}> ${esc(o.label)}</label>`).join("");
+  return `<fieldset class="field lab-radio" id="${esc(f.id)}"><legend>${esc(f.label)}</legend>${radios}</fieldset>`;
+}
+
+/**
+ * The fields of a forms page: one fieldset per block (person and block), with its legend; the shipping block after
+ * its "same as billing" checkbox (hidden when checked); the three parts of a split date in a fieldset whose legend
+ * is the date's label; radio groups; a text date's format as a placeholder (in the label where the layout uses the
+ * placeholder for something else).
+ */
+function formsFieldParts(spec: FormSpec, blocks: FormsBlocks, layout: LayoutId, fw: FrameworkId, hash: string, marks: boolean,
+  placeHoneypot: (role: string) => string): string[] {
+  const out: string[] = [];
+  let open: string | undefined;
+  const close = () => {
+    if (open !== undefined) out.push("</fieldset>");
+    open = undefined;
+  };
+  const fields = spec.fields;
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i]!;
+    const key = `${f.person ?? 0}|${f.block ?? ""}`;
+    if (key !== open) {
+      close();
+      if (f.block === "shipping") {
+        const checked = blocks.shippingSame === true;
+        out.push(`<label class="lab-same"><input type="checkbox" id="lab-same" name="same_as_billing"${checked ? " checked" : ""}`
+          + ` onchange="this.closest('form').querySelector('#lab-ship').hidden=this.checked"> ${esc(blocks.sameLabel)}</label>`);
+        out.push(`<fieldset class="lab-block" id="lab-ship"${checked ? " hidden" : ""}>`);
+      } else {
+        out.push(`<fieldset class="lab-block">`);
+      }
+      const legend = blocks.legends[key] ?? "";
+      if (legend) out.push(`<legend>${esc(legend)}</legend>`);
+      open = key;
+    }
+    out.push(placeHoneypot(f.role));
+    const auto = spec.noAutocomplete ? undefined : f.autocomplete;
+    const mark = (k: number) => (marks ? ` data-lab-field="${k}"` : "");
+    const date = f.render?.date;
+    if (date?.kind === "part") {
+      // The parts of one date: consecutive fields of the same role, person and group.
+      const group: number[] = [i];
+      while (i + 1 < fields.length) {
+        const g = fields[i + 1]!;
+        const d = g.render?.date;
+        if (d?.kind !== "part" || d.group !== date.group || g.role !== f.role && !(g.role.startsWith("bday_") && f.role.startsWith("bday_"))
+          || (g.person ?? 0) !== (f.person ?? 0)) break;
+        group.push(++i);
+      }
+      const inner = group.map((k) => {
+        const p = fields[k]!;
+        const pauto = spec.noAutocomplete ? undefined : p.autocomplete;
+        return `<div class="field"><label for="${esc(p.id)}">${esc(p.label)}</label>`
+          + `${formsControl(p, pauto, `${frameworkAttrs(fw, hash, p.name)}${mark(k)}`, blocks.labelLang)}</div>`;
+      }).join("");
+      out.push(`<fieldset class="lab-date"><legend>${esc(date.group)}</legend>${inner}</fieldset>`);
+      continue;
+    }
+    if (f.render?.choice?.kind === "radio") {
+      out.push(radioGroup(f, `${frameworkAttrs(fw, hash, f.name)}${mark(i)}`));
+      continue;
+    }
+    const format = date?.kind === "text" && date.placeholder ? datePlaceholder(date.format, blocks.lang) : undefined;
+    const inLabel = format !== undefined && (layout === "floating" || layout === "placeholder_only");
+    const label = inLabel ? `${f.label} (${format})` : f.label;
+    out.push(layoutField(layout, {
+      id: esc(f.id), label: esc(label), select: f.type === "select",
+      control: (extra) => formsControl(f, auto, `${extra}${format !== undefined && !inLabel ? ` placeholder="${esc(format)}"` : ""}`
+        + `${frameworkAttrs(fw, hash, f.name)}${mark(i)}`, blocks.labelLang),
+    }));
+  }
+  close();
+  return out;
 }
 
 /** The main `form#lab-form`, fields in order, honeypot right before the field of its role. */
@@ -110,6 +225,21 @@ export function formHtml(spec: FormSpec, opts: FormLook = {}): string {
   const hash = hashOf(`${spec.action}|${spec.fields.map((f) => f.id).join("|")}`);
   const parts: string[] = [];
   const fieldParts: string[] = [];
+  if (spec.forms) {
+    let placed = false;
+    const hp = (role: string) => {
+      if (!spec.honeypot || placed || spec.honeypot.role !== role) return "";
+      placed = true;
+      return honeypotHtml(spec.honeypot);
+    };
+    fieldParts.push(...formsFieldParts(spec, spec.forms, layout, fw, hash, opts.labelMarks === true, hp));
+    if (spec.honeypot && !placed) fieldParts.push(honeypotHtml(spec.honeypot));
+    parts.push(layoutGroup(layout, fieldParts.join("")));
+    parts.push(`<button type="submit" id="lab-submit">${esc(spec.submit)}</button>`);
+    const css = layoutCss(layout);
+    const form = `<form id="lab-form" method="post" action="${esc(spec.action)}">${parts.join("")}</form>`;
+    return (css ? `<style>${css}</style>` : "") + frameworkRoot(fw, hash, form);
+  }
   let hpPlaced = false;
   const placeHoneypot = () => {
     if (spec.honeypot && !hpPlaced) { fieldParts.push(honeypotHtml(spec.honeypot)); hpPlaced = true; }
@@ -217,6 +347,7 @@ const RUNTIME_JS = `(function () {
         var relay = document.getElementById("lab-form");
         Array.prototype.forEach.call(form.elements, function (el) {
           if (!el.name) return;
+          if ((el.type === "radio" || el.type === "checkbox") && !el.checked) return;
           var target = relay.elements.namedItem(el.name);
           if (target) target.value = el.value;
         });

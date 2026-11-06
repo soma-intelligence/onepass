@@ -5,7 +5,7 @@
 import type { CountryCase } from "./cases.ts";
 import type { Behaviour, Profile } from "./population.ts";
 
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;
 export type Lang = string; // BCP 47 primary subtag: "fr", "en", "de", "es", ...
 export type ProviderId = "google" | "apple" | "microsoft";
 export type FlowId = "login_single" | "login_username_first" | "login_email_then_password" | "login_totp"

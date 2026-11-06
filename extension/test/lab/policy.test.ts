@@ -28,7 +28,8 @@ describe("signup policies", () => {
 
   it("only signup sites carry a policy, about 60 % of them", () => {
     expect(world.sites.filter((s) => s.flow !== "signup").every((s) => s.passwordPolicy === undefined)).toBe(true);
-    expect(signups.length).toBeGreaterThan(100);
+    // Generator version 4 gives a quarter of the later sites to the forms flows: fewer signups than in version 3.
+    expect(signups.length).toBeGreaterThan(75);
     const rate = policies.length / signups.length;
     expect(rate).toBeGreaterThan(0.5);
     expect(rate).toBeLessThan(0.7);
@@ -41,7 +42,7 @@ describe("signup policies", () => {
   });
 
   it("every drawn policy is satisfiable and states each part somewhere", () => {
-    expect(policies.length).toBeGreaterThan(60);
+    expect(policies.length).toBeGreaterThan(45);
     for (const s of policies) {
       const p = s.passwordPolicy!;
       if (p.min !== undefined && p.max !== undefined) expect(p.min).toBeLessThanOrEqual(p.max);
