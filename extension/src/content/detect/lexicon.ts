@@ -464,6 +464,24 @@ export const TERMS: readonly Term[] = [
     w: { website: 7 },
   },
   { re: /^site$/, w: { website: 5 } },
+  { re: /^web$/, w: { website: 5 } },
+  // Short forms seen on real travel and rental pages: "Né(e) à", "Né(e) le", "Trat.", "Nº socio",
+  // "Nº carné", "DL #", "Délivr.", "Afgifte rijb.", "Issued", "Issued by", "Pays permis".
+  { re: /\b(ne e a|nee a|ne a|ne e en|nee en)\b/, w: { birth_place: 10, bday: -7, city: -6 } },
+  { re: /\b(ne e le|nee le|ne le)\b/, w: { bday: 6 } },
+  {
+    re: /\b(pays ou vous etes ne e|pays ou vous etes nee?|country (where|in which) you were born|land waar u geboren bent|pais (donde|en el que) nacio)\b/,
+    w: { birth_country: 11, country: -8, bday: -7, birth_place: -8 },
+  },
+  { re: /\b(trat|tit|sr sra)\b/, w: { honorific_prefix: 5 } },
+  { re: /\b(n socio|no socio|nr socio|socio n)\b/, w: { loyalty_number: 8 } },
+  { re: /\b(n carne|no carne|n permis|n permiso|dl|dl no|dl number|dl nr)\b/, w: { license_number: 7 } },
+  { re: /\b(delivr|afgifte|ausgest|expedido|rilasciat[oa]|emitid[oa])\b/, w: { passport_issue_date: 9, bday: -5, cc_exp: -6 } },
+  { re: /^(issued|issued on|date issued)$/, w: { passport_issue_date: 9, bday: -5, cc_exp: -6 } },
+  {
+    re: /\b(issued by|issuing authority country|delivre par|delivree par|delivre en|ausgestellt (von|in)|expedido (por|en)|rilasciato (da|in)|emitido (por|en)|afgegeven (door|in)|pays (du |de |d )?(permis|passeport)|country of (the )?(passport|licen[cs]e)|(passport|licen[cs]e) country|land (van )?(paspoort|rijbewijs))\b/,
+    w: { passport_issuing_country: 10, country: -8, passport_issue_date: -9 },
+  },
   // The Dutch "tussenvoegsel" (van, de) is no middle name: nothing fills it (ruling R14).
   { re: /\btussenvoegsel\w*\b/, w: { additional_name: -20, given_name: -20, family_name: -20, full_name: -20 } },
 

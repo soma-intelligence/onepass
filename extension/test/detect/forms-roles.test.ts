@@ -200,3 +200,34 @@ describe("forms roles: meaning by context", () => {
     expect(r.roles).toEqual({ g: "given_name", fa: "family_name" });
   });
 });
+
+// Short forms common on real booking and rental pages ("Né(e) à", "Nº socio", "DL #"): a check
+// of the generated worlds after Task 10 found them unread; the terms come from usage, not the lab.
+describe("forms roles: short forms", () => {
+  it.each([
+    ["Né(e) à", [["g", "Prénom"], ["fa", "Nom"], ["x", "Né(e) à"]], "birth_place"],
+    ["Pays où vous êtes né(e)", [["g", "Prénom"], ["fa", "Nom"], ["x", "Pays où vous êtes né(e)"]], "birth_country"],
+    ["Trat.", [["x", "Trat."], ["g", "Nombre"], ["fa", "Apellidos"]], "honorific_prefix"],
+    ["Nº socio", [["g", "Nombre"], ["fa", "Apellidos"], ["pn", "Número de pasaporte"], ["x", "Nº socio"]], "loyalty_number"],
+    ["Nº carné", [["g", "Nombre"], ["fa", "Apellidos"], ["x", "Nº carné"]], "license_number"],
+    ["DL #", [["g", "First name"], ["fa", "Last name"], ["x", "DL #"]], "license_number"],
+    ["Web", [["o", "Société"], ["x", "Web"]], "website"],
+    ["Issued by", [["g", "First name"], ["pn", "Passport number"], ["x", "Issued by"]], "passport_issuing_country"],
+    ["Pays permis", [["g", "Prénom"], ["ln", "Numéro de permis"], ["x", "Pays permis"]], "license_issuing_country"],
+    ["Délivr. permis", [["g", "Prénom"], ["ln", "Numéro de permis"], ["x", "Délivr. permis"]], "license_issue_date"],
+    ["Afgifte rijb.", [["g", "Voornaam"], ["ln", "Rijbewijsnummer"], ["x", "Afgifte rijb."]], "license_issue_date"],
+    ["Issued", [["g", "First name"], ["pn", "Passport number"], ["x", "Issued"]], "passport_issue_date"],
+  ] as [string, Row[], FieldRole][])("%s", (_name, rs, role) => {
+    expect(form(rs).roles.x).toBe(role);
+  });
+
+  it("three lists under the legend Délivr. next to a passport number are its issue date", () => {
+    const opts = (n: number, from = 1) => Array.from({ length: n }, (_, i) => `<option>${from + i}</option>`).join("");
+    const r = analyze(`<form id="f">${rowHtml(["pn", "Numéro de passeport"])}<fieldset><legend>Délivr.</legend>`
+      + `<label for="d">Jour</label><select id="d" name="issue_day">${opts(31)}</select>`
+      + `<label for="m">MM</label><select id="m" name="issue_month">${opts(12)}</select>`
+      + `<label for="y">Année de naissance</label><select id="y" name="issue_year">${opts(30, 2000)}</select>`
+      + '</fieldset><button type="submit">OK</button></form>');
+    expect(r.roles.d).toBe("passport_issue_date");
+  });
+});
