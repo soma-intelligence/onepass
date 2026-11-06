@@ -37,6 +37,7 @@ struct CategoryListView: View {
                 NavigationLink(value: PhoneRoute.item(ref)) {
                     ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
                 }
+                .itemZoomSource(ref)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     if summary.trashedAt == nil {
                         // The first button is the one a full swipe runs: Archive, never the trash.

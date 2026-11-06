@@ -335,6 +335,7 @@ struct WatchtowerItemsList: View {
                         summary: summary,
                         vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
                 }
+                .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }
         }
         .listStyle(.insetGrouped)

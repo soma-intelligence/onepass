@@ -184,6 +184,7 @@ struct SearchTab: View {
         NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
             ItemListRow(summary: summary, vaultName: vaultName)
         }
+        .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
     }
 
     private struct Scope: Equatable {

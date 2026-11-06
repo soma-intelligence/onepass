@@ -43,6 +43,8 @@ struct PhoneTabsView: View {
     @Environment(AppModel.self) private var model
     @State private var tab: PhoneTab = .home
     @State private var paths: [PhoneTab: [PhoneRoute]] = [:]
+    /// The item rows and the item detail share it: an item opens by zooming out of its row.
+    @Namespace private var itemZoom
     @State private var searchQuery = ""
     @State private var searching = false
     /// Choosing Rechercher opens its field (off for the demo captures of the list).
@@ -163,12 +165,14 @@ struct PhoneTabsView: View {
                         case .item(let ref):
                             ItemDetailView(ref: ref)
                                 .id(ref)
+                                .itemZoomDestination(ref, in: itemZoom)
                                 .toolbar(model.isEditing ? .hidden : .visible, for: .tabBar)
                         }
                     }
                     .headerFade()
                 }
         }
+        .environment(\.itemZoomNamespace, itemZoom)
     }
 
     private func path(_ which: PhoneTab) -> Binding<[PhoneRoute]> {

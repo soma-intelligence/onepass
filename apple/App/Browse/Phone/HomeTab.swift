@@ -338,6 +338,7 @@ private struct HomeProfileCard: View {
             .padding(.vertical, 10)
             .contentShape(.rect)
         }
+        .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
         .buttonStyle(RowHighlightButtonStyle())
         .phoneCard()
         .accessibilityElement(children: .combine)
@@ -533,6 +534,7 @@ struct PhoneItemRows: View {
                     .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
+                .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .buttonStyle(RowHighlightButtonStyle())
                 // The hairline belongs to the row below it, so a row leaving takes its own line along.
                 .overlay(alignment: .top) {
