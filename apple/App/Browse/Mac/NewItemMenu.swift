@@ -175,16 +175,16 @@ struct NewItemSheet: View {
                 Button {
                     close()
                 } label: {
-                    Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
+                    Image(systemName: "xmark").font(.body.weight(.semibold))
                         #if os(iOS)
-                        // 44 pt target around the 28 pt glyph.
-                        .contentShape(Rectangle().inset(by: -8))
+                        // A 44 pt Liquid Glass circle, like the system close buttons.
+                        .frame(width: 30, height: 30)
                         #else
-                        .contentShape(.rect)
+                        .frame(width: 20, height: 20)
                         #endif
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel(Text("Fermer"))
                 .accessibilityIdentifier("newItem.close")
