@@ -13,10 +13,26 @@ type Values = Partial<Record<LabRole, string>>;
 
 /** Roles whose value tells one item from another. */
 const TELLING = new Set<LabRole>(["username", "email", "password", "cc_name", "cc_number", "given_name", "family_name", "tel",
-  "birth_date", "organization", "address_line1", "address_line2", "postal_code", "city"]);
+  "birth_date", "organization", "address_line1", "address_line2", "postal_code", "city", "passport_number", "license_number",
+  "vat_number", "company_id", "birth_name", "birth_place", "loyalty_number"]);
 
-/** The values the vault holds for `site`'s own item (login, card or identity). */
-function ownValues(world: World, site: Site): Values {
+interface Doc { type: string; title: string; fields: Record<string, string> }
+const docOf = (world: World, title: string | undefined) =>
+  title === undefined ? undefined : (world.fixture.items as Doc[]).find((i) => i.title === title)?.fields;
+
+/**
+ * The values the vault holds for `site`'s own items (login, card or identity). A travel site's form
+ * takes the passport's names, but the identity's own names are the user's too.
+ */
+function ownValues(world: World, site: Site): Values[] {
+  if (site.identityTitle !== undefined && site.forms?.passportTitle !== undefined) {
+    const id = docOf(world, site.identityTitle);
+    return [expectedValues(world, site), { given_name: id?.first_name ?? "", family_name: id?.last_name ?? "" }];
+  }
+  return [ownValue(world, site)];
+}
+
+function ownValue(world: World, site: Site): Values {
   if (site.cardTitle !== undefined || site.identityTitle !== undefined) return expectedValues(world, site);
   // A signup's account is the one the user types, not a vault item.
   if (site.account && site.flow !== "signup") {
@@ -29,7 +45,12 @@ function ownValues(world: World, site: Site): Values {
 
 /** Every item value of the world but `site`'s own: the other sites' items and the provider accounts. */
 function otherValues(world: World, site: Site): Values[] {
-  const out = world.sites.filter((s) => s.index !== site.index).map((s) => ownValues(world, s));
+  const out = world.sites.filter((s) => s.index !== site.index).flatMap((s) => ownValues(world, s));
+  // A decoy passport (another traveller's) is another item, on its own site too.
+  for (const s of world.sites) {
+    const d = docOf(world, s.forms?.decoyPassportTitle);
+    if (d) out.push({ passport_number: d.number, given_name: d.first_names, family_name: d.last_name, birth_date: d.birth_date, birth_place: d.birth_place });
+  }
   for (const accounts of Object.values(world.idp)) {
     for (const a of accounts) out.push({ username: a.email, email: a.email, password: a.password });
   }
@@ -44,15 +65,16 @@ function otherValues(world: World, site: Site): Values[] {
 export function foreignFields(world: World, site: Site, values: Record<string, string>, typed: readonly string[] = []): string[] {
   const own = ownValues(world, site);
   const others = otherValues(world, site);
+  const ownMatch = (role: LabRole, v: string, f: Site["fields"][number]) =>
+    own.some((o) => o[role] !== undefined && o[role] !== "" && matches(role, v, o[role]!, site.lang, f));
   return site.fields.filter((f) => {
     if (!TELLING.has(f.role) || typed.includes(f.name)) return false;
     const v = values[f.name] ?? "";
     if (v.trim() === "") return false;
-    const mine = own[f.role];
-    if (mine !== undefined && mine !== "" && matches(f.role, v, mine, site.lang)) return false;
+    if (ownMatch(f.role, v, f)) return false;
     return others.some((o) => {
       const theirs = o[f.role];
-      return theirs !== undefined && theirs !== "" && matches(f.role, v, theirs, site.lang);
+      return theirs !== undefined && theirs !== "" && matches(f.role, v, theirs, site.lang, f);
     });
   }).map((f) => f.name);
 }

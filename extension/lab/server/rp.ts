@@ -14,7 +14,10 @@
 // session that passed the previous one.
 import { randomBytes } from "node:crypto";
 import { totp } from "../../e2e/server.ts";
-import type { LabRole, Site, World } from "../gen/model.ts";
+import { isFormsFlow } from "../gen/forms-flows.ts";
+import { CIVILITY_OF, CIVILITY_OPTIONS, DEMONYMS, FORMS_LANGS, SEX_OPTIONS } from "../gen/forms-lexicon.ts";
+import type { Civility, SexCode } from "../gen/forms-lexicon.ts";
+import type { FieldSpec, LabRole, Site, World } from "../gen/model.ts";
 import { policyViolation } from "../gen/policy.ts";
 import { PAGE_PATH, renderSitePage, stepPath } from "../gen/render.ts";
 import type { PageContext, PageId } from "../gen/render.ts";
@@ -47,6 +50,8 @@ export function looksGenerated(pw: string, policy?: Site["passwordPolicy"]): boo
 interface CardFields { cardholder: string; number: string; expiry: string; cvv: string }
 interface IdentityFields {
   first_name: string; last_name: string; email: string; mobile_phone: string; birth_date: string; company: string;
+  honorific?: string; middle_name?: string; birth_name?: string; sex?: string; birth_place?: string; nationality?: string;
+  work_phone?: string; job_title?: string; department?: string; website?: string;
   address: { line1: string; line2: string; city: string; postal_code: string; region: string; country: string };
 }
 interface Item { type: string; title: string; fields: unknown }
@@ -65,13 +70,49 @@ export function expectedValues(world: World, site: Site): Partial<Record<LabRole
   if (site.identityTitle) {
     const p = items.find((i) => i.type === "identity" && i.title === site.identityTitle)?.fields as IdentityFields | undefined;
     if (!p) return {};
-    return {
+    const core: Partial<Record<LabRole, string>> = {
       given_name: p.first_name, family_name: p.last_name, email: p.email, tel: p.mobile_phone, birth_date: p.birth_date,
       organization: p.company, address_line1: p.address.line1, address_line2: p.address.line2,
       postal_code: p.address.postal_code, city: p.address.city, country: p.address.country,
     };
+    return isFormsFlow(site.flow) ? { ...core, ...formsValues(items, site, p) } : core;
   }
   return {};
+}
+
+const fieldsOf = (items: Item[], type: string, title: string | undefined) =>
+  (title === undefined ? undefined : items.find((i) => i.type === type && i.title === title)?.fields) as Record<string, string> | undefined;
+
+/**
+ * The values of the forms flows (spec 11.2): person roles from the identity, company ids from the
+ * site (the vault holds them only once the generator puts them there), documents from their item.
+ * On a travel site the passport's names win over the identity's. A role the vault cannot answer
+ * (birth country, a loyalty program the vault lacks) expects an empty field. Dates stay ISO here:
+ * `matches` compares them in the format the field renders.
+ */
+function formsValues(items: Item[], site: Site, p: IdentityFields): Partial<Record<LabRole, string>> {
+  const out: Partial<Record<LabRole, string>> = {
+    honorific: p.honorific ?? "", additional_name: p.middle_name ?? "", birth_name: p.birth_name ?? "", sex: p.sex ?? "",
+    birth_place: p.birth_place ?? "", birth_country: "", nationality: p.nationality ?? "",
+    bday_day: p.birth_date, bday_month: p.birth_date, bday_year: p.birth_date,
+    job_title: p.job_title ?? "", department: p.department ?? "", website: p.website ?? "", tel_work: p.work_phone ?? "",
+    vat_number: site.forms?.vatNumber ?? "", company_id: site.forms?.companyId ?? "",
+    loyalty_number: fieldsOf(items, "reward_program", site.forms?.loyaltyTitle)?.member_number ?? "",
+  };
+  const pp = fieldsOf(items, "passport", site.forms?.passportTitle);
+  if (pp) {
+    Object.assign(out, {
+      given_name: pp.first_names, family_name: pp.last_name, passport_number: pp.number, passport_issuing_country: pp.issuing_country,
+      passport_issue_date: pp.issued_on, passport_expiry: pp.expiry,
+    });
+  }
+  const dl = fieldsOf(items, "driver_license", site.forms?.licenseTitle);
+  if (dl) {
+    Object.assign(out, {
+      license_number: dl.number, license_issuing_country: dl.country, license_issue_date: dl.issued_on, license_expiry: dl.expiry,
+    });
+  }
+  return out;
 }
 
 const text = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -84,9 +125,12 @@ function expiry(s: string): [number, number] | undefined {
 }
 const year = (s: string) => (s.length === 2 ? 2000 + Number(s) : Number(s));
 
-function countryMatches(posted: string, code: string, lang: string): boolean {
+function countryMatches(posted: string, code: string, lang: string, demonyms = false): boolean {
   if (text(posted) === text(code)) return true;
-  for (const l of new Set(["en", "fr", lang])) {
+  if (code.length !== 2) return false;
+  const up = code.toUpperCase() as keyof (typeof DEMONYMS)["fr"];
+  if (demonyms && FORMS_LANGS.some((l) => (DEMONYMS[l][up] ?? []).some((d) => text(d) === text(posted)))) return true;
+  for (const l of new Set(["en", "fr", lang, ...(demonyms ? FORMS_LANGS : [])])) {
     try {
       const name = new Intl.DisplayNames([l], { type: "region" }).of(code.toUpperCase());
       if (name && text(name) === text(posted)) return true;
@@ -97,8 +141,58 @@ function countryMatches(posted: string, code: string, lang: string): boolean {
   return false;
 }
 
-/** Whether a posted value is the fixture value `want` of `role` (formats as the site accepts them). */
-export function matches(role: LabRole, posted: string, want: string, lang: string): boolean {
+const DATE_ROLES = new Set<LabRole>(["bday_day", "bday_month", "bday_year", "passport_issue_date", "passport_expiry", "license_issue_date", "license_expiry"]);
+const COUNTRY_ROLES = new Set<LabRole>(["nationality", "passport_issuing_country", "license_issuing_country", "birth_country"]);
+const ID_ROLES = new Set<LabRole>(["vat_number", "company_id", "passport_number", "license_number", "loyalty_number"]);
+const ident = (s: string) => s.replace(/[\s.\-]/g, "").toUpperCase();
+
+/** The label of the option a posted list or radio value names (the value itself when the field has no options). */
+function shown(posted: string, field?: FieldSpec): string {
+  const c = field?.render?.choice;
+  if (!c || c.kind === "text") return posted;
+  return c.options.find((o) => o.value === posted)?.label ?? posted;
+}
+
+const CIVILITY_BY_LABEL = new Map<string, Civility>(FORMS_LANGS.flatMap((l) => CIVILITY_OPTIONS[l].map(([label, c]) => [text(label), c] as const)));
+const SEX_BY_LABEL = new Map<string, SexCode>([
+  ...FORMS_LANGS.flatMap((l) => SEX_OPTIONS[l].map(([label, c]) => [text(label), c] as const)),
+  ["féminin", "f"], ["masculin", "m"], ["autre", "x"],
+]);
+const civility = (s: string) => CIVILITY_OF[s.trim()] ?? CIVILITY_BY_LABEL.get(text(s));
+
+/** A date posted in the field's rendered format only: ISO for a date input, the site's pattern for text, a number for a part. */
+function dateMatches(role: LabRole, posted: string, want: string, field?: FieldSpec): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(want)) return posted.trim() === "" && want === "";
+  const [y, m, d] = [want.slice(0, 4), want.slice(5, 7), want.slice(8, 10)];
+  const r = field?.render?.date;
+  const part = r?.kind === "part" ? r.part : role === "bday_day" ? "day" : role === "bday_month" ? "month" : role === "bday_year" ? "year" : undefined;
+  const v = posted.trim();
+  if (part === "year") return v === y;
+  if (part) return /^\d{1,2}$/.test(v) && Number(v) === Number(part === "day" ? d : m);
+  if (r?.kind === "text") return v === r.format.replace("YYYY", y).replace("MM", m).replace("DD", d);
+  return v === want;
+}
+
+/**
+ * Whether a posted value is the fixture value `want` of `role` (formats as the site accepts them).
+ * `field`, when given, says how the field renders: dates then match in that format only, list and
+ * radio values through their option's label.
+ */
+export function matches(role: LabRole, posted: string, want: string, lang: string, field?: FieldSpec): boolean {
+  if (DATE_ROLES.has(role) || (role === "birth_date" && field?.render?.date)) return dateMatches(role, posted, want, field);
+  if (COUNTRY_ROLES.has(role)) return want === "" ? posted.trim() === "" : countryMatches(shown(posted, field), want, lang, true);
+  if (ID_ROLES.has(role)) return ident(posted) === ident(want);
+  if (role === "honorific") {
+    if (want === "") return posted.trim() === "";
+    const c = civility(shown(posted, field));
+    return c !== undefined && c === civility(want);
+  }
+  if (role === "sex") {
+    if (want === "") return posted.trim() === "";
+    const c = SEX_BY_LABEL.get(text(shown(posted, field)));
+    return c !== undefined && c === SEX_BY_LABEL.get(text(want));
+  }
+  if (role === "tel_work") return phone(posted) === phone(want);
   switch (role) {
     case "cc_number": return posted.replace(/\D/g, "") === want.replace(/\D/g, "");
     case "cc_exp": {
@@ -117,13 +211,21 @@ export function matches(role: LabRole, posted: string, want: string, lang: strin
 /** Names of the site's form fields whose posted value differs from the fixture (a missing field counts as empty). */
 export function wrongFields(world: World, site: Site, body: Record<string, string>): string[] {
   const want = expectedValues(world, site);
-  return site.fields.filter((f) => !matches(f.role, body[f.name] ?? "", want[f.role] ?? "", site.lang)).map((f) => f.name);
+  const ok = (f: FieldSpec): boolean => {
+    const posted = body[f.name] ?? "";
+    // Passengers 2 and later are other people: the user types them, the check wants them non empty.
+    if ((f.person ?? 0) > 0) return posted.trim() !== "";
+    // A shipping block hidden behind "same as billing" posts nothing.
+    if (f.block === "shipping" && site.forms?.shippingSame) return posted.trim() === "";
+    return matches(f.role, posted, want[f.role] ?? "", site.lang, f);
+  };
+  return site.fields.filter((f) => !ok(f)).map((f) => f.name);
 }
 
 // ---- pages ----
 
 const PASSWORD_LOGIN = new Set<Site["flow"]>(["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey"]);
-const FORM_FLOWS = new Set<Site["flow"]>(["checkout_card", "address", "identity"]);
+const FORM_FLOWS = new Set<Site["flow"]>(["checkout_card", "address", "identity", "travel_booking", "company_b2b", "car_rental", "admin_identity"]);
 const MSG = {
   credentials: "Identifiant ou mot de passe incorrect",
   code: "Code incorrect",

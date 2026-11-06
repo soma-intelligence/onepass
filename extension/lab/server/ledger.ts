@@ -11,7 +11,7 @@ import type { FixtureFile, LabRole, ProviderId, Site, World } from "../gen/model
 import { archiveHostOf } from "../gen/population.ts";
 import { IDP_HOST, PAGE_PATH } from "../gen/render.ts";
 
-export type SecretKind = "password" | "totp" | "card" | "csc";
+export type SecretKind = "password" | "totp" | "card" | "csc" | "document";
 export type LabEvent =
   | { at: number; host: string; kind: "signin"; user: string; via?: ProviderId }
   | { at: number; host: string; kind: "submit"; form: string; ok: boolean; fields: string[]; reason?: string }
@@ -19,7 +19,10 @@ export type LabEvent =
 
 // Public test card numbers (and short CVCs) repeat across sites: a secret can have several owners.
 interface Owned { kind: SecretKind; owners: string[] }
-interface CardItem { type?: string; title?: string; urls?: { url: string }[]; fields?: { number?: string; cvv?: string; password?: string } }
+interface CardItem {
+  type?: string; title?: string; urls?: { url: string }[];
+  fields?: { number?: string; cvv?: string; password?: string; member_number?: string };
+}
 
 function own(index: Map<string, Owned>, value: string, kind: SecretKind, owner: string): void {
   const known = index.get(value);
@@ -28,6 +31,8 @@ function own(index: Map<string, Owned>, value: string, kind: SecretKind, owner: 
 }
 
 const digitsOf = (s: string) => s.replace(/\D/g, "");
+/** A document number as typed: spaces, dots and dashes dropped, case ignored. */
+const docOf = (s: string) => s.replace(/[\s.\-]/g, "").toUpperCase();
 // A card number as typed or pasted: digits with optional spaces or dashes.
 const CARD_SHAPE = /^[\d\s-]{12,}$/;
 const CARD_ROLES = new Set<LabRole>(["cc_name", "cc_number", "cc_exp", "cc_exp_month", "cc_exp_year", "cc_csc"]);
@@ -40,6 +45,8 @@ export class Ledger {
   private readonly passwords = new Map<string, Owned>();
   private readonly cards = new Map<string, Owned>();
   private readonly cscs = new Map<string, Owned>();
+  /** Passport, driving licence and loyalty numbers (normalized), owned by the site that asks for them. */
+  private readonly documents = new Map<string, Owned>();
   private readonly added: { value: string; kind: SecretKind }[] = [];
   /** TOTP secrets of the world, by owner host. */
   private readonly totps: { secret: string; owner: string }[] = [];
@@ -68,12 +75,31 @@ export class Ledger {
       if (raw.type === "login" && raw.fields?.password && raw.urls?.[0]) {
         own(this.passwords, raw.fields.password, "password", new URL(raw.urls[0].url).hostname);
       }
+      this.indexDocument(world, raw);
       if (raw.type !== "credit_card") continue;
       const owner = world.sites.find((s) => s.cardTitle !== undefined && s.cardTitle === raw.title)?.host
         ?? (raw.title ? archiveHostOf(raw.title) : undefined);
       if (!owner) continue;
       if (raw.fields?.number) own(this.cards, digitsOf(raw.fields.number), "card", owner);
       if (raw.fields?.cvv) own(this.cscs, raw.fields.cvv, "csc", owner);
+    }
+  }
+
+  /**
+   * A document number is owned by the site whose form names its item (spec 11.3). A decoy passport
+   * (another person's, stored for the same trip) is owned by `decoy:<host>`, a host no request
+   * has: every post of it is a leak, on its own site too.
+   */
+  private indexDocument(world: World, raw: CardItem): void {
+    const number = raw.type === "reward_program" ? raw.fields?.member_number
+      : raw.type === "passport" || raw.type === "driver_license" ? raw.fields?.number : undefined;
+    if (!number || raw.title === undefined) return;
+    for (const s of world.sites) {
+      const f = s.forms;
+      if (!f) continue;
+      const owner = f.decoyPassportTitle === raw.title ? `decoy:${s.host}`
+        : [f.passportTitle, f.licenseTitle, f.loyaltyTitle].includes(raw.title) ? s.host : undefined;
+      if (owner) own(this.documents, docOf(number), "document", owner);
     }
   }
 
@@ -137,6 +163,8 @@ export class Ledger {
       const card = this.cards.get(digitsOf(value));
       if (card) return card;
     }
+    const document = this.documents.get(docOf(value));
+    if (document) return document;
     if (role !== undefined && CARD_ROLES.has(role)) return this.cscs.get(value);
     return undefined;
   }

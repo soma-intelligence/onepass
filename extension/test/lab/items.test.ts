@@ -84,3 +84,24 @@ describe("smart fill target", () => {
     expect(smartTarget({ ...base, flow: "signup", fields: [field("email", "m"), field("new_password", "p")] })?.id).toBe("p");
   });
 });
+
+describe("foreign fields on forms sites (generator version 4)", () => {
+  const fw = generate("items-forms", { sites: 400, patterns: loadPatterns() });
+  interface Item { title: string; fields: Record<string, string> }
+  const doc = (title: string | undefined) => (fw.fixture.items as Item[]).find((i) => i.title === title)!.fields;
+  const site = fw.sites.find((s) => s.forms?.decoyPassportTitle && s.fields.some((f) => f.role === "passport_number"))!;
+  const field = (role: string) => site.fields.find((f) => f.role === role && (f.person ?? 0) === 0)!.name;
+
+  it("the site's own passport and the identity's own names are not foreign", () => {
+    const own = doc(site.forms!.passportTitle);
+    const id = doc(site.identityTitle);
+    expect(foreignFields(fw, site, { [field("passport_number")]: own.number!, [field("given_name")]: own.first_names! })).toEqual([]);
+    expect(foreignFields(fw, site, { [field("given_name")]: id.first_name!, [field("family_name")]: id.last_name! })).toEqual([]);
+  });
+
+  it("the decoy passport's number and names are foreign", () => {
+    const d = doc(site.forms!.decoyPassportTitle);
+    expect(foreignFields(fw, site, { [field("passport_number")]: d.number! })).toEqual([field("passport_number")]);
+    expect(foreignFields(fw, site, { [field("family_name")]: d.last_name! })).toEqual([field("family_name")]);
+  });
+});
