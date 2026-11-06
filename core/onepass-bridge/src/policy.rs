@@ -13,10 +13,14 @@ use onepass_core::model::{
 };
 use onepass_core::reference::otp_field_of;
 use onepass_core::totp::{code_at, parse_otpauth, seconds_remaining, totp_from_secret};
+use time::Date;
 use zeroize::Zeroizing;
 
 use crate::AppErrorCode;
-use crate::api::{AddressOut, FillField, Method, Response, SecretString, Summary, SummaryKind};
+use crate::api::{
+    AddressOut, FillField, LicenseOut, LoyaltyOut, Method, PassportOut, Response, SecretString,
+    Summary, SummaryKind,
+};
 use crate::origin::{MatchQuality, Origin, item_host, matches};
 use crate::provider::{ProviderId, from_core, official_hosts};
 use crate::service::VaultInfo;
@@ -434,10 +438,9 @@ pub fn card_values(item: &Item) -> Response {
     }
 }
 
-/// Values of an identity fill.
-pub fn identity_values(item: &Item) -> Response {
-    let birthday = item
-        .field("birth_date")
+/// A date field marked for autofill, `YYYY-MM-DD`.
+fn fillable_date(item: &Item, id: &str) -> Option<String> {
+    item.field(id)
         .filter(|f| f.autofill)
         .and_then(|f| match &f.value {
             FieldValue::Date(d) => Some(format!(
@@ -447,7 +450,208 @@ pub fn identity_values(item: &Item) -> Response {
                 d.day()
             )),
             _ => None,
-        });
+        })
+}
+
+/// Lower case words without accents, split on anything that is not a
+/// letter or a digit (spaces, hyphens, dots, apostrophes).
+fn name_words(s: &str) -> Vec<String> {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_normalization::char::is_combining_mark;
+    let folded: String = s
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase();
+    folded
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `needle`, non empty, as consecutive words of `hay`.
+fn has_run(hay: &[String], needle: &[String]) -> bool {
+    !needle.is_empty() && hay.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Sex as the extension reads it: `f`, `m`, `x` (spec 2026-11-06 section
+/// 7). The vault menu (`Féminin`, `Masculin`, `Autre`) or a free text from
+/// the table; anything else is unknown.
+pub fn canonical_sex(s: &str) -> Option<&'static str> {
+    const M: &[&str] = &[
+        "m",
+        "h",
+        "homme",
+        "masculin",
+        "male",
+        "man",
+        "mannlich",
+        "hombre",
+        "masculino",
+        "maschio",
+        "uomo",
+        "maschile",
+        "mannelijk",
+    ];
+    const F: &[&str] = &[
+        "f",
+        "femme",
+        "feminin",
+        "female",
+        "woman",
+        "weiblich",
+        "mujer",
+        "femenino",
+        "femmina",
+        "donna",
+        "femminile",
+        "feminino",
+        "mulher",
+        "vrouw",
+        "vrouwelijk",
+    ];
+    const X: &[&str] = &[
+        "x",
+        "autre",
+        "other",
+        "divers",
+        "diverse",
+        "otro",
+        "altro",
+        "outro",
+        "anders",
+        "non binaire",
+        "non binary",
+    ];
+    let key = name_words(s).join(" ");
+    [("m", M), ("f", F), ("x", X)]
+        .into_iter()
+        .find(|(_, words)| words.contains(&key.as_str()))
+        .map(|(c, _)| c)
+}
+
+fn fillable_sex(item: &Item) -> Option<String> {
+    fillable_text(item, "sex")
+        .and_then(|s| canonical_sex(&s))
+        .map(str::to_owned)
+}
+
+/// Is the document's holder the person of `identity` (R2 rule 1)? Names
+/// fold case, accents, hyphens and spaces. A passport: the same last name,
+/// and the identity's first name(s) are the first of its first names. A
+/// license: the identity's first and last names are words of its full name.
+fn is_holder(identity: &Item, doc: &Item) -> bool {
+    let words = |i: &Item, id: &str| name_words(display_text(i, id).unwrap_or_default());
+    let (first, last) = (words(identity, "first_name"), words(identity, "last_name"));
+    if first.is_empty() || last.is_empty() {
+        return false;
+    }
+    match doc.item_type {
+        ItemType::Passport => {
+            words(doc, "last_name") == last && words(doc, "first_names").starts_with(&first)
+        }
+        ItemType::DriverLicense => {
+            let full = words(doc, "full_name");
+            has_run(&full, &first) && has_run(&full, &last)
+        }
+        _ => false,
+    }
+}
+
+fn expired(doc: &Item, today: Date) -> bool {
+    matches!(doc.field("expiry").map(|f| &f.value), Some(FieldValue::Date(d)) if *d < today)
+}
+
+/// The passport or driver license (`kind`) of the person of `identity`
+/// among `items` (R2): eligible documents whose holder is the person, the
+/// only one, or of several the most recently saved that has not expired;
+/// with none, the only document of a vault with exactly one identity.
+/// Anything else, none: a guess would write someone else's papers.
+pub fn associated_document<'a>(
+    identity: &Item,
+    items: &'a [Item],
+    kind: ItemType,
+    today: Date,
+) -> Option<&'a Item> {
+    let docs: Vec<&Item> = items
+        .iter()
+        .filter(|i| i.item_type == kind && eligible(i))
+        .collect();
+    let holders: Vec<&Item> = docs
+        .iter()
+        .copied()
+        .filter(|d| is_holder(identity, d))
+        .collect();
+    match holders.len() {
+        0 => {
+            let identities = items
+                .iter()
+                .filter(|i| i.item_type == ItemType::Identity && eligible(i))
+                .count();
+            (identities == 1 && docs.len() == 1).then(|| docs[0])
+        }
+        1 => Some(holders[0]),
+        _ => holders
+            .into_iter()
+            .filter(|d| !expired(d, today))
+            .max_by_key(|d| d.updated_at),
+    }
+}
+
+/// The loyalty program of the page: exactly one eligible reward program
+/// or membership with a URL matching the page (the login rule), else none.
+pub fn site_loyalty<'a>(items: &'a [Item], page: &Origin) -> Option<&'a Item> {
+    let mut found = items.iter().filter(|i| {
+        matches!(i.item_type, ItemType::RewardProgram | ItemType::Membership)
+            && eligible(i)
+            && item_match(i, page).is_some()
+    });
+    let one = found.next()?;
+    found.next().is_none().then_some(one)
+}
+
+/// Values of a passport given with an identity.
+pub fn passport_values(doc: &Item) -> PassportOut {
+    PassportOut {
+        first_names: fillable_text(doc, "first_names"),
+        last_name: fillable_text(doc, "last_name"),
+        number: fillable_secret(doc, "number"),
+        issuing_country: fillable_text(doc, "issuing_country"),
+        issued_on: fillable_date(doc, "issued_on"),
+        expiry: fillable_date(doc, "expiry"),
+        nationality: fillable_text(doc, "nationality"),
+        sex: fillable_sex(doc),
+        birth_date: fillable_date(doc, "birth_date"),
+        birth_place: fillable_text(doc, "birth_place"),
+    }
+}
+
+/// Values of a driver license given with an identity.
+pub fn license_values(doc: &Item) -> LicenseOut {
+    LicenseOut {
+        number: fillable_secret(doc, "number"),
+        country: fillable_text(doc, "country"),
+        issued_on: fillable_date(doc, "issued_on"),
+        expiry: fillable_date(doc, "expiry"),
+    }
+}
+
+/// Values of a loyalty program, none without a member number.
+pub fn loyalty_values(item: &Item) -> Option<LoyaltyOut> {
+    let program = match item.item_type {
+        ItemType::RewardProgram => fillable_text(item, "company"),
+        _ => fillable_text(item, "organization"),
+    };
+    Some(LoyaltyOut {
+        number: fillable_secret(item, "member_number")?,
+        program,
+    })
+}
+
+/// Values of an identity fill: the person, never a document.
+pub fn identity_values(item: &Item) -> Response {
+    let birthday = fillable_date(item, "birth_date");
     let address = item
         .field("address")
         .filter(|f| f.autofill)
@@ -472,6 +676,21 @@ pub fn identity_values(item: &Item) -> Response {
         organization: fillable_text(item, "company"),
         birthday,
         address,
+        honorific: fillable_text(item, "honorific"),
+        middle_name: fillable_text(item, "middle_name"),
+        birth_name: fillable_text(item, "birth_name"),
+        sex: fillable_sex(item),
+        birth_place: fillable_text(item, "birth_place"),
+        nationality: fillable_text(item, "nationality"),
+        job_title: fillable_text(item, "job_title"),
+        department: fillable_text(item, "department"),
+        website: fillable_text(item, "website"),
+        work_tel: fillable_text(item, "work_phone"),
+        vat_number: fillable_text(item, "vat_number"),
+        company_registration: fillable_text(item, "company_registration"),
+        passport: None,
+        driver_license: None,
+        loyalty: None,
     }
 }
 

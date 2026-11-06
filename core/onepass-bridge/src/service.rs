@@ -31,17 +31,17 @@ use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::api::{
-    AddressIn, CredentialStatus, Ctx, ErrorBody, FillField, FillKind, PasskeySummary, Recipe,
-    RecipeKind, RecipeProfile, Reply, Request, Response, SecretString, Step, Summary, SummaryKind,
-    VaultEntry,
+    AddressIn, CredentialStatus, Ctx, ErrorBody, Extra, FillField, FillKind, PasskeySummary,
+    Recipe, RecipeKind, RecipeProfile, Reply, Request, Response, SecretString, Step, Summary,
+    SummaryKind, VaultEntry,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
-    add_passkey, card_values, eligible, identity_values, is_provider_account, item_match,
-    login_identifier, login_secrets, otp_field, passkeys, plan_candidates, plan_quality,
-    provider_url_matches, reveal_value, stored_password, summarize, summary_kind, to_candidate,
-    totp_now,
+    add_passkey, associated_document, card_values, eligible, identity_values, is_provider_account,
+    item_match, license_values, login_identifier, login_secrets, loyalty_values, otp_field,
+    passkeys, passport_values, plan_candidates, plan_quality, provider_url_matches, reveal_value,
+    site_loyalty, stored_password, summarize, summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::quirks::quirk_rules;
@@ -525,8 +525,9 @@ impl<V: VaultAccess> Service<V> {
                 ctx,
                 item_id,
                 origin: o,
+                extras,
                 ..
-            } => self.fill_other(*ctx, item_id, o, ItemType::Identity, now),
+            } => self.fill_identity(*ctx, item_id, o, extras, now),
             Request::Totp {
                 ctx,
                 item_id,
@@ -917,12 +918,71 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::NotFound);
         }
         self.reprompt(&item)?;
-        let (op, out) = if kind == ItemType::CreditCard {
-            ("fill_card", card_values(&item))
-        } else {
-            ("fill_identity", identity_values(&item))
-        };
-        self.record(op, item.id, Some(o), ctx, now);
+        self.record("fill_card", item.id, Some(o), ctx, now);
+        Ok(card_values(&item))
+    }
+
+    /// An identity, and on request (`extras`) the passport and driver
+    /// license of its person and the page's loyalty number (spec 2026-11-06
+    /// sections 4 and 9). A document asks for its own reprompt and has its
+    /// own audit record, `fill_document` or `fill_loyalty`.
+    fn fill_identity(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        extras: &[Extra],
+        now: u64,
+    ) -> OpResult<Response> {
+        let page = origin(o)?;
+        let (_, item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Identity {
+            return Err(AppErrorCode::NotFound);
+        }
+        self.reprompt(&item)?;
+        let mut out = identity_values(&item);
+        let mut given: Vec<(&'static str, Id)> = Vec::new();
+        if !extras.is_empty() {
+            let all: Vec<Item> = self.items()?.into_iter().map(|(_, i)| i).collect();
+            let today = OffsetDateTime::from_unix_timestamp(i64::try_from(now).unwrap_or(i64::MAX))
+                .map_err(|_| AppErrorCode::Internal)?
+                .date();
+            let Response::Identity {
+                passport,
+                driver_license,
+                loyalty,
+                ..
+            } = &mut out
+            else {
+                return Err(AppErrorCode::Internal);
+            };
+            if extras.contains(&Extra::Passport)
+                && let Some(doc) = associated_document(&item, &all, ItemType::Passport, today)
+            {
+                self.reprompt(doc)?;
+                *passport = Some(passport_values(doc));
+                given.push(("fill_document", doc.id));
+            }
+            if extras.contains(&Extra::DriverLicense)
+                && let Some(doc) = associated_document(&item, &all, ItemType::DriverLicense, today)
+            {
+                self.reprompt(doc)?;
+                *driver_license = Some(license_values(doc));
+                given.push(("fill_document", doc.id));
+            }
+            if extras.contains(&Extra::Loyalty)
+                && let Some(program) = site_loyalty(&all, &page)
+                && let Some(values) = loyalty_values(program)
+            {
+                self.reprompt(program)?;
+                *loyalty = Some(values);
+                given.push(("fill_loyalty", program.id));
+            }
+        }
+        self.record("fill_identity", item.id, Some(o), ctx, now);
+        for (op, id) in given {
+            self.record(op, id, Some(o), ctx, now);
+        }
         Ok(out)
     }
 

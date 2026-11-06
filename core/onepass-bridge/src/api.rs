@@ -251,6 +251,9 @@ pub enum Request {
         ctx: Ctx,
         item_id: String,
         origin: String,
+        /// Documents of the identity to add, only those the form asks for.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        extras: Vec<Extra>,
     },
     Totp {
         id: u64,
@@ -624,6 +627,63 @@ pub struct VaultEntry {
     pub color: Option<String>,
 }
 
+/// What `fill_identity` may add to the identity's own values, on request
+/// only: the holder's passport, driver license, the site's loyalty number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Extra {
+    Passport,
+    DriverLicense,
+    Loyalty,
+}
+
+/// The passport associated with the identity of a `fill_identity`. Dates
+/// `YYYY-MM-DD`, sex `f`, `m` or `x`; a value left out is unknown.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct PassportOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_names: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<SecretString>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuing_country: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issued_on: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nationality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birth_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birth_place: Option<String>,
+}
+
+/// The driver license associated with the identity of a `fill_identity`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct LicenseOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<SecretString>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issued_on: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry: Option<String>,
+}
+
+/// The site's loyalty program of a `fill_identity`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LoyaltyOut {
+    pub number: SecretString,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+}
+
 /// Address of `fill_identity`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AddressOut {
@@ -721,7 +781,10 @@ pub struct PasskeySummary {
     pub credential_id: String,
 }
 
-/// The `ok` payload of a reply, one shape per operation.
+/// The `ok` payload of a reply, one shape per operation. One value lives
+/// for one reply and is serialized at once: the size of the identity
+/// variant costs nothing worth a box.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Response {
@@ -772,6 +835,38 @@ pub enum Response {
         birthday: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         address: Option<AddressOut>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        honorific: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        middle_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        birth_name: Option<String>,
+        /// `f`, `m` or `x`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sex: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        birth_place: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        nationality: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        job_title: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        department: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        website: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        work_tel: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        vat_number: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        company_registration: Option<String>,
+        /// `extras` only.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        passport: Option<PassportOut>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        driver_license: Option<LicenseOut>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        loyalty: Option<LoyaltyOut>,
     },
     Totp {
         code: SecretString,
@@ -955,6 +1050,24 @@ mod tests {
             8,
             "fill_card",
         );
+    }
+
+    #[test]
+    fn request_json_round_trip_fill_identity_with_extras() {
+        let r = round_trip(
+            r#"{"id":9,"op":"fill_identity","ctx":"menu","item_id":"x","origin":"https://atlas-cloud.test","extras":["passport","driver_license","loyalty"]}"#,
+            9,
+            "fill_identity",
+        );
+        let Request::FillIdentity { extras, .. } = r else {
+            panic!()
+        };
+        assert_eq!(
+            extras,
+            [Extra::Passport, Extra::DriverLicense, Extra::Loyalty]
+        );
+        let bad = r#"{"id":9,"op":"fill_identity","ctx":"menu","item_id":"x","origin":"https://atlas-cloud.test","extras":["id_card"]}"#;
+        assert!(serde_json::from_str::<Request>(bad).is_err());
     }
 
     #[test]
