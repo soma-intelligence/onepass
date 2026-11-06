@@ -73,6 +73,19 @@ export const FORMS_ROLES = [
 ] as const;
 export type FormsRole = (typeof FORMS_ROLES)[number];
 
+/**
+ * A role read from a passport, a driver's license or a loyalty card: it
+ * follows the card rule (never a hidden field nor a cross-site frame, only
+ * on a user action, never auto-submitted, never in a sign-in, sign-up, code
+ * or password change form).
+ */
+export function isDocumentRole(role: string): boolean {
+  return role.startsWith("passport_") || role.startsWith("license_") || role === "loyalty_number";
+}
+
+/** The form kinds that never take a document role. */
+export const NO_DOCUMENT_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "otp", "change_password"]);
+
 // ---- fill_identity (mirror of onepass_bridge::api) ----
 
 /** What `fill_identity` may add to the identity's own values, asked only for the roles a form has. */

@@ -488,3 +488,24 @@ fn unknown_extra_is_invalid() {
     let v = h.fill(&["id_card"], ATLAS);
     assert_eq!(err(&v), "invalid");
 }
+
+/// Task 13 (document number security, spec section 9 rule 6): the audit names the documents
+/// given, never their numbers; another origin's request gets the passport (no domain on it) but
+/// never the loyalty number of a program bound to this site.
+#[test]
+fn audit_holds_no_document_number() {
+    let mut h = H::with(|v, _| {
+        let p = passport(v, "Alex", "Martin", "18AB12345", 2031, 10);
+        let l = license(v, "Alex Martin", "120375201234");
+        let r = program(v, ItemType::RewardProgram, "Atlas Miles", "AM123", ATLAS);
+        v.items.extend([p, l, r]);
+    });
+    let v = h.fill(&["passport", "driver_license", "loyalty"], ATLAS);
+    assert_eq!(ok(&v)["loyalty"]["number"], "AM123");
+    let seen = format!("{:?}", h.audit.events());
+    for n in ["18AB12345", "120375201234", "AM123"] {
+        assert!(!seen.contains(n), "{n} in the audit: {seen}");
+    }
+    let v = h.fill(&["passport", "loyalty"], "https://atlas-cloud.test.evil.test");
+    assert!(ok(&v).get("loyalty").is_none());
+}

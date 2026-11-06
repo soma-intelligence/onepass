@@ -48,6 +48,8 @@ export const FX = {
     zip: "69000",
     city: "Lyon",
   },
+  /** Fictional passport of Alex Martin (fixtures/e2e.json). */
+  passport: { number: "E2E0PASS1" },
 } as const;
 
 // ---- TOTP (RFC 6238, SHA-1, 30 s, 6 digits) ----
@@ -294,6 +296,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
       }
       if (host === "evil.test" && path === "/frame") return send(page("Autre site", "evil/frame.html"));
       if (host === "evil.test" && path === "/passkey-frame") return send(page("Autre site", "evil/passkey-frame.html"));
+      if (host === "evil.test" && path === "/passport-frame") return send(page("Autre site", "evil/passport-frame.html"));
       if (host === "accounts.google.com.evil.test") {
         if (path === "/signin/identifier") {
           return send(page("Connexion", "google/identifier.html", { chosen: "", error: "", action: path }));
@@ -506,6 +509,10 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           return send(page("Atlas Cloud - Paiement", "atlas/checkout-full.html"));
         case "/profile":
           return send(page("Atlas Cloud - Profil", "atlas/profile.html"));
+        case "/travel":
+          // A booking with a passport field, its traps and a partner's cross-site frame (Task 13).
+          if (post) state.captured.push({ host, path, body });
+          return send(page("Atlas Cloud - Vol", "atlas/travel.html"));
         case "/passkey": {
           // `rp`: the rpId the page asks for (S19: another site's); `auto=1`: asks on load, no click (S18, S20).
           const challenge = randomBytes(32).toString("base64url");

@@ -20,6 +20,7 @@
 // the country and, when the country changed, once the page reloaded its list
 // (bounded wait); ARIA comboboxes are typed into and their option pressed.
 import type { FieldInfo, FieldRole, FillHints, FormInfo, PageAnalysis } from "../shared/messages";
+import { NO_DOCUMENT_KINDS, isDocumentRole } from "../shared/messages";
 import { backingSelect, isCombobox, optionLike, optionsOf, press } from "./combobox";
 import { pickChoice } from "./choice";
 import { dateOption, datePart, dateText, leadingInt, monthOf } from "./date";
@@ -536,6 +537,8 @@ export function createFiller(opts: FillerOptions): Filler {
         // Passengers 2 and later are other people: never written (ruling R3). The birth country
         // is never written either (ruling R5).
         if ((f.person ?? 0) > 0 || f.role === "birth_country") continue;
+        // A document number in a sign-in, sign-up, code or password change form is a trap (card rule).
+        if (NO_DOCUMENT_KINDS.has(form.kind) && isDocumentRole(f.role)) continue;
         slots.push({ slot: { role: f.role, nth }, field: f });
       }
       let n = 0;

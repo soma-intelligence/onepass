@@ -104,6 +104,23 @@
       }
     },
     {
+      "type": "passport",
+      "title": "Passeport Alex Martin",
+      "vault": "Personnel",
+      "fields": {
+        "first_names": "Alex",
+        "last_name": "Martin",
+        "number": "E2E0PASS1",
+        "issuing_country": "FR",
+        "issued_on": "2023-02-02",
+        "expiry": "2033-02-01",
+        "nationality": "FR",
+        "birth_date": "1990-05-17",
+        "birth_place": "Lyon",
+        "sex": "Masculin"
+      }
+    },
+    {
       "type": "login",
       "title": "Google perso",
       "vault": "Personnel",

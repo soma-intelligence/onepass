@@ -318,6 +318,36 @@ paired("S6_no_fill_in_cross_site_iframe", async ({ ext }) => {
   await emptyFields(frame, "#email", "#password");
 });
 
+// Forms coverage, Task 13 (spec section 9): a passport number follows the card rule. The user's
+// pick fills passenger 1's visible passport field; the off-screen and transparent traps, passenger 2
+// and the partner's cross-site frame stay empty, and the form is never sent by OnePass.
+paired("S22_passport_number_follows_the_card_rule", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/travel`);
+  // Nothing before a gesture: the page loaded, a field took the focus by a click.
+  await page.click("#passport");
+  await ext.settle(1000);
+  await emptyFields(page, "#passport", "#trap-passport", "#ghost-passport");
+  const menu = await ext.openMenu(page, "#given-name");
+  await ext.pickRow(menu, "Alex Martin");
+  await expect(page.locator("#given-name")).toHaveValue(FX.identity.given);
+  await expect(page.locator("#passport")).toHaveValue(FX.passport.number);
+  await emptyFields(page, "#trap-passport", "#ghost-passport", "#given-name-2", "#family-name-2", "#passport-2");
+  expect(ext.audit()).toContain("fill_document");
+  // The partner's frame (another site): its own menu's pick is refused.
+  let partner: Frame | null = null;
+  await expect.poll(() => (partner = page.frame({ url: /^https:\/\/evil\.test\/passport-frame/ })) !== null).toBe(true);
+  const frame = partner as unknown as Frame;
+  await expect(frame.locator("#passport")).toBeVisible();
+  const inFrame = await ext.openMenu(page, "#given-name", frame);
+  await ext.pickRow(inFrame, "Alex Martin");
+  await expect(inFrame.locator(".error-line")).toHaveText("Cadre d'un autre site : remplissage refusé.");
+  await ext.settle(1000);
+  await emptyFields(frame, "#given-name", "#passport");
+  // Never sent by OnePass; nothing reached a trap host.
+  expect(ext.server.captured).toEqual([]);
+});
+
 paired("S7_invisible_form_stays_empty", async ({ ext }) => {
   const { page } = ext;
   // The pick signs in (the chain submits the form): the post is held here, so the page and

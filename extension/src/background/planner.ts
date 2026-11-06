@@ -22,6 +22,7 @@
 // answers; a locked vault or a refusal never blocks the fill.
 import type { FillField } from "../bridge/client";
 import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut, SignupMode } from "../shared/messages";
+import { isDocumentRole } from "../shared/messages";
 import type { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { FillTarget, Filler } from "./fill";
@@ -323,10 +324,12 @@ export class Planner {
    * The plan's action after the submit rules: `OpenChain` and
    * `FillAndSubmit` become `Fill` outside a sign-in or code, in a child
    * frame, next to a pay or create button, or for a plan this planner did
-   * not make (its page is unknown).
+   * not make (its page is unknown), or for a plan holding a document role.
    */
   private guarded(t: FillTarget, plan: PlanOut, ctx: PageContext | undefined): FillAction {
     if (!SUBMITTING.has(plan.action)) return plan.action;
+    // A document number is filled on a user action only, never submitted (card rule).
+    if (plan.groups.some((g) => g.fields.some((f) => isDocumentRole(f.role)))) return "fill";
     if (plan.intent !== "login" && plan.intent !== "otp") return "fill";
     if (plan.confidence !== "high") return "fill";
     if (t.frameId !== 0) return "fill";

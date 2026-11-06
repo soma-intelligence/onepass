@@ -182,6 +182,21 @@ describe("planner", () => {
     expect(calls.chain).toEqual([]);
   });
 
+  it("Task 13: a plan holding a document role never submits nor opens a chain, even a high sign-in plan", async () => {
+    for (const action of ["fill_and_submit", "open_chain"] as const) {
+      const { calls, outcome } = await planAndRun(
+        plan({
+          action,
+          groups: [loginGroup(), { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e2", role: "passport_number" }] }],
+        }),
+        context([form("f1", ["username", "current_password", "passport_number"], [{ button_ref: "b1", class: "submit" }])]),
+      );
+      expect(outcome).toBe("filled");
+      expect(calls.chain).toEqual([]);
+      expect(calls.filler.map((c) => c[0])).not.toContain("submit");
+    }
+  });
+
   it("child_frame_open_chain_downgraded_to_fill", async () => {
     const t = target({ frameId: 3, sameOriginAsTop: true });
     const { calls, outcome } = await planAndRun(

@@ -557,7 +557,7 @@ mod tests {
     fn e2e_fixture_loads() {
         let mut v = load_fixture(&e2e()).unwrap();
         let items = v.items().unwrap();
-        assert_eq!(items.len(), 12);
+        assert_eq!(items.len(), 13);
         let docs = items.iter().find(|(_, i)| i.title == "Atlas Docs").unwrap();
         let perso = items
             .iter()
@@ -656,7 +656,7 @@ mod tests {
         drop(v);
         let mut again = load_fixture_cached(&e2e(), &cache).unwrap();
         let items = again.items().unwrap();
-        assert_eq!(items.len(), 12);
+        assert_eq!(items.len(), 13);
         assert!(items.iter().any(|(_, i)| i.title == "Atlas admin 2"));
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&cache).unwrap().permissions().mode();
