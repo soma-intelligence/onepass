@@ -21,6 +21,7 @@
 // (bounded wait); ARIA comboboxes are typed into and their option pressed.
 import type { FieldInfo, FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import { backingSelect, isCombobox, optionLike, optionsOf, press } from "./combobox";
+import { birthdayOption, birthdayText, leadingInt, monthOf } from "./date";
 import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
@@ -56,36 +57,6 @@ function setNative(el: FieldElement, v: string): void {
   d?.set?.call(el, v);
 }
 
-/** Month names (English, French), index 0 is January. Accent-free. */
-const MONTHS: readonly (readonly string[])[] = [
-  ["january", "janvier", "jan", "janv"],
-  ["february", "fevrier", "feb", "fev", "fevr"],
-  ["march", "mars", "mar"],
-  ["april", "avril", "apr", "avr"],
-  ["may", "mai"],
-  ["june", "juin", "jun"],
-  ["july", "juillet", "jul", "juil"],
-  ["august", "aout", "aug"],
-  ["september", "septembre", "sep", "sept"],
-  ["october", "octobre", "oct"],
-  ["november", "novembre", "nov"],
-  ["december", "decembre", "dec"],
-];
-
-const leadingInt = (s: string): number => {
-  const m = /^\s*(\d{1,4})\b/.exec(s);
-  return m ? Number(m[1]) : Number.NaN;
-};
-
-function monthOf(s: string): number {
-  const n = leadingInt(s);
-  if (n >= 1 && n <= 12) return n;
-  const t = normalizeText(s);
-  const word = /^[a-z]+/.exec(t)?.[0] ?? "";
-  const i = MONTHS.findIndex((names) => names.includes(word));
-  return i < 0 ? Number.NaN : i + 1;
-}
-
 function yearOf(s: string): number {
   const n = leadingInt(s);
   if (!Number.isFinite(n)) return Number.NaN;
@@ -100,6 +71,8 @@ export interface GeoContext {
   country: string | null;
   /** The item's postal code: a region deduced from it when the item has none. */
   postal?: string | null;
+  /** The page's language as it declares it (`en-US`): the written order of a birth date. */
+  lang?: string | null;
 }
 
 const DEFAULT_GEO: GeoContext = { langs: nameLangs(null), country: null };
@@ -190,7 +163,19 @@ function textValue(el: FieldElement, v: string, role: FieldRole, geo: GeoContext
 /** Writes `v` into one control, as a user would. False when nothing matched. */
 function write(el: FieldElement, v: string, role: FieldRole, geo: GeoContext = DEFAULT_GEO): boolean {
   let value = v;
-  if (el instanceof HTMLSelectElement) {
+  if (role === "bday") {
+    // The date input, the part, or the written format the field wants (date.ts).
+    if (el instanceof HTMLSelectElement) {
+      const i = birthdayOption(el, v);
+      const opt = i >= 0 ? el.options[i] : undefined;
+      if (!opt) return false;
+      value = opt.value;
+    } else {
+      const text = birthdayText(el, v, geo.lang ?? null);
+      if (text === null) return false;
+      value = text;
+    }
+  } else if (el instanceof HTMLSelectElement) {
     const i = matchOption(el, v, role, geo);
     const opt = i >= 0 ? el.options[i] : undefined;
     if (!opt) return false;
@@ -438,7 +423,8 @@ export function createFiller(opts: FillerOptions): Filler {
         return lookup(slot, part).el;
       };
 
-      const langs = nameLangs(pageLang());
+      const lang = pageLang();
+      const langs = nameLangs(lang);
       const itemCountry = typeof values.country === "string" && values.country !== "" ? resolveCountry(values.country, langs) : null;
       const postal = typeof values.postal_code === "string" && values.postal_code !== "" ? values.postal_code : null;
       /** The country of the item, else the one the form's country field holds now. */
@@ -452,7 +438,7 @@ export function createFiller(opts: FillerOptions): Filler {
         }
         return el instanceof HTMLInputElement ? resolveCountry(nativeValue(el), langs) : null;
       };
-      const geoNow = (): GeoContext => ({ langs, country: countryNow(), postal });
+      const geoNow = (): GeoContext => ({ langs, country: countryNow(), postal, lang });
 
       const written: Written[] = [];
       const put = (slot: Slot, part: number | undefined, value: string): boolean => {

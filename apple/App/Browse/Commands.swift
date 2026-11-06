@@ -21,7 +21,7 @@ struct BrowseCommands: Commands {
             Button("Importer…") { model.showImport = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(!unlocked)
-            Button("Restaurer une sauvegarde…") { model.showRestore = true }
+            Button("browse.restoreBackup") { model.showRestore = true }
                 .disabled(!unlocked)
             #if os(macOS)
             Divider()
@@ -32,19 +32,19 @@ struct BrowseCommands: Commands {
         }
         // Replaces the standard Find submenu, whose ⌘F would compete with this one.
         CommandGroup(replacing: .textEditing) {
-            Button("Rechercher") { model.searchFocusRequest &+= 1 }
+            Button("common.search") { model.searchFocusRequest &+= 1 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(!unlocked)
         }
         CommandMenu("Élément") {
-            Button("Modifier") { model.editRequest &+= 1 }
+            Button("common.edit") { model.editRequest &+= 1 }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(!unlocked || model.selectedItem == nil || model.isEditing)
             Button("Enregistrer") { model.saveRequest &+= 1 }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(!unlocked || !model.isEditing)
             Divider()
-            Button("Mettre à la corbeille") { model.trashSelection() }
+            Button("browse.moveToTrash") { model.trashSelection() }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!unlocked || listFocused != true || !model.canTrashSelection)
         }

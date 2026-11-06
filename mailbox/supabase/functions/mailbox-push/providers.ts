@@ -1,6 +1,6 @@
 // Push providers (spec 4.10). A wake-up carries no content: the provider
-// only tells the app to fetch. APNs (plan X1b) and FCM (plan X4) providers
-// are added by those plans; LogProvider is for tests and for a self-host
+// only tells the app to fetch. APNs (plan X1b) is in apns.ts; FCM (plan X4)
+// comes with that plan; LogProvider is for tests and for a self-host
 // without notifications (clients then poll).
 
 /**
@@ -37,8 +37,12 @@ export class LogProvider implements PushProvider {
  * - "log": LogProvider for every kind (local stack and tests).
  * Anything else, or nothing, throws: the function fails at boot.
  */
-export function providersFromEnv(mode: string | undefined): PushProvider[] {
-  if (mode === "none") return [];
-  if (mode === "log") return [1, 2, 3].map((k) => new LogProvider(k));
-  throw new Error("mailbox-push: MAILBOX_PUSH_PROVIDERS must be set to none or log");
+export function providersFromEnv(mode: string | undefined, apns: PushProvider | null = null): PushProvider[] {
+  let providers: PushProvider[];
+  if (mode === "none") providers = [];
+  else if (mode === "log") providers = [1, 2, 3].map((k) => new LogProvider(k));
+  else throw new Error("mailbox-push: MAILBOX_PUSH_PROVIDERS must be set to none or log");
+  // APNs, when its secrets exist (plan X1b): it takes kind 2 whatever the mode.
+  if (apns) providers = [...providers.filter((p) => p.kind !== apns.kind), apns];
+  return providers;
 }

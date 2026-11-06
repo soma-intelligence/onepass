@@ -5,7 +5,11 @@
 // - a trusted click on the form's submit control (or any submit-type button);
 // - a trusted Enter keydown in one of its fields;
 // - single-page apps: a trusted click on any other button of the form, after
-//   which the password field disappears within 2 s.
+//   which the password field disappears within 10 s (a real server round
+//   trip often takes more than a second or two).
+// A lone identifier step (identifier first, password on the next page) is
+// reported the same way, without a password (`submitted_identifier`): the
+// worker then knows whose password the next step sends.
 // The identifier and password are read when the gesture happens (the page
 // often clears the fields right after) and sent once per submission:
 // identical reports within 2 s are dropped.
@@ -19,10 +23,24 @@
 // page could make OnePass report credentials of its choosing at will (save
 // prompt spoofing, probing for stored credentials).
 //
+// A card, identity or address form sent the same ways (submit event after a
+// gesture in it, its submit control, Enter) is reported as `submitted_form`:
+// the values of its card or identity roles, never a security code, so the
+// worker can offer to save a card or address typed by hand (MS-04).
+//
 // Forms in shadow roots (spec D1, D2): the caller's `listen` also listens on
 // every watched root, so a gesture is read from its real target (a `submit`
 // never leaves its root); a button's own shadow root is crossed to its host.
-import type { CsToBg, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
+import {
+  CARD_SUBMIT_ROLES,
+  type CsToBg,
+  type FormInfo,
+  type FormKind,
+  IDENTITY_SUBMIT_ROLES,
+  type PageAnalysis,
+  type SavedFormKind,
+  type SubmittedValues,
+} from "../shared/messages";
 import { buttonClass } from "./context";
 import { BUTTON_SELECTOR } from "./detect/forms";
 import type { RefRegistry } from "./detect/refs";
@@ -31,12 +49,20 @@ import { type Geometry, isRendered } from "./detect/visibility";
 import { nativeValue } from "./filler";
 
 export const DEDUPE_MS = 2000;
-export const SPA_WINDOW_MS = 2000;
+export const SPA_WINDOW_MS = 10_000;
 const SPA_POLL_MS = 250;
 /** A `submit` event counts only after a trusted gesture in that form this recent. */
 export const GESTURE_MS = 5000;
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
+/** Forms whose values may be offered for saving, and as what. */
+const SAVED_KINDS: ReadonlyMap<FormKind, SavedFormKind> = new Map<FormKind, SavedFormKind>([
+  ["card", "card"],
+  ["identity", "identity"],
+  ["address", "identity"],
+]);
+const SAVED_FORM_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(SAVED_KINDS.keys());
+const GESTURE_KINDS: ReadonlySet<FormKind> = new Set<FormKind>([...CREDENTIAL_KINDS, ...SAVED_KINDS.keys()]);
 const BUTTONS =
   'button, input[type="submit" i], input[type="image" i], input[type="button" i], [role="button"], a:not([href]), a[href^="#"]';
 
@@ -59,6 +85,10 @@ export interface SubmitOptions {
   /** Where form `ref` is in `a`: itself, or the copy a re-render put in its place. */
   resolve: (ref: string, a: PageAnalysis) => FormInfo | null;
   onCredentials: (c: Extract<CsToBg, { type: "submitted_credentials" }>) => void;
+  /** A card, identity or address form was sent by the user. */
+  onForm?: (c: Extract<CsToBg, { type: "submitted_form" }>) => void;
+  /** A lone identifier step was sent. */
+  onIdentifier?: (c: Extract<CsToBg, { type: "submitted_identifier" }>) => void;
   /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
   onStep?: (container: Element) => void;
   /**
@@ -74,6 +104,8 @@ export interface SubmitWatcher {
   stop(): void;
   /** Chain: clicks a rendered element by ref. */
   clickRef(ref: string): boolean;
+  /** One-click signup: clicks the button of `ref` only if it is rendered and still reads as a passkey button. */
+  clickPasskey(ref: string): boolean;
   /**
    * Chain and plan: submits a form (its button, then `requestSubmit`, then
    * Enter). `planned` (a plan's submit): only that very form, never a copy a
@@ -97,6 +129,8 @@ function payOrCreate(container: Element, button: Element | null, geometry: Geome
     if (!(b instanceof HTMLElement) || (b !== button && !isRendered(b, geometry))) continue;
     const c = buttonClass(b);
     if (c === "pay" || c === "create") return true;
+    // The control that would send the form makes a passkey: an account, not a sign-in.
+    if (c === "passkey" && b === button) return true;
   }
   return false;
 }
@@ -116,12 +150,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       ? el.form
       : (composedClosest(el, "form") as HTMLFormElement | null);
 
-  /** The credential form that `el` belongs to (field, button, or the form itself). */
-  const formOf = (el: Element): FormInfo | null => {
+  /** The credential form (or, with `kinds`, a form of those kinds) that `el` belongs to (field, button, or the form itself). */
+  const formOf = (el: Element, kinds: ReadonlySet<FormKind> = CREDENTIAL_KINDS): FormInfo | null => {
     const a = opts.latest();
     if (!a) return null;
     for (const f of a.forms) {
-      if (!CREDENTIAL_KINDS.has(f.kind)) continue;
+      if (!kinds.has(f.kind)) continue;
       const container = refs.get(f.ref);
       if (!container) continue;
       if (el === container) return f;
@@ -153,6 +187,68 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return { formRef: f.ref, username, password, isNew: f.kind !== "login" };
   };
 
+  /** A sign-in step that asks for the identifier alone: its value, else null. */
+  const readIdentifier = (f: FormInfo): string | null => {
+    if (f.kind !== "login") return null;
+    if (f.fields.some((x) => x.role === "current_password" || x.role === "new_password")) return null;
+    for (const role of ["username", "email"] as const) {
+      for (const fi of f.fields) {
+        if (fi.role !== role) continue;
+        const el = refs.get(fi.ref);
+        const v = el ? nativeValue(el).trim() : "";
+        if (v !== "") return v;
+      }
+    }
+    return null;
+  };
+  let lastIdentifier: string | null = null;
+  const reportIdentifier = (f: FormInfo) => {
+    const username = readIdentifier(f);
+    if (username === null) return;
+    const key = `${f.ref}\u0000${username}`;
+    if (lastIdentifier === key) return;
+    lastIdentifier = key;
+    opts.onIdentifier?.({ type: "submitted_identifier", formRef: f.ref, username });
+  };
+  /** The identifier field of a lone identifier step. */
+  const identifierField = (f: FormInfo): Element | null => {
+    const fi = f.fields.find((x) => x.role === "username" || x.role === "email");
+    return fi ? refs.get(fi.ref) : null;
+  };
+
+  /** The card or identity values of a sent form; null when there is nothing to offer. */
+  const readForm = (f: FormInfo): Extract<CsToBg, { type: "submitted_form" }> | null => {
+    const kind = SAVED_KINDS.get(f.kind);
+    if (!kind) return null;
+    const roles: readonly string[] = kind === "card" ? CARD_SUBMIT_ROLES : IDENTITY_SUBMIT_ROLES;
+    const values: Record<string, string> = {};
+    for (const fi of f.fields) {
+      if (!roles.includes(fi.role) || values[fi.role] !== undefined) continue;
+      const cells = (fi.parts ?? [fi.ref]).map((r) => refs.get(r)).filter((el): el is Element => el !== null && el !== undefined);
+      const v = cells.map((el) => nativeValue(el)).join("").trim();
+      if (v !== "") values[fi.role] = v.slice(0, 256);
+    }
+    if (kind === "card" && values.cc_number === undefined) return null;
+    if (Object.keys(values).length === 0) return null;
+    return { type: "submitted_form", formRef: f.ref, kind, values: values as SubmittedValues };
+  };
+  let lastForm: string | null = null;
+  const reportForm = (f: FormInfo | null) => {
+    if (!f || !opts.onForm) return;
+    const m = readForm(f);
+    if (!m) return;
+    // Same dedupe as a sign-in: the form and its value lengths only, cleared after 2 s.
+    const key = `${f.ref}\u0000${Object.entries(m.values).map(([k, v]) => `${k}:${v.length}`).join(",")}`;
+    if (lastForm === key) return;
+    lastForm = key;
+    const t = setTimeout(() => {
+      timers.delete(t);
+      if (lastForm === key) lastForm = null;
+    }, DEDUPE_MS);
+    timers.add(t);
+    opts.onForm(m);
+  };
+
   const report = (c: Credentials | null) => {
     if (!c) return;
     const key = `${c.formRef}\u0000${c.username}\u0000${c.password.length}`;
@@ -174,14 +270,14 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     opts.onCredentials({ type: "submitted_credentials", ...c });
   };
 
-  /** SPA: report the snapshot if the password field goes away within 2 s. */
-  const watchDisappearance = (f: FormInfo, snapshot: Credentials) => {
-    const pw = passwordField(f);
+  /** SPA: `then` once `el` goes away within the window. */
+  const watchDisappearance = (el: Element | null, then: () => void) => {
+    const pw = el;
     if (!pw) return;
     const deadline = Date.now() + SPA_WINDOW_MS;
     const tick = () => {
       if (!pw.isConnected || !isRendered(pw, geometry)) {
-        report(snapshot);
+        then();
         return;
       }
       if (Date.now() >= deadline) return;
@@ -205,9 +301,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return !(ua && typeof ua.isActive === "boolean") || ua.isActive;
   };
 
-  /** Remembers a trusted click or keydown inside a credential form. */
+  /** Remembers a trusted click or keydown inside a credential, card or identity form. */
   const noteGesture = (target: Element) => {
-    const f = formOf(target);
+    const f = formOf(target, GESTURE_KINDS);
     if (f) gesture = { formRef: f.ref, at: Date.now() };
   };
 
@@ -218,7 +314,14 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!isTrusted(e) || !(e.target instanceof Element)) return;
     if (e.target instanceof HTMLFormElement) opts.onStep?.(e.target);
     const f = formOf(e.target);
-    if (f && activated(f)) report(read(f));
+    if (!f) {
+      const saved = formOf(e.target, SAVED_FORM_KINDS);
+      if (saved && activated(saved)) reportForm(saved);
+      return;
+    }
+    if (!activated(f)) return;
+    report(read(f));
+    reportIdentifier(f);
   };
 
   const onClick = (e: Event) => {
@@ -228,11 +331,21 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!button) return;
     if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
     const f = formOf(button);
-    if (!f) return;
+    if (!f) {
+      const saved = formOf(button, SAVED_FORM_KINDS);
+      if (saved && ((saved.submitRef !== undefined && refs.get(saved.submitRef) === button) || isSubmitType(button))) reportForm(saved);
+      return;
+    }
+    const sends = (f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button);
     const snapshot = read(f);
-    if (!snapshot) return;
-    if ((f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button)) report(snapshot);
-    else watchDisappearance(f, snapshot);
+    if (!snapshot) {
+      if (readIdentifier(f) === null) return;
+      if (sends) reportIdentifier(f);
+      else watchDisappearance(identifierField(f), () => reportIdentifier(f));
+      return;
+    }
+    if (sends) report(snapshot);
+    else watchDisappearance(passwordField(f), () => report(snapshot));
   };
 
   const onKey = (e: Event) => {
@@ -242,7 +355,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     if (!(e.target instanceof HTMLInputElement)) return;
     opts.onStep?.(stepContainer(e.target));
     const f = formOf(e.target);
-    if (f) report(read(f));
+    if (!f) {
+      reportForm(formOf(e.target, SAVED_FORM_KINDS));
+      return;
+    }
+    report(read(f));
+    reportIdentifier(f);
   };
 
   const target: EventTarget = view ?? doc;
@@ -269,11 +387,20 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       timers.clear();
       last = null;
       lastTimer = null;
+      lastIdentifier = null;
+      lastForm = null;
       gesture = null;
     },
     clickRef(ref) {
       const el = refs.get(ref);
       if (!(el instanceof HTMLElement) || !isRendered(el, geometry)) return false;
+      el.click();
+      return true;
+    },
+    clickPasskey(ref) {
+      const el = refs.get(ref);
+      // Relabelled since the plan (or never one): refused, nothing clicked.
+      if (!(el instanceof HTMLElement) || !isRendered(el, geometry) || buttonClass(el) !== "passkey") return false;
       el.click();
       return true;
     },

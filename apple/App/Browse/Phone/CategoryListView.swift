@@ -5,8 +5,9 @@ import VaultKit
 
 /// Items of one filter of the Éléments tab (vault, category, tag, Archive, Supprimés récemment)
 /// sorted by title, or of "À proximité" (closest first, the distance in the subtitle), with a search
-/// of its own. A row opens the item's detail; swiping an active item moves it to Supprimés
-/// récemment (toast, 30 days to restore).
+/// of its own. A row opens the item's detail. Swiping an active item from the right: Archive first
+/// (a full swipe archives), then Mettre à la corbeille (toast, 30 days to restore); an archived
+/// item offers Désarchiver.
 struct CategoryListView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,16 +23,39 @@ struct CategoryListView: View {
             ? ItemSearch.filter(nearby.summaries, query: query) : session.items(filter: filter, query: query, sort: .title)
         let showVault = showsVaultName
         List {
+            // Crypto wallets: the way to the watch-only balances (spec 2026-11-02-crypto-watch).
+            if filter == .category(.cryptoWallet), query.isEmpty, !items.isEmpty {
+                Section {
+                    NavigationLink(value: PhoneRoute.crypto) {
+                        Label("crypto.category.link", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityIdentifier("category.crypto.open")
+                }
+            }
             ForEach(items, id: \.id) { summary in
                 let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
                 NavigationLink(value: PhoneRoute.item(ref)) {
                     ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
                 }
-                .swipeActions(edge: .trailing) {
+                .itemZoomSource(ref)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     if summary.trashedAt == nil {
-                        Button("Mettre à la corbeille", systemImage: "trash", role: .destructive) {
+                        // The first button is the one a full swipe runs: Archive, never the trash.
+                        if summary.archived {
+                            Button("app.unarchive", systemImage: "archivebox") { model.unarchive(ref) }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("list.swipe.unarchive")
+                        } else {
+                            Button("common.archive", systemImage: "archivebox") { model.archive(ref) }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("list.swipe.archive")
+                        }
+                        Button("term.trash", systemImage: "trash", role: .destructive) {
                             model.trash(ref)
                         }
+                        // The list's accent tint would paint it like Archive.
+                        .tint(.red)
+                        .accessibilityIdentifier("list.swipe.trash")
                     }
                 }
                 .swipeActions(edge: .leading) {
@@ -66,16 +90,9 @@ struct CategoryListView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("Rechercher"))
+        .searchable(text: $query, placement: .navigationBarDrawer, prompt: Text("common.search"))
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Text(ItemListColumn.countLabel(items.count))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-            .sharedBackgroundVisibility(.hidden)
-            // A new item of this list's type (Supprimés récemment and À proximité have none).
+            // No count in the bar: the list is the count. A new item of this list's type (Supprimés récemment and À proximité have none).
             if filter != .trash, filter != .nearby {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Nouvel élément", systemImage: "plus") { addItem() }
@@ -107,8 +124,9 @@ struct CategoryListView: View {
         switch filter {
         case .all: String(localized: "Tous les éléments")
         case .favorites: String(localized: "Favoris")
+        case .passkeys: String(localized: "Passkeys")
         case .nearby: String(localized: "À proximité")
-        case .vault(let id): vaultName(id) ?? String(localized: "Coffre")
+        case .vault(let id): vaultName(id) ?? String(localized: "term.vault")
         case .category(let type): ItemCategory.of(type).plural
         case .tag(let tag): tag
         case .archive: String(localized: "Archive")

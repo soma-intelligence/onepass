@@ -202,3 +202,33 @@ public final class InMemoryPairingNetwork: PairingListener, PairingConnector {
         return mine
     }
 }
+
+/// One Bonjour service type on an `InMemoryPairingNetwork`: names are scoped by the type, so a
+/// listener of one type is never reached by a connector of another (device pairing and contact
+/// verification, sharing spec 5.3.1).
+public struct InMemoryPairingService: PairingListener, PairingConnector {
+    public let network: InMemoryPairingNetwork
+    public let serviceType: String
+
+    public init(network: InMemoryPairingNetwork, serviceType: String) {
+        self.network = network
+        self.serviceType = serviceType
+    }
+
+    public func scoped(_ serviceName: String) -> String { "\(serviceType)/\(serviceName)" }
+
+    public func connections(serviceName: String) -> AsyncThrowingStream<any PairingTransport, any Error> {
+        network.connections(serviceName: scoped(serviceName))
+    }
+
+    public func connect(serviceName: String) async throws -> any PairingTransport {
+        try await network.connect(serviceName: scoped(serviceName))
+    }
+}
+
+extension InMemoryPairingNetwork {
+    /// The services of one Bonjour type on this network.
+    public func service(_ serviceType: String) -> InMemoryPairingService {
+        InMemoryPairingService(network: self, serviceType: serviceType)
+    }
+}

@@ -13,89 +13,89 @@ struct ImportSource: Identifiable, Hashable {
 
     /// "Détecter automatiquement": the format comes from the content alone.
     static let automatic = ImportSource(
-        id: "auto", name: String(localized: "Détecter automatiquement"), formats: [],
-        hint: String(localized: "OnePass reconnaît le format d'après le contenu du fichier."))
+        id: "auto", name: String(localized: "settings.detectAutomatically"), formats: [],
+        hint: String(localized: "settings.onepassRecognizesFormatFrom"))
 
     static let all: [ImportSource] = [
         ImportSource(
-            id: "apple", name: String(localized: "Mots de passe d'Apple"), formats: ["safari-csv"],
-            hint: String(localized: "App Mots de passe : Fichier > Exporter tous les mots de passe vers un fichier.")),
+            id: "apple", name: String(localized: "settings.applePasswords"), formats: ["safari-csv"],
+            hint: String(localized: "settings.passwordsAppFileExport")),
         ImportSource(
             id: "safari", name: "Safari", formats: ["safari-csv"],
-            hint: String(localized: "Fichier > Exporter les données de navigation, avec les mots de passe (.zip ou .csv).")),
+            hint: String(localized: "settings.fileExportBrowsingData")),
         ImportSource(
             id: "1password", name: "1Password", formats: ["1pux", "1password-csv"],
-            hint: String(localized: "Fichier > Exporter, puis le format 1PUX (ou CSV).")),
+            hint: String(localized: "settings.fileExportThen1pux")),
         ImportSource(
             id: "bitwarden", name: "Bitwarden", formats: ["bitwarden-json", "bitwarden-csv"],
-            hint: String(localized: "Outils > Exporter le coffre, en .json non chiffré ou en .csv.")),
+            hint: String(localized: "settings.toolsExportVaultAs")),
         ImportSource(
             id: "nordpass", name: "NordPass", formats: ["nordpass-csv"],
-            hint: String(localized: "Réglages > Importer et exporter > Exporter les éléments (.csv).")),
+            hint: String(localized: "settings.settingsImportAndExport")),
         ImportSource(
             id: "dashlane", name: "Dashlane", formats: ["dashlane-zip", "dashlane-csv"],
-            hint: String(localized: "Réglages > Exporter les données > CSV (le .zip ou un des fichiers .csv).")),
+            hint: String(localized: "settings.settingsExportDataCsv")),
         ImportSource(
             id: "lastpass", name: "LastPass", formats: ["lastpass-csv"],
-            hint: String(localized: "Options avancées > Exporter > fichier CSV LastPass.")),
+            hint: String(localized: "settings.advancedOptionsExportLastpass")),
         ImportSource(
             id: "protonpass", name: "Proton Pass", formats: ["protonpass-csv"],
-            hint: String(localized: "Réglages > Exporter, au format CSV.")),
+            hint: String(localized: "settings.settingsExportAsCsv")),
         ImportSource(
             id: "keeper", name: "Keeper", formats: ["keeper-csv"],
-            hint: String(localized: "Réglages > Exporter > fichier .csv.")),
+            hint: String(localized: "settings.settingsExportCsvFile")),
         ImportSource(
             id: "enpass", name: "Enpass", formats: ["enpass-json"],
-            hint: String(localized: "Fichier > Exporter, au format .json.")),
+            hint: String(localized: "settings.fileExportAsJson")),
         ImportSource(
             id: "roboform", name: "RoboForm", formats: ["roboform-csv"],
-            hint: String(localized: "Options > Exporter les identifiants et les notes (.csv).")),
+            hint: String(localized: "settings.optionsExportLoginsAnd")),
         ImportSource(
             id: "keepass", name: "KeePass, KeePassXC", formats: ["keepass-xml"],
-            hint: String(localized: "Fichier > Exporter en XML KeePass 2 (le .kdbx ne se lit pas directement).")),
+            hint: String(localized: "settings.fileExportAsKeepass")),
         ImportSource(
             id: "chrome", name: "Google Chrome", formats: ["chrome-csv"],
-            hint: String(localized: "Gestionnaire de mots de passe Google > Paramètres > Exporter les mots de passe.")),
+            hint: String(localized: "settings.googlePasswordManagerSettings")),
         ImportSource(
             id: "edge", name: "Microsoft Edge", formats: ["chrome-csv"],
-            hint: String(localized: "Paramètres > Mots de passe > ⋯ > Exporter les mots de passe.")),
+            hint: String(localized: "settings.settingsPasswordsExportPasswords")),
         ImportSource(
             id: "brave", name: "Brave", formats: ["chrome-csv"],
-            hint: String(localized: "brave://password-manager/settings > Exporter les mots de passe.")),
+            hint: String(localized: "settings.bravePasswordManagerSettings")),
         ImportSource(
             id: "opera", name: "Opera", formats: ["chrome-csv"],
-            hint: String(localized: "Réglages > Mots de passe > ⋯ > Exporter les mots de passe.")),
+            hint: String(localized: "settings.settingsPasswordsExportPasswords2")),
         ImportSource(
             id: "arc", name: "Arc", formats: ["chrome-csv"],
-            hint: String(localized: "arc://password-manager/settings > Exporter les mots de passe.")),
+            hint: String(localized: "settings.arcPasswordManagerSettings")),
         ImportSource(
             id: "vivaldi", name: "Vivaldi", formats: ["chrome-csv"],
-            hint: String(localized: "Réglages > Confidentialité > Mots de passe > Exporter.")),
+            hint: String(localized: "settings.settingsPrivacyPasswordsExport")),
         ImportSource(
             id: "firefox", name: "Firefox", formats: ["firefox-csv"],
-            hint: String(localized: "about:logins > ⋯ > Exporter les identifiants.")),
+            hint: String(localized: "settings.aboutLoginsExportLogins")),
         ImportSource(
-            id: "cxf", name: String(localized: "Autre gestionnaire (Credential Exchange)"), formats: ["cxf"],
-            hint: String(localized: "Fichier .json au format d'échange d'identifiants (CXF).")),
+            id: "cxf", name: String(localized: "settings.otherPasswordManagerCredential"), formats: ["cxf"],
+            hint: String(localized: "settings.jsonFileInCredential")),
         ImportSource(
             id: "otpauth", name: String(localized: "Codes à usage unique"), formats: ["otpauth"],
-            hint: String(localized: "Liens otpauth:// (Google Authenticator et autres), un par ligne.")),
+            hint: String(localized: "settings.otpauthLinksGoogleAuthenticator")),
         ImportSource(
-            id: "wifi", name: String(localized: "Réseaux Wi-Fi (codes QR)"), formats: ["wifi-qr"],
-            hint: String(localized: "Texte des codes QR Wi-Fi (WIFI:S:...), un par ligne.")),
+            id: "wifi", name: String(localized: "settings.wiFiNetworksQr"), formats: ["wifi-qr"],
+            hint: String(localized: "settings.wiFiQrCode")),
         ImportSource(
-            id: "onepass", name: String(localized: "OnePass (export CSV)"), formats: ["onepass-csv"],
-            hint: String(localized: "Le fichier CSV en clair exporté par OnePass.")),
+            id: "onepass", name: String(localized: "settings.onepassCsvExport"), formats: ["onepass-csv"],
+            hint: String(localized: "settings.plainTextCsvFile")),
         ImportSource(
-            id: "pdf", name: String(localized: "PDF d'identifiants"), formats: ["pdf-text"],
-            hint: String(localized: "Une liste de mots de passe imprimée en PDF, ou l'Emergency Kit de 1Password. OnePass lit le texte du PDF sur cet appareil, puis te montre ce qu'il a trouvé.")),
+            id: "pdf", name: String(localized: "settings.credentialsPdf"), formats: ["pdf-text"],
+            hint: String(localized: "settings.passwordListPrintedTo")),
     ]
 
     /// Display name of a core format, for the preview.
     static func name(ofFormat format: String) -> String {
         switch format {
-        case "safari-csv": String(localized: "Mots de passe d'Apple, Safari (CSV)")
-        case "chrome-csv": String(localized: "Chrome et navigateurs Chromium (CSV)")
+        case "safari-csv": String(localized: "settings.applePasswordsSafariCsv")
+        case "chrome-csv": String(localized: "settings.chromeAndChromiumBrowsers")
         default: all.first { $0.formats.contains(format) }?.name ?? format
         }
     }
@@ -138,7 +138,11 @@ struct ImportSheet: View {
     @State private var format: String?
     @State private var preview: FfiImportSummary?
     /// Items of the export already in the chosen vault from an earlier import: updated, not added.
-    @State private var updates: UInt32 = 0
+    /// What importing into the chosen vault would do (`previewImportInto`): nil until counted.
+    @State private var into: FfiImportSummary?
+    /// Merge, skip or import for each item of the export that looks like one already in the chosen
+    /// vault (`into.duplicates`), the core's suggestion until the user changes it.
+    @State private var duplicateChoices = ImportDuplicateChoices()
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
@@ -147,6 +151,14 @@ struct ImportSheet: View {
     /// What the import wrote, shown before the sheet closes.
     @State private var done: FfiImportSummary?
     @State private var doneVaultName = ""
+    /// Credentials another app handed over through the system's Credential Exchange (Passwords >
+    /// Export to OnePass): read with this one-time token when the sheet opens, then previewed and
+    /// imported like a CXF file (passkeys included).
+    private let credentialExchange: UUID?
+
+    init(credentialExchange: UUID? = nil) {
+        self.credentialExchange = credentialExchange
+    }
 
     private static let calloutID = "import.callout"
 
@@ -183,6 +195,10 @@ struct ImportSheet: View {
         #endif
         .onAppear {
             if vaultID.isEmpty { vaultID = defaultVaultID }
+        }
+        .task(id: credentialExchange) {
+            guard let token = credentialExchange else { return }
+            await receive(token)
         }
         #if DEBUG
         .task {
@@ -255,9 +271,9 @@ struct ImportSheet: View {
         VStack(spacing: 12) {
             ProgressView().controlSize(.large)
             if preview == nil {
-                Text("Lecture du fichier…")
+                Text("settings.readingFile")
             } else {
-                Text("Import en cours…")
+                Text("settings.importing")
             }
         }
         .font(.callout)
@@ -319,10 +335,10 @@ struct ImportSheet: View {
                     .frame(width: 54, height: 54)
                     .background(Theme.accent.opacity(dropTargeted ? 0.22 : 0.13), in: .circle)
                 VStack(spacing: 3) {
-                    Text("Dépose ton export ici")
+                    Text("settings.dropExportHere")
                         .font(.headline)
                         .foregroundStyle(.primary)
-                    Text("ou choisis un fichier")
+                    Text("settings.orChooseFile")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.accent)
                 }
@@ -360,10 +376,10 @@ struct ImportSheet: View {
 
     private var sourcePicker: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Ou choisis la source").font(.headline)
+            Text("settings.orChooseSource").font(.headline)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Rechercher une source", text: $query)
+                TextField("settings.searchSources", text: $query)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("import.search")
@@ -407,7 +423,7 @@ struct ImportSheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 ImportSourceGlyph(source: s, size: 24)
-                Text("Exporte depuis \(s.name)").font(.subheadline.weight(.semibold))
+                Text("settings.exportFrom \(s.name)").font(.subheadline.weight(.semibold))
                 Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -437,7 +453,7 @@ struct ImportSheet: View {
                 Button {
                     pickFile(as: s)
                 } label: {
-                    Label("Choisir le fichier", systemImage: "doc.badge.plus")
+                    Label("settings.chooseFile", systemImage: "doc.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
@@ -451,7 +467,7 @@ struct ImportSheet: View {
 
     private var privacyNote: some View {
         Label {
-            Text("Le fichier est lu sur cet appareil, jamais envoyé ni gardé. Supprime l'export une fois l'import fait : il contient tes mots de passe en clair.")
+            Text("settings.fileReadOnDevice")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "lock.fill")
@@ -477,6 +493,20 @@ struct ImportSheet: View {
                             .editorRowPadding()
                     }
                     .accessibilityIdentifier("import.done")
+                    if d.updated > 0 || d.archivedDuplicates > 0 {
+                        Label(Self.outcomeLine(d), systemImage: "arrow.triangle.2.circlepath")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .accessibilityIdentifier("import.outcome")
+                    }
+                    if d.merged + d.skippedDuplicates + d.separate > 0 {
+                        Label(Self.duplicatesDoneLine(d), systemImage: "square.on.square")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .accessibilityIdentifier("import.duplicates.done")
+                    }
                     contentSection(d, done: true)
                 }
                 .padding(20)
@@ -487,7 +517,7 @@ struct ImportSheet: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("Terminé").frame(minWidth: 64)
+                    Text("common.done").frame(minWidth: 64)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
@@ -510,12 +540,15 @@ struct ImportSheet: View {
                     fileCard(format: format)
                     contentSection(p)
                     destinationSection
-                    if updates > 0 {
-                        Label(Self.updatesLine(updates, of: p.items), systemImage: "arrow.triangle.2.circlepath")
+                    if let into {
+                        Label(Self.outcomeLine(into), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 4)
                             .accessibilityIdentifier("import.updates")
+                    }
+                    if !duplicateChoices.isEmpty {
+                        duplicatesSection
                     }
                 }
                 .padding(20)
@@ -530,6 +563,114 @@ struct ImportSheet: View {
             Divider()
             footerBar(p)
         }
+    }
+
+    // MARK: Possible duplicates
+
+    /// "3 doublons possibles": each item of the export that matches one of the chosen vault (same
+    /// site and username, same TOTP, same card or document number), with what differs and a
+    /// Merge / Skip / Import choice; bulk buttons set every row at once.
+    private var duplicatesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("duplicates.banner.title \(duplicateChoices.count)")
+            Text("import.duplicates.subtitle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+            HStack(spacing: 8) {
+                Button("import.duplicates.mergeAll", systemImage: "arrow.triangle.merge") {
+                    duplicateChoices.setAll(.merge)
+                }
+                .disabled(duplicateChoices.all(.merge))
+                .accessibilityIdentifier("import.duplicates.mergeAll")
+                Button("import.duplicates.skipAll", systemImage: "arrow.uturn.right") {
+                    duplicateChoices.setAll(.skip)
+                }
+                .disabled(duplicateChoices.all(.skip))
+                .accessibilityIdentifier("import.duplicates.skipAll")
+                Spacer(minLength: 0)
+                if !duplicateChoices.decisions.isEmpty {
+                    Button("import.duplicates.suggested") { duplicateChoices.resetToSuggested() }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("import.duplicates.suggested")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .font(.subheadline)
+            EditorCard {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(duplicateChoices.rows.enumerated()), id: \.element.index) { n, row in
+                        if n > 0 { CardDivider() }
+                        duplicateRow(row)
+                    }
+                }
+            }
+            .accessibilityIdentifier("import.duplicates")
+            Text(Self.duplicatesPlanLine(duplicateChoices))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .accessibilityIdentifier("import.duplicates.plan")
+        }
+    }
+
+    /// The file's item, the vault item it matches, what differs, and the choice.
+    private func duplicateRow(_ row: FfiImportDuplicate) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                CategoryTile(category: .of(row.incoming.itemType), size: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.incoming.title.isEmpty ? row.existing.title : row.incoming.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if !row.incoming.subtitle.isEmpty {
+                        Text(row.incoming.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Label {
+                        Text("import.duplicates.inVault \(Self.vaultLine(row))")
+                            .lineLimit(1)
+                    } icon: {
+                        Image(systemName: "arrow.turn.down.right")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            if row.exact {
+                Label("import.duplicates.exact", systemImage: "equal.circle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.green)
+            } else if !row.differences.isEmpty {
+                Text(Self.differencesLine(row.differences))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("import.duplicates.choice", selection: choiceBinding(row.index)) {
+                Text("import.choice.merge").tag(FfiImportChoice.merge)
+                Text("import.choice.skip").tag(FfiImportChoice.skip)
+                Text("import.choice.import").tag(FfiImportChoice.import)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("import.duplicates.choice.\(row.index)")
+        }
+        .editorRowPadding()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("import.duplicates.row.\(row.index)")
+    }
+
+    private func choiceBinding(_ index: UInt32) -> Binding<FfiImportChoice> {
+        Binding(
+            get: { duplicateChoices.choice(for: index) },
+            set: { duplicateChoices.set($0, for: index) })
     }
 
     private func fileCard(format: String) -> some View {
@@ -566,9 +707,9 @@ struct ImportSheet: View {
             + (p.skipped > 0 ? [("arrow.uturn.right", Self.skippedLine(p.skipped))] : [])
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Contenu")
-            if p.items == 0 {
+            if p.byType.isEmpty {
                 EditorCard {
-                    Label("Aucun élément à importer dans ce fichier.", systemImage: "tray")
+                    Label("settings.theresNothingToImport", systemImage: "tray")
                         .foregroundStyle(.secondary)
                         .editorRowPadding()
                 }
@@ -592,13 +733,16 @@ struct ImportSheet: View {
                     }
                 }
             }
-            Text(done
-                ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
-                : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
+            // With possible duplicates, their section says what happens to the vault items.
+            if done || duplicateChoices.isEmpty {
+                Text(done
+                    ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
+                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
         }
     }
 
@@ -629,9 +773,9 @@ struct ImportSheet: View {
                 HStack(spacing: 12) {
                     Image(systemName: "lock.rectangle.stack.fill")
                         .foregroundStyle(Theme.accent)
-                    Text("Coffre")
+                    Text("term.vault")
                     Spacer(minLength: 12)
-                    Picker("Coffre", selection: $vaultID) {
+                    Picker("term.vault", selection: $vaultID) {
                         ForEach(model.session.vaults, id: \.id) { vault in
                             Text(vault.meta.name).tag(vault.id)
                         }
@@ -668,7 +812,7 @@ struct ImportSheet: View {
     }
 
     private var otherFileButton: some View {
-        Button("Choisir un autre fichier", systemImage: "arrow.uturn.backward") {
+        Button("settings.chooseAnotherFile", systemImage: "arrow.uturn.backward") {
             reset()
             picking = true
         }
@@ -684,7 +828,7 @@ struct ImportSheet: View {
         .tint(Theme.accent)
         .keyboardShortcut(.return, modifiers: .command)
         .disabled(busy || vaultID.isEmpty || p.items == 0)
-        .help("Importer (⌘↩)")
+        .help("settings.import")
         .accessibilityIdentifier("import.confirm")
     }
 
@@ -706,6 +850,8 @@ struct ImportSheet: View {
     private func reset() {
         buffer.wipe()
         preview = nil
+        into = nil
+        duplicateChoices = ImportDuplicateChoices()
         format = nil
         fileName = ""
         errorMessage = nil
@@ -774,7 +920,7 @@ struct ImportSheet: View {
             chosen = detected
         }
         guard let chosen else {
-            errorMessage = String(localized: "Format non reconnu. Choisis la source de l'export dans la liste.")
+            errorMessage = String(localized: "settings.unrecognizedFormatChooseWhere")
             buffer.wipe()
             return
         }
@@ -792,14 +938,36 @@ struct ImportSheet: View {
         }
     }
 
+    /// Reads the credentials of a Credential Exchange (`CredentialExchangeImport`) and previews them
+    /// as CXF. The token works once: a failure leaves the sheet on its sources with the reason.
+    private func receive(_ token: UUID) async {
+        reset()
+        busy = true
+        defer { busy = false }
+        do {
+            buffer.replace(with: try await CredentialExchangeImport.receive(token: token))
+            let summary = try await VaultSession.previewImport(format: CredentialExchangeImport.format, data: buffer.data)
+            fileName = String(localized: "settings.credentialExchange")
+            format = CredentialExchangeImport.format
+            preview = summary
+            if vaultID.isEmpty || !model.session.vaults.contains(where: { $0.id == vaultID }) {
+                vaultID = defaultVaultID
+            }
+        } catch {
+            errorMessage = String(localized: "settings.credentialsSentByOther")
+            buffer.wipe()
+        }
+    }
+
     /// How many items of the export already sit in the chosen vault from an earlier import.
     private func countUpdates() async {
         guard let format, !vaultID.isEmpty else {
-            updates = 0
+            into = nil
             return
         }
         let summary = try? await model.session.previewImport(format: format, data: buffer.data, vaultID: vaultID)
-        updates = summary?.updated ?? 0
+        into = summary
+        duplicateChoices.update(summary?.duplicates ?? [])
     }
 
     private func runImport() async {
@@ -808,10 +976,11 @@ struct ImportSheet: View {
         defer { busy = false }
         let vaultName = model.session.vaults.first { $0.id == vaultID }?.meta.name ?? ""
         do {
-            let written = try await model.session.importItems(format: format, data: buffer.data, vaultID: vaultID)
+            let written = try await model.session.importItems(
+                format: format, data: buffer.data, vaultID: vaultID, decisions: duplicateChoices.decisions)
             buffer.wipe()
-            model.showToast(written.updated > 0
-                ? Self.updatesLine(written.updated, of: written.items)
+            model.showToast(written.updated > 0 || written.archivedDuplicates > 0
+                ? Self.outcomeLine(written)
                 : Self.doneLine(written.items, vault: vaultName))
             doneVaultName = vaultName
             done = written
@@ -829,7 +998,7 @@ struct ImportSheet: View {
 
     private static func typeCount(_ type: FfiItemType, _ n: Int) -> String {
         guard let forms = typeForms(type) else {
-            return String(localized: "\(CoreLabels.typeName(type)) : \(n)")
+            return String(localized: "app.text \(CoreLabels.typeName(type)) \(n)")
         }
         return "\(n) \(n > 1 ? forms.many : forms.one)"
     }
@@ -842,17 +1011,17 @@ struct ImportSheet: View {
 
     private static func typeForms(_ type: FfiItemType) -> (one: String, many: String)? {
         switch type {
-        case .login: (String(localized: "identifiant"), String(localized: "identifiants"))
-        case .password: (String(localized: "mot de passe"), String(localized: "mots de passe"))
+        case .login: (String(localized: "settings.login"), String(localized: "settings.logins"))
+        case .password: (String(localized: "settings.password"), String(localized: "settings.passwords"))
         case .secureNote: (String(localized: "note"), String(localized: "notes"))
-        case .creditCard: (String(localized: "carte"), String(localized: "cartes"))
-        case .identity: (String(localized: "identité"), String(localized: "identités"))
-        case .bankAccount: (String(localized: "compte bancaire"), String(localized: "comptes bancaires"))
-        case .router: (String(localized: "réseau Wi-Fi"), String(localized: "réseaux Wi-Fi"))
-        case .sshKey: (String(localized: "clé SSH"), String(localized: "clés SSH"))
-        case .passport: (String(localized: "passeport"), String(localized: "passeports"))
-        case .idCard: (String(localized: "carte d'identité"), String(localized: "cartes d'identité"))
-        case .driverLicense: (String(localized: "permis de conduire"), String(localized: "permis de conduire"))
+        case .creditCard: (String(localized: "settings.card"), String(localized: "settings.cards"))
+        case .identity: (String(localized: "settings.identity"), String(localized: "settings.identities"))
+        case .bankAccount: (String(localized: "settings.bankAccount"), String(localized: "settings.bankAccounts"))
+        case .router: (String(localized: "settings.wiFiNetwork"), String(localized: "settings.wiFiNetworks"))
+        case .sshKey: (String(localized: "settings.sshKey"), String(localized: "settings.sshKeys"))
+        case .passport: (String(localized: "settings.passport"), String(localized: "settings.passports"))
+        case .idCard: (String(localized: "settings.idCard"), String(localized: "settings.idCards"))
+        case .driverLicense: (String(localized: "settings.driversLicense"), String(localized: "settings.driversLicense"))
         default: nil
         }
     }
@@ -868,41 +1037,65 @@ struct ImportSheet: View {
     private static func warningLine(_ w: FfiImportWarningCount) -> String {
         let n = Int(w.count)
         return switch w.code {
-        case "field_moved": String(localized: "\(n) valeur(s) rangée(s) dans la section Importé")
+        case "field_moved": String(localized: "settings.valuesPlacedInImported \(n)")
         case "login_to_password":
-            String(localized: "\(n) identifiant(s) sans nom d'utilisateur, gardé(s) comme mot de passe")
-        case "to_secure_note": String(localized: "\(n) élément(s) gardé(s) comme note sécurisée")
-        case "totp_moved": String(localized: "\(n) code(s) à usage unique rangé(s) dans la section Importé")
-        case "attachment_skipped": String(localized: "\(n) pièce(s) jointe(s) non importée(s)")
-        case "unsupported_entry": String(localized: "\(n) entrée(s) d'un type non pris en charge, ignorée(s)")
-        case "bad_date": String(localized: "\(n) date(s) illisible(s), gardée(s) en texte")
+            String(localized: "settings.loginsWithoutUsernameKept \(n)")
+        case "to_secure_note": String(localized: "settings.itemsKeptAsSecure \(n)")
+        case "totp_moved": String(localized: "settings.oneTimeCodesPlaced \(n)")
+        case "attachment_skipped": String(localized: "settings.attachmentsNotImported \(n)")
+        case "unsupported_entry": String(localized: "settings.entriesOfUnsupportedType \(n)")
+        case "bad_date": String(localized: "settings.unreadableDatesKeptAs \(n)")
+        case "passkey_needs_cxf": String(localized: "settings.passkeysNeedCredentialExchange \(n)")
         // A warning this version does not know yet: counted, never shown as its raw code.
-        default: String(localized: "\(n) élément(s) importé(s) avec une remarque")
+        default: String(localized: "settings.itemsImportedWithNote \(n)")
         }
     }
 
-    /// "12 éléments déjà importés seront mis à jour, 3 nouveaux".
-    private static func updatesLine(_ updated: UInt32, of total: UInt32) -> String {
-        let fresh = Int(total) - Int(min(updated, total))
-        return String(localized: "\(Int(updated)) élément(s) déjà importé(s) mis à jour, \(fresh) nouveau(x)")
+    /// "4 mis à jour, 3 créés, 2 convertis depuis une note, 1 doublon archivé, 120 inchangés": the
+    /// dry run of an import into the chosen vault, and its result. Items an earlier import of the
+    /// same export made are updated in place, never duplicated; nothing is deleted.
+    private static func outcomeLine(_ s: FfiImportSummary) -> String {
+        String(localized: "settings.importDryRun \(Int(s.fixed)) \(Int(s.added)) \(Int(s.converted)) \(Int(s.archivedDuplicates)) \(Int(s.unchanged))")
+    }
+
+    /// "Gmail, alice@example.com": the vault item a file item matches, its subtitle only when it
+    /// is not the file item's.
+    private static func vaultLine(_ row: FfiImportDuplicate) -> String {
+        let s = row.existing
+        return s.subtitle.isEmpty || s.subtitle == row.incoming.subtitle ? s.title : "\(s.title), \(s.subtitle)"
+    }
+
+    /// "Diffère : mot de passe, sites".
+    private static func differencesLine(_ aspects: [FfiDuplicateAspect]) -> String {
+        let list = aspects.map(DuplicatesText.aspect).formatted(.list(type: .and, width: .narrow))
+        return String(localized: "duplicates.copy.differs \(list)")
+    }
+
+    /// "2 à fusionner, 1 à ignorer, 0 gardés à part".
+    private static func duplicatesPlanLine(_ c: ImportDuplicateChoices) -> String {
+        String(localized: "import.duplicates.plan \(c.count(of: .merge)) \(c.count(of: .skip)) \(c.count(of: .import))")
+    }
+
+    private static func duplicatesDoneLine(_ s: FfiImportSummary) -> String {
+        String(localized: "import.duplicates.done \(Int(s.merged)) \(Int(s.skippedDuplicates)) \(Int(s.separate))")
     }
 
     private static func pdfMessage(_ e: PDFImportError) -> String {
         switch e {
-        case .unreadable: String(localized: "Ce PDF est illisible ou endommagé.")
-        case .locked: String(localized: "Ce PDF est protégé par un mot de passe. Ouvre-le, enregistre-le sans protection, puis réessaie.")
-        case .noText: String(localized: "Ce PDF ne contient pas de texte lisible (un scan ou une photo) : rien à importer.")
+        case .unreadable: String(localized: "settings.pdfCantReadOr")
+        case .locked: String(localized: "settings.pdfPasswordProtectedOpen")
+        case .noText: String(localized: "settings.pdfHasNoReadable")
         }
     }
 
     private static func skippedLine(_ n: UInt32) -> String {
-        String(localized: "\(Int(n)) ligne(s) vide(s), dossier(s) ou élément(s) supprimé(s) ignoré(s)")
+        String(localized: "settings.emptyRowsFoldersOr \(Int(n))")
     }
 
     private static func doneLine(_ n: UInt32, vault: String) -> String {
         n == 1
-            ? String(localized: "1 élément importé dans « \(vault) »")
-            : String(localized: "\(Int(n)) éléments importés dans « \(vault) »")
+            ? String(localized: "settings.n1ItemImportedInto \(vault)")
+            : String(localized: "settings.itemsImportedInto \(Int(n)) \(vault)")
     }
 }
 
@@ -913,7 +1106,7 @@ private enum ImportReadError: Error {
     var message: String {
         switch self {
         case .tooLarge: VaultError.importMessage("import file too large") ?? ""
-        case .unreadable: String(localized: "Impossible de lire ce fichier.")
+        case .unreadable: String(localized: "app.cantReadFile")
         }
     }
 }

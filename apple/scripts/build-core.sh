@@ -7,6 +7,12 @@
 #                           watchos-arm64-simulator + xros-arm64 +
 #                           xros-arm64-simulator
 #                           -> apple/build/OnePassFFI.xcframework
+#   build-core.sh dev       debug profile, no dev-fast-kdf, macos-arm64 +
+#                           ios-arm64-simulator + watchos-arm64-simulator:
+#                           minutes instead of the shipped hour, for Mac and
+#                           Simulator app builds (device and visionOS builds
+#                           need shipped)
+#                           -> apple/build/OnePassFFI.xcframework
 #   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf
 #                           -> apple/build/test/OnePassFFI.xcframework
 #
@@ -18,8 +24,8 @@ set -euo pipefail
 
 MODE="${1:-shipped}"
 case "$MODE" in
-  shipped | test) ;;
-  *) echo "usage: $0 [shipped|test]" >&2; exit 64 ;;
+  shipped | dev | test) ;;
+  *) echo "usage: $0 [shipped|dev|test]" >&2; exit 64 ;;
 esac
 
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -48,6 +54,11 @@ if [ "$MODE" = shipped ]; then
     aarch64-apple-watchos aarch64-apple-watchos-sim aarch64-apple-visionos aarch64-apple-visionos-sim)
   PROFILE_DIR=release
   CARGO_ARGS=(--release)
+elif [ "$MODE" = dev ]; then
+  OUT_DIR="$APPLE_DIR/build"
+  TARGETS=(aarch64-apple-darwin aarch64-apple-ios-sim aarch64-apple-watchos-sim)
+  PROFILE_DIR=debug
+  CARGO_ARGS=()
 else
   OUT_DIR="$APPLE_DIR/build/test"
   TARGETS=(aarch64-apple-darwin)
@@ -72,7 +83,9 @@ fingerprint() {
   # A different script also invalidates the output.
   shasum -a 256 "$SCRIPT_DIR/build-core.sh" | cut -d' ' -f1
 }
-CURRENT="$(fingerprint)"
+# shipped and dev share an output directory: the mode is part of the stamp so
+# switching modes always rebuilds.
+CURRENT="$MODE $(fingerprint)"
 
 if [ -d "$XCFRAMEWORK" ] && [ -f "$SWIFT_OUT/onepass_ffi.swift" ] \
   && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$CURRENT" ]; then
@@ -102,8 +115,26 @@ for dir in "$TARGET_DIR" "${TARGETS[@]/#/$TARGET_DIR/}"; do
 done
 
 echo "core ($MODE): cargo build ${TARGETS[*]}"
+# Only the deployment target of the platform being built may be in the
+# environment: clang refuses a compile that sees two of them ("conflicting
+# deployment targets"), which breaks sccache's compiler detection for aws-lc.
+deployment_var() {
+  case "$1" in
+    *-darwin) echo MACOSX_DEPLOYMENT_TARGET ;;
+    *-ios | *-ios-sim) echo IPHONEOS_DEPLOYMENT_TARGET ;;
+    *-watchos | *-watchos-sim) echo WATCHOS_DEPLOYMENT_TARGET ;;
+    *-visionos | *-visionos-sim) echo XROS_DEPLOYMENT_TARGET ;;
+  esac
+}
+ALL_DEPLOYMENT_VARS=(MACOSX_DEPLOYMENT_TARGET IPHONEOS_DEPLOYMENT_TARGET WATCHOS_DEPLOYMENT_TARGET XROS_DEPLOYMENT_TARGET)
+
 for target in "${TARGETS[@]}"; do
-  (cd "$CORE_DIR" && cargo build -p onepass-ffi "${CARGO_ARGS[@]}" --target "$target")
+  keep="$(deployment_var "$target")"
+  unset_args=()
+  for var in "${ALL_DEPLOYMENT_VARS[@]}"; do
+    [ "$var" = "$keep" ] || unset_args+=(-u "$var")
+  done
+  (cd "$CORE_DIR" && env "${unset_args[@]}" cargo build -p onepass-ffi ${CARGO_ARGS[@]+"${CARGO_ARGS[@]}"} --target "$target")
 done
 
 # Bindings: identical for both modes (they only depend on the exported
@@ -113,7 +144,8 @@ GEN_DIR="$OUT_DIR/generated"
 rm -rf "$GEN_DIR"
 mkdir -p "$GEN_DIR" "$SWIFT_OUT"
 echo "core ($MODE): generating Swift bindings"
-(cd "$CORE_DIR" && cargo run -q -p onepass-ffi --features bindgen --bin uniffi-bindgen -- \
+(cd "$CORE_DIR" && env -u IPHONEOS_DEPLOYMENT_TARGET -u WATCHOS_DEPLOYMENT_TARGET -u XROS_DEPLOYMENT_TARGET \
+  cargo run -q -p onepass-ffi --features bindgen --bin uniffi-bindgen -- \
   generate --library "$MAC_LIB" --language swift --out-dir "$GEN_DIR")
 
 # Rewrite only on change so SwiftPM does not rebuild for nothing.

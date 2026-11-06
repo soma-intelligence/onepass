@@ -20,6 +20,12 @@ RELAY="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/onepass-relay"
 if [ "${PLATFORM_NAME:-}" != macosx ]; then
   exit 0
 fi
+# Mac App Store build: every executable must be sandboxed, and the relay cannot be (above).
+# Chrome and Firefox then reach no app; Safari goes through its own extension.
+if [ "${ONEPASS_APP_STORE:-NO}" = YES ]; then
+  rm -f "$RELAY"
+  exit 0
+fi
 if [ "${CODE_SIGNING_ALLOWED:-NO}" != YES ] || [ -z "${DEVELOPMENT_TEAM:-}" ] \
   || [ -z "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] || [ "${EXPANDED_CODE_SIGN_IDENTITY}" = "-" ]; then
   rm -f "$RELAY"

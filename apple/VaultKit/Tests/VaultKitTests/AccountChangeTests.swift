@@ -218,7 +218,7 @@ struct AccountChangeTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("vault.sqlite").path
-        try createAccountWithKdf(dbPath: path, password: testPassword, kdf: SessionHarness.fastKdf).session.lock()
+        try createAccountOnCoreStack(dbPath: path, password: testPassword, kdf: SessionHarness.fastKdf).session.lock()
         let store = try openSyncStore(dbPath: path)
         let ticking = ClockTickingRemote(remote) { clock.withLock { $0 = $0.addingTimeInterval(-3600) } }
         let coordinator = SyncCoordinator(store: store, remote: ticking, now: { clock.withLock { $0 } })
@@ -274,7 +274,7 @@ struct AccountChangeTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("vault.sqlite").path
-        _ = try createAccountWithKdf(dbPath: path, password: testPassword, kdf: SessionHarness.fastKdf).session.lock()
+        _ = try createAccountOnCoreStack(dbPath: path, password: testPassword, kdf: SessionHarness.fastKdf).session.lock()
         let store = try openSyncStore(dbPath: path)
         // Each fetch moves the clock 11 minutes forward: the identity is old when the send comes.
         let ticking = ClockTickingRemote(remote) { clock.withLock { $0 = $0.addingTimeInterval(660) } }

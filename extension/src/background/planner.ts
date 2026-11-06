@@ -21,7 +21,7 @@
 // reset page is saved as a pending Login (save-flow.ts) before the run
 // answers; a locked vault or a refusal never blocks the fill.
 import type { FillField } from "../bridge/client";
-import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut } from "../shared/messages";
+import type { FieldRole, FillAction, PageContext, PageFrameKind, PlanGroupOut, PlanOut, SignupMode } from "../shared/messages";
 import type { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { FillTarget, Filler } from "./fill";
@@ -82,6 +82,8 @@ export interface PlannerHooks {
   onFilled?: (t: FillTarget, note: FilledNote) => void | Promise<void>;
   /** The page's `pattern` refused every generated password: the run answers "menu" (spec 6.3). */
   onGenerateRefused?: (t: FillTarget) => void;
+  /** Before each `plan_fill`: the session's browser profile for the ranking (history.ts). Never throws. */
+  beforePlan?: () => Promise<void>;
 }
 
 export interface RunOptions {
@@ -130,6 +132,7 @@ export class Planner {
     else throw new BgError("cross_site_frame");
     // A same-origin child's top is at its very origin.
     const context: PageContext = { ...ctx, origin: t.origin, top_origin: t.origin, frame_kind: frame };
+    await this.hooks.beforePlan?.();
     const reply = await this.session.request({ op: "plan_fill", ctx: "menu", origin: t.origin, context });
     // A refused password on this site: no auto-submit, no chain, until a chain gets through.
     const plan = (await this.isPenalized(t.origin)) ? penalized(reply.plan) : reply.plan;
@@ -162,6 +165,11 @@ export class Planner {
       made &&
       (made.tabId !== t.tabId || made.frameId !== t.frameId || made.origin !== t.origin || made.documentId !== t.documentId)
     ) {
+      return "menu";
+    }
+    // One-click signup: a form that can make a passkey asks first (password or passkey,
+    // `runSignup`): the two paths exclude each other (spec 2.3).
+    if (full.intent === "signup" && full.action === "fill" && full.passkey && (opts.form === undefined || full.passkey.form_ref === opts.form)) {
       return "menu";
     }
     let plan = full;
@@ -202,6 +210,8 @@ export class Planner {
           weak = g.report?.weak_by_site === true;
         }
         let remembered = false;
+        /** Signup: the e-mail the identity group wrote in an identifier field, the pending Login's username. */
+        let identifier: string | undefined;
         /** Every group wrote at least one value, and the code went in when it is a code. */
         let complete = true;
         let otpWritten = false;
@@ -222,11 +232,18 @@ export class Planner {
                 // In the vault before the form is sent (spec 7.1): a lock or a closed tab loses nothing.
                 // Signup only: a reset keeps the save prompt, which updates the existing Login.
                 if (plan.intent === "signup") {
-                  await this.saveFlow.savePending(t.tabId, t.origin, generated, { weak });
+                  await this.saveFlow.savePending(t.tabId, t.origin, generated, identifier === undefined ? { weak } : { weak, username: identifier });
                 }
               }
             } else if (g.item_id !== null) {
-              written = await this.fillGroup(gt, g, g.item_id, roles);
+              // Identity groups come before the generated one (onepass_core compose): the e-mail is known in time.
+              const onIdentifier =
+                plan.intent === "signup" && g.kind === "identity" && roles.some((r) => r === "email" || r === "username")
+                  ? (email: string) => {
+                      identifier ??= email;
+                    }
+                  : undefined;
+              written = await this.fillGroup(gt, g, g.item_id, roles, onIdentifier);
               // The count is of distinct roles: all of them written means the code was too.
               if (g.kind === "login" && roles.includes("otp") && written === new Set(roles).size) otpWritten = true;
               if (written > 0 && !items.includes(g.item_id)) items.push(g.item_id);
@@ -236,6 +253,7 @@ export class Planner {
           }
         } finally {
           generated = undefined;
+          identifier = undefined;
         }
         let submitted = false;
         if (action === "fill_and_submit" && complete && (plan.intent !== "otp" || otpWritten)) {
@@ -257,13 +275,36 @@ export class Planner {
     }
   }
 
+  /**
+   * The user's choice in the menu a passkey-offering signup plan opened:
+   * `password` runs the plan's groups of the offer's form (identity,
+   * generated password, pending Login), `passkey` only its identity groups
+   * (no password made, nothing saved: the site's passkey button follows).
+   * Never a submit. Not a signup plan with an offer: the menu.
+   */
+  async runSignup(t: FillTarget, plan: PlanOut, mode: SignupMode): Promise<RunOutcome> {
+    const offer = plan.passkey;
+    if (plan.intent !== "signup" || !offer) return "menu";
+    const groups = plan.groups.filter((g) => g.form_ref === offer.form_ref && (mode === "password" || g.kind === "identity"));
+    const chosen: PlanOut = { ...plan, groups, action: "fill", passkey: null };
+    const made = this.made.get(plan);
+    if (made) this.made.set(chosen, made);
+    return this.run(t, chosen);
+  }
+
   /** `plan` may submit in the frame of `t` (`OpenChain` or `FillAndSubmit` after every guard). */
   submits(t: FillTarget, plan: PlanOut): boolean {
     return SUBMITTING.has(this.guarded(t, plan, this.made.get(plan)?.context));
   }
 
   /** Roles written for a group with an item (0 when none had a value). */
-  private async fillGroup(t: FillTarget, g: PlanGroupOut, itemId: string, roles: FieldRole[]): Promise<number> {
+  private async fillGroup(
+    t: FillTarget,
+    g: PlanGroupOut,
+    itemId: string,
+    roles: FieldRole[],
+    onIdentifier?: (email: string) => void,
+  ): Promise<number> {
     switch (g.kind) {
       case "login": {
         const fields = loginFieldsFor(roles);
@@ -272,7 +313,7 @@ export class Planner {
       case "card":
         return this.filler.fillCard(t, itemId, "menu", roles);
       case "identity":
-        return this.filler.fillIdentity(t, itemId, "menu", roles);
+        return onIdentifier ? this.filler.fillIdentity(t, itemId, "menu", roles, onIdentifier) : this.filler.fillIdentity(t, itemId, "menu", roles);
       case "generated_password":
         return 0;
     }

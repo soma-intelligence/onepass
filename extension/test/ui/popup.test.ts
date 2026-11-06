@@ -1,36 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
-import type { Timers } from "../../src/ui/components";
 import { GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
-import { FakeWorker, type Reply, button, login, root, text } from "./helpers";
+import { FakeWorker, ManualTimers, type Reply, button, login, root, text } from "./helpers";
 
-class ManualTimers implements Timers {
-  private n = 0;
-  readonly timeouts = new Map<number, () => void>();
-  readonly intervals = new Map<number, () => void>();
-  setTimeout(fn: () => void) {
-    this.timeouts.set(++this.n, fn);
-    return this.n;
-  }
-  clearTimeout(id: unknown) {
-    this.timeouts.delete(id as number);
-  }
-  setInterval(fn: () => void) {
-    this.intervals.set(++this.n, fn);
-    return this.n;
-  }
-  clearInterval(id: unknown) {
-    this.intervals.delete(id as number);
-  }
-  runTimeouts() {
-    const fns = [...this.timeouts.values()];
-    this.timeouts.clear();
-    fns.forEach((f) => f());
-  }
-  tick() {
-    [...this.intervals.values()].forEach((f) => f());
-  }
-}
 
 const STATUS = { locked: false, account: "alex@atlas.dev", vaults: 2 };
 const items = [login("it_01", { has_totp: true }), login("id_01", { kind: "identity", title: "Alex Martin", subtitle: "Identité", has_password: false })];
@@ -61,6 +33,9 @@ function worker(over: (m: UiToBg) => Reply | null = () => null) {
         return { ok: { password: m.kind === "pin" ? "482913" : "abcd7e.XYZ.wxyz4kq", entropy_bits: 90 } };
       case "popup_history":
         return { ok: { entries: [{ password: "old-Pass-1", kind: "random", at: 1 }] } };
+      case "popup_pair_auto":
+        // The app does not vouch for this browser: the code is shown.
+        return { ok: { paired: false } };
       case "popup_pair_start":
         return { ok: { sas: "123 456" } };
       default:
@@ -78,6 +53,25 @@ function setup(w = worker()) {
 }
 
 describe("popup", () => {
+  it("a save prompt that left by itself waits here: Save sends the decision, the row goes", async () => {
+    const id = "AbCdEfGhIjKlMnOpQrStUw";
+    const w = worker((m) =>
+      m.type === "popup_pending"
+        ? { ok: { pending: [{ id, origin: "https://linear.app", site: "linear.app", username: "alex.new@atlas.dev", status: "new" }] } }
+        : m.type === "popup_pending_decide"
+          ? { ok: { outcome: "saved", vault: "Personnel" } }
+          : null,
+    );
+    const { r, handle } = setup(w);
+    await handle.ready;
+    expect(text(r)).toContain("Enregistrer le login pour linear.app ?");
+    expect(text(r)).toContain("alex.new@atlas.dev");
+    button(r, "Enregistrer").click();
+    await handle.settled();
+    expect(w.sent.find((m) => m.type === "popup_pending_decide")).toEqual({ type: "popup_pending_decide", id, decision: "save" });
+    expect(text(r)).not.toContain("Enregistrer le login pour linear.app ?");
+  });
+
   it("unpaired: Appairer avec OnePass, then the code and its two buttons", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { err: "unpaired" } : null));
     const { r, handle } = setup(w);
@@ -111,8 +105,120 @@ describe("popup", () => {
     await handle.settled();
     button(r, "Les codes sont identiques").click();
     await handle.settled();
-    expect(w.types()).toEqual(["popup_status", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions"]);
+    expect(w.types()).toEqual(["popup_status", "popup_pair_auto", "popup_pair_start", "popup_pair_approve", "popup_status", "popup_suggestions", "popup_pending"]);
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+  });
+
+  it("a browser the app vouches for connects from the button without a code", async () => {
+    let paired = false;
+    let toastShown = false;
+    const w = worker((m) => {
+      if (m.type === "popup_status" && !paired) return { err: "unpaired" };
+      if (m.type === "popup_status" && !toastShown) {
+        toastShown = true;
+        return { ok: { ...STATUS, connected: true } };
+      }
+      if (m.type === "popup_pair_auto") {
+        paired = true;
+        return { ok: { paired: true } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Appairer avec OnePass").click();
+    await handle.settled();
+    expect(w.types()).not.toContain("popup_pair_start");
+    expect(text(r)).not.toContain("123 456");
+    expect(text(r)).toContain("Connectée à OnePass");
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+  });
+
+  it("locked: the app comes forward, the popup waits for the unlock and loads by itself", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_unlock") return { ok: { locked: true } };
+      return null;
+    });
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    button(r, "Déverrouiller dans OnePass").click();
+    await handle.settled();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await handle.settled();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    locked = false;
+    timers.runTimeouts();
+    await handle.settled();
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock")).toHaveLength(1);
+  });
+
+  it("IOSSAF-01 (iOS): locked, the popup is the unlock sheet; Face ID once by itself, then the list", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_vault") return { ok: { locked: true, account: "Camille", biometry: "faceID" } };
+      if (m.type === "popup_unlock_biometric") {
+        locked = false;
+        return { ok: { locked: false, account: "Camille", biometry: "faceID" } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    await handle.settled();
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock_biometric")).toHaveLength(1);
+    // Never the app's button on iOS.
+    expect(w.types()).not.toContain("popup_unlock");
+  });
+
+  it("IOSSAF-01 (iOS): a cancelled Face ID stays; the master password opens", async () => {
+    let locked = true;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
+      if (m.type === "popup_vault") return { ok: { locked: true, account: "Camille", biometry: "faceID" } };
+      if (m.type === "popup_unlock_biometric") return { ok: { locked: true, account: "Camille", biometry: "faceID", error: "cancelled" } };
+      if (m.type === "popup_unlock_password") {
+        locked = false;
+        return { ok: { locked: false, account: "Camille", biometry: "faceID" } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    await handle.settled();
+    expect(text(r)).toContain("Camille");
+    expect(text(r)).not.toContain("Déverrouille l'app");
+    const input = r.querySelector<HTMLInputElement>("input[type=password]")!;
+    input.value = "bon-mot-de-passe";
+    r.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    await handle.settled();
+    expect(input.value).toBe("");
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+    expect(w.types().filter((t) => t === "popup_unlock_biometric")).toHaveLength(1);
+  });
+
+  it("locked: after a minute without unlock, the button comes back", async () => {
+    const w = worker((m) => {
+      if (m.type === "popup_status") return { ok: { ...STATUS, locked: true } };
+      if (m.type === "popup_unlock") return { ok: { locked: true } };
+      return null;
+    });
+    const { r, handle, timers } = setup(w);
+    await handle.ready;
+    button(r, "Déverrouiller dans OnePass").click();
+    await handle.settled();
+    for (let i = 0; i < 60; i++) {
+      timers.runTimeouts();
+      await handle.settled();
+    }
+    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(62);
   });
 
   it("locked: Déverrouiller dans OnePass", async () => {

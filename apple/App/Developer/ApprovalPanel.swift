@@ -188,20 +188,20 @@ struct ApprovalView: View {
                 .accessibilityIdentifier("approval.phone")
         }
         HStack {
-            Button("Refuser", role: .cancel) { answer(.deny) }
+            Button("app.refuse", role: .cancel) { answer(.deny) }
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("approval.deny")
             Spacer()
             if r.rememberAllowed {
-                Menu("Autoriser pendant…") {
-                    Button("5 minutes") { answer(.allowForMinutes(minutes: 5)) }
-                    Button("15 minutes") { answer(.allowForMinutes(minutes: 15)) }
-                    Button("1 heure") { answer(.allowForMinutes(minutes: 60)) }
+                Menu("developer.allowFor") {
+                    Button("developer.n5Minutes") { answer(.allowForMinutes(minutes: 5)) }
+                    Button("developer.n15Minutes") { answer(.allowForMinutes(minutes: 15)) }
+                    Button("developer.n1Hour") { answer(.allowForMinutes(minutes: 60)) }
                 }
                 .fixedSize()
                 .accessibilityIdentifier("approval.allowFor")
             }
-            Button("Autoriser une fois") { answer(.allowOnce) }
+            Button("developer.allowOnce") { answer(.allowOnce) }
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("approval.allowOnce")
         }
@@ -210,22 +210,22 @@ struct ApprovalView: View {
     @ViewBuilder private func pairing(_ c: FfiMcpClient) -> some View {
         HStack(spacing: 12) {
             PageTile(symbol: "link", color: .purple, size: 36)
-            Text("Appairer un agent IA ?").font(.headline)
+            Text("developer.pairAiAgent").font(.headline)
         }
-        Text("\(c.label) veut utiliser le serveur MCP de OnePass.").font(.title3.weight(.semibold))
+        Text("developer.wantsToUseOnepass \(c.label)").font(.title3.weight(.semibold))
         VStack(alignment: .leading, spacing: 4) {
-            Text("Identité vérifiée").font(.caption).foregroundStyle(.secondary)
+            Text("developer.verifiedIdentity").font(.caption).foregroundStyle(.secondary)
             Text(c.id).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
         }
-        Text("Appairé, il verra les coffres exposés (métadonnées) et pourra demander à utiliser leurs secrets, chaque fois avec ton accord. Touch ID confirme l'appairage.")
+        Text("developer.oncePairedItSees")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         HStack {
-            Button("Refuser", role: .cancel) { answer(.deny) }
+            Button("app.refuse", role: .cancel) { answer(.deny) }
                 .keyboardShortcut(.cancelAction)
             Spacer()
-            Button("Appairer") { answer(.allowOnce) }
+            Button("developer.pair") { answer(.allowOnce) }
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("approval.pair")
         }

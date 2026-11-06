@@ -69,7 +69,8 @@ fn add_item(dir: &Path, vault: &str, title: &str) {
 fn template() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("travel-template");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("travel-template-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         ok(&dir, &["account", "create"]);
         ok(&dir, &["vault", "create", "Voyage", "--travel-safe"]);

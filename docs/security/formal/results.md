@@ -89,6 +89,16 @@
 | emergency_kit.pv | `not event(Pinned(restore_kit_lost,a,i))` | false | false |
 | emergency_kit.pv | `not event(ItemWritten(restore_kit_lost,v_42,m_14))` | false | false |
 | emergency_kit.pv | `not event(AukDerived(restore_no_keyset))` | false | false |
+| mailbox.pv | `not attacker(blob_access(mbx_h[]))` | true | true |
+| mailbox.pv | `event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4))` | true | true |
+| mailbox.pv | `event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4))` | true | true |
+| mailbox.pv | `not event(Enrolled(mbx_h[],k_4))` | false | false |
+| mailbox.pv | `not event(NewcomerRead(m_13))` | false | false |
+| mailbox.pv | `not event(Switched(dev_d,h_4))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `not attacker(blob_access(mbx_h[]))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4))` | false | false |
+| mailbox_unsigned_ticket_broken.pv | `event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4))` | true | true |
+| mailbox_unsigned_ticket_broken.pv | `not event(NewcomerRead(m_13))` | false | false |
 | manifest.pv | `event(Accept(d_3,v_84,n,mh_12,e)) ==> event(Signed(v_84,n,p,mh_12,e))` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1))@i_6 && event(Accept(d_3,v_84,m_3,h2,e2))@j ==> i_6 > j \|\| m_3 ≥ n` | true | true |
 | manifest.pv | `event(Accept(d_3,v_84,n,h1,e1)) && event(Accept(d_3,v_84,n,h2,e2)) ==> h1 = h2` | true | true |
@@ -101,6 +111,36 @@
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12))` | false | false |
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12))` | false | false |
 | manifest.pv | `not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6)))` | false | false |
+| recovery.pv | `not attacker(ks_org[])` | true | true |
+| recovery.pv | `not attacker(ks_srv[])` | true | true |
+| recovery.pv | `not attacker(ks_main[])` | true | true |
+| recovery.pv | `not attacker(ks_box[])` | true | true |
+| recovery.pv | `event(Recovered(m_12,k_8)) ==> event(Enrolled(m_12,o_10,e_30)) && event(Released(o_10,m_12,e_30))` | true | true |
+| recovery.pv | `event(Recovered(m_main,k_8)) ==> k_8 = ks_main[]` | true | true |
+| recovery.pv | `event(Recovered(m_srv,k_8)) ==> k_8 = ks_srv[]` | true | true |
+| recovery.pv | `event(CancelSeen(o_10,m_12,e_30)) ==> event(CancelSigned(m_12,e_30))` | true | true |
+| recovery.pv | `event(Released(o_10,m_12,e_30)) ==> event(RequestSigned(o_10,m_12,e_30))` | true | true |
+| recovery.pv | `not attacker(ks_ally[])` | false | false |
+| recovery.pv | `not attacker(ks_kit[])` | false | false |
+| recovery.pv | `not event(Recovered(m_main,k_8))` | false | false |
+| recovery.pv | `not event(Recovered(m_srv,k_8))` | false | false |
+| recovery.pv | `not event(CancelSeen(o_10,m_main,e_30))` | false | false |
+| recovery_autoenroll.pv | `not attacker(ks_auto[])` | false | false |
+| recovery_autoenroll.pv | `not event(Enrolled(m_auto,o_1,e_4))` | false | false |
+| remote_unlock.pv | `not attacker(auk[])` | true | true |
+| remote_unlock.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
+| remote_unlock.pv | `inj-event(AgentOnly(m_29,p,r,d_8)) ==> inj-event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
+| remote_unlock.pv | `not event(PhoneEnrolled(m_29,k_11))` | false | false |
+| remote_unlock.pv | `not event(PhoneEnrolled(mac2_id,k_11))` | false | false |
+| remote_unlock.pv | `not event(PhoneAnswered(mac2_id,p,r,dec_once))` | false | false |
+| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
+| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_grant5m))` | false | false |
+| remote_unlock_lookup_broken.pv | `not attacker(auk[])` | false | false |
+| remote_unlock_lookup_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
+| remote_unlock_sig_broken.pv | `not attacker(auk[])` | true | true |
+| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | false | false |
+| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d2))` | true | true |
+| remote_unlock_sig_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
 | rotation.pv | `not (event(ItemSealedNew(d,m)) && attacker(m))` | true | true |
 | rotation.pv | `not (event(RotationSigned(s,ip_4,r,ro,k_13,ik)) && attacker(k_13))` | true | true |
 | rotation.pv | `not (event(RotationSigned(s,ip_4,r,ro,k_13,ik)) && attacker(ik))` | true | true |
@@ -122,20 +162,6 @@
 | rotation_autofollow.pv | `not event(CommitAdoption(devC,devB,ip_1))` | false | false |
 | rotation_autofollow.pv | `not (event(ItemSealedNew(d,m)) && attacker(m))` | false | false |
 | rotation_autofollow.pv | `not event(CommitAdoption(devC,devA,ip_1))` | false | false |
-| remote_unlock.pv | `not attacker(auk[])` | true | true |
-| remote_unlock.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
-| remote_unlock.pv | `inj-event(AgentOnly(m_29,p,r,d_8)) ==> inj-event(PhoneAnswered(m_29,p,r,d_8))` | true | true |
-| remote_unlock.pv | `not event(PhoneEnrolled(m_29,k_11))` | false | false |
-| remote_unlock.pv | `not event(PhoneEnrolled(mac2_id,k_11))` | false | false |
-| remote_unlock.pv | `not event(PhoneAnswered(mac2_id,p,r,dec_once))` | false | false |
-| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
-| remote_unlock.pv | `not event(AgentOnly(m_29,p,r,dec_grant5m))` | false | false |
-| remote_unlock_lookup_broken.pv | `not attacker(auk[])` | false | false |
-| remote_unlock_lookup_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
-| remote_unlock_sig_broken.pv | `not attacker(auk[])` | true | true |
-| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d_8))` | false | false |
-| remote_unlock_sig_broken.pv | `event(AgentOnly(m_29,p,r,d_8)) ==> event(PhoneAnswered(m_29,p,r,d2))` | true | true |
-| remote_unlock_sig_broken.pv | `not event(AgentOnly(m_29,p,r,dec_once))` | false | false |
 | sanity.pv | `not attacker(secret_msg[])` | true | true |
 | sanity.pv | `not attacker(auk_msg[])` | true | true |
 | sanity.pv | `not attacker(bridge_msg[])` | true | true |

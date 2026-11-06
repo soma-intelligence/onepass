@@ -98,3 +98,16 @@ describe("native messaging host of the build", () => {
     expect(bg).toMatch(/NATIVE_HOST = true \? "me\.somalabs\.onepass" :/);
   });
 });
+
+describe("fill-smart shortcut (MS-08, IPAD-06)", () => {
+  type Cmd = { commands: Record<string, { suggested_key: Record<string, string> }> };
+  const keys = (b: string) => (load(b) as unknown as Cmd).commands["fill-smart"]!.suggested_key;
+  it("safari: Control+Shift+L on the Mac and iPad, never Safari's Show Sidebar", () => {
+    expect(keys("safari")).toEqual({ default: "Ctrl+Shift+L", mac: "MacCtrl+Shift+L" });
+    expect(Object.values(keys("safari"))).not.toContain("Command+Shift+L");
+  });
+  it("chromium and firefox keep Command+Shift+L", () => {
+    expect(keys("chromium")).toEqual({ default: "Ctrl+Shift+L", mac: "Command+Shift+L" });
+    expect(keys("firefox")).toEqual({ default: "Ctrl+Shift+L", mac: "Command+Shift+L" });
+  });
+});

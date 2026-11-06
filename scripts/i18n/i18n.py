@@ -787,18 +787,49 @@ def cmd_rekey(args) -> int:
             cat["strings"] = insert_sorted(cat["strings"], new, entry)
         sem = new.split(" ")[0]
         for p, m in hits:
-            interps = [m.group(i) for i in range(1, (m.lastindex or 0) + 1)]
-            lit = '"' + sem + ("" if not interps else " " + " ".join(interps)) + '"'
-            edits[p].append((m.start(), m.end(), lit))
+            spans = [m.span(i) for i in range(1, (m.lastindex or 0) + 1)]
+            edits[p].append((m.start(), m.end(), sem, tuple(spans)))
     for p, es in edits.items():
-        text = files[p]
-        for start, end, lit in sorted(set(es), reverse=True):
-            text = text[:start] + lit + text[end:]
+        text = apply_literal_edits(files[p], sorted(set(es)))
         with open(p, "w", encoding="utf-8") as f:
             f.write(text)
     write_xcstrings(catalog, cat)
     print(f"{len(plan)} key(s) renamed in {len(edits)} file(s); skipped: {dict(skipped)}")
     return 0
+
+
+def apply_literal_edits(text: str, edits: list) -> str:
+    """Rewrites literals (start, end, semantic key, interpolation spans) in `text`.
+
+    A literal can sit inside another one's interpolation (`"Carte de \\(x ? String(localized: "ce
+    lieu") : x)"`): the inner edit is applied to the outer literal's interpolation text, never to
+    stale offsets."""
+
+    def render(start: int, end: int, sem: str, spans: tuple, inner: list) -> str:
+        parts = []
+        for a, b in spans:
+            nested = [e for e in inner if a <= e[0] and e[1] <= b]
+            parts.append(apply_literal_edits_at(text, a, b, nested))
+        return '"' + sem + ("" if not parts else " " + " ".join(parts)) + '"'
+
+    def apply_literal_edits_at(src: str, lo: int, hi: int, es: list) -> str:
+        out, pos = [], lo
+        for e in top_level(es):
+            out.append(src[pos:e[0]])
+            out.append(render(*e, [x for x in es if x is not e and e[0] <= x[0] and x[1] <= e[1]]))
+            pos = e[1]
+        out.append(src[pos:hi])
+        return "".join(out)
+
+    def top_level(es: list) -> list:
+        tops = []
+        for e in sorted(es):
+            if tops and e[0] < tops[-1][1]:
+                continue
+            tops.append(e)
+        return tops
+
+    return apply_literal_edits_at(text, 0, len(text), list(edits))
 
 
 def main(argv: list[str]) -> int:

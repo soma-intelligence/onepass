@@ -31,6 +31,7 @@ pub fn fake_pool(kind: Kind) -> Pool {
                 last_at: NOW - 86_400,
             }),
             has_totp: false,
+            affinity: 0,
         }],
         Kind::Signup => Vec::new(),
     };

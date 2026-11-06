@@ -25,7 +25,8 @@ use onepass_core::manifest::{SeenManifest, SignedManifest, verify_manifest};
 use onepass_core::repo::rotate::open_key_delivery;
 use onepass_core::repo::travel::TravelState;
 use onepass_core::repo::{RotateRequest, RotationOutcome};
-use onepass_core::store::{RotationPush, VaultEvent, account_record_id};
+use onepass_core::share::ShareState;
+use onepass_core::store::{ErasedNotice, RotationPush, VaultEvent, Zone, account_record_id};
 use onepass_core::sync::PhaseOutcome;
 use onepass_core::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use onepass_core::vaultlist::VaultListEntry;
@@ -249,7 +250,26 @@ fn rotate_refused_in_travel_mode() {
     a.repo().resume_travel(&TravelState {
         parked: BTreeMap::from([(v.id, seen)]),
         entered_at: T0,
+        parked_items: Default::default(),
     });
+    let before = snapshot(&a.store());
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    let r = a.repo.as_mut().unwrap().rotate(req);
+    assert!(is_validation(&r), "{r:?}");
+    assert_eq!(snapshot(&a.store()), before);
+}
+
+/// Guard-only travel parks nothing and still counts as travelling.
+#[test]
+fn rotate_refused_in_travel_mode_with_nothing_parked() {
+    let (mut a, f) = fixture();
+    a.repo().resume_travel(&TravelState {
+        parked: BTreeMap::new(),
+        entered_at: T0,
+        parked_items: Default::default(),
+    });
+    assert!(a.repo().travelling());
     let before = snapshot(&a.store());
     let new_sk = SecretKey::generate().unwrap();
     let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
@@ -525,6 +545,8 @@ impl RecordStore for Faulty {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         self.ok()?;
         if self.fail_commit {
@@ -532,7 +554,7 @@ impl RecordStore for Faulty {
         }
         self.race()?;
         self.inner
-            .put_rotation(writes, chain, expected, trust, rotation)?;
+            .put_rotation(writes, chain, expected, trust, rotation, zoned, shares)?;
         self.broken.set(true);
         Ok(())
     }
@@ -1029,15 +1051,28 @@ fn cut_between_phases_resumes() {
         PhaseOutcome::Done
     );
 
-    // Reopened: phase 2 only, the vault records, nothing deleted.
+    // Reopened: phase 2 only, the vault records, nothing deleted; the
+    // rotator's acknowledgment of its own head (spec 6.8, O6), which phase 1
+    // does not rank, goes with them.
     assert_eq!(state(&a), rotating(2));
     let phase_two = outbox(&a);
     assert!(!phase_two.is_empty());
     assert!(phase_two.iter().all(|(c, _)| c.data.is_some()
         && matches!(
             c.kind,
-            RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Item | RecordKind::Manifest
+            RecordKind::VaultKey
+                | RecordKind::VaultMeta
+                | RecordKind::Item
+                | RecordKind::Manifest
+                | RecordKind::DeviceAck
         )));
+    assert_eq!(
+        phase_two
+            .iter()
+            .filter(|(c, _)| c.kind == RecordKind::DeviceAck)
+            .count(),
+        1
+    );
     push_outbox(&mut server, &a).unwrap();
     assert_eq!(
         a.store().push_rotation_phase(2).unwrap(),
@@ -2589,6 +2624,7 @@ fn travel_refused_while_candidate() {
     let parked = TravelState {
         parked: BTreeMap::new(),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     assert_eq!(c.repo().exit_travel(&upstream, &parked).err(), ro);
     assert_eq!(c.repo().exit_travel_unpinned(&upstream).err(), ro);
@@ -4145,6 +4181,9 @@ fn erased_after_seven_days() {
     assert_eq!(tick(&c, T + Q + 1), QuarantineTick::NotQuarantined);
 }
 
+/// A clock moved back never erases early: nothing is counted for the move,
+/// the erase date shifts to the new reading plus what is left (amended
+/// 2026-11-03: the count no longer freezes either).
 #[test]
 fn clock_moved_back_never_erases_early() {
     let (_server, _a, c, f, out) = c_revoked();
@@ -4152,9 +4191,11 @@ fn clock_moved_back_never_erases_early() {
     let before = records(&c);
     assert_eq!(
         tick(&c, T - 86_400),
-        QuarantineTick::Waiting { erase_at: T + Q }
+        QuarantineTick::Waiting {
+            erase_at: T - 86_400 + Q
+        }
     );
-    assert_eq!(tick(&c, 0), QuarantineTick::Waiting { erase_at: T + Q });
+    assert_eq!(tick(&c, 0), QuarantineTick::Waiting { erase_at: Q });
     assert_eq!(records(&c), before);
     assert_eq!(
         state(&c),
@@ -4602,7 +4643,7 @@ fn answers_before_the_first_tick() {
     let mut other = stale.clone();
     other.ignore([0xAB; 32]);
     let before = records(&c);
-    assert_eq!(c.store().erase_device(&other), Err(Error::Conflict));
+    assert_eq!(c.store().erase_device(&other, None), Err(Error::Conflict));
     assert_eq!(records(&c), before);
     quarantine_resolve(c.store(), not_me(&c, PASSWORD, &f.sk))
         .unwrap()
@@ -4616,7 +4657,7 @@ fn answers_before_the_first_tick() {
             .contains(&f.me.id())
     );
     // The stale trust state no longer erases.
-    assert_eq!(c.store().erase_device(&stale), Err(Error::Conflict));
+    assert_eq!(c.store().erase_device(&stale, None), Err(Error::Conflict));
     assert_eq!(records(&c), before);
 
     let (_server, _a, c, _f, _out) = c_revoked();
@@ -5576,6 +5617,7 @@ fn old_key_travel_state_listing_a_later_vault_is_refused() {
             },
         )]),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     let sealed = t.ipad.repo().seal_travel_state(&forged).unwrap();
     assert!(t.c.repo().open_travel_state(&sealed).is_err());
@@ -5628,6 +5670,7 @@ fn travel_state_is_resealed_under_the_new_identity() {
             },
         )]),
         entered_at: T0,
+        parked_items: Default::default(),
     };
     let sealed = t.c.repo().seal_travel_state(&both).unwrap();
     assert_eq!(t.c.repo().open_travel_state(&sealed).unwrap(), both);
@@ -5686,4 +5729,935 @@ fn write_loop_timing() {
     eprintln!(
         "TIMING writes(1000)={writes:?} pending_changes({changes})={outbox_time:?} push={pushed:?}"
     );
+}
+
+// ---------------------------------------------------------------- acknowledgments (O6)
+
+use onepass_core::lineage::{AckStatus, SignedAck, ack_id, ack_statuses, verify_ack};
+
+fn statuses(dev: &Device) -> Option<Vec<AckStatus>> {
+    let store = dev.store();
+    let trust = store.trust_state().unwrap().unwrap();
+    ack_statuses(&store, &trust)
+}
+
+fn acked(dev: &Device, id: Id) -> bool {
+    statuses(dev)
+        .expect("statuses past generation 0")
+        .iter()
+        .find(|s| s.device_id == id)
+        .expect("in the roster")
+        .acknowledged
+}
+
+/// Spec 6.8 (O6): nothing to acknowledge before the first rotation.
+#[test]
+fn generation_zero_shows_no_ack_status() {
+    let (a, _f) = fixture();
+    assert_eq!(statuses(&a), None);
+}
+
+/// The rotator writes its own acknowledgment in the rotation's
+/// transaction; the others show "en attente" until they follow, then "à
+/// jour" on the rotator once their acknowledgment syncs.
+#[test]
+fn follow_writes_its_ack_and_the_rotator_shows_it() {
+    let (mut server, mut a, mut c, f, out, _new_sk) = rotated();
+    let me = f.me.id();
+    let cid = f.others[C].id();
+    assert!(acked(&a, me));
+    assert!(!acked(&a, cid));
+    assert!(!acked(&a, f.others[2].id()));
+    // B was revoked: not in the roster any more.
+    assert!(
+        statuses(&a)
+            .unwrap()
+            .iter()
+            .all(|s| s.device_id != f.others[B].id())
+    );
+
+    let (repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    // In C's own store, in the follow's transaction.
+    let rec = c
+        .store()
+        .get(RecordKind::DeviceAck, ack_id(&out.head, cid))
+        .unwrap()
+        .expect("C's ack");
+    assert_eq!(rec.version, 1);
+    let ack = SignedAck::decode(&rec.data).unwrap();
+    assert_eq!(ack.body.head, out.head);
+    assert_eq!(ack.body.device_id, cid);
+    verify_ack(&ack, &f.others[C].public.sign_pub).unwrap();
+    assert!(acked(&c, cid));
+
+    sync(&mut server, &mut c).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    assert!(acked(&a, cid));
+    assert!(acked(&a, me));
+    assert!(!acked(&a, f.others[2].id()));
+}
+
+/// Display only: an acknowledgment signed by another key, or naming
+/// another head or device, never shows "à jour".
+#[test]
+fn forged_or_misplaced_acks_show_waiting() {
+    use onepass_core::lineage::{AckBody, sign_ack};
+    let (_server, mut a, _c, f, out, _new_sk) = rotated();
+    let trust = a.store().trust_state().unwrap().unwrap();
+    let d = &f.others[2];
+    let body = |head: [u8; 32], device: Id| AckBody {
+        format: LINEAGE_FORMAT,
+        account_id: trust.account_id,
+        head,
+        device_id: device,
+        acked_at: T0,
+    };
+    let put = |a: &mut Device, id: Id, ack: SignedAck| {
+        a.repo()
+            .store_mut()
+            .put_if_version(
+                Record {
+                    id,
+                    kind: RecordKind::DeviceAck,
+                    version: 1,
+                    data: ack.encode(),
+                },
+                None,
+            )
+            .unwrap();
+    };
+    // D's ack, signed by A's key.
+    put(
+        &mut a,
+        ack_id(&out.head, d.id()),
+        sign_ack(body(out.head, d.id()), &f.me.keys).unwrap(),
+    );
+    assert!(!acked(&a, d.id()));
+
+    // C's honest signature over another head, stored under the current
+    // head's id.
+    let c = &f.others[C];
+    put(
+        &mut a,
+        ack_id(&out.head, c.id()),
+        sign_ack(body([7; 32], c.id()), &c.keys).unwrap(),
+    );
+    assert!(!acked(&a, c.id()));
+}
+
+// ---------------------------------------------------------------- approver list across a rotation
+
+/// Ruling 2026-11-02 (approver list at rotation): the list survives a
+/// rotation, and a locked Mac reads it under the new identity too
+/// (`approvers_without_unlock`, agent-ready spec 6.2), on the rotator and on
+/// a device that followed. Before the fix the locked read looked under the
+/// account id, where only generation 0's records are.
+#[test]
+fn locked_approver_list_survives_rotation_and_follow() {
+    use onepass_core::approvers::{ApproverRole, approvers_without_unlock};
+    use onepass_core::crypto::{HybridKemSecret, HybridSigningKey};
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let sign_pub = HybridSigningKey::generate()
+        .unwrap()
+        .verifying_key()
+        .unwrap();
+    let kem_pub = HybridKemSecret::generate().unwrap().public().unwrap();
+    a.repo()
+        .register_this_approver(sign_pub.clone(), kem_pub, ApproverRole::Phone)
+        .unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+
+    let new_sk = SecretKey::generate().unwrap();
+    let req = request(&f, &new_sk, vec![], RotationReason::Rotate);
+    let out = a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let locked = |d: &mut Device| {
+        let repo = d.repo();
+        approvers_without_unlock(repo.store(), repo.device_state(), repo.chain()).unwrap()
+    };
+    let on_a = locked(&mut a);
+    assert_eq!(on_a.entries.len(), 1);
+    assert_eq!(on_a.entries[0].sign_pub, sign_pub);
+    assert_eq!(on_a.approver_list_seq, 1);
+
+    pull(&server, &mut c);
+    let (repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(c.repo().approvers().unwrap().len(), 1);
+    let on_c = locked(&mut c);
+    assert_eq!(on_c.entries.len(), 1);
+    assert_eq!(on_c.entries[0].sign_pub, sign_pub);
+}
+
+// ------------------------------------------------------------- sync home
+
+/// A on a mailbox (its `SyncHome` pushed), C a follower; A rotates and
+/// pushes every phase, C pulls everything.
+fn rotated_on_a_mailbox() -> (
+    Server,
+    Device,
+    Device,
+    Fixture,
+    RotationOutcome,
+    onepass_core::synchome::SyncBackend,
+) {
+    let home = onepass_core::synchome::SyncBackend::Mailbox {
+        url: "https://mailbox.example.org/functions/v1/mailbox".into(),
+        mailbox_id: [4; 16],
+    };
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    a.repo().set_sync_home(home.clone(), T0).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let mut c = follower_with(&mut server, &a, &f, C, |_| {});
+    let new_sk = SecretKey::generate().unwrap();
+    let out = rotate(&mut a, &f, &new_sk);
+    sync(&mut server, &mut a).unwrap();
+    assert_eq!(state(&a), DeviceLineageState::Current);
+    pull(&server, &mut c);
+    (server, a, c, f, out, home)
+}
+
+#[test]
+fn rotation_carries_sync_home() {
+    let (server, mut a, _c, _f, _out, home) = rotated_on_a_mailbox();
+    let params = a.repo().account().params.clone();
+    let rid = account_record_id(params.account_id, Some(&params.identity_pub));
+    let got = a.repo().sync_home().unwrap().expect("a home");
+    // A new chain under the new identity, same backend, signed by the new
+    // key (`sync_home` verifies against it).
+    assert_eq!(got.seq, 1);
+    assert_eq!(got.prev_hash, [0; 32]);
+    assert_eq!(got.backend, home);
+    let rec = server.get(RecordKind::SyncHome, rid).expect("pushed");
+    assert_eq!(rec.version, 1);
+    assert_eq!(
+        RecordStore::chain_state(&a.store()).unwrap().sync_home,
+        Some(got.seen())
+    );
+}
+
+#[test]
+fn rotation_phase_one_writes_the_home_before_the_lineage_record() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let home = onepass_core::synchome::SyncBackend::CloudKit;
+    a.repo().set_sync_home(home, T0).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    let kinds: Vec<RecordKind> = outbox(&a).iter().map(|(c, _)| c.kind).collect();
+    let home_at = kinds
+        .iter()
+        .position(|k| *k == RecordKind::SyncHome)
+        .expect("the home in phase 1");
+    let lineage_at = kinds
+        .iter()
+        .position(|k| *k == RecordKind::Lineage)
+        .unwrap();
+    assert!(home_at < lineage_at, "{kinds:?}");
+}
+
+#[test]
+fn rotation_without_a_home_writes_none() {
+    let mut server = Server::default();
+    let (mut a, f) = fixture_on(&mut server);
+    let new_sk = SecretKey::generate().unwrap();
+    rotate(&mut a, &f, &new_sk);
+    assert!(
+        outbox(&a)
+            .iter()
+            .all(|(c, _)| c.kind != RecordKind::SyncHome)
+    );
+    assert_eq!(a.repo().sync_home().unwrap(), None);
+}
+
+#[test]
+fn follower_reads_new_home() {
+    let (_server, mut a, c, f, out, home) = rotated_on_a_mailbox();
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let got = repo.sync_home().unwrap().expect("a home");
+    assert_eq!(got.backend, home);
+    assert_eq!(got, a.repo().sync_home().unwrap().unwrap());
+}
+
+#[test]
+fn moved_home_after_rotation_is_read_not_adopted_silently() {
+    // A valid rotation, then the new identity names another mailbox: the
+    // follower reads the move as signed data (the driver stops on it and
+    // the app asks, `HomeMoved`), the pin moves forward only.
+    let (mut server, mut a, mut c, f, out, _home) = rotated_on_a_mailbox();
+    let elsewhere = onepass_core::synchome::SyncBackend::Mailbox {
+        url: "https://other.example.org/functions/v1/mailbox".into(),
+        mailbox_id: [5; 16],
+    };
+    a.repo().set_sync_home(elsewhere.clone(), T0 + 50).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let got = repo.sync_home().unwrap().unwrap();
+    assert_eq!((got.seq, got.backend), (2, elsewhere));
+}
+
+#[test]
+fn left_identity_home_never_read_after_follow() {
+    // The old identity's record stays on the server under its id; the
+    // follower reads only the new identity's chain, so an old home served
+    // again changes nothing.
+    let (server, _a, c, f, out, home) = rotated_on_a_mailbox();
+    let (mut repo, _auk, _sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    let left = server
+        .records
+        .keys()
+        .filter(|(k, _)| *k == RecordKind::SyncHome)
+        .count();
+    assert_eq!(left, 2, "old and new identity homes");
+    assert_eq!(repo.sync_home().unwrap().unwrap().backend, home);
+}
+
+// ------------------------------------ Recover rotation (sharing plan 3 Task 3)
+
+use onepass_core::contact::{ForeignLineage, ForeignPin, LegacyIntros, follow_foreign};
+use onepass_core::repo::{RecoverRequest, recover_rotate};
+
+const RECOVERED_PASSWORD: &str = "Nouveau départ, Camille Durand";
+
+/// A's account recovered on a new device N (spec 11.5 step 5), from the
+/// keyset a recovery slot gives, after A rotated (`rotated`). N synced.
+struct Recovered {
+    server: Server,
+    a: Device,
+    n: Device,
+    f: Fixture,
+    /// A's rotation, the head N recovered from.
+    before: RotationOutcome,
+    out: RotationOutcome,
+    sk: SecretKey,
+    keys: DeviceKeys,
+    items: Vec<Item>,
+    /// A's Secret Key since its own rotation (`before`).
+    a_sk: SecretKey,
+}
+
+fn recovered() -> Recovered {
+    let (mut server, mut a, _c, f, before, a_sk) = rotated();
+    let keyset = a.repo().account().recovery_keyset().unwrap();
+    let items = a.items();
+    let mut n = Device::empty();
+    pull(&server, &mut n);
+    let keys = kit_keys();
+    let sk = SecretKey::generate().unwrap();
+    let store = n.store();
+    let device = store.device_state().unwrap();
+    let (repo, out) = recover_rotate(
+        store,
+        RecoverRequest {
+            keyset_record: &keyset,
+            new_password: RECOVERED_PASSWORD,
+            new_secret_key: &sk,
+            device_keys: &keys,
+            device_name: "iPhone de secours",
+            kind: DeviceKind::Phone,
+            mode: DeviceMode::Personal,
+            device,
+        },
+        T0 + 500,
+    )
+    .unwrap();
+    n.repo = Some(repo);
+    n.repo().persist_device_state().unwrap();
+    sync(&mut server, &mut n).unwrap();
+    Recovered {
+        server,
+        a,
+        n,
+        f,
+        before,
+        out,
+        sk,
+        keys,
+        items,
+        a_sk,
+    }
+}
+
+fn records_of(store: &SyncStore) -> (Vec<LineageRecord>, Vec<SignedIntro>) {
+    let records = store
+        .list(RecordKind::Lineage)
+        .unwrap()
+        .iter()
+        .map(|r| LineageRecord::decode(&r.data).unwrap())
+        .collect();
+    let intros = store
+        .list(RecordKind::DeviceIntro)
+        .unwrap()
+        .iter()
+        .filter_map(|r| SignedIntro::decode(&r.data).ok())
+        .collect();
+    (records, intros)
+}
+
+/// From the opened keyset: a new identity, Secret Key and password, the
+/// roster N alone, every device of A's roster revoked, every item readable
+/// under the new identity, a rotation code.
+#[test]
+fn recover_rotate_end_to_end() {
+    let mut r = recovered();
+    let t = trust_of_dev(&r.n).unwrap();
+    let me = t.me.device_id;
+    assert_eq!(t.me, r.keys.public(me).unwrap());
+    assert_eq!(
+        t.head,
+        LineageHead {
+            generation: 2,
+            hash: r.out.head
+        }
+    );
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_self_pinned(&t);
+    assert_eq!(t.roster.len(), 1);
+
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let body = rotation_of(&r.n.store(), &r.out.head);
+    assert_eq!(body.reason, RotationReason::Recover);
+    assert_eq!(body.parent, r.before.head);
+    assert_eq!(body.rotator, me);
+    assert_eq!(body.roster.len(), 1);
+    assert_eq!(body.roster[0].name, "iPhone de secours");
+    assert!(body.deliveries.is_empty());
+    let mut was: Vec<Id> = parent.roster.iter().map(|e| e.device_id).collect();
+    was.sort();
+    assert_eq!(body.revoked, was);
+    assert_ne!(body.identity_pub, parent.identity_pub);
+    assert_eq!(t.identity_pub, body.identity_pub);
+    assert_eq!(r.out.code, rotation_code(&r.out.head));
+    for id in &was {
+        assert!(t.revoked.contains(id));
+    }
+
+    // The device list of the new identity names N; A's devices are revoked.
+    let devices = r.n.repo().devices().unwrap();
+    assert!(
+        devices
+            .iter()
+            .any(|d| d.device_id == me && d.revoked_at.is_none())
+    );
+    assert!(
+        devices
+            .iter()
+            .filter(|d| was.contains(&d.device_id))
+            .all(|d| d.revoked_at.is_some())
+    );
+
+    assert_eq!(r.n.items(), r.items);
+    r.n.lock();
+    r.n.try_unlock(RECOVERED_PASSWORD, &r.sk).unwrap();
+    assert_eq!(r.n.items(), r.items);
+    assert!(r.n.try_unlock(PASSWORD, &r.sk).is_err());
+}
+
+/// Ruling B-4: an old device reads the `Recover` rotation and goes to
+/// quarantine (its id is revoked); its exit is to erase and pair again,
+/// from the recovered device, as a new device. The rotator is only
+/// self-introduced, but the identity this device pinned signed its intro:
+/// the erase clock runs (founder decision 2026-11-03, replacing the I1
+/// ruling that kept it locked with no date).
+#[test]
+fn old_devices_quarantined_then_repair() {
+    let mut r = recovered();
+    pull(&r.server, &mut r.a);
+    r.a.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(tick(&r.a, T), QuarantineTick::Waiting { erase_at: T + Q });
+    assert!(matches!(
+        state(&r.a),
+        DeviceLineageState::Quarantined { by, .. } if by == r.out.head
+    ));
+    assert!(
+        quarantine_resolve(r.a.store(), QuarantineChoice::Erase)
+            .unwrap()
+            .is_none()
+    );
+    assert_erased(&r.a);
+
+    // A new pairing from N.
+    use onepass_core::devices::DeviceEntry;
+    use onepass_core::pairing::{
+        DeviceInfo, FullGrant, FullGrantV2, import_full_v2, snapshot_from_store,
+    };
+    let p = Peer::new(Id::new());
+    let info = DeviceInfo {
+        device_id: p.id(),
+        name: "iPad".into(),
+        kind: DeviceKind::Tablet,
+    };
+    let entry = DeviceEntry {
+        device_id: p.id(),
+        name: info.name.clone(),
+        kind: info.kind,
+        mode: DeviceMode::Personal,
+        added_at: T0 + 600,
+        added_by: r.n.repo().this_device_id(),
+        revoked_at: None,
+    };
+    let sk = &r.sk;
+    let grant =
+        r.n.repo()
+            .add_device_then(entry, |repo| -> Result<FullGrantV2> {
+                Ok(FullGrantV2 {
+                    full: FullGrant {
+                        account_id: repo.account().params.account_id,
+                        secret_key: zeroize::Zeroizing::new(sk.to_display()),
+                        mode: DeviceMode::Personal,
+                        device_id: p.id(),
+                        snapshot: snapshot_from_store(repo.store())?,
+                    },
+                    trust: repo.trust_snapshot()?,
+                    sync: None,
+                    enroll: None,
+                })
+            })
+            .unwrap();
+    let mut d = Device::empty();
+    {
+        let mut store = SyncStore::open(&d.path).unwrap();
+        import_full_v2(&mut store, &grant, &p.public, &p.keys, &info).unwrap();
+    }
+    d.try_unlock(RECOVERED_PASSWORD, &r.sk).unwrap();
+    let t = trust_of_dev(&d).unwrap();
+    assert_eq!(t.head.hash, r.out.head);
+    assert_eq!(t.state, DeviceLineageState::Current);
+    assert_self_pinned(&t);
+    assert_eq!(d.items(), r.items);
+}
+
+/// Ruling B-3: without the self-intro signed by the parent identity, the
+/// `Recover` rotation is valid neither for an old device (the resolver
+/// ignores it) nor for a contact (`follow_foreign`).
+#[test]
+fn recover_without_identity_intro_invalid() {
+    let mut r = recovered();
+    pull_only(&r.server, &mut r.a, |ch| ch.kind != RecordKind::DeviceIntro);
+    r.a.repo().refresh_pending_rotation().unwrap();
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    assert_eq!(r.a.repo().pending_lock(), None);
+    assert_eq!(tick(&r.a, T), QuarantineTick::NotQuarantined);
+
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let (records, _) = records_of(&r.n.store());
+    let pin = foreign_pin(&records, &r.before, &parent);
+    assert_eq!(
+        follow_foreign(&pin, &records, &[], &LegacyIntros::default()),
+        ForeignLineage::Same
+    );
+    // A self-intro under the head that the identity did not sign counts
+    // for nothing either.
+    let (_, intros) = records_of(&r.n.store());
+    let me = trust_of_dev(&r.n).unwrap().me.device_id;
+    let mut forged: Vec<SignedIntro> = intros
+        .into_iter()
+        .filter(|i| i.body.entry.device_id == me)
+        .collect();
+    for i in &mut forged {
+        i.identity_sig = None;
+    }
+    assert_eq!(
+        follow_foreign(&pin, &records, &forged, &LegacyIntros::default()),
+        ForeignLineage::Same
+    );
+    let _ = &r.f;
+}
+
+fn foreign_pin(
+    records: &[LineageRecord],
+    before: &RotationOutcome,
+    parent: &onepass_core::lineage::RotationBody,
+) -> ForeignPin {
+    let genesis = records
+        .iter()
+        .find(|r| matches!(r, LineageRecord::Genesis(_)))
+        .expect("a genesis");
+    ForeignPin {
+        account_id: genesis.account_id(),
+        genesis: genesis.hash(),
+        head: LineageHead {
+            generation: 1,
+            hash: before.head,
+        },
+        identity_pub: parent.identity_pub.clone(),
+    }
+}
+
+/// A contact pinned at A's head sees the recovery as an identity change
+/// (spec 12.3 point 1): `Advanced`, the last rotation of reason `Recover`.
+#[test]
+fn contact_sees_recover_as_identity_change() {
+    let r = recovered();
+    let parent = rotation_of(&r.a.store(), &r.before.head);
+    let (records, intros) = records_of(&r.n.store());
+    let pin = foreign_pin(&records, &r.before, &parent);
+    match follow_foreign(&pin, &records, &intros, &LegacyIntros::default()) {
+        ForeignLineage::Advanced {
+            head,
+            last_rotation,
+            identity_pub,
+            ..
+        } => {
+            assert_eq!(head.hash, r.out.head);
+            assert_eq!(last_rotation.reason, RotationReason::Recover);
+            assert_ne!(identity_pub, parent.identity_pub);
+        }
+        other => panic!("expected Advanced, got {other:?}"),
+    }
+}
+
+// ------------------------- recover wipe and stolen devices (2026-11-03)
+
+use onepass_core::crypto::IdentityKey;
+use onepass_core::lineage::wipe::{SignedWipe, WipeBody, sign_wipe, target_key};
+
+const YEAR: u64 = 365 * 86_400;
+
+/// The recovered account with A having read the `Recover` (quarantined
+/// at `T`).
+fn a_quarantined_by_recover() -> Recovered {
+    let mut r = recovered();
+    pull(&r.server, &mut r.a);
+    assert_eq!(tick(&r.a, T), QuarantineTick::Waiting { erase_at: T + Q });
+    r
+}
+
+fn a_id(r: &Recovered) -> Id {
+    trust_of_dev(&r.a).unwrap().me.device_id
+}
+
+/// N marks `device` stolen and pushes; A fetches.
+fn n_marks_stolen(r: &mut Recovered, device: Id) {
+    r.n.repo().mark_stolen(device, (T + 10) as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    pull(&r.server, &mut r.a);
+}
+
+/// An order planted in `dev`'s store, as a server would.
+fn plant(dev: &Device, w: &SignedWipe) {
+    dev.store()
+        .put(Record {
+            id: w.record_id(),
+            kind: RecordKind::Lineage,
+            version: 2,
+            data: w.encode(),
+        })
+        .unwrap();
+}
+
+/// A valid order for A, signed by N's identity (the recovered head).
+fn order_for_a(r: &mut Recovered) -> WipeBody {
+    let t = trust_of_dev(&r.a).unwrap();
+    let n = trust_of_dev(&r.n).unwrap();
+    WipeBody {
+        format: LINEAGE_FORMAT,
+        account_id: t.account_id,
+        target: t.me.device_id,
+        target_key: target_key(&t.me),
+        removed_by: r.out.head,
+        head: r.out.head,
+        issuer: n.me.device_id,
+        issued_at: (T + 10) as i64,
+    }
+}
+
+fn n_identity(r: &mut Recovered) -> IdentityKey {
+    IdentityKey::from_bytes(&r.n.repo().account().keyset().identity.to_bytes()).unwrap()
+}
+
+/// Founder decision 2026-11-03: an old device of a recovered account
+/// erases itself 7 days after it read the `Recover`, not before.
+#[test]
+fn recover_quarantine_erases_after_seven_days() {
+    let r = a_quarantined_by_recover();
+    assert_eq!(
+        tick(&r.a, T + Q - 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert!(!matches!(state(&r.a), DeviceLineageState::Legacy));
+    assert_eq!(tick(&r.a, T + Q), QuarantineTick::Erased);
+    assert_erased(&r.a);
+    // The erase says why, for the app's erased screen.
+    assert_eq!(
+        r.a.store().erased_notice().unwrap(),
+        Some(ErasedNotice::Recovered)
+    );
+    // The recovered device keeps everything.
+    assert_eq!(state(&r.n), DeviceLineageState::Current);
+}
+
+/// A clock set back neither stops nor reverses the count: the time the
+/// clock moves forward from its new reading still counts.
+#[test]
+fn clock_set_back_does_not_stop_the_erase() {
+    let r = a_quarantined_by_recover();
+    assert_eq!(
+        tick(&r.a, T + 86_400),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    // Back a year: one day counted, six left from the new reading.
+    let back = T - YEAR;
+    assert_eq!(
+        tick(&r.a, back),
+        QuarantineTick::Waiting {
+            erase_at: back + Q - 86_400
+        }
+    );
+    // Back again and again, each time after a few real days: they add up.
+    assert_eq!(
+        tick(&r.a, back + 3 * 86_400),
+        QuarantineTick::Waiting {
+            erase_at: back + Q - 86_400
+        }
+    );
+    assert!(matches!(tick(&r.a, back), QuarantineTick::Waiting { .. }));
+    assert_eq!(tick(&r.a, back + 3 * 86_400), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// The lock screen's date follows the saved clock, read only.
+#[test]
+fn erase_date_follows_the_saved_clock() {
+    use onepass_core::repo::follow::quarantine_erase_at;
+    let r = a_quarantined_by_recover();
+    assert_eq!(quarantine_erase_at(&r.a.store()).unwrap(), Some(T + Q));
+    tick(&r.a, T - YEAR);
+    assert_eq!(
+        quarantine_erase_at(&r.a.store()).unwrap(),
+        Some(T - YEAR + Q)
+    );
+}
+
+/// "Ce n'était pas moi" before the 7 days: the countdown is gone, and an
+/// order made for that removal no longer erases anything.
+#[test]
+fn reapproval_cancels_countdown_and_order() {
+    let mut r = a_quarantined_by_recover();
+    let a = a_id(&r);
+    let repo = quarantine_resolve(r.a.store(), not_me(&r.a, PASSWORD, &r.a_sk))
+        .unwrap()
+        .expect("unlocked");
+    drop(repo);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    n_marks_stolen(&mut r, a);
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::NotQuarantined);
+    assert_eq!(tick(&r.a, T + YEAR), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    r.a.try_unlock(PASSWORD, &r.a_sk).unwrap();
+}
+
+/// Founder decision 2026-11-03: marked stolen right after a `Recover`,
+/// the old device erases at its next tick, no countdown.
+#[test]
+fn stolen_after_recover_erases_at_once() {
+    let mut r = a_quarantined_by_recover();
+    let a = a_id(&r);
+    n_marks_stolen(&mut r, a);
+    assert_eq!(r.n.repo().stolen_devices().unwrap(), vec![a]);
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// The order and the `Recover` arrive in the same fetch: the first tick
+/// quarantines, then erases.
+#[test]
+fn stolen_before_first_tick_erases_at_once() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    pull(&r.server, &mut r.a);
+    assert_eq!(tick(&r.a, T), QuarantineTick::Erased);
+    assert_erased(&r.a);
+}
+
+/// Marking twice writes one order.
+#[test]
+fn marking_twice_writes_once() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    let count = |r: &Recovered| {
+        r.n.store()
+            .list(RecordKind::Lineage)
+            .unwrap()
+            .iter()
+            .filter(|x| SignedWipe::decode(&x.data).is_ok())
+            .count()
+    };
+    assert_eq!(count(&r), 1);
+    r.n.repo().mark_stolen(a, T as i64 + 5).unwrap();
+    assert_eq!(count(&r), 1);
+}
+
+/// Attack: an order signed by any identity other than the recovered
+/// head's, or naming an issuer outside its roster, or another removal,
+/// or other device keys, erases nothing; the countdown goes on.
+#[test]
+fn forged_orders_erase_nothing() {
+    let mut r = a_quarantined_by_recover();
+    let good = order_for_a(&mut r);
+    let other = IdentityKey::generate().unwrap();
+    plant(&r.a, &sign_wipe(good.clone(), &other).unwrap());
+
+    // The old identity (the one A holds itself) is not the head's.
+    let old = IdentityKey::from_bytes(&r.a.repo().account().keyset().identity.to_bytes()).unwrap();
+    plant(&r.a, &sign_wipe(good.clone(), &old).unwrap());
+
+    let n = n_identity(&mut r);
+    let c = r.f.others[C].id();
+    for body in [
+        WipeBody {
+            issuer: c,
+            ..good.clone()
+        },
+        WipeBody {
+            target_key: [7; 32],
+            ..good.clone()
+        },
+        WipeBody {
+            removed_by: r.before.head,
+            ..good.clone()
+        },
+        WipeBody {
+            head: r.before.head,
+            ..good.clone()
+        },
+        WipeBody {
+            account_id: Id::new(),
+            ..good.clone()
+        },
+        WipeBody {
+            target: c,
+            ..good.clone()
+        },
+    ] {
+        plant(&r.a, &sign_wipe(body, &n).unwrap());
+    }
+    // A signature over another body.
+    let mut swapped = sign_wipe(good.clone(), &n).unwrap();
+    swapped.body.issued_at += 1;
+    plant(&r.a, &swapped);
+
+    assert_eq!(
+        tick(&r.a, T + 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+    assert!(matches!(
+        state(&r.a),
+        DeviceLineageState::Quarantined { .. }
+    ));
+
+    // The genuine order still works afterwards.
+    plant(&r.a, &sign_wipe(good, &n).unwrap());
+    assert_eq!(tick(&r.a, T + 2), QuarantineTick::Erased);
+}
+
+/// Attack: an order for another device (C, removed by the same
+/// `Recover`) replayed to A erases nothing on A.
+#[test]
+fn order_for_another_device_erases_nothing() {
+    let mut r = a_quarantined_by_recover();
+    let c = r.f.others[C].id();
+    n_marks_stolen(&mut r, c);
+    assert_eq!(r.n.repo().stolen_devices().unwrap(), vec![c]);
+    assert_eq!(
+        tick(&r.a, T + 1),
+        QuarantineTick::Waiting { erase_at: T + Q }
+    );
+}
+
+/// Attack: the order reaches A without the removal it names (the server
+/// held the `Recover` back): A is not quarantined and erases nothing.
+#[test]
+fn order_without_its_removal_erases_nothing() {
+    let mut r = recovered();
+    let a = trust_of_dev(&r.a).unwrap().me.device_id;
+    r.n.repo().mark_stolen(a, T as i64).unwrap();
+    sync(&mut r.server, &mut r.n).unwrap();
+    let head = r.out.head;
+    pull_only(&r.server, &mut r.a, |ch| {
+        !(ch.kind == RecordKind::Lineage
+            && ch
+                .data
+                .as_ref()
+                .and_then(|d| LineageRecord::decode(d).ok())
+                .is_some_and(|l| l.hash() == head))
+    });
+    assert_eq!(tick(&r.a, T), QuarantineTick::NotQuarantined);
+    assert_eq!(state(&r.a), DeviceLineageState::Current);
+    r.a.try_unlock(PASSWORD, &r.a_sk).unwrap();
+}
+
+/// Without a `Recover`: a device still in the roster cannot be marked (it
+/// is removed first, by a rotation); once removed it is, and it erases at
+/// its next tick instead of 7 days later. C follows A's first rotation,
+/// then A removes C.
+#[test]
+fn removed_then_marked_stolen_erases_at_once() {
+    let (mut server, mut a, c, f, out, sk1) = rotated();
+    let (repo, _auk, c_sk) =
+        follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    drop(repo);
+    let mut c = c;
+    assert_eq!(state(&c), DeviceLineageState::Current);
+
+    let c_id = f.others[C].id();
+    let refusal = a.repo().mark_stolen(c_id, T as i64);
+    assert!(matches!(&refusal, Err(Error::Validation(v)) if v.reason == "not removed"));
+    let me = trust_of_dev(&a).unwrap().me.device_id;
+    let refusal = a.repo().mark_stolen(me, T as i64);
+    assert!(matches!(&refusal, Err(Error::Validation(v)) if v.reason == "this device"));
+
+    let new_sk = SecretKey::generate().unwrap();
+    let mut req = request(&f, &new_sk, vec![c_id], RotationReason::Revoke);
+    req.secret_key = &sk1;
+    a.repo.as_mut().unwrap().rotate(req).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T), QuarantineTick::Waiting { erase_at: T + Q });
+
+    a.repo().mark_stolen(c_id, T as i64).unwrap();
+    assert_eq!(a.repo().stolen_devices().unwrap(), vec![c_id]);
+    sync(&mut server, &mut a).unwrap();
+    pull(&server, &mut c);
+    assert_eq!(tick(&c, T + 1), QuarantineTick::Erased);
+    assert_erased(&c);
+    let _ = c_sk;
+}
+
+/// The erase touches only the store of the account that was ordered:
+/// another account's store on the same device, holding the very same
+/// order bytes, stays as it was.
+#[test]
+fn other_account_store_untouched() {
+    let mut r = a_quarantined_by_recover();
+    let mut other_server = Server::default();
+    let (other, _f) = fixture_on(&mut other_server);
+    let a = a_id(&r);
+    n_marks_stolen(&mut r, a);
+    let order =
+        r.a.store()
+            .list(RecordKind::Lineage)
+            .unwrap()
+            .into_iter()
+            .find(|x| SignedWipe::decode(&x.data).is_ok())
+            .unwrap();
+    other.store().put(order).unwrap();
+    let before = snapshot(&other.store());
+    assert_eq!(tick(&r.a, T + 1), QuarantineTick::Erased);
+    assert_eq!(tick(&other, T + 1), QuarantineTick::NotQuarantined);
+    assert_eq!(snapshot(&other.store()), before);
 }

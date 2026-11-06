@@ -7,7 +7,12 @@ import VaultKit
 /// focus ring, shakes on a wrong password) and below it the main action: "Déverrouiller avec
 /// Touch ID" (Face ID, Optic ID) while the field is empty and biometric unlock is on, otherwise
 /// "Déverrouiller". Return unlocks. The Secret Key is never asked here: it stays in this device's
-/// keychain. Biometric unlock is tried once automatically when the screen shows up in an active scene.
+/// keychain. Biometric unlock is tried at most once per lock presentation, automatically, once this
+/// screen has been seen for a moment in an active scene (`BiometricAutoPrompt`): never over the
+/// launch screen or the privacy cover, and never again after that prompt answers (success, cancel or
+/// failure), whatever scene phases its sheet causes; after it only the button asks. While the system
+/// checks, the dial is worked tick by tick; it opens into the vault door on success and unwinds
+/// against its stop on a refusal.
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -22,6 +27,12 @@ struct LockView: View {
     @State private var fieldFocused = false
     /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop.
     @State private var dialRefusals = 0
+    /// "J'ai perdu mon mot de passe ou ma Secret Key" is open.
+    @State private var recovering = false
+    /// The system biometric check is running: the dial is being worked.
+    @State private var biometricCheck = false
+    /// This lock screen is in the view hierarchy (the automatic try waits for it).
+    @State private var shown = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -51,17 +62,33 @@ struct LockView: View {
             try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 0.2))
             lockoutRefresh &+= 1
         }
-        .task(id: scenePhase == .active) {
-            // One automatic try per app activation (AppModel), not per window or per redraw.
-            // The password field takes the focus (and the keyboard comes up) only when no automatic
-            // biometric attempt runs, or once it failed or was cancelled.
-            guard scenePhase == .active else { return }
+        .onAppear { shown = true }
+        .onDisappear { shown = false }
+        .task(id: AutoAttempt(presentation: model.biometricAutoPrompt.presentation, ready: shown && scenePhase == .active)) {
+            // At most one automatic try per lock presentation (`BiometricAutoPrompt`): this task
+            // runs again on every scene phase change (the Face ID sheet causes some), but only a
+            // real lock makes a new try due. It waits until this screen has been on screen, active
+            // and uncovered, for a moment: run at once, the system prompt rose over the launch
+            // screen or the privacy cover before the lock screen was ever seen. The password field
+            // takes the focus (and the keyboard comes up) only when no biometric check runs.
+            guard shown, scenePhase == .active else { return }
             #if DEBUG && os(iOS)
             if await playDemoVaultDoor() { return }
             #endif
-            if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
-                await unlockWithBiometrics(automatic: true)
-            } else {
+            if model.automaticBiometricAttemptDue, session.canUseBiometrics {
+                do {
+                    try await Task.sleep(for: BiometricAutoPrompt.settle)
+                } catch {
+                    return
+                }
+                if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
+                    // Not tied to this task: the prompt makes the scene inactive, which ends this
+                    // task, and a cancelled task would dismiss the system sheet (`decrypt`).
+                    Task { await unlockWithBiometrics(automatic: true) }
+                    return
+                }
+            }
+            if session.state == .locked, !biometricCheck, !model.biometricAutoPrompt.promptOnScreen {
                 fieldFocused = true
             }
         }
@@ -92,11 +119,11 @@ struct LockView: View {
         VStack(spacing: 0) {
             #if os(iOS)
             // The vault's dial: it turns, and the screen opens at its center (`RootView`).
-            VaultDial(size: Self.dialSize, refusals: dialRefusals)
+            VaultDial(size: Self.dialSize, refusals: dialRefusals, working: biometricCheck)
             #else
             AppGlyph(size: Self.glyphSize)
             #endif
-            Text("Déverrouille OnePass")
+            Text("lock.unlockOnepass")
                 .font(.system(size: Platform.isMac ? 22 : 26, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)
@@ -122,9 +149,29 @@ struct LockView: View {
 
     // MARK: - Account
 
+    /// The account to unlock; with several accounts on the device, a menu that switches to another
+    /// (each keeps its own lock and Secret Key, multi-account spec 2).
     @ViewBuilder private var account: some View {
-        let initials = model.initials
-        let name = model.settings.displayName
+        if model.accounts.hasSeveralAccounts {
+            Menu {
+                AccountsMenuItems()
+            } label: {
+                accountCapsule(chevron: true)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityIdentifier("lock.accounts")
+        } else {
+            accountCapsule(chevron: false)
+        }
+    }
+
+    @ViewBuilder private func accountCapsule(chevron: Bool) -> some View {
+        let profile = model.activeProfile
+        let initials = profile.map { $0.isPrimary ? model.initials : model.initials(of: $0) } ?? model.initials
+        let name = profile.flatMap { $0.label.isEmpty ? nil : $0.label } ?? model.settings.displayName
         HStack(spacing: 8) {
             // Round, so it sits concentric in the capsule (a squircle poked out of it).
             if let photo = model.profileImage {
@@ -136,7 +183,7 @@ struct LockView: View {
                     .overlay { Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5) }
             } else {
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(model.accountTint)
                     .frame(width: 26, height: 26)
                     .overlay {
                         if initials.isEmpty {
@@ -150,7 +197,7 @@ struct LockView: View {
             }
             Group {
                 if name.isEmpty {
-                    Text("Compte OnePass")
+                    Text("lock.onepassAccount")
                 } else {
                     Text(verbatim: name)
                 }
@@ -158,6 +205,11 @@ struct LockView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            if chevron {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.leading, 3)
         .padding(.trailing, 12)
@@ -165,7 +217,7 @@ struct LockView: View {
         .background(Capsule().fill(Color.primary.opacity(0.06)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
+        .accessibilityLabel(name.isEmpty ? Text("lock.onepassAccount") : Text(verbatim: name))
         .accessibilityIdentifier("lock.account")
     }
 
@@ -201,7 +253,7 @@ struct LockView: View {
             }
             .buttonStyle(.plain)
             .visionHoverEffect()
-            .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+            .accessibilityLabel(revealed ? Text("lock.hidePassword") : Text("lock.showPassword"))
             .accessibilityIdentifier("lock.reveal")
             // One trailing slot: Touch ID (Face ID, Optic ID) while the field is empty, the
             // arrow once something is typed. Everything lives in the one field.
@@ -244,7 +296,7 @@ struct LockView: View {
 
     @ViewBuilder private var status: some View {
         if session.passwordChangedElsewhere, message == nil {
-            Text("Ton mot de passe maître a changé sur un autre appareil. Saisis le nouveau.")
+            Text("lock.masterPasswordChangedOn")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -271,12 +323,21 @@ struct LockView: View {
                 .transition(.opacity)
                 .accessibilityIdentifier("lock.error")
         }
+        // Sharing plan 4: recovery with the organizer's help. Shown once this device has its keys
+        // (device keys plan); until then the flow cannot start.
+        if model.deviceKeys != nil {
+            Button("recovery.lost") { recovering = true }
+                .font(.footnote)
+                .padding(.top, 10)
+                .accessibilityIdentifier("lock.recoverWithHelp")
+                .sheet(isPresented: $recovering) { RecoverWithHelpView() }
+        }
         if let until = lockoutUntil {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
                 Text(remaining > 0
-                     ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
-                     : String(localized: "Tu peux réessayer."))
+                     ? String(localized: "lock.tooManyAttemptsTry \(Self.duration(remaining))")
+                     : String(localized: "lock.canTryAgain"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -315,8 +376,8 @@ struct LockView: View {
     private var passwordDueText: String? {
         guard let days = daysUntilPassword else { return nil }
         return days <= 1
-            ? String(localized: "Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.")
-            : String(localized: "Mot de passe maître redemandé dans \(days) jours, puis tous les 14 jours.")
+            ? String(localized: "lock.masterPasswordRequiredAgain")
+            : String(localized: "lock.masterPasswordRequiredAgain \(days)")
     }
 
     /// The arrow at the end of the field: dim until something is typed, a spinner while unlocking.
@@ -343,7 +404,7 @@ struct LockView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(!ready)
         .animation(.smooth(duration: 0.15), value: ready)
-        .accessibilityLabel(Text("Déverrouiller"))
+        .accessibilityLabel(Text("common.unlock"))
         .accessibilityIdentifier("lock.unlock")
     }
 
@@ -384,6 +445,10 @@ struct LockView: View {
         message = nil
         let typed = SecretBytes(utf8: password)
         password = ""
+        // The keyboard leaves with the submission. Left on, the field (disabled while unlocking)
+        // took the keyboard back once enabled again, under the vault door: the panels parted
+        // with it up and it stayed over the vault. A refusal gives the focus back below.
+        fieldFocused = false
         defer { typed.wipe() }
         do {
             try await session.unlock(password: typed)
@@ -396,8 +461,8 @@ struct LockView: View {
             case .wrongPassword:
                 let count = model.settings.failedUnlocks
                 message = count > 1
-                    ? String(localized: "Mot de passe incorrect (\(count) essais).")
-                    : String(localized: "Mot de passe incorrect.")
+                    ? String(localized: "lock.wrongPasswordAttempts \(count)")
+                    : String(localized: "lock.incorrectPassword")
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil
@@ -408,20 +473,37 @@ struct LockView: View {
         }
     }
 
-    /// Any refusal (cancel, reboot, 14 days, biometry change) leaves the password field.
+    /// Any refusal (cancel, reboot, 14 days, biometry change) leaves the password field. Nothing
+    /// asks again on its own after this (`BiometricAutoPrompt.promptStarted`). The dial is worked for
+    /// the whole check (the system prompt, then the vault opening): on success it hands over to the
+    /// door's quarter turn where it stands, so nothing pauses between the two.
     private func unlockWithBiometrics(automatic: Bool) async {
-        guard session.canUseBiometrics, !unlocking else {
-            if automatic { fieldFocused = true }
+        guard session.canUseBiometrics, !unlocking, !biometricCheck else {
+            if automatic, !biometricCheck { fieldFocused = true }
             return
         }
         message = nil
+        fieldFocused = false
+        biometricCheck = true
+        model.biometricPromptStarted()
         do {
             try await session.unlockWithBiometrics()
+            biometricCheck = false
+            model.biometricPromptEnded()
         } catch {
+            biometricCheck = false
+            model.biometricPromptEnded()
             withAnimation(.linear(duration: 0.5)) { dialRefusals += 1 }
             fieldFocused = true
         }
     }
+}
+
+/// What the automatic try waits on: a new lock presentation, or the screen becoming visible and
+/// active.
+private struct AutoAttempt: Hashable {
+    let presentation: UInt64
+    let ready: Bool
 }
 
 #if DEBUG && os(iOS)

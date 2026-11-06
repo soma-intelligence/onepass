@@ -11,8 +11,8 @@
 // relays the arrows and Return to the worker, the menu asks for them
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
-import type { MenuKey, ProviderId, UiToBg } from "../shared/messages";
-import { t } from "../shared/i18n";
+import type { MenuKey, ProviderId, SignupMode, UiToBg } from "../shared/messages";
+import { t, tn } from "../shared/i18n";
 import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
 import {
   ClickGuard,
@@ -24,6 +24,7 @@ import {
   hostOf,
   icon,
   mark,
+  markTouch,
   messageBlock,
   mount,
   observeVisibility,
@@ -31,10 +32,14 @@ import {
   providerGlyph,
   providerLabel,
   realTimers,
+  UNLOCK_POLL_MS,
+  UNLOCK_WAIT_TRIES,
+  siteTile,
   tokenFromHash,
   wayArt,
+  wayTile,
 } from "./components";
-import { parseEmpty, parseKeys, parseLocked, parseMenuInit } from "./parse";
+import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, type NativeVaultState } from "./parse";
 
 export interface MenuHandle {
   /** Resolves once the first render is done. */
@@ -58,6 +63,7 @@ function methodOf(it: Summary): string {
 
 /** An empty `menu_keys` answer sooner than this: ask again only after it. */
 const KEYS_BACKOFF_MS = 1000;
+
 
 export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   const now = deps.now ?? (() => performance.now());
@@ -100,6 +106,21 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     opts[active]?.scrollIntoView?.({ block: "nearest" });
   };
 
+  // One selection: the row under the pointer is the highlighted row (the
+  // relayed arrows go on from it), never a hover tint beside a key highlight.
+  container.addEventListener("mousemove", (e) => {
+    const row = (e.target as Element | null)?.closest?.("[data-opt]");
+    const i = row ? options().indexOf(row as HTMLButtonElement) : -1;
+    if (i >= 0 && i !== active) highlight(i);
+  });
+  container.addEventListener("mouseleave", () => {
+    active = -1;
+    for (const o of options()) {
+      o.classList.remove("active");
+      o.setAttribute("aria-selected", "false");
+    }
+  });
+
   const relayed = (key: MenuKey) => {
     const opts = options();
     if (opts.length === 0) return;
@@ -136,9 +157,16 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   };
   document.addEventListener("keydown", keydown);
 
-  const header = (origin: string | null) =>
-    h("h1", { class: "menu-head" }, mark("s"), origin ? `OnePass · ${hostOf(origin)}` : "OnePass");
-  const glyphTile = (name: "key" | "plus", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
+  /** The OnePass mark and the site on the left, how many logins it has on the right. */
+  const header = (origin: string | null, logins?: number) =>
+    h(
+      "h1",
+      { class: "menu-head" },
+      mark("s"),
+      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
+      logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
+    );
+  const glyphTile = (name: "key" | "plus" | "shield", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
 
   const showError = (line: HTMLElement | null, code: string) => {
     if (code === "locked" || code === "unpaired" || code === "host_missing") {
@@ -193,9 +221,166 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     return b;
   };
 
+  /**
+   * The app came forward on its lock screen: say so, ask again every second
+   * and reload the menu once unlocked. After a minute, the button again.
+   */
+  function waitForUnlock(origin: string | null): void {
+    mount(container, header(origin), messageBlock(t("ui.unlockToContinue")));
+    remeasure();
+    let left = UNLOCK_WAIT_TRIES;
+    const check = (): void => {
+      if (!token) return;
+      void call(deps.send, { type: "menu_init", token }, parseMenuInit).then((r) => {
+        if (r.ok) {
+          // Unlocked with Touch ID in the app (MS-03): the fill asked for goes on by itself.
+          void resume(() => {
+            render(r.value);
+            void listenKeys();
+          });
+        } else if (r.code !== "locked") renderState(r.code, origin);
+        else if (--left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
+        else renderState("locked", origin);
+      });
+    };
+    timers.setTimeout(check, UNLOCK_POLL_MS);
+  }
+
+  /**
+   * Unlocked in the app after this menu asked (Touch ID on the Mac): the worker closes the menu
+   * and runs its field's plan in its frame (one click plus Touch ID). Refused (too late, the page
+   * changed): `fallback`, the menu again. The iOS sheet never calls this: the worker resumes
+   * within its unlock call, so one unlock fills once.
+   */
+  async function resume(fallback: () => void): Promise<void> {
+    if (!token) return fallback();
+    const r = await call(deps.send, { type: "menu_resume", token }, parseEmpty);
+    if (!r.ok) fallback();
+  }
+
+  /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
+  let autoBiometricDone = false;
+  /** A biometric or password unlock is running: the buttons wait. */
+  let unlocking = false;
+
+  /**
+   * iOS (spec 2026-11-03-ios-safari-autofill 5): the menu turns into the unlock sheet. Face ID
+   * (or Touch ID) runs once by itself when the policy allows it, the explicit button after;
+   * the master password always works. Unlocked, the menu loads and the fill goes on.
+   */
+  function renderUnlock(v: NativeVaultState, origin: string | null): void {
+    const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    const reason = v.error ? unlockErrorText(v) : "";
+    if (reason) errLine.textContent = reason;
+    const after = (r: Awaited<ReturnType<typeof callVault>>): void => {
+      unlocking = false;
+      if (!r.ok) {
+        renderState(r.code === "locked" ? "locked_plain" : r.code, origin);
+        return;
+      }
+      if (!r.value.locked) {
+        // A tap or the password: the worker already closed the menu and resumed the fill (the
+        // menu's token died, this load finds nothing). The automatic Face ID of a menu that may
+        // have opened by itself is no gesture: the menu loads and the user picks.
+        void load();
+        return;
+      }
+      renderUnlock(r.value, origin);
+    };
+    const biometric = (auto = false): void => {
+      if (unlocking || !token) return;
+      unlocking = true;
+      void callVault(auto ? { type: "menu_unlock_biometric", token } : { type: "menu_unlock_biometric", token, gesture: true }).then(after);
+    };
+    const input = h("input", {
+      class: "input unlock-input",
+      attrs: {
+        type: "password",
+        autocomplete: "off",
+        autocapitalize: "off",
+        spellcheck: "false",
+        enterkeyhint: "go",
+        "aria-label": t("unlock.masterPassword"),
+        placeholder: t("unlock.masterPassword"),
+      },
+    });
+    const submit = (e?: Event): void => {
+      e?.preventDefault();
+      if (unlocking || !token || input.value.length === 0) return;
+      unlocking = true;
+      const password = input.value;
+      input.value = "";
+      void callVault({ type: "menu_unlock_password", token, password }).then(after);
+    };
+    const kind = v.biometry === "none" ? null : v.biometry;
+    const bioButton = kind
+      ? h(
+          "button",
+          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: guard.wrap(() => biometric()) } },
+          icon(kind === "touchID" ? "touchid" : "faceid", 18),
+          t(kind === "touchID" ? "unlock.withTouchId" : kind === "opticID" ? "unlock.withOpticId" : "unlock.withFaceId"),
+        )
+      : null;
+    const form = h(
+      "form",
+      { class: "unlock-form", on: { submit } },
+      input,
+      h("button", { class: kind ? "btn" : "btn btn-primary", attrs: { type: "submit" } }, t("unlock.unlock")),
+    );
+    const body = h(
+      "div",
+      { class: "unlock-sheet" },
+      h("span", { class: "unlock-mark" }, mark("l")),
+      h("p", { class: "message-title" }, t("ui.onepassLocked")),
+      v.account ? h("p", { class: "message-detail unlock-account" }, v.account) : null,
+      bioButton,
+      form,
+      v.message && v.error === "password_required" ? h("p", { class: "message-detail" }, v.message) : null,
+      errLine,
+    );
+    mount(container, header(origin), body);
+    active = -1;
+    guard.reset();
+    remeasure();
+    // One automatic try per menu, and never after the policy asked for the password.
+    if (kind && !autoBiometricDone && !v.error) {
+      autoBiometricDone = true;
+      biometric(true);
+    } else if (!kind) input.focus();
+  }
+
+  const callVault = (m: UiToBg) => call(deps.send, m, parseNativeVaultState);
+
+  function unlockErrorText(v: NativeVaultState): string {
+    switch (v.error) {
+      case "wrong_password":
+        return t("unlock.wrongPassword");
+      case "locked_out":
+        return v.message ?? t("unlock.lockedOut");
+      case "password_required":
+        return t("unlock.passwordRequired");
+      case "no_account":
+        return t("unlock.noAccount");
+      case "failed":
+        return v.message ?? errorText("internal");
+      default:
+        return "";
+    }
+  }
+
   function renderState(code: string, origin: string | null): void {
     let body: HTMLElement;
-    if (code === "locked") {
+    if (code === "locked" && token) {
+      // iOS has a native vault: the sheet. Elsewhere "unsupported" brings the app button.
+      const asked = token;
+      void callVault({ type: "menu_vault", token: asked }).then((r) => {
+        if (r.ok && r.value.locked) renderUnlock(r.value, origin);
+        else if (r.ok) void load();
+        else renderState("locked_plain", origin);
+      });
+      return;
+    }
+    if (code === "locked" || code === "locked_plain") {
       const btn = h(
         "button",
         {
@@ -206,7 +391,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
               if (!token) return;
               void call(deps.send, { type: "menu_unlock", token }, parseLocked).then((r) => {
                 if (r.ok && !r.value.locked) void load();
-                else if (!r.ok) renderState(r.code, origin);
+                else if (r.ok) waitForUnlock(origin);
+                else renderState(r.code, origin);
               });
             }),
           },
@@ -237,7 +423,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
     // A plan opened this menu because the page refused every generated password.
     if (init.notice) errLine.textContent = errorText(init.notice);
-    const list = h("div", { class: "menu-list" });
+    const list = h("div", { class: "menu-group menu-list" });
     const pick = (itemId: string) => async () => {
       if (!token) return;
       const r = await call(deps.send, { type: "menu_pick", token, itemId }, parseEmpty);
@@ -256,6 +442,33 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const linked = init.linked;
     const items = linked ? [...init.items].sort((a, b) => Number(b.item_id === linked.itemId) - Number(a.item_id === linked.itemId)) : init.items;
     const fill = t("common.fill");
+    // One-click signup on a form that can make a passkey: the two ways, asked first (spec 2.3).
+    if (init.signup?.passkey) {
+      const signup = (mode: SignupMode) => async () => {
+        if (!token) return;
+        const r = await call(deps.send, { type: "menu_signup", token, mode }, parseEmpty);
+        if (!r.ok) showError(errLine, r.code);
+      };
+      list.append(
+        option({
+          label: t("menu.signupWithPassword"),
+          sub: t("menu.signupWithPasswordDetail"),
+          lead: glyphTile("key", 16),
+          act: fill,
+          accent: true,
+          attrs: { "data-signup": "password" },
+          run: signup("password"),
+        }),
+        option({
+          label: t("menu.signupWithPasskey"),
+          sub: t("menu.signupWithPasskeyDetail"),
+          lead: glyphTile("shield", 14),
+          act: t("common.continue"),
+          attrs: { "data-signup": "passkey" },
+          run: signup("passkey"),
+        }),
+      );
+    }
     for (const it of items) {
       const providerOnly = it.kind === "login" && !it.has_password && it.methods.length > 0;
       if (!providerOnly) {
@@ -266,7 +479,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             sub: it.subtitle,
             ...(post ? { post: ` · ${post}` } : {}),
-            lead: wayArt(it, undefined),
+            // Logins show the site's icon (the pill's source); cards and identities their art.
+            lead: it.kind === "login" ? siteTile(init.origin, it.icon_letter, 32) : wayArt(it, undefined),
             act: isLinked ? t("menu.usedForSite", { site: linked.site }) : fill,
             // The best item of a plan that could not choose (listed first by the worker).
             accent: isLinked || init.best === it.item_id,
@@ -284,7 +498,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             pre: t("menu.withName", { name }),
             sub: def?.email ?? m.account_email,
-            lead: wayArt(it, m.provider),
+            lead: wayTile(init.origin, it.icon_letter, m.provider, 32),
             act: t("common.continue"),
             attrs: { "data-provider": m.provider },
             run: signin(it.item_id, m.provider, def?.itemId),
@@ -315,7 +529,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     const empty = init.items.length === 0 ? h("p", { class: "message-detail empty" }, emptyText(init)) : null;
     const extras: HTMLElement[] = [];
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
-      extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
           label: t("menu.generatePassword"),
@@ -330,7 +543,6 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     }
     if (LOGIN_FORMS.has(init.formKind)) {
       // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
-      if (extras.length === 0) extras.push(h("div", { class: "sep", attrs: { "aria-hidden": "true" } }));
       extras.push(
         option({
           label: t("menu.saveNewLogin"),
@@ -344,12 +556,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         }),
       );
     }
-    // Only options (and decorative separators) inside the listbox.
+    // Only options inside the listbox: the logins in one inset group, the other actions in a second.
+    const groups = [list.childElementCount > 0 ? list : null, extras.length > 0 ? h("div", { class: "menu-group menu-foot" }, ...extras) : null];
     const listbox =
       list.childElementCount + extras.length > 0
-        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, list, ...extras)
+        ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, ...groups)
         : null;
-    mount(container, header(init.origin), empty, listbox, errLine);
+    const logins = init.items.filter((x) => x.kind === "login").length;
+    mount(container, header(init.origin, logins), empty, listbox, errLine);
     active = -1;
     guard.reset();
     remeasure();
@@ -386,6 +600,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
 
 // Entry point in the extension (not under test, where `ext` is absent).
 if (typeof document !== "undefined" && ext?.runtime?.id) {
+  markTouch(document);
   const root = document.getElementById("root");
   if (root) mountMenu(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash });
 }

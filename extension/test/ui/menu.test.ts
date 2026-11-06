@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import { mountMenu } from "../../src/ui/menu";
-import { Clock, FakeVisibility, FakeWorker, HASH, type Reply, TOKEN, button, login, root, text } from "./helpers";
+import { Clock, FakeVisibility, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
 
@@ -40,8 +40,9 @@ function setup(answer: (m: UiToBg) => Reply | Promise<Reply>, formKind = "login"
     }
     return answer(m);
   });
-  const handle = mountMenu(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: vis.observe });
-  return { r, clock, vis, worker, handle };
+  const timers = new ManualTimers();
+  const handle = mountMenu(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: vis.observe, timers });
+  return { r, clock, vis, worker, handle, timers };
 }
 
 const ok = (v: unknown = {}): Reply => ({ ok: v });
@@ -52,7 +53,9 @@ describe("inline menu", () => {
     const { r, handle, worker } = setup(def);
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "menu_init", token: TOKEN });
-    expect(text(r)).toContain("OnePass · atlas-cloud.test");
+    // The site and how many logins it has (the provider-only login counts).
+    expect(r.querySelector(".menu-host")!.textContent).toBe("atlas-cloud.test");
+    expect(r.querySelector(".menu-count")!.textContent).toBe("2 logins");
     const opts = [...r.querySelectorAll("[role=option]")];
     // Each row says how it signs in and what a click does.
     expect(says(opts[0]!)).toBe("Atlas Cloud | alex@atlas.dev · mot de passe | Remplir");
@@ -60,6 +63,13 @@ describe("inline menu", () => {
     expect(opts[1]!.querySelector(".way-badge svg.glyph-p_google")).not.toBeNull();
     // A provider-only login has no password row; then "Enregistrer un nouveau login".
     expect(opts).toHaveLength(3);
+    // Logins show the site's own icon over HTTPS, with no referrer.
+    const img = opts[0]!.querySelector<HTMLImageElement>(".site-tile img");
+    expect(img!.getAttribute("src")).toBe("https://atlas-cloud.test/favicon.ico");
+    expect(img!.getAttribute("referrerpolicy")).toBe("no-referrer");
+    // No icon: the tile keeps the login's initial.
+    img!.dispatchEvent(new Event("error"));
+    expect(opts[0]!.querySelector(".site-tile")!.textContent).toBe("A");
   });
 
   it("says the site refused the generated password, and on a refused Générer", async () => {
@@ -117,6 +127,23 @@ describe("inline menu", () => {
     button(r, "Atlas Cloud").click();
     await Promise.resolve();
     expect(worker.sent.at(-1)).toEqual({ type: "menu_pick", token: TOKEN, itemId: "it_01" });
+  });
+
+  it("IOSSAF-09: a real tap held back by the delay shows pressed until the delay is over, and runs nothing", async () => {
+    const { r, handle, worker, clock } = setup(def);
+    await handle.ready;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      clock.advance(100);
+      const row = button(r, "Atlas Cloud");
+      row.click();
+      expect(row.classList.contains("held")).toBe(true);
+      vi.advanceTimersByTime(200);
+      expect(row.classList.contains("held")).toBe(false);
+      expect(worker.types()).toEqual(["menu_init"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores untrusted clicks by default", async () => {
@@ -226,6 +253,28 @@ describe("inline menu", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("one selection: the pointer and the relayed keys move the same highlight", async () => {
+    const keys: string[][] = [["down"]];
+    const { r, handle } = setup((m) => {
+      if (m.type === "menu_keys") {
+        const k = keys.shift();
+        return k ? ok({ keys: k }) : new Promise<Reply>(() => undefined);
+      }
+      return def();
+    });
+    await handle.ready;
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    await new Promise((res) => setTimeout(res, 0));
+    const opts = [...r.querySelectorAll<HTMLElement>("[role=option]")];
+    const selected = () => opts.filter((o) => o.classList.contains("active") || o.getAttribute("aria-selected") === "true");
+    expect(selected()).toEqual([opts[0]]);
+    // The pointer over another row takes the selection: never two rows highlighted.
+    opts[2]!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    expect(selected()).toEqual([opts[2]]);
+    opts[1]!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    expect(selected()).toEqual([opts[1]]);
+  });
+
   it("keyboard: arrows move between options, Escape closes", async () => {
     const { r, handle, worker } = setup(def);
     await handle.ready;
@@ -248,6 +297,8 @@ describe("inline menu", () => {
     let locked = true;
     const { r, handle, worker, clock } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      // No native vault (macOS, other browsers): the app button.
+      if (m.type === "menu_vault") return { err: "invalid" };
       if (m.type === "menu_unlock") {
         locked = false;
         return ok({ locked: false });
@@ -255,12 +306,192 @@ describe("inline menu", () => {
       return ok();
     });
     await handle.ready;
+    await flush();
     expect(text(r)).toContain("OnePass est verrouillé");
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
     await new Promise((res) => setTimeout(res, 0));
-    expect(worker.types()).toEqual(["menu_init", "menu_unlock", "menu_init"]);
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("locked: the app comes forward, the menu waits for the unlock and reloads by itself", async () => {
+    let locked = true;
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return { err: "invalid" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      // A frame's menu, or too late: the worker refuses to resume, the menu reloads.
+      if (m.type === "menu_resume") return { err: "invalid" };
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    locked = false;
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Atlas Cloud");
+    expect(worker.types().filter((t) => t === "menu_unlock")).toHaveLength(1);
+  });
+
+  it("locked: after a minute without unlock, the button comes back", async () => {
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return { err: "invalid" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    for (let i = 0; i < 60; i++) {
+      timers.runTimeouts();
+      await flush();
+    }
+    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(worker.types().filter((t) => t === "menu_init").length).toBeLessThanOrEqual(62);
+  });
+
+  it("iOS: the unlock sheet runs Face ID once by itself, then loads the menu", async () => {
+    let locked = true;
+    const { r, handle, worker } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") {
+        locked = false;
+        return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      }
+      if (m.type === "menu_resume") return { err: "invalid" };
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("MS-03 (iOS): the automatic Face ID says no gesture; a tap on Face ID says one (the worker resumes in that call)", async () => {
+    let first = true;
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") {
+        if (first) {
+          first = false;
+          return ok({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+        }
+        return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      }
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 4; i++) await flush();
+    expect(worker.sent.filter((m) => m.type === "menu_unlock_biometric")).toEqual([{ type: "menu_unlock_biometric", token: TOKEN }]);
+    clock.advance(300);
+    button(r, "Déverrouiller avec Face ID").click();
+    for (let i = 0; i < 3; i++) await flush();
+    expect(worker.sent.filter((m) => m.type === "menu_unlock_biometric").at(-1)).toEqual({ type: "menu_unlock_biometric", token: TOKEN, gesture: true });
+    // One resume per unlock: the menu never asks for a second one after the sheet.
+    expect(worker.types()).not.toContain("menu_resume");
+  });
+
+  it("MS-03 (iOS): an automatic Face ID that opens the vault never asks to resume", async () => {
+    const { handle, worker } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") return ok({ locked: false, account: "Camille", biometry: "faceID" });
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 4; i++) await flush();
+    expect(worker.types().slice(0, 4)).toEqual(["menu_init", "menu_vault", "menu_unlock_biometric", "menu_init"]);
+    expect(worker.sent.find((m) => m.type === "menu_unlock_biometric")).toEqual({ type: "menu_unlock_biometric", token: TOKEN });
+    expect(worker.types()).not.toContain("menu_resume");
+  });
+
+  it("MS-03 (Mac): Touch ID in the app, then the menu resumes the fill by itself", async () => {
+    let locked = true;
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return { err: "invalid" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Déverrouiller dans OnePass").click();
+    await flush();
+    locked = false;
+    timers.runTimeouts();
+    await flush();
+    await flush();
+    expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(1);
+    expect(worker.types().at(-1)).toBe("menu_resume");
+  });
+
+  it("iOS: a cancelled Face ID never runs again by itself; the button and the password stay", async () => {
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return { err: "locked" };
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "faceID" });
+      if (m.type === "menu_unlock_biometric") return ok({ locked: true, account: "Camille", biometry: "faceID", error: "cancelled" });
+      return ok();
+    });
+    await handle.ready;
+    for (let i = 0; i < 5; i++) await flush();
+    expect(worker.types().filter((t) => t === "menu_unlock_biometric")).toHaveLength(1);
+    expect(text(r)).toContain("Camille");
+    expect(r.querySelector("input[type=password]")).not.toBeNull();
+    clock.advance(300);
+    button(r, "Déverrouiller avec Face ID").click();
+    for (let i = 0; i < 5; i++) await flush();
+    expect(worker.types().filter((t) => t === "menu_unlock_biometric")).toHaveLength(2);
+  });
+
+  it("iOS: the policy asks the password (no Face ID offered), a wrong one says so, the right one opens", async () => {
+    let locked = true;
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return ok({ locked: true, account: "Camille", biometry: "none" });
+      if (m.type === "menu_unlock_password") {
+        if (m.password !== "bon-mot-de-passe") return ok({ locked: true, account: "Camille", biometry: "none", error: "wrong_password" });
+        locked = false;
+        return ok({ locked: false, account: "Camille", biometry: "none" });
+      }
+      if (m.type === "menu_resume") return { err: "invalid" };
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    expect(worker.types()).not.toContain("menu_unlock_biometric");
+    expect(r.querySelector(".unlock-bio")).toBeNull();
+    const submit = (pw: string) => {
+      const input = r.querySelector<HTMLInputElement>("input[type=password]")!;
+      input.value = pw;
+      r.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    };
+    clock.advance(300);
+    submit("faux");
+    await flush();
+    expect(text(r)).toContain("Mot de passe incorrect.");
+    // The field never keeps the typed password.
+    expect(r.querySelector<HTMLInputElement>("input[type=password]")!.value).toBe("");
+    submit("bon-mot-de-passe");
+    await flush();
+    await flush();
+    expect(text(r)).toContain("Atlas Cloud");
+    expect(worker.types().filter((t) => t === "menu_unlock_password")).toHaveLength(2);
   });
 
   it("unpaired, host missing and malformed replies", async () => {
@@ -286,6 +517,34 @@ describe("inline menu", () => {
     expect(text(r)).toContain("Aucun login pour atlas-cloud.test");
   });
 
+  it("a signup that can make a passkey asks password or passkey first", async () => {
+    const init = { origin: SITE, formKind: "signup", items: [login("it_01")], signup: { passkey: true } };
+    const { r, handle, worker, clock } = setup((m) => (m.type === "menu_init" ? ok(init) : ok()), "signup");
+    await handle.ready;
+    const opts = [...r.querySelectorAll("[role=option]")];
+    expect(opts[0]?.getAttribute("data-signup")).toBe("password");
+    expect(opts[1]?.getAttribute("data-signup")).toBe("passkey");
+    expect(says(opts[0]!)).toContain("Créer le compte avec un mot de passe fort");
+    expect(says(opts[1]!)).toContain("Créer une passkey à la place");
+    clock.advance(300);
+    (opts[1] as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signup", token: TOKEN, mode: "passkey" });
+    clock.advance(300);
+    (opts[0] as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_signup", token: TOKEN, mode: "password" });
+  });
+
+  it("no signup rows without the offer, nor with a malformed one", async () => {
+    for (const extra of [{}, { signup: { passkey: "yes" } }]) {
+      const init = { origin: SITE, formKind: "signup", items: [login("it_01")], ...extra };
+      const { r, handle } = setup((m) => (m.type === "menu_init" ? ok(init) : ok()), "signup");
+      await handle.ready;
+      expect(r.querySelector("[data-signup]")).toBeNull();
+    }
+  });
+
   it("signup form offers Générer un mot de passe", async () => {
     const { r, handle, worker, clock } = setup(def, "signup");
     await handle.ready;
@@ -302,7 +561,8 @@ describe("inline menu", () => {
         : { err: "origin_mismatch" },
     );
     await handle.ready;
-    expect(r.querySelector("img")).toBeNull();
+    // The only image is the site's icon, never markup from the data.
+    expect(r.querySelector("img:not(.site-img)")).toBeNull();
     expect(text(r)).toContain("<img src=x onerror=alert(1)>");
     clock.advance(300);
     button(r, "<img").click();

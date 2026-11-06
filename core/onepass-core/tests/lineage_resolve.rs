@@ -389,6 +389,7 @@ fn recs(names: &[&str]) -> Vec<LineageRecord> {
 fn complete(names: &[&str]) -> Completeness {
     Completeness {
         present: names.iter().map(|n| h(n)).collect(),
+        ..Default::default()
     }
 }
 
@@ -1159,6 +1160,7 @@ impl Follower {
     fn decide(&self, records: &[LineageRecord]) -> Decision {
         let c = Completeness {
             present: self.complete.clone(),
+            ..Default::default()
         };
         let before = records.to_vec();
         let d = resolve_cached(&self.trust, records, &c, &mut cache());
@@ -1316,7 +1318,7 @@ proptest! {
         let head = fc.trust.head.hash;
         prop_assert!(head == world().genesis.hash() || honest(name_of(&head)));
         // The uncached resolver agrees with the cached one.
-        let c = Completeness { present: fc.complete.clone() };
+        let c = Completeness { present: fc.complete.clone(), ..Default::default() };
         let r = fc.records();
         prop_assert_eq!(
             resolve(&fc.trust, &r, &c),

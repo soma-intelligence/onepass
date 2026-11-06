@@ -14,7 +14,14 @@ pub mod bip32;
 pub mod encoding;
 pub mod seed;
 
+use crate::model::{FieldValue, Item, ItemType};
 use crate::{Error, Result};
+
+/// Reserved tags of the per-item Travel Mode protection (spec
+/// 2026-11-02-travel-detection-and-items): an item that leaves the device in
+/// Travel Mode, and one behind extra protection. Read here by their text so
+/// the check works whether or not the travel feature is on this build.
+const TRAVEL_PROTECTION_TAGS: [&str; 2] = ["onepass:travel-hidden", "onepass:travel-guard"];
 
 /// Largest number of addresses one derivation call returns (a gap-limit
 /// scan asks again for more).
@@ -113,9 +120,48 @@ pub fn entry_text(addr: &WatchAddress) -> String {
     format!("{}, {}", addr.chain.label(), addr.address)
 }
 
+/// Watchtower (spec section 7): a crypto wallet item that stores a
+/// recovery phrase without per-item Travel Mode protection. The app raises
+/// the alert only for wallets whose watched balance is not zero.
+pub fn phrase_unprotected(item: &Item) -> bool {
+    if item.item_type != ItemType::CryptoWallet || item.trashed_at.is_some() {
+        return false;
+    }
+    let has_phrase = item
+        .field("recovery_phrase")
+        .is_some_and(|f| matches!(&f.value, FieldValue::Mnemonic(s) if !s.trim().is_empty()));
+    has_phrase
+        && !item
+            .tags
+            .iter()
+            .any(|t| TRAVEL_PROTECTION_TAGS.contains(&t.as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Id;
+    use crate::model::new_item;
+    use zeroize::Zeroizing;
+
+    #[test]
+    fn phrase_without_travel_protection() {
+        let mut item = new_item(ItemType::CryptoWallet, Id::new(), "Ledger");
+        assert!(!phrase_unprotected(&item), "no phrase");
+        for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+            if f.id == "recovery_phrase" {
+                f.value = FieldValue::Mnemonic(Zeroizing::new("abandon about".into()));
+            }
+        }
+        assert!(phrase_unprotected(&item));
+        for tag in TRAVEL_PROTECTION_TAGS {
+            let mut tagged = item.clone();
+            tagged.tags.push(tag.into());
+            assert!(!phrase_unprotected(&tagged), "{tag}");
+        }
+        let login = new_item(ItemType::Login, Id::new(), "x");
+        assert!(!phrase_unprotected(&login));
+    }
 
     #[test]
     fn parses_named_and_bare_entries() {

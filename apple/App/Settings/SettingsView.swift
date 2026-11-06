@@ -1,12 +1,38 @@
 import DesignKit
 import SwiftUI
 import VaultKit
+import os
+
+/// How long Réglages takes to show after the tap that asks for it (Debug builds log it under the
+/// `settings` category, so a slow opening can be measured on a large vault).
+@MainActor
+enum SettingsTiming {
+    static let log = Logger(subsystem: "me.somalabs.onepass", category: "settings")
+    private static var requestedAt: ContinuousClock.Instant?
+
+    /// The tap on "Réglages".
+    static func requested(_ step: String) {
+        #if DEBUG
+        requestedAt = .now
+        log.notice("settings: requested (\(step, privacy: .public))")
+        #endif
+    }
+
+    /// A step after the tap: logs the time since it.
+    static func mark(_ step: String) {
+        #if DEBUG
+        guard let requestedAt else { return }
+        let ms = Int((ContinuousClock.now - requestedAt) / .milliseconds(1))
+        log.notice("settings: \(step, privacy: .public) after \(ms, privacy: .public) ms")
+        #endif
+    }
+}
 
 /// The pages of the settings (spec 6.1, plus Remplissage automatique from milestone 3, Appareils
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, vaults, devices, travel, developer, about
+    case general, security, autofill, sync, accounts, vaults, contacts, family, devices, travel, crypto, developer, about
 
     var id: String { rawValue }
 
@@ -16,9 +42,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: "Sécurité"
         case .autofill: "Remplissage automatique"
         case .sync: "Sync"
+        case .accounts: "accounts.title"
         case .vaults: "Coffres"
+        case .contacts: "settings.contacts.title"
+        case .family: "settings.family.title"
         case .devices: "Appareils"
         case .travel: "Travel Mode"
+        case .crypto: "crypto.title"
         case .developer: "Développeur"
         case .about: "À propos"
         }
@@ -30,9 +60,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: "lock.shield.fill"
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
+        case .accounts: "person.2.fill"
         case .vaults: "square.stack.3d.up.fill"
+        case .contacts: "person.crop.circle.badge.checkmark"
+        case .family: "figure.2.and.child.holdinghands"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
+        case .crypto: "bitcoinsign"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
         }
@@ -44,9 +78,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: Color(red: 0.88, green: 0.58, blue: 0.0)
         case .autofill: Color(red: 0.20, green: 0.47, blue: 0.96)
         case .sync: Color(red: 0.13, green: 0.63, blue: 0.42)
+        case .accounts: Color(red: 0.35, green: 0.34, blue: 0.84)
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .contacts: Color(red: 0.16, green: 0.60, blue: 0.86)
+        case .family: Color(red: 0.93, green: 0.36, blue: 0.45)
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
+        case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Theme.accent
         }
@@ -59,9 +97,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .security: SecuritySettings()
         case .autofill: AutoFillSettings()
         case .sync: SyncSettings()
+        case .accounts: AccountsSettings()
         case .vaults: VaultsSettings()
+        case .contacts: ContactsView()
+        case .family: FamilyView()
         case .devices: DevicesSettings()
         case .travel: TravelSettings()
+        case .crypto: CryptoSettingsView()
         case .developer:
             #if os(macOS)
             DeveloperSettingsPage()
@@ -112,9 +154,13 @@ struct SettingsView: View {
                     row(.sync)
                 }
                 Section {
+                    row(.accounts)
                     row(.vaults)
+                    row(.contacts)
+                    row(.family)
                     row(.devices)
                     row(.travel)
+                    row(.crypto)
                     #if os(iOS)
                     watchRow
                     agentsRow
@@ -123,7 +169,7 @@ struct SettingsView: View {
                 Section {
                     row(.about)
                 } footer: {
-                    Text("OnePass est open source (AGPL-3.0)")
+                    Text("settings.onepassOpenSourceAgpl")
                         .frame(maxWidth: .infinity)
                         .padding(.top, 8)
                 }
@@ -142,6 +188,7 @@ struct SettingsView: View {
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
+        .onAppear { SettingsTiming.mark("shown") }
     }
 
     #if os(iOS)
@@ -185,7 +232,7 @@ private struct SettingsAccountHeader: View {
         HStack(spacing: 14) {
             AccountAvatar(initials: model.initials, photo: model.profileImage, size: 56)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName)
+                Text(model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -224,7 +271,8 @@ enum SettingsTint {
 
 extension View {
     /// Every settings page, iPhone, iPad and Mac: grouped cards and the page's title. iPhone and
-    /// iPad: an inline title over the app's page color, content fading softly under the bar.
+    /// iPad: an inline title over the app's page color, content fading under the bar with the
+    /// shared header fade.
     func settingsPage(_ title: LocalizedStringKey) -> some View {
         formStyle(.grouped)
             .navigationTitle(title)
@@ -236,7 +284,7 @@ extension View {
             .background(Theme.page.ignoresSafeArea())
             // Buttons and values in the accent keep 4.5:1 on the dark cards too.
             .tint(Theme.readableAccent)
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .headerFade()
             #endif
     }
 }
@@ -257,9 +305,13 @@ struct MacSettingsView: View {
                             ForEach([SettingsPage.general, .security, .autofill, .sync], id: \.self) { row($0) }
                         }
                         Section {
+                            row(.accounts)
                             row(.vaults)
+                            row(.contacts)
+                            row(.family)
                             row(.devices)
                             row(.travel)
+                            row(.crypto)
                             row(.developer)
                         }
                         Section {
@@ -281,7 +333,7 @@ struct MacSettingsView: View {
             } else {
                 ContentUnavailableView(
                     "Réglages verrouillés", systemImage: "lock",
-                    description: Text("Déverrouille OnePass pour ouvrir les réglages."))
+                    description: Text("settings.unlockOnepassToOpen"))
             }
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)

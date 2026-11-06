@@ -43,7 +43,7 @@ use crate::crypto::{
     Aad, BlobKind, HybridSignature, SymmetricKey, open, seal, unwrap_key, wrap_key,
 };
 use crate::manifest::SeenManifest;
-use crate::manifest::{SignedManifest, verify_manifest};
+use crate::manifest::{ManifestEntry, SignedManifest, record_hash, verify_manifest};
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::vault::{ItemRecord, Vault};
 use crate::{Error, Id, IntegrityError, Result};
@@ -56,7 +56,9 @@ pub const SEALED_TRAVEL_STATE_LEN: usize = 65536;
 const SIG_DOMAIN: &[u8] = b"travel-state";
 /// KEM context prefix, followed by the account id.
 const KEM_CONTEXT: &[u8] = b"travel:";
-const SCHEMA: u16 = 1;
+/// Schema of a sealed state: 2 adds `parked_items`. Schema 1 still opens.
+const SCHEMA: u16 = 2;
+const SCHEMA_V1: u16 = 1;
 const LEN_PREFIX: usize = 4;
 
 const BAD: Error = Error::InvalidFormat("travel state");
@@ -68,6 +70,17 @@ const UPSTREAM_MISMATCH: Error = Error::InvalidFormat("upstream does not hold th
 pub struct TravelState {
     pub parked: BTreeMap<Id, SeenManifest>,
     pub entered_at: i64,
+    /// Items marked `travel_hidden` parked from vaults that stay: vault id
+    /// to item ids (schema 2; empty in a schema 1 state). Their manifest
+    /// entries stay in the vault's manifest, pinned by `last_seen`.
+    pub parked_items: BTreeMap<Id, BTreeSet<Id>>,
+}
+
+/// A schema 1 state, before parked items.
+#[derive(Serialize, Deserialize)]
+struct TravelStateV1 {
+    parked: BTreeMap<Id, SeenManifest>,
+    entered_at: i64,
 }
 
 /// A vault to bring back: its parked last manifest seen, if any, and
@@ -106,12 +119,23 @@ pub(crate) fn kem_context(account_id: Id) -> Vec<u8> {
     c
 }
 
-fn state_aad(account_id: Id) -> Aad {
+fn state_aad(account_id: Id, schema: u16) -> Aad {
     Aad {
         blob_id: account_id,
         vault_id: None,
-        schema: SCHEMA,
+        schema,
     }
+}
+
+/// Whether `r` is the exact record a manifest entry lists.
+fn exact(e: &ManifestEntry, r: &ItemRecord) -> bool {
+    r.item_id == e.item_id && r.version == e.version && record_hash(r) == e.record_hash
+}
+
+/// The item record body of a stored record of `vault`, if it is one.
+fn item_of(r: &Record, vault: Id) -> Option<ItemRecord> {
+    let (prefix, body) = split_item_record(&r.data).ok()?;
+    (prefix == vault).then(|| ItemRecord::decode(body).ok())?
 }
 
 /// Postcard of the whole buffer, trailing bytes refused.
@@ -142,13 +166,31 @@ impl<S: RecordStore> Repository<S> {
         let local_items = self.store.list(RecordKind::Item)?;
         let local_chunks = self.store.list(RecordKind::Attachment)?;
         let mut plan: Vec<(Id, SeenManifest, Vec<Record>)> = Vec::new();
-        for vault in self.vaults()? {
+        // Spec 2026-11-02: items marked `travel_hidden` in personal vaults
+        // that stay. Shared vaults stay out of Travel Mode, items included.
+        let mut item_plan: Vec<(Id, BTreeSet<Id>, Vec<Record>)> = Vec::new();
+        let mut guarded = false;
+        for vault in self.personal_vaults()? {
             if vault.meta.travel_safe {
+                let (hidden, records, any_guard) = self.hidden_items_of(&vault, upstream)?;
+                guarded |= any_guard;
+                if !hidden.is_empty() {
+                    item_plan.push((vault.id, hidden, records));
+                }
                 continue;
             }
             let loaded = self.load(&vault)?;
+            let mut chunks = Vec::new();
             for (_, r) in &loaded.records {
-                vault.open_item(r)?;
+                let item = vault.open_item(r)?;
+                // The chunks leave too: the server must hold each one.
+                for a in &item.attachments {
+                    for id in crate::attachment::chunk_ids(a)? {
+                        if let Some(chunk) = self.store.get(RecordKind::Attachment, id)? {
+                            chunks.push(chunk);
+                        }
+                    }
+                }
             }
             let mut required = Vec::new();
             for kind in VAULT_KINDS {
@@ -162,6 +204,7 @@ impl<S: RecordStore> Repository<S> {
                         .ok_or(Error::NotFound)?,
                 );
             }
+            required.extend(chunks);
             for r in &required {
                 match upstream.get(r.kind, r.id)? {
                     Some(u) if same(&u, r) => {}
@@ -174,13 +217,20 @@ impl<S: RecordStore> Repository<S> {
             records.extend(items_of(&local_chunks, vault.id).cloned());
             plan.push((vault.id, seen(&loaded.manifest), records));
         }
+        if plan.is_empty() && item_plan.is_empty() && !guarded {
+            return Err(Error::InvalidFormat("nothing leaves"));
+        }
 
         // Only this device's copy goes (`evict`, all or nothing): a store
         // with a server never pushes these as deletions.
         let all: Vec<Record> = plan
             .iter()
             .flat_map(|(_, _, r)| r.iter().cloned())
+            .chain(item_plan.iter().flat_map(|(_, _, r)| r.iter().cloned()))
             .collect();
+        // The autofill history names sites and items of what leaves: it
+        // goes first, and nothing is recorded while travelling.
+        self.clear_autofill_history()?;
         self.store.evict_all(&all)?;
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {
@@ -189,10 +239,84 @@ impl<S: RecordStore> Repository<S> {
             self.travel_parked.insert(id);
             parked.insert(id, seen);
         }
+        let mut parked_items = BTreeMap::new();
+        for (id, items, _) in item_plan {
+            self.travel_parked_items.insert(id, items.clone());
+            parked_items.insert(id, items);
+        }
+        self.travelling = true;
         Ok(TravelState {
             parked,
             entered_at: OffsetDateTime::now_utc().unix_timestamp(),
+            parked_items,
         })
+    }
+
+    /// The items of a vault that stays and that leave (`travel_hidden`,
+    /// never the profile), checked against `upstream`: each one's current
+    /// record and every chunk of its attachments held locally must be there
+    /// byte for byte (`InvalidFormat("upstream does not hold the vault")`
+    /// otherwise). Returns their ids, every local record that goes (the
+    /// current one, ignored leftovers, chunks), and whether any item of the
+    /// vault is guarded.
+    fn hidden_items_of<U: RecordStore>(
+        &self,
+        vault: &Vault,
+        upstream: &U,
+    ) -> Result<(BTreeSet<Id>, Vec<Record>, bool)> {
+        let loaded = self.load(vault)?;
+        let mut hidden = BTreeSet::new();
+        let mut records = Vec::new();
+        let mut guarded = false;
+        for (blob, r) in &loaded.records {
+            let item = vault.open_item(r)?;
+            guarded |= item.travel_guarded();
+            if !item.travel_hidden() || item.is_profile() {
+                continue;
+            }
+            let mut required = vec![
+                self.store
+                    .get(RecordKind::Item, *blob)?
+                    .ok_or(Error::NotFound)?,
+            ];
+            for a in &item.attachments {
+                for id in crate::attachment::chunk_ids(a)? {
+                    if let Some(chunk) = self.store.get(RecordKind::Attachment, id)? {
+                        required.push(chunk);
+                    }
+                }
+            }
+            for r in &required {
+                match upstream.get(r.kind, r.id)? {
+                    Some(u) if same(&u, r) => {}
+                    _ => return Err(UPSTREAM_MISMATCH),
+                }
+            }
+            records.extend(required);
+            for leftover in loaded.ignored_of(item.id) {
+                if let Some(r) = self.store.get(RecordKind::Item, leftover)? {
+                    records.push(r);
+                }
+            }
+            hidden.insert(item.id);
+        }
+        Ok((hidden, records, guarded))
+    }
+
+    /// The Travel Mode is on in this session: entered or resumed, and not
+    /// left since (guarded items only count too).
+    pub fn travelling(&self) -> bool {
+        self.travelling
+            || !self.travel_parked.is_empty()
+            || self.travel_parked_items.values().any(|s| !s.is_empty())
+    }
+
+    /// Whether the Travel Mode parked `item` of `vault` (its records are off
+    /// this device).
+    pub fn is_parked_item(&self, vault: Id, item: Id) -> bool {
+        self.travel_parked_items
+            .get(&vault)
+            .is_some_and(|s| s.contains(&item))
     }
 
     /// Resume the Travel Mode in a new session: the vaults of `state` are
@@ -201,6 +325,13 @@ impl<S: RecordStore> Repository<S> {
     /// `open_travel_state`, which verifies it.
     pub fn resume_travel(&mut self, state: &TravelState) {
         self.travel_parked.extend(state.parked.keys().copied());
+        for (vault, items) in &state.parked_items {
+            self.travel_parked_items
+                .entry(*vault)
+                .or_default()
+                .extend(items.iter().copied());
+        }
+        self.travelling = true;
     }
 
     /// Bring the parked vaults back from `upstream` and verify them as in
@@ -239,7 +370,117 @@ impl<S: RecordStore> Repository<S> {
                 copy: !present,
             });
         }
-        self.restore(upstream, &todo)
+        self.restore_items(upstream, &state.parked_items)?;
+        self.restore(upstream, &todo)?;
+        self.travelling = false;
+        Ok(())
+    }
+
+    /// Bring back the parked items of the vaults that stayed: copy from
+    /// `upstream` the exact records the local manifest (verified against
+    /// the last one seen) lists for them, and their attachments' chunks,
+    /// then load each vault through `items()` with nothing tolerated. An
+    /// item the manifest no longer lists (deleted by another device) is
+    /// forgotten. A vault no longer listed (deleted meanwhile) is skipped.
+    ///
+    /// On failure the copied records are evicted again and the parked set
+    /// is put back, so the state stays valid.
+    fn restore_items<U: RecordStore>(
+        &mut self,
+        upstream: &U,
+        parked: &BTreeMap<Id, BTreeSet<Id>>,
+    ) -> Result<()> {
+        if parked.values().all(BTreeSet::is_empty) {
+            return Ok(());
+        }
+        let before = self.travel_parked_items.clone();
+        let mut copied: Vec<(RecordKind, Id)> = Vec::new();
+        let result = self.copy_items(upstream, parked, &mut copied);
+        if result.is_err() {
+            self.travel_parked_items = before;
+            let mut rollback = Ok(());
+            for (kind, id) in copied.into_iter().rev() {
+                if let Err(e) = self.store.evict(kind, id) {
+                    rollback = rollback.and(Err(e));
+                }
+            }
+            rollback?;
+        }
+        result
+    }
+
+    fn copy_items<U: RecordStore>(
+        &mut self,
+        upstream: &U,
+        parked: &BTreeMap<Id, BTreeSet<Id>>,
+        copied: &mut Vec<(RecordKind, Id)>,
+    ) -> Result<()> {
+        let vaults = self.vaults()?;
+        let upstream_items = upstream.list(RecordKind::Item)?;
+        let local_items = self.store.list(RecordKind::Item)?;
+        for (vault_id, items) in parked {
+            let Some(vault) = vaults.iter().find(|v| v.id == *vault_id) else {
+                self.travel_parked_items.remove(vault_id);
+                continue;
+            };
+            let manifest = self.read_manifest(vault, self.device.last_seen.get(vault_id))?;
+            for e in manifest
+                .entries
+                .iter()
+                .filter(|e| items.contains(&e.item_id))
+            {
+                let local = local_items
+                    .iter()
+                    .find(|r| item_of(r, *vault_id).is_some_and(|i| exact(e, &i)));
+                let record = match local {
+                    Some(r) => r.clone(),
+                    None => match upstream_items
+                        .iter()
+                        .find(|r| item_of(r, *vault_id).is_some_and(|i| exact(e, &i)))
+                    {
+                        Some(r) => {
+                            self.put_new(r.clone(), copied)?;
+                            r.clone()
+                        }
+                        // The verification below reports it missing.
+                        None => continue,
+                    },
+                };
+                let Some(rec) = item_of(&record, *vault_id) else {
+                    continue;
+                };
+                let Ok(item) = vault.open_item(&rec) else {
+                    continue;
+                };
+                for a in &item.attachments {
+                    for id in crate::attachment::chunk_ids(a)? {
+                        if self.store.get(RecordKind::Attachment, id)?.is_none()
+                            && let Some(chunk) = upstream.get(RecordKind::Attachment, id)?
+                        {
+                            self.put_new(chunk, copied)?;
+                        }
+                    }
+                }
+            }
+            self.travel_parked_items.remove(vault_id);
+            self.items(vault)?;
+        }
+        Ok(())
+    }
+
+    /// Put `r` unless the same record is already there; a different local
+    /// record under its key is refused (never overwritten).
+    fn put_new(&mut self, r: Record, copied: &mut Vec<(RecordKind, Id)>) -> Result<()> {
+        match self.store.get(r.kind, r.id)? {
+            None => {
+                let key = (r.kind, r.id);
+                self.store.put(r)?;
+                copied.push(key);
+                Ok(())
+            }
+            Some(local) if same(&local, &r) => Ok(()),
+            Some(_) => Err(IntegrityError::WrongContext.into()),
+        }
     }
 
     /// Bring back every vault of `upstream` absent locally, without a
@@ -271,6 +512,34 @@ impl<S: RecordStore> Repository<S> {
             })
             .collect();
         self.restore(upstream, &todo)?;
+        // Items parked from vaults that stayed: every listed entry without
+        // a local record is brought back the same way.
+        let mut parked: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
+        let local_items = self.store.list(RecordKind::Item)?;
+        for vault in self.open_vaults()? {
+            let Ok(m) = self.read_manifest(&vault, self.device.last_seen.get(&vault.id)) else {
+                continue;
+            };
+            let absent: BTreeSet<Id> = m
+                .entries
+                .iter()
+                .filter(|e| {
+                    !local_items
+                        .iter()
+                        .any(|r| item_of(r, vault.id).is_some_and(|i| exact(e, &i)))
+                })
+                .map(|e| e.item_id)
+                .collect();
+            if !absent.is_empty() {
+                self.travel_parked_items
+                    .entry(vault.id)
+                    .or_default()
+                    .extend(absent.iter().copied());
+                parked.insert(vault.id, absent);
+            }
+        }
+        self.restore_items(upstream, &parked)?;
+        self.travelling = false;
         Ok(missing.into_iter().collect())
     }
 
@@ -413,7 +682,7 @@ impl<S: RecordStore> Repository<S> {
                 }
             }
         }
-        let listed = self.vaults()?;
+        let listed = self.personal_vaults()?;
         for v in vaults {
             let vault = listed
                 .iter()
@@ -430,11 +699,32 @@ impl<S: RecordStore> Repository<S> {
     /// `u32 BE len(body) || body || postcard(sig)`, zero padded to
     /// `SEALED_TRAVEL_STATE_LEN`, where `body = postcard((envelope, blob))`.
     pub fn seal_travel_state(&self, s: &TravelState) -> Result<Vec<u8>> {
+        let plain = postcard::to_allocvec(s).map_err(|_| BAD)?;
+        self.seal_state_bytes(&plain, SCHEMA)
+    }
+
+    /// A schema 1 sealed state, as a build from before parked items wrote
+    /// it (`parked_items` is left out). For compatibility tests only.
+    #[doc(hidden)]
+    pub fn seal_travel_state_v1_for_tests(&self, s: &TravelState) -> Result<Vec<u8>> {
+        let v1 = TravelStateV1 {
+            parked: s.parked.clone(),
+            entered_at: s.entered_at,
+        };
+        let plain = postcard::to_allocvec(&v1).map_err(|_| BAD)?;
+        self.seal_state_bytes(&plain, SCHEMA_V1)
+    }
+
+    fn seal_state_bytes(&self, plain: &[u8], schema: u16) -> Result<Vec<u8>> {
         let account_id = self.account_id();
         let key = SymmetricKey::generate()?;
         let envelope = wrap_key(&self.account.params.kem_pub, &key, &kem_context(account_id))?;
-        let plain = postcard::to_allocvec(s).map_err(|_| BAD)?;
-        let blob = seal(&key, BlobKind::TravelState, &state_aad(account_id), &plain)?;
+        let blob = seal(
+            &key,
+            BlobKind::TravelState,
+            &state_aad(account_id, schema),
+            plain,
+        )?;
         let body = postcard::to_allocvec(&(envelope, blob)).map_err(|_| BAD)?;
         let sig = self.sign_local(SIG_DOMAIN, &body)?;
         let sig = postcard::to_allocvec(&sig).map_err(|_| BAD)?;
@@ -522,7 +812,28 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         let key = found.ok_or_else(|| first_err.unwrap_or(BAD))?;
-        let plain = open(&key, BlobKind::TravelState, &state_aad(account_id), &blob)?;
-        Ok((decode_exact(&plain)?, retired_only))
+        // The schema is bound in the AAD: a schema 1 state (before parked
+        // items) opens only under schema 1 and decodes as one.
+        if let Ok(plain) = open(
+            &key,
+            BlobKind::TravelState,
+            &state_aad(account_id, SCHEMA),
+            &blob,
+        ) {
+            return Ok((decode_exact(&plain)?, retired_only));
+        }
+        let plain = open(
+            &key,
+            BlobKind::TravelState,
+            &state_aad(account_id, SCHEMA_V1),
+            &blob,
+        )?;
+        let v1: TravelStateV1 = decode_exact(&plain)?;
+        let state = TravelState {
+            parked: v1.parked,
+            entered_at: v1.entered_at,
+            parked_items: BTreeMap::new(),
+        };
+        Ok((state, retired_only))
     }
 }

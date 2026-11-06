@@ -143,3 +143,34 @@ struct NearbySessionTests {
         session.lock()
     }
 }
+
+/// "À proximité" on a library of `count` items, `placed` of them with a place: how long the first
+/// search takes (cold index) and the next one (warm). Prints the figures; run alone for numbers.
+@MainActor
+@Suite("Session: À proximité, cost", .serialized)
+struct NearbyCostTests {
+    @Test func firstSearchReadsOnlyItemsWithAPlace() async throws {
+        let harness = try SessionHarness()
+        defer { harness.cleanUp() }
+        let session = harness.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let count = 500, placed = 12
+        let vault = session.allVaults[0].id
+        for i in 0..<count {
+            var item = try session.newItem(type: i.isMultiple(of: 3) ? .secureNote : .login, vaultID: vault)
+            item.title = "Élément \(i)"
+            fillRequired(&item)
+            if i < placed { item.locations = [location(i.isMultiple(of: 2) ? nearHotelDeVille : laDefense)] }
+            _ = try await session.save(item)
+        }
+        let clock = ContinuousClock()
+        var result: [NearbyItem] = []
+        let cold = try await clock.measure { result = try await session.nearbyItems(from: hotelDeVille) }
+        let warm = try await clock.measure { result = try await session.nearbyItems(from: hotelDeVille) }
+        print("nearby cost: \(count) items, \(placed) placed: cold \(cold), warm \(warm), read \(session.nearbyItemsRead)")
+        #expect(result.count == placed / 2)
+        // Only the items holding a place are decrypted for the index.
+        #expect(session.nearbyItemsRead == placed)
+        session.lock()
+    }
+}

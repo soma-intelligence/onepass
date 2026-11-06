@@ -27,10 +27,19 @@ import UIKit
 ///   it off; `-OnePassDemoNoAutoBiometrics YES` skips the automatic attempt of the lock screen
 ///   (captures); `-OnePassDemoBiometricOffer YES` stays unlocked and shows the first-unlock offer.
 /// - `-OnePassDemoHostDevice YES` (Mac): opens "Configurer un appareil…" once the data is there.
+/// - Crypto wallets with watch data and recorded balances (DemoCrypto); `-OnePassDemoCrypto NO`
+///   leaves them unwatched.
 /// - `-OnePassSnapshot <folder>` (Mac): implies the demo data, renders the window into PNGs, quits.
+/// - `-OnePassDemoSecondAccount YES`: also a business account "Atelier Atlas" (orange, work domain
+///   `atlas.exemple.fr`, same demo password) next to the personal one, locked;
+///   `-OnePassDemoUnifiedSearch YES` turns the search over all accounts on;
+///   `-OnePassDemoShowWork YES` shows the business account (locked); `-OnePassDemoAddAccount YES`
+///   opens "Ajouter un compte".
+/// - `-OnePassDemoBulkItems <n>`: n more fictional logins (a large vault for measurements).
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
+    static let log = Logger(subsystem: "me.somalabs.onepass", category: "demo")
     private static let suiteName = "me.somalabs.onepass.demo"
     private static let folderPrefix = "OnePassDemo-"
 
@@ -184,7 +193,10 @@ enum DemoTrace {
 extension AppModel {
     func seedDemoData() {
         DemoTrace.log("demo: state %@", String(describing: session.state))
-        guard session.state == .noAccount else { return }
+        guard session.state == .noAccount else {
+            demoPreparing = false
+            return
+        }
         let defaults = UserDefaults.standard
         Task {
             do {
@@ -209,6 +221,10 @@ extension AppModel {
                     try? await session.enrollBiometrics(password: DemoData.password)
                     DemoTrace.log("demo: biometrics %@", session.canUseBiometrics ? "on" : "off")
                 }
+                if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
+                // `-OnePassDemoSharing YES [-OnePassDemoRecoveryAlert YES]`: the sharing screens.
+                if defaults.bool(forKey: "OnePassDemoSharing") { showDemoSharing() }
+                demoPreparing = false
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
                 if defaults.bool(forKey: "OnePassDemoAccountChanged") { debugSetSyncStatus(.accountChanged) }
@@ -231,13 +247,85 @@ extension AppModel {
                 #endif
             } catch {
                 DemoTrace.log("demo: seeding failed: %@", String(describing: VaultError(error)))
+                // In the system log too: a half-seeded demo is otherwise silent on iOS.
+                DemoData.log.error("demo seeding failed: \(String(describing: VaultError(error)), privacy: .public)")
                 onboardingInProgress = false
+                demoPreparing = false
                 #if os(iOS) || os(visionOS)
                 // The settings captures need no items.
                 showSettings = defaults.bool(forKey: "OnePassDemoSettings")
                 #endif
             }
         }
+    }
+}
+
+extension AppModel {
+    /// Sharing screens without a mailbox (sharing plan 4): a fixed snapshot, never refreshed.
+    /// "Projet Atlas" is shared by this account (Camille in Write, Léo by link in Read), "Famille"
+    /// is shared with it in Read, one invitation waits, and the family has one organizer.
+    fileprivate func showDemoSharing() {
+        let atlas = session.vaults.first { $0.meta.name == "Projet Atlas" }?.id ?? ""
+        let family = session.vaults.first { $0.meta.name == "Famille" }?.id ?? ""
+        let me = "demo-me", camille = "demo-camille", leo = "demo-leo"
+        let now = Int64(Date().timeIntervalSince1970)
+        var snapshot = SharingSnapshot()
+        snapshot.contacts = [
+            FfiContact(
+                accountId: camille, nameLocal: "Camille Durand", level: .verified, state: .active,
+                verifiedAt: now - 86_400, safetyNumber: "48213 90577 11640 32098 75521 60034"),
+            FfiContact(
+                accountId: leo, nameLocal: "Léo Martin", level: .link, state: .active,
+                verifiedAt: 0, safetyNumber: "17702 64390 22815 90476 31158 84203"),
+        ]
+        snapshot.sharedVaults = [
+            FfiSharedVault(
+                vaultId: atlas, name: "Projet Atlas", role: .manage, owner: true, generation: 1,
+                members: [
+                    FfiMember(accountId: me, nameLocal: "", role: .manage, owner: true, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: camille, nameLocal: "Camille Durand", role: .write, owner: false, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: leo, nameLocal: "Léo Martin", role: .read, owner: false, level: .link, keysChanged: false, keyPending: false),
+                ],
+                identityPending: false, mcpHidden: false),
+            FfiSharedVault(
+                vaultId: family, name: "Famille", role: .read, owner: false, generation: 1,
+                members: [
+                    FfiMember(accountId: camille, nameLocal: "Camille Durand", role: .manage, owner: true, level: .verified, keysChanged: false, keyPending: false),
+                    FfiMember(accountId: me, nameLocal: "", role: .read, owner: false, level: .verified, keysChanged: false, keyPending: false),
+                ],
+                identityPending: false, mcpHidden: false),
+        ]
+        snapshot.shareInvites = [
+            FfiShareInvite(id: "demo-invite", vaultNameHint: "Vacances", fromNameLocal: "Camille Durand", role: .write, serverHost: "somalabs.me")
+        ]
+        snapshot.family = FfiFamily(
+            familyId: "demo-family",
+            members: [
+                FfiFamilyMember(accountId: me, nameLocal: "", role: .organizer, level: .verified, keysChanged: false),
+                FfiFamilyMember(accountId: camille, nameLocal: "Camille Durand", role: .member, level: .verified, keysChanged: false),
+            ],
+            vaults: [family], iAmOrganizer: true, needsSecondOrganizer: true)
+        snapshot.seenByFormerMembers = Set(session.summaries.filter { $0.vaultId == atlas }.prefix(2).map(\.id))
+        let alerts = UserDefaults.standard.bool(forKey: "OnePassDemoRecoveryAlert")
+            ? [FfiRecoveryAlert(enrollmentId: "demo-enrollment", organizerNameLocal: "Camille Durand", releaseAfter: now + 3 * 86_400)]
+            : []
+        session.showDemoSharing(snapshot, alerts: alerts)
+    }
+
+    /// A second, business account on the same device: its own store, keyset and Secret Key.
+    fileprivate func seedSecondDemoAccount() async throws {
+        let slot = try accounts.beginAdding(kind: .business, label: "Atelier Atlas", color: .orange)
+        guard let work = accounts.session(for: slot) else { return }
+        _ = try await work.createAccount(
+            password: DemoData.password, displayName: DemoData.displayName, mode: .personal)
+        try accounts.finishAdding(slot)
+        try accounts.update(slot, label: "Atelier Atlas", color: .orange, workDomains: ["atlas.exemple.fr"])
+        try await DemoSeeder(session: work).runWork()
+        if UserDefaults.standard.bool(forKey: "OnePassDemoUnifiedSearch") { try accounts.setUnifiedSearch(true) }
+        accounts.lock(slot)
+        if UserDefaults.standard.bool(forKey: "OnePassDemoShowWork") { switchAccount(to: slot) }
+        showAddAccount = UserDefaults.standard.bool(forKey: "OnePassDemoAddAccount")
+        DemoTrace.log("demo: second account %@", slot)
     }
 }
 
@@ -321,15 +409,29 @@ private struct DemoSeeder {
             "cvv": .concealed(value: "123"),
             "issuer": .text(value: "Banque Exemple"),
         ], tags: ["Finance"], favorite: true)
+        // Two more networks, so the list tells cards apart by their last four (public test numbers).
+        try await add(.creditCard, "Mastercard Pro", personal, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "5555 5555 5555 4444"),
+            "expiry": .monthYear(year: 2029, month: 11),
+            "issuer": .text(value: "Banque Exemple"),
+        ], tags: ["Finance"])
+        try await add(.creditCard, "Amex Platinum", personal, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "3782 822463 10005"),
+            "expiry": .monthYear(year: 2031, month: 6),
+        ], tags: ["Finance"])
         try await add(.bankAccount, "Compte courant", personal, [
             "bank": .text(value: "Banque Exemple"),
             "holder": .text(value: "Camille Durand"),
             "iban": .text(value: "FR76 3000 6000 0112 3456 7890 189"),
         ], tags: ["Finance"])
-        try await add(.cryptoWallet, "Portefeuille de test", personal, [
+        let wallet = try await add(.cryptoWallet, "Portefeuille de test", personal, [
             "name": .text(value: "Portefeuille de test"),
             "recovery_phrase": .mnemonic(value: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"),
         ], tags: ["Finance"])
+        // The wallets' public addresses and a watch-only one (off with `-OnePassDemoCrypto NO`).
+        try await DemoCrypto.seed(session, vaultID: personal, phraseWallet: wallet)
         try await add(.subscription, "Musique Exemple", family, [
             "service": .text(value: "Musique Exemple"),
             "price": .money(minorUnits: 1099, currency: "EUR"),
@@ -419,6 +521,22 @@ private struct DemoSeeder {
             "seats": .number(value: 5),
         ], tags: ["Travail"])
 
+        // Possible duplicates (spec 2026-11-03-duplicates): the same GitHub account saved again in
+        // Personnel, the Google account saved from Gmail, the Visa card entered again in Famille.
+        try await add(.login, "GitHub", personal, [
+            "username": .text(value: "Camille.Durand@exemple.fr"),
+            "password": .password(value: "Ancien-Forge-2024"),
+        ], urls: ["https://github.com/login"], notes: "Enregistré depuis Safari.")
+        try await add(.login, "Gmail", personal, [
+            "username": .text(value: "camille.durand.exemple@gmail.com"),
+            "password": .password(value: "Colline-Ardoise-Pluie-73"),
+        ], urls: ["https://mail.google.com"])
+        try await add(.creditCard, "Visa Banque Exemple", family, [
+            "cardholder": .text(value: "CAMILLE DURAND"),
+            "number": .concealed(value: "4111111111111111"),
+            "expiry": .monthYear(year: 2030, month: 3),
+        ], tags: ["Famille"])
+
         // One archived item, one in Supprimés récemment.
         let old = try await add(.login, "Ancien forum Exemple", personal, [
             "username": .text(value: "camille.d"),
@@ -430,10 +548,44 @@ private struct DemoSeeder {
         ])
         try await session.trash(itemID: draft.id, vaultID: draft.vaultId)
         _ = forge
+        try await addBulk(personal: personal, atlas: atlas, family: family)
+    }
+
+    /// `-OnePassDemoBulkItems <n>`: n more fictional logins over the three vaults, so a large vault
+    /// can be measured (Réglages opening, lists). Every value is made up (`site-N.exemple.fr`).
+    private func addBulk(personal: String, atlas: String, family: String) async throws {
+        let count = UserDefaults.standard.integer(forKey: "OnePassDemoBulkItems")
+        guard count > 0 else { return }
+        let vaults = [personal, atlas, family]
+        for index in 1...count {
+            try await add(.login, "Site exemple \(index)", vaults[index % vaults.count], [
+                "username": .text(value: "camille.\(index)@exemple.fr"),
+                "password": .password(value: "Exemple-\(index)-Mot-\(index * 7919 % 10000)"),
+            ], urls: ["https://site-\(index).exemple.fr"], tags: index % 5 == 0 ? ["Travail"] : [])
+        }
+        DemoTrace.log("demo: %d bulk items", count)
     }
 
     private func vaultID(_ name: String) -> String? {
         session.vaults.first { $0.meta.name == name }?.id
+    }
+
+    /// The business account's few items.
+    func runWork() async throws {
+        guard let vault = session.vaults.first?.id else { return }
+        try await add(.login, "Intranet Atlas", vault, [
+            "username": .text(value: "c.durand"),
+            "password": .password(value: "Brume-Falaise-Corde-42"),
+        ], urls: ["https://intranet.atlas.exemple.fr"], favorite: true)
+        try await add(.login, "Suivi des tickets", vault, [
+            "username": .text(value: "c.durand@atlas.exemple.fr"),
+            "password": .password(value: "Sable-Orme-Piste-09"),
+        ], urls: ["https://tickets.atlas.exemple.fr"])
+        try await add(.server, "Base de recette", vault, [
+            "host": .text(value: "recette.atlas.exemple.fr"),
+            "username": .text(value: "qa"),
+            "password": .password(value: "Lierre-Canal-Bise-64"),
+        ])
     }
 
     @discardableResult

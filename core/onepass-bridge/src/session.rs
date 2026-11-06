@@ -74,7 +74,7 @@ pub struct VectorKeys {
 
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut b = [0u8; N];
-    aws_lc_rs::rand::fill(&mut b).map_err(|_| BridgeError::Crypto)?;
+    onepass_core::crypto::random::fill_random(&mut b).map_err(|_| BridgeError::Crypto)?;
     Ok(b)
 }
 

@@ -16,6 +16,7 @@ use aws_lc_rs::signature::{
 };
 use crypto_bigint::{BoxedUint, NonZero};
 use data_encoding::BASE64_NOPAD;
+use onepass_core::crypto::random::fill_random;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::der;
@@ -194,6 +195,34 @@ fn crypto<T>(_: T) -> KeyError {
     KeyError::Crypto
 }
 
+/// A new ECDSA key whose scalar comes from the hedged random source, read
+/// back by aws-lc from an RFC 5915 `ECPrivateKey` (aws-lc computes the
+/// public point). A draw outside `[1, n-1]` is drawn again.
+fn hedged_ecdsa(curve: Curve) -> Result<EcdsaKeyPair, KeyError> {
+    let (oid, top_mask): (&[u8], u8) = match curve {
+        Curve::P256 => (&[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07], 0xff),
+        Curve::P384 => (&[0x2b, 0x81, 0x04, 0x00, 0x22], 0xff),
+        // 521 bits in 66 bytes: the top byte holds one bit.
+        Curve::P521 => (&[0x2b, 0x81, 0x04, 0x00, 0x23], 0x01),
+    };
+    let n = curve.field_len();
+    let body = 3 + 2 + n + 2 + 2 + oid.len();
+    for _ in 0..16 {
+        let mut der = Zeroizing::new(Vec::with_capacity(2 + body));
+        der.extend_from_slice(&[0x30, body as u8, 0x02, 0x01, 0x01, 0x04, n as u8]);
+        let at = der.len();
+        der.resize(at + n, 0);
+        fill_random(&mut der[at..]).map_err(crypto)?;
+        der[at] &= top_mask;
+        der.extend_from_slice(&[0xa0, (2 + oid.len()) as u8, 0x06, oid.len() as u8]);
+        der.extend_from_slice(oid);
+        if let Ok(pair) = EcdsaKeyPair::from_private_key_der(curve.signing(), &der) {
+            return Ok(pair);
+        }
+    }
+    Err(KeyError::Crypto)
+}
+
 const RSA_KEY_SIZE: KeyError = KeyError::Unsupported("RSA key size");
 /// RSA moduli accepted at import (aws-lc-rs supports 2048 to 8192 bits).
 const RSA_MIN_BITS: usize = 2048;
@@ -217,11 +246,15 @@ fn bit_len(magnitude: &[u8]) -> usize {
 }
 
 impl AgentKey {
-    /// Generates a new key with aws-lc-rs.
+    /// Generates a new key. Ed25519 and ECDSA private keys come from the
+    /// core's hedged random source (`onepass_core::crypto::random`); RSA
+    /// primes are drawn by aws-lc itself, which takes no outside randomness.
     pub fn generate(t: KeyType) -> Result<AgentKey, KeyError> {
         match t {
             KeyType::Ed25519 => {
-                let pair = Ed25519KeyPair::generate().map_err(crypto)?;
+                let mut seed = Zeroizing::new([0u8; 32]);
+                fill_random(&mut *seed).map_err(crypto)?;
+                let pair = Ed25519KeyPair::from_seed_unchecked(&*seed).map_err(crypto)?;
                 Self::from_ed25519_pair(pair)
             }
             KeyType::EcdsaP256 | KeyType::EcdsaP384 | KeyType::EcdsaP521 => {
@@ -230,8 +263,7 @@ impl AgentKey {
                     KeyType::EcdsaP384 => Curve::P384,
                     _ => Curve::P521,
                 };
-                let pair = EcdsaKeyPair::generate(curve.signing()).map_err(crypto)?;
-                Self::from_ecdsa_pair(curve, pair)
+                Self::from_ecdsa_pair(curve, hedged_ecdsa(curve)?)
             }
             KeyType::Rsa3072 | KeyType::Rsa4096 => {
                 let size = if t == KeyType::Rsa3072 {

@@ -139,3 +139,60 @@ export function safariTransport(runtime: SafariNativeApi, connId: string = rando
     },
   };
 }
+
+/**
+ * The vault of the iOS handler's own process (spec 2026-11-03-ios-safari-autofill 4), as the
+ * unlock sheet sees it: no secret, no item data. `error` is set after a refused unlock.
+ */
+export interface NativeVault {
+  locked: boolean;
+  account: string;
+  biometry: "faceID" | "touchID" | "opticID" | "none";
+  error?: NativeVaultError;
+  message?: string;
+}
+
+export type NativeVaultError = "password_required" | "wrong_password" | "cancelled" | "locked_out" | "no_account" | "failed";
+
+const BIOMETRY: ReadonlySet<string> = new Set(["faceID", "touchID", "opticID", "none"]);
+const VAULT_ERRORS: ReadonlySet<string> = new Set(["password_required", "wrong_password", "cancelled", "locked_out", "no_account", "failed"]);
+
+/** `{ok: true, vault: {...}}` strictly, else null (the Mac relay answers `bad_request`: no native vault there). */
+export function parseNativeVault(raw: unknown): NativeVault | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.ok !== true || r.vault === null || typeof r.vault !== "object" || Array.isArray(r.vault)) return null;
+  const v = r.vault as Record<string, unknown>;
+  if (typeof v.locked !== "boolean" || typeof v.account !== "string" || v.account.length > 320) return null;
+  if (typeof v.biometry !== "string" || !BIOMETRY.has(v.biometry)) return null;
+  const out: NativeVault = { locked: v.locked, account: v.account, biometry: v.biometry as NativeVault["biometry"] };
+  if (v.error !== undefined) {
+    if (typeof v.error !== "string" || !VAULT_ERRORS.has(v.error)) return null;
+    out.error = v.error as NativeVaultError;
+  }
+  if (v.message !== undefined) {
+    if (typeof v.message !== "string" || v.message.length > 512) return null;
+    out.message = v.message;
+  }
+  return out;
+}
+
+/** Longest master password the handler takes, in UTF-8 bytes (RelayRequest.maxPassword). */
+export const MAX_PASSWORD_BYTES = 1024;
+
+export type NativeVaultCall = { op: "vault_state" } | { op: "unlock_biometric" } | { op: "unlock_password"; password: string };
+
+/** One native vault call; null when this Safari has no native vault (macOS) or the reply is bad. */
+export async function nativeVault(runtime: SafariNativeApi, call: NativeVaultCall): Promise<NativeVault | null> {
+  const msg: Record<string, unknown> = { onepass: 1, op: call.op };
+  if (call.op === "unlock_password") {
+    const bytes = new TextEncoder().encode(call.password).length;
+    if (bytes === 0 || bytes > MAX_PASSWORD_BYTES) return null;
+    msg.password = call.password;
+  }
+  try {
+    return parseNativeVault(await runtime.sendNativeMessage(SAFARI_APP, msg));
+  } catch {
+    return null;
+  }
+}

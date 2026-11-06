@@ -153,7 +153,7 @@ public final class PhoneApprovals {
         defer { busy = false }
         if on {
             guard let target = phone ?? phones.first?.id else {
-                errorMessage = String(localized: "Aucun iPhone enrôlé.", bundle: VaultKitStrings.bundle)
+                errorMessage = String(localized: "developer.noIphoneEnrolled", bundle: VaultKitStrings.bundle)
                 return
             }
             do {

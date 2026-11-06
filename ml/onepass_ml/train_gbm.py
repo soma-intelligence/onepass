@@ -38,13 +38,14 @@ def train_gbm(
     learning_rate: float = 0.2,
     early_stopping_rounds: int = 10,
     extra: tuple[Any, Any, float] | None = None,
+    matrices: tuple[Any, Any, Any, Any] | None = None,
 ) -> Path:
     """`extra` = (X, y, weight): more training rows (the bench's bench_train), each weighted `weight`."""
     data, out = Path(data), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
-    X, y = load_matrix(data / "train.parquet")
-    Xv, yv = load_matrix(data / "val.parquet")
+    # `matrices` = (X, y, Xv, yv) already vectorized (bench_compare trains twice on the same lab data).
+    X, y, Xv, yv = matrices if matrices is not None else (*load_matrix(data / "train.parquet"), *load_matrix(data / "val.parquet"))
     params = {
         "objective": "multiclass",
         "num_class": len(LABELS),

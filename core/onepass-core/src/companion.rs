@@ -392,15 +392,18 @@ fn live_items<S: RecordStore>(
     excluded_vaults: &[Id],
     keep: impl Fn(&Item) -> bool,
 ) -> Result<Vec<Item>> {
+    // Travel Mode (spec 2026-11-02): an item behind extra protection is
+    // never on the Watch or in a widget while travelling.
+    let guard = repo.travelling();
     let mut out = Vec::new();
     for vault in repo.vaults()? {
         if excluded_vaults.contains(&vault.id) {
             continue;
         }
         out.extend(
-            repo.items(&vault)?
-                .into_iter()
-                .filter(|i| is_live(i, excluded_vaults) && keep(i)),
+            repo.items(&vault)?.into_iter().filter(|i| {
+                is_live(i, excluded_vaults) && keep(i) && !(guard && i.travel_guarded())
+            }),
         );
     }
     out.sort_by(by_title);

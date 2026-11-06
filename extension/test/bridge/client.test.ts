@@ -25,7 +25,7 @@ class FakeHost implements Transport {
   constructor(
     readonly record: PairingRecord,
     private readonly answer: Answer,
-    private readonly opts: { badWelcomeMac?: boolean; errorOnHello?: string } = {},
+    private readonly opts: { badWelcomeMac?: boolean; errorOnHello?: string; vouch?: boolean } = {},
   ) {}
 
   send(env: Envelope): void {
@@ -52,10 +52,17 @@ class FakeHost implements Transport {
     | { hello: Record<string, string>; kem: ReturnType<typeof generateKem>; nH: Uint8Array; id: Uint8Array }
     | undefined;
   pairedKey: Uint8Array | undefined;
+  helloAuto = false;
 
   private async handle(raw: unknown): Promise<void> {
     const env = parseEnvelope(raw);
     if (env.t === "pair_hello") {
+      this.helloAuto = env.auto === true;
+      // The app asked for an automatic pairing it cannot vouch for: refused at once.
+      if (this.helloAuto && this.opts.vouch === false) {
+        this.deliver({ v: 1, t: "error", code: "not_allowed" });
+        return;
+      }
       const kem = generateKem();
       const nH = randomBytes(32);
       const id = randomBytes(16);
@@ -83,7 +90,8 @@ class FakeHost implements Transport {
       const t = await tr.hash();
       const confirm = await expand(t, ss, "onepass/bridge/pair-confirm/v1");
       this.pairedKey = await expand(t, ss, "onepass/bridge/pairing-key/v1");
-      this.deliver({ v: 1, t: "pair_sas" });
+      // `vouch` undefined: an older app, which always asks for the code.
+      this.deliver({ v: 1, t: this.helloAuto && this.opts.vouch === true ? "pair_auto" : "pair_sas" });
       this.deliver({ v: 1, t: "pair_done", mac: toB64(await hmac(confirm, "host", t)) });
     } else if (env.t === "pair_confirm") {
       this.deliver({ v: 1, t: "pair_ok" });
@@ -294,6 +302,57 @@ describe("BridgeClient pairing", () => {
     });
     expect(shown).toMatch(/^\d{3} \d{3}$/);
     expect(rec.key).toEqual(host.pairedKey);
+  });
+
+  it("pairs without a code when the app vouches for the browser", async () => {
+    const host = new FakeHost(record(), () => undefined, { vouch: true });
+    const client = new BridgeClient(host);
+    let asked = false;
+    const rec = await client.pair(
+      "OnePass",
+      "Chrome",
+      async () => {
+        asked = true;
+        return false;
+      },
+      { auto: true },
+    );
+    expect(host.helloAuto).toBe(true);
+    expect(asked).toBe(false);
+    expect(rec.key).toEqual(host.pairedKey);
+  });
+
+  it("an automatic pairing the app refuses ends with not_allowed", async () => {
+    const host = new FakeHost(record(), () => undefined, { vouch: false });
+    const client = new BridgeClient(host);
+    const e = (await rejection(client.pair("OnePass", "Chrome", async () => true, { auto: true }))) as BridgeError;
+    expect(e.code).toBe("host");
+    expect(e.hostCode).toBe("not_allowed");
+  });
+
+  it("an automatic pairing never falls into the code flow of an older app", async () => {
+    const host = new FakeHost(record(), () => undefined);
+    const client = new BridgeClient(host);
+    let asked = false;
+    const e = (await rejection(
+      client.pair(
+        "OnePass",
+        "Chrome",
+        async () => {
+          asked = true;
+          return true;
+        },
+        { auto: true },
+      ),
+    )) as BridgeError;
+    expect(e.code).toBe("refused");
+    expect(asked).toBe(false);
+  });
+
+  it("a code pairing never sends auto", async () => {
+    const host = new FakeHost(record(), () => undefined, { vouch: true });
+    await new BridgeClient(host).pair("OnePass", "Chrome", async () => true);
+    expect(host.helloAuto).toBe(false);
   });
 
   /** Start a pairing whose user step never settles; resolves once the host MAC verified. */

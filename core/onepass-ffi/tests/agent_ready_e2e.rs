@@ -222,6 +222,7 @@ fn mac_and_phone() -> (Device, Device) {
         FfiDeviceKind::Phone,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let a = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -233,6 +234,7 @@ fn mac_and_phone() -> (Device, Device) {
             created.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();

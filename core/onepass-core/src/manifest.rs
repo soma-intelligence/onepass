@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::{
     Aad, BlobKind, HybridSignature, HybridSigningKey, HybridVerifyingKey, open, seal,
 };
+use crate::share::MembershipSeen;
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
 
@@ -48,6 +49,24 @@ pub struct ManifestExt {
     /// at most `HISTORY` of them: a device that skipped some manifests
     /// still checks that its last one is an ancestor.
     pub history: Vec<(u64, [u8; 32])>,
+    /// Shared vaults only (sharing spec 8.1): the membership body this
+    /// manifest was written under. Encoded with `EXT_V2`, together with
+    /// `generation`; a personal manifest leaves both unset and keeps its
+    /// `EXT_V1` bytes.
+    #[serde(skip)]
+    pub membership: Option<MembershipSeen>,
+    /// Shared vaults only: the key generation the blob is sealed under.
+    #[serde(skip)]
+    pub generation: Option<u32>,
+}
+
+/// `ManifestExt` as `EXT_V2` encodes it.
+#[derive(Serialize, Deserialize)]
+struct ExtV2 {
+    meta_hash: Option<[u8; 32]>,
+    history: Vec<(u64, [u8; 32])>,
+    membership: MembershipSeen,
+    generation: u32,
 }
 
 /// A sealed manifest and the signature over the sealed blob.
@@ -87,6 +106,9 @@ const EMPTY: u8 = 0x02;
 const BAD: Error = Error::InvalidFormat("manifest");
 /// Tag of the `ManifestExt` encoding that follows the manifest fields.
 const EXT_V1: u8 = 1;
+/// Tag of the shared-vault extension (sharing spec 8.1). A client from
+/// before it refuses the manifest, which is wanted.
+const EXT_V2: u8 = 2;
 /// Ancestors kept in `ManifestExt::history`.
 pub const HISTORY: usize = 64;
 const META_DOMAIN: &[u8] = b"onepass/vault-meta/v1";
@@ -125,19 +147,37 @@ pub fn meta_hash(meta: &VaultMeta) -> [u8; 32] {
     hash_postcard(META_DOMAIN, meta)
 }
 
-/// `postcard(m)`, then, if `m.ext` is set, `EXT_V1 || postcard(ext)`.
-fn encode_manifest(m: &Manifest) -> Vec<u8> {
+/// `postcard(m)`, then, if `m.ext` is set, `EXT_V1 || postcard(ext)`, or
+/// `EXT_V2 || postcard(ExtV2)` when the shared fields are both set. Only one
+/// of them set is refused by `check_shape`, and encoded as `EXT_V1` here.
+pub(crate) fn encode_manifest(m: &Manifest) -> Vec<u8> {
     let mut bytes = postcard::to_allocvec(m).expect("postcard into a Vec is infallible");
     if let Some(ext) = &m.ext {
-        bytes.push(EXT_V1);
-        bytes.extend(postcard::to_allocvec(ext).expect("postcard into a Vec is infallible"));
+        match (ext.membership, ext.generation) {
+            (Some(membership), Some(generation)) => {
+                bytes.push(EXT_V2);
+                let v2 = ExtV2 {
+                    meta_hash: ext.meta_hash,
+                    history: ext.history.clone(),
+                    membership,
+                    generation,
+                };
+                bytes
+                    .extend(postcard::to_allocvec(&v2).expect("postcard into a Vec is infallible"));
+            }
+            _ => {
+                bytes.push(EXT_V1);
+                bytes
+                    .extend(postcard::to_allocvec(ext).expect("postcard into a Vec is infallible"));
+            }
+        }
     }
     bytes
 }
 
 /// The inverse of `encode_manifest`, the whole buffer: trailing bytes or an
 /// unknown extension tag are `InvalidFormat("manifest")`.
-fn decode_manifest(bytes: &[u8]) -> Result<Manifest> {
+pub(crate) fn decode_manifest(bytes: &[u8]) -> Result<Manifest> {
     let (mut m, rest) = postcard::take_from_bytes::<Manifest>(bytes).map_err(|_| BAD)?;
     match rest {
         [] => {}
@@ -145,7 +185,23 @@ fn decode_manifest(bytes: &[u8]) -> Result<Manifest> {
             Ok((ext, [])) => m.ext = Some(ext),
             _ => return Err(BAD),
         },
+        [EXT_V2, tail @ ..] => match postcard::take_from_bytes::<ExtV2>(tail) {
+            Ok((v2, [])) => {
+                m.ext = Some(ManifestExt {
+                    meta_hash: v2.meta_hash,
+                    history: v2.history,
+                    membership: Some(v2.membership),
+                    generation: Some(v2.generation),
+                })
+            }
+            _ => return Err(BAD),
+        },
         _ => return Err(BAD),
+    }
+    // One encoding per manifest: bytes that do not re-encode to themselves
+    // are refused, so two blobs never carry the same manifest.
+    if encode_manifest(&m) != bytes {
+        return Err(BAD);
     }
     Ok(m)
 }
@@ -184,7 +240,7 @@ fn strictly_sorted(entries: &[ManifestEntry]) -> bool {
     entries.windows(2).all(|w| w[0].item_id < w[1].item_id)
 }
 
-fn aad(vault_id: Id) -> Aad {
+pub(crate) fn aad(vault_id: Id) -> Aad {
     Aad {
         blob_id: vault_id,
         vault_id: Some(vault_id),
@@ -197,7 +253,7 @@ fn aad(vault_id: Id) -> Aad {
 /// (`InvalidFormat("manifest")`); a root that does not match the entries
 /// means the listed items are not the ones committed to
 /// (`IntegrityError::ManifestItemMismatch`).
-fn check_shape(vault: &Vault, m: &Manifest) -> Result<()> {
+pub(crate) fn check_shape(vault: &Vault, m: &Manifest) -> Result<()> {
     if m.vault_id != vault.id {
         return Err(IntegrityError::WrongContext.into());
     }
@@ -209,6 +265,9 @@ fn check_shape(vault: &Vault, m: &Manifest) -> Result<()> {
     }
     if let Some(ext) = &m.ext {
         if ext.history.len() > HISTORY {
+            return Err(BAD);
+        }
+        if ext.membership.is_some() != ext.generation.is_some() {
             return Err(BAD);
         }
         if ext.meta_hash.is_some_and(|h| h != meta_hash(&vault.meta)) {
@@ -261,7 +320,12 @@ impl Manifest {
             prev_hash,
             entries,
             merkle_root,
-            ext: Some(ManifestExt { meta_hash, history }),
+            ext: Some(ManifestExt {
+                meta_hash,
+                history,
+                membership: None,
+                generation: None,
+            }),
         })
     }
 
@@ -271,8 +335,24 @@ impl Manifest {
         let ext = self.ext.get_or_insert_with(|| ManifestExt {
             meta_hash: None,
             history: Vec::new(),
+            membership: None,
+            generation: None,
         });
         ext.meta_hash = Some(meta_hash(meta));
+        self
+    }
+
+    /// Name the membership body and key generation this manifest is written
+    /// under (shared vaults, sharing spec 8.1).
+    pub fn with_membership(mut self, membership: MembershipSeen, generation: u32) -> Manifest {
+        let ext = self.ext.get_or_insert_with(|| ManifestExt {
+            meta_hash: None,
+            history: Vec::new(),
+            membership: None,
+            generation: None,
+        });
+        ext.membership = Some(membership);
+        ext.generation = Some(generation);
         self
     }
 }
@@ -314,21 +394,32 @@ pub fn verify_manifest(
     let plain = open(vault.key(), BlobKind::Manifest, &aad(vault.id), &sm.blob)?;
     let m = decode_manifest(&plain)?;
     check_shape(vault, &m)?;
+    // A shared manifest never verifies as a personal one.
+    if m.ext.as_ref().is_some_and(|e| e.membership.is_some()) {
+        return Err(IntegrityError::WrongContext.into());
+    }
+    check_history(&m, last_seen)?;
+    Ok(m)
+}
+
+/// The history check of `verify_manifest`, shared with the shared-vault
+/// manifests.
+pub(crate) fn check_history(m: &Manifest, last_seen: Option<&SeenManifest>) -> Result<()> {
     if let Some(last) = last_seen {
         let consistent = if m.seq < last.seq {
             false
         } else if m.seq == last.seq {
-            manifest_hash(&m) == last.hash
+            manifest_hash(m) == last.hash
         } else if m.seq - last.seq == 1 {
             m.prev_hash == last.hash
         } else {
-            gap_consistent(&m, last)
+            gap_consistent(m, last)
         };
         if !consistent {
             return Err(IntegrityError::ManifestRollback.into());
         }
     }
-    Ok(m)
+    Ok(())
 }
 
 /// Match the records served by the store against the manifest, by item id:

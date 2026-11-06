@@ -16,7 +16,7 @@ struct UseICloudAccountButton: View {
             Task { await check() }
         } label: {
             HStack(spacing: 8) {
-                Text("Utiliser ce compte iCloud")
+                Text("root.useIcloudAccount")
                 if working { ProgressView().controlSize(.small) }
             }
         }
@@ -25,11 +25,11 @@ struct UseICloudAccountButton: View {
         .confirmationDialog(
             "Utiliser ce compte iCloud ?", isPresented: $confirmUpload, titleVisibility: .visible
         ) {
-            Button("Envoyer mon coffre") { Task { await accept() } }
+            Button("root.uploadMyVault") { Task { await accept() } }
                 .accessibilityIdentifier("sync.useAccount.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Ton coffre chiffré sera envoyé dans ce compte iCloud.")
+            Text("root.encryptedVaultWillUploaded")
         }
         .alert(
             "Compte iCloud", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })
@@ -45,12 +45,12 @@ struct UseICloudAccountButton: View {
         defer { working = false }
         do {
             switch try await model.checkAccountChange() {
-            case .otherVault: message = String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.")
+            case .otherVault: message = String(localized: "root.icloudAccountAlreadyHolds")
             case .sameVault: await finish(model.acceptAccountChange(expected: .sameVault))
             case .emptyZone: confirmUpload = true
             }
         } catch {
-            message = String(localized: "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie.")
+            message = String(localized: "root.cantReadIcloudAccount")
         }
     }
 
@@ -63,8 +63,8 @@ struct UseICloudAccountButton: View {
     private func finish(_ outcome: AccountChangeOutcome) async {
         switch outcome {
         case .accepted: break
-        case .refusedOtherVault: message = String(localized: "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser.")
-        case .changedDuringCheck: message = String(localized: "Ce compte iCloud a changé pendant la vérification. Réessaie.")
+        case .refusedOtherVault: message = String(localized: "root.icloudAccountAlreadyHolds")
+        case .changedDuringCheck: message = String(localized: "root.icloudAccountChangedDuring")
         case .failed(let text): message = text
         }
     }
@@ -77,10 +77,10 @@ struct AccountChangedCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Le compte iCloud a changé", systemImage: "person.crop.circle.badge.exclamationmark")
+            Label("app.icloudAccountChanged", systemImage: "person.crop.circle.badge.exclamationmark")
                 .font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
-            Text("La synchronisation est en pause : ton coffre reste intact sur cet appareil. Reconnecte le compte d'origine, ou utilise celui-ci.")
+            Text("root.syncPausedAndVault")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct IgnoredDeletionsView: View {
         Form {
             Section {
                 if entries.isEmpty {
-                    Text("Aucune suppression refusée.").foregroundStyle(.secondary)
+                    Text("root.noRefusedDeletions").foregroundStyle(.secondary)
                 }
                 ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                     VStack(alignment: .leading, spacing: 2) {
@@ -134,23 +134,23 @@ struct IgnoredDeletionsView: View {
                     .accessibilityElement(children: .combine)
                 }
             } footer: {
-                Text("iCloud a demandé de supprimer ces éléments, ce qu'aucun appareil OnePass ne fait. OnePass a refusé et les a gardés sur cet appareil. Une ou deux entrées peuvent venir d'un incident iCloud ; beaucoup d'entrées répétées méritent d'utiliser un autre appareil pour vérifier ton coffre.")
+                Text("root.icloudAskedToDelete")
             }
             if !entries.isEmpty {
                 Section {
-                    Button("Effacer le journal", role: .destructive) { confirmClear = true }
+                    Button("root.clearLog", role: .destructive) { confirmClear = true }
                         .accessibilityIdentifier("settings.ignoredDeletions.clear")
                 }
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Suppressions refusées")
+        .navigationTitle("root.refusedDeletions")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task { entries = await model.ignoredDeletions().reversed() }
-        .confirmationDialog("Effacer le journal ?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Effacer le journal", role: .destructive) {
+        .confirmationDialog("root.clearLog2", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("root.clearLog", role: .destructive) {
                 Task {
                     await model.clearIgnoredDeletions()
                     entries = []
@@ -158,19 +158,19 @@ struct IgnoredDeletionsView: View {
             }
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Seul le journal est effacé : les éléments gardés restent sur cet appareil.")
+            Text("root.onlyLogClearedItems")
         }
     }
 
     static func kindLabel(_ kind: UInt8) -> String {
         switch kind {
-        case 1: String(localized: "Paramètres du compte")
-        case 2: String(localized: "Clés du compte")
-        case 3: String(localized: "Clé d'un coffre")
-        case 4: String(localized: "Nom et icône d'un coffre")
+        case 1: String(localized: "root.accountSettings")
+        case 2: String(localized: "root.accountKeys")
+        case 3: String(localized: "root.vaultKey")
+        case 4: String(localized: "root.vaultNameAndIcon")
         case 5: String(localized: "Élément")
-        case 6: String(localized: "Liste signée d'un coffre")
-        default: String(localized: "Enregistrement inconnu")
+        case 6: String(localized: "root.signedVaultList")
+        default: String(localized: "root.unknownRecord")
         }
     }
 

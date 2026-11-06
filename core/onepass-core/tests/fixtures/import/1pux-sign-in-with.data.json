@@ -1,0 +1,100 @@
+{
+  "accounts": [
+    {
+      "attrs": {"accountName": "Invented", "uuid": "ACCT-INVENTED"},
+      "vaults": [
+        {
+          "attrs": {"uuid": "vault-perso", "name": "Personal", "type": "P"},
+          "items": [
+            {
+              "uuid": "google-acct", "favIndex": 0, "createdAt": 1600000000, "updatedAt": 1600000100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Google", "url": "https://accounts.google.com"},
+              "details": {"loginFields": [
+                {"value": "alice.invented@example.com", "name": "email", "fieldType": "E", "designation": "username"},
+                {"value": "Google-Invented-1", "name": "password", "fieldType": "P", "designation": "password"}]}
+            },
+            {
+              "uuid": "notion-sso", "favIndex": 1, "createdAt": 1600001000, "updatedAt": 1600001100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Notion", "url": "https://www.notion.so/login", "tags": ["work"]},
+              "details": {"loginFields": [], "sections": [{"title": "", "name": "", "fields": [
+                {"title": "sign in with", "id": "sso", "value": {"ssoLogin": {
+                  "provider": "google", "item": {"itemUuid": "google-acct", "vaultUuid": "vault-perso"}}}}]}]}
+            },
+            {
+              "uuid": "figma-sso", "favIndex": 0, "createdAt": 1600002000, "updatedAt": 1600002100,
+              "state": "active", "categoryUuid": "999",
+              "overview": {"title": "Figma", "url": "https://www.figma.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Sign in with", "id": "sso", "value": {"ssoLogin": {
+                  "provider": "GitHub", "email": "alice-gh@example.com"}}}]}]}
+            },
+            {
+              "uuid": "testflight-sso", "favIndex": 0, "createdAt": 1600003000, "updatedAt": 1600003100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "TestFlight", "url": "https://testflight.example.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Se connecter avec", "id": "sso", "value": {"ssoLogin": {
+                  "provider": "Apple", "accountEmail": "x7k2invented@privaterelay.appleid.com"}}}]}]}
+            },
+            {
+              "uuid": "devops-sso", "favIndex": 0, "createdAt": 1600004000, "updatedAt": 1600004100,
+              "state": "active", "categoryUuid": "005",
+              "overview": {"title": "Azure DevOps", "url": "https://dev.azure.example.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Sign in with", "id": "sso", "value": {"signInWith": "Microsoft"}}]}]}
+            },
+            {
+              "uuid": "insta-sso", "favIndex": 0, "createdAt": 1600005000, "updatedAt": 1600005100,
+              "state": "active",
+              "overview": {"title": "Instagram", "url": "https://www.instagram.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Sign in with", "id": "sso", "value": {"ssoLogin": {"provider": "facebook.com"}}}]}]}
+            },
+            {
+              "uuid": "corp-acct", "favIndex": 0, "createdAt": 1600006000, "updatedAt": 1600006100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Corp account", "url": "https://login.corp.example.com"},
+              "details": {"loginFields": [
+                {"value": "alice@corp.example.com", "designation": "username"},
+                {"value": "Corp-Invented-1", "designation": "password"}]}
+            },
+            {
+              "uuid": "wiki-sso", "favIndex": 0, "createdAt": 1600007000, "updatedAt": 1600007100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Internal Wiki", "url": "https://wiki.corp.example.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Sign in with", "id": "sso", "value": {"ssoLogin": {
+                  "item": {"itemUuid": "corp-acct", "vaultUuid": "vault-perso"}}}}]}]}
+            },
+            {
+              "uuid": "github-acct", "favIndex": 0, "createdAt": 1600008000, "updatedAt": 1600008100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Dev account", "url": "https://github.com/login"},
+              "details": {"loginFields": [
+                {"value": "alice-dev", "designation": "username"},
+                {"value": "Gh-Invented-1", "designation": "password"}]}
+            },
+            {
+              "uuid": "gist-sso", "favIndex": 0, "createdAt": 1600009000, "updatedAt": 1600009100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "Gist mirror", "url": "https://gist.example.com"},
+              "details": {"sections": [{"fields": [
+                {"title": "Sign in with", "id": "sso", "value": {"ssoLogin": {
+                  "provider": "other", "item": {"itemUuid": "github-acct"}}}}]}]}
+            },
+            {
+              "uuid": "passkey-only", "favIndex": 0, "createdAt": 1600010000, "updatedAt": 1600010100,
+              "state": "active", "categoryUuid": "001",
+              "overview": {"title": "WebAuthn demo", "url": "https://webauthn.example.com"},
+              "details": {"loginFields": [], "passkey": {
+                "credentialId": "AQIDBA", "rpId": "webauthn.example.com", "userName": "alice",
+                "userHandle": "dXNlcjE"}}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

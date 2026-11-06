@@ -53,7 +53,7 @@ public struct OtpLinkAccount: Identifiable, Sendable, Equatable, CustomStringCon
 
     /// Title of a new Login: the issuer, else the account.
     public var title: String {
-        issuer ?? account ?? String(localized: "Code de vérification", bundle: VaultKitStrings.bundle)
+        issuer ?? account ?? String(localized: "otpLink.verificationCode", bundle: VaultKitStrings.bundle)
     }
 
     /// Username of a new Login (required by the template): the account, else the issuer, else the title.
@@ -108,7 +108,7 @@ extension OtpLink {
     /// The label of a new "Ancien code" field, in the app's language (stored as written, like any
     /// label; display only).
     static func previousCodeLabel(bundle: Bundle = VaultKitStrings.bundle) -> String {
-        String(localized: "Ancien code", bundle: bundle)
+        String(localized: "otpLink.previousCode", bundle: bundle)
     }
 
     /// `previous_otp_<n>`, never used in `item` yet.
@@ -196,9 +196,9 @@ extension VaultSession {
     }
 
     private static let notALogin = String(
-        localized: "Le code ne peut être ajouté qu'à un élément Login.", bundle: VaultKitStrings.bundle)
+        localized: "otpLink.codeCanOnlyAdded", bundle: VaultKitStrings.bundle)
     private static let confirmFirst = String(
-        localized: "Confirme d'abord ton identité pour modifier cet élément.", bundle: VaultKitStrings.bundle)
+        localized: "otpLink.confirmFirstToChange", bundle: VaultKitStrings.bundle)
 
     /// The Login's current one-time code, if its `totp` field holds one.
     private static func currentOtp(in item: FfiItem) -> String? {

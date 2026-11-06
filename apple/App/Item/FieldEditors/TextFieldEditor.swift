@@ -193,7 +193,7 @@ struct TextFieldEditor: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Utiliser \(suggestion)"))
+                    .accessibilityLabel(Text("item.use \(suggestion)"))
                     .accessibilityIdentifier("editor.field.\(field.id).suggestion")
                 }
             }
@@ -205,9 +205,9 @@ struct TextFieldEditor: View {
         switch field.kind {
         // What to type, never an example value: a prompt that looks like data reads as a filled field.
         case .url: "https://"
-        case .email: String(localized: "adresse email")
-        case .phone: String(localized: "numéro de téléphone")
-        default: field.id == "username" ? String(localized: "nom d'utilisateur ou email") : ""
+        case .email: String(localized: "item.emailAddress")
+        case .phone: String(localized: "item.phoneNumber")
+        default: field.id == "username" ? String(localized: "item.usernameOrEmail") : ""
         }
     }
 }

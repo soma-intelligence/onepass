@@ -5,8 +5,20 @@
 // typed or generated one). Exception: "Enregistrer un nouveau login" from the
 // menu (`view: "edit"`) opens the edit view with nothing typed on the page;
 // the password the user types here is sent with the save.
+//
+// The prompt is a small, quiet card (founder, 2026-11-03): the site's icon,
+// "Enregistrer le login pour <site> ?" and the username, the vault as a
+// compact chip, "Pas maintenant" and "Enregistrer"; "Ne jamais proposer",
+// the edit view and "Enregistrer comme nouveau login" sit in a small menu.
+// A card or an identity typed by hand in a checkout (kinds `card` and
+// `identity`) gets the same card: "Enregistrer cette carte ?" with its last
+// four digits and expiry (never the number), or "Enregistrer cette adresse ?"
+// with the name and city; the vault chip, "Pas maintenant", "Enregistrer".
+// No sound, no motion of its own. Left alone AUTO_DISMISS_MS (no pointer or
+// focus in it, no menu open), it goes away by itself and the sign-in waits
+// in the toolbar popup ("later").
 import { ext } from "../shared/browser";
-import type { SaveDecision, SaveEdits } from "../shared/messages";
+import type { SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import type { SaveInit } from "../shared/ui";
 import {
   ClickGuard,
@@ -22,18 +34,23 @@ import {
   observeVisibility,
   providerLabel,
   realTimers,
+  siteTile,
   tile,
+  vaultColor,
   tokenFromHash,
   wayArt,
 } from "./components";
 import { t } from "../shared/i18n";
-import { parseEmpty, parsePassword, parseSaveInit } from "./parse";
+import { parseEmpty, parseOutcome, parsePassword, parseSaveInit } from "./parse";
 
 /** Asked for by the edit view: the content script clamps it to the frame's largest height. */
 const FULL_HEIGHT = 2000;
 
 /** The saved confirmation closes itself after this delay. */
-export const SAVED_CLOSE_MS = 4000;
+export const SAVED_CLOSE_MS = 2500;
+
+/** Left alone this long, the card goes away and the sign-in waits in the popup. */
+export const AUTO_DISMISS_MS = 20_000;
 
 const MASK = "••••••••••••";
 const ACCENT_TILE = "#14532D";
@@ -84,6 +101,44 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   let draft: Draft | null = null;
   let mode: "new" | "update" = "new";
   let more = false;
+  let picking = false;
+
+  // ---- auto-dismiss: only while nobody is looking at or using the card ----
+  let hovered = false;
+  let focused = false;
+  let quietTimer: unknown = null;
+  let quietOn = false;
+  const stopQuiet = () => {
+    if (quietTimer !== null) timers.clearTimeout(quietTimer);
+    quietTimer = null;
+  };
+  const armQuiet = () => {
+    stopQuiet();
+    if (!quietOn || hovered || focused || more || picking) return;
+    quietTimer = timers.setTimeout(() => {
+      quietTimer = null;
+      if (!quietOn || hovered || focused || more || picking) return;
+      quietOn = false;
+      if (token) void call(deps.send, { type: "save_decide", token, decision: "later" }, parseEmpty);
+    }, AUTO_DISMISS_MS);
+  };
+  container.addEventListener("pointerenter", () => {
+    hovered = true;
+    stopQuiet();
+  });
+  container.addEventListener("pointerleave", () => {
+    hovered = false;
+    armQuiet();
+  });
+  container.addEventListener("focusin", () => {
+    focused = true;
+    stopQuiet();
+  });
+  container.addEventListener("focusout", (e) => {
+    if (e.relatedTarget instanceof Node && container.contains(e.relatedTarget)) return;
+    focused = false;
+    armQuiet();
+  });
 
   const btn = (label: string, cls: string, fn: () => void, attrs: Record<string, string> = {}) =>
     h("button", { class: cls, attrs: { type: "button", ...attrs }, on: { click: guard.wrap(fn) } }, label);
@@ -109,14 +164,17 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     }, SAVED_CLOSE_MS);
   };
 
-  const decide = async (decision: SaveDecision, err: HTMLElement, saved: () => void) => {
+  const decide = async (decision: SaveDecision, err: HTMLElement, saved: (o: SaveOutcome) => void) => {
     if (!token || !init || !draft) return;
     const msg: { type: "save_decide"; token: string; decision: SaveDecision; edits?: SaveEdits } = {
       type: "save_decide",
       token,
       decision,
     };
-    if (decision === "save" && init.kind === "login") {
+    if (decision === "save" && (init.kind === "card" || init.kind === "identity")) {
+      // Only the vault: the worker holds what was typed in the page.
+      msg.edits = { title: "", username: "", password: "", vaultId: draft.vaultId, rule: "domain", tags: [] };
+    } else if (decision === "save" && init.kind === "login") {
       msg.edits = {
         title: draft.title,
         username: draft.username,
@@ -128,12 +186,12 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
         tags: draft.tags,
       };
     }
-    const r = await call(deps.send, msg, parseEmpty);
+    const r = await call(deps.send, msg, parseOutcome);
     if (!r.ok) {
       err.textContent = errorText(r.code);
       return;
     }
-    if (decision !== "dismiss") saved();
+    if (decision !== "dismiss") saved(r.value);
   };
 
   const vaultName = () => init?.vaults.find((v) => v.id === draft?.vaultId)?.name ?? "";
@@ -162,7 +220,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   /** Vault choice and "Enregistrer"; with no vault, nothing can be saved. */
   const saveActions = (cls: string, err: HTMLElement, d: Draft) => {
     const save = btn(t("common.save"), "btn btn-primary", () =>
-      void decide("save", err, () => renderSaved(t("save.titleSaved", { title: d.title }), t("save.inValue", { value: vaultName() }))),
+      void decide("save", err, (o) =>
+        o.outcome === "already" ? renderOutcome(o, d) : renderSaved(t("save.titleSaved", { title: d.title }), t("save.inValue", { value: o.vault ?? vaultName() })),
+      ),
     );
     saveBtn = save;
     updateSave(d);
@@ -188,18 +248,27 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
 
   function renderSaved(title: string, sub: string): void {
     setFit(true);
+    quietOn = false;
+    stopQuiet();
     show(
       h(
         "div",
-        { class: "saved", attrs: { role: "status" } },
-        h("span", { class: "saved-art" }, tile(init?.title.charAt(0) ?? "O", ACCENT_TILE, 52), h("span", { class: "ok-badge", attrs: { "aria-hidden": "true" } }, icon("check", 11))),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, title), h("span", { class: "t2" }, sub)),
+        { class: "saved quiet", attrs: { role: "status" } },
+        h("span", { class: "ok-dot", attrs: { "aria-hidden": "true" } }, icon("check", 11)),
+        h("span", { class: "stack" }, h("span", { class: "t1" }, title), sub !== "" ? h("span", { class: "t2" }, sub) : null),
         btn(t("common.close"), "btn-link", () => {
           if (token) void call(deps.send, { type: "save_close", token }, parseEmpty);
         }),
       ),
     );
     closeSoon();
+  }
+
+  /** What a save from the card did, in one line. */
+  function renderOutcome(o: SaveOutcome, d: Draft): void {
+    if (o.outcome === "already") renderSaved(t("save.alreadyInOnepass"), d.username);
+    else if (o.outcome === "updated") renderSaved(t("save.passwordUpdated"), d.username);
+    else renderSaved(o.vault !== undefined ? t("save.savedIn", { vault: o.vault }) : t("save.loginSaved"), d.username);
   }
 
   const never = () => {
@@ -263,9 +332,158 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     h(
       "div",
       { class: "more", attrs: { role: "menu" } },
-      btn(t("save.neverOfferForSite", { site: i.site }), "", never, { role: "menuitem" }),
-      btn(t("save.notNow"), "", () => void decide("dismiss", errLine(), () => undefined), { role: "menuitem" }),
+      btn(t("save.neverForSite"), "", never, { role: "menuitem" }),
+      i.kind === "login" && mode === "new" ? btn(t("save.editBeforeSaving"), "", () => renderEdit(), { role: "menuitem" }) : null,
+      i.kind === "login" && mode === "update"
+        ? btn(t("save.saveAsNew"), "", () => {
+            mode = "new";
+            more = false;
+            renderPrompt();
+          }, { role: "menuitem" })
+        : null,
+      i.kind === "provider_link" ? btn(t("save.notNow"), "", () => void decide("dismiss", errLine(), () => undefined), { role: "menuitem" }) : null,
     );
+
+  /** The vault Save uses: a compact chip, the list under it when opened. */
+  const vaultLabel = (v: SaveInit["vaults"][number]) => {
+    const accounts = new Set((init?.vaults ?? []).map((x) => x.account ?? ""));
+    return accounts.size > 1 && v.account ? `${v.account} · ${v.name}` : v.name;
+  };
+
+  /** The title with the site name kept on one line (no break at its hyphens). */
+  const titleParts = (title: string, site: string): (string | HTMLElement)[] => {
+    const at = title.indexOf(site);
+    if (at === -1 || site === "") return [title];
+    return [title.slice(0, at), h("span", { class: "sc-site" }, site), title.slice(at + site.length)];
+  };
+
+  const chip = (d: Draft): HTMLElement | null => {
+    if (init?.locked) return h("span", { class: "sc-chip sc-chip-locked" }, icon("lock", 11), h("span", { class: "sc-chip-name" }, t("save.lockedChip")));
+    const vaults = init?.vaults ?? [];
+    const v = vaults.find((x) => x.id === d.vaultId);
+    if (!v) return null;
+    const dot = h("span", { class: "vault-dot", attrs: { "aria-hidden": "true" } });
+    const el =
+      vaults.length > 1
+        ? h(
+            "button",
+            {
+              class: "sc-chip",
+              attrs: { type: "button", "aria-haspopup": "listbox", "aria-expanded": String(picking), "aria-label": t("save.vaultChip", { name: vaultLabel(v) }) },
+              on: {
+                click: guard.wrap(() => {
+                  picking = !picking;
+                  renderPrompt();
+                }),
+              },
+            },
+            dot,
+            h("span", { class: "sc-chip-name" }, v.name),
+            icon("chevron", 10),
+          )
+        : h("span", { class: "sc-chip", attrs: { "aria-label": t("save.vaultChip", { name: vaultLabel(v) }) } }, dot, h("span", { class: "sc-chip-name" }, v.name));
+    // Several accounts: the chip shows the vault, its label and tooltip name the account too.
+    el.title = vaultLabel(v);
+    el.style.setProperty("--vault", vaultColor(v.id));
+    return el;
+  };
+
+  const picker = (d: Draft) =>
+    h(
+      "div",
+      { class: "sc-vaults", attrs: { role: "listbox", "aria-label": t("save.chooseVault") } },
+      ...(init?.vaults ?? []).map((v) => {
+        const o = h(
+          "button",
+          {
+            class: "sc-vault",
+            attrs: { type: "button", role: "option", "aria-selected": String(v.id === d.vaultId) },
+            on: {
+              click: guard.wrap(() => {
+                d.vaultId = v.id;
+                picking = false;
+                renderPrompt();
+              }),
+            },
+          },
+          h("span", { class: "vault-dot", attrs: { "aria-hidden": "true" } }),
+          h("span", { class: "sc-vault-name" }, vaultLabel(v)),
+          v.id === d.vaultId ? icon("check", 11) : null,
+        );
+        o.style.setProperty("--vault", vaultColor(v.id));
+        return o;
+      }),
+    );
+
+  /** A card or identity typed in the page: what it is, the vault, "Pas maintenant", "Enregistrer". */
+  function renderForm(i: SaveInit, d: Draft): void {
+    setFit(true);
+    const err = errLine();
+    const isCard = i.kind === "card";
+    const updating = isCard && i.status === "update" && i.update !== undefined;
+    const title = isCard
+      ? t(updating ? "save.updateCard" : "save.saveCard")
+      : t(i.identity?.place !== undefined ? "save.saveAddress" : "save.saveIdentity");
+    const c = i.card;
+    const line1 = isCard
+      ? [c ? t("save.cardEnding", { last4: c.last4 }) : "", c?.exp !== undefined ? t("save.cardExpires", { exp: c.exp }) : ""].filter((x) => x !== "").join(" · ")
+      : [i.identity?.name, i.identity?.email].filter((x): x is string => x !== undefined && x !== "").join(" · ");
+    const line2 = isCard ? (c?.holder ?? "") : (i.identity?.place ?? "");
+    const done = (o: SaveOutcome) =>
+      o.outcome === "already" ? renderSaved(t("save.alreadyInOnepass"), line1) : renderSaved(
+        updating ? t("save.cardUpdated") : isCard ? t("save.cardSaved") : t("save.identitySaved"),
+        o.outcome === "updated" || updating ? line1 : o.vault !== undefined ? t("save.inValue", { value: o.vault }) : line1,
+      );
+    const primary = updating
+      ? btn(t("save.update"), "btn-text sc-primary", () => void decide("update", err, done))
+      : btn(t("common.save"), "btn-text sc-primary", () => void decide("save", err, done));
+    if (!updating && i.vaults.length === 0) primary.disabled = true;
+    show(
+      h(
+        "div",
+        { class: "save-card", attrs: { role: "dialog", "aria-label": title } },
+        h(
+          "div",
+          { class: "sc-row" },
+          siteTile(i.origin, i.title, 28),
+          h(
+            "span",
+            { class: "stack" },
+            h("span", { class: "sc-title" }, title),
+            line1 !== "" ? h("span", { class: "sc-sub" }, line1) : null,
+            line2 !== "" ? h("span", { class: "sc-sub" }, line2) : null,
+          ),
+          h(
+            "button",
+            {
+              class: "btn-icon sc-more",
+              attrs: { type: "button", "aria-label": t("save.options"), "aria-haspopup": "menu", "aria-expanded": String(more) },
+              on: {
+                click: guard.wrap(() => {
+                  more = !more;
+                  picking = false;
+                  renderPrompt();
+                }),
+              },
+            },
+            icon("more", 12),
+          ),
+        ),
+        more ? h("div", { class: "more", attrs: { role: "menu" } }, btn(t("save.neverForSite"), "", never, { role: "menuitem" })) : null,
+        picking && !updating ? picker(d) : null,
+        h(
+          "div",
+          { class: "sc-foot" },
+          updating ? h("span", { class: "sc-note" }, "") : chip(d) ?? h("span", { class: "sc-note" }, ""),
+          h("span", { class: "sc-gap" }),
+          btn(t("save.notNow"), "btn-text sc-quiet", () => void decide("dismiss", err, () => undefined)),
+          primary,
+        ),
+        err,
+      ),
+    );
+    armQuiet();
+  }
 
   function renderPrompt(): void {
     if (!init || !draft) return;
@@ -274,76 +492,69 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       renderProviderLink(i);
       return;
     }
+    if (i.kind === "card" || i.kind === "identity") {
+      renderForm(i, draft);
+      return;
+    }
     setFit(true);
     const d = draft;
     const err = errLine();
-    const seg = i.update
-      ? h(
-          "div",
-          { class: "seg", attrs: { role: "tablist" } },
-          btn(t("save.newItem"), "", () => {
-            mode = "new";
-            renderPrompt();
-          }, { role: "tab", "aria-selected": String(mode === "new") }),
-          btn(t("save.update1"), "", () => {
-            mode = "update";
-            renderPrompt();
-          }, { role: "tab", "aria-selected": String(mode === "update") }),
-        )
-      : null;
-    let card: HTMLElement;
-    let note: string | null = null;
-    if (mode === "update" && i.update) {
-      card = h(
-        "div",
-        { class: "candidate selected" },
-        tile(i.update.title.charAt(0), ACCENT_TILE, "m"),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, i.update.title), h("span", { class: "t2" }, d.username)),
-      );
-      note = t("save.oldPasswordStaysIn");
-    } else {
-      card = h(
-        "div",
-        { class: "candidate" },
-        tile(d.title.charAt(0), ACCENT_TILE, "m"),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, d.title), h("span", { class: "t2" }, d.username)),
-        h(
-          "button",
-          { class: "btn", attrs: { type: "button" }, on: { click: guard.wrap(() => renderEdit()) } },
-          icon("edit", 13),
-          t("common.edit"),
-        ),
-      );
-    }
-    const actions =
-      mode === "update"
-        ? h(
-            "div",
-            { class: "actions" },
-            h("span", { class: "stack" }),
-            btn(t("save.update"), "btn btn-primary", () =>
-              void decide("update", err, () => renderSaved(t("save.valueUpdated", { value: i.update?.title ?? d.title }), d.username)),
-            ),
-          )
-        : saveActions("actions", err, d);
+    const updating = mode === "update" && i.update !== undefined;
+    const title = updating ? t("save.updatePasswordFor", { site: i.site }) : t("save.saveLoginFor", { site: i.site });
+    const sub = updating && i.update && i.update.title !== "" ? `${i.update.title} · ${d.username}` : d.username;
+    const primary = updating
+      ? btn(t("save.update"), "btn-text sc-primary", () => void decide("update", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "updated" } : o, d)))
+      : btn(t("common.save"), "btn-text sc-primary", () =>
+          void decide("save", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "saved", vault: vaultName() } : o, d)),
+        );
+    if (!updating && !i.locked && i.vaults.length === 0) primary.disabled = true;
     show(
       h(
         "div",
-        { class: "save-body", attrs: { role: "dialog", "aria-label": "Enregistrer le login" } },
-        header(t("save.saveLogin"), true),
+        { class: "save-card", attrs: { role: "dialog", "aria-label": title } },
+        h(
+          "div",
+          { class: "sc-row" },
+          siteTile(i.origin, i.title, 28),
+          h("span", { class: "stack" }, h("span", { class: "sc-title" }, ...titleParts(title, i.site)), sub !== "" ? h("span", { class: "sc-sub" }, sub) : null),
+          h(
+            "button",
+            {
+              class: "btn-icon sc-more",
+              attrs: { type: "button", "aria-label": t("save.options"), "aria-haspopup": "menu", "aria-expanded": String(more) },
+              on: {
+                click: guard.wrap(() => {
+                  more = !more;
+                  picking = false;
+                  renderPrompt();
+                }),
+              },
+            },
+            icon("more", 12),
+          ),
+        ),
         more ? moreMenu(i) : null,
-        seg,
-        card,
-        note ? h("p", { class: "note" }, note) : null,
-        actions,
+        picking && !updating ? picker(d) : null,
+        h(
+          "div",
+          { class: "sc-foot" },
+          updating ? h("span", { class: "sc-note" }, "") : chip(d) ?? h("span", { class: "sc-note" }, ""),
+          h("span", { class: "sc-gap" }),
+          btn(t("save.notNow"), "btn-text sc-quiet", () => void decide("dismiss", err, () => undefined)),
+          primary,
+        ),
         err,
       ),
     );
+    armQuiet();
   }
 
   function renderEdit(): void {
     if (!init || !draft || !token) return;
     setFit(false);
+    // Editing: the card never leaves by itself.
+    quietOn = false;
+    stopQuiet();
     const i = init;
     const d = draft;
     const tok = token;
@@ -487,7 +698,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     draft = {
       title: init.title,
       username: init.username,
-      vaultId: init.vaults[0]?.id ?? "",
+      vaultId: init.defaultVault !== undefined && init.vaults.some((v) => v.id === init?.defaultVault) ? init.defaultVault : (init.vaults[0]?.id ?? ""),
       rule: "domain",
       tags: [],
       password: null,
@@ -495,7 +706,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       typed: "",
     };
     if (init.view === "edit") renderEdit();
-    else renderPrompt();
+    else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
+    else {
+      quietOn = init.kind !== "provider_link";
+      renderPrompt();
+    }
   }
 
   return { ready: load() };

@@ -15,7 +15,7 @@ use crate::attachment::{self, MAX_PER_ITEM};
 use crate::error::{Error, Result};
 use crate::id::Id;
 use crate::model::{AttachmentRef, EventKind, Item};
-use crate::store::{RecordKind, RecordStore};
+use crate::store::{RecordKind, RecordStore, Zone};
 use crate::vault::Vault;
 
 impl<S: RecordStore> Repository<S> {
@@ -43,25 +43,21 @@ impl<S: RecordStore> Repository<S> {
         }
         let (reference, records) = attachment::seal_attachment(vault, name, mime, bytes)?;
         let ids: Vec<Id> = records.iter().map(|r| r.id).collect();
-        let written = records
-            .into_iter()
-            .try_for_each(|r| self.store.put(r))
-            .and_then(|()| {
-                let now = OffsetDateTime::now_utc();
-                item.attachments.push(reference.clone());
-                item.record(
-                    now,
-                    EventKind::AttachmentAdded {
-                        name: reference.name.clone(),
-                    },
-                );
-                item.updated_at = now;
-                self.save_item(vault, item)
-            });
+        let zone = vault.zone();
+        let written = self.put_chunks(zone, records).and_then(|()| {
+            let now = OffsetDateTime::now_utc();
+            item.attachments.push(reference.clone());
+            item.record(
+                now,
+                EventKind::AttachmentAdded {
+                    name: reference.name.clone(),
+                },
+            );
+            item.updated_at = now;
+            self.save_item(vault, item)
+        });
         if let Err(e) = written {
-            for id in ids {
-                let _ = self.store.delete(RecordKind::Attachment, id);
-            }
+            self.delete_chunks(zone, &ids);
             return Err(e);
         }
         Ok(reference)
@@ -84,7 +80,8 @@ impl<S: RecordStore> Repository<S> {
         let removed = item.attachments.remove(at);
         item.updated_at = OffsetDateTime::now_utc();
         self.save_item(vault, item)?;
-        self.delete_attachment_chunks(std::slice::from_ref(&removed));
+        let ids = attachment::chunk_ids(&removed).unwrap_or_default();
+        self.delete_chunks(vault.zone(), &ids);
         Ok(())
     }
 
@@ -108,8 +105,9 @@ impl<S: RecordStore> Repository<S> {
             .clone();
         self.heal_attachment(vault, &reference)?;
         let store = &self.store;
+        let zone = vault.zone();
         attachment::open_attachment(vault, &reference, |id| {
-            store.get(RecordKind::Attachment, id)
+            store.get_in(zone, RecordKind::Attachment, id)
         })
     }
 
@@ -117,8 +115,9 @@ impl<S: RecordStore> Repository<S> {
     /// (a move or a rotation cut short): re-wrapped into `vault`.
     fn heal_attachment(&mut self, vault: &Vault, r: &AttachmentRef) -> Result<()> {
         let mut others: Option<Vec<Vault>> = None;
+        let zone = vault.zone();
         for id in attachment::chunk_ids(r)? {
-            let Some(rec) = self.store.get(RecordKind::Attachment, id)? else {
+            let Some(rec) = self.store.get_in(zone, RecordKind::Attachment, id)? else {
                 continue;
             };
             let Some(owner) = attachment::vault_of(&rec) else {
@@ -128,16 +127,61 @@ impl<S: RecordStore> Repository<S> {
                 continue;
             }
             if others.is_none() {
-                others = Some(self.vaults()?);
+                others = Some(self.personal_vaults()?);
             }
             if let Some(from) = others.iter().flatten().find(|v| v.id == owner)
                 && let Ok(moved) = attachment::rewrap(from, vault, &rec)
                 && self.writable().is_ok()
             {
-                self.store.put(moved)?;
+                if zone == Zone::Private {
+                    self.store.put(moved)?;
+                } else {
+                    let version = rec.version;
+                    self.store.put_all_zoned(
+                        vec![(zone, moved, Some(version))],
+                        vec![],
+                        None,
+                        &[],
+                    )?;
+                }
             }
         }
         Ok(())
+    }
+
+    /// Write the chunks of a new attachment: in the private zone with
+    /// `put`, in a shared vault's zone as zone rows (sharing plan 2).
+    pub(crate) fn put_chunks(
+        &mut self,
+        zone: Zone,
+        records: Vec<crate::store::Record>,
+    ) -> Result<()> {
+        if zone == Zone::Private {
+            return records.into_iter().try_for_each(|r| self.store.put(r));
+        }
+        let writes = records.into_iter().map(|r| (zone, r, None)).collect();
+        self.store.put_all_zoned(writes, vec![], None, &[])
+    }
+
+    /// Best effort: delete chunks `ids` of `zone`. A chunk already gone is
+    /// fine.
+    pub(crate) fn delete_chunks(&mut self, zone: Zone, ids: &[Id]) {
+        if zone == Zone::Private {
+            for id in ids {
+                let _ = self.store.delete(RecordKind::Attachment, *id);
+            }
+            return;
+        }
+        let deletes = ids
+            .iter()
+            .filter(|id| {
+                self.store
+                    .get_in(zone, RecordKind::Attachment, **id)
+                    .is_ok_and(|r| r.is_some())
+            })
+            .map(|id| (zone, RecordKind::Attachment, *id))
+            .collect();
+        let _ = self.store.put_all_zoned(vec![], deletes, None, &[]);
     }
 
     /// Best effort: delete the chunks of `refs` (an item deleted for good,

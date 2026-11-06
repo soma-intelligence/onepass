@@ -701,6 +701,8 @@ describe("save and link proposals (wired)", () => {
     );
     t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
     t.ext.complete(7, 0);
+    // The new page asks for no password: the sign-in went through.
+    await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
     await vi.advanceTimersByTimeAsync(0);
     expect(t.client.requests.find((r) => r.op === "check_credentials")).toEqual({
       op: "check_credentials",
@@ -729,6 +731,8 @@ describe("save and link proposals (wired)", () => {
       { type: "submitted_credentials", formRef: "f9", username: "", password: "Gen-Pass-123", isNew: true },
       csSender(`${SITE}/signup`, 7, 0, { documentId: "doc-1" }),
     );
+    // The form went away on the same document (a single-page app).
+    await analyze(t, `${SITE}/signup`, page(`${SITE}/signup`), "doc-1");
     await vi.advanceTimersByTimeAsync(1500);
     expect(ops(t)).toContain("check_credentials");
     expect(toTab(t, "show_frame").at(-1)).toMatchObject({ kind: "save" });
@@ -759,7 +763,7 @@ describe("save and link proposals (wired)", () => {
     expect(ops(t)).not.toContain("save_login");
     expect(
       await t.ext.send({ type: "save_decide", token: saveToken, decision: "save", edits: { ...edits, password: "Typed-Pass-9" } }, saveUi),
-    ).toEqual({ ok: {} });
+    ).toMatchObject({ ok: { outcome: "saved" } });
     expect(ops(t)).toContain("save_login");
   });
 
@@ -779,7 +783,7 @@ describe("save and link proposals (wired)", () => {
     const ui = uiSender(`save.html#${saveToken}`, 7);
     const init = (await t.ext.send({ type: "save_init", token: saveToken }, ui)) as { ok: Record<string, unknown> };
     expect(init.ok).toMatchObject({ kind: "provider_link", provider: { id: "google", email: "alex.pro@example.com" } });
-    expect(await t.ext.send({ type: "save_decide", token: saveToken, decision: "save" }, ui)).toEqual({ ok: {} });
+    expect(await t.ext.send({ type: "save_decide", token: saveToken, decision: "save" }, ui)).toEqual({ ok: { outcome: "done" } });
     expect(t.client.requests.at(-1)).toEqual({
       op: "link_provider",
       ctx: "save_prompt",

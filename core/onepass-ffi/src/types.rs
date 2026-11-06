@@ -306,6 +306,14 @@ pub struct FfiItem {
     /// The files attached to the item (read only here: `Session::add_attachment`
     /// and `remove_attachment` change them).
     pub attachments: Vec<FfiAttachment>,
+    /// Leaves the device in Travel Mode even when its vault stays (the
+    /// reserved tag `onepass:travel-hidden`, never listed in `tags`).
+    #[uniffi(default = false)]
+    pub travel_hidden: bool,
+    /// Extra protection in Travel Mode (the reserved tag
+    /// `onepass:travel-guard`, never listed in `tags`).
+    #[uniffi(default = false)]
+    pub travel_guard: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -332,6 +340,8 @@ pub struct FfiVault {
     pub id: String,
     pub meta: FfiVaultMeta,
     pub item_count: u32,
+    /// Set for a shared vault (sharing plan 4): role, members, generation.
+    pub shared: Option<crate::sharing::FfiSharedVault>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -357,6 +367,26 @@ pub struct FfiItemSummary {
     /// "amex"... as `card_brand`). `None` for other types or an unknown brand.
     #[uniffi(default = None)]
     pub card_brand: Option<String>,
+    /// Last four digits of a credit card's number (`checks::card_last4`), so a
+    /// list can tell cards apart. Never more of the number. `None` for other
+    /// types, an empty number or one of fewer than 8 digits.
+    #[uniffi(default = None)]
+    pub card_last4: Option<String>,
+    /// Passkeys stored in the item (`Passkey` field values): the "Passkeys" list counts and
+    /// filters on it.
+    #[uniffi(default = 0)]
+    pub passkey_count: u32,
+    /// The item holds at least one placed location (a location field, custom
+    /// ones included, or one of its own locations, never the blank 0, 0):
+    /// "À proximité" decrypts only these items for its index.
+    #[uniffi(default = false)]
+    pub has_places: bool,
+    /// See `FfiItem::travel_hidden`.
+    #[uniffi(default = false)]
+    pub travel_hidden: bool,
+    /// See `FfiItem::travel_guard`.
+    #[uniffi(default = false)]
+    pub travel_guard: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -574,12 +604,31 @@ pub struct FfiAutofillIdentity {
     pub favorite: bool,
     /// Order among the identities of one service, higher first: 100 for
     /// the Login used last on the service's site, 50 for a favorite, 0
-    /// otherwise (last used beats favorite).
+    /// otherwise (last used beats favorite), plus up to 200 from the learned
+    /// preference of the system AutoFill (`fill_plan::learned`).
     pub rank: u32,
     /// Empty unless `kind` is `Passkey`.
     pub credential_id: Vec<u8>,
     /// Empty unless `kind` is `Passkey`.
     pub user_handle: Vec<u8>,
+    /// A Login without password nor username that signs in with a provider
+    /// (`google`, `apple`, `oidc:<domain>`...): the system menu shows "Signs
+    /// in with <provider>". Empty otherwise, and for codes and passkeys.
+    pub sign_in_with: String,
+    /// `service` is an app identifier (a Login's `apps`), published with
+    /// the app service type: never a domain.
+    #[uniffi(default = false)]
+    pub service_is_app: bool,
+}
+
+/// What the system names when it asks to fill: a site (a domain or a URL)
+/// or an app (its App ID). An app only ever matches a Login's `apps`,
+/// exactly: it is never read as a host (`com.example.app` is not the site
+/// `example.app`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiAutofillService {
+    Site { value: String },
+    App { id: String },
 }
 
 /// How well a Login matches the requested site, best first.

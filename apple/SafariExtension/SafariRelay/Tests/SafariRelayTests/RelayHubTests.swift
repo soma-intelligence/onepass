@@ -62,6 +62,21 @@ struct RelayHubTests {
         #expect(request(hub, "send", id(4), frame: "{}") == .failure(.unknownConn))
     }
 
+    @Test func openAppAsksTheAppToComeForward() {
+        final class Count: @unchecked Sendable { var n = 0 }
+        let count = Count()
+        let hub = RelayHub(launcher: nil, openApp: {
+            count.n += 1
+            return true
+        })
+        #expect(hub.handle(message: ["onepass": 1, "op": "open_app"]) == .ok(frames: [], closed: true))
+        #expect(count.n == 1)
+        #expect(hub.openConnections == 0)
+        let refused = RelayHub(launcher: nil, openApp: { false })
+        #expect(refused.handle(message: ["onepass": 1, "op": "open_app"]) == .failure(.unavailable))
+        #expect(RelayHub(launcher: nil).handle(message: ["onepass": 1, "op": "open_app"]) == .failure(.unavailable))
+    }
+
     @Test func malformedAndDuplicate() {
         let hub = RelayHub(launcher: Self.cat, pollTimeout: 0.2)
         #expect(hub.handle(message: ["op": "open"]) == .failure(.badRequest))

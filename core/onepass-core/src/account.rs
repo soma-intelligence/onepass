@@ -134,6 +134,12 @@ impl KeyTag {
         KeyTag(out)
     }
 
+    /// The tag of an account recovered without its Secret Key: all zeros,
+    /// which no `KeyTag::of` output matches in practice.
+    fn unknown() -> KeyTag {
+        KeyTag([0; 32])
+    }
+
     fn matches(&self, other: &KeyTag) -> bool {
         aws_lc_rs::constant_time::verify_slices_are_equal(&self.0, &other.0).is_ok()
     }
@@ -232,6 +238,57 @@ fn above_floor(kdf: &KdfParams) -> bool {
 impl Account {
     pub fn keyset(&self) -> &Keyset {
         &self.keyset
+    }
+
+    /// The keyset in clear for the recovery slot (sharing plan 3, ruling
+    /// B-2): the `OPK3` plaintext layout (KEM, signing and identity
+    /// secrets, then the retired KEM secrets), whatever the stored record's
+    /// version. Wiped on drop; the caller seals it at once.
+    pub fn recovery_keyset(&self) -> Result<Zeroizing<Vec<u8>>> {
+        let kem = self.keyset.kem.to_bytes();
+        let signing = self.keyset.signing.to_bytes();
+        let identity = self.keyset.identity.to_bytes();
+        let retired: Vec<_> = self
+            .keyset
+            .retired_kem
+            .iter()
+            .map(|k| k.to_bytes())
+            .collect();
+        let plain = postcard::to_allocvec(&(
+            Bytes::new(&kem),
+            Bytes::new(&signing),
+            Bytes::new(&identity),
+            retired.iter().map(|r| Bytes::new(r)).collect::<Vec<_>>(),
+        ))
+        .map_err(|_| Error::InvalidFormat("keyset"))?;
+        Ok(Zeroizing::new(plain))
+    }
+
+    /// The account of a keyset recovered in clear (`recovery_keyset`) and
+    /// its params record, which must verify under the keyset's own identity
+    /// and match its public keys (`Integrity(Signature)` otherwise). No
+    /// Secret Key is known: `rotate_keys` takes any new one (the recovered
+    /// user lost the old one; K11 cannot apply), and nothing else reads it.
+    ///
+    /// `params_for` hands the params record of the keyset's identity.
+    pub fn open_recovered(
+        keyset_plain: &[u8],
+        params_for: impl FnOnce(&IdentityVerifyingKey) -> Result<Vec<u8>>,
+    ) -> Result<Account> {
+        let keyset = decode_keyset(keyset_plain, KeysetVersion::V3)?;
+        let identity = keyset.identity.verifying_key();
+        let params_record = params_for(&identity)?;
+        let params = AccountParams::decode_verified(&params_record, &identity)?;
+        if keyset.kem.public()? != params.kem_pub
+            || keyset.signing.verifying_key()? != params.signing_pub
+        {
+            return Err(IntegrityError::Signature.into());
+        }
+        Ok(Account {
+            params,
+            keyset,
+            secret_key_tag: Some(KeyTag::unknown()),
+        })
     }
 
     /// Create an account with the default (floor) KDF parameters.

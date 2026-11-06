@@ -28,7 +28,7 @@ struct EntryDetailView: View {
                         .accessibilityElement(children: .combine)
                     }
                 } header: {
-                    Text("Code")
+                    Text("entryDetailView.code")
                 }
             }
             ForEach(Array(entry.fields.enumerated()), id: \.offset) { _, field in

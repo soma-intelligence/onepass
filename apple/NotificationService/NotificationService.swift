@@ -28,10 +28,10 @@ final class NotificationService: UNNotificationServiceExtension {
         content.interruptionLevel = .timeSensitive
         let names = UserDefaults(suiteName: Self.appGroup)?.stringArray(forKey: Self.macNamesKey) ?? []
         if names.count == 1, let name = names.first, !name.isEmpty {
-            content.title = String(localized: "Demande d'un agent sur \(name)")
+            content.title = String(localized: "notificationService.requestFromAgentOn \(name)")
         } else {
             // Several Macs (or none known yet): which one asks is in the sealed request only.
-            content.title = String(localized: "Demande d'un agent")
+            content.title = String(localized: "notificationService.requestFromAgent")
         }
         content.body = ""
         contentHandler(content)

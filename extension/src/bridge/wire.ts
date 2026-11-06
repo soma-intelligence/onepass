@@ -13,10 +13,13 @@ export const VERSION = 1;
 export const MAX_FRAME = 1_048_576;
 
 type V = { v: 1 };
-export type PairHelloEnvelope = V & { t: "pair_hello"; commit: string; ext_name: string; browser: string };
+/** `auto`: pair without a code if the app vouches for this browser, else refuse (no code flow). */
+export type PairHelloEnvelope = V & { t: "pair_hello"; commit: string; ext_name: string; browser: string; auto?: true };
 export type PairOfferEnvelope = V & { t: "pair_offer"; pairing_id: string; pk: string; n: string };
 export type PairRevealEnvelope = V & { t: "pair_reveal"; pk: string; n: string; ct: string };
 export type PairSasEnvelope = V & { t: "pair_sas" };
+/** The app vouches for this browser by its code signature: no code to compare. */
+export type PairAutoEnvelope = V & { t: "pair_auto" };
 export type PairDoneEnvelope = V & { t: "pair_done"; mac: string };
 export type PairConfirmEnvelope = V & { t: "pair_confirm"; mac: string };
 export type PairOkEnvelope = V & { t: "pair_ok" };
@@ -35,6 +38,7 @@ export type Envelope =
   | PairOfferEnvelope
   | PairRevealEnvelope
   | PairSasEnvelope
+  | PairAutoEnvelope
   | PairDoneEnvelope
   | PairConfirmEnvelope
   | PairOkEnvelope
@@ -54,6 +58,7 @@ const SHAPES: Record<EnvelopeType, Record<string, Kind>> = {
   pair_offer: { pairing_id: 16, pk: PUBLIC_LEN, n: 32 },
   pair_reveal: { pk: PUBLIC_LEN, n: 32, ct: CT_LEN },
   pair_sas: {},
+  pair_auto: {},
   pair_done: { mac: 32 },
   pair_confirm: { mac: 32 },
   pair_ok: {},
@@ -95,6 +100,7 @@ export function parseEnvelope(input: unknown): Envelope {
     }
     out[name] = f;
   }
+  if (t === "pair_hello" && obj.auto === true) out.auto = true;
   if (t === "msg") {
     const c = obj.c;
     if (typeof c !== "number" || !Number.isSafeInteger(c) || c < 0) bad("counter");

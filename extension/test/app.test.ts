@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBackground, FILL_SMART_COMMAND } from "../src/background/app";
+import type { NativeVault, NativeVaultCall } from "../src/background/safari";
 import { BridgeAppError } from "../src/bridge/client";
 import { NOTE_NAV_MS } from "../src/background/notes";
 import { penaltyKey } from "../src/background/penalty";
@@ -62,7 +63,11 @@ const summary = (id: string, subtitle: string) => ({
 
 const LOGIN_FORM = [form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }])];
 
-async function bg(next: () => PlanOut, extra: (r: Record<string, unknown>) => unknown = () => undefined) {
+async function bg(
+  next: () => PlanOut,
+  extra: (r: Record<string, unknown>) => unknown = () => undefined,
+  nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>,
+) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
   await new Store(ext, pairings).setPairing(record());
@@ -99,7 +104,14 @@ async function bg(next: () => PlanOut, extra: (r: Record<string, unknown>) => un
         return {};
     }
   });
-  const b = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined, chain, now: () => clock.t });
+  const b = createBackground(ext, {
+    pairings,
+    newClient: () => client,
+    sleep: async () => undefined,
+    chain,
+    now: () => clock.t,
+    ...(nativeVault ? { nativeVault } : {}),
+  });
   b.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
   const top = csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" });
@@ -108,6 +120,131 @@ async function bg(next: () => PlanOut, extra: (r: Record<string, unknown>) => un
   const toTab = (type: string) => ext.sentToTabs.filter((m) => (m.message as { type: string }).type === type);
   return { ext, b, client, clock, chainCalls, top, ops, notes, toTab };
 }
+
+describe("IOSSAF-02 + MS-03: an unlock asked in the menu resumes the menu field's plan, once", () => {
+  /** The vault: locked until the menu unlocks it (unless `refuse`); the plan fails `locked` while it is. */
+  async function lockedBg() {
+    const vault = { locked: true, refuse: false };
+    const native = async (call: NativeVaultCall): Promise<NativeVault> => {
+      if (call.op !== "vault_state" && !vault.refuse) vault.locked = false;
+      return { locked: vault.locked, account: "Camille", biometry: "faceID" };
+    };
+    const t = await bg(
+      () => plan({ action: "fill", groups: [loginGroup(A)] }),
+      (r) => (r.op === "plan_fill" && vault.locked ? new BridgeAppError("locked", "vault locked") : undefined),
+      native,
+    );
+    return { ...t, vault };
+  }
+
+  async function tapThenMenu(t: Awaited<ReturnType<typeof lockedBg>>, fieldRef = "f1e0") {
+    const r = await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef, context: body(LOGIN_FORM) }, t.top);
+    expect(r).toEqual({ err: "locked" });
+    return openMenu(t, fieldRef);
+  }
+
+  async function openMenu(t: Awaited<ReturnType<typeof lockedBg>>, fieldRef = "f1e0", from = t.top) {
+    const open = (await t.ext.send({ type: "open_menu", fieldRef, formRef: "f1", formKind: "login" }, from)) as { ok: { url: string } };
+    const token = open.ok.url.split("#")[1] as string;
+    return { token, ui: uiSender(`menu.html#${token}`, 7) };
+  }
+
+  it("a tap on Face ID in the sheet: the menu goes and the tapped field's plan runs again, in its document", async () => {
+    const t = await lockedBg();
+    const { token, ui } = await tapThenMenu(t);
+    const v = await t.ext.send({ type: "menu_unlock_biometric", token, gesture: true }, ui);
+    expect(v).toEqual({ ok: { locked: false, account: "Camille", biometry: "faceID" } });
+    expect(t.toTab("remove_frame").at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
+    const replay = t.toTab("smart_fill");
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ tabId: 7, message: { type: "smart_fill", fieldRef: "f1e0", origin: SITE }, options: { documentId: "doc-1" } });
+    // The menu's token is gone: nothing else runs from it, the app path's resume included.
+    expect(await t.ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
+    expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(t.toTab("smart_fill")).toHaveLength(1);
+  });
+
+  it("the master password in the sheet resumes too, once", async () => {
+    const t = await lockedBg();
+    const { token, ui } = await tapThenMenu(t);
+    await t.ext.send({ type: "menu_unlock_password", token, password: "pw" }, ui);
+    expect(t.toTab("smart_fill")).toHaveLength(1);
+    expect(await t.ext.send({ type: "menu_unlock_password", token, password: "pw" }, ui)).toEqual({ err: "invalid" });
+    expect(t.toTab("smart_fill")).toHaveLength(1);
+  });
+
+  it("the menu's automatic Face ID unlocks but never fills: the menu stays and loads", async () => {
+    const t = await lockedBg();
+    const { token, ui } = await tapThenMenu(t);
+    expect(await t.ext.send({ type: "menu_unlock_biometric", token }, ui)).toEqual({ ok: { locked: false, account: "Camille", biometry: "faceID" } });
+    expect(t.toTab("smart_fill")).toHaveLength(0);
+    expect(t.toTab("remove_frame")).toHaveLength(0);
+    expect(await t.ext.send({ type: "menu_init", token }, ui)).toHaveProperty("ok");
+    // Nor does the app path's resume: no unlock was asked in the app.
+    expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(t.toTab("smart_fill")).toHaveLength(0);
+  });
+
+  it("always the menu's own field: a keyboard menu, or a tap on another field before it", async () => {
+    // A menu from the keyboard (no locked plan before it).
+    let t = await lockedBg();
+    let m = await openMenu(t);
+    await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, m.ui);
+    expect(t.toTab("smart_fill").map((x) => x.message)).toEqual([{ type: "smart_fill", fieldRef: "f1e0", origin: SITE }]);
+
+    // The tap was on another field than the menu's: the menu's field runs.
+    t = await lockedBg();
+    await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e1", context: body(LOGIN_FORM) }, t.top);
+    m = await openMenu(t, "f1e0");
+    await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, m.ui);
+    expect(t.toTab("smart_fill").map((x) => x.message)).toEqual([{ type: "smart_fill", fieldRef: "f1e0", origin: SITE }]);
+  });
+
+  it("nothing fills once the menu's document changed, from another tab, or when the unlock fails", async () => {
+    // The page committed another document meanwhile: the menu stays.
+    let t = await lockedBg();
+    let m = await tapThenMenu(t);
+    t.ext.setFrame(7, 0, `${SITE}/login`, "doc-2");
+    await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, m.ui);
+    expect(t.toTab("smart_fill")).toHaveLength(0);
+    expect(t.toTab("remove_frame")).toHaveLength(0);
+
+    // Another origin, or plain http, in the menu's frame.
+    for (const url of ["https://other.example/login", "http://atlas-cloud.test/login"]) {
+      t = await lockedBg();
+      m = await tapThenMenu(t);
+      t.ext.setFrame(7, 0, url, "doc-1");
+      await t.ext.send({ type: "menu_unlock_password", token: m.token, password: "pw" }, m.ui);
+      expect(t.toTab("smart_fill")).toHaveLength(0);
+    }
+
+    // Another tab's page cannot use the menu's token.
+    t = await lockedBg();
+    m = await tapThenMenu(t);
+    expect(await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, uiSender(`menu.html#${m.token}`, 8))).toHaveProperty("err");
+    expect(t.toTab("smart_fill")).toHaveLength(0);
+
+    // The unlock fails (still locked): nothing runs.
+    t = await lockedBg();
+    t.vault.refuse = true;
+    m = await tapThenMenu(t);
+    expect(await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, m.ui)).toEqual({
+      ok: { locked: true, account: "Camille", biometry: "faceID" },
+    });
+    await t.ext.send({ type: "menu_unlock_password", token: m.token, password: "pw" }, m.ui);
+    expect(t.toTab("smart_fill")).toHaveLength(0);
+  });
+
+  it("a frame's menu resumes in that frame only, never in the top frame", async () => {
+    const t = await lockedBg();
+    t.ext.setFrame(7, 3, `${SITE}/frame`, "doc-3");
+    const m = await openMenu(t, "f1e0", csSender(`${SITE}/frame`, 7, 3, { documentId: "doc-3" }));
+    await t.ext.send({ type: "menu_unlock_biometric", token: m.token, gesture: true }, m.ui);
+    const replay = t.toTab("smart_fill");
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ tabId: 7, message: { type: "smart_fill", fieldRef: "f1e0", origin: SITE }, options: { documentId: "doc-3" } });
+  });
+});
 
 describe("icon click (plan_context with the gesture's form and field)", () => {
   it("icon_click_with_high_login_starts_chain", async () => {
@@ -270,7 +407,7 @@ describe("site memory (note_fill)", () => {
     expect(t.notes()).toHaveLength(1);
   });
 
-  it("a pick in the menu a plan opened is noted once the page moves on", async () => {
+  it("a pick in the menu a plan opened runs the sign-in with that plan, noted by the chain at its end", async () => {
     const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A] }));
     await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
@@ -278,9 +415,21 @@ describe("site memory (note_fill)", () => {
     const ui = uiSender(`menu.html#${token}`, 7);
     await t.ext.send({ type: "menu_init", token }, ui);
     expect(await t.ext.send({ type: "menu_pick", token, itemId: A }, ui)).toEqual({ ok: {} });
+    expect(t.chainCalls).toEqual([[7, A, undefined, { anchorRef: "f1e0", planned: { roles: ["username", "current_password"], intent: "login" } }]]);
+  });
+
+  it("a pick in the menu a plan opened on a password change form is noted once the page moves on", async () => {
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low", groups: [loginGroup(B)], alternatives: [A] }));
+    await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, t.top);
+    const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "change_password" }, t.top)) as { ok: { url: string } };
+    const token = open.ok.url.split("#")[1] as string;
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await t.ext.send({ type: "menu_init", token }, ui);
+    expect(await t.ext.send({ type: "menu_pick", token, itemId: A }, ui)).toEqual({ ok: {} });
     t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
     await new Promise((r) => setTimeout(r, 0));
     expect(t.notes()).toEqual([expect.objectContaining({ item_id: A, roles: ["username", "current_password"], intent: "login" })]);
+    expect(t.chainCalls).toEqual([]);
   });
 
   it("save_confirmed_notes_fill: the saved login with the roles of the fill before it", async () => {
@@ -295,7 +444,7 @@ describe("site memory (note_fill)", () => {
     expect(await t.ext.send({ type: "plan_context", formRef: "f1", context: signup }, t.top)).toEqual({ ok: { outcome: "filled" } });
     const token = await t.b.saves.open({ tabId: 7, origin: SITE, documentId: "doc-1", kind: "login", status: "new", username: "alex@atlas.dev", password: "Gen-Secret-42!" });
     const edits = { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain", tags: [] };
-    expect(await t.ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender(`save.html#${token}`, 7))).toEqual({ ok: {} });
+    expect(await t.ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender(`save.html#${token}`, 7))).toEqual({ ok: { outcome: "saved" } });
     expect(t.notes()).toEqual([
       { op: "note_fill", ctx: "save_prompt", item_id: NEW_LOGIN, origin: SITE, roles: ["email", "new_password"], intent: "signup", steps: ["fill"] },
     ]);

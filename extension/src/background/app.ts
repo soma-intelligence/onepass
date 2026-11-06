@@ -21,9 +21,11 @@ import type { ChainDriver, StartOptions } from "./chain/types";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { FormGenerator } from "./generate";
+import { AutofillHistory, type BrowserKind, browserKind } from "./history";
 import { type CsContext, Frames } from "./frames";
 import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
-import { openTransport } from "./native";
+import { isSafari, openApp as openAppNative, openTransport } from "./native";
+import { type NativeVault, type NativeVaultCall, nativeVault } from "./safari";
 import { NeverSave } from "./never-save";
 import { FillNotes } from "./notes";
 import { Overlays, removeFrame, resizeFrame } from "./overlay";
@@ -35,7 +37,7 @@ import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
 import type { ModelSession } from "./model";
-import { BgError, type BridgeLike, Session } from "./session";
+import { BgError, type BridgeLike, Session, toBgError } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
 
 export interface BackgroundOptions {
@@ -47,6 +49,22 @@ export interface BackgroundOptions {
   browser?: string;
   /** Sign-in chain; the real driver (`ChainRunner`) by default. */
   chain?: ChainDriver;
+  /** Brings the app forward for "Déverrouiller dans OnePass"; `openApp` of native.ts by default. */
+  openApp?: () => Promise<boolean>;
+  /** Browser kind for the autofill history; from `navigator` by default. */
+  browserKind?: BrowserKind;
+  /**
+   * The native vault of the iOS Safari handler (unlock sheet); `nativeVault` of safari.ts in
+   * Safari by default, none elsewhere. Null: no native vault (macOS, other browsers).
+   */
+  nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>;
+}
+
+/** The browser kind from the worker's `navigator` ("unknown" without one). */
+function navigatorKind(): BrowserKind {
+  const nav = (globalThis as { navigator?: { userAgent?: string; brave?: unknown; userAgentData?: { brands?: { brand: string }[] } } }).navigator;
+  if (!nav || typeof nav.userAgent !== "string") return "unknown";
+  return browserKind({ userAgent: nav.userAgent, brave: nav.brave, brands: nav.userAgentData?.brands ?? [] });
 }
 
 /** The command of manifests/base.json that runs smart fill in the active tab. */
@@ -56,8 +74,15 @@ export const PLAN_MENU_MS = 30_000;
 
 /** Forms the menu offers sign-ins on (provider methods start the chain there). */
 const SIGN_IN_FORMS: ReadonlySet<string> = new Set(["login", "signup", "change_password", "otp"]);
+/** Forms where picking a login runs the whole sign-in (chain) rather than a fill of the page. */
+const CHAIN_FORMS: ReadonlySet<string> = new Set(["login", "otp"]);
 /** Forms where the menu offers to generate a password, items or not. */
 const NEW_PASSWORD_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
+
+/** The autofill history's key of the menu of a frame. */
+function menuList(tabId: number, frameId: number): string {
+  return `menu:${tabId}:${frameId}`;
+}
 
 function targetOf(rec: MenuRecord): FillTarget {
   const t: FillTarget = { tabId: rec.tabId, frameId: rec.frameId, origin: rec.origin, formRef: rec.formRef };
@@ -73,15 +98,49 @@ interface PlanForMenu {
   at: number;
   /** The run refused: the page's `pattern` took no generated password. */
   notice?: MenuNotice;
+  /** A signup plan whose form can make a passkey: the menu asks password or passkey. */
+  signup?: PlanOut;
 }
+
+/** A menu may resume its fill this long after its user asked to unlock (Touch ID in the app, the sheet). */
+export const RESUME_WINDOW_MS = 3 * 60 * 1000;
 
 export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const now = opts.now ?? Date.now;
   const store = new Store(ext, opts.pairings ?? new IdbPairingStore());
   const newClient = opts.newClient ?? (() => new BridgeClient(openTransport(ext.runtime)));
-  const session = new Session({ store, newClient, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
-  const pairing = new PairingFlow({ store, session, newClient, ...(opts.browser ? { browser: opts.browser } : {}) });
+  const openApp = opts.openApp ?? (() => openAppNative(ext.runtime));
+  const vaultOf: (call: NativeVaultCall) => Promise<NativeVault | null> =
+    opts.nativeVault ??
+    ((call) => {
+      const send = ext.runtime.sendNativeMessage;
+      if (typeof send !== "function" || !isSafari(ext.runtime)) return Promise.resolve(null);
+      return nativeVault({ sendNativeMessage: (app, msg) => send.call(ext.runtime, app, msg) }, call);
+    });
+  /** A native vault call for the unlock sheet; "invalid" where there is no native vault. */
+  const vaultCall = async (call: NativeVaultCall): Promise<NativeVault> => {
+    const v = await vaultOf(call);
+    if (!v) throw new BgError("invalid");
+    return v;
+  };
+  // Without a pairing, the session first asks the app to pair without a code
+  // (spec 2026-11-02-browser-auto-pairing).
+  const session: Session = new Session({
+    store,
+    newClient,
+    autoPair: (): Promise<boolean> => pairing.autoPair(),
+    ...(opts.sleep ? { sleep: opts.sleep } : {}),
+  });
+  const pairing: PairingFlow = new PairingFlow({
+    store,
+    session,
+    newClient,
+    ...(opts.browser ? { browser: opts.browser } : {}),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
   const frames = new Frames(ext.webNavigation);
+  // The on-device autofill history of the app (history.ts): reports only.
+  const history = new AutofillHistory({ session, area: ext.storage.local, browser: opts.browserKind ?? navigatorKind() });
   const menus = new MenuTokens(store.session, opts.now ?? Date.now);
   const keys = new KeyRelay();
   const filler = new Filler(ext.tabs, frames, session);
@@ -137,6 +196,15 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     generator,
     neverSave,
     onSaved: (tabId, origin, itemId) => notes.onSaved(tabId, origin, itemId),
+    area: ext.storage.local,
+    openApp,
+    nativeUnlock: async () => {
+      const state = await vaultOf({ op: "vault_state" });
+      if (!state) return null;
+      if (!state.locked) return true;
+      const after = await vaultOf({ op: "unlock_biometric" });
+      return after !== null && !after.locked;
+    },
     ...(opts.now ? { now: opts.now } : {}),
   });
   // One surface: a save prompt takes the place of an offered overlay (both sit at the top right).
@@ -145,6 +213,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       await overlays.yieldTo(p.tabId).catch(() => false);
       return savePrompts.open(p);
     },
+    recentlyDismissed: (origin: string, key: string) => savePrompts.recentlyDismissed(origin, key),
   };
   const saveFlow = new SaveFlow({
     session,
@@ -154,6 +223,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });
+  filler.onFilled = (tabId, origin, kind, itemId) => saveFlow.noteFilled(tabId, origin, kind, itemId);
   const providerFlows = new ProviderFlows({
     area: store.session,
     session,
@@ -169,6 +239,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     penalized: (origin) => hasPenalty(store.session, origin),
     onGenerateRefused: (t) => void refusedRuns.add(`${t.tabId}:${t.frameId}`),
     onFilled: async (t, note) => notes.filled(t.tabId, t.origin, note, (await frames.details(t.tabId, 0))?.url ?? null),
+    beforePlan: () => history.ensureClient(),
   });
   plannerRef.current = planner;
   /** Smart fill origins of a content script frame; null for a cross-origin child (or an unknown top). */
@@ -182,6 +253,33 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   };
   /** Per frame (`tab:frame`): the alternatives of a plan that answered "menu". */
   const planMenus = new Map<string, PlanForMenu>();
+
+  /**
+   * The one resume after an unlock the user asked for in a menu (MS-03, IOSSAF-02): the menu goes
+   * and its own field runs its plan again, in the menu's own frame and document (the content
+   * script checks the field and the origin again), so the right form fills, once. Callers check
+   * the vault is open. Only within RESUME_WINDOW_MS of the unlock request, and only while that
+   * frame still holds the https document of the menu's origin (same document id where the
+   * browser gives one): no fill handed to a page that committed meanwhile, none to another frame.
+   * False when refused (the menu stays).
+   */
+  const resumeAfterUnlock = async (rec: MenuRecord, askedAt: number): Promise<boolean> => {
+    const t = now();
+    if (t < askedAt || t - askedAt > RESUME_WINDOW_MS) return false;
+    const f = await frames.details(rec.tabId, rec.frameId);
+    const o = f ? parseOrigin(f.url) : null;
+    if (!f || !o?.https || o.origin !== rec.origin) return false;
+    if (rec.documentId !== undefined && f.documentId !== undefined && f.documentId !== rec.documentId) return false;
+    await menus.revokeFrame(rec.tabId, rec.frameId);
+    await removeFrame(ext.tabs, rec, "menu");
+    const msg: BgToCs = { type: "smart_fill", fieldRef: rec.fieldRef, origin: rec.origin };
+    try {
+      await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: rec.frameId });
+    } catch {
+      // The page went away: nothing to fill.
+    }
+    return true;
+  };
 
   /**
    * The page context of frame `cs`, asked of its content script
@@ -243,6 +341,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     area: store.session,
     session,
     pairing,
+    openApp,
+    nativeVault: vaultCall,
     filler,
     analyses,
     onLock: () => saveFlow.clearGenerated(),
@@ -260,6 +360,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       return (await planWithoutGesture(cs))?.plan ?? null;
     },
     smartFill: smartFillTab,
+    history,
     onForgetSite: async (origin) => {
       // The computed site and the raw host: whichever key the chain filed the penalty under.
       const keys = new Set<string>();
@@ -291,6 +392,17 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     return rec;
   };
 
+  /**
+   * Menus whose user asked to unlock in the app (MS-03, Touch ID on the Mac), by token, with the
+   * time: once unlocked, the menu may resume the fill once (`menu_resume`). The iOS sheet's
+   * unlocks resume in their own call and never land here. Memory only, no secret.
+   */
+  const unlockAsked = new Map<string, number>();
+  const askedUnlock = (token: string): void => {
+    for (const [t, at] of unlockAsked) if (now() - at > RESUME_WINDOW_MS) unlockAsked.delete(t);
+    unlockAsked.set(token, now());
+  };
+
   const handlers: Handlers = {
     cs: {
       page_analysis: async (m, from) => {
@@ -313,15 +425,25 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           field.first = left.alternatives;
           field.planned = left.planned;
           if (left.notice) field.notice = left.notice;
+          if (left.signup) field.signup = left.signup;
         }
         const token = await menus.register(from, field);
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
       },
       close_menu: async (_m, from) => {
+        void history.dismissed(menuList(from.tabId, from.frameId));
         await menus.revokeFrame(from.tabId, from.frameId);
       },
       submitted_credentials: async (m, from) => {
         await saveFlow.onSubmitted(m, from);
+        return {};
+      },
+      submitted_identifier: async (m, from) => {
+        saveFlow.onIdentifier(m, from);
+        return {};
+      },
+      submitted_form: async (m, from) => {
+        saveFlow.onForm(m, from);
         return {};
       },
       provider_click: async (m, from) => {
@@ -361,6 +483,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
             at: now(),
           };
           if (refused) left.notice = "site_refused";
+          if (plan.intent === "signup" && plan.passkey) left.signup = plan;
           planMenus.set(key, left);
         }
         return { outcome };
@@ -388,6 +511,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const best = rec.first?.[0];
         if (best !== undefined && items[0]?.item_id === best) out.best = best;
         if (rec.notice) out.notice = rec.notice;
+        // One-click signup: password or passkey, asked first.
+        if (rec.signup?.passkey && rec.frameId === 0) out.signup = { passkey: true };
         // On a provider's pages during a sign-in to a site: the account linked to it.
         const flow = rec.frameId === 0 ? await providerFlows.signingInto(rec.tabId, rec.origin) : null;
         if (flow) {
@@ -416,13 +541,36 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           methods[it.item_id] = it.methods.map((x) => x.provider);
         }
         await menus.setOffered(m.token, offered, methods, accounts);
+        void history.shown(menuList(rec.tabId, rec.frameId), "menu", rec.origin, items.map((x) => x.item_id));
         return out;
       },
       menu_pick: async (m, from) => {
         const rec = await menuRecord(m.token, from);
         // Only an item the menu showed; its kind comes from the host.
         const kind = rec.offered && Object.hasOwn(rec.offered, m.itemId) ? rec.offered[m.itemId] : undefined;
+        // A login on a sign-in form of the top document: the sign-in runs to its
+        // end (identifier, password, code), as the overlay's button does; a fill
+        // of the one page left the user on the next step. Where no chain can run
+        // (an http page, an item without a password), the fill as before.
+        if (kind === "login" && CHAIN_FORMS.has(rec.formKind) && rec.frameId === 0) {
+          // Still the document the menu was opened in (as the fill checks it).
+          const check = await frames.checkFillTarget(rec.tabId, 0, rec.origin, rec.documentId);
+          if (!check.ok) throw new BgError(check.code);
+          await menus.revokeFrame(rec.tabId, rec.frameId);
+          await removeFrame(ext.tabs, rec, "menu");
+          const start: StartOptions = { anchorRef: rec.fieldRef };
+          if (rec.planned) start.planned = rec.planned;
+          try {
+            await chain.start(rec.tabId, m.itemId, undefined, start);
+            return {};
+          } catch (e) {
+            const code = toBgError(e).code;
+            if (code !== "insecure_origin" && code !== "invalid") throw e;
+          }
+        }
         const t = targetOf(rec);
+        // The choice and its rank, before the fill (a close racing it is no dismissal).
+        if (kind !== undefined) void history.picked(menuList(rec.tabId, rec.frameId), m.itemId);
         let written: number;
         if (kind === "login") written = await filler.fillLogin(t, m.itemId, loginFields(rec.formKind));
         else if (kind === "card") written = await filler.fillCard(t, m.itemId);
@@ -445,6 +593,27 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // A signup form: in the vault before it is sent (spec 7.1), as from the planner.
         const intent = rec.planned?.intent ?? (rec.formKind === "signup" ? "signup" : undefined);
         if (intent === "signup") await saveFlow.savePending(rec.tabId, rec.origin, g.password, { weak: g.report?.weak_by_site === true });
+        return {};
+      },
+      menu_signup: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const plan = rec.signup;
+        const offer = plan?.passkey;
+        // Only the choice the menu showed: a signup plan of this top document with its passkey button.
+        if (!plan || !offer || rec.frameId !== 0) throw new BgError("invalid");
+        const t = targetOf(rec);
+        await planner.runSignup(t, plan, m.mode);
+        if (m.mode === "passkey") {
+          // The site's own button starts the ceremony (it owns the challenge); the
+          // creation it asks for opens OnePass's window, which still asks (spec 2.3).
+          const cs: CsContext = { tabId: rec.tabId, frameId: 0, origin: rec.origin };
+          if (rec.documentId !== undefined) cs.documentId = rec.documentId;
+          passkeys.armCreate(cs);
+          const msg: BgToCs = { type: "click_passkey", origin: rec.origin, ref: offer.button_ref };
+          await ext.tabs.sendMessage(rec.tabId, msg, rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: 0 });
+        }
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
         return {};
       },
       menu_new_login: async (m, from) => {
@@ -478,7 +647,41 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_unlock: async (m, from) => {
         await menuRecord(m.token, from);
+        askedUnlock(m.token);
+        await openApp();
         return session.request({ op: "unlock" });
+      },
+      menu_vault: async (m, from) => {
+        await menuRecord(m.token, from);
+        return vaultCall({ op: "vault_state" });
+      },
+      menu_unlock_biometric: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const at = now();
+        const v = await vaultCall({ op: "unlock_biometric" });
+        // The menu's automatic Face ID is no gesture: it unlocks and the menu loads, nothing fills.
+        // A tap on the Face ID button resumes the fill.
+        if (m.gesture === true && !v.locked) await resumeAfterUnlock(rec, at);
+        return v;
+      },
+      menu_unlock_password: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const at = now();
+        const v = await vaultCall({ op: "unlock_password", password: m.password });
+        if (!v.locked) await resumeAfterUnlock(rec, at);
+        return v;
+      },
+      menu_resume: async (m, from) => {
+        // The unlock in the app (Touch ID on the Mac) ends out of the worker's sight: the menu that
+        // asked for it says when it sees the vault open. The same resume as the sheet's, once.
+        const rec = await menuRecord(m.token, from);
+        const at = unlockAsked.get(m.token);
+        unlockAsked.delete(m.token);
+        if (at === undefined) throw new BgError("invalid");
+        const s = await session.request({ op: "status" });
+        if (s.locked) throw new BgError("locked");
+        if (!(await resumeAfterUnlock(rec, at))) throw new BgError("invalid");
+        return {};
       },
       menu_keys: async (m, from) => {
         await menuRecord(m.token, from);
@@ -491,6 +694,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_close: async (m, from) => {
         const rec = await menuRecord(m.token, from);
+        void history.dismissed(menuList(rec.tabId, rec.frameId));
         keys.drop(m.token);
         await menus.revokeFrame(rec.tabId, rec.frameId);
         await removeFrame(ext.tabs, rec, "menu");
@@ -509,6 +713,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_close: async (m, from) => savePrompts.close(m.token, from),
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height),
       ...popup.handlers(),
+      popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
+      popup_pending_decide: async (m) => savePrompts.decidePending(m.id, m.decision),
     },
   };
 
@@ -562,15 +768,20 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     /** Register every listener; call synchronously at service worker start. */
     install(): void {
       store.restrictLocal();
+      // Connect at install and browser start, so that the first popup is already connected.
+      const connect = () => void session.getClient().catch(() => undefined);
+      ext.runtime.onInstalled?.addListener(connect);
+      ext.runtime.onStartup?.addListener(connect);
       menus.install(ext);
       overlays.tokens.install(ext);
       savePrompts.tokens.install(ext);
       analyses.install(ext);
       runner?.install(ext);
       analyses.onAnalysis((a, cs) => {
+        // The sign that a sign-in worked (or failed) comes from the submitting frame too.
+        saveFlow.onAnalysis(a, cs);
         if (cs.frameId !== 0) return;
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
-        void saveFlow.onReady(cs.tabId).catch(() => undefined);
       });
       ext.webNavigation.onCommitted.addListener((d) => {
         if (d.frameId !== 0) return;
@@ -579,10 +790,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
       });
       ext.webNavigation.onCompleted.addListener((d) => {
-        if (d.frameId === 0) void saveFlow.onReady(d.tabId).catch(() => undefined);
+        if (d.frameId === 0) saveFlow.onReady(d.tabId);
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
+        savePrompts.forgetTab(tabId);
         notes.onTabRemoved(tabId);
         for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
         void providerFlows.drop(tabId).catch(() => undefined);

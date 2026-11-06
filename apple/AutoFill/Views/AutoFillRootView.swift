@@ -11,18 +11,25 @@ struct AutoFillRootView: View {
     let model: AutoFillModel
     let session: VaultSession
     let request: AutoFillRequest
-    /// Site icons, as in the app's lists (the extension keeps its own cache).
-    @State private var icons: SiteIconLoader
+    /// The device's accounts when there are several (account switcher of the lists, MACAPP-06).
+    var accounts: AutoFillAccounts?
+    /// Picking another account: the controller locks this session and opens that one.
+    var switchAccount: (@MainActor (String) -> Void)?
+    /// Item icons, as in the app's lists: the app's icon pack, else the site's own icon (the
+    /// extension keeps its own site icon cache).
+    @State private var icons: ItemIconResolver
 
-    init(model: AutoFillModel, session: VaultSession, request: AutoFillRequest) {
+    init(
+        model: AutoFillModel, session: VaultSession, request: AutoFillRequest, accounts: AutoFillAccounts? = nil,
+        switchAccount: (@MainActor (String) -> Void)? = nil
+    ) {
         self.model = model
         self.session = session
         self.request = request
+        self.accounts = accounts
+        self.switchAccount = switchAccount
         let settings = session.environment.settings
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        _icons = State(initialValue: SiteIconLoader(
-            cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true),
-            enabled: { settings.siteIconsEnabled }))
+        _icons = State(initialValue: ItemIconResolver.live(settings: settings))
     }
 
     var body: some View {
@@ -42,21 +49,21 @@ struct AutoFillRootView: View {
         case .noAccount:
             MessageView(
                 model: model,
-                title: String(localized: "Ouvre OnePass pour configurer ton coffre"),
+                title: String(localized: "views.openOnepassToSet"),
                 systemImage: "lock.shield",
-                message: String(localized: "Crée ou restaure ton compte dans l'app OnePass, puis reviens ici."))
+                message: String(localized: "views.createOrRestoreAccount"))
         case .needsSecretKey:
             MessageView(
                 model: model,
-                title: String(localized: "Ouvre OnePass pour configurer ton coffre"),
+                title: String(localized: "views.openOnepassToSet"),
                 systemImage: "key",
-                message: String(localized: "Saisis ta Secret Key dans l'app OnePass sur cet appareil, puis reviens ici."))
+                message: String(localized: "views.enterSecretKeyIn"))
         case .integrityFailure(let failure):
             IntegrityView(model: model, failure: failure)
         case .list(let matches, let others):
             CandidateListView(
                 model: model, session: session, matches: matches, others: others, oneTimeCode: isOneTimeCodeList,
-                site: siteName)
+                site: siteName, accounts: accounts, switchAccount: switchAccount)
         case .passkeyRegistration(let suggestions):
             if case .passkeyRegistration(let registration) = request {
                 PasskeyRegistrationView(
@@ -83,31 +90,36 @@ struct AutoFillRootView: View {
         }
     }
 
-    /// The site or app asking ("exemple.fr"), for the headings: the first service of the request.
+    /// The site or app asking ("exemple.fr", "Instagram"), for the headings: the first service of the
+    /// request, an app by its name, never its raw identifier (G12).
     private var siteName: String? {
-        let service: String? = switch request {
-        case .credentialList(let services, let passkey): passkey?.rpID ?? services.first
-        case .oneTimeCodeList(let services): services.first
-        case .credential(_, _, let passkey, let service): passkey?.rpID ?? service
-        case .passkeyRegistration(let registration): registration.rpID
-        case .savePassword(let save): save.service
-        case .textToInsert, .configuration: nil
-        }
-        return service.flatMap(Self.displayHost)
+        guard let service = request.primaryService,
+            !service.identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return service.shownName
     }
+}
 
-    /// "https://www.exemple.fr/login" gives "exemple.fr"; an app identifier stays as is.
-    static func displayHost(_ service: String) -> String? {
-        let trimmed = service.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let host = URL(string: trimmed.contains("://") ? trimmed : "https://\(trimmed)")?.host() ?? trimmed
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+/// The accounts of the device for the list's switcher, and the one this request is open on.
+struct AutoFillAccounts {
+    let accounts: [AccountProfile]
+    let current: String
+
+    /// "Perso", "Travail": the account's label, else its kind.
+    static func name(_ account: AccountProfile) -> String {
+        let label = account.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !label.isEmpty { return label }
+        switch account.kind {
+        case .personal: return String(localized: "views.accountPersonal")
+        case .business: return String(localized: "views.accountWork")
+        case .managed: return String(localized: "views.accountOrganization")
+        }
     }
 }
 
 extension EnvironmentValues {
     /// The extension's site icon loader (`AutoFillRootView`).
-    @Entry var autofillIcons: SiteIconLoader?
+    @Entry var autofillIcons: ItemIconResolver?
 }
 
 /// Navigation bar with the title and "Annuler" (every screen), and "Retour" when `back` is set, over
@@ -128,12 +140,12 @@ struct AutoFillScaffold<Content: View>: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Annuler") { model.cancel() }
+                        Button("common.cancel") { model.cancel() }
                             .accessibilityIdentifier("autofill.cancel")
                     }
                     if let back {
                         ToolbarItem(placement: .navigation) {
-                            Button("Retour", systemImage: "chevron.backward", action: back)
+                            Button("common.back", systemImage: "chevron.backward", action: back)
                                 .accessibilityIdentifier("autofill.back")
                         }
                     }
@@ -249,13 +261,13 @@ struct AutoFillIcon: View {
     @State private var icon: Data?
 
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon, size: size)
+        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title), size: size)
             .task(id: url) {
                 guard let url, let loader else {
                     icon = nil
                     return
                 }
-                let loaded = await loader.icon(for: url)
+                let loaded = await loader.icon(for: url, title: title)
                 withAnimation(.easeOut(duration: 0.15)) { icon = loaded }
             }
     }
@@ -342,14 +354,14 @@ private struct IntegrityView: View {
     let failure: VaultError
 
     var body: some View {
-        AutoFillScaffold(title: Text("Données refusées"), model: model) {
+        AutoFillScaffold(title: Text("views.dataRefused"), model: model) {
             VStack(spacing: 16) {
                 if case .integrity(let kind) = failure {
                     IntegrityBanner(kind: kind)
                 } else {
                     Text(failure.localizedMessage)
                 }
-                Text("Ouvre OnePass pour en savoir plus.")
+                Text("views.openOnepassToLearn")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()

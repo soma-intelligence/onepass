@@ -3,7 +3,7 @@
 import type { Transport } from "../bridge/client";
 import type { Envelope } from "../bridge/wire";
 import type { BgExt } from "./ext";
-import { safariTransport } from "./safari";
+import { SAFARI_APP, safariTransport } from "./safari";
 
 /** Set by `build.mjs`: `--dev-host` (and the e2e and lab builds) gives the development host. */
 declare const __ONEPASS_NATIVE_HOST__: string | undefined;
@@ -89,4 +89,26 @@ export function openTransport(runtime: RuntimeApi): Transport {
     return safariTransport({ sendNativeMessage: (app, msg) => send.call(runtime, app, msg) });
   }
   return nativeTransport(NATIVE_HOST, runtime);
+}
+
+/** The one plain message the relay and the Safari handler read: bring the app forward. */
+const OPEN_APP = { onepass: 1, op: "open_app" } as const;
+
+/**
+ * "Déverrouiller dans OnePass": since macOS 14 the app cannot bring itself
+ * forward while the browser is in front, so the process that serves this
+ * click asks LaunchServices to open `onepass://unlock` (the Safari handler in
+ * Safari, a fresh `onepass-relay` elsewhere). It also launches the app when it
+ * is not running. Never a bridge frame. True when the host says it did.
+ */
+export async function openApp(runtime: Pick<BgExt["runtime"], "getURL" | "sendNativeMessage">): Promise<boolean> {
+  const send = runtime.sendNativeMessage;
+  if (typeof send !== "function") return false;
+  const host = isSafari(runtime) ? SAFARI_APP : NATIVE_HOST;
+  try {
+    const reply = (await send.call(runtime, host, { ...OPEN_APP })) as { ok?: unknown } | null;
+    return reply !== null && typeof reply === "object" && reply.ok === true;
+  } catch {
+    return false;
+  }
 }

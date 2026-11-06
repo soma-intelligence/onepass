@@ -20,6 +20,11 @@ struct HomeTab: View {
     @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
+    // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
+    @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
+
+    // Loaded here: a banner with nothing to show is an empty view, and an empty view never runs its task.
+    @State private var duplicates = DuplicatesLoader()
 
     private var session: VaultSession { model.session }
 
@@ -36,31 +41,46 @@ struct HomeTab: View {
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
+                        // Under the search, above Tous les éléments and Favoris (spec 2026-11-03-duplicates).
+                        if !searchActive { DuplicatesBanner(loader: duplicates) }
+                        SharingBanners(horizontalPadding: 0)
                         tiles(all: counts.all, favorites: counts.favorites)
+                        if model.travel.suggestion != .none, !searchActive {
+                            TravelSuggestionCard()
+                                .padding(16)
+                                .phoneCard()
+                        }
                         if model.showsAutoFillTip, !searchActive {
                             AutoFillTipCard()
                                 .padding(16)
                                 .phoneCard()
                         }
+                        if model.showsSafariSetupCard, !searchActive {
+                            SafariSetupCard()
+                                .padding(16)
+                                .phoneCard()
+                        }
                         if showsNearby { HomeNearbyCard() }
+                        if showsCrypto { HomeCryptoCard() }
                         if showsProfile, let profile { HomeProfileCard(summary: profile) }
                         if showsFavorites {
                             HomeListCard(
                                 title: "Favoris", symbol: "star.fill", color: .orange, isOpen: $favoritesOpen,
                                 items: favorites, list: .favorites,
-                                emptyText: "Touche l'étoile d'un élément pour le retrouver ici.", id: "home.favorites")
+                                emptyText: "browse.tapItemsStarTo", id: "home.favorites")
                         }
                         if showsRecents {
                             HomeListCard(
                                 title: "Récents", symbol: "clock.fill", color: Color(white: 0.55), isOpen: $recentsOpen,
                                 items: recents, list: nil,
-                                emptyText: "Les éléments ouverts apparaissent ici jusqu'au verrouillage.", id: "home.recents")
+                                emptyText: "browse.itemsOpenAppearHere", id: "home.recents")
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
                 }
                 .background(PhoneBackground())
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
         // "Bonjour Camille", large, above the four tiles.
@@ -68,11 +88,12 @@ struct HomeTab: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             PhoneRootToolbar {
-                Section("Afficher sur l'accueil") {
+                Section("browse.showOnHome") {
                     Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
                     Toggle("Récents", systemImage: "clock", isOn: $showsRecents)
+                    Toggle("crypto.title", systemImage: "bitcoinsign", isOn: $showsCrypto)
                 }
             }
         }
@@ -81,7 +102,7 @@ struct HomeTab: View {
     /// "Accueil", or "Bonjour" and the account's first name.
     private var greeting: String {
         let first = model.settings.displayName.split(separator: " ").first.map(String.init) ?? ""
-        return first.isEmpty ? String(localized: "Accueil") : String(localized: "Bonjour \(first)")
+        return first.isEmpty ? String(localized: "Accueil") : String(localized: "browse.hi \(first)")
     }
 
     private func tiles(all: Int, favorites: Int) -> some View {
@@ -116,7 +137,7 @@ struct HomeTab: View {
                 .accessibilityIdentifier("home.watchtower")
                 NavigationLink(value: PhoneRoute.list(.nearby)) {
                     HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
-                        Text("2 km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityIdentifier("home.nearby")
@@ -150,9 +171,9 @@ struct HomeTab: View {
                 }
             }
             .padding(.bottom, 6)
-            Text("Ton coffre est vide")
+            Text("browse.vaultEmpty2")
                 .font(.title2.weight(.bold))
-            Text("Mots de passe, cartes, identités, notes : tout ce que tu ranges ici est chiffré sur tes appareils.")
+            Text("browse.passwordsCardsIdentitiesNotes")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -160,7 +181,7 @@ struct HomeTab: View {
             Button {
                 model.showNewItemPicker = true
             } label: {
-                Text("Créer ton premier élément")
+                Text("browse.createFirstItem")
                     .font(.headline)
                     .padding(.horizontal, 8)
                     .frame(height: 34)
@@ -209,7 +230,7 @@ private struct HomeCardHeader<Controls: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(.isHeader)
-            .accessibilityValue(isOpen ? Text("Déplié") : Text("Replié"))
+            .accessibilityValue(isOpen ? Text("browse.expanded") : Text("browse.collapsed"))
             .accessibilityIdentifier(id)
             controls
             Button(action: toggle) {
@@ -221,7 +242,7 @@ private struct HomeCardHeader<Controls: View>: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isOpen ? Text("Replier") : Text("Déplier"))
+            .accessibilityLabel(isOpen ? Text("browse.collapse") : Text("browse.expand"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
@@ -254,7 +275,7 @@ private struct HomeListCard: View {
                 if let list, !items.isEmpty {
                     Menu {
                         NavigationLink(value: PhoneRoute.list(list)) {
-                            Label("Voir les éléments", systemImage: "list.bullet")
+                            Label("browse.showItems", systemImage: "list.bullet")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -265,7 +286,7 @@ private struct HomeListCard: View {
                             .frame(width: 44, height: 44)
                             .contentShape(.rect)
                     }
-                    .accessibilityLabel(Text("Actions pour \(Text(title))"))
+                    .accessibilityLabel(Text("app.actionsFor \(Text(title))"))
                 }
             }
             if isOpen {
@@ -317,6 +338,7 @@ private struct HomeProfileCard: View {
             .padding(.vertical, 10)
             .contentShape(.rect)
         }
+        .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
         .buttonStyle(RowHighlightButtonStyle())
         .phoneCard()
         .accessibilityElement(children: .combine)
@@ -345,7 +367,7 @@ private struct HomeNearbyCard: View {
             ) {
                 if isOpen {
                     Menu {
-                        Picker("Rayon", selection: $radius) {
+                        Picker("app.radius", selection: $radius) {
                             ForEach(Self.radii, id: \.self) { Text(verbatim: Self.label($0)).tag($0) }
                         }
                     } label: {
@@ -358,7 +380,7 @@ private struct HomeNearbyCard: View {
                         .frame(minHeight: 44)
                         .contentShape(.rect)
                     }
-                    .accessibilityLabel(Text("Rayon"))
+                    .accessibilityLabel(Text("app.radius"))
                     .accessibilityValue(Text(verbatim: Self.label(radius)))
                     .accessibilityIdentifier("home.nearby.radius")
                     Button {
@@ -372,7 +394,7 @@ private struct HomeNearbyCard: View {
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(showsMap ? Text("Masquer la carte") : Text("Afficher la carte"))
+                    .accessibilityLabel(showsMap ? Text("browse.hideMap") : Text("browse.showMap"))
                     .accessibilityIdentifier("home.nearby.map")
                 }
             }
@@ -420,8 +442,8 @@ private struct HomeNearbyCard: View {
         guard isOpen, nearby.phase == .ready else { return nil }
         let count = nearby.items.count
         return count == 0
-            ? String(localized: "Rien dans un rayon de \(Self.label(radius))")
-            : String(localized: "\(count) dans un rayon de \(Self.label(radius))")
+            ? String(localized: "browse.nothingWithin \(Self.label(radius))")
+            : String(localized: "browse.within \(count) \(Self.label(radius))")
     }
 
     @ViewBuilder private var content: some View {
@@ -438,17 +460,17 @@ private struct HomeNearbyCard: View {
         case .idle, .locating:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Recherche de ta position…").font(.subheadline).foregroundStyle(.secondary)
+                Text("browse.findingLocation").font(.subheadline).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
         case .failed(.denied):
             VStack(alignment: .leading, spacing: 8) {
-                Text("Autorise OnePass à utiliser ta position pour voir les éléments enregistrés autour de toi. Elle reste sur cet appareil.")
+                Text("browse.allowOnepassToUse")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Button("Ouvrir les Réglages") { LocationAccess.openSettings() }
+                Button("app.openSettings") { LocationAccess.openSettings() }
                     .font(.subheadline.weight(.semibold))
                     .accessibilityIdentifier("home.nearby.openSettings")
             }
@@ -457,7 +479,7 @@ private struct HomeNearbyCard: View {
             .padding(.bottom, 14)
         case .failed(.unavailable):
             HStack {
-                Text("Impossible de savoir où tu es pour le moment.").font(.subheadline).foregroundStyle(.secondary)
+                Text("browse.cantTellWhereRight").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Button("Réessayer") { Task { await nearby.load(model.session, within: radius) } }
                     .font(.subheadline.weight(.semibold))
@@ -512,6 +534,7 @@ struct PhoneItemRows: View {
                     .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
+                .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .buttonStyle(RowHighlightButtonStyle())
                 // The hairline belongs to the row below it, so a row leaving takes its own line along.
                 .overlay(alignment: .top) {
@@ -588,10 +611,10 @@ struct SyncRefusalSection: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     IntegrityBanner(kind: kind)
-                    Text("Les données reçues d'iCloud ont été refusées. Tes modifications restent sur cet appareil mais ne se synchronisent plus pour ce coffre.")
+                    Text("browse.dataReceivedFromIcloud")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Button("Voir les solutions") { safeExitKind = kind }
+                    Button("app.seeSolutions") { safeExitKind = kind }
                         .font(.footnote.weight(.semibold))
                         .accessibilityIdentifier("sync.refused.safeExits")
                 }
@@ -605,6 +628,55 @@ struct SyncRefusalSection: View {
         }
     }
 }
+/// Accueil's way to the Crypto screen: the cached total (no request from here) and its change, or
+/// "Désactivé" while the watch is off. Hidden until a crypto wallet carries an address or an xpub.
+private struct HomeCryptoCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let watch = model.cryptoWatch
+        let watched = watch.wallets.contains { !$0.addresses.isEmpty || $0.xpub != nil }
+        Group {
+            if watched {
+                NavigationLink(value: PhoneRoute.crypto) {
+                    HStack(spacing: 12) {
+                        SymbolTile(symbol: "bitcoinsign", color: .orange, size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("crypto.title").font(.headline)
+                            if let p = watch.isEnabled ? watch.portfolio() : nil, !p.holdings.isEmpty {
+                                ChangeLabel(change: p.changePercent)
+                            } else {
+                                Text(watch.isEnabled ? "crypto.home.tapToRefresh" : "crypto.home.off")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if watch.isEnabled, let p = watch.portfolio(), !p.holdings.isEmpty {
+                            Text(verbatim: CryptoFormat.money(p.total, currency: p.currency))
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        Image(systemName: "chevron.forward")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .phoneCard()
+                    .contentShape(.rect(cornerRadius: PhoneCard.radius))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("home.crypto")
+            }
+        }
+        .task { await model.prepareCryptoWatch() }
+    }
+}
+
 /// One of the four tiles of Accueil: the Mac sidebar's colored tile, the figure on the right, the
 /// name below.
 private struct HomeTile<Value: View>: View {

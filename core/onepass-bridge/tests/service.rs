@@ -1231,6 +1231,118 @@ fn note_fill_then_plan_prefers_last_used() {
     assert!(reasons.contains(&json!("same_shape")), "{plan}");
 }
 
+// Autofill history: client_info, note_autofill, the learned order.
+
+fn client(profile: &str) -> Value {
+    json!({"op":"client_info","browser":"chrome","profile_id":profile,"profile_name":"Work"})
+}
+
+fn note_ev(action: &str, item: Option<Id>, rank: Option<u8>, shown: &[Id]) -> Value {
+    let mut v = json!({"op":"note_autofill","ctx":"menu","origin":TWIN,"action":action,
+                       "shown": shown.iter().map(|i| id(*i)).collect::<Vec<_>>()});
+    if let Some(i) = item {
+        v["item_id"] = json!(id(i));
+    }
+    if let Some(r) = rank {
+        v["rank"] = json!(r);
+    }
+    v
+}
+
+#[test]
+fn picks_in_a_profile_lead_its_plans_and_carry_no_value() {
+    let mut h = H::new();
+    let (a, b) = twins(&mut h);
+    let lead = |h: &mut H| -> Value {
+        let v = h.call_at(plan_req(TWIN, page(TWIN, None)), NOW + 120);
+        ok(&v)["plan"]["groups"][0]["item_id"].clone()
+    };
+    // Work profile: the user picks a (b listed first), and signs in with it.
+    assert_eq!(ok(&h.call(client("work-1"))), &json!({}));
+    for _ in 0..2 {
+        assert_eq!(
+            ok(&h.call(note_ev("shown", None, None, &[b, a]))),
+            &json!({})
+        );
+        assert_eq!(
+            ok(&h.call(note_ev("picked", Some(a), Some(1), &[]))),
+            &json!({})
+        );
+        assert_eq!(
+            ok(&h.call(note_ev("picked_other", Some(b), Some(0), &[]))),
+            &json!({})
+        );
+    }
+    assert_eq!(ok(&h.call(note(a, TWIN))), &json!({}));
+    // Home profile: b signs in last, so the synced memory has b last here.
+    assert_eq!(ok(&h.call(client("home-2"))), &json!({}));
+    assert_eq!(ok(&h.call_at(note(b, TWIN), NOW + 60)), &json!({}));
+    assert!(
+        h.vault().item(b).site_last_at("twin.test") > h.vault().item(a).site_last_at("twin.test")
+    );
+    assert_eq!(lead(&mut h), json!(id(b)));
+    // Back in the work profile, a leads; at home, b.
+    ok(&h.call(client("work-1")));
+    assert_eq!(lead(&mut h), json!(id(a)));
+    ok(&h.call(client("home-2")));
+    assert_eq!(lead(&mut h), json!(id(b)));
+    // Events name the session's profile, the site and item ids; never a value.
+    let hist = &h.vault().history;
+    assert_eq!(hist.len(), 8);
+    assert!(hist.iter().all(|e| e.site == "twin.test"));
+    assert_eq!(hist[0].shown, vec![b, a]);
+    assert_eq!(hist[1].client.profile_id.as_deref(), Some("work-1"));
+    assert_eq!(hist[1].client.profile_name.as_deref(), Some("Work"));
+    assert_eq!(hist[6].item_id, Some(a));
+    assert_eq!(hist[7].client.profile_id.as_deref(), Some("home-2"));
+    let dump = format!("{hist:?}");
+    assert!(!dump.contains("tom@example.com") && !dump.contains("alex@twin.test"));
+}
+
+#[test]
+fn note_autofill_checks_items_ctx_and_client() {
+    let mut h = H::new();
+    let (a, _) = twins(&mut h);
+    let atlas = h.ids.atlas;
+    // A login of another site: not this page's.
+    assert_eq!(
+        err(&h.call(note_ev("picked", Some(atlas), Some(0), &[]))),
+        "not_found"
+    );
+    // A pick names its item.
+    assert_eq!(
+        err(&h.call(note_ev("picked", None, Some(0), &[]))),
+        "invalid"
+    );
+    // A shown list keeps only this page's items.
+    assert_eq!(
+        ok(&h.call(note_ev("shown", None, None, &[atlas, a]))),
+        &json!({})
+    );
+    assert_eq!(h.vault().history[0].shown, vec![a]);
+    // Too many shown, or a context the history does not take.
+    let many: Vec<Id> = (0..9).map(|_| a).collect();
+    assert_eq!(err(&h.call(note_ev("shown", None, None, &many))), "invalid");
+    let mut v = note_ev("picked", Some(a), Some(0), &[]);
+    v["ctx"] = json!("save_prompt");
+    assert_eq!(err(&h.call(v)), "not_allowed");
+    // An http page, a profile id that is not opaque, the system's own kind.
+    let mut v = note_ev("picked", Some(a), Some(0), &[]);
+    v["origin"] = json!("http://twin.test");
+    assert_eq!(err(&h.call(v)), "insecure_origin");
+    assert_eq!(err(&h.call(client("has space"))), "invalid");
+    assert_eq!(
+        err(&h.call(json!({"op":"client_info","browser":"system_auto_fill"}))),
+        "invalid"
+    );
+    // Unknown fields are refused, as for every op.
+    assert_eq!(
+        err(&h.call(json!({"op":"client_info","browser":"chrome","email":"x@y.z"}))),
+        "invalid"
+    );
+    assert_eq!(h.vault().history.len(), 1);
+}
+
 #[test]
 fn note_fill_rejects_item_of_other_site() {
     let mut h = H::new();
@@ -2214,4 +2326,404 @@ fn check_credentials_pending_other_site_ignored() {
         "Gen-Pass-0042",
     ));
     assert_eq!(ok(&v), &json!({"status":"new"}));
+}
+
+// Cards and identities typed by hand in a page form (MS-04).
+
+const SHOP: &str = "https://shop.atlas-cloud.test";
+const NEW_CARD: &str = "5555 5555 5555 4444";
+
+fn check_card(number: &str, month: &str, year: &str) -> Value {
+    json!({"op":"check_card","ctx":"save_prompt","origin":SHOP,
+           "number":number,"exp_month":month,"exp_year":year})
+}
+
+fn save_card(vault: Id, number: &str, month: &str, year: &str, item_id: Option<Id>) -> Value {
+    let mut v = json!({"op":"save_card","ctx":"save_prompt","origin":SHOP,"vault_id":id(vault),
+        "title":"","cardholder":"  Alex Martin ","number":number,
+        "exp_month":month,"exp_year":year});
+    if let Some(i) = item_id {
+        v["item_id"] = json!(id(i));
+    }
+    v
+}
+
+fn saved<'a>(h: &'a H, v: &Value) -> &'a onepass_core::model::Item {
+    let new_id = ok(v)["item_id"].as_str().unwrap().to_owned();
+    h.vault()
+        .items
+        .iter()
+        .find(|i| i.id.to_string() == new_id)
+        .unwrap()
+}
+
+#[test]
+fn check_card_new_same_update() {
+    let mut h = H::new();
+    let card = h.ids.card;
+    let same = json!({"status":"same","item_id":id(card),"title":"Carte Atlas"});
+    assert_eq!(
+        ok(&h.call(check_card("4242424242424242", "04", "2029"))),
+        &same
+    );
+    assert_eq!(
+        ok(&h.call(check_card("4242-4242-4242-4242", "4", "29"))),
+        &same
+    );
+    // No typed expiry: the number alone answers.
+    assert_eq!(
+        ok(&h.call(check_card("4242 4242 4242 4242", "", ""))),
+        &same
+    );
+    let v = h.call(check_card("4242424242424242", "05", "2031"));
+    assert_eq!(
+        ok(&v),
+        &json!({"status":"update","item_id":id(card),"title":"Carte Atlas"})
+    );
+    assert_eq!(
+        ok(&h.call(check_card(NEW_CARD, "01", "30"))),
+        &json!({"status":"new"})
+    );
+    // An archived card never answers.
+    h.svc
+        .vault_mut()
+        .items
+        .iter_mut()
+        .find(|i| i.id == card)
+        .unwrap()
+        .archived = true;
+    assert_eq!(
+        ok(&h.call(check_card("4242424242424242", "04", "2029"))),
+        &json!({"status":"new"})
+    );
+}
+
+#[test]
+fn check_card_refuses_bad_input() {
+    let mut h = H::new();
+    for bad in ["4242", "4242 4242 4242 4241", "4242x4242x4242x4242", ""] {
+        assert_eq!(err(&h.call(check_card(bad, "", ""))), "invalid", "{bad}");
+    }
+    assert_eq!(err(&h.call(check_card(NEW_CARD, "13", "2030"))), "invalid");
+    assert_eq!(err(&h.call(check_card(NEW_CARD, "01", "203"))), "invalid");
+    for ctx in ["menu", "popup", "overlay", "chain"] {
+        let v = h.call(json!({"op":"check_card","ctx":ctx,"origin":SHOP,
+            "number":NEW_CARD,"exp_month":"","exp_year":""}));
+        assert_eq!(err(&v), "not_allowed", "{ctx}");
+    }
+    let http = json!({"op":"check_card","ctx":"save_prompt","origin":"http://shop.test",
+        "number":NEW_CARD,"exp_month":"","exp_year":""});
+    assert_eq!(err(&h.call(http)), "insecure_origin");
+}
+
+#[test]
+fn save_card_new_stores_fields_without_cvv() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let v = h.call(save_card(perso, NEW_CARD, "3", "31", None));
+    let item = saved(&h, &v);
+    assert_eq!(item.vault_id, perso);
+    assert_eq!(item.item_type, onepass_core::model::ItemType::CreditCard);
+    assert_eq!(item.title, "Carte \u{2022}\u{2022}\u{2022}\u{2022} 4444");
+    assert_eq!(
+        item.field("cardholder").unwrap().value,
+        FieldValue::Text("Alex Martin".into())
+    );
+    assert!(matches!(
+        &item.field("number").unwrap().value,
+        FieldValue::Concealed(n) if n.as_str() == "5555555555554444"
+    ));
+    assert_eq!(
+        item.field("expiry").unwrap().value,
+        FieldValue::MonthYear {
+            year: 2031,
+            month: 3
+        }
+    );
+    assert_eq!(item.field("cvv").unwrap().value, FieldValue::Empty);
+    let new_id = item.id;
+    let events = h.audit.events();
+    let last = events.last().unwrap();
+    assert_eq!(last.op, "save_card");
+    assert_eq!(last.item_id, Some(id(new_id)));
+    assert_eq!(last.origin.as_deref(), Some(SHOP));
+    assert!(!format!("{events:?}").contains("4444"));
+    // Now known.
+    let v = h.call(check_card(NEW_CARD, "03", "2031"));
+    assert_eq!(ok(&v)["status"], "same");
+    assert_eq!(ok(&v)["item_id"], id(new_id));
+}
+
+#[test]
+fn save_card_without_expiry_or_holder() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let v = h.call(json!({"op":"save_card","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"Ma carte","cardholder":"","number":NEW_CARD,
+        "exp_month":"","exp_year":""}));
+    let item = saved(&h, &v);
+    assert_eq!(item.title, "Ma carte");
+    assert_eq!(item.field("expiry").unwrap().value, FieldValue::Empty);
+    assert_eq!(item.field("cardholder").unwrap().value, FieldValue::Empty);
+    let before = h.vault().items.len();
+    // Both parts given, one wrong.
+    assert_eq!(
+        err(&h.call(save_card(perso, NEW_CARD, "0", "31", None))),
+        "invalid"
+    );
+    assert_eq!(
+        err(&h.call(save_card(perso, "1234", "", "", None))),
+        "invalid"
+    );
+    assert_eq!(
+        err(&h.call(save_card(Id::new(), NEW_CARD, "", "", None))),
+        "not_found"
+    );
+    assert_eq!(h.vault().items.len(), before);
+}
+
+#[test]
+fn save_card_updates_expiry_of_the_same_number() {
+    let mut h = H::new();
+    let (perso, card) = (h.ids.perso, h.ids.card);
+    let before = h.vault().items.len();
+    let v = h.call(save_card(
+        perso,
+        "4242424242424242",
+        "09",
+        "2032",
+        Some(card),
+    ));
+    assert_eq!(ok(&v), &json!({"item_id":id(card)}));
+    assert_eq!(h.vault().items.len(), before);
+    let item = h.vault().item(card);
+    assert_eq!(
+        item.field("expiry").unwrap().value,
+        FieldValue::MonthYear {
+            year: 2032,
+            month: 9
+        }
+    );
+    // Everything else stays: holder, number as stored, CVV, title.
+    assert_eq!(item.title, "Carte Atlas");
+    assert_eq!(
+        item.field("cardholder").unwrap().value,
+        FieldValue::Text("Alex Martin".into())
+    );
+    assert!(matches!(
+        &item.field("number").unwrap().value,
+        FieldValue::Concealed(n) if n.as_str() == CARD_NUMBER
+    ));
+    assert!(matches!(
+        &item.field("cvv").unwrap().value,
+        FieldValue::Concealed(n) if n.as_str() == CARD_CVV
+    ));
+    assert_eq!(h.audit.events().last().unwrap().op, "save_card");
+}
+
+#[test]
+fn save_card_refuses_another_number_for_an_item() {
+    let mut h = H::new();
+    let (perso, card, identity) = (h.ids.perso, h.ids.card, h.ids.identity);
+    let v = h.call(save_card(perso, NEW_CARD, "09", "2032", Some(card)));
+    assert_eq!(err(&v), "invalid");
+    assert_eq!(
+        h.vault().item(card).field("expiry").unwrap().value,
+        FieldValue::MonthYear {
+            year: 2029,
+            month: 4
+        }
+    );
+    let v = h.call(save_card(perso, NEW_CARD, "09", "2032", Some(identity)));
+    assert_eq!(err(&v), "not_found");
+    let v = h.call(save_card(perso, NEW_CARD, "09", "2032", Some(Id::new())));
+    assert_eq!(err(&v), "not_found");
+}
+
+#[test]
+fn save_card_and_identity_need_save_prompt() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let before = h.vault().items.len();
+    for ctx in ["menu", "popup", "overlay", "chain", "passkey"] {
+        let mut v = save_card(perso, NEW_CARD, "", "", None);
+        v["ctx"] = json!(ctx);
+        assert_eq!(err(&h.call(v)), "not_allowed", "{ctx}");
+        let v = json!({"op":"save_identity","ctx":ctx,"origin":SHOP,"vault_id":id(perso),
+            "title":"","given_name":"Sam"});
+        assert_eq!(err(&h.call(v)), "not_allowed", "{ctx}");
+        let v = json!({"op":"check_identity","ctx":ctx,"origin":SHOP,"given_name":"Sam"});
+        assert_eq!(err(&h.call(v)), "not_allowed", "{ctx}");
+    }
+    assert_eq!(h.vault().items.len(), before);
+}
+
+fn check_identity(extra: Value) -> Value {
+    let mut v = json!({"op":"check_identity","ctx":"save_prompt","origin":SHOP});
+    for (k, val) in extra.as_object().unwrap() {
+        v[k] = val.clone();
+    }
+    v
+}
+
+#[test]
+fn check_identity_same_and_new() {
+    let mut h = H::new();
+    let identity = h.ids.identity;
+    let same = json!({"status":"same","item_id":id(identity),"title":"Alex Martin"});
+    let v = h.call(check_identity(json!({
+        "given_name":" alex ","family_name":"MARTIN","email":"Alex@Atlas.dev",
+        "tel":"+33 (6) 00-00-00-00","organization":"atlas",
+        "address":{"line1":"1  rue de l'exemple","city":"LYON","postal_code":"69000","country":"fr"}
+    })));
+    assert_eq!(ok(&v), &same);
+    // A subset is held too.
+    assert_eq!(
+        ok(&h.call(check_identity(json!({"email":"alex@atlas.dev"})))),
+        &same
+    );
+    for differs in [
+        json!({"given_name":"Sam"}),
+        json!({"given_name":"Alex","email":"sam@atlas.dev"}),
+        json!({"tel":"+33 6 11 11 11 11"}),
+        json!({"address":{"city":"Paris"}}),
+    ] {
+        let v = h.call(check_identity(differs.clone()));
+        assert_eq!(ok(&v), &json!({"status":"new"}), "{differs}");
+    }
+}
+
+#[test]
+fn check_identity_refuses_nothing_typed() {
+    let mut h = H::new();
+    for empty in [
+        json!({}),
+        json!({"given_name":"  ","email":"","tel":"-"}),
+        json!({"address":{"line1":" ","city":""}}),
+    ] {
+        assert_eq!(
+            err(&h.call(check_identity(empty.clone()))),
+            "invalid",
+            "{empty}"
+        );
+    }
+}
+
+#[test]
+fn save_identity_with_address() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let v = h.call(
+        json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"","given_name":" Sam ","family_name":"Durand",
+        "email":"sam@example.test","tel":"+33 6 11 11 11 11","organization":"Atlas",
+        "address":{"line1":"2 avenue du Test ","line2":"","city":"Paris","postal_code":"75001",
+                   "region":"","country":"FR"}}),
+    );
+    let item = saved(&h, &v);
+    assert_eq!(item.item_type, onepass_core::model::ItemType::Identity);
+    assert_eq!(item.title, "Sam Durand");
+    assert_eq!(
+        item.field("first_name").unwrap().value,
+        FieldValue::Text("Sam".into())
+    );
+    assert_eq!(
+        item.field("last_name").unwrap().value,
+        FieldValue::Text("Durand".into())
+    );
+    assert_eq!(
+        item.field("email").unwrap().value,
+        FieldValue::Email("sam@example.test".into())
+    );
+    assert_eq!(
+        item.field("mobile_phone").unwrap().value,
+        FieldValue::Phone("+33 6 11 11 11 11".into())
+    );
+    assert_eq!(
+        item.field("company").unwrap().value,
+        FieldValue::Text("Atlas".into())
+    );
+    let FieldValue::Address(a) = &item.field("address").unwrap().value else {
+        panic!("no address")
+    };
+    assert_eq!(a.line1, "2 avenue du Test");
+    assert_eq!(a.city, "Paris");
+    assert_eq!(a.country, "FR");
+    let new_id = item.id;
+    let last = h.audit.events().last().cloned().unwrap();
+    assert_eq!(last.op, "save_identity");
+    assert_eq!(last.item_id, Some(id(new_id)));
+    // Now known.
+    let v = h.call(check_identity(
+        json!({"email":"sam@example.test","tel":"0033611111111"}),
+    ));
+    assert_eq!(ok(&v)["status"], "new");
+    let v = h.call(check_identity(
+        json!({"email":"sam@example.test","tel":"+33611111111"}),
+    ));
+    assert_eq!(ok(&v)["item_id"], id(new_id));
+}
+
+#[test]
+fn save_identity_titles_and_no_address() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let v = h.call(
+        json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"","email":"sam@example.test",
+        "address":{"line1":" ","city":""}}),
+    );
+    let item = saved(&h, &v);
+    assert_eq!(item.title, "sam@example.test");
+    assert_eq!(item.field("address").unwrap().value, FieldValue::Empty);
+    let v = h.call(
+        json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"","organization":"Atlas"}),
+    );
+    assert_eq!(saved(&h, &v).title, "atlas-cloud.test");
+    let v = h.call(
+        json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":" Livraison ","given_name":"Sam"}),
+    );
+    assert_eq!(saved(&h, &v).title, "Livraison");
+}
+
+#[test]
+fn save_identity_refuses_empty_and_unknown_vault() {
+    let mut h = H::new();
+    let perso = h.ids.perso;
+    let before = h.vault().items.len();
+    let empty = json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"Vide","given_name":" ","address":{}});
+    assert_eq!(err(&h.call(empty)), "invalid");
+    let unknown = json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(Id::new()),"title":"","given_name":"Sam"});
+    assert_eq!(err(&h.call(unknown)), "not_found");
+    assert_eq!(h.vault().items.len(), before);
+}
+
+#[test]
+fn card_and_identity_ops_locked() {
+    let mut h = H::new();
+    let (perso, card) = (h.ids.perso, h.ids.card);
+    h.svc.vault_mut().locked = true;
+    let before = h.vault().items.len();
+    assert_eq!(err(&h.call(check_card(NEW_CARD, "", ""))), "locked");
+    assert_eq!(
+        err(&h.call(save_card(perso, NEW_CARD, "", "", None))),
+        "locked"
+    );
+    assert_eq!(
+        err(&h.call(save_card(perso, "4242424242424242", "01", "33", Some(card)))),
+        "locked"
+    );
+    assert_eq!(
+        err(&h.call(check_identity(json!({"given_name":"Sam"})))),
+        "locked"
+    );
+    let v = json!({"op":"save_identity","ctx":"save_prompt","origin":SHOP,
+        "vault_id":id(perso),"title":"","given_name":"Sam"});
+    assert_eq!(err(&h.call(v)), "locked");
+    assert_eq!(h.vault().items.len(), before);
+    assert!(h.audit.events().is_empty());
 }

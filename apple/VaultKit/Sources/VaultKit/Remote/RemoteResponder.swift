@@ -67,21 +67,21 @@ public enum RemoteResponderError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .presenceRequired:
-            String(localized: "Face ID est nécessaire pour répondre.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.faceIdRequiredTo", bundle: VaultKitStrings.bundle)
         case .expired:
-            String(localized: "Cette demande a expiré.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.requestExpired", bundle: VaultKitStrings.bundle)
         case .unknownRequest:
-            String(localized: "Cette demande n'est plus disponible.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.requestNoLongerAvailable", bundle: VaultKitStrings.bundle)
         case .notEnrolled:
-            String(localized: "Le déverrouillage à distance de ce Mac n'est pas actif sur cet iPhone : réactive-le depuis le Mac.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.remoteUnlockForMac", bundle: VaultKitStrings.bundle)
         case .faceIDChanged:
-            String(localized: "Face ID a changé : réactive Face ID dans Réglages > Agents.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.faceIdChangedTurn", bundle: VaultKitStrings.bundle)
         case .notAllowed:
-            String(localized: "Cette réponse n'est pas permise pour cette demande.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.answerNotAllowedFor", bundle: VaultKitStrings.bundle)
         case .clockSkew:
-            String(localized: "Vérifie l'heure de ton iPhone : elle ne correspond pas à celle de ton Mac.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.checkIphonesTimeIt", bundle: VaultKitStrings.bundle)
         case .unavailable:
-            String(localized: "Le Mac est injoignable pour l'instant. Réessaie.", bundle: VaultKitStrings.bundle)
+            String(localized: "remote.macCantReachedRight", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -285,11 +285,11 @@ public actor RemoteResponder {
     // MARK: - Answers
 
     static var answerPrompt: String {
-        String(localized: "Répondre à la demande de l'agent", bundle: VaultKitStrings.bundle)
+        String(localized: "remote.answerAgentsRequest", bundle: VaultKitStrings.bundle)
     }
 
     static var enrollPrompt: String {
-        String(localized: "Activer le déverrouillage à distance de ce Mac", bundle: VaultKitStrings.bundle)
+        String(localized: "remote.turnOnRemoteUnlock", bundle: VaultKitStrings.bundle)
     }
 
     /// Answers a request after Face ID. For an unlock approval, `K_r` of that Mac is read behind
@@ -400,7 +400,7 @@ public actor RemoteResponder {
     }
 
     static var rearmPrompt: String {
-        String(localized: "Réactiver Face ID pour les demandes des agents", bundle: VaultKitStrings.bundle)
+        String(localized: "remote.turnFaceIdBack", bundle: VaultKitStrings.bundle)
     }
 
     /// After a Face ID change: the gate is written again for the current biometric set, then read

@@ -6,22 +6,22 @@ import VaultKit
 enum AgentRequestText {
     static func detailLabel(_ label: String) -> String {
         switch label {
-        case "key": String(localized: "Clé")
-        case "fingerprint": String(localized: "Empreinte")
-        case "process": String(localized: "Programme")
+        case "key": String(localized: "app.key")
+        case "fingerprint": String(localized: "app.fingerprint")
+        case "process": String(localized: "developer.program")
         case "destination": String(localized: "Destination")
-        case "forwarded": String(localized: "Connexion transférée")
-        case "namespace": String(localized: "Espace de noms")
-        case "warning": String(localized: "Attention")
-        case "command": String(localized: "Commande")
-        case "cwd": String(localized: "Dossier")
-        case "template": String(localized: "Modèle")
-        case "output": String(localized: "Fichier écrit")
-        case "overwrite": String(localized: "Remplacer")
-        case "reference": String(localized: "Secret")
-        case "title": String(localized: "Titre")
-        case "username": String(localized: "Identifiant")
-        case "url": String(localized: "Site")
+        case "forwarded": String(localized: "developer.forwardedConnection")
+        case "namespace": String(localized: "developer.namespace")
+        case "warning": String(localized: "developer.warning")
+        case "command": String(localized: "developer.command")
+        case "cwd": String(localized: "app.folder")
+        case "template": String(localized: "developer.template")
+        case "output": String(localized: "developer.fileWritten")
+        case "overwrite": String(localized: "app.replace")
+        case "reference": String(localized: "developer.secret")
+        case "title": String(localized: "app.title")
+        case "username": String(localized: "developer.username")
+        case "url": String(localized: "developer.website")
         default: label
         }
     }
@@ -29,21 +29,21 @@ enum AgentRequestText {
     static func detailValue(_ value: String) -> String {
         switch value {
         case "yes": String(localized: "oui")
-        case "no": String(localized: "non")
+        case "no": String(localized: "developer.no")
         default: value
         }
     }
 
     static func actionTitle(_ action: String) -> String {
         switch action {
-        case "ssh_sign": String(localized: "Signer avec une clé SSH")
-        case "run_with_secrets": String(localized: "Lancer une commande avec des secrets")
-        case "fill_template": String(localized: "Remplir un fichier avec des secrets")
-        case "create_login": String(localized: "Créer un identifiant")
-        case "totp_code": String(localized: "Lire un code à usage unique")
-        case "reveal_secret": String(localized: "Révéler un secret")
-        case "remote_unlock": String(localized: "Déverrouiller pour les agents")
-        case "remote_unlock_pair": String(localized: "Activer le déverrouillage à distance")
+        case "ssh_sign": String(localized: "developer.signWithSshKey")
+        case "run_with_secrets": String(localized: "developer.runCommandWithSecrets")
+        case "fill_template": String(localized: "developer.fillFileWithSecrets")
+        case "create_login": String(localized: "developer.createLogin")
+        case "totp_code": String(localized: "developer.readOneTimeCode")
+        case "reveal_secret": String(localized: "developer.revealSecret")
+        case "remote_unlock": String(localized: "developer.unlockForAgents")
+        case "remote_unlock_pair": String(localized: "developer.turnOnRemoteUnlock")
         default: action
         }
     }
@@ -70,7 +70,7 @@ struct AgentRequestsSheet: View {
                     if agents.requests.isEmpty {
                         ContentUnavailableView(
                             "Aucune demande en attente", systemImage: "checkmark.circle",
-                            description: Text("Les demandes des agents de ton Mac apparaissent ici pendant une minute."))
+                            description: Text("developer.requestsFromMacsAgents"))
                     }
                     ForEach(agents.requests) { request in
                         AgentRequestView(agents: agents, request: request)
@@ -78,7 +78,7 @@ struct AgentRequestsSheet: View {
                 }
                 .padding()
             }
-            .navigationTitle("Demandes des agents")
+            .navigationTitle("developer.agentRequests")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -115,12 +115,12 @@ struct AgentRequestView: View {
                 pairing
             } else {
                 Text(request.isUnlock
-                     ? String(localized: "\(request.macName) est verrouillé. Déverrouiller pour les agents et autoriser cette demande ?")
+                     ? String(localized: "developer.lockedUnlockItFor \(request.macName)")
                      : AgentRequestText.actionTitle(body_.action))
                     .font(.title3.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 if request.isUnlock, let minutes = body_.windowMinutes {
-                    Label("Fenêtre agents : \(Self.duration(minutes))", systemImage: "timer")
+                    Label("developer.agentsWindow \(Self.duration(minutes))", systemImage: "timer")
                         .font(.callout)
                         .accessibilityIdentifier("agentRequest.window")
                 }
@@ -133,7 +133,7 @@ struct AgentRequestView: View {
                 }
                 details
                 if !body_.confirmCode.isEmpty {
-                    code(body_.confirmCode, caption: "Code montré à l'agent")
+                    code(body_.confirmCode, caption: "developer.codeShownToAgent")
                 }
             }
             if let error {
@@ -154,9 +154,9 @@ struct AgentRequestView: View {
         VStack(alignment: .leading, spacing: 4) {
             Group {
                 if request.isPairing {
-                    Text("Demande de \(request.macName)")
+                    Text("developer.requestFrom \(request.macName)")
                 } else {
-                    Text("Demande d'un agent sur \(request.macName)")
+                    Text("developer.requestFromAgentOn \(request.macName)")
                 }
             }
             .font(.headline)
@@ -193,14 +193,14 @@ struct AgentRequestView: View {
     }
 
     @ViewBuilder private var pairing: some View {
-        Text("Activer le déverrouillage à distance de \(request.macName) ?")
+        Text("developer.turnOnRemoteUnlock \(request.macName)")
             .font(.title3.weight(.semibold))
             .fixedSize(horizontal: false, vertical: true)
-        Text("Ton iPhone gardera une clé qui permet à ce Mac de s'ouvrir pour les agents, chaque fois avec ton accord et Face ID.")
+        Text("developer.iphoneWillKeepKey")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-        code(body_.confirmCode, caption: "Vérifie que le Mac montre le même code")
+        code(body_.confirmCode, caption: "developer.checkMacShowsSame")
     }
 
     private func code(_ value: String, caption: LocalizedStringKey) -> some View {
@@ -215,10 +215,10 @@ struct AgentRequestView: View {
     @ViewBuilder private var buttons: some View {
         if request.isPairing {
             HStack {
-                Button("Refuser", role: .cancel) { Task { await agents.dismiss(request) } }
+                Button("app.refuse", role: .cancel) { Task { await agents.dismiss(request) } }
                     .accessibilityIdentifier("agentRequest.deny")
                 Spacer()
-                Button("Activer") { run { try await agents.acceptEnrollment(request) } }
+                Button("app.turnOn") { run { try await agents.acceptEnrollment(request) } }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("agentRequest.accept")
             }
@@ -227,7 +227,7 @@ struct AgentRequestView: View {
                 Button {
                     run { try await agents.answer(request, decision: .once) }
                 } label: {
-                    Text("Autoriser une fois").frame(maxWidth: .infinity)
+                    Text("developer.allowOnce").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("agentRequest.allowOnce")
@@ -235,7 +235,7 @@ struct AgentRequestView: View {
                     Button {
                         run { try await agents.answer(request, decision: .grant5m) }
                     } label: {
-                        Text("Autoriser 5 min").frame(maxWidth: .infinity)
+                        Text("developer.allowFor5Min").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("agentRequest.allowFor")
@@ -243,7 +243,7 @@ struct AgentRequestView: View {
                 Button(role: .destructive) {
                     run { try await agents.answer(request, decision: .denied) }
                 } label: {
-                    Text("Refuser").frame(maxWidth: .infinity)
+                    Text("app.refuse").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("agentRequest.deny")

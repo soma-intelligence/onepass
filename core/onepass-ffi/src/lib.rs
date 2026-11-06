@@ -10,22 +10,31 @@ mod archive;
 mod autofill;
 mod bridge;
 mod companion;
+mod contacts;
 mod convert;
 mod developer;
 mod devices;
+mod duplicates;
 mod error;
+mod family;
 mod hardening;
 mod import;
+mod mailbox;
 mod pairing;
 mod remote;
 mod rotation;
 mod rules;
 mod session;
+mod sharing;
+#[cfg(feature = "dev-fast-kdf")]
+mod test_mailbox;
 pub mod timeline;
 mod travel;
 mod types;
 mod wallet_watch;
 pub mod watchtower;
+mod wifi;
+mod zones;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -43,21 +52,27 @@ pub use accounts::*;
 pub use archive::*;
 pub use bridge::*;
 pub use companion::*;
+pub use contacts::*;
 use convert::{sections_to_ffi, type_label};
 pub use developer::*;
 pub use devices::*;
+pub use duplicates::*;
 pub use error::OnePassError;
 use error::invalid;
+pub use family::*;
 pub use hardening::*;
 pub use import::*;
+pub use mailbox::*;
 pub use pairing::*;
 pub use remote::*;
 pub use rotation::*;
 pub use rules::{password_for_context, password_from_rules};
 pub use session::{Session, SyncStoreHandle};
-pub use travel::{FfiTravelPlanEntry, FfiTravelStatus};
+pub use sharing::*;
+pub use travel::{FfiTravelItemEntry, FfiTravelItemPlan, FfiTravelPlanEntry, FfiTravelStatus};
 pub use types::*;
 pub use wallet_watch::*;
+pub use zones::*;
 
 uniffi::setup_scaffolding!();
 
@@ -309,6 +324,23 @@ fn recipe_to_core(r: &FfiPasswordRecipe) -> Result<Recipe, OnePassError> {
             digits: small(*length)?,
         },
     })
+}
+
+/// A new 32-byte device seed for the hedged random source (core
+/// `crypto::random`), made once per install: the app stores it in its
+/// keychain (this device only, never synced) and passes it to
+/// `set_device_rng_seed` at every launch.
+#[uniffi::export]
+pub fn new_device_rng_seed() -> Result<Vec<u8>, OnePassError> {
+    Ok(onepass_core::crypto::random::new_device_seed()?.to_vec())
+}
+
+/// Install this device's seed in the hedged random source. Until it is
+/// called, the core's randomness is OS random only.
+#[uniffi::export]
+pub fn set_device_rng_seed(seed: Vec<u8>) -> Result<(), OnePassError> {
+    let seed = zeroize::Zeroizing::new(seed);
+    Ok(onepass_core::crypto::random::set_device_seed(&seed)?)
 }
 
 #[uniffi::export]

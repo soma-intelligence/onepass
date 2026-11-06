@@ -203,7 +203,7 @@ struct SshKeyEditor: View {
                             .frame(minHeight: 120)
                             .fieldInput(.concealed)
                     } else {
-                        Text(privateKey.wrappedValue.isEmpty ? String(localized: "Aucune clé privée") : FieldRow.mask)
+                        Text(privateKey.wrappedValue.isEmpty ? String(localized: "item.noPrivateKey") : FieldRow.mask)
                             .font(.body.monospaced())
                             .foregroundStyle(privateKey.wrappedValue.isEmpty ? .secondary : .primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -225,21 +225,21 @@ struct SshKeyEditor: View {
                 }
                 .labelStyle(.titleAndIcon)
                 if key != nil {
-                    Button("Effacer", role: .destructive) { value = .empty }
+                    Button("app.erase", role: .destructive) { value = .empty }
                         .buttonStyle(.borderless)
                 }
             }
             if let key, !key.publicOpenssh.isEmpty {
-                LabeledContent("Clé publique") {
+                LabeledContent("item.publicKey") {
                     Text(key.publicOpenssh).font(.caption.monospaced()).lineLimit(2).truncationMode(.middle)
                 }
             }
             if let key, !key.fingerprintSha256.isEmpty {
-                LabeledContent("Empreinte") {
+                LabeledContent("app.fingerprint") {
                     Text(key.fingerprintSha256).font(.caption.monospaced())
                 }
             }
-            Text("La génération de clés arrive au jalon 7.").font(.caption).foregroundStyle(.secondary)
+            Text("item.keyGenerationComingIn").font(.caption).foregroundStyle(.secondary)
         }
         .task(id: revealed) {
             guard revealed else { return }

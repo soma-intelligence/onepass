@@ -48,13 +48,6 @@ pub struct Credential {
 }
 
 impl Credential {
-    /// A fresh pair from the system's random source.
-    pub fn generate() -> Result<Credential, MailboxError> {
-        let mut seed = Zeroizing::new([0u8; 32]);
-        aws_lc_rs::rand::fill(&mut seed[..]).map_err(|_| MailboxError::Rng)?;
-        Credential::from_seed(&seed[..])
-    }
-
     /// The pair of a stored 32-byte seed.
     pub fn from_seed(seed: &[u8]) -> Result<Credential, MailboxError> {
         let seed: [u8; 32] = seed

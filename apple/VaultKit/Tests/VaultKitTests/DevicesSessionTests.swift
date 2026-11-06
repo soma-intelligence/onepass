@@ -60,6 +60,8 @@ struct DevicesSessionTests {
         #expect(me.name == VaultSession.currentDeviceName())
         #expect(me.kind == VaultSession.currentDeviceKind)
         #expect(me.mode == .personal)
+        // Spec 6.8 (O6): no key rotation yet, so no acknowledgment status to show.
+        #expect(session.rotationAcks.isEmpty)
 
         session.lock()
         try await session.unlock(password: testPassword)

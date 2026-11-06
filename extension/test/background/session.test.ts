@@ -154,6 +154,27 @@ describe("Session", () => {
     expect(made).toBe(1);
   });
 
+  it("a pairing the app no longer knows: the stale record goes and the app is asked once to vouch again", async () => {
+    const { store } = await paired();
+    let asked = 0;
+    const s = new Session({
+      store,
+      newClient: () =>
+        new FakeClient(undefined, async () => {
+          throw new BridgeError("host", "unknown_pairing", "unknown_pairing");
+        }),
+      sleep: async () => undefined,
+      autoPair: async () => {
+        asked++;
+        return false;
+      },
+    });
+    // Refused (a revoked browser): unpaired, and nothing stale left behind.
+    expect((await rejection(s.getClient())).code).toBe("unpaired");
+    expect(asked).toBe(1);
+    expect(await store.getPairing()).toBeNull();
+  });
+
   it("a bad host MAC is not retried", async () => {
     const { store } = await paired();
     let made = 0;

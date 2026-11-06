@@ -104,6 +104,14 @@ interface WorkerFixtures {
 
 interface TestFixtures {
   build: Build;
+  /**
+   * The system appearance the browser runs under: "dark" starts Chromium with
+   * `--force-dark-mode`, as on a Mac in dark mode (no media emulation, which
+   * would reach every frame and hide how the frames pick their scheme).
+   */
+  scheme: "light" | "dark";
+  /** The browser's UI language, which the extension follows (the specs read French). */
+  uiLang: "fr" | "en";
   ext: Ext;
 }
 
@@ -119,12 +127,18 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: "worker" },
   ],
   build: ["regular", { option: true }],
-  ext: async ({ env, build }, use) => {
+  scheme: ["light", { option: true }],
+  uiLang: ["fr", { option: true }],
+  ext: async ({ env, build, scheme, uiLang }, use) => {
     const { server, cert, cache, staged } = env;
     server.reset();
     const dir = mkdtempSync(join(tmpdir(), "onepass-e2e-test-"));
     const profile = join(dir, "profile");
     const extPath = join(EXT_ROOT, "dist", build === "e2e" ? "chromium-e2e" : "chromium");
+    // The popup's words in the browser's UI language (pairing reads them).
+    const words = JSON.parse(readFileSync(join(EXT_ROOT, "src/shared/l10n", `${uiLang}.json`), "utf8")) as Record<string, string>;
+    const pairLabel = words["popup.pairWithOnepass"] ?? "";
+    const matchLabel = words["popup.codesMatch"] ?? "";
     // Whatever fails below (launch, canary, test, loopback check), the
     // browser closes and the temporary profile and host data go.
     let context: BrowserContext | undefined;
@@ -135,7 +149,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         channel: "chromium",
         headless: true,
         viewport: { width: 1280, height: 860 },
-        locale: "fr-FR",
+        locale: uiLang === "en" ? "en-US" : "fr-FR",
+        // Playwright emulates a light scheme by default (in every frame): off for "dark".
+        ...(scheme === "dark" ? { colorScheme: null } : {}),
         ...(process.env.ONEPASS_E2E_VIDEO
           ? { recordVideo: { dir: process.env.ONEPASS_E2E_VIDEO, size: { width: 1280, height: 860 } } }
           : {}),
@@ -145,12 +161,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           `--host-resolver-rules=MAP * 127.0.0.1:${server.port}, EXCLUDE localhost`,
           `--ignore-certificate-errors-spki-list=${cert.spki}`,
           // The extension follows the browser's UI language; the specs read French.
-          "--lang=fr-FR",
+          uiLang === "en" ? "--lang=en-US" : "--lang=fr-FR",
           "--no-first-run",
           "--no-default-browser-check",
           "--disable-sync",
           "--disable-background-networking",
           "--disable-component-update",
+          ...(scheme === "dark" ? ["--force-dark-mode"] : []),
         ],
       });
       context = ctx;
@@ -216,7 +233,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           const popup = await ctx.newPage();
           await popup.goto(`chrome-extension://${id}/popup.html`);
           expect(popup.url(), "the popup tab must show the extension popup").toBe(`chrome-extension://${id}/popup.html`);
-          await popup.getByRole("button", { name: "Appairer avec OnePass" }).click();
+          await popup.getByRole("button", { name: pairLabel }).click();
           // The host logs its banner first thing: if it never does, Chromium
           // could not start it (manifest, extension id, or an exec blocked by
           // the OS), and waiting for the code below would only time out.
@@ -230,8 +247,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           await expect(sas).toHaveText(/^\d{3} \d{3}$/, { timeout: 60_000 });
           const shown = (await sas.textContent())?.trim() ?? "";
           await expect.poll(() => host.codes().at(-1), { timeout: 10_000 }).toBe(shown);
-          await popup.getByRole("button", { name: "Les codes sont identiques" }).click();
-          await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toHaveCount(0);
+          await popup.getByRole("button", { name: matchLabel }).click();
+          await expect(popup.getByRole("button", { name: pairLabel })).toHaveCount(0);
           await expect(popup.locator(".sas")).toHaveCount(0);
           await expect.poll(() => host.log().includes("pairing stored")).toBe(true);
           await popup.close();
@@ -277,11 +294,21 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           const overlay = await extFrame(p, "overlay");
           const via = /^(.*) via (\S+)$/.exec(title);
           const provider = via ? (via[2] ?? "").toLowerCase() : null;
-          const scope = provider ? `.ov-account[data-provider="${provider}"]:not(.ov-sub)` : ".ov-account:not([data-provider])";
-          const account = overlay.locator(scope).filter({ has: overlay.locator(".t1", { hasText: exact(via ? (via[1] ?? "") : title) }) });
-          await expect(account).toHaveCount(1);
+          const name = exact(via ? (via[1] ?? "") : title);
+          const titled = (sel: string) => overlay.locator(sel).filter({ has: overlay.locator(".t1", { hasText: name }) });
+          await expect(overlay.locator(".ov-pill")).toHaveCount(1);
           await settle();
-          await account.getByRole("button").click();
+          // The pill's login: its "Sign in"; any other: from "Other logins".
+          const pill = titled(provider ? `.ov-pill[data-provider="${provider}"]` : ".ov-pill:not([data-provider])");
+          if ((await pill.count()) === 1) {
+            await pill.locator(".ov-signin").click();
+            return overlay;
+          }
+          await overlay.locator(".ov-others").click();
+          await settle();
+          const opt = titled(provider ? `.ov-opt[data-provider="${provider}"]` : ".ov-opt:not([data-provider])").first();
+          await expect(opt).toBeVisible();
+          await opt.click();
           return overlay;
         },
         async chainState() {

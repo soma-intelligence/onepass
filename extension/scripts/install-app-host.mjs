@@ -4,6 +4,10 @@
 // Chrome and Firefox then launch `<OnePass.app>/Contents/Helpers/onepass-relay`,
 // which reaches the vault unlocked in the app. macOS only.
 //
+// Fallback only: the app now writes these manifests itself at launch and
+// whenever it comes forward (spec 2026-11-02-browser-auto-pairing). Use this
+// for a custom profile directory or an unsigned development build.
+//
 // Usage:
 //   node scripts/install-app-host.mjs --app /Applications/OnePass.app
 //        --browser chrome|chromium|firefox|all [--extension-id <id>] [--profile <user-data-dir>]

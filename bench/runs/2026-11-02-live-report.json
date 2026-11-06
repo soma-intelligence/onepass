@@ -1,0 +1,697 @@
+{
+  "version": 1,
+  "mode": "live",
+  "started": 1793641828,
+  "chrome": "Chrome/147.0.7727.15",
+  "probe_sha256": "1e3e2d02b23b1562072c894c18f69216007c500ed8b0c17edc1faae9a048d3cd",
+  "summary": {
+    "sites": 23,
+    "scored": 23,
+    "skipped": 0,
+    "stale": 0,
+    "errors": 0,
+    "fields": 44,
+    "fields_correct": 42,
+    "detection_accuracy": 0.9545454545454546,
+    "merged_macro_f1": 0.8449045318610536,
+    "detection_pass": 21,
+    "fill_pass": 18,
+    "fill_rate": 0.782608695652174
+  },
+  "sites": [
+    {
+      "id": "google-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#identifierId",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "select[name=\"hl\"]",
+          "truth": "none",
+          "detected": "none",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "microsoft-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#usernameEntry",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "signup",
+        "action": "show_menu",
+        "groups": 0
+      },
+      "fill_pass": false
+    },
+    {
+      "id": "stackoverflow-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#email",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "#password",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "truth": "none",
+          "detected": "none",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "dropbox-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[name=\"susi_email\"]",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "atlassian-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[name=\"username\"]",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "slack-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#signup_email",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "tumblr-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "truth": "none",
+          "detected": "none",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "figma-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#email",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "#current-password",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "fill",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "notion-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[type=\"email\"]",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "docker-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#username",
+          "truth": "username",
+          "detected": "email",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "spotify-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#username",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "wordpress-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#usernameOrEmail",
+          "truth": "username",
+          "detected": "none",
+          "correct": false,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": false,
+      "plan": {
+        "intent": "ignore",
+        "action": "nothing",
+        "groups": 0
+      },
+      "fill_pass": false
+    },
+    {
+      "id": "zoom-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#email",
+          "truth": "email",
+          "detected": "none",
+          "correct": false,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": false,
+      "plan": {
+        "intent": "ignore",
+        "action": "nothing",
+        "groups": 0
+      },
+      "fill_pass": false
+    },
+    {
+      "id": "vimeo-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#unified_auth_email",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "duolingo-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#web-ui1",
+          "truth": "username",
+          "detected": "email",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "#web-ui2",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "lemonde-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#email",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "#password",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "spiegel-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#username",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "signup",
+        "action": "show_menu",
+        "groups": 0
+      },
+      "fill_pass": false
+    },
+    {
+      "id": "pixiv-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[autocomplete=\"username webauthn\"]",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "input[type=\"password\"]",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "qiita-login",
+      "kind": "login",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#identity",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "#password",
+          "truth": "password",
+          "detected": "password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "open_chain",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "gitlab-signup",
+      "kind": "signup",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#new_user_first_name",
+          "truth": "given_name",
+          "detected": "given_name",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#new_user_last_name",
+          "truth": "family_name",
+          "detected": "family_name",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#new_user_username",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#new_user_email",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#new_user_password",
+          "truth": "new_password",
+          "detected": "new_password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "signup",
+        "action": "fill",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "discord-signup",
+      "kind": "signup",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "truth": "email",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "input[name=\"global_name\"]",
+          "truth": "full_name",
+          "detected": "full_name",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "input[name=\"username\"]",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "truth": "new_password",
+          "detected": "new_password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "signup",
+        "action": "fill",
+        "groups": 1
+      },
+      "fill_pass": true
+    },
+    {
+      "id": "qiita-signup",
+      "kind": "signup",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "#user_url_name",
+          "truth": "username",
+          "detected": "username",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#user_email",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "#user_password",
+          "truth": "new_password",
+          "detected": "password",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "login",
+        "action": "show_menu",
+        "groups": 0
+      },
+      "fill_pass": false
+    },
+    {
+      "id": "tumblr-signup",
+      "kind": "signup",
+      "status": "ok",
+      "fields": [
+        {
+          "selector": "input[name=\"email\"]",
+          "truth": "email",
+          "detected": "email",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        },
+        {
+          "selector": "input[name=\"password\"]",
+          "truth": "new_password",
+          "detected": "new_password",
+          "correct": true,
+          "filled": true,
+          "expected_value": true
+        },
+        {
+          "selector": "input[name=\"q\"]",
+          "truth": "none",
+          "detected": "none",
+          "correct": true,
+          "filled": false,
+          "expected_value": false
+        }
+      ],
+      "detection_pass": true,
+      "plan": {
+        "intent": "signup",
+        "action": "fill",
+        "groups": 1
+      },
+      "fill_pass": true
+    }
+  ]
+}

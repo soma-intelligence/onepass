@@ -5,8 +5,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    Record, RecordKind, RecordStore, RotationPush, TrustGuard, check_local_meta_key,
-    check_local_meta_prefix,
+    AutofillRow, Record, RecordKind, RecordStore, RotationPush, TrustGuard, autofill_sql,
+    check_local_meta_key, check_local_meta_prefix,
 };
 use crate::chain::ChainState;
 use crate::sync::merge_chain;
@@ -103,6 +103,8 @@ impl SqliteStore {
              );",
         )
         .map_err(store_err)?;
+        conn.execute_batch(autofill_sql::SCHEMA)
+            .map_err(store_err)?;
         Ok(SqliteStore { conn })
     }
 
@@ -236,6 +238,39 @@ impl RecordStore for SqliteStore {
         meta_on(&self.conn, key)
     }
 
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        autofill_sql::append(&tx, site_tag, data, keep_per_site, keep_total)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        autofill_sql::rows(&self.conn, site_tag)
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        autofill_sql::delete(&tx, seqs)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        let n = autofill_sql::clear(&tx)?;
+        tx.commit().map_err(store_err)?;
+        Ok(n)
+    }
+
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
         check_local_meta_prefix(prefix)?;
         meta_keys_on(&self.conn, prefix)
@@ -358,7 +393,13 @@ impl RecordStore for SqliteStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(crate::store::Zone, Record, Option<u64>)>,
+        shares: &[crate::share::ShareState],
     ) -> Result<()> {
+        // No shared zone here (a local store, no server).
+        if !zoned.is_empty() || !shares.is_empty() {
+            return Err(Error::Store("zones unsupported".into()));
+        }
         let mut settled = trust.clone();
         settled.state = DeviceLineageState::Current;
         let collect = rotation
@@ -408,7 +449,13 @@ impl RecordStore for SqliteStore {
     /// Both tables emptied in one transaction, the trust row compared with
     /// `expected` inside it; then the file is compacted (best effort), so
     /// the rows do not linger in free pages or in the WAL.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+    fn erase_device(
+        &mut self,
+        expected: &TrustState,
+        notice: Option<super::ErasedNotice>,
+    ) -> Result<()> {
+        // The CLI tells the user itself and never reads a notice: none kept.
+        let _ = notice;
         let tx = self.conn.transaction().map_err(store_err)?;
         let stored: Option<Vec<u8>> = tx
             .query_row(
@@ -826,6 +873,8 @@ mod tests {
             &after,
             &after,
             &push,
+            vec![],
+            &[],
         );
         assert_eq!(r, Err(Error::Conflict), "the expected state must match");
         s.put_rotation(
@@ -834,6 +883,8 @@ mod tests {
             &before,
             &after,
             &push,
+            vec![],
+            &[],
         )
         .unwrap();
         let stored = s.trust_state().unwrap().unwrap();

@@ -21,32 +21,84 @@ public enum EmergencyKitError: Error, Equatable {
 /// is written to disk here: the caller owns the bytes.
 public enum EmergencyKit {
     static let payloadPrefix = "onepass-kit:1:"
+    /// Kits made since multi-account: `onepass-kit:2:<account id>:<Secret Key without dashes>`.
+    static let payloadPrefixV2 = "onepass-kit:2:"
+
+    /// What a scanned kit gives: its Secret Key (display format) and, on a version 2 kit, the account
+    /// id that names its iCloud zone (multi-account ruling P8).
+    public struct Scan: Equatable, Sendable {
+        public let secretKey: String
+        public let accountID: String?
+        /// The server of a self-hosted account (spec D.4), nil otherwise.
+        public var server: URL? = nil
+    }
 
     // MARK: QR code
 
-    /// The text encoded in the QR code: `onepass-kit:1:<Secret Key without dashes>`.
-    public static func qrPayload(secretKey: String) -> String {
+    /// Separates the kit body from the server URL of a self-hosted account in the payload.
+    static let serverSeparator: Character = ";"
+
+    /// The text encoded in the QR code: `onepass-kit:1:<Secret Key without dashes>`, then
+    /// `;<server URL>` for an account on a server other than the OnePass one (spec D.4).
+    public static func qrPayload(secretKey: String, server: URL? = nil) -> String {
         let bare = secretKey.filter { $0 != "-" && !$0.isWhitespace }.uppercased()
-        return payloadPrefix + bare
+        return withServer(payloadPrefix + bare, server)
+    }
+
+    /// The version 2 payload: the account id, then the Secret Key without dashes, then the server
+    /// of a self-hosted account.
+    public static func qrPayload(secretKey: String, accountID: String, server: URL? = nil) -> String {
+        let bare = secretKey.filter { $0 != "-" && !$0.isWhitespace }.uppercased()
+        return withServer(payloadPrefixV2 + accountID.lowercased() + ":" + bare, server)
+    }
+
+    private static func withServer(_ body: String, _ server: URL?) -> String {
+        guard let server else { return body }
+        return body + String(serverSeparator) + server.absoluteString
     }
 
     /// The Secret Key (display format) carried by a scanned payload, or nil when the text is
-    /// not a version 1 OnePass kit payload or the key is malformed.
+    /// not a OnePass kit payload or the key is malformed.
     public static func parsePayload(_ s: String) -> String? {
+        parseKit(s)?.secretKey
+    }
+
+    /// The Secret Key, the account id of a version 2 kit and the server of a self-hosted account
+    /// of a scanned payload. Nil when the text is not a OnePass kit payload, the key is malformed
+    /// or the account id is not 32 hex characters. A server URL that is not a valid one for this
+    /// build is dropped (the key still counts).
+    public static func parseKit(_ s: String) -> Scan? {
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.lowercased().hasPrefix(payloadPrefix) else { return nil }
-        let body = String(trimmed.dropFirst(payloadPrefix.count))
-        guard !body.isEmpty else { return nil }
-        return try? normalizeSecretKey(text: body)
+        let halves = trimmed.split(separator: serverSeparator, maxSplits: 1, omittingEmptySubsequences: false)
+        let kit = String(halves.first ?? "")
+        let server = halves.count > 1 ? URL(string: String(halves[1])) : nil
+        let valid = server.flatMap { MailboxEndpoints.validate($0, allowHTTP: MailboxEndpoints.allowsLocalHTTP) ? $0 : nil }
+        let lowered = kit.lowercased()
+        if lowered.hasPrefix(payloadPrefix) {
+            let body = String(kit.dropFirst(payloadPrefix.count))
+            guard !body.isEmpty, let key = try? normalizeSecretKey(text: body) else { return nil }
+            return Scan(secretKey: key, accountID: nil, server: valid)
+        }
+        guard lowered.hasPrefix(payloadPrefixV2) else { return nil }
+        let parts = kit.dropFirst(payloadPrefixV2.count).split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let id = SignInZone.accountID(String(parts[0])), !parts[1].isEmpty,
+            let key = try? normalizeSecretKey(text: String(parts[1]))
+        else { return nil }
+        return Scan(secretKey: key, accountID: id, server: valid)
     }
 
     /// A square QR code (error correction M, 4 module quiet zone, nearest neighbor scaling so
     /// modules stay sharp). The side is the largest whole multiple of the module count that
     /// fits `size`. Nil when the key is invalid.
-    public static func qrImage(for secretKey: String, size: CGFloat) -> CGImage? {
+    public static func qrImage(
+        for secretKey: String, accountID: String? = nil, size: CGFloat, server: URL? = nil
+    ) -> CGImage? {
         guard let display = try? normalizeSecretKey(text: secretKey) else { return nil }
         let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(qrPayload(secretKey: display).utf8)
+        let payload = accountID.flatMap(SignInZone.accountID).map {
+            qrPayload(secretKey: display, accountID: $0, server: server)
+        }
+        filter.message = Data((payload ?? qrPayload(secretKey: display, server: server)).utf8)
         filter.correctionLevel = "M"
         guard let raw = filter.outputImage else { return nil }
         let quiet: CGFloat = 4
@@ -69,9 +121,11 @@ public enum EmergencyKit {
     private static let pageHeight: CGFloat = 842
     private static let margin: CGFloat = 50
 
-    /// The one page PDF. Throws `invalidSecretKey` when the key does not parse.
+    /// The one page PDF. Throws `invalidSecretKey` when the key does not parse. `server`: the
+    /// sync server of an account that is not on the OnePass server (a line and the QR carry it);
+    /// nil for the OnePass server and iCloud.
     public static func pdf(
-        secretKey: String, accountID: String, displayName: String, createdAt: Date
+        secretKey: String, accountID: String, displayName: String, createdAt: Date, server: URL? = nil
     ) throws -> Data {
         guard let key = try? normalizeSecretKey(text: secretKey) else {
             throw EmergencyKitError.invalidSecretKey
@@ -89,7 +143,7 @@ public enum EmergencyKit {
         context.beginPDFPage(nil)
         draw(
             in: context, secretKey: key, accountID: accountID,
-            displayName: displayName, createdAt: createdAt)
+            displayName: displayName, createdAt: createdAt, server: server)
         context.endPDFPage()
         context.closePDF()
         return data as Data
@@ -97,7 +151,7 @@ public enum EmergencyKit {
 
     private static func draw(
         in context: CGContext, secretKey: String, accountID: String,
-        displayName: String, createdAt: Date
+        displayName: String, createdAt: Date, server: URL?
     ) {
         let contentWidth = pageWidth - 2 * margin
         var y = pageHeight - margin
@@ -131,7 +185,7 @@ public enum EmergencyKit {
         y = text(String(localized: "Emergency Kit OnePass", bundle: VaultKitStrings.bundle), font: title, top: y) - 10
         y = text(
             String(
-                localized: "Ce kit plus ton mot de passe maître donnent un accès complet à ton coffre. Imprime-le et range la feuille hors ligne. Ne le photographie jamais et ne le stocke jamais dans le cloud.",
+                localized: "emergencyKit.kitPlusMasterPassword",
                 bundle: VaultKitStrings.bundle),
             font: strong, top: y) - 12
         let formatter = DateFormatter()
@@ -139,18 +193,22 @@ public enum EmergencyKit {
         formatter.dateStyle = .long
         formatter.timeStyle = .none
         formatter.timeZone = TimeZone(identifier: "UTC")
-        y = text(String(localized: "Compte : \(displayName)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
-        y = text(String(localized: "Identifiant du compte : \(accountID)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
-        y = text(String(localized: "Créé le \(formatter.string(from: createdAt))", bundle: VaultKitStrings.bundle), font: body, top: y) - 24
+        y = text(String(localized: "emergencyKit.account \(displayName)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        y = text(String(localized: "emergencyKit.accountId \(accountID)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        y = text(String(localized: "emergencyKit.created \(formatter.string(from: createdAt))", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        if let server {
+            y = text(String(localized: "kit.server \(server.absoluteString)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        }
+        y -= 20
 
-        y = text(String(localized: "Ta Secret Key", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.secretKey", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         y = text(
-            String(localized: "Cette clé s'ajoute à ton mot de passe maître pour protéger ton coffre. Elle est stockée sur tes appareils et n'est jamais envoyée à personne.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.keyWorksWithMaster", bundle: VaultKitStrings.bundle),
             font: body, top: y) - 10
         y = text(secretKey, font: mono, top: y) - 16
 
         let qrSide: CGFloat = 150
-        if let qr = qrImage(for: secretKey, size: qrSide) {
+        if let qr = qrImage(for: secretKey, accountID: accountID, size: qrSide, server: server) {
             let rect = CGRect(x: margin, y: y - qrSide, width: qrSide, height: qrSide)
             context.saveGState()
             context.interpolationQuality = .none
@@ -159,14 +217,14 @@ public enum EmergencyKit {
         }
         let side = margin + qrSide + 20
         _ = text(
-            String(localized: "Scanne ce QR code avec OnePass sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.scanQrCodeWith", bundle: VaultKitStrings.bundle),
             font: body, top: y - 6, left: side, width: pageWidth - margin - side)
         y -= qrSide + 30
 
-        y = text(String(localized: "Ton mot de passe maître", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.masterPassword", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         y = text(
             String(
-                localized: "Il n'est pas imprimé sur ce kit. Si tu choisis de le garder sur papier, écris-le à la main sur la ligne ci-dessous, jamais dans un fichier ni une photo.",
+                localized: "emergencyKit.itNotPrintedOn",
                 bundle: VaultKitStrings.bundle),
             font: body, top: y) - 30
         context.setStrokeColor(CGColor(gray: 0, alpha: 1))
@@ -176,12 +234,12 @@ public enum EmergencyKit {
         context.strokePath()
         y -= 30
 
-        y = text(String(localized: "En cas de perte", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
+        y = text(String(localized: "emergencyKit.ifLoseThem", bundle: VaultKitStrings.bundle), font: heading, top: y) - 8
         let lines = [
-            String(localized: "Sans ton mot de passe maître et ta Secret Key, personne ne peut ouvrir ton coffre, pas même nous. Il n'existe aucun moyen de les récupérer.", bundle: VaultKitStrings.bundle),
-            String(localized: "Imprime ce kit et range la feuille hors ligne, dans un endroit sûr (coffre, tiroir fermé à clé). Ne la photographie jamais et ne la stocke jamais dans le cloud (iCloud Drive, Photos, messageries).", bundle: VaultKitStrings.bundle),
-            String(localized: "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître.", bundle: VaultKitStrings.bundle),
-            String(localized: "Si tu penses que cette page a été vue par quelqu'un d'autre, crée un nouveau compte et déplace tes données.", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.withoutMasterPasswordAnd", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.printKitAndKeep", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.toAddNewDevice", bundle: VaultKitStrings.bundle),
+            String(localized: "emergencyKit.ifThinkSomeoneElse", bundle: VaultKitStrings.bundle),
         ]
         for line in lines {
             y = text(line, font: body, top: y) - 8

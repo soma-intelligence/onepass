@@ -50,6 +50,9 @@ pub enum IntegrityError {
     MembershipFork,
     /// A family record older than the one this device already accepted.
     FamilyRollback,
+    /// A `SyncHome` older than the one this device already accepted, or a
+    /// fork of it (`crate::synchome`).
+    SyncHomeRollback,
 }
 
 impl fmt::Display for IntegrityError {
@@ -81,6 +84,7 @@ impl fmt::Display for IntegrityError {
             Self::MembershipRollback => "membership rollback detected",
             Self::MembershipFork => "membership fork detected",
             Self::FamilyRollback => "family rollback detected",
+            Self::SyncHomeRollback => "sync home rollback detected",
         };
         f.write_str(s)
     }

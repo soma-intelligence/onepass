@@ -11,8 +11,8 @@ struct FavoritesWidget: Widget {
             FavoritesWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("Favoris")
-        .description("Ouvre un de tes favoris dans OnePass.")
+        .configurationDisplayName("term.favorites")
+        .description("favoritesWidget.opensOneOfFavorites")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -28,7 +28,7 @@ struct FavoritesWidgetView: View {
         case .stale:
             GlanceMessage.stale
         case .available(let snapshot) where snapshot.favorites.isEmpty:
-            GlanceMessage(symbol: "star", text: "Ajoute un favori dans OnePass")
+            GlanceMessage(symbol: "star", text: "favoritesWidget.addFavoriteInOnepass")
         case .available(let snapshot):
             list(snapshot.favorites)
         }
@@ -55,7 +55,7 @@ struct FavoritesWidgetView: View {
                     .lineLimit(2)
                     .privacySensitive()
                 if favorites.count > 1 {
-                    Text("+ \(favorites.count - 1) autres")
+                    Text("widgets.more \(favorites.count - 1)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

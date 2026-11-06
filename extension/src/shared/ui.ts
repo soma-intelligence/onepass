@@ -107,6 +107,8 @@ export interface MenuInit {
   best?: string;
   /** Opened because the page refused every generated password: said at the top of the menu. */
   notice?: MenuNotice;
+  /** A signup form that can make a passkey: "Créer le compte avec un mot de passe fort" or "Créer une clé d'accès à la place" first. */
+  signup?: { passkey: true };
 }
 
 /** Why a plan opened the menu instead of filling. */
@@ -126,6 +128,8 @@ export interface OverlayAccount {
   accounts?: ProviderChoice[];
   /** Password rows: the item also fills a one-time code. */
   totp?: boolean;
+  /** The vault the item lives in: named on the card when the site's logins span several vaults. */
+  vault?: { id: string; name: string };
 }
 
 export interface OverlayInit {
@@ -138,23 +142,51 @@ export interface SaveInit {
   origin: string;
   /** Registrable domain, as shown in "Ne jamais proposer pour <domaine>". */
   site: string;
-  kind: "login" | "provider_link";
+  kind: "login" | "provider_link" | "card" | "identity";
   status: "new" | "update";
   title: string;
   username: string;
-  /** The login to update (status `update`). */
+  /** Kind `card`: what the card shows of the card typed in the page (never its number). */
+  card?: { last4: string; exp?: string; holder?: string };
+  /** Kind `identity`: what the card shows of the identity or address typed in the page. */
+  identity?: { name?: string; email?: string; place?: string };
+  /** The login (or card) to update (status `update`). */
   update?: { itemId: string; title: string };
-  vaults: { id: string; name: string }[];
+  /** `account`: the OnePass account the vault belongs to, when the host names one. */
+  vaults: { id: string; name: string; account?: string }[];
+  /** The vault picked first: the last one used for this site, else the last one used, else the first. */
+  defaultVault?: string;
+  /** OnePass was locked when the sign-in was sent: Save unlocks first. */
+  locked?: boolean;
   /** Provider link: the provider account (its own item) the site signs in with. */
   provider?: { id: ProviderId; email: string; title?: string };
-  /** Open in the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). */
-  view?: "edit";
+  /**
+   * `edit`: the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). `saved`: a
+   * login OnePass already saved (a generated signup password, confirmed at the submission),
+   * shown as done, nothing to answer.
+   */
+  view?: "edit" | "saved";
 }
 
 export interface PopupStatus {
   locked: boolean;
   account: string;
   vaults: number;
+  /** The extension just paired itself with the app (no code): the popup says "Connected". */
+  connected?: boolean;
+}
+
+/** A sign-in the save card offered and nobody answered: waits in the popup (no password here). */
+export interface PendingSave {
+  id: string;
+  origin: string;
+  site: string;
+  username: string;
+  status: "new" | "update";
+  /** Status `update`: the login whose password changes. */
+  title?: string;
+  /** The vault Save uses (status `new`). */
+  vault?: string;
 }
 
 export interface PopupSuggestions {

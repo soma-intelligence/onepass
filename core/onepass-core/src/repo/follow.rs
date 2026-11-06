@@ -53,9 +53,13 @@ use crate::chain::ChainState;
 use crate::crypto::{HybridKemSecret, KdfParams, SecretKey, unwrap_key, wrap_key};
 use crate::device_keys::DeviceKeys;
 use crate::lineage::resolve::{Completeness, Decision, Prompt, PromptKind, resolve};
-use crate::lineage::{LineageRecord, RotationBody, delivery_id, identity_id, rotation_code};
-use crate::store::{Record, RecordKind, RecordStore, account_record_id};
-use crate::trust::{DeviceLineageState, LineageHead, RetiredIdentity, TrustLevel, TrustState};
+use crate::lineage::{
+    LineageRecord, RotationBody, RotationReason, delivery_id, identity_id, rotation_code, wipe,
+};
+use crate::store::{ErasedNotice, Record, RecordKind, RecordStore, account_record_id};
+use crate::trust::{
+    DeviceLineageState, LineageHead, QuarantineClock, RetiredIdentity, TrustLevel, TrustState,
+};
 use crate::vault::{Vault, kem_context};
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -183,18 +187,29 @@ fn later_epoch(params: &[u8], body: &RotationBody) -> bool {
         .is_ok_and(|p| p.account_id == body.account_id && p.epoch > 1)
 }
 
-fn completeness<S: RecordStore + ?Sized>(
+/// The completeness of every rotation for `trust`'s device, and the
+/// self-introduced devices a `Recover` child of the head may come from
+/// (sharing plan 3 Task 3).
+pub(crate) fn completeness<S: RecordStore + ?Sized>(
     store: &S,
     records: &[LineageRecord],
-    me: Id,
+    trust: &TrustState,
 ) -> Result<Completeness> {
     let mut present = BTreeSet::new();
     for (h, body) in rotations(records) {
-        if complete_for(store, &h, body, me)? {
+        if complete_for(store, &h, body, trust.me.device_id)? {
             present.insert(h);
         }
     }
-    Ok(Completeness { present })
+    let intros = super::pairing::stored_intros(store)?;
+    let self_introduced = super::kit::self_intros(trust, &intros)
+        .into_iter()
+        .map(|(id, i)| (id, i.body.entry.clone()))
+        .collect();
+    Ok(Completeness {
+        present,
+        self_introduced,
+    })
 }
 
 /// A digest of everything a rotation prompt depends on: the lineage
@@ -463,7 +478,7 @@ pub(crate) fn look_for<S: RecordStore + ?Sized>(store: &S, trust: &TrustState) -
         });
     }
     let records = lineage_records(store)?;
-    let complete = completeness(store, &records, trust.me.device_id)?;
+    let complete = completeness(store, &records, trust)?;
     look_in(store, trust, &records, &complete)
 }
 
@@ -500,7 +515,7 @@ fn offered<S: RecordStore + ?Sized>(
     records: &[LineageRecord],
     choice: [u8; 32],
 ) -> Result<Prompt> {
-    let mut complete = completeness(store, records, trust.me.device_id)?;
+    let mut complete = completeness(store, records, trust)?;
     complete.present.insert(choice);
     match resolve(trust, records, &complete) {
         Decision::Prompt(p) if p.children.contains(&choice) => Ok(p),
@@ -781,7 +796,11 @@ pub(crate) fn abandoned_rotation_rows<S: RecordStore + ?Sized>(
             .iter()
             .map(|(r, _)| (RecordKind::KeyDelivery, delivery_id(&trust.head.hash, *r))),
     );
-    for kind in [RecordKind::DeviceList, RecordKind::VaultList] {
+    for kind in [
+        RecordKind::DeviceList,
+        RecordKind::VaultList,
+        RecordKind::SyncHome,
+    ] {
         rows.push((kind, left_id));
     }
     for (kind, id) in rows {
@@ -828,7 +847,10 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         mut drop_pending,
         device_keys,
     } = a;
+    // The new identity's home is pinned when first read, as its lists are:
+    // its chain starts at seq 1 under the new key.
     let chain = ChainState {
+        sync_home: None,
         params_epoch: account.params.epoch,
         device_list: None,
         vault_list: None,
@@ -873,7 +895,17 @@ pub(crate) fn commit_adoption<S: RecordStore>(
             drop_pending.push((kind, left_id));
         }
     }
-    store.put_follow(chain.clone(), trust, &next, retained, drop_pending)?;
+    // Spec 6.8 (O6): this device's acknowledgment of the head it pins, in
+    // the same transaction (display only).
+    let ack = crate::lineage::ack::ack_write(&store, &next, device_keys, crate::devices::now())?;
+    store.put_follow(
+        ack.into_iter().collect(),
+        chain.clone(),
+        trust,
+        &next,
+        retained,
+        drop_pending,
+    )?;
     // Best effort: a leftover not collected is what R21 tolerates anyway.
     let _ = store.collect_foreign_items(collect);
     // Spec 6.4, 8.5: the devices this one introduced that the new roster
@@ -897,6 +929,8 @@ pub(crate) fn commit_adoption<S: RecordStore>(
         epoch_cache: Mutex::new(None),
         chain,
         travel_parked: BTreeSet::new(),
+        travel_parked_items: BTreeMap::new(),
+        travelling: false,
         lists_forced: true,
         records_id: rid,
         pending: None,
@@ -1050,7 +1084,7 @@ pub fn reject_rotation(
         return Err(refused("rotation", "state"));
     }
     let records = lineage_records(&*store)?;
-    let complete = completeness(&*store, &records, trust.me.device_id)?;
+    let complete = completeness(&*store, &records, &trust)?;
     // Incomplete choices are offered too: "not me" never waits.
     let offered = look_in(&*store, &trust, &records, &complete)?
         .prompt
@@ -1221,49 +1255,62 @@ pub enum QuarantineTick {
     /// of the removal or of the records that lead to it is not `Verified`
     /// on this device (`Tofu`, or no level), or one of those records is
     /// missing. Nothing erases it until the user answers ("Effacer cet
-    /// appareil" or "Ce n'était pas moi").
+    /// appareil" or "Ce n'était pas moi"). A `Recover` removal is the
+    /// exception (founder decision 2026-11-03): it runs the clock.
     Locked,
-    /// The store was erased now (`RecordStore::erase_device`). The app
-    /// deletes what it keeps for the account outside the store (Keychain
-    /// items: Secret Key, Account Unlock Key, device keys).
+    /// The store was erased now (`RecordStore::erase_device`): the clock
+    /// ran out, or a valid wipe order ("Marquer comme volé",
+    /// `crate::lineage::wipe`) named this device. The app deletes what it
+    /// keeps for the account outside the store (Keychain items: Secret
+    /// Key, Account Unlock Key, device keys).
     Erased,
 }
 
 /// The quarantine clock (spec 8.4, R8, O1), with the caller's clock `now`
-/// (Unix seconds; the core never reads one): the app calls it at launch and
-/// on the quarantine screen. No password.
+/// (Unix seconds; the core never reads one): the app calls it at launch,
+/// after a sync and on the quarantine screen. No password.
 ///
 /// - A device whose trust state is not quarantined yet is quarantined when
 ///   the resolver decides `Quarantine`, i.e. a valid lineage record
 ///   (signed by a device pinned in the local roster, not revoked, excluded
-///   or ignored, and by the identity it names) revokes it: the state
-///   `Quarantined { by, since: now }` is written in one write, conditional
-///   on the trust state read (`Conflict`). Anything else (nothing, a
-///   prompt, an invalid or unverifiable record, the signed device list) is
-///   `NotQuarantined` and writes nothing, except a valid record that drops
-///   this device, recorded as `Orphaned` (it never erases).
+///   or ignored, and by the identity it names; or a `Recover` admitted by
+///   an identity-signed self intro) revokes it: the state
+///   `Quarantined { by, since: now }` and a fresh erase clock are written
+///   in one write, conditional on the trust state read (`Conflict`).
+///   Anything else (nothing, a prompt, an invalid or unverifiable record,
+///   the signed device list) is `NotQuarantined` and writes nothing,
+///   except a valid record that drops this device, recorded as `Orphaned`
+///   (it never erases).
 /// - Once quarantined, the state stays whatever the server holds since:
-///   only `quarantine_resolve` or the erase ends it. `since` is never
-///   moved.
+///   only `quarantine_resolve`, a kit restore or the erase ends it.
+///   `since` is never moved.
 /// - The erase clock runs only when the whole path of the removal is
-///   known and `Verified` here (`erase_clock_runs`, final review I1, fix
-///   round 2); otherwise the tick is `Locked` (never erased, no date)
-///   until the user answers with `quarantine_resolve`.
-/// - Otherwise the store is erased (`RecordStore::erase_device`,
-///   conditional on the trust state read) once `now - since` reaches
-///   `QUARANTINE_ERASE_AFTER_SECS`; a clock moved back only delays it
-///   (saturating arithmetic, never early). Otherwise `Waiting` with
-///   `erase_at = since + QUARANTINE_ERASE_AFTER_SECS` (saturating).
+///   known and `Verified` here, a `Recover` child of the head counting as
+///   verified by its identity signature (`erase_clock_runs`, final review
+///   I1, founder decision 2026-11-03); otherwise the tick is `Locked`
+///   (never erased, no date, wipe orders ignored) until the user answers.
+/// - A valid wipe order for this device and this removal
+///   (`crate::lineage::wipe`) erases the store now
+///   (`RecordStore::erase_device`, conditional on the trust state).
+/// - Otherwise the erase clock (`TrustState::quarantine_clock`) counts the
+///   forward moves of `now` across ticks: a clock set back counts nothing
+///   and the count goes on from the new reading, so setting the clock back
+///   never stops the erase; a clock set forward brings it forward. A
+///   quarantine with no clock yet (entered before version 5 of the trust
+///   state, or `Locked` before) starts with `now - since` counted. Once
+///   `QUARANTINE_ERASE_AFTER_SECS` are counted the store is erased;
+///   otherwise the clock is saved and the tick is `Waiting` with
+///   `erase_at = now + what is left`.
 pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<QuarantineTick> {
     let Some(trust) = trust_of(&*store)? else {
         return Ok(QuarantineTick::NotQuarantined);
     };
-    let (trust, since) = match trust.state {
-        DeviceLineageState::Quarantined { since, .. } => (trust, since),
+    let trust = match trust.state {
+        DeviceLineageState::Quarantined { .. } => trust,
         DeviceLineageState::Legacy => return Ok(QuarantineTick::NotQuarantined),
         _ => {
             let records = lineage_records(&*store)?;
-            let complete = completeness(&*store, &records, trust.me.device_id)?;
+            let complete = completeness(&*store, &records, &trust)?;
             let lock = look_in(&*store, &trust, &records, &complete)?.lock;
             let Some(state) = lock.and_then(|l| l.state(&trust.state, &records, now)) else {
                 return Ok(QuarantineTick::NotQuarantined);
@@ -1272,24 +1319,68 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
                 return Ok(QuarantineTick::NotQuarantined);
             }
             let mut next = trust.clone();
+            if let DeviceLineageState::Quarantined { by, .. } = &state {
+                next.quarantine_clock = Some(QuarantineClock::start(*by, now, 0));
+            }
             next.state = state;
             store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)?;
             if !matches!(next.state, DeviceLineageState::Quarantined { .. }) {
                 return Ok(QuarantineTick::NotQuarantined);
             }
-            (next, now)
+            next
         }
     };
-    if !erase_clock_runs(&trust, &lineage_records(&*store)?) {
+    let records = lineage_records(&*store)?;
+    if !erase_clock_runs(&trust, &records) {
         return Ok(QuarantineTick::Locked);
     }
-    if now.saturating_sub(since) < QUARANTINE_ERASE_AFTER_SECS {
-        return Ok(QuarantineTick::Waiting {
-            erase_at: since.saturating_add(QUARANTINE_ERASE_AFTER_SECS),
-        });
+    let rotations = wipe::signed_rotations(&records);
+    if wipe::stored_wipes(&*store)?
+        .iter()
+        .any(|w| wipe::orders_me(w, &trust, &rotations))
+    {
+        store.erase_device(&trust, Some(ErasedNotice::Stolen))?;
+        return Ok(QuarantineTick::Erased);
     }
-    store.erase_device(&trust)?;
-    Ok(QuarantineTick::Erased)
+    let mut clock = clock_of(&trust, now);
+    clock.advance(now);
+    if clock.elapsed >= QUARANTINE_ERASE_AFTER_SECS {
+        store.erase_device(&trust, Some(clock_erase_notice(&trust, &records)))?;
+        return Ok(QuarantineTick::Erased);
+    }
+    if trust.quarantine_clock != Some(clock) {
+        let mut next = trust.clone();
+        next.quarantine_clock = Some(clock);
+        store.put_with_trust_cas(Vec::new(), Vec::new(), None, &trust, &next)?;
+    }
+    Ok(QuarantineTick::Waiting {
+        erase_at: now.saturating_add(QUARANTINE_ERASE_AFTER_SECS - clock.elapsed),
+    })
+}
+
+/// Why the clock erased the quarantine `trust` records: a `Recover`
+/// removal (the account was recovered on another device) or any other.
+fn clock_erase_notice(trust: &TrustState, records: &[LineageRecord]) -> ErasedNotice {
+    let DeviceLineageState::Quarantined { by, .. } = &trust.state else {
+        return ErasedNotice::Removed;
+    };
+    match rotations(records).get(by) {
+        Some(b) if b.reason == RotationReason::Recover => ErasedNotice::Recovered,
+        _ => ErasedNotice::Removed,
+    }
+}
+
+/// The erase clock of the quarantine `trust` records: the stored one when
+/// it belongs to that quarantine, else one read first at `now` with
+/// `now - since` counted. Any other state: a clock counting nothing.
+fn clock_of(trust: &TrustState, now: u64) -> QuarantineClock {
+    let DeviceLineageState::Quarantined { by, since, .. } = &trust.state else {
+        return QuarantineClock::start([0; 32], now, 0);
+    };
+    match trust.quarantine_clock {
+        Some(c) if c.by == *by => c,
+        _ => QuarantineClock::start(*by, now, now.saturating_sub(*since)),
+    }
 }
 
 /// Whether the quarantine `trust` records runs the erase clock (final
@@ -1301,6 +1392,13 @@ pub fn quarantine_tick(store: &mut dyn RecordStore, now: u64) -> Result<Quaranti
 /// A `Tofu` or unknown signer anywhere, or a missing record, means no
 /// clock: a `Tofu` device cannot launder its removal through a device it
 /// introduced. Any other state: `false`.
+///
+/// Founder decision 2026-11-03 (recover-wipe): a `Recover` rotation that is
+/// a child of this device's head counts its rotator `Verified`. The
+/// resolver admits it only when the identity this device pinned signed
+/// the rotator's self intro, so its authority is that identity (whoever
+/// holds the kit or the recovered keyset), not a pairing; the old devices
+/// of a recovered account then erase 7 days later like any removed device.
 fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
     let DeviceLineageState::Quarantined { by, rotator, .. } = &trust.state else {
         return false;
@@ -1310,7 +1408,10 @@ fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
         return false;
     };
     let mut levels = trust.levels.clone();
-    for b in &path {
+    for (i, b) in path.iter().enumerate() {
+        if i == 0 && b.reason == RotationReason::Recover && b.parent == trust.head.hash {
+            levels.insert(b.rotator, TrustLevel::Verified);
+        }
         if levels.get(&b.rotator) != Some(&TrustLevel::Verified) {
             return false;
         }
@@ -1324,17 +1425,26 @@ fn erase_clock_runs(trust: &TrustState, records: &[LineageRecord]) -> bool {
 
 /// The device time (Unix seconds) at which the quarantine erases this
 /// device, or `None`: not quarantined, or quarantined with no erase clock
-/// (`QuarantineTick::Locked`, final review I1). Read only, no password:
-/// for the lock screen.
+/// (`QuarantineTick::Locked`, final review I1). With a saved clock
+/// (`TrustState::quarantine_clock`): its last reading plus what is left;
+/// before the first tick: `since` + 7 days. Read only, no password: for
+/// the lock screen.
 pub fn quarantine_erase_at(store: &dyn RecordStore) -> Result<Option<u64>> {
     let Some(trust) = trust_of(store)? else {
         return Ok(None);
     };
-    let DeviceLineageState::Quarantined { since, .. } = trust.state else {
+    let DeviceLineageState::Quarantined { by, since, .. } = trust.state else {
         return Ok(None);
     };
-    Ok(erase_clock_runs(&trust, &lineage_records(store)?)
-        .then(|| since.saturating_add(QUARANTINE_ERASE_AFTER_SECS)))
+    if !erase_clock_runs(&trust, &lineage_records(store)?) {
+        return Ok(None);
+    }
+    Ok(Some(match trust.quarantine_clock {
+        Some(c) if c.by == by => c
+            .last
+            .saturating_add(QUARANTINE_ERASE_AFTER_SECS.saturating_sub(c.elapsed)),
+        _ => since.saturating_add(QUARANTINE_ERASE_AFTER_SECS),
+    }))
 }
 
 /// The user's answer on a locked device (spec 8.2, 8.4).
@@ -1375,7 +1485,7 @@ pub fn quarantine_resolve<S: RecordStore>(
             if !matches!(lock, LineageLock::Quarantine { .. }) {
                 return Err(refused("device", "not quarantined"));
             }
-            store.erase_device(&trust)?;
+            store.erase_device(&trust, None)?;
             Ok(None)
         }
         QuarantineChoice::NotMe {

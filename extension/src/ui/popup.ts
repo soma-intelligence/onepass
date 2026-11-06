@@ -7,6 +7,7 @@
 // and "Oublier mes choix sur ce site".
 import { ext } from "../shared/browser";
 import { t } from "../shared/i18n";
+import type { UiToBg } from "../shared/messages";
 import {
   CUSTOM_MAX_LENGTH,
   CUSTOM_MIN_LENGTH,
@@ -14,6 +15,7 @@ import {
   type GeneratorEntry,
   type GeneratorKind,
   type GeneratorProfile,
+  type PendingSave,
   type PopupPlanLine,
   type PopupStatus,
   type Summary,
@@ -30,7 +32,10 @@ import {
   mark,
   mount,
   realTimers,
+  UNLOCK_POLL_MS,
+  UNLOCK_WAIT_TRIES,
   siteIcon,
+  siteTile,
   srOnly,
 } from "./components";
 import {
@@ -42,6 +47,11 @@ import {
   parseItem,
   parseItems,
   parseLocked,
+  parseNativeVaultState,
+  type NativeVaultState,
+  parseOutcome,
+  parsePaired,
+  parsePending,
   parseSas,
   parseStatus,
   parseSuggestions,
@@ -242,9 +252,26 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         null,
         t("popup.linkExtensionToOnepass"),
       ),
-      h("div", { class: "actions" }, button(t("popup.pairWithOnepass"), "btn btn-primary", () => void track(startPairing()))),
+      h("div", { class: "actions" }, button(t("popup.pairWithOnepass"), "btn btn-primary", () => void track(connect()))),
       err ? h("p", { class: "error-line", attrs: { role: "alert" } }, err) : null,
     );
+  }
+
+  /**
+   * "Pair with OnePass": first without a code (the app vouches for this browser by its
+   * signature), then the code comparison when the app cannot.
+   */
+  async function connect(): Promise<void> {
+    center(mark("l"), h("h1", null, t("popup.connecting")), h("p", null, t("popup.openOnepassAppIf")));
+    const r = await call(deps.send, { type: "popup_pair_auto" }, parsePaired);
+    if (!r.ok) {
+      if (r.code === "host_missing") renderHostMissing();
+      else renderUnpaired(errorText(r.code));
+      return;
+    }
+    if (!r.value.paired) return startPairing();
+    // The status says "connected" once: load shows the toast.
+    await load();
   }
 
   async function startPairing(): Promise<void> {
@@ -323,7 +350,153 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     renderUnpaired(r.ok ? undefined : errorText(r.code));
   }
 
-  function renderLocked(): void {
+  /**
+   * The app came forward on its lock screen: say so, ask again every second
+   * and load once unlocked. After a minute, the locked screen again.
+   */
+  function waitForUnlock(): void {
+    center(mark("l"), h("h1", null, t("ui.unlockToContinue")), h("p", null, t("popup.unlockAppToSee")));
+    let left = UNLOCK_WAIT_TRIES;
+    const check = (): void => {
+      void track(
+        call(deps.send, { type: "popup_status" }, parseStatus).then((r) => {
+          if (r.ok && !r.value.locked) return load();
+          if (r.ok && --left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
+          else if (r.ok) renderLockedPlain();
+          else return load();
+          return undefined;
+        }),
+      );
+    };
+    timers.setTimeout(check, UNLOCK_POLL_MS);
+  }
+
+  /** Face ID ran once by itself in this popup: never again without a tap (no loop). */
+  let autoBiometricDone = false;
+  /** A native unlock is running: the buttons wait. */
+  let unlocking = false;
+  /** The native vault said unlocked once and the bridge still said locked: no second round. */
+  let nativeSettled = false;
+
+  /**
+   * Locked. iOS (IOSSAF-01): the native vault of the Safari handler answers, and the popup turns
+   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans OnePass".
+   */
+  function renderLocked(): Promise<void> {
+    return track(
+      call(deps.send, { type: "popup_vault" }, parseNativeVaultState).then((r) => {
+        if (r.ok && r.value.locked) return renderUnlockSheet(r.value);
+        if (r.ok && !nativeSettled) {
+          nativeSettled = true;
+          return load();
+        }
+        renderLockedPlain();
+        return undefined;
+      }),
+    );
+  }
+
+  function unlockErrorText(v: NativeVaultState): string {
+    switch (v.error) {
+      case "wrong_password":
+        return t("unlock.wrongPassword");
+      case "locked_out":
+        return v.message ?? t("unlock.lockedOut");
+      case "password_required":
+        return t("unlock.passwordRequired");
+      case "no_account":
+        return t("unlock.noAccount");
+      case "failed":
+        return v.message ?? errorText("internal");
+      default:
+        return "";
+    }
+  }
+
+  /** Face ID (or Touch ID) once by itself when the policy allows it, then the button; the master password always. */
+  function renderUnlockSheet(v: NativeVaultState): void {
+    const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    const reason = v.error ? unlockErrorText(v) : "";
+    if (reason) errLine.textContent = reason;
+    const after = (r: Awaited<ReturnType<typeof callVault>>): Promise<void> | undefined => {
+      unlocking = false;
+      if (!r.ok) {
+        renderLockedPlain();
+        return undefined;
+      }
+      if (!r.value.locked) return load();
+      renderUnlockSheet(r.value);
+      return undefined;
+    };
+    const biometric = (): void => {
+      if (unlocking) return;
+      unlocking = true;
+      void track(callVault({ type: "popup_unlock_biometric" }).then(after));
+    };
+    const input = h("input", {
+      class: "input unlock-input",
+      attrs: {
+        type: "password",
+        autocomplete: "off",
+        autocapitalize: "off",
+        spellcheck: "false",
+        enterkeyhint: "go",
+        "aria-label": t("unlock.masterPassword"),
+        placeholder: t("unlock.masterPassword"),
+      },
+    });
+    const submit = (e?: Event): void => {
+      e?.preventDefault();
+      if (unlocking || input.value.length === 0) return;
+      // The native unlock takes 1 to 1024 UTF-8 bytes (RelayRequest.maxPassword): said, not dropped.
+      if (new TextEncoder().encode(input.value).length > 1024) {
+        input.value = "";
+        errLine.textContent = t("unlock.wrongPassword");
+        return;
+      }
+      unlocking = true;
+      const password = input.value;
+      input.value = "";
+      void track(callVault({ type: "popup_unlock_password", password }).then(after));
+    };
+    const kind = v.biometry === "none" ? null : v.biometry;
+    const bio = kind
+      ? h(
+          "button",
+          { class: "btn btn-primary unlock-bio", attrs: { type: "button" }, on: { click: () => biometric() } },
+          icon(kind === "touchID" ? "touchid" : "faceid", 18),
+          t(kind === "touchID" ? "unlock.withTouchId" : kind === "opticID" ? "unlock.withOpticId" : "unlock.withFaceId"),
+        )
+      : null;
+    center(
+      h(
+        "div",
+        { class: "unlock-sheet" },
+        h("span", { class: "unlock-mark" }, mark("l")),
+        h("h1", null, t("ui.onepassLocked")),
+        v.account ? h("p", { class: "message-detail unlock-account" }, v.account) : null,
+        bio,
+        h(
+          "form",
+          { class: "unlock-form", on: { submit } },
+          input,
+          h("button", { class: kind ? "btn" : "btn btn-primary", attrs: { type: "submit" } }, t("unlock.unlock")),
+        ),
+        v.message && v.error === "password_required" ? h("p", { class: "message-detail" }, v.message) : null,
+        errLine,
+      ),
+      forgetButton(),
+    );
+    // One automatic try per popup, and never after the policy asked for the password.
+    if (kind && !autoBiometricDone && !v.error) {
+      autoBiometricDone = true;
+      biometric();
+    } else if (!kind) input.focus();
+  }
+
+  const callVault = (m: UiToBg) => call(deps.send, m, parseNativeVaultState);
+
+  function renderLockedPlain(): void {
     center(
       mark("l"),
       h("h1", null, t("ui.onepassLocked")),
@@ -335,7 +508,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
           void track(
             call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
               if (r.ok && !r.value.locked) return load();
-              if (!r.ok) toast(errorText(r.code), "error");
+              if (r.ok) waitForUnlock();
+              else toast(errorText(r.code), "error");
               return undefined;
             }),
           ),
@@ -367,6 +541,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   let domain: string | null = null;
   let suggestions: Summary[] = [];
   let plan: PopupPlanLine | null = null;
+  /** Sign-ins whose save card went away unanswered (no password here). */
+  let waiting: PendingSave[] = [];
   let results: Summary[] | null = null;
   let selected: string | null = null;
   let view: "detail" | "gen" | "none" = "none";
@@ -462,6 +638,30 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             button(t("common.fill"), "btn btn-primary", () => void track(smartFill())),
           )
         : null;
+    const toSave =
+      waiting.length > 0 && !results
+        ? h(
+            "div",
+            { class: "pp-pending glass", attrs: { role: "group", "aria-label": t("popup.toSave") } },
+            ...waiting.map((w) =>
+              h(
+                "div",
+                { class: "pp-pending-row" },
+                siteTile(w.origin, w.site, 28),
+                h(
+                  "span",
+                  { class: "stack" },
+                  h("span", { class: "t1" }, w.status === "update" ? t("save.updatePasswordFor", { site: w.site }) : t("save.saveLoginFor", { site: w.site })),
+                  h("span", { class: "t2" }, w.vault !== undefined ? `${w.username} · ${w.vault}` : w.username),
+                ),
+                button(t("save.notNow"), "btn-text sc-quiet", () => void track(decideWaiting(w, "dismiss"))),
+                button(w.status === "update" ? t("save.update") : t("common.save"), "btn-text sc-primary", () =>
+                  void track(decideWaiting(w, w.status === "update" ? "update" : "save")),
+                ),
+              ),
+            ),
+          )
+        : null;
     for (const it of items) {
       list.append(
         h(
@@ -478,6 +678,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     }
     mount(
       side,
+      toSave,
       h("h1", { class: "pp-side-title" }, icon(results ? "search" : "star", 13), title),
       line,
       list,
@@ -490,6 +691,27 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             button(t("popup.forgetMyChoicesOn"), "btn-link", () => void track(forgetSite())),
           )
         : null,
+    );
+  }
+
+  async function decideWaiting(w: PendingSave, decision: "save" | "update" | "dismiss"): Promise<void> {
+    const r = await call(deps.send, { type: "popup_pending_decide", id: w.id, decision }, parseOutcome);
+    waiting = waiting.filter((x) => x.id !== w.id);
+    renderSide();
+    if (!r.ok) {
+      toast(errorText(r.code), "error");
+      return;
+    }
+    if (decision === "dismiss") return;
+    const o = r.value;
+    toast(
+      o.outcome === "already"
+        ? t("save.alreadyInOnepass")
+        : o.outcome === "updated"
+          ? t("save.passwordUpdated")
+          : o.vault !== undefined
+            ? t("save.savedIn", { vault: o.vault })
+            : t("save.loginSaved"),
     );
   }
 
@@ -523,7 +745,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   function handleError(code: string): void {
     stopTotp();
-    if (code === "locked") renderLocked();
+    if (code === "locked") void renderLocked();
     else if (code === "unpaired") renderUnpaired();
     else if (code === "host_missing") renderHostMissing();
     else toast(errorText(code), "error");
@@ -877,13 +1099,16 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     if (!r.ok) {
       if (r.code === "unpaired") renderUnpaired();
       else if (r.code === "host_missing") renderHostMissing();
-      else if (r.code === "locked") renderLocked();
+      else if (r.code === "locked") await renderLocked();
       else renderError(r.code);
       return;
     }
     status = r.value;
+    // The extension paired itself with the app while opening: said once, over the rendered view.
+    const connected = status.connected === true;
     if (status.locked) {
-      renderLocked();
+      await renderLocked();
+      if (connected) toast(t("popup.connectedToOnepass"));
       return;
     }
     const s = await call(deps.send, { type: "popup_suggestions" }, parseSuggestions);
@@ -891,9 +1116,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     domain = s.value.domain;
     suggestions = s.value.items;
     plan = s.value.plan ?? null;
+    const p = await call(deps.send, { type: "popup_pending" }, parsePending);
+    waiting = p.ok ? p.value : [];
     results = null;
     view = "none";
     renderMain();
+    if (connected) toast(t("popup.connectedToOnepass"));
   }
 
   center(mark("l"));

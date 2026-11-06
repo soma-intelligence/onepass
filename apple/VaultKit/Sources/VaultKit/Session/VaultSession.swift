@@ -22,8 +22,12 @@ public final class VaultSession {
     public private(set) var allVaults: [FfiVault] = []
     /// Every item summary, archived and trashed ones included. Use `items(filter:query:sort:)` for lists.
     public private(set) var summaries: [FfiItemSummary] = []
+    /// Travel Mode is on in this session (entered or resumed), refreshed with every list reload.
+    public private(set) var isTravelling = false
     /// Recently opened item ids, newest first. Memory only, emptied on lock.
     public private(set) var recents: [String] = []
+    /// Searches typed in this session, newest first (`RecentSearches`). Memory only, emptied on lock.
+    public private(set) var recentSearches: [String] = []
     public var lastError: VaultError?
     public private(set) var hiddenVaultIDs: Set<String>
     /// The store holds an account but this device has no Secret Key for it: use `restore`.
@@ -33,11 +37,30 @@ public final class VaultSession {
     public internal(set) var passwordChangedElsewhere = false
     /// The signed device list, revoked devices included (`refreshDevices`). Emptied on lock.
     public internal(set) var devices: [FfiDevice] = []
+    /// Devices this account marked stolen (`markStolen`), by id.
+    public internal(set) var stolenDeviceIDs: Set<String> = []
+    /// The account removes devices by lineage (key rotation v2): a removed device can then be marked
+    /// stolen. False for an account with no lineage.
+    public internal(set) var canMarkStolen = false
     /// This device's id in the device list, once known (`refreshDevices`).
     public internal(set) var thisDeviceID: String?
+    /// After a key rotation, each device's signed acknowledgment of this device's current head, by
+    /// device id (spec 6.8, O6: "à jour" or "en attente"). Empty before the first rotation, on a
+    /// legacy device and when it cannot be read: display only, never a trust decision. Emptied on lock.
+    public internal(set) var rotationAcks: [String: FfiDeviceAck] = [:]
     /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
     /// the revoked screen must not say "effacées". `refresh` tries again.
     public private(set) var revokedEraseFailed = false
+    /// A lineage record removed this device (key rotation v2 quarantine): the date it erases itself,
+    /// shown on the removed-device screen. Nil when not quarantined or when the core keeps it locked
+    /// with no date (`runQuarantineClock`).
+    public private(set) var quarantineEraseAt: Date?
+    /// The quarantine erased this device's local copy, and why: 7 days after a recovery of the
+    /// account on another device or after a removal, or another device of the account marked it
+    /// stolen. Kept by the core in the emptied store until the erased screen was shown
+    /// (`dismissErasedNotice`), so an erase inside a sync commit, or one the app was killed right
+    /// after, is still told and its Keychain items still go.
+    public private(set) var erasedByQuarantine: FfiErasedNotice?
     /// Bumped after the lists were reloaded for a write of another process (the AutoFill extension):
     /// an open item detail reloads, or warns its editor before a save overwrites the new version,
     /// exactly as for a remote change set.
@@ -56,6 +79,15 @@ public final class VaultSession {
     @ObservationIgnored var profileTask: Task<Void, Never>?
     /// How long an edit of the profile waits before its write (typing a name writes once).
     @ObservationIgnored var profileWriteDelay: Duration = .milliseconds(800)
+
+    /// Contacts, shared vaults, invitations, identity changes, family and received items
+    /// (`refreshSharing`, sharing plan 4). Emptied on lock.
+    public internal(set) var sharing = SharingSnapshot()
+    /// The recovery requests for this account (spec 11.5), read from the store without unlocking
+    /// (`refreshRecoveryAlerts`): a locked device shows them too. Kept on lock.
+    public internal(set) var recoveryAlerts: [FfiRecoveryAlert] = []
+    /// Demo data (`showDemoSharing`, Debug): `refreshSharing` keeps the shown state.
+    @ObservationIgnored var sharingPinned = false
 
     /// Vaults shown in the sidebar (hidden ones left out).
     public var vaults: [FfiVault] { allVaults.filter { !hiddenVaultIDs.contains($0.id) } }
@@ -110,7 +142,7 @@ public final class VaultSession {
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
-    static var unlockPrompt: String { String(localized: "Déverrouiller OnePass", bundle: VaultKitStrings.bundle) }
+    static var unlockPrompt: String { String(localized: "session.unlockOnepass", bundle: VaultKitStrings.bundle) }
     nonisolated static let personalVault = FfiVaultMeta(
         name: "Personnel", icon: "person", color: "blue", travelSafe: false, mcpAccess: false)
     nonisolated private static let log = Logger(subsystem: "me.somalabs.onepass", category: "session")
@@ -165,9 +197,18 @@ public final class VaultSession {
     public func reload() async {
         switch state {
         case .unlocked:
+            // A sync commit may have erased this device (a wipe order, or its 7 days ran out): the
+            // session closes, then the quarantine clock reads the erase.
+            if storedErasedNotice() != nil {
+                lockRevokedDevice()
+                return
+            }
             await refresh()
             refreshAutofillIdentities()
         case .noAccount, .locked: evaluateStoredAccount()
+        case .failed(let error) where error == .deviceRevoked:
+            // On the removed screen: a sync commit may have erased it, or moved its date.
+            runQuarantineClock()
         case .unlocking, .failed: break
         }
     }
@@ -185,6 +226,7 @@ public final class VaultSession {
             lastError = refusedStore
             return
         }
+        if runQuarantineClock() { return }
         if settings.revokedErasePending {
             // Revoked, not erased yet (L6): never the lock screen of a revoked account.
             state = .failed(.deviceRevoked)
@@ -294,6 +336,14 @@ public final class VaultSession {
         try await environment.sync.resetStore {
             if accountMissing { try resetStoreForRecovery(dbPath: path) } else { try resetStore(dbPath: path) }
         }
+        forgetErasedAccount()
+    }
+
+    /// What `eraseLocalAccount` removes outside the store, once the store is empty: the Secret Key and
+    /// biometric enrollment of the account (its Keychain items), the account id, name, failure
+    /// throttle and biometric wish, and the system identity store. Other accounts on the device are
+    /// untouched (their own Keychain items, keyed by their account id).
+    private func forgetErasedAccount() {
         if let accountID = settings.accountID {
             do {
                 try secretKeys.remove(accountID: accountID)
@@ -334,6 +384,99 @@ public final class VaultSession {
         state = .failed(.deviceRevoked)
         lastError = .deviceRevoked
         if wasOpen { notifySync { await $0.sessionLocked() } }
+        // A lineage removal locks the session the same way: its clock (or a stolen order) runs now.
+        _ = runQuarantineClock()
+    }
+
+    /// The core's quarantine clock (key rotation v2 spec 8.4; founder decision 2026-11-03), run at
+    /// launch, on every re-read of the store and when a session is found removed, with the device
+    /// clock. A device a lineage record removed (also every old device after a recovery) is locked on
+    /// the removed-device screen with the date it erases itself (`quarantineEraseAt`, nil when the
+    /// core keeps it locked with no date); a device whose 7 days ran out, or that a valid "Marquer
+    /// comme volé" order names, has an empty store now: its Keychain items and settings go too
+    /// (`finishQuarantineErase`), and the session ends in `.noAccount` with `erasedByQuarantine` set.
+    /// A store with no lineage (every account the app creates today) is never touched. Returns
+    /// whether it decided the state. The biometric policy is unchanged: the removed screen offers no
+    /// unlock.
+    @discardableResult
+    func runQuarantineClock() -> Bool {
+        guard FileManager.default.fileExists(atPath: dbPath) else {
+            quarantineEraseAt = nil
+            return false
+        }
+        // Erased already (inside a sync commit, or before a kill): finish it and tell it.
+        if let notice = storedErasedNotice() {
+            finishQuarantineErase(notice)
+            return true
+        }
+        let now = UInt64(max(0, environment.clock.now.timeIntervalSince1970.rounded(.down)))
+        let tick: FfiQuarantineTick
+        do {
+            tick = try quarantineTick(dbPath: dbPath, now: now)
+        } catch {
+            Self.log.error("quarantine clock not run")
+            return false
+        }
+        switch tick {
+        case .notQuarantined:
+            quarantineEraseAt = nil
+            return false
+        case .waiting(let eraseAt):
+            quarantineEraseAt = Date(timeIntervalSince1970: TimeInterval(eraseAt))
+        case .locked:
+            quarantineEraseAt = nil
+        case .erased:
+            finishQuarantineErase(storedErasedNotice() ?? .removed)
+            return true
+        }
+        settings.revokedLocked = true
+        state = .failed(.deviceRevoked)
+        lastError = .deviceRevoked
+        return true
+    }
+
+    /// After the core erased the store (`runQuarantineClock`): the session, the account's Keychain
+    /// items and settings go, and the session ends in `.noAccount` with `erasedByQuarantine` set.
+    /// Idempotent: it runs again at each re-read until the erased screen was shown.
+    private func finishQuarantineErase(_ notice: FfiErasedNotice) {
+        quarantineEraseAt = nil
+        if let session {
+            self.session = nil
+            release(session)
+        }
+        clearMemory()
+        forgetErasedAccount()
+        settings.revokedLocked = false
+        settings.revokedErasePending = false
+        revokedEraseFailed = false
+        erasedByQuarantine = notice
+        state = .noAccount
+        lastError = nil
+    }
+
+    /// The erase notice the core left in the emptied store, if any. Never creates the store.
+    private func storedErasedNotice() -> FfiErasedNotice? {
+        guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
+        do {
+            return try erasedNotice(dbPath: dbPath)
+        } catch {
+            Self.log.error("erase notice not read")
+            return nil
+        }
+    }
+
+    /// The user read the erased screen: the notice is forgotten (in the store too), then the store
+    /// is read again (the onboarding, or what a sync brought back since).
+    public func dismissErasedNotice() {
+        if FileManager.default.fileExists(atPath: dbPath) {
+            do {
+                try clearErasedNotice(dbPath: dbPath)
+            } catch {
+                Self.log.error("erase notice not cleared")
+            }
+        }
+        erasedByQuarantine = nil
+        evaluateStoredAccount()
     }
 
     /// The user erases a device found revoked (`lockRevokedDevice`): the store, the Secret Key and the
@@ -364,7 +507,7 @@ public final class VaultSession {
 
     nonisolated static var recoveryRefused: String {
         String(
-            localized: "Cette action n'est possible que lorsque le compte a disparu du stockage ou que sa Secret Key manque.",
+            localized: "session.onlyPossibleWhenAccount",
             bundle: VaultKitStrings.bundle)
     }
 
@@ -399,7 +542,7 @@ public final class VaultSession {
     /// `needsSecretKey`. Keychain error: thrown as is.
     func loadSecretKey() throws -> (accountID: String, secretKey: SecretBytes) {
         let missing = VaultError.other(String(
-            localized: "La Secret Key de ce compte n'est pas sur cet appareil : utilise ton Emergency Kit.", bundle: VaultKitStrings.bundle))
+            localized: "session.accountsSecretKeyIsnt", bundle: VaultKitStrings.bundle))
         guard let accountID = knownAccountID() else {
             needsSecretKey = true
             throw fail(missing)
@@ -829,10 +972,14 @@ public final class VaultSession {
     }
 
     private func clearMemory() {
+        sharing = SharingSnapshot()
         devices = []
+        rotationAcks = [:]
         summaries = []
         allVaults = []
         recents = []
+        recentSearches = []
+        isTravelling = false
         locationIndex = LocationIndex()
         autoLockTimer?.cancel()
         autoLockTimer = nil
@@ -910,15 +1057,20 @@ public final class VaultSession {
     }
 
     /// "À proximité": active items of visible vaults with a place within `radius` meters of
-    /// `origin`, closest first. Only items new or modified since the last call are decrypted (one
-    /// core call for all of them); the rest comes from the in-memory index. An item that cannot be
+    /// `origin`, closest first. Only items holding a place (`hasPlaces`, said by the summary) and
+    /// new or modified since the last call are decrypted (one core call for all of them); the rest
+    /// comes from the in-memory index. A library of 500 items with a dozen places reads a dozen. An item that cannot be
     /// read is left out and read again next time: a passing error (a sync applying) never hides it
     /// for good (its detail reports a lasting error when opened).
+    /// Items `nearbyItems` decrypted so far (tests: the index reads only what it must).
+    @ObservationIgnored var nearbyItemsRead = 0
+
     public func nearbyItems(from origin: GeoPoint, within radius: Double = LocationIndex.nearbyRadius) async throws
         -> [NearbyItem]
     {
-        let active = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
+        let active = placedSummaries()
         let stale = locationIndex.needsLoading(active).map { ($0.vaultId, $0.id, $0.updatedAt) }
+        nearbyItemsRead += stale.count
         if !stale.isEmpty {
             let loaded = try await read { session in
                 var out: [String: LocationIndex.Entry] = [:]
@@ -934,11 +1086,24 @@ public final class VaultSession {
             locationIndex.update(loaded, keeping: summaries)
         }
         // Summaries may have changed during the read: the current ones decide what is listed.
-        let current = summaries.filter { !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
-        return locationIndex.nearby(current, from: origin, within: radius)
+        return locationIndex.nearby(placedSummaries(), from: origin, within: radius)
+    }
+
+    /// Active items of visible vaults that hold a place.
+    private func placedSummaries() -> [FfiItemSummary] {
+        summaries.filter { $0.hasPlaces && !hiddenVaultIDs.contains($0.vaultId) && ItemFilter.nearby.matches($0) }
     }
 
     // MARK: - Items
+
+    /// Remembers a search the user acted on (opened a result, submitted it), for the search screen.
+    public func noteSearch(_ query: String) {
+        recentSearches = RecentSearches.adding(query, to: recentSearches)
+    }
+
+    public func clearRecentSearches() {
+        recentSearches = []
+    }
 
     /// The full item, for the detail view only (which forgets it when closed).
     public func loadItem(vaultID: String, itemID: String) async throws -> FfiItem {
@@ -1026,7 +1191,7 @@ public final class VaultSession {
             let failure = VaultError(error)
             if case .integrity = failure {
                 throw VaultError.other(String(
-                    localized: "Ce fichier est endommagé : il ne s'ouvre pas.", bundle: VaultKitStrings.bundle))
+                    localized: "session.fileDamagedItCant", bundle: VaultKitStrings.bundle))
             }
             throw failure
         }
@@ -1147,6 +1312,41 @@ public final class VaultSession {
         return written
     }
 
+    /// `autofillCandidates(service:includeAll:)` for a typed service: an app matches only the Logins
+    /// whose `apps` hold its App ID (never a site by a domain read from it).
+    public func autofillCandidates(for service: AutoFillService, includeAll: Bool) async throws
+        -> [FfiAutofillCandidate]
+    {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        return try await read {
+            try $0.autofillServiceCandidates(service: typed, includeAll: includeAll, excludedVaultIds: excluded)
+        }
+    }
+
+    /// `autofillPlan(service:request:)` for a typed service.
+    public func autofillPlan(for service: AutoFillService, request: FfiAutofillRequest) async throws
+        -> FfiAutofillPlan
+    {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        return try await read {
+            try $0.autofillServicePlan(service: typed, request: request, excludedVaultIds: excluded)
+        }
+    }
+
+    /// `noteAutofillUse(recordID:service:)` for a typed service (an app is remembered as an app).
+    @discardableResult
+    public func noteAutofillUse(recordID: String, for service: AutoFillService) async throws -> Bool {
+        let excluded = excludedVaultIDs
+        let typed = service.ffi
+        let written = try await read {
+            try $0.noteAutofillServiceUse(recordId: recordID, service: typed, excludedVaultIds: excluded)
+        }
+        if written { notifySync { await $0.localChangesWritten() } }
+        return written
+    }
+
     /// The sites the visible vaults remember a choice for (registrable domains, sorted).
     public func knownUsageSites() async throws -> [String] {
         let excluded = excludedVaultIDs
@@ -1169,6 +1369,33 @@ public final class VaultSession {
             }
             throw error
         }
+    }
+
+    // MARK: Autofill history (device-local, 2026-11-03)
+    //
+    // Which login was chosen on which site, from which browser and profile, kept on this device only,
+    // sealed in its database, never synced (core `autofill_history`). Not a vault write: `read`, no
+    // reload and nothing for the sync.
+
+    /// Whether this device keeps the autofill history that ranks the suggestions (on by default).
+    public func autofillHistoryEnabled() async throws -> Bool {
+        try await read { try $0.autofillHistoryEnabled() }
+    }
+
+    /// Turns the autofill history on or off for this device. Off erases it.
+    public func setAutofillHistoryEnabled(_ enabled: Bool) async throws {
+        try await read { try $0.setAutofillHistoryEnabled(enabled: enabled) }
+    }
+
+    /// How many autofill history events this device keeps.
+    public func autofillHistoryCount() async throws -> Int {
+        Int(try await read { try $0.autofillHistoryCount() })
+    }
+
+    /// Erases this device's autofill history. Returns how many events went.
+    @discardableResult
+    public func clearAutofillHistory() async throws -> Int {
+        Int(try await read { try $0.clearAutofillHistory() })
     }
 
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
@@ -1242,11 +1469,13 @@ public final class VaultSession {
     }
 
     /// Publishes the AutoFill identities now, without the debounce, and returns once the system store
-    /// was replaced (after every identity request sent before). For the AutoFill extension after a
-    /// write: its session locks right after, and a debounced refresh would then find it locked, leaving
-    /// the new identity out of the store until the next app unlock. Does nothing unless unlocked with
-    /// the "Suggestions au-dessus du clavier" setting on.
-    public func publishAutofillIdentitiesNow() async {
+    /// was replaced (after every identity request sent before), or after `limit` at most. For the
+    /// AutoFill extension after a write: its session locks right after, and a debounced refresh would
+    /// then find it locked, leaving the new identity out of the store until the next app unlock. The
+    /// identities are read from the core at once; only the system store's answer is not waited for
+    /// past `limit`: a fill must never hang on it (the iOS 27.0 Simulator's store never answers).
+    /// Does nothing unless unlocked with the "Suggestions au-dessus du clavier" setting on.
+    public func publishAutofillIdentitiesNow(limit: Duration = .seconds(2)) async {
         guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
         let excluded = excludedVaultIDs
         let settings = settings
@@ -1257,7 +1486,44 @@ public final class VaultSession {
             else { return }
             await sync.replaceNow(list)
         }
-        await identityChain?.value
+        guard let chain = identityChain else { return }
+        await Self.wait(for: chain, atMost: limit)
+    }
+
+    /// Reads the AutoFill identities now (metadata only) and queues their publication without waiting
+    /// for the system store: for the AutoFill extension right after an unlock (G10), so QuickType
+    /// works without opening the app, at no cost to the request. Does nothing unless unlocked with
+    /// the "Suggestions au-dessus du clavier" setting on; a disabled store is left alone.
+    public func publishAutofillIdentitiesSoon() async {
+        guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
+        let excluded = excludedVaultIDs
+        guard let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
+        else { return }
+        let sync = identitySync
+        enqueueIdentity { await sync.replaceSoon(list) }
+    }
+
+    /// Returns when `task` ends or after `limit`, whichever comes first (the task keeps running).
+    nonisolated static func wait(for task: Task<Void, Never>, atMost limit: Duration) async {
+        let resumed = OSAllocatedUnfairLock(initialState: false)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeOnce: @Sendable () -> Void = {
+                if resumed.withLock({ done in
+                    defer { done = true }
+                    return !done
+                }) {
+                    continuation.resume()
+                }
+            }
+            Task {
+                await task.value
+                resumeOnce()
+            }
+            Task {
+                try? await Task.sleep(for: limit)
+                resumeOnce()
+            }
+        }
     }
 
     /// Record ids (`"<vault id>:<item id>"`) of the items hidden from AutoFill, every type included.
@@ -1520,6 +1786,9 @@ public final class VaultSession {
         var summaries: [FfiItemSummary]
         var purged: UInt32 = 0
         var profile: FfiProfile?
+        /// Travel Mode is on in this session (spec 2026-11-02): items behind extra protection lock
+        /// harder.
+        var travelling = false
     }
 
     private struct Opened: Sendable {
@@ -1563,7 +1832,7 @@ public final class VaultSession {
         let purged = purge ? try session.purgeTrash(olderThanDays: trashRetentionDays) : 0
         return Snapshot(
             vaults: try session.vaults(), summaries: try session.itemSummaries(), purged: purged,
-            profile: try session.profile())
+            profile: try session.profile(), travelling: (try? session.travelling()) ?? false)
     }
 
     /// The core's default name of a device that listed itself (`devices::DEFAULT_DEVICE_NAME`).
@@ -1638,12 +1907,12 @@ public final class VaultSession {
 
     nonisolated static var secretKeyNotStoredOnCreate: String {
         String(
-            localized: "Impossible de ranger la Secret Key dans le trousseau de cet appareil. Le coffre n'a pas été créé.",
+            localized: "session.secretKeyCouldntStored2",
             bundle: VaultKitStrings.bundle)
     }
     nonisolated static var secretKeyNotStoredOnRestore: String {
         String(
-            localized: "Impossible de ranger la Secret Key dans le trousseau de cet appareil. La connexion a été annulée.",
+            localized: "session.secretKeyCouldntStored",
             bundle: VaultKitStrings.bundle)
     }
 
@@ -1672,6 +1941,7 @@ public final class VaultSession {
     private func apply(_ snapshot: Snapshot) {
         allVaults = snapshot.vaults
         summaries = snapshot.summaries
+        isTravelling = snapshot.travelling
         summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
@@ -1710,7 +1980,7 @@ public final class VaultSession {
 
     func beginPasswordCheck() throws {
         guard !passwordCheckInFlight else {
-            throw fail(.other(String(localized: "Une vérification du mot de passe est déjà en cours.", bundle: VaultKitStrings.bundle)))
+            throw fail(.other(String(localized: "session.passwordCheckAlreadyIn", bundle: VaultKitStrings.bundle)))
         }
         passwordCheckInFlight = true
     }

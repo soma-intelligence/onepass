@@ -222,3 +222,80 @@ path = "fuzz_targets/contact_frames.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "member_key"
+path = "fuzz_targets/member_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "membership"
+path = "fuzz_targets/membership.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "shared_manifest"
+path = "fuzz_targets/shared_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zone_access"
+path = "fuzz_targets/zone_access.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "share_invite"
+path = "fuzz_targets/share_invite.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rekey_request"
+path = "fuzz_targets/rekey_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sync_home"
+path = "fuzz_targets/sync_home.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enroll_request"
+path = "fuzz_targets/enroll_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "family"
+path = "fuzz_targets/family.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "item_send"
+path = "fuzz_targets/item_send.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recovery_message"
+path = "fuzz_targets/recovery_message.rs"
+test = false
+doc = false
+bench = false

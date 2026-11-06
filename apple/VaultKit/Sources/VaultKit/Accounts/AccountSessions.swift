@@ -13,6 +13,10 @@ public enum AccountsError: Error, Equatable, Sendable {
     case alreadyOnDevice
     /// The primary account is reset, never removed (M8).
     case primaryAccount
+    /// Several accounts of this iCloud are not on this device: the kit's account id is needed.
+    case needsAccountID
+    /// No account with that id in this iCloud.
+    case notInICloud
 
     public var message: String {
         switch self {
@@ -23,6 +27,10 @@ public enum AccountsError: Error, Equatable, Sendable {
             String(localized: "accounts.error.alreadyOnDevice", bundle: VaultKitStrings.bundle)
         case .primaryAccount:
             String(localized: "accounts.error.primaryAccount", bundle: VaultKitStrings.bundle)
+        case .needsAccountID:
+            String(localized: "accounts.error.needsAccountID", bundle: VaultKitStrings.bundle)
+        case .notInICloud:
+            String(localized: "accounts.error.notInICloud", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -116,10 +124,17 @@ public final class AccountSessions {
         }
     }
 
+    /// The session of `slot` if it was already made (views read this one: drawing a list of accounts
+    /// opens no store).
+    public func madeSession(_ slot: String) -> VaultSession? { sessions[slot] }
+
     /// Every session already made, primary first, in display order.
     public var openSessions: [(profile: AccountProfile, session: VaultSession)] {
         profiles.compactMap { p in sessions[p.slot].map { (p, $0) } }
     }
+
+    /// At least one account is unlocked.
+    public var anyUnlocked: Bool { sessions.values.contains { $0.state == .unlocked } }
 
     /// The sessions of the accounts that are unlocked now.
     public var unlockedProfiles: [AccountProfile] {

@@ -18,11 +18,16 @@ use crate::devices::{DeviceKind, DeviceMode};
 use crate::manifest::SeenManifest;
 use crate::{Error, Id, Result};
 
+pub mod ack;
 mod codec;
 mod legacy;
 pub mod resolve;
 pub mod verify;
+pub mod wipe;
 
+pub use ack::{
+    ACK_DOMAIN, AckBody, AckStatus, SignedAck, ack_id, ack_statuses, sign_ack, verify_ack,
+};
 pub(crate) use codec::{check_entry, decode_strict_with};
 pub use codec::{check_genesis, check_intro, check_legacy_intro, check_rotation};
 pub use legacy::{LegacyAnchor, LegacyIntros, accept_legacy_intros, legacy_intro_id};
@@ -88,6 +93,13 @@ pub enum RotationReason {
     RotateWithPassword,
     Reapply,
     Finish,
+    /// Organizer-assisted recovery (sharing spec 11.5 step 5, plan 3
+    /// rulings B-3 and B-4): the rotator is a device outside the parent
+    /// roster, admitted by a self-intro under the parent signed by the
+    /// parent identity; the roster is that device alone and every device
+    /// of the parent roster is revoked. Appended last: the other reasons
+    /// keep their encoding.
+    Recover,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

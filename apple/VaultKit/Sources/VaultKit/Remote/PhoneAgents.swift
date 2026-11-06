@@ -211,7 +211,7 @@ public final class PhoneAgents {
     public func acceptEnrollment(_ request: OpenedRequest) async throws {
         guard let responder else { throw RemoteResponderError.unknownRequest }
         try await responder.acceptEnrollment(request.id)
-        record(request, decision: String(localized: "Déverrouillage à distance activé", bundle: VaultKitStrings.bundle))
+        record(request, decision: String(localized: "remote.remoteUnlockTurnedOn", bundle: VaultKitStrings.bundle))
         await pull()
         await refresh()
     }
@@ -255,9 +255,9 @@ public final class PhoneAgents {
 
     static func decisionLabel(_ decision: FfiRemoteDecision) -> String {
         switch decision {
-        case .denied: String(localized: "Refusé", bundle: VaultKitStrings.bundle)
-        case .once: String(localized: "Autorisé une fois", bundle: VaultKitStrings.bundle)
-        case .grant5m: String(localized: "Autorisé 5 min", bundle: VaultKitStrings.bundle)
+        case .denied: String(localized: "remote.denied", bundle: VaultKitStrings.bundle)
+        case .once: String(localized: "remote.allowedOnce", bundle: VaultKitStrings.bundle)
+        case .grant5m: String(localized: "remote.allowedFor5Min", bundle: VaultKitStrings.bundle)
         }
     }
 }

@@ -49,7 +49,7 @@ def latency_ms_per_form(model: Path, rows: list[dict], reps: int = 30) -> float:
     return float(statistics.median(times)) if times else 0.0
 
 
-def compare(data: Path, bench_rows: Path, out: Path, *, weight: float = 20.0, n_estimators: int = 300,
+def compare(data: Path, bench_rows: Path, out: Path, *, weight: float = 20.0, n_estimators: int = 150,
             threads: int = 4, seed: int = 1) -> dict[str, Any]:
     data, out = Path(data), Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -58,6 +58,7 @@ def compare(data: Path, bench_rows: Path, out: Path, *, weight: float = 20.0, n_
     Xb, yb = to_matrix(train_rows)
     Xh, _ = to_matrix(hold)
     Xt, yt = load_matrix(data / "test.parquet")
+    lab = (*load_matrix(data / "train.parquet"), *load_matrix(data / "val.parquet"))
     report: dict[str, Any] = {
         "bench_rows": len(rows),
         "bench_train_rows": len(train_rows),
@@ -67,7 +68,8 @@ def compare(data: Path, bench_rows: Path, out: Path, *, weight: float = 20.0, n_
         "models": {},
     }
     for name, extra in (("lab_only", None), ("lab_bench", (Xb, yb, weight))):
-        path = train_gbm(data, out / name, seed, num_threads=threads, n_estimators=n_estimators, extra=extra)
+        path = train_gbm(data, out / name, seed, num_threads=threads, n_estimators=n_estimators, extra=extra,
+                         matrices=lab)
         sess = ort.InferenceSession(str(path))
         pred = [LABELS[i] for i in predict(sess, Xh)] if len(hold) else []
         g = gate(hold, pred, size_bytes=path.stat().st_size, latency_ms=latency_ms_per_form(path, hold))
@@ -91,7 +93,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("bench_rows", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--weight", type=float, default=20.0)
-    ap.add_argument("--n-estimators", type=int, default=300)
+    ap.add_argument("--n-estimators", type=int, default=150)
     ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args(argv)
     r = compare(a.data, a.bench_rows, a.out, weight=a.weight, n_estimators=a.n_estimators, threads=a.threads)

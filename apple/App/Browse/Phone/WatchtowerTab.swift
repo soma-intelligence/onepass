@@ -21,8 +21,8 @@ struct WatchtowerTab: View {
                     PhoneScoreGauge(score: score)
                         .padding(.top, 4)
                     if let score {
-                        ShareLink(item: String(localized: "Mon score de sécurité OnePass : \(score) sur 100.")) {
-                            Label("Partager mon score", systemImage: "square.and.arrow.up")
+                        ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                            Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
                                 .font(.subheadline.weight(.semibold))
                                 .padding(.horizontal, 4)
                                 .frame(minHeight: 30)
@@ -33,19 +33,25 @@ struct WatchtowerTab: View {
                 }
                 .frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Watchtower repère les mots de passe à changer et les sites où tu peux renforcer la sécurité de tes comptes.")
+                    Text("browse.watchtowerFindsPasswordsTo")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     statusLine
                 }
                 .padding(.horizontal, 4)
+                scanCard
                 if let report = watchtower.report {
                     StrengthCard(levels: report.strength.map(Int.init))
                     let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
                     ForEach(flagged) { card in
                         PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
                     }
+                    let seen = model.seenByFormerMemberIDs
+                    if !seen.isEmpty {
+                        PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
+                    }
+                    CryptoPhraseAlertCard()
                     let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
                     if !clear.isEmpty {
                         ClearChecksCard(
@@ -57,6 +63,7 @@ struct WatchtowerTab: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
+            .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
         }
         .background(PhoneBackground())
         .navigationTitle("Watchtower")
@@ -65,7 +72,10 @@ struct WatchtowerTab: View {
             PhoneRootToolbar()
         }
         .refreshable { watchtower.refresh(model.session) }
-        .task(id: model.session.summariesRevision) { watchtower.refreshIfNeeded(model.session) }
+        .task(id: model.session.summariesRevision) {
+            watchtower.refreshIfNeeded(model.session)
+            _ = try? await model.session.seenByFormerMemberItems()
+        }
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")
@@ -77,25 +87,40 @@ struct WatchtowerTab: View {
         !card.itemIDs(in: report).isEmpty
     }
 
+    /// While a scan runs: a card with its step and a slim bar (the analysis, then the breach check
+    /// with its figures).
+    @ViewBuilder private var scanCard: some View {
+        if watchtower.isRunning {
+            Group {
+                switch watchtower.phase {
+                case .checkingBreaches(let done, let total):
+                    ScanProgressBar(
+                        title: Text("browse.checkingForBreaches"), detail: Text("app.of \(done) \(total)"), done: done,
+                        total: total)
+                default:
+                    ScanProgressBar(title: Text("browse.analyzingItems"))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .phoneCard()
+            .transition(.opacity)
+            .accessibilityIdentifier("watchtower.scan")
+        }
+    }
+
     @ViewBuilder private var statusLine: some View {
         switch watchtower.phase {
         case .idle, .ready:
             if let report = watchtower.report {
                 Text(report.itemsAnalyzed == 1
-                     ? String(localized: "1 élément analysé") : String(localized: "\(report.itemsAnalyzed) éléments analysés"))
+                     ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)"))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
-        case .analyzing:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Analyse des éléments…").font(.footnote).foregroundStyle(.secondary)
-            }
-        case .checkingBreaches(let done, let total):
-            HStack(spacing: 8) {
-                ProgressView(value: Double(done), total: Double(max(total, 1))).frame(width: 120)
-                Text("Vérification des fuites : \(done) sur \(total)").font(.footnote).foregroundStyle(.secondary)
-            }
+        case .analyzing, .checkingBreaches:
+            // The scan's own card says it (`scanCard`).
+            EmptyView()
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote)
@@ -131,7 +156,7 @@ struct PhoneScoreGauge: View {
                     .font(.system(size: 58, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                Text(score.map(ScoreGauge.label) ?? String(localized: "Analyse…"))
+                Text(score.map(ScoreGauge.label) ?? String(localized: "browse.analyzing"))
                     .font(.subheadline.weight(.semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
@@ -140,7 +165,7 @@ struct PhoneScoreGauge: View {
         }
         .frame(width: 210, height: 210)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Score de sécurité"))
+        .accessibilityLabel(Text("browse.securityScore"))
         .accessibilityValue(Text(score.map { "\($0) sur 100, \(ScoreGauge.label($0))" } ?? ""))
     }
 
@@ -214,7 +239,7 @@ private struct PhoneWatchtowerCard: View {
                 .padding(16)
                 Rectangle().fill(.white.opacity(0.25)).frame(height: 0.5)
                 HStack {
-                    Text("Voir les éléments").font(.body.weight(.medium))
+                    Text("browse.showItems").font(.body.weight(.medium))
                     Spacer()
                     Image(systemName: "chevron.forward").font(.footnote.weight(.bold))
                 }
@@ -229,7 +254,7 @@ private struct PhoneWatchtowerCard: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint(Text("Voir les éléments"))
+        .accessibilityHint(Text("browse.showItems"))
         .accessibilityIdentifier("watchtower.show.\(card.id)")
     }
 
@@ -256,7 +281,7 @@ private struct ClearChecksCard: View {
     var body: some View {
         EditorCard {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Rien à signaler")
+                Text("browse.nothingToReport")
                     .font(.headline)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
@@ -275,7 +300,7 @@ private struct ClearChecksCard: View {
                         if note(card) == nil {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
-                                .accessibilityLabel(Text("Rien à signaler"))
+                                .accessibilityLabel(Text("browse.nothingToReport"))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -310,6 +335,7 @@ struct WatchtowerItemsList: View {
                         summary: summary,
                         vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
                 }
+                .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }
         }
         .listStyle(.insetGrouped)
@@ -317,8 +343,8 @@ struct WatchtowerItemsList: View {
         .background(PhoneBackground())
         .overlay {
             if items.isEmpty {
-                EmptyState(title: String(localized: "Rien à signaler"), systemImage: "checkmark.shield",
-                    message: String(localized: "Aucun élément concerné pour l'instant."))
+                EmptyState(title: String(localized: "browse.nothingToReport"), systemImage: "checkmark.shield",
+                    message: String(localized: "browse.noItemAffectedFor"))
             }
         }
         .navigationTitle(title)

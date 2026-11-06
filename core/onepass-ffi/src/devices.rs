@@ -20,6 +20,9 @@ pub enum FfiDeviceKind {
     Mac,
     Vision,
     Other,
+    Android,
+    Windows,
+    Linux,
 }
 
 /// What a device may hold: a personal or shared device holds the account, a
@@ -58,6 +61,9 @@ impl From<DeviceKind> for FfiDeviceKind {
             DeviceKind::Mac => Self::Mac,
             DeviceKind::Vision => Self::Vision,
             DeviceKind::Other => Self::Other,
+            DeviceKind::Android => Self::Android,
+            DeviceKind::Windows => Self::Windows,
+            DeviceKind::Linux => Self::Linux,
         }
     }
 }
@@ -70,6 +76,9 @@ impl From<FfiDeviceKind> for DeviceKind {
             FfiDeviceKind::Mac => Self::Mac,
             FfiDeviceKind::Vision => Self::Vision,
             FfiDeviceKind::Other => Self::Other,
+            FfiDeviceKind::Android => Self::Android,
+            FfiDeviceKind::Windows => Self::Windows,
+            FfiDeviceKind::Linux => Self::Linux,
         }
     }
 }

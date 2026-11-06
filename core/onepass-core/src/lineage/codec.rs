@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 
 use super::{
     GenesisBody, IntroBody, LINEAGE_FORMAT, LegacyIntroBody, LineageRecord, MAX_ROSTER,
-    RosterEntry, RotationBody, Signed, SignedIntro, SignedLegacyIntro,
+    RosterEntry, RotationBody, RotationReason, Signed, SignedIntro, SignedLegacyIntro,
 };
 use crate::crypto::sign::{MLDSA_PUBLIC_LEN, MLDSA_SIG_LEN, SLH_PUBLIC_LEN, SLH_SIG_LEN};
 use crate::crypto::{HybridKemPublic, HybridSignature, IdentitySignature, IdentityVerifyingKey};
@@ -38,7 +38,7 @@ pub(crate) fn decode_strict_with<T: Serialize + DeserializeOwned>(
     Ok(value)
 }
 
-fn check_hybrid_sig(s: &HybridSignature) -> Result<()> {
+pub(crate) fn check_hybrid_sig(s: &HybridSignature) -> Result<()> {
     if s.mldsa.len() != MLDSA_SIG_LEN {
         return Err(bad("signature length"));
     }
@@ -52,7 +52,7 @@ fn check_identity_pub(k: &IdentityVerifyingKey) -> Result<()> {
     Ok(())
 }
 
-fn check_identity_sig(s: &IdentitySignature) -> Result<()> {
+pub(crate) fn check_identity_sig(s: &IdentitySignature) -> Result<()> {
     if s.as_bytes().len() != SLH_SIG_LEN {
         return Err(bad("identity signature length"));
     }
@@ -108,6 +108,10 @@ pub fn check_rotation(b: &RotationBody) -> Result<()> {
     }
     if !b.roster.iter().any(|e| e.device_id == b.rotator) {
         return Err(bad("rotator missing from roster"));
+    }
+    // A recovery keeps the rotator alone (plan 3 ruling B-3).
+    if b.reason == RotationReason::Recover && b.roster.len() != 1 {
+        return Err(bad("recover roster"));
     }
     // Deliveries: exactly the roster minus the rotator, in roster order.
     let expected = b.roster.iter().filter(|e| e.device_id != b.rotator);

@@ -14,7 +14,7 @@ struct WatchtowerPage: View {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(
                     title: "Watchtower", symbol: "checkmark.shield.fill", color: Theme.accent,
-                    message: String(localized: "Watchtower repère les mots de passe à changer et les sites où tu peux renforcer la sécurité de tes comptes.")
+                    message: String(localized: "browse.watchtowerFindsPasswordsTo")
                 ) {
                     ScoreGauge(score: watchtower.report.map { Int($0.score) })
                 }
@@ -28,6 +28,15 @@ struct WatchtowerPage: View {
                                 breachCatalog: watchtower.breachCatalogUsed
                             ) {
                                 model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report))
+                            }
+                        }
+                        let seen = model.seenByFormerMemberIDs
+                        if !seen.isEmpty {
+                            WatchtowerCardView(
+                                card: .seenByFormerMember, report: report, checkBreaches: watchtower.checkBreaches,
+                                breachCatalog: watchtower.breachCatalogUsed, itemIDs: seen
+                            ) {
+                                model.showWatchtowerItems(title: WatchtowerCard.seenByFormerMember.title, itemIDs: seen)
                             }
                         }
                     }
@@ -44,13 +53,16 @@ struct WatchtowerPage: View {
                 Button {
                     watchtower.refresh(model.session)
                 } label: {
-                    Label("Analyser à nouveau", systemImage: "arrow.clockwise")
+                    Label("browse.analyzeAgain", systemImage: "arrow.clockwise")
                 }
                 .disabled(watchtower.isRunning)
-                .help(Text("Analyser à nouveau"))
+                .help(Text("browse.analyzeAgain"))
             }
         }
-        .task(id: model.session.summariesRevision) { watchtower.refreshIfNeeded(model.session) }
+        .task(id: model.session.summariesRevision) {
+            watchtower.refreshIfNeeded(model.session)
+            _ = try? await model.session.seenByFormerMemberItems()
+        }
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")
@@ -63,16 +75,12 @@ struct WatchtowerPage: View {
                 Text(summary(report)).font(.callout).foregroundStyle(.secondary)
             }
         case .analyzing:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Analyse des éléments…").font(.callout).foregroundStyle(.secondary)
-            }
+            ScanProgressBar(title: Text("browse.analyzingItems"))
+                .frame(maxWidth: 420)
         case .checkingBreaches(let done, let total):
-            HStack(spacing: 8) {
-                ProgressView(value: Double(done), total: Double(max(total, 1)))
-                    .frame(width: 140)
-                Text("Vérification des fuites : \(done) sur \(total)").font(.callout).foregroundStyle(.secondary)
-            }
+            ScanProgressBar(
+                title: Text("browse.checkingForBreaches"), detail: Text("app.of \(done) \(total)"), done: done, total: total)
+                .frame(maxWidth: 420)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
@@ -82,16 +90,16 @@ struct WatchtowerPage: View {
 
     private func summary(_ report: FfiWatchtowerReport) -> String {
         let items = report.itemsAnalyzed == 1
-            ? String(localized: "1 élément analysé") : String(localized: "\(report.itemsAnalyzed) éléments analysés")
+            ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)")
         switch report.pwned {
         case .checked:
-            return items + String(localized: " · fuites vérifiées")
+            return items + String(localized: "browse.breachesChecked")
         case .partial(let failed):
-            return items + String(localized: " · fuites vérifiées en partie (\(failed) requêtes en échec)")
+            return items + String(localized: "browse.breachesPartlyCheckedRequests \(failed)")
         case .unavailable:
-            return items + String(localized: " · fuites non vérifiées (pas de réseau)")
+            return items + String(localized: "browse.breachesNotCheckedNo")
         case .disabled:
-            return items + String(localized: " · vérification des fuites désactivée")
+            return items + String(localized: "browse.breachCheckTurnedOff")
         }
     }
 }
@@ -104,11 +112,11 @@ struct ScoreGauge: View {
 
     static func label(_ score: Int) -> String {
         switch score {
-        case ..<40: String(localized: "Faible")
-        case ..<60: String(localized: "Moyen")
-        case ..<80: String(localized: "Bon")
-        case ..<95: String(localized: "Excellent")
-        default: String(localized: "Fantastique")
+        case ..<40: String(localized: "browse.weak")
+        case ..<60: String(localized: "browse.fair")
+        case ..<80: String(localized: "browse.good")
+        case ..<95: String(localized: "app.excellent")
+        default: String(localized: "browse.fantastic")
         }
     }
 
@@ -138,7 +146,7 @@ struct ScoreGauge: View {
                     .font(.system(size: 46, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                Text(score.map(Self.label) ?? String(localized: "Analyse…"))
+                Text(score.map(Self.label) ?? String(localized: "browse.analyzing"))
                     .font(.headline)
                     .foregroundStyle(score.map(Self.color) ?? .secondary)
             }
@@ -146,7 +154,7 @@ struct ScoreGauge: View {
         }
         .frame(width: 230, height: 125)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Score de sécurité"))
+        .accessibilityLabel(Text("browse.securityScore"))
         .accessibilityValue(Text(score.map { "\($0) sur 100, \(Self.label($0))" } ?? ""))
     }
 
@@ -179,8 +187,8 @@ struct StrengthCard: View {
     let levels: [Int]
 
     private static let names = [
-        String(localized: "Trop courts"), String(localized: "Faibles"), String(localized: "Moyens"),
-        String(localized: "Bons"), String(localized: "Excellents"),
+        String(localized: "browse.tooShort"), String(localized: "browse.weak2"), String(localized: "browse.fair2"),
+        String(localized: "browse.good2"), String(localized: "browse.excellent"),
     ]
     private static let colors: [Color] = [.red, .orange, .yellow, .mint, .green]
 
@@ -189,14 +197,14 @@ struct StrengthCard: View {
         EditorCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Force globale des mots de passe").font(.headline)
+                    Text("browse.overallPasswordStrength").font(.headline)
                     Spacer()
-                    Text(total == 1 ? String(localized: "1 mot de passe") : String(localized: "\(total) mots de passe"))
+                    Text(total == 1 ? String(localized: "browse.n1Password") : String(localized: "browse.passwords \(total)"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 if total == 0 {
-                    Text("Aucun mot de passe à analyser pour l'instant.")
+                    Text("browse.noPasswordsToAnalyze")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
@@ -281,18 +289,18 @@ struct WatchtowerCard: Identifiable {
             return nil
         case .breaches:
             switch report.pwned {
-            case .disabled: return String(localized: "Vérification des fuites désactivée.")
-            case .unavailable: return checkBreaches ? String(localized: "En attente du réseau.") : nil
+            case .disabled: return String(localized: "browse.breachCheckTurnedOff2")
+            case .unavailable: return checkBreaches ? String(localized: "browse.waitingForNetwork") : nil
             case .checked, .partial: return nil
             }
         case .sites:
             return report.sitesChecked ? nil
-                : checkBreaches ? String(localized: "Catalogue des sites pas encore téléchargé.")
-                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites.")
+                : checkBreaches ? String(localized: "browse.siteCatalogNotDownloaded")
+                : String(localized: "browse.turnOnCheckFor2")
         case .breachCatalog:
             return breachCatalog ? nil
-                : checkBreaches ? String(localized: "Catalogue des fuites pas encore téléchargé.")
-                : String(localized: "Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.")
+                : checkBreaches ? String(localized: "browse.breachListNotDownloaded")
+                : String(localized: "browse.turnOnCheckFor")
         }
     }
 
@@ -301,81 +309,89 @@ struct WatchtowerCard: Identifiable {
         all.first { $0.checks.contains(check) }
     }
 
+    /// Items a removed member of a shared vault could read (sharing spec 10.4): not a report
+    /// check, the ids come from the sharing state.
+    static let seenByFormerMember = WatchtowerCard(
+        id: "seen_by_former_member", checks: [],
+        title: VaultSession.seenByFormerMemberTitle,
+        message: String(localized: "watchtower.seenByFormerMember.message"),
+        symbol: "person.crop.circle.badge.xmark", color: .orange, source: .local)
+
     static let all: [WatchtowerCard] = [
         WatchtowerCard(
             id: "compromised", checks: ["compromised"],
-            title: String(localized: "Mots de passe compromis"),
-            message: String(localized: "Ils apparaissent dans des fuites de données connues. Change-les en priorité."),
+            title: String(localized: "browse.compromisedPasswords"),
+            message: String(localized: "browse.theyAppearInKnown"),
             symbol: "exclamationmark.octagon.fill", color: .red, source: .breaches),
         WatchtowerCard(
             id: "breached_site", checks: ["breached_site"],
-            title: String(localized: "Sites piratés"),
-            message: String(localized: "Ces sites ont subi une fuite depuis ton dernier changement de mot de passe. Change-le sur chacun."),
+            title: String(localized: "browse.breachedSites"),
+            message: String(localized: "browse.theseSitesHadBreach"),
             symbol: "exclamationmark.shield.fill", color: .red, source: .breachCatalog),
         WatchtowerCard(
             id: "provider_exposed", checks: ["provider_exposed"],
-            title: String(localized: "Comptes de connexion exposés"),
-            message: String(localized: "Un compte qui te sert à te connecter ailleurs est compromis, faible, réutilisé ou sans double authentification : tous les sites qui en dépendent sont exposés."),
+            title: String(localized: "browse.exposedSignInAccounts"),
+            message: String(localized: "browse.accountUseToSign"),
             symbol: "person.crop.circle.badge.exclamationmark", color: .red, source: .local),
         WatchtowerCard(
             id: "reused", checks: ["reused"],
-            title: String(localized: "Mots de passe réutilisés"),
-            message: String(localized: "Un même mot de passe sur plusieurs comptes : une seule fuite suffit à tous les ouvrir."),
+            title: String(localized: "browse.reusedPasswords"),
+            message: String(localized: "browse.onePasswordOnSeveral"),
             symbol: "arrow.triangle.2.circlepath", color: .orange, source: .local),
         WatchtowerCard(
             id: "weak", checks: ["weak"],
-            title: String(localized: "Mots de passe faibles"),
-            message: String(localized: "Faciles à deviner. Remplace-les par des mots de passe générés."),
+            title: String(localized: "browse.weakPasswords"),
+            message: String(localized: "browse.easyToGuessReplace"),
             symbol: "lock.open.fill", color: .orange, source: .local),
         WatchtowerCard(
             id: "passkey", checks: ["passkey_available"],
-            title: String(localized: "Passkeys disponibles"),
-            message: String(localized: "Ces sites acceptent les passkeys, plus sûres et plus simples qu'un mot de passe."),
+            title: String(localized: "browse.passkeysAvailable"),
+            message: String(localized: "browse.theseSitesSupportPasskeys"),
             symbol: "person.badge.key.fill", color: Theme.accent, source: .sites),
         WatchtowerCard(
             id: "2fa", checks: ["missing_2fa"],
-            title: String(localized: "Double authentification disponible"),
-            message: String(localized: "Ces sites proposent des codes à usage unique que tu n'as pas encore ajoutés."),
+            title: String(localized: "browse.twoFactorAuthenticationAvailable"),
+            message: String(localized: "browse.theseSitesOfferOne"),
             symbol: "lock.shield.fill", color: .blue, source: .sites),
         WatchtowerCard(
             id: "http", checks: ["insecure_url"],
-            title: String(localized: "Sites en HTTP"),
-            message: String(localized: "Ces adresses ne sont pas chiffrées. Passe-les en HTTPS si le site le permet."),
+            title: String(localized: "browse.httpSites"),
+            message: String(localized: "browse.theseAddressesArentEncrypted"),
             symbol: "globe.badge.chevron.backward", color: .yellow, source: .local),
         WatchtowerCard(
             id: "expiring", checks: ["expired", "expiring"],
-            title: String(localized: "Éléments qui expirent"),
-            message: String(localized: "Cartes, documents et licences expirés ou qui expirent dans les 30 jours."),
+            title: String(localized: "browse.expiringItems"),
+            message: String(localized: "browse.cardsDocumentsAndLicenses"),
             symbol: "calendar.badge.exclamationmark", color: .pink, source: .local),
         WatchtowerCard(
             id: "wifi", checks: ["wifi_insecure"],
-            title: String(localized: "Wi-Fi peu protégés"),
-            message: String(localized: "Ces réseaux utilisent WEP ou aucun chiffrement. Passe-les en WPA2 ou WPA3 sur le routeur."),
+            title: String(localized: "browse.poorlyProtectedWiFi"),
+            message: String(localized: "browse.theseNetworksUseWep"),
             symbol: "wifi.exclamationmark", color: .orange, source: .local),
         WatchtowerCard(
             id: "ssh", checks: ["ssh_weak"],
-            title: String(localized: "Clés SSH faibles"),
-            message: String(localized: "Clés RSA de moins de 3 072 bits ou DSA. Remplace-les par une clé Ed25519."),
+            title: String(localized: "browse.weakSshKeys"),
+            message: String(localized: "browse.rsaKeysUnder3"),
             symbol: "terminal.fill", color: .orange, source: .local),
         WatchtowerCard(
             id: "wallet", checks: ["wallet_no_backup"],
-            title: String(localized: "Portefeuilles sans sauvegarde"),
-            message: String(localized: "Indique où est rangée la copie physique de la phrase de récupération de ces portefeuilles."),
+            title: String(localized: "browse.walletsWithoutBackup"),
+            message: String(localized: "browse.noteWherePhysicalCopy"),
             symbol: "archivebox.fill", color: .yellow, source: .local),
         WatchtowerCard(
             id: "duplicate", checks: ["duplicate"],
-            title: String(localized: "Doublons"),
-            message: String(localized: "Même site et même identifiant dans plusieurs éléments. Garde-en un seul."),
+            title: String(localized: "browse.duplicates"),
+            message: String(localized: "browse.sameSiteAndSame"),
             symbol: "square.on.square", color: .gray, source: .local),
         WatchtowerCard(
             id: "old", checks: ["old_password"],
-            title: String(localized: "Vieux mots de passe"),
-            message: String(localized: "Inchangés depuis plus d'un an. Pense à les renouveler."),
+            title: String(localized: "browse.oldPasswords"),
+            message: String(localized: "browse.unchangedForOverYear"),
             symbol: "clock.arrow.circlepath", color: .gray, source: .local),
         WatchtowerCard(
             id: "pending", checks: ["pending_unused"],
-            title: String(localized: "Mot de passe en attente"),
-            message: String(localized: "Mot de passe généré mais jamais confirmé depuis plus de 30 jours. L'inscription n'a sans doute pas abouti."),
+            title: String(localized: "browse.pendingPassword"),
+            message: String(localized: "browse.generatedPasswordNeverConfirmed"),
             symbol: "hourglass", color: .gray, source: .local),
     ]
 }
@@ -392,6 +408,8 @@ struct WatchtowerCardView: View {
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
     let breachCatalog: Bool
+    /// The items when they do not come from the report ("Vus par un ancien membre").
+    var itemIDs: Set<String>? = nil
     let onShow: () -> Void
 
     private var unavailable: String? {
@@ -399,7 +417,7 @@ struct WatchtowerCardView: View {
     }
 
     var body: some View {
-        let ids = card.itemIDs(in: report)
+        let ids = itemIDs ?? card.itemIDs(in: report)
         EditorCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -416,7 +434,7 @@ struct WatchtowerCardView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                PageLinkButton(title: String(localized: "Voir les éléments"), action: onShow)
+                PageLinkButton(title: String(localized: "browse.showItems"), action: onShow)
                     .disabled(ids.isEmpty)
                     .opacity(ids.isEmpty ? 0.45 : 1)
             }
@@ -448,7 +466,7 @@ struct BreachSettingCard: View {
                         Image(systemName: "info.circle").foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Ce qui est envoyé")
+                    .help("browse.whatSent")
                     .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
                         Text("""
                             Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers \
@@ -462,7 +480,7 @@ struct BreachSettingCard: View {
                             .frame(width: 320)
                             .padding(14)
                     }
-                    .accessibilityLabel(Text("Ce qui est envoyé"))
+                    .accessibilityLabel(Text("browse.whatSent"))
                     .accessibilityIdentifier("watchtower.checkBreaches.info")
                 }
                 Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 1).padding(.leading, 16)

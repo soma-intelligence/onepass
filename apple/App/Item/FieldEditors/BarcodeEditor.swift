@@ -26,11 +26,11 @@ struct BarcodeEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(field.displayLabel, text: text, prompt: Text("Valeur du code"))
+            TextField(field.displayLabel, text: text, prompt: Text("item.codeValue"))
                 .font(.body.monospaced())
                 .fieldInput(.text)
                 .accessibilityIdentifier("editor.field.\(field.id)")
-            Picker("Format", selection: format) {
+            Picker("item.format", selection: format) {
                 ForEach(BarcodeRenderer.formats, id: \.self) { Text(BarcodeRenderer.name($0)).tag($0) }
             }
             .pickerStyle(.menu)
@@ -104,7 +104,7 @@ struct BarcodeLargeView: View {
                     .padding(16)
                     .background(.white, in: RoundedRectangle(cornerRadius: 12))
                     .frame(maxWidth: 360, maxHeight: format == .qr || format == .aztec ? 360 : 180)
-                    .accessibilityLabel(Text("\(BarcodeRenderer.name(format)) : \(value)"))
+                    .accessibilityLabel(Text("app.text \(BarcodeRenderer.name(format)) \(value)"))
             }
             Text(value)
                 .font(.system(format == .ean13 ? .largeTitle : .title3, design: .monospaced))

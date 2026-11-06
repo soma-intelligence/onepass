@@ -112,13 +112,75 @@ describe("fill pipeline", () => {
     });
   });
 
+  const fills = (ext: FakeExt) => ext.sentToTabs.map((x) => x.message as { type: string; values?: Record<string, string> }).filter((m) => m.type === "fill");
+  /** The page's username field: a handle field (letters, digits, dot or underscore, at most `max`). */
+  const handleField = (ext: FakeExt, max = 30, pattern = /^[a-z0-9._]+$/) => {
+    const asked: string[] = [];
+    ext.tabReply = (_t, m) => {
+      const msg = m as { type?: string; candidate?: string };
+      if (msg.type !== "username_check") return undefined;
+      const c = msg.candidate ?? "";
+      asked.push(c);
+      return { ok: true, matches: c.length <= max && pattern.test(c), max_length: max };
+    };
+    return asked;
+  };
+
   it("a planned signup identifier gets the identity's e-mail, a menu fill never", async () => {
     const { ext, filler } = await setup();
     ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
     expect(await filler.fillIdentity(target(), "it_03", "menu", ["username"])).toBe(1);
-    expect((ext.sentToTabs[0]?.message as { values: unknown }).values).toEqual({ username: "alex@atlas.dev" });
+    expect(fills(ext)[0]?.values).toEqual({ username: "alex@atlas.dev" });
     await filler.fillIdentity(target(), "it_03");
-    expect(Object.keys((ext.sentToTabs[1]?.message as { values: object }).values)).not.toContain("username");
+    expect(Object.keys(fills(ext)[1]?.values ?? {})).not.toContain("username");
+  });
+
+  it("MS-06: a username field that refuses '@' gets a handle from the identity, the e-mail its own field", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    const asked = handleField(ext);
+    const told: string[] = [];
+    await filler.fillIdentity(target(), "it_03", "menu", ["username"], (e) => told.push(e));
+    expect(asked[0]).toBe("alex@atlas.dev");
+    expect(fills(ext)[0]?.values).toEqual({ username: "alex.martin" });
+    // The pending Login's identifier: what the site got as username.
+    expect(told).toEqual(["alex.martin"]);
+  });
+
+  it("MS-06: a form with its own e-mail field: the username field gets a handle, never the address", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    const asked = handleField(ext, 30, /^[a-z0-9_]+$/);
+    await filler.fillIdentity(target(), "it_03", "menu", ["email", "username"]);
+    expect(asked).not.toContain("alex@atlas.dev");
+    // "alex.martin" is refused by the pattern (no dot): the next one.
+    expect(fills(ext)[0]?.values).toEqual({ email: "alex@atlas.dev", username: "alexmartin" });
+  });
+
+  it("MS-06: maxlength and pattern respected (digits only after letters), else the field is left alone", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    handleField(ext, 8, /^[a-z]+[0-9]{4}$/);
+    await filler.fillIdentity(target(), "it_03", "menu", ["email", "username"]);
+    const u = fills(ext)[0]?.values?.username ?? "";
+    expect(u).toMatch(/^[a-z]+[0-9]{4}$/);
+    expect(u.length).toBeLessThanOrEqual(8);
+
+    const other = await setup();
+    other.ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    handleField(other.ext, 3, /^Z+$/);
+    await other.filler.fillIdentity(target(), "it_03", "menu", ["email", "username"]);
+    expect(fills(other.ext)[0]?.values).toEqual({ email: "alex@atlas.dev" });
+  });
+
+  it("tells the e-mail it wrote in an identifier field, only then", async () => {
+    const { ext, filler } = await setup();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    const told: string[] = [];
+    await filler.fillIdentity(target(), "it_03", "menu", ["email", "given_name"], (e) => told.push(e));
+    expect(told).toEqual(["alex@atlas.dev"]);
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name"], (e) => told.push(e));
+    expect(told).toEqual(["alex@atlas.dev"]);
   });
 
   it("fill_refused_after_navigation (other origin, nothing asked to the host)", async () => {

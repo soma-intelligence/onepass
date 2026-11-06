@@ -34,8 +34,8 @@ struct GlanceMessage: View {
         }
     }
 
-    static let locked = GlanceMessage(symbol: "lock.fill", text: "Déverrouille ton iPhone")
-    static let stale = GlanceMessage(symbol: "arrow.clockwise", text: "Ouvre OnePass pour actualiser")
+    static let locked = GlanceMessage(symbol: "lock.fill", text: "glanceViews.unlockIphone")
+    static let stale = GlanceMessage(symbol: "arrow.clockwise", text: "widgets.openOnepassToRefresh")
 }
 
 /// The category tile of an item (symbol on its category color).
@@ -82,7 +82,7 @@ struct CodeRow: View {
                         .font(.title3.monospacedDigit().weight(.semibold))
                         .privacySensitive()
                 } else {
-                    Text("Ouvre OnePass pour actualiser")
+                    Text("widgets.openOnepassToRefresh")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

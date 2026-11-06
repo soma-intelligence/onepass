@@ -64,7 +64,8 @@ fn ok(dir: &Path, args: &[&str]) -> Out {
 fn template() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("mcp-template");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("mcp-template-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         ok(&dir, &["account", "create"]);
         ok(&dir, &["vault", "create", "Dev", "--mcp-access"]);
@@ -359,7 +360,8 @@ fn mcp_refuses_tampered_policy() {
 fn other_account() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("mcp-other-account");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("mcp-other-account-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         ok(&dir, &["account", "create"]);
         ok(&dir, &["vault", "create", "Dev", "--mcp-access"]);

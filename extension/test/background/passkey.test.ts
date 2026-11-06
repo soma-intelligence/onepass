@@ -747,3 +747,63 @@ describe("passkey hardening (review)", () => {
     expect(t.windows.created).toHaveLength(0);
   });
 });
+
+describe("passkey creation armed by the signup menu (one-click signup)", () => {
+  it("one create without activation opens the window, never a sign", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    void t.pk.request(cs(), "r1", CREATE, false);
+    await flush();
+    await flush();
+    expect(t.windows.created).toHaveLength(1);
+    // The window asks: nothing created yet.
+    expect(t.ops()).not.toContain("passkey_create");
+  });
+
+  it("is used once", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    void t.pk.request(cs(), "r1", CREATE, false);
+    await flush();
+    await flush();
+    expect(await t.pk.request(cs({ documentId: "doc-1" }), "r2", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("never lets a get through", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    expect(await t.pk.request(cs(), "r1", GET, false)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("only for its document, frame and origin", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    expect(await t.pk.request(cs({ documentId: "doc-2" }), "r1", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs({ frameId: 3 }), "r2", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(await t.pk.request(cs({ tabId: 8 }), "r3", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("expires after 15 s", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    t.clock.t += 15_001;
+    expect(await t.pk.request(cs(), "r1", CREATE, false)).toEqual({ kind: "fallback" });
+    expect(t.windows.created).toHaveLength(0);
+  });
+
+  it("a navigation of the tab disarms it", async () => {
+    const t = setup();
+    t.pk.armCreate(cs());
+    for (const n of t.nav) n({ tabId: 7, frameId: 0, url: `${ORIGIN}/next` });
+    expect(await t.pk.request(cs(), "r1", CREATE, false)).toEqual({ kind: "fallback" });
+  });
+
+  it("is never armed for a child frame", async () => {
+    const t = setup();
+    t.pk.armCreate(cs({ frameId: 2 }));
+    expect(await t.pk.request(cs({ frameId: 2 }), "r1", CREATE, false)).toEqual({ kind: "fallback" });
+  });
+});

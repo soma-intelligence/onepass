@@ -3,6 +3,8 @@
 //! Without usage memory and without a typed username the score is the match
 //! quality alone: favorite, recency and frequency then only break ties in
 //! `order`, which keeps the historic order of the two existing rankers.
+//! The learned bonus of the autofill history (`fill_plan::learned`) is
+//! added as it is: zero without history, so the order above is unchanged.
 
 use super::weights::{
     DOMAIN, EXACT, FAVORITE, FREQUENCY_MAX, LAST_ON_SITE, MARGIN, RECENCY_MAX, SAME_SHAPE,
@@ -49,6 +51,9 @@ pub struct Candidate {
     pub usage: Option<UsageSignal>,
     /// A Login holding a one-time code secret (only these fill an Otp form).
     pub has_totp: bool,
+    /// Learned bonus of the autofill history (`fill_plan::learned::affinity`)
+    /// for the browser profile the plan is made in; 0 without history.
+    pub affinity: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,7 +116,7 @@ pub fn score(c: &Candidate, typed: Option<&[u8; 32]>, now: i64) -> i64 {
             s += i64::from(u.count).min(FREQUENCY_MAX);
         }
     }
-    s
+    s + c.affinity
 }
 
 /// Score descending, then quality, then the tiebreak. Stable.
@@ -137,7 +142,9 @@ pub fn confidence(ranked: &[Candidate], scores: &[i64], role_min_ok: bool) -> Co
         return Confidence::Low;
     };
     let top = scores.first().copied().unwrap_or(0);
-    let remembered = first.usage.is_some_and(|u| u.last_on_site) || top >= TYPED_USERNAME;
+    let remembered = first.usage.is_some_and(|u| u.last_on_site)
+        || first.affinity >= super::learned::TRUST
+        || top >= TYPED_USERNAME;
     let Some(&second) = scores.get(1).filter(|_| ranked.len() > 1) else {
         return if role_min_ok {
             Confidence::High
@@ -172,6 +179,7 @@ mod tests {
             username_hash: None,
             usage: None,
             has_totp: false,
+            affinity: 0,
         }
     }
 
@@ -327,6 +335,26 @@ mod tests {
         let s: Vec<i64> = v.iter().map(|c| score(c, Some(&hash), NOW)).collect();
         assert_eq!(s[0], s[1]);
         assert_eq!(confidence(&v, &s, true), Confidence::Medium);
+    }
+
+    #[test]
+    fn learned_affinity_lifts_and_trusts() {
+        let mut a = cand(1, MatchQuality::Domain);
+        a.affinity = 120;
+        let mut b = cand(2, MatchQuality::Exact);
+        b.usage = usage(true, false, 0, 0);
+        // 60 + 120 against 100 + 80.
+        assert_eq!(sc(&a), 180);
+        assert_eq!(sc(&b), 180);
+        a.affinity = 121;
+        let mut v = vec![b, a];
+        order(&mut v, None, NOW, Tiebreak::Title);
+        assert_eq!(v[0].item_id, Id([1; 16]));
+        let s = scores(&v);
+        // Remembered through the history, with a lead under the margin.
+        assert_eq!(confidence(&v, &s, true), Confidence::Medium);
+        let v = vec![v[0].clone(), cand(3, MatchQuality::Other)];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::High);
     }
 
     #[test]

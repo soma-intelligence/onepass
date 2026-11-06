@@ -18,6 +18,8 @@ struct SecretInputField: View {
     var focused: Binding<Bool>?
     /// Return key "Go" (unlock) instead of "Done".
     var submitGo = false
+    /// Return key "Next" (another field follows), when `submitGo` is off.
+    var submitNext = false
     var onSubmit: () -> Void = {}
     var monospaced = false
     var fontSize: CGFloat?
@@ -55,7 +57,7 @@ struct SecretInputField: View {
     @ViewBuilder private func styled(_ field: some View) -> some View {
         let base = field
             .font(swiftUIFont)
-            .submitLabel(submitGo ? .go : .done)
+            .submitLabel(submitGo ? .go : submitNext ? .next : .done)
             .onSubmit(onSubmit)
             .focused($plainFocused)
             .onChange(of: focused?.wrappedValue, initial: true) { _, wanted in
@@ -84,7 +86,7 @@ struct SecretInputField: View {
         return .monospacedSystemFont(ofSize: base.pointSize, weight: .regular)
     }
 
-    private var returnKey: UIReturnKeyType { submitGo ? .go : .done }
+    private var returnKey: UIReturnKeyType { submitGo ? .go : submitNext ? .next : .done }
     #endif
 }
 

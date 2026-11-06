@@ -5,10 +5,12 @@
 //! stored in `PasskeyCredential`. CBOR is written by hand: the structures are
 //! few and fixed.
 
-use crate::crypto::random::random_array;
+use crate::crypto::random::{fill_random, random_array};
 use crate::model::PasskeyCredential;
 use crate::{Error, Result};
 use aws_lc_rs::digest::{SHA256, digest};
+// aws-lc ignores this argument: its ECDSA nonce comes from its own DRBG,
+// hedged with the private key and the digest (inherited from BoringSSL).
 use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
 use time::OffsetDateTime;
@@ -62,16 +64,39 @@ pub fn new_credential(
     if user_name.len() > MAX_USER_NAME {
         return Err(Error::InvalidFormat("passkey user name"));
     }
-    let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &SystemRandom::new())
-        .map_err(|_| Error::Crypto)?;
+    let pkcs8 = p256_new_pkcs8()?;
     Ok(PasskeyCredential {
         rp_id: rp_id.to_owned(),
         user_name: user_name.to_owned(),
         user_handle: user_handle.to_vec(),
         credential_id: random_array::<CREDENTIAL_ID_LEN>()?.to_vec(),
-        private_key: Zeroizing::new(pkcs8.as_ref().to_vec()),
+        private_key: pkcs8,
         created_at: now,
     })
+}
+
+/// A new P-256 key as PKCS#8 v1 (the stored format, as aws-lc writes it),
+/// its scalar from hedged randomness (`crypto::random`). The key is
+/// rebuilt from an RFC 5915 `ECPrivateKey` (aws-lc computes the public
+/// point); a draw outside `[1, n-1]` (odds about 2^-32) is drawn again.
+fn p256_new_pkcs8() -> Result<Zeroizing<Vec<u8>>> {
+    // SEQUENCE { INTEGER 1, OCTET STRING (32) d, [0] OID prime256v1 }.
+    const PREFIX: [u8; 7] = [0x30, 0x31, 0x02, 0x01, 0x01, 0x04, 0x20];
+    const SUFFIX: [u8; 12] = [
+        0xa0, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+    ];
+    for _ in 0..8 {
+        let mut der = Zeroizing::new([0u8; 51]);
+        der[..7].copy_from_slice(&PREFIX);
+        fill_random(&mut der[7..39])?;
+        der[39..].copy_from_slice(&SUFFIX);
+        if let Ok(pair) = EcdsaKeyPair::from_private_key_der(&ECDSA_P256_SHA256_ASN1_SIGNING, &*der)
+        {
+            let doc = pair.to_pkcs8v1().map_err(|_| Error::Crypto)?;
+            return Ok(Zeroizing::new(doc.as_ref().to_vec()));
+        }
+    }
+    Err(Error::Crypto)
 }
 
 /// COSE_Key (ES256) of the credential, in canonical CBOR (77 bytes):

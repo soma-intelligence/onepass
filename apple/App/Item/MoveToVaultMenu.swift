@@ -7,7 +7,7 @@ import VaultKit
 struct MoveToVaultMenu: View {
     @Environment(AppModel.self) private var model
     let currentVaultID: String
-    var title: LocalizedStringKey = "Déplacer vers"
+    var title: LocalizedStringKey = "item.moveTo"
     let onMove: (FfiVault) -> Void
 
     private var targets: [FfiVault] { model.session.vaults.filter { $0.id != currentVaultID } }
@@ -15,7 +15,7 @@ struct MoveToVaultMenu: View {
     var body: some View {
         Menu(title, systemImage: "folder") {
             if targets.isEmpty {
-                Text("Aucun autre coffre")
+                Text("item.noOtherVaults")
             }
             ForEach(targets, id: \.id) { vault in
                 Button(vault.meta.name) { onMove(vault) }
@@ -33,7 +33,7 @@ struct VaultPicker: View {
     @Binding var vaultID: String
 
     var body: some View {
-        Picker("Coffre", selection: $vaultID) {
+        Picker("term.vault", selection: $vaultID) {
             ForEach(model.session.vaults, id: \.id) { vault in
                 Text(vault.meta.name).tag(vault.id)
             }
@@ -90,7 +90,7 @@ struct VaultToolbarMenu: View {
         .disabled(targets.isEmpty)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Coffre")
+                Text("term.vault")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -107,7 +107,7 @@ struct VaultToolbarMenu: View {
             .padding(6)
             .frame(width: 220)
         }
-        .accessibilityLabel(Text("Coffre \(current?.meta.name ?? "")"))
+        .accessibilityLabel(Text("item.vault \(current?.meta.name ?? "")"))
         .accessibilityIdentifier("item.vault")
     }
     #else
@@ -118,7 +118,7 @@ struct VaultToolbarMenu: View {
                     .disabled(true)
             }
             if !targets.isEmpty {
-                Section("Déplacer vers") {
+                Section("item.moveTo") {
                     ForEach(targets, id: \.id) { vault in
                         Button(vault.meta.name) { onMove(vault) }
                             .accessibilityIdentifier("item.vault.move.\(vault.id)")
@@ -134,7 +134,7 @@ struct VaultToolbarMenu: View {
             }
         }
         .menuIndicator(targets.isEmpty ? .hidden : .visible)
-        .accessibilityLabel(Text("Coffre \(current?.meta.name ?? "")"))
+        .accessibilityLabel(Text("item.vault \(current?.meta.name ?? "")"))
         .accessibilityIdentifier("item.vault")
     }
     #endif

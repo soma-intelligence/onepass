@@ -26,9 +26,9 @@ public struct ErrorText: Equatable, Sendable {
         let bundle = given ?? VaultKitStrings.bundle
         let number = String(code)
         if let detail, !detail.isEmpty {
-            return String(localized: "(code \(number) : \(detail))", bundle: bundle)
+            return String(localized: "errorText.code \(number) \(detail)", bundle: bundle)
         }
-        return String(localized: "(code \(number))", bundle: bundle)
+        return String(localized: "errorText.code \(number)", bundle: bundle)
     }
 
     /// `base`, then the readable reason of `error` when there is one (file errors behind "Le fichier
@@ -81,7 +81,7 @@ public struct ErrorText: Equatable, Sendable {
         let bundle = given ?? VaultKitStrings.bundle
         return osStatus(status, keychain: true, bundle: bundle)
             ?? ErrorText(
-                sentence: String(localized: "Le trousseau a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil.", bundle: bundle),
+                sentence: String(localized: "errorText.keychainRefusedOperationTry", bundle: bundle),
                 code: Int(status), systemDetail: systemMessage(status))
     }
 
@@ -91,27 +91,27 @@ public struct ErrorText: Equatable, Sendable {
         let sentence: String?
         switch status {
         case errSecMissingEntitlement:  // -34018
-            sentence = String(localized: "Cette version de OnePass n'a pas accès au trousseau de l'appareil. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode).", bundle: bundle)
+            sentence = String(localized: "errorText.copyOfOnepassCant", bundle: bundle)
         case errSecItemNotFound:  // -25300
-            sentence = String(localized: "Une donnée de OnePass manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé OnePass, restaure ton compte avec ton Emergency Kit.", bundle: bundle)
+            sentence = String(localized: "errorText.onepassEntryMissingFrom", bundle: bundle)
         case errSecDuplicateItem:  // -25299
-            sentence = String(localized: "Cette donnée existe déjà dans le trousseau. Réessaie. Si l'erreur revient, redémarre l'appareil.", bundle: bundle)
+            sentence = String(localized: "errorText.entryAlreadyExistsIn", bundle: bundle)
         case errSecInteractionNotAllowed:  // -25308
-            sentence = String(localized: "Le trousseau reste fermé tant que l'appareil est verrouillé. Déverrouille l'appareil, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.keychainStaysClosedWhile", bundle: bundle)
         case errSecUserCanceled:  // -128, also userCanceledErr
             sentence = cancelled(bundle)
         case errSecAuthFailed:  // -25293
-            sentence = String(localized: "Le trousseau a refusé l'authentification. Vérifie le code de l'appareil ou ta biométrie, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.keychainRefusedAuthenticationCheck", bundle: bundle)
         case errSecDecode:  // -26275
-            sentence = String(localized: "Une donnée du trousseau est illisible. Réessaie. Si l'erreur revient, restaure ton compte avec ton Emergency Kit.", bundle: bundle)
+            sentence = String(localized: "errorText.keychainEntryCantRead", bundle: bundle)
         case errSecNotAvailable:  // -25291
-            sentence = String(localized: "Le trousseau n'est pas disponible pour le moment. Redémarre l'appareil, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.keychainIsntAvailableRight", bundle: bundle)
         case errSecNoAccessForItem, errSecInvalidOwnerEdit:  // -25243, -25244
-            sentence = String(localized: "OnePass n'a pas le droit de lire cette donnée du trousseau. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode).", bundle: bundle)
+            sentence = String(localized: "errorText.onepassIsntAllowedTo2", bundle: bundle)
         case errSecNoSuchKeychain, errSecInvalidKeychain:  // -25294, -25295
-            sentence = String(localized: "Le trousseau de ta session est introuvable ou abîmé. Redémarre l'appareil, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.sessionsKeychainMissingOr", bundle: bundle)
         case errSecParam:  // -50
-            sentence = String(localized: "OnePass a fait une demande que le système refuse. Mets à jour OnePass. Si l'erreur revient, contacte le support.", bundle: bundle)
+            sentence = String(localized: "errorText.onepassMadeRequestSystem", bundle: bundle)
         case errSecDiskFull:  // -34, also dskFulErr
             sentence = diskFull(bundle)
         case errSecIO:  // -36, also ioErr
@@ -132,7 +132,7 @@ public struct ErrorText: Equatable, Sendable {
         if let sentence { return ErrorText(sentence: sentence, code: Int(status), systemDetail: nil) }
         if keychain { return nil }
         return ErrorText(
-            sentence: String(localized: "Le système a refusé l'opération. Réessaie. Si l'erreur revient, redémarre l'appareil.", bundle: bundle),
+            sentence: String(localized: "errorText.systemRefusedOperationTry", bundle: bundle),
             code: Int(status), systemDetail: nil)
     }
 
@@ -156,17 +156,17 @@ public struct ErrorText: Equatable, Sendable {
         case .fileWriteFileExists: sentence = fileExists(bundle)
         case .fileReadInvalidFileName, .fileWriteInvalidFileName: sentence = invalidName(bundle)
         case .fileReadCorruptFile:
-            sentence = String(localized: "Ce fichier est abîmé ou n'a pas le format attendu. Choisis un autre fichier.", bundle: bundle)
+            sentence = String(localized: "errorText.fileDamagedOrIsnt", bundle: bundle)
         case .fileReadInapplicableStringEncoding, .fileReadUnknownStringEncoding, .fileWriteInapplicableStringEncoding:
-            sentence = String(localized: "Le texte de ce fichier est illisible (encodage inconnu). Enregistre-le en UTF-8, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.filesTextCantRead", bundle: bundle)
         case .fileReadTooLarge:
-            sentence = String(localized: "Ce fichier est trop gros pour être ouvert. Choisis un fichier plus petit.", bundle: bundle)
+            sentence = String(localized: "errorText.fileTooLargeTo", bundle: bundle)
         case .fileLocking: sentence = inUse(bundle)
         case .userCancelled: sentence = cancelled(bundle)
         case .fileReadUnknown:
-            sentence = String(localized: "Ce fichier n'a pas pu être lu. Réessaie, ou choisis-en un autre.", bundle: bundle)
+            sentence = String(localized: "errorText.fileCouldntReadTry", bundle: bundle)
         case .fileWriteUnknown:
-            sentence = String(localized: "Ce fichier n'a pas pu être enregistré. Réessaie, ou choisis un autre emplacement.", bundle: bundle)
+            sentence = String(localized: "errorText.fileCouldntSavedTry", bundle: bundle)
         default: return nil
         }
         return ErrorText(sentence: sentence, code: code, systemDetail: nil)
@@ -215,21 +215,21 @@ public struct ErrorText: Equatable, Sendable {
         case 3, 4:  // networkUnavailable, networkFailure
             sentence = network(bundle)
         case 5, 8, 24:  // badContainer, missingEntitlement, badDatabase
-            sentence = String(localized: "Cette version de OnePass n'est pas configurée pour iCloud. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode).", bundle: bundle)
+            sentence = String(localized: "errorText.copyOfOnepassIsnt", bundle: bundle)
         case 9, 36:  // notAuthenticated, accountTemporarilyUnavailable
-            sentence = String(localized: "Aucun compte iCloud n'est disponible. Connecte-toi à iCloud dans Réglages, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.noIcloudAccountAvailable", bundle: bundle)
         case 10, 32:  // permissionFailure, managedAccountRestricted
-            sentence = String(localized: "iCloud refuse l'accès à OnePass. Vérifie dans Réglages qu'iCloud est activé pour OnePass, puis réessaie.", bundle: bundle)
+            sentence = String(localized: "errorText.icloudDeniesOnepassAccess", bundle: bundle)
         case 18:  // incompatibleVersion
-            sentence = String(localized: "Cette version de OnePass est trop ancienne pour iCloud. Mets à jour OnePass.", bundle: bundle)
+            sentence = String(localized: "errorText.versionOfOnepassToo", bundle: bundle)
         case 1, 6, 7, 23, 34:  // internalError, serviceUnavailable, requestRateLimited, zoneBusy, serverResponseLost
-            sentence = String(localized: "iCloud ne répond pas pour le moment. OnePass réessaiera tout seul.", bundle: bundle)
+            sentence = String(localized: "errorText.icloudIsntRespondingRight", bundle: bundle)
         case 25:  // quotaExceeded
-            sentence = String(localized: "Ton stockage iCloud est plein. Libère de l'espace dans iCloud, puis synchronise à nouveau.", bundle: bundle)
+            sentence = String(localized: "errorText.icloudStorageFullFree", bundle: bundle)
         case 20:  // operationCancelled
             sentence = cancelled(bundle)
         default:
-            sentence = String(localized: "iCloud a refusé la synchronisation. Réessaie plus tard. Si l'erreur revient, vérifie ton compte iCloud dans Réglages.", bundle: bundle)
+            sentence = String(localized: "errorText.icloudRefusedToSync", bundle: bundle)
         }
         return ErrorText(sentence: sentence, code: code, systemDetail: nil)
     }
@@ -237,46 +237,46 @@ public struct ErrorText: Equatable, Sendable {
     // MARK: - Shared sentences
 
     static func cancelled(_ bundle: Bundle) -> String {
-        String(localized: "Opération annulée. Recommence quand tu veux.", bundle: bundle)
+        String(localized: "errorText.cancelledStartAgainWhenever", bundle: bundle)
     }
 
     static func diskFull(_ bundle: Bundle) -> String {
-        String(localized: "L'appareil n'a plus d'espace libre. Libère de la place, puis réessaie.", bundle: bundle)
+        String(localized: "errorText.deviceOutOfSpace", bundle: bundle)
     }
 
     static func io(_ bundle: Bundle) -> String {
-        String(localized: "L'appareil n'a pas pu lire ou écrire la donnée. Réessaie. Si l'erreur revient, redémarre l'appareil.", bundle: bundle)
+        String(localized: "errorText.deviceCouldntReadOr", bundle: bundle)
     }
 
     static func noPermission(_ bundle: Bundle) -> String {
-        String(localized: "OnePass n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à OnePass dans Réglages.", bundle: bundle)
+        String(localized: "errorText.onepassIsntAllowedTo", bundle: bundle)
     }
 
     static func fileNotFound(_ bundle: Bundle) -> String {
-        String(localized: "Fichier introuvable. Il a peut-être été déplacé ou supprimé : choisis-le à nouveau.", bundle: bundle)
+        String(localized: "errorText.fileNotFoundIt", bundle: bundle)
     }
 
     static func folderNotFound(_ bundle: Bundle) -> String {
-        String(localized: "Dossier introuvable. Il a peut-être été déplacé ou supprimé : choisis un autre emplacement.", bundle: bundle)
+        String(localized: "errorText.folderNotFoundIt", bundle: bundle)
     }
 
     static func readOnly(_ bundle: Bundle) -> String {
-        String(localized: "Cet emplacement est en lecture seule. Choisis-en un autre.", bundle: bundle)
+        String(localized: "errorText.locationReadOnlyPick", bundle: bundle)
     }
 
     static func fileExists(_ bundle: Bundle) -> String {
-        String(localized: "Un fichier porte déjà ce nom. Choisis un autre nom.", bundle: bundle)
+        String(localized: "errorText.fileWithNameAlready", bundle: bundle)
     }
 
     static func invalidName(_ bundle: Bundle) -> String {
-        String(localized: "Ce nom de fichier n'est pas accepté. Choisis un nom plus court, sans « / » ni « : ».", bundle: bundle)
+        String(localized: "errorText.fileNameIsntAllowed", bundle: bundle)
     }
 
     static func inUse(_ bundle: Bundle) -> String {
-        String(localized: "Une autre app utilise ce fichier. Ferme-la, puis réessaie.", bundle: bundle)
+        String(localized: "errorText.anotherAppUsingFile", bundle: bundle)
     }
 
     static func network(_ bundle: Bundle) -> String {
-        String(localized: "Impossible de joindre le réseau. Vérifie ta connexion, puis réessaie.", bundle: bundle)
+        String(localized: "errorText.cantReachNetworkCheck", bundle: bundle)
     }
 }

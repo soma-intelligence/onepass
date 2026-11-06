@@ -287,7 +287,8 @@ fn ninth_rule_string_ignored() {
 fn repeated_rule_strings_keep_the_maximum() {
     // Field, confirmation and quirk carry one string: each class counts
     // once, so four required classes still fit in 4 to 7 chars.
-    let rule = "required: lower; required: upper; required: digit; required: special; maxlength: 7;";
+    let rule =
+        "required: lower; required: upper; required: digit; required: special; maxlength: 7;";
     let ctx = FfiPasswordContext {
         rules: vec![rule.to_owned(), rule.to_owned()],
         quirk_rules: Some(rule.to_owned()),

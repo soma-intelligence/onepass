@@ -41,13 +41,13 @@ struct UnlockView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     AppGlyph(size: 72)
-                    Text("Déverrouille OnePass")
+                    Text("views.unlockOnepass")
                         .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
                         .padding(.top, 16)
                         .accessibilityAddTraits(.isHeader)
                     if let site {
-                        Text("pour remplir \(site)")
+                        Text("views.toFill \(site)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -104,7 +104,7 @@ struct UnlockView: View {
                     }
                 }
             Group {
-                if name.isEmpty { Text("Compte OnePass") } else { Text(verbatim: name) }
+                if name.isEmpty { Text("views.onepassAccount") } else { Text(verbatim: name) }
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
@@ -115,7 +115,7 @@ struct UnlockView: View {
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(name.isEmpty ? Text("Compte OnePass") : Text(verbatim: name))
+        .accessibilityLabel(name.isEmpty ? Text("views.onepassAccount") : Text(verbatim: name))
     }
 
     private var passwordField: some View {
@@ -124,13 +124,13 @@ struct UnlockView: View {
         return HStack(spacing: 4) {
             Group {
                 if revealed {
-                    TextField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                    TextField("term.masterPassword", text: $password, prompt: Text("term.masterPassword"))
                         .autocorrectionDisabled()
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         #endif
                 } else {
-                    SecureField("Mot de passe maître", text: $password, prompt: Text("Mot de passe maître"))
+                    SecureField("term.masterPassword", text: $password, prompt: Text("term.masterPassword"))
                 }
             }
             .labelsHidden()
@@ -161,7 +161,7 @@ struct UnlockView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(revealed ? Text("Masquer le mot de passe") : Text("Afficher le mot de passe"))
+            .accessibilityLabel(revealed ? Text("views.hidePassword") : Text("views.showPassword"))
             .accessibilityIdentifier("autofill.reveal")
             #if os(iOS)
             submitButton
@@ -208,8 +208,8 @@ struct UnlockView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
                 Text(remaining > 0
-                     ? String(localized: "Trop d'essais. Nouvel essai possible dans \(Self.duration(remaining)).")
-                     : String(localized: "Tu peux réessayer."))
+                     ? String(localized: "views.tooManyAttemptsTry \(Self.duration(remaining))")
+                     : String(localized: "views.canTryAgain"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -242,7 +242,7 @@ struct UnlockView: View {
         }
         .buttonStyle(PressableButtonStyle(scale: 0.9))
         .disabled(!enabled)
-        .accessibilityLabel(Text("Déverrouiller"))
+        .accessibilityLabel(Text("common.unlock"))
         .accessibilityIdentifier("autofill.unlock")
     }
     #endif
@@ -258,11 +258,11 @@ struct UnlockView: View {
                     if unlocking {
                         ProgressView()
                     } else {
-                        Label("Déverrouiller avec \(Self.biometryName)", systemImage: Self.biometrySymbol)
+                        Label("views.unlockWith \(Self.biometryName)", systemImage: Self.biometrySymbol)
                     }
                 }
                 .disabled(unlocking)
-                .accessibilityLabel(Text("Déverrouiller avec \(Self.biometryName)"))
+                .accessibilityLabel(Text("views.unlockWith \(Self.biometryName)"))
                 .accessibilityIdentifier("autofill.biometrics")
             } else {
                 #if !os(iOS)
@@ -270,7 +270,7 @@ struct UnlockView: View {
                 AutoFillPrimaryButton {
                     Task { await unlockWithPassword() }
                 } label: {
-                    if unlocking { ProgressView() } else { Text("Déverrouiller") }
+                    if unlocking { ProgressView() } else { Text("common.unlock") }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(password.isEmpty || unlocking || lockedOut)
@@ -280,7 +280,7 @@ struct UnlockView: View {
                     Button {
                         Task { await unlockWithBiometrics() }
                     } label: {
-                        Label("Utiliser \(Self.biometryName)", systemImage: Self.biometrySymbol)
+                        Label("views.use \(Self.biometryName)", systemImage: Self.biometrySymbol)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.accent)
                             .padding(.vertical, 4)
@@ -291,7 +291,7 @@ struct UnlockView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(unlocking)
-                    .accessibilityLabel(Text("Déverrouiller avec \(Self.biometryName)"))
+                    .accessibilityLabel(Text("views.unlockWith \(Self.biometryName)"))
                     .accessibilityIdentifier("autofill.biometrics")
                 }
             }
@@ -358,8 +358,8 @@ struct UnlockView: View {
         case .wrongPassword?:
             let count = settings.failedUnlocks
             message = count > 1
-                ? String(localized: "Mot de passe incorrect (\(count) essais).")
-                : String(localized: "Mot de passe incorrect.")
+                ? String(localized: "views.wrongPasswordAttempts \(count)")
+                : String(localized: "views.incorrectPassword")
         case .lockedOut?, .passwordRequired?, nil:
             message = nil
         case let failure?:

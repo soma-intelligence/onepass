@@ -8,11 +8,11 @@ import Testing
 func identity(
     _ kind: FfiAutofillKind = .password, service: String = "exemple.fr", user: String = "camille@exemple.fr",
     record: String = "aa:bb", favorite: Bool = false, rank: UInt32 = 0, credential: Data = Data(),
-    handle: Data = Data()
+    handle: Data = Data(), signInWith: String = "", app: Bool = false
 ) -> FfiAutofillIdentity {
     FfiAutofillIdentity(
         kind: kind, service: service, user: user, recordId: record, favorite: favorite, rank: rank,
-        credentialId: credential, userHandle: handle)
+        credentialId: credential, userHandle: handle, signInWith: signInWith, serviceIsApp: app)
 }
 
 @Suite("Identity store sync")
@@ -179,6 +179,38 @@ struct IdentityStoreSyncTests {
         #expect(passkey.recordIdentifier == "v:2")
     }
 
+    /// A Login that signs in with a provider shows "Se connecte avec Apple" in the system menu
+    /// (French catalog of the test bundle), its rank unchanged.
+    @Test func builderNamesTheProviderOfASignInWithLogin() throws {
+        let built = AutoFillIdentityBuilder.credentialIdentities([
+            identity(.password, service: "login.nvgs.nvidia.com", user: "", record: "v:3", rank: 120, signInWith: "apple"),
+            identity(.password, service: "corp.test", user: "", record: "v:4", signInWith: "oidc:sso.corp.test"),
+        ])
+        let apple = try #require(built[0] as? ASPasswordCredentialIdentity)
+        #expect(apple.user.hasSuffix("Apple"))
+        #expect(apple.user != "Apple")
+        #expect(apple.rank == 120)
+        let custom = try #require(built[1] as? ASPasswordCredentialIdentity)
+        #expect(custom.user.hasSuffix("sso.corp.test"))
+        #expect(AutoFillIdentityBuilder.providerName("entra_id") == "Microsoft Entra ID")
+        #expect(AutoFillIdentityBuilder.providerName("github") == "GitHub")
+    }
+
+    /// G1: a Login's app is published with the app service type, never as a domain.
+    @available(iOS 26.2, macOS 26.2, visionOS 26.2, *)
+    @Test func builderPublishesAppsAsApps() throws {
+        let built = AutoFillIdentityBuilder.credentialIdentities([
+            identity(.password, service: "com.example.app", user: "camille", record: "v:5", app: true),
+            identity(.password, service: "example.app", user: "camille", record: "v:6"),
+        ])
+        #expect(built.count == 2)
+        let app = try #require(built[0] as? ASPasswordCredentialIdentity)
+        #expect(app.serviceIdentifier.identifier == "com.example.app")
+        #expect(app.serviceIdentifier.type == .app)
+        let site = try #require(built[1] as? ASPasswordCredentialIdentity)
+        #expect(site.serviceIdentifier.type == .domain)
+    }
+
     @Test func notifierDeliversPosts() async throws {
         let notifier = StoreChangeNotifier(name: "me.somalabs.onepass.tests.\(UUID().uuidString)")
         let stream = notifier.changes()
@@ -187,7 +219,9 @@ struct IdentityStoreSyncTests {
             return false
         }
         notifier.post()
-        let got = try await withTimeout(.seconds(5)) { await received.value }
+        // Darwin callbacks come on the main run loop, which the @MainActor suites running in
+        // parallel can hold for seconds: this checks delivery, not latency.
+        let got = try await withTimeout(.seconds(30)) { await received.value }
         #expect(got)
     }
 }

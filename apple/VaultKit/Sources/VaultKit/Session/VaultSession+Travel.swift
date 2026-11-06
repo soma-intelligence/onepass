@@ -17,6 +17,11 @@ extension VaultSession {
         try await read { try $0.travelPlan() }
     }
 
+    /// The items of vaults that stay that Travel Mode hides or guards (spec 2026-11-02).
+    public func travelItemPlan() async throws -> FfiTravelItemPlan {
+        try await read { try $0.travelItemPlan() }
+    }
+
     @discardableResult
     public func enterTravel() async throws -> FfiTravelStatus {
         try await write { try $0.enterTravel() }

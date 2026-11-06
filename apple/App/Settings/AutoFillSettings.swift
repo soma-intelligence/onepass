@@ -16,13 +16,14 @@ struct AutoFillSettings: View {
         let _ = model.settingsRevision
         Form {
             providerSection
+            SafariExtensionSection()
             #if os(macOS)
             if let bridge = model.browserBridge {
                 BrowserBridgeSection(bridge: bridge)
             }
             #endif
             Section {
-                Button("Codes de vérification", systemImage: "number.square") {
+                Button("settings.verificationCodes", systemImage: "number.square") {
                     Task { await AutoFillStatus.openVerificationCodeSettings() }
                 }
                 .accessibilityIdentifier("autofill.codes")
@@ -55,6 +56,7 @@ struct AutoFillSettings: View {
             } footer: {
                 Text("settings.autofill.forgetSites.footer")
             }
+            AutofillHistorySection()
         }
         .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
@@ -66,8 +68,8 @@ struct AutoFillSettings: View {
             LabeledContent("OnePass") {
                 Group {
                     switch enabled {
-                    case true?: Label("Activé", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    case false?: Text("Désactivé")
+                    case true?: Label("app.on", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    case false?: Text("app.off")
                     case nil: ProgressView().controlSize(.small)
                     }
                 }
@@ -81,16 +83,16 @@ struct AutoFillSettings: View {
                 Button {
                     activate()
                 } label: {
-                    Label("Activer OnePass", systemImage: "key.fill")
+                    Label("app.turnOnOnepass", systemImage: "key.fill")
                 }
                 .disabled(requesting)
                 .accessibilityIdentifier("autofill.enable")
-                Button("Ouvrir les réglages du système", systemImage: "gear") {
+                Button("settings.openSystemSettings", systemImage: "gear") {
                     Task { await AutoFillStatus.openProviderSettings() }
                 }
                 .accessibilityIdentifier("autofill.systemSettings")
             } else if enabled == true {
-                Button("Gérer dans les réglages du système", systemImage: "gear") {
+                Button("settings.manageInSystemSettings", systemImage: "gear") {
                     Task { await AutoFillStatus.openProviderSettings() }
                 }
                 .accessibilityIdentifier("autofill.systemSettings")
@@ -114,8 +116,8 @@ struct AutoFillSettings: View {
 
     private func statusValue(_ enabled: Bool?) -> Text {
         switch enabled {
-        case true?: Text("Activé")
-        case false?: Text("Désactivé")
+        case true?: Text("app.on")
+        case false?: Text("app.off")
         case nil: Text(verbatim: "")
         }
     }
@@ -151,12 +153,12 @@ struct ForgetSiteChoices: View {
                 case nil:
                     ProgressView()
                 case let sites? where sites.isEmpty:
-                    Text("Aucun site retenu pour l'instant.")
+                    Text("settings.noSiteRememberedYet")
                         .foregroundStyle(.secondary)
                 case let sites?:
                     ForEach(sites, id: \.self) { site in
                         LabeledContent(site) {
-                            Button("Oublier", role: .destructive) { forgetting = site }
+                            Button("settings.forget", role: .destructive) { forgetting = site }
                                 .accessibilityIdentifier("autofill.forgetSites.forget")
                         }
                     }
@@ -171,7 +173,7 @@ struct ForgetSiteChoices: View {
             "Oublier ce site ?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
             titleVisibility: .visible, presenting: forgetting
         ) { site in
-            Button("Oublier \(site)", role: .destructive) { Task { await forget(site) } }
+            Button("settings.forget \(site)", role: .destructive) { Task { await forget(site) } }
             Button("Annuler", role: .cancel) {}
         }
     }
@@ -197,5 +199,76 @@ struct ForgetSiteChoices: View {
             await reload()
             errorMessage = message
         }
+    }
+}
+
+
+/// "Apprendre de mes choix": the device-local autofill history that ranks first the login chosen
+/// before on a site, per browser and browser profile. On by default (it never leaves the device);
+/// off erases it. "Effacer l'historique" erases it and keeps learning.
+struct AutofillHistorySection: View {
+    @Environment(AppModel.self) private var model
+    @State private var enabled: Bool?
+    @State private var count: Int?
+    @State private var confirmClear = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Section {
+            Toggle("settings.autofill.history", isOn: Binding(
+                get: { enabled ?? false },
+                set: { on in Task { await set(on) } }
+            ))
+            .disabled(enabled == nil)
+            .accessibilityIdentifier("autofill.history")
+            if enabled == true {
+                Button("settings.autofill.history.clear", systemImage: "trash", role: .destructive) {
+                    confirmClear = true
+                }
+                .disabled((count ?? 0) == 0)
+                .accessibilityIdentifier("autofill.history.clear")
+            }
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            }
+        } footer: {
+            Text("settings.autofill.history.footer")
+        }
+        .task { await reload() }
+        .confirmationDialog(
+            "settings.autofill.history.clear.confirm", isPresented: $confirmClear, titleVisibility: .visible
+        ) {
+            Button("settings.autofill.history.clear", role: .destructive) { Task { await clear() } }
+            Button("Annuler", role: .cancel) {}
+        }
+    }
+
+    private func reload() async {
+        do {
+            enabled = try await model.session.autofillHistoryEnabled()
+            count = try await model.session.autofillHistoryCount()
+            errorMessage = nil
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+    }
+
+    private func set(_ on: Bool) async {
+        do {
+            try await model.session.setAutofillHistoryEnabled(on)
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+        await reload()
+    }
+
+    private func clear() async {
+        do {
+            try await model.session.clearAutofillHistory()
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+        await reload()
     }
 }

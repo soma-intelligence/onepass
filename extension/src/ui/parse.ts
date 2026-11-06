@@ -1,6 +1,6 @@
 // Validation of service worker replies before rendering. A malformed reply
 // renders as an internal error, never partially.
-import type { FormKind, ProviderId } from "../shared/messages";
+import type { FormKind, ProviderId, SaveOutcome } from "../shared/messages";
 import {
   CHAIN_PHASES,
   STEP_WHATS,
@@ -16,6 +16,7 @@ import {
   type OverlayInit,
   type PopupItem,
   type PopupPlanLine,
+  type PendingSave,
   type PopupStatus,
   type PopupSuggestions,
   type ProviderChoice,
@@ -105,6 +106,10 @@ export const parseMenuInit = (v: unknown): MenuInit | null =>
     if (o.choices !== undefined) m.choices = list(o.choices, signInChoice, 64);
     if (o.best !== undefined) m.best = str(o.best, 128);
     if (o.notice !== undefined) m.notice = oneOf<MenuNotice>(o.notice, ["site_refused"]);
+    if (o.signup !== undefined) {
+      if (obj(o.signup).passkey !== true) throw new Error("signup");
+      m.signup = { passkey: true };
+    }
     return m;
   });
 
@@ -165,6 +170,10 @@ function account(v: unknown): OverlayAccount {
   if (o.accountId !== undefined) a.accountId = str(o.accountId, 128);
   if (o.accounts !== undefined) a.accounts = list(o.accounts, providerChoice, 32);
   if (o.totp !== undefined) a.totp = bool(o.totp);
+  if (o.vault !== undefined) {
+    const v = obj(o.vault);
+    a.vault = { id: str(v.id, 128), name: str(v.name, 256) };
+  }
   return a;
 }
 
@@ -183,15 +192,19 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
     const s: SaveInit = {
       origin: origin(o.origin),
       site: str(o.site, 253),
-      kind: oneOf(o.kind, ["login", "provider_link"]),
+      kind: oneOf(o.kind, ["login", "provider_link", "card", "identity"]),
       status: oneOf(o.status, ["new", "update"]),
       title: str(o.title, 256),
       username: str(o.username),
       vaults: list(o.vaults, (x) => {
         const vv = obj(x);
-        return { id: str(vv.id, 128), name: str(vv.name, 256) };
+        const out: SaveInit["vaults"][number] = { id: str(vv.id, 128), name: str(vv.name, 256) };
+        if (vv.account !== undefined) out.account = str(vv.account, 256);
+        return out;
       }, 64),
     };
+    if (o.defaultVault !== undefined) s.defaultVault = str(o.defaultVault, 128);
+    if (o.locked !== undefined) s.locked = o.locked === true;
     if (o.update !== undefined) {
       const u = obj(o.update);
       s.update = { itemId: str(u.itemId, 128), title: str(u.title, 256) };
@@ -201,7 +214,20 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };
       if (p.title !== undefined) s.provider.title = str(p.title, 256);
     }
-    if (o.view !== undefined) s.view = oneOf<"edit">(o.view, ["edit"]);
+    if (o.view !== undefined) s.view = oneOf<"edit" | "saved">(o.view, ["edit", "saved"]);
+    if (o.card !== undefined) {
+      const c = obj(o.card);
+      s.card = { last4: str(c.last4, 4) };
+      if (c.exp !== undefined) s.card.exp = str(c.exp, 8);
+      if (c.holder !== undefined) s.card.holder = str(c.holder, 256);
+    }
+    if (o.identity !== undefined) {
+      const i = obj(o.identity);
+      s.identity = {};
+      if (i.name !== undefined) s.identity.name = str(i.name, 512);
+      if (i.email !== undefined) s.identity.email = str(i.email, 320);
+      if (i.place !== undefined) s.identity.place = str(i.place, 800);
+    }
     return s;
   });
 
@@ -215,13 +241,68 @@ export const parseKeys = (v: unknown): { keys: ("down" | "up" | "enter")[] } | n
 
 export const parseEmpty = (v: unknown): object | null => guard(() => obj(v));
 
+/** Reply of a save or an update: what it did (an empty reply reads as "done"). */
+export const parseOutcome = (v: unknown): SaveOutcome | null =>
+  guard(() => {
+    const o = obj(v);
+    const out: SaveOutcome = { outcome: o.outcome === undefined ? "done" : oneOf<SaveOutcome["outcome"]>(o.outcome, ["saved", "updated", "already", "done"]) };
+    if (o.vault !== undefined) out.vault = str(o.vault, 256);
+    return out;
+  });
+
+export const parsePending = (v: unknown): PendingSave[] | null =>
+  guard(() =>
+    list(obj(v).pending, (x) => {
+      const o = obj(x);
+      const p: PendingSave = {
+        id: str(o.id, 22),
+        origin: origin(o.origin),
+        site: str(o.site, 253),
+        username: str(o.username),
+        status: oneOf(o.status, ["new", "update"]),
+      };
+      if (o.title !== undefined) p.title = str(o.title, 256);
+      if (o.vault !== undefined) p.vault = str(o.vault, 256);
+      return p;
+    }, 16),
+  );
+
+/** The iOS native vault for the unlock sheet (background/safari.ts `NativeVault`). */
+export interface NativeVaultState {
+  locked: boolean;
+  account: string;
+  biometry: "faceID" | "touchID" | "opticID" | "none";
+  error?: "password_required" | "wrong_password" | "cancelled" | "locked_out" | "no_account" | "failed";
+  message?: string;
+}
+
+const BIOMETRY_KINDS = ["faceID", "touchID", "opticID", "none"];
+const VAULT_ERRORS = ["password_required", "wrong_password", "cancelled", "locked_out", "no_account", "failed"];
+
+export const parseNativeVaultState = (v: unknown): NativeVaultState | null =>
+  guard(() => {
+    const o = obj(v);
+    const s: NativeVaultState = {
+      locked: bool(o.locked),
+      account: str(o.account, 320),
+      biometry: oneOf<NativeVaultState["biometry"]>(o.biometry, BIOMETRY_KINDS),
+    };
+    if (o.error !== undefined) s.error = oneOf<NonNullable<NativeVaultState["error"]>>(o.error, VAULT_ERRORS);
+    if (o.message !== undefined) s.message = str(o.message, 512);
+    return s;
+  });
+
 export const parseLocked = (v: unknown): { locked: boolean } | null => guard(() => ({ locked: bool(obj(v).locked) }));
 
 export const parseStatus = (v: unknown): PopupStatus | null =>
   guard(() => {
     const o = obj(v);
-    return { locked: bool(o.locked), account: str(o.account, 320), vaults: num(o.vaults) };
+    const s: PopupStatus = { locked: bool(o.locked), account: str(o.account, 320), vaults: num(o.vaults) };
+    if (o.connected === true) s.connected = true;
+    return s;
   });
+
+export const parsePaired = (v: unknown): { paired: boolean } | null => guard(() => ({ paired: bool(obj(v).paired) }));
 
 export const parseSas = (v: unknown): { sas: string } | null =>
   guard(() => {

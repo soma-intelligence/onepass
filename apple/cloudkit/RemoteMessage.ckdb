@@ -1,5 +1,20 @@
 DEFINE SCHEMA
 
+    RECORD TYPE OPRecord (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        data            ENCRYPTED BYTES,
+        kind            INT64,
+        version         INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
     RECORD TYPE RemoteMessage (
         "___createTime" TIMESTAMP,
         "___createdBy"  REFERENCE,
@@ -12,5 +27,17 @@ DEFINE SCHEMA
         "to"            STRING QUERYABLE,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Users (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        roles           LIST<INT64>,
+        GRANT WRITE TO "_creator",
         GRANT READ TO "_world"
     );

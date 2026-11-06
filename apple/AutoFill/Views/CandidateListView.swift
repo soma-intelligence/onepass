@@ -6,6 +6,11 @@ import VaultKit
 /// éléments" (every other Login), folded until an explicit gesture or a search (spec 5 and 8: a
 /// choice outside the matches always takes a gesture). Rows as in the app: site icon or category
 /// artwork, title, username, and a passkey or code glyph.
+///
+/// Without any service (an app without associated domain, G8) there is nothing to match: the list
+/// opens on the search, focused, with the Logins used last first. "Nouveau login" creates, saves and
+/// fills a Login with a generated password (MACAPP-03). With several accounts, a menu switches the
+/// account (MACAPP-06). On the Mac, the arrows move a selection and Return fills it (MACAPP-08).
 struct CandidateListView: View {
     let model: AutoFillModel
     let session: VaultSession
@@ -15,33 +20,149 @@ struct CandidateListView: View {
     let oneTimeCode: Bool
     /// The site or app asking, for the heading ("pour exemple.fr").
     var site: String?
+    var accounts: AutoFillAccounts?
+    var switchAccount: (@MainActor (String) -> Void)?
 
     @State private var query = ""
     @State private var showOthers = false
     @State private var busy = false
+    @State private var creating = false
+    @FocusState private var searchFocused: Bool
+    /// The keyboard selection (Mac): an index in `keyboardRows`.
+    @State private var selection = 0
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #endif
 
     var body: some View {
-        AutoFillScaffold(title: oneTimeCode ? Text("Codes de vérification") : Text("Choisis un compte"), model: model) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    SessionErrorText(session: session)
-                        .padding(.horizontal, 6)
-                    matchesSection
-                    if !others.isEmpty {
-                        othersSection
-                            .padding(.top, 14)
+        AutoFillScaffold(title: oneTimeCode ? Text("views.verificationCodes") : Text("views.chooseAccount"), model: model) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if let accounts, accounts.accounts.count > 1 {
+                            accountMenu(accounts)
+                        }
+                        SessionErrorText(session: session)
+                            .padding(.horizontal, 6)
+                        if model.listWithoutService {
+                            newLoginCard
+                        } else {
+                            matchesSection
+                            if shownMatches.isEmpty && model.canCreateLogin { newLoginCard }
+                        }
+                        if !others.isEmpty {
+                            othersSection
+                                .padding(.top, model.listWithoutService ? 0 : 14)
+                        }
+                        if !shownMatches.isEmpty && !model.listWithoutService && model.canCreateLogin {
+                            newLoginCard
+                                .padding(.top, 14)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, 24)
+                }
+                .scrollDismissesKeyboard(.immediately)
+                .searchable(text: $query, prompt: Text("views.searchOnepass"))
+                .searchFocused($searchFocused)
+                // Return in a search the user typed fills the first row it shows.
+                .onSubmit(of: .search) { if !query.isEmpty { fillSelection() } }
+                #if os(macOS)
+                .onKeyPress(.downArrow) { moveSelection(1, proxy) }
+                .onKeyPress(.upArrow) { moveSelection(-1, proxy) }
+                .onKeyPress(.return) {
+                    fillSelection()
+                    return .handled
+                }
+                .background {
+                    // Command-F: the search field.
+                    Button("views.searchOnepass") { searchFocused = true }
+                        .keyboardShortcut("f", modifiers: .command)
+                        .hidden()
+                }
+                #endif
+                .onChange(of: query) { selection = 0 }
+                .disabled(busy)
+            }
+            .navigationDestination(isPresented: $creating) {
+                NewLoginView(model: model, session: session, site: site)
+            }
+        }
+        .onAppear {
+            // No service: every Login is a manual choice, the search is where to start (G8).
+            if model.listWithoutService {
+                showOthers = true
+                searchFocused = true
+            }
+        }
+    }
+
+    // MARK: - Account switcher (MACAPP-06)
+
+    private func accountMenu(_ accounts: AutoFillAccounts) -> some View {
+        let current = accounts.accounts.first { $0.slot == accounts.current }
+        return Menu {
+            ForEach(accounts.accounts) { account in
+                Button {
+                    guard account.slot != accounts.current else { return }
+                    switchAccount?(account.slot)
+                } label: {
+                    if account.slot == accounts.current {
+                        Label(AutoFillAccounts.name(account), systemImage: "checkmark")
+                    } else {
+                        Label(AutoFillAccounts.name(account), systemImage: account.symbol)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-                .padding(.bottom, 24)
+                .accessibilityIdentifier("autofill.account.\(account.slot)")
             }
-            .scrollDismissesKeyboard(.immediately)
-            .searchable(text: $query, prompt: Text("Rechercher dans OnePass"))
-            .disabled(busy)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: current?.symbol ?? "person.fill")
+                Text("views.accountMenu \(current.map(AutoFillAccounts.name) ?? "")")
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+            }
+            .font(.subheadline.weight(.medium))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .padding(.horizontal, 2)
+        .padding(.bottom, 4)
+        .accessibilityIdentifier("autofill.accounts")
+    }
+
+    // MARK: - New Login (MACAPP-03)
+
+    @ViewBuilder private var newLoginCard: some View {
+        if model.canCreateLogin {
+            Button {
+                creating = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
+                    if let site {
+                        Text("views.newLoginFor \(site)")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Theme.accent)
+                    } else {
+                        Text("views.newLogin")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(AutoFillRowStyle())
+            .autofillCard()
+            .accessibilityIdentifier("autofill.newLogin")
         }
     }
 
@@ -49,9 +170,9 @@ struct CandidateListView: View {
 
     @ViewBuilder private var matchesSection: some View {
         if let site {
-            AutoFillLabel("pour \(site)")
+            AutoFillLabel("views.forSite \(site)")
         } else {
-            AutoFillLabel("pour ce site")
+            AutoFillLabel("views.forThisSite")
         }
         if shownMatches.isEmpty {
             HStack(spacing: 12) {
@@ -60,7 +181,7 @@ struct CandidateListView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 36, height: 36)
                     .background(Color.primary.opacity(0.06), in: .rect(cornerRadius: 9, style: .continuous))
-                Text(query.isEmpty ? "Aucun élément pour ce site." : "Aucun résultat pour ce site.")
+                Text(query.isEmpty ? "views.noItemsForSite" : "views.noResultsForSite")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -78,10 +199,14 @@ struct CandidateListView: View {
     }
 
     @ViewBuilder private var othersSection: some View {
-        AutoFillLabel("autres éléments")
+        if model.listWithoutService {
+            AutoFillLabel("views.recentItems")
+        } else {
+            AutoFillLabel("views.otherItems")
+        }
         if othersVisible {
             if shownOthers.isEmpty {
-                Text("Aucun résultat.")
+                Text("views.noResults")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(14)
@@ -112,7 +237,7 @@ struct CandidateListView: View {
                         .foregroundStyle(Theme.accent)
                         .frame(width: 36, height: 36)
                         .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
-                    Text("Afficher les \(others.count) autres éléments")
+                    Text("views.showMoreItems \(others.count)")
                         .font(.body.weight(.medium))
                         .foregroundStyle(Theme.accent)
                     Spacer(minLength: 0)
@@ -131,15 +256,21 @@ struct CandidateListView: View {
 
     // MARK: - Rows
 
+    private func fillsSecret(_ candidate: FfiAutofillCandidate) -> Bool {
+        oneTimeCode ? candidate.hasTotp : (candidate.hasPassword || candidate.passkeys.isEmpty)
+    }
+
     @ViewBuilder private func rows(for candidate: FfiAutofillCandidate) -> some View {
-        let fillsSecret = oneTimeCode ? candidate.hasTotp : (candidate.hasPassword || candidate.passkeys.isEmpty)
+        let fillsSecret = fillsSecret(candidate)
         if fillsSecret {
             Button {
                 act { await model.choose(candidate) }
             } label: {
                 row(candidate, detail: candidate.user, badge: oneTimeCode ? .code : nil)
+                    .background(selectedKey == candidate.key ? Theme.accent.opacity(0.14) : .clear)
             }
             .buttonStyle(AutoFillRowStyle())
+            .id(candidate.key)
             .accessibilityIdentifier(autofillIdentifier("candidate", candidate.title))
         }
         ForEach(Array(candidate.passkeys.enumerated()), id: \.offset) { index, ref in
@@ -165,17 +296,17 @@ struct CandidateListView: View {
         ) {
             switch badge {
             case .code:
-                Label("Code", systemImage: "number")
+                Label("views.code", systemImage: "number")
                     .labelStyle(.iconOnly)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.readableAccent)
                     .frame(width: 28, height: 28)
                     .background(Theme.accent.opacity(0.12), in: Circle())
-                    .accessibilityLabel(Text("Code de vérification"))
+                    .accessibilityLabel(Text("views.verificationCode"))
             case .passkey:
                 HStack(spacing: 4) {
                     Image(systemName: "person.badge.key.fill")
-                    Text("Passkey")
+                    Text("term.passkey")
                 }
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.readableAccent)
@@ -183,7 +314,7 @@ struct CandidateListView: View {
                 .padding(.vertical, 4)
                 .background(Theme.accent.opacity(0.12), in: Capsule())
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("Passkey"))
+                .accessibilityLabel(Text("term.passkey"))
             case nil:
                 EmptyView()
             }
@@ -197,6 +328,44 @@ struct CandidateListView: View {
         Task {
             await action()
             busy = false
+        }
+    }
+
+    // MARK: - Keyboard (Mac, MACAPP-08)
+
+    /// The rows the arrows walk: the matches, then the others once shown.
+    private var keyboardRows: [FfiAutofillCandidate] {
+        shownMatches + (othersVisible ? shownOthers : [])
+    }
+
+    /// The selected row; none on iOS (touch has no selection).
+    private var selectedKey: String? {
+        #if os(macOS)
+        let rows = keyboardRows
+        return rows.indices.contains(selection) ? rows[selection].key : nil
+        #else
+        return nil
+        #endif
+    }
+
+    private func moveSelection(_ step: Int, _ proxy: ScrollViewProxy) -> KeyPress.Result {
+        let rows = keyboardRows
+        guard !rows.isEmpty else { return .ignored }
+        selection = min(max(selection + step, 0), rows.count - 1)
+        proxy.scrollTo(rows[selection].key)
+        return .handled
+    }
+
+    /// Return (or the search's submit): fills the selected row (the first one when nothing moved),
+    /// its first offered passkey for a passkey-only Login.
+    private func fillSelection() {
+        let rows = keyboardRows
+        guard rows.indices.contains(selection) else { return }
+        let candidate = rows[selection]
+        if fillsSecret(candidate) {
+            act { await model.choose(candidate) }
+        } else if let ref = candidate.passkeys.first {
+            act { await model.choosePasskey(ref, in: candidate) }
         }
     }
 

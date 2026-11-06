@@ -671,10 +671,19 @@ struct SiteIconLoaderTests {
         for (host, domain) in expected {
             #expect(SiteIconLoader.registrableDomain(of: host) == domain, "\(host)")
         }
-        #expect(SiteIconLoader.siteHosts(for: "dashboard.stripe.com") == ["dashboard.stripe.com", "stripe.com", "www.stripe.com"])
-        #expect(SiteIconLoader.siteHosts(for: "www.notion.so") == ["www.notion.so", "notion.so"])
-        #expect(SiteIconLoader.siteHosts(for: "notion.so") == ["notion.so", "www.notion.so"])
-        #expect(SiteIconLoader.siteHosts(for: "exemple.co.uk") == ["exemple.co.uk", "www.exemple.co.uk"])
+        #expect(SiteIconLoader.siteHosts(for: "dashboard.stripe.com") == [
+            "dashboard.stripe.com", "stripe.com", "www.stripe.com", "app.stripe.com", "account.stripe.com",
+            "my.stripe.com",
+        ])
+        #expect(SiteIconLoader.siteHosts(for: "www.notion.so") == [
+            "www.notion.so", "notion.so", "app.notion.so", "account.notion.so", "my.notion.so",
+        ])
+        #expect(SiteIconLoader.siteHosts(for: "notion.so") == [
+            "notion.so", "www.notion.so", "app.notion.so", "account.notion.so", "my.notion.so",
+        ])
+        #expect(SiteIconLoader.siteHosts(for: "app.exemple.co.uk") == [
+            "app.exemple.co.uk", "exemple.co.uk", "www.exemple.co.uk", "account.exemple.co.uk", "my.exemple.co.uk",
+        ])
         // Never a bare public suffix.
         #expect(SiteIconLoader.siteHosts(for: "co.uk") == ["co.uk"])
         #expect(SiteIconLoader.sameSite("notion.so", "www.notion.so"))
@@ -741,9 +750,10 @@ struct SiteIconLoaderTests {
         let resolver = StaticResolver()
         let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: resolver, enabled: { true })
         #expect(await loader.icon(for: "https://app.vide-icone.fr") == nil)
-        #expect(resolver.lookups == ["app.vide-icone.fr", "vide-icone.fr", "www.vide-icone.fr"])
+        let asked = ["app.vide-icone.fr", "vide-icone.fr", "www.vide-icone.fr", "account.vide-icone.fr", "my.vide-icone.fr"]
+        #expect(resolver.lookups == asked)
         #expect(await loader.icon(for: "https://app.vide-icone.fr") == nil)
-        #expect(resolver.lookups.count == 3)
+        #expect(resolver.lookups.count == asked.count)
         // The parent's own miss is remembered too: another subdomain does not ask it again.
         let parent = StubProtocol.requests(host: "vide-icone.fr").count
         #expect(await loader.icon(for: "https://autre.vide-icone.fr") == nil)
@@ -932,5 +942,93 @@ struct SiteIconLoaderTests {
         #expect(StubProtocol.requests(host: "img.marque-cdn.net").contains { $0.url?.path == "/t180.png" })
         #expect(await loader.icon(for: "https://www.marque-fermee.fr") != nil, "the site's own favicon")
         #expect(StubProtocol.requests(host: "img.interne.net").isEmpty)
+    }
+}
+
+// MARK: Source quality and freshness
+
+extension SiteIconLoaderTests {
+    /// A stale manifest whose entries all 404 (`tesla.com`) no longer uses up the search: after a
+    /// few dead entries the page's own icon link is still fetched.
+    @Test func deadManifestEntriesDoNotStarveTheSearch() async throws {
+        let (session, _) = Self.makeSession()
+        let html = #"<link rel="icon" href="/assets/favicon.ico"><link rel="manifest" href="/manifest.json">"#
+        let sizes = [152, 144, 120, 114, 76, 72, 60, 57]
+        let manifest = "{\"icons\": [" + sizes.map { #"{"src": "/m/t\#($0).png", "sizes": "\#($0)x\#($0)"}"# }
+            .joined(separator: ",") + "]}"
+        StubProtocol.install(host: "manifeste-mort.exemple.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(html.utf8))
+            case "/manifest.json": .init(body: Data(manifest.utf8))
+            case "/assets/favicon.ico": .init(body: Self.icoData(sides: [16, 32]))
+            default: .init(status: 404)
+            }
+        }
+        let loader = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
+        let png = try #require(await loader.icon(for: "https://manifeste-mort.exemple.fr"))
+        #expect(Self.side(png) == 64)
+        let paths = StubProtocol.requests(host: "manifeste-mort.exemple.fr").compactMap(\.url?.path)
+        #expect(paths.filter { $0.hasPrefix("/m/") }.count == SiteIconLoader.maxFailuresPerKind)
+        #expect(paths.contains("/assets/favicon.ico"))
+    }
+
+    /// A brand whose home page refuses anything but a browser (`withings.com`): its web app host
+    /// on the same domain serves the icon, cached under the item's host.
+    @Test func appHostOfTheSameDomainIsAskedLast() async throws {
+        let (session, _) = Self.makeSession()
+        let directory = Self.tempDirectory()
+        for host in ["refus-icone.fr", "www.refus-icone.fr"] {
+            StubProtocol.install(host: host) { _ in .init(status: 403) }
+        }
+        StubProtocol.install(host: "app.refus-icone.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(#"<link rel="apple-touch-icon" sizes="144x144" href="/assets/appicon-144.png">"#.utf8))
+            case "/assets/appicon-144.png": .init(body: Self.pngData(side: 144))
+            default: .init(status: 404)
+            }
+        }
+        let resolver = StaticResolver()
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: resolver, enabled: { true })
+        #expect(Self.side(await loader.icon(for: "https://www.refus-icone.fr/fr")) == 256)
+        #expect(resolver.lookups == ["www.refus-icone.fr", "refus-icone.fr", "app.refus-icone.fr"])
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.cacheName("www.refus-icone.fr")).path))
+    }
+
+    /// An icon cached long ago is shown at once and fetched again behind it: a new logo replaces
+    /// it; a site with nothing now keeps the old one (dated again, not asked at every display).
+    @Test func oldIconIsShownThenRefreshed() async throws {
+        let (session, _) = Self.makeSession()
+        let directory = Self.tempDirectory()
+        StubProtocol.install(host: "logo-neuf.exemple.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: Self.pngData(side: 64)) : .init(status: 404)
+        }
+        let loader = SiteIconLoader(cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true })
+        let old = try #require(await loader.icon(for: "https://logo-neuf.exemple.fr"))
+        #expect(Self.side(old) == 128)
+        let file = directory.appendingPathComponent(Self.cacheName("logo-neuf.exemple.fr"))
+        let aged: [FileAttributeKey: Any] = [.modificationDate: Date().addingTimeInterval(-SiteIconLoader.refreshAge - 60)]
+        try FileManager.default.setAttributes(aged, ofItemAtPath: file.path)
+
+        StubProtocol.install(host: "logo-neuf.exemple.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: Self.pngData(side: 180)) : .init(status: 404)
+        }
+        // Shown at once, the old one.
+        #expect(await loader.icon(for: "https://logo-neuf.exemple.fr") == old)
+        await loader.settle()
+        let fresh = try #require(loader.cachedIcon(for: "https://logo-neuf.exemple.fr"))
+        #expect(Self.side(fresh) == 256)
+
+        // Old again, and the site has nothing now: the icon stays, dated now.
+        try FileManager.default.setAttributes(aged, ofItemAtPath: file.path)
+        StubProtocol.install(host: "logo-neuf.exemple.fr") { _ in .init(status: 404) }
+        #expect(await loader.icon(for: "https://logo-neuf.exemple.fr") == fresh)
+        await loader.settle()
+        #expect(loader.cachedIcon(for: "https://logo-neuf.exemple.fr") == fresh)
+        let dated = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date
+        #expect(try #require(dated).timeIntervalSinceNow > -60)
+        let requests = StubProtocol.requests(host: "logo-neuf.exemple.fr").count
+        _ = await loader.icon(for: "https://logo-neuf.exemple.fr")
+        await loader.settle()
+        #expect(StubProtocol.requests(host: "logo-neuf.exemple.fr").count == requests)
     }
 }

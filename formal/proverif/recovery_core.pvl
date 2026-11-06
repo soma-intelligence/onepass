@@ -1,0 +1,214 @@
+(* OnePass formal model: organizer-assisted recovery (spec
+   docs/superpowers/specs/2026-10-30-sharing-families-design.md, sections
+   11.3 to 11.7 and 17, founder decisions 1, 4 and 18; family plan rulings
+   B-1, B-2 and B-7). Shared declarations and processes of recovery.pv and
+   its negative control recovery_autoenroll.pv.
+
+   Status: design model, written before the code (plan 1 Task 8).
+
+   Construction (spec 11.4, ruling B-1: RK is derived, never drawn):
+   - on the member's device, after the password: S_org and S_store fresh
+     (32 bytes each), enrollment_id fresh;
+     RK = HKDF-SHA256(ikm = S_org || S_store,
+                      info = "onepass/recovery/rk/v1"
+                             || (account_id, identity_id, enrollment_id));
+   - RecoverySlot: the keyset sealed directly under RK, BlobKind
+     RecoverySlot, AAD identity_id (ruling B-2), in the member's private
+     base;
+   - RecoveryHalf: S_store in the member's private base, in clear for an
+     account on iCloud, sealed under
+     K_store = HKDF-SHA256(ikm = Secret Key,
+                           info = "onepass/recovery/store-seal/v1"
+                                  || enrollment_id)
+     for an account on the mailbox (spec 11.7, decision 18);
+   - S_org wrapped for the organizer's KEM key AS PINNED IN THE MEMBER'S
+     BOOK at level Verified, wrap_key_labeled under
+     "onepass/recovery/share/v1", context (member account, member
+     identity_id, organizer account, enrollment_id), dropped in the
+     contact zone with a RecoveryEnrollment signed by the member identity
+     (domain onepass/recovery/enroll/v1) that binds SHA-256 of the
+     envelope.
+
+   Recovery (spec 11.5):
+   - the organizer reads the enrollment, checks the member's signature
+     against the member's identity pinned in its own book, signs a
+     RecoveryRequest (domain onepass/recovery/request/v1) into the contact
+     zone;
+   - a live device of the member may answer with a RecoveryCancel signed
+     by its device key (domain onepass/recovery/cancel/v1); the organizer
+     stops on a valid cancel. The server can withhold it (documented limit,
+     spec 20);
+   - after the delay (clocks and delays are not modeled, ruling B-7), the
+     organizer unwraps S_org and hands it over face to face (decision 4):
+     the contact channel of plan 1 (QR, Bonjour, SAS compared), which is
+     the authenticated private channel `f2f` here (F-02, proven for the
+     bridge in bridge.pv, same construction). Inside it S_org is sealed
+     for the new device's ephemeral key: the private channel covers it;
+   - the new device reads RecoverySlot and RecoveryHalf from the member's
+     private base (Apple ID on iCloud, Emergency Kit on the mailbox),
+     derives RK, opens the keyset. The rotation Recover that follows
+     (11.5 step 5) is rotation.pv's job and is not modeled.
+
+   Channels:
+   - c: the server (contact zone, mailbox), hostile throughout;
+   - base: the member's private base, a parameter: a private channel when
+     the attacker cannot read it (iCloud with Advanced Data Protection, or
+     the mailbox when the attacker is not its operator), c when it can
+     (Apple, whoever took the Apple ID, or the mailbox operator);
+   - f2f: the face to face channel between the organizer's device and the
+     member's new device, private.
+
+   Abstractions: the keyset is one secret key (its content is account.pv's
+   job); identity_id is a public constant per member; the organizer's
+   identity_id in the share context is folded into its account id (one
+   identity per organizer here, rotation cancels the enrollment, 11.4);
+   enrollment replacement, rotation of either side and the delay are
+   Rust tests (family plan Tasks 4 to 6). *)
+
+(* ------------------------------------------------------------------ *)
+(* Labels (spec 19.1)                                                  *)
+(* ------------------------------------------------------------------ *)
+
+(* core/onepass-core/src/recovery/mod.rs: RK_INFO "onepass/recovery/rk/v1" *)
+const lbl_recovery_rk: bitstring.
+(* SHARE_LABEL "onepass/recovery/share/v1" (wrap_key_labeled) *)
+const lbl_recovery_share: bitstring.
+(* STORE_SEAL_INFO "onepass/recovery/store-seal/v1" *)
+const lbl_recovery_store_seal: bitstring.
+(* Signature domains of the recovery messages. *)
+const dom_recovery_enroll: bitstring.
+const dom_recovery_request: bitstring.
+const dom_recovery_cancel: bitstring.
+(* crypto/aead.rs: BlobKind::RecoverySlot, and the sealed RecoveryHalf. *)
+const kind_recovery_slot: bitstring.
+const kind_recovery_half: bitstring.
+
+(* Storage of the half: in clear (iCloud) or sealed under the Secret Key
+   (mailbox, 11.7). *)
+const half_clear: bitstring.
+const half_sealed: bitstring.
+
+(* ------------------------------------------------------------------ *)
+(* Events                                                              *)
+(* ------------------------------------------------------------------ *)
+
+(* Member m enrolled with organizer o, enrollment id e. *)
+event Enrolled(bitstring, bitstring, nonce).
+(* Organizer o signed a request for member m, enrollment e. *)
+event RequestSigned(bitstring, bitstring, nonce).
+(* A live device of member m signed a cancel of enrollment e. *)
+event CancelSigned(bitstring, nonce).
+(* Organizer o stopped on a valid cancel of member m, enrollment e. *)
+event CancelSeen(bitstring, bitstring, nonce).
+(* Organizer o handed S_org of member m, enrollment e, face to face. *)
+event Released(bitstring, bitstring, nonce).
+(* The new device of member m opened keyset k. *)
+event Recovered(bitstring, key).
+
+(* ------------------------------------------------------------------ *)
+(* Derivations                                                         *)
+(* ------------------------------------------------------------------ *)
+
+(* recovery/mod.rs: derive_rk *)
+letfun derive_rk(s_org: key, s_store: key, m: bitstring, idid: bitstring,
+                 e: nonce) =
+  hkdf(empty, (k2b(s_org), k2b(s_store)), (lbl_recovery_rk, (m, idid, n2b(e)))).
+
+(* recovery/mod.rs: store_seal_key (mailbox account, 11.7) *)
+letfun store_key(sk_acct: key, e: nonce) =
+  hkdf(empty, k2b(sk_acct), (lbl_recovery_store_seal, n2b(e))).
+
+(* Context of the S_org envelope. *)
+letfun share_ctx(m: bitstring, idid: bitstring, o: bitstring, e: nonce) =
+  (m, idid, o, n2b(e)).
+
+(* ------------------------------------------------------------------ *)
+(* Enrollment, on the member's device, after the password (11.4).      *)
+(* opkm, opkx: the organizer's KEM key as pinned in the member's book  *)
+(* (Verified). Nothing here comes from the server.                     *)
+(* ------------------------------------------------------------------ *)
+let Enroll(m: bitstring, idid: bitstring, isk: skey, ks: key,
+           o: bitstring, opkm: mlkem_pk, opkx: x25519_pk,
+           base: channel, mode: bitstring, sk_acct: key) =
+  new s_org: key; new s_store: key; new e: nonce;
+  new rm: seed; new rx: seed;
+  let rk = derive_rk(s_org, s_store, m, idid, e) in
+  let slot = aead_seal(rk, blob_aad(kind_recovery_slot, idid, no_vault), k2b(ks)) in
+  let env = core_wrap_labeled(opkm, opkx, rm, rx, lbl_recovery_share,
+                              share_ctx(m, idid, o, e), s_org) in
+  (* The signed enrollment binds the envelope (its hash): without it, a
+     server that reads the private base swaps in an envelope of an S_org
+     of its own and a slot of its own, and the new device recovers into
+     the attacker's keyset (found by this model, ruling recorded in the
+     family plan ledger). *)
+  let body = (m, idid, o, n2b(e), h(env)) in
+  event Enrolled(m, o, e);
+  (* RecoveryEnrollment and envelope, in the contact zone. *)
+  out(c, (body, sign_dom(isk, dom_recovery_enroll, body), env));
+  (* RecoverySlot and RecoveryHalf, in the private base, read by any
+     number of new devices. *)
+  if mode = half_clear then
+    ! out(base, (n2b(e), slot, k2b(s_store)))
+  else
+    ! out(base, (n2b(e), slot,
+                 aead_seal(store_key(sk_acct, e),
+                           blob_aad(kind_recovery_half, idid, no_vault),
+                           k2b(s_store)))).
+
+(* ------------------------------------------------------------------ *)
+(* A live device of the member answers a request with a cancel        *)
+(* (11.5 step 3). opk: the organizer's signing key as pinned by the    *)
+(* member. dsk: the device key (its public half is in the roster the   *)
+(* organizer reads from the member's card).                            *)
+(* ------------------------------------------------------------------ *)
+let Cancel(m: bitstring, opk: pkey, dsk: skey) =
+  in(c, (rq: bitstring, rsig: bitstring));
+  if verify_dom(opk, dom_recovery_request, rq, rsig) = true then
+  let (=m, idid: bitstring, o: bitstring, n2b(e)) = rq in
+  event CancelSigned(m, e);
+  out(c, sign_dom(dsk, dom_recovery_cancel, rq)).
+
+(* ------------------------------------------------------------------ *)
+(* The organizer helps (11.5 steps 2 to 4). mipk: the member's        *)
+(* identity as pinned in the organizer's book; mdpk: the member's      *)
+(* device key from the roster of the member's pinned lineage.          *)
+(* ------------------------------------------------------------------ *)
+let Release(o: bitstring, osk: skey, oskm: seed, oskx: seed,
+            m: bitstring, mipk: pkey, mdpk: pkey, f2f: channel) =
+  in(c, (body: bitstring, bsig: bitstring, env: bitstring));
+  if verify_dom(mipk, dom_recovery_enroll, body, bsig) = true then
+  let (=m, idid: bitstring, =o, n2b(e), =h(env)) = body in
+  let rq = (m, idid, o, n2b(e)) in
+  event RequestSigned(o, m, e);
+  out(c, (rq, sign_dom(osk, dom_recovery_request, rq)));
+  (* Whatever the zone holds when the delay ends: a valid cancel stops,
+     anything else (nothing, garbage, a withheld cancel) goes on. *)
+  in(c, cn: bitstring);
+  (* verify fails (rather than returning false) on a bad signature: the
+     else branch of a let catches the failure. *)
+  let (=true) = verify_dom(mdpk, dom_recovery_cancel, rq, cn) in
+    event CancelSeen(o, m, e)
+  else
+    let s_org = core_unwrap_labeled(oskm, oskx, lbl_recovery_share,
+                                    share_ctx(m, idid, o, e), env) in
+    event Released(o, m, e);
+    out(f2f, (n2b(e), k2b(s_org))).
+
+(* ------------------------------------------------------------------ *)
+(* The member's new device (11.5 steps 1, 4 and 5). It reads the slot  *)
+(* and the half from the private base (sk_acct: the Secret Key from    *)
+(* the Emergency Kit, for a mailbox account) and S_org from the face   *)
+(* to face channel.                                                    *)
+(* ------------------------------------------------------------------ *)
+let NewDevice(m: bitstring, idid: bitstring, base: channel, f2f: channel,
+              mode: bitstring, sk_acct: key) =
+  in(base, (n2b(e), slot: bitstring, half: bitstring));
+  in(f2f, (n2b(=e), k2b(s_org)));
+  let s_store_b =
+    (if mode = half_clear then half
+     else aead_open(store_key(sk_acct, e),
+                    blob_aad(kind_recovery_half, idid, no_vault), half)) in
+  let k2b(s_store) = s_store_b in
+  let rk = derive_rk(s_org, s_store, m, idid, e) in
+  let k2b(ks) = aead_open(rk, blob_aad(kind_recovery_slot, idid, no_vault), slot) in
+  event Recovered(m, ks).

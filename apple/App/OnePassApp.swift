@@ -2,6 +2,10 @@ import DesignKit
 import SwiftUI
 import UserNotifications
 import VaultKit
+// The Mac App Store build (ONEPASS_APP_STORE) updates through the store: no Sparkle.
+#if os(macOS) && !ONEPASS_APP_STORE
+import UpdateKit
+#endif
 
 @main
 struct OnePassApp: App {
@@ -11,6 +15,10 @@ struct OnePassApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
     @State private var model = AppModel()
+    #if os(macOS) && !ONEPASS_APP_STORE
+    /// Updates from GitHub Releases (Sparkle): `nil` in builds without the update key.
+    @State private var updater = AppUpdater()
+    #endif
     /// Aggregate phase of every scene: drives auto-lock and sync, once for the whole app.
     @Environment(\.scenePhase) private var scenePhase
 
@@ -33,6 +41,8 @@ struct OnePassApp: App {
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
+        // Links (`onepass://`, verification code links) go to the main window, reopened if closed.
+        .handlesExternalEvents(matching: ["*"])
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
         }
@@ -40,15 +50,28 @@ struct OnePassApp: App {
             BrowseCommands(model: model)
             // View > Show/Hide Sidebar (⌃⌘S): the toolbar has no sidebar button on the Mac.
             SidebarCommands()
+            #if !ONEPASS_APP_STORE
+            // OnePass > Rechercher les mises à jour…, after À propos.
+            CommandGroup(after: .appInfo) {
+                if let updater {
+                    CheckForUpdatesButton(updater: updater)
+                }
+            }
+            #endif
         }
         // "Ouvrir dans une nouvelle fenêtre" of the item menu: one read-only detail per item.
         WindowGroup(id: ItemWindow.id, for: String.self) { $key in
             ItemWindowRoot(key: key).environment(model).tint(Theme.accent)
         }
+        // Never opened by a link: an empty item window would appear.
+        .handlesExternalEvents(matching: [])
         .defaultSize(width: 720, height: 780)
         Settings {
             MacSettingsView()
                 .environment(model)
+                #if !ONEPASS_APP_STORE
+                .environment(updater)
+                #endif
                 .tint(Theme.accent)
         }
         // Menu bar icon: opens the window from anywhere, and the app stays there once the window is
@@ -56,8 +79,7 @@ struct OnePassApp: App {
         MenuBarExtra {
             MenuBarMenu(model: model)
         } label: {
-            Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
-                .accessibilityLabel(Text("OnePass"))
+            MenuBarLabel(model: model)
         }
         #else
         WindowGroup {
@@ -155,10 +177,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) async -> UIBackgroundFetchResult {
         // A background wake past the auto-lock delay drops the keys before anything else runs.
         model?.session.checkAutoLock()
-        guard let coordinator = model?.coordinator else { return .noData }
-        await coordinator.syncNow()
-        return .newData
+        guard let model else { return .noData }
+        return await model.silentPush() ? .newData : .noData
     }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        model?.didRegisterPush(token: deviceToken)
+    }
+
+    /// Refused or unavailable: the sync still runs at each opening and in the foreground.
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {}
 }
 #else
 @MainActor
@@ -193,13 +221,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
         Task { @MainActor in
-            guard let coordinator = self.model?.coordinator else { return }
-            await coordinator.syncNow()
+            _ = await self.model?.silentPush()
         }
+    }
+
+    func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        model?.didRegisterPush(token: deviceToken)
     }
 
     /// The menu bar icon keeps the app running; the closed window has already locked.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+#if !ONEPASS_APP_STORE
+/// OnePass > Rechercher les mises à jour…: Sparkle's window shows what it finds. A view, so the menu
+/// item follows `canCheckForUpdates` (disabled while a check or an install runs).
+struct CheckForUpdatesButton: View {
+    let updater: AppUpdater
+
+    var body: some View {
+        Button("menu.app.checkForUpdates") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
+    }
+}
+#endif
+
+/// The menu bar icon. It lives while no window is open, so it reopens the main window when the
+/// model asks (`mainWindowRequest`: "Déverrouiller dans OnePass" from an extension).
+struct MenuBarLabel: View {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
+            .accessibilityLabel(Text("OnePass"))
+            .onChange(of: model.mainWindowRequest) {
+                openWindow(id: "main")
+                NSApp.activate()
+            }
+    }
 }
 
 /// The menu of the menu bar icon: open the window, search, lock, settings, quit.
@@ -209,8 +269,8 @@ struct MenuBarMenu: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Button("Ouvrir OnePass") { show() }
-        Button("Rechercher") {
+        Button("app.openOnepass") { show() }
+        Button("common.search") {
             show()
             model.searchFocusRequest &+= 1
         }
@@ -226,6 +286,8 @@ struct MenuBarMenu: View {
     }
 
     private func show() {
+        // Opened by hand: the user stays in the app after the unlock (MS-03).
+        model.cancelReturnToBrowser()
         openWindow(id: "main")
         NSApp.activate()
     }

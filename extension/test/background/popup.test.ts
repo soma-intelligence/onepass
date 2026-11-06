@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BridgeError } from "../../src/bridge/bytes";
 import { BridgeAppError } from "../../src/bridge/client";
 import { createBackground } from "../../src/background/app";
 import { HISTORY_KEY, resetGeneratorHistoryForTests } from "../../src/background/popup";
@@ -48,14 +49,37 @@ const answer: Answer = (r) => {
 
 const analysis = (forms: unknown[]) => ({ url: `${SITE}/login`, forms, captcha: false, push: false, providerButtons: [], accountChooser: [] });
 
-async function setup(a: Answer = answer, opts: { paired?: boolean; openError?: Error } = {}) {
+const STATUS_OK = { locked: false, account: "alex@atlas.dev", vaults: 2 };
+
+async function setup(
+  a: Answer = answer,
+  opts: { paired?: boolean; openError?: Error; pair?: ConstructorParameters<typeof FakeClient>[2] } = {},
+) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
   if (opts.paired !== false) await new Store(ext, pairings).setPairing(record());
-  const client = new FakeClient(a, async () => {
-    if (opts.openError) throw opts.openError;
+  const client = new FakeClient(
+    a,
+    async () => {
+      if (opts.openError) throw opts.openError;
+    },
+    // By default the app is there but does not vouch for this browser.
+    opts.pair ??
+      (async () => {
+        throw new BridgeError("host", "refused", "not_allowed");
+      }),
+  );
+  const opened = { n: 0 };
+  const bg = createBackground(ext, {
+    pairings,
+    newClient: () => client,
+    sleep: async () => undefined,
+    now: () => 42,
+    openApp: async () => {
+      opened.n++;
+      return true;
+    },
   });
-  const bg = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined, now: () => 42 });
   bg.install();
   ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
   ext.activeTab = { id: 7, url: `${SITE}/login` };
@@ -63,10 +87,17 @@ async function setup(a: Answer = answer, opts: { paired?: boolean; openError?: E
   const send = (m: unknown) => ext.send(m, popup);
   const reportForms = (forms: unknown[]) =>
     ext.send({ type: "page_analysis", analysis: analysis(forms) }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }));
-  return { ext, client, bg, send, reportForms, pairings };
+  return { ext, client, bg, send, reportForms, pairings, opened };
 }
 
 describe("popup background", () => {
+  it("Déverrouiller dans OnePass brings the app forward and asks it to unlock", async () => {
+    const { send, client, opened } = await setup();
+    expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
+    expect(opened.n).toBe(1);
+    expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+  });
+
   it("suggestions for the active tab origin, from the browser", async () => {
     const { send, client } = await setup();
     expect(await send({ type: "popup_suggestions" })).toEqual({ ok: { domain: "atlas-cloud.test", items: [summary("it_01")] } });
@@ -195,6 +226,38 @@ describe("popup background", () => {
     expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });
     const fresh = await setup(answer, { paired: false });
     expect(await fresh.send({ type: "popup_status" })).toEqual({ err: "unpaired" });
+  });
+
+  it("a browser the app vouches for pairs on the first status, which says connected once", async () => {
+    const asked: unknown[] = [];
+    const { send, pairings } = await setup(answer, {
+      paired: false,
+      pair: async (_cb, opts) => {
+        asked.push(opts);
+        return record();
+      },
+    });
+    expect(await send({ type: "popup_status" })).toEqual({ ok: { ...STATUS_OK, connected: true } });
+    expect(asked).toEqual([{ auto: true }]);
+    expect(pairings.value).toBeDefined();
+    expect(await send({ type: "popup_status" })).toEqual({ ok: STATUS_OK });
+  });
+
+  it("a refused automatic pairing leaves the manual pairing, and the button asks again", async () => {
+    let calls = 0;
+    const { send } = await setup(answer, {
+      paired: false,
+      pair: async () => {
+        calls++;
+        throw new BridgeError("host", "refused", "not_allowed");
+      },
+    });
+    expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });
+    // The background waits before asking the app again; the button does not.
+    expect(await send({ type: "popup_status" })).toEqual({ err: "unpaired" });
+    expect(calls).toBe(1);
+    expect(await send({ type: "popup_pair_auto" })).toEqual({ ok: { paired: false } });
+    expect(calls).toBe(2);
   });
 
   it("Oublier cet appairage drops the record, the items shown and the history", async () => {

@@ -18,7 +18,7 @@ struct TotpCodeView: View {
                         .font(compact ? .callout.monospacedDigit() : .title3.monospacedDigit())
                         .contentTransition(.numericText())
                         .animation(.snappy(duration: 0.35), value: code.code)
-                        .accessibilityLabel(Text("Code à usage unique"))
+                        .accessibilityLabel(Text("term.oneTimeCode"))
                         .accessibilityValue(Text(verbatim: code.code))
                     if compact {
                         TotpRing(remaining: Int(code.remaining), period: Int(code.period), exact: reduceMotion ? nil : Self.exactRemaining(period: code.period, at: context.date))
@@ -27,7 +27,7 @@ struct TotpCodeView: View {
                     }
                 }
             } else {
-                Text("Secret invalide : colle la clé base32 ou l'URI otpauth://.")
+                Text("item.invalidSecretPasteBase32")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -68,8 +68,8 @@ struct TotpFieldView: View {
             if captured {
                 Text(verbatim: FieldRow.mask)
                     .font(.title3.monospacedDigit())
-                    .accessibilityLabel(Text("Code à usage unique"))
-                    .accessibilityValue(Text("masqué"))
+                    .accessibilityLabel(Text("term.oneTimeCode"))
+                    .accessibilityValue(Text("item.hidden2"))
             } else {
                 TotpCodeView(secret: field.value.text)
             }

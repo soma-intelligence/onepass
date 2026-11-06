@@ -107,7 +107,7 @@ Sync storage only ever sees padded ciphertext, and everything it returns is veri
 <details open>
 <summary><b>Vault and items</b></summary>
 
-- 26 item types: logins, passwords, secure notes, credit cards, bank accounts, crypto wallets, identities, passports, driver licenses, SSH keys, API credentials, servers, databases, routers, software licenses, documents and more. Logins also hold passkeys and TOTP secrets.
+- 26 item types: logins, passwords, secure notes, credit cards, bank accounts, crypto wallets, identities, passports, driver licenses, SSH keys, API credentials, servers, databases, routers, software licenses, documents and more. Logins also hold passkeys and TOTP secrets. Crypto wallets show watch-only balances on iPhone and iPad, read from public addresses: the recovery phrase is never sent anywhere.
 - Multiple vaults, fast search, favorites, TOTP codes, `onepass://vault/item/field` secret references.
 - Password and passphrase generator (EFF word lists).
 - Auto-lock, unlock with Face ID, Touch ID or Apple Watch on Mac. The master password is required again after a reboot or after 14 days.
@@ -146,8 +146,8 @@ Sync storage only ever sees padded ciphertext, and everything it returns is veri
 <details>
 <summary><b>Browser extension</b></summary>
 
-- Manifest V3, TypeScript, no framework, in the app's look, French and English.
-- **Safari** extension built into the Mac app. **Chrome and Firefox** builds talk to the same app through its signed relay. One end-to-end encrypted, post-quantum channel, paired with a 6-digit code you compare on both screens and approve with Touch ID.
+- Manifest V3, TypeScript, no framework, in the app's look, in French, English, Spanish and Italian.
+- **Safari** extension built into the Mac app. **Chrome and Firefox** builds talk to the same app through its signed relay. One end-to-end encrypted, post-quantum channel. On the Mac that runs the app, the extension pairs on its own, with no code to type (real-browser check pending). "Unlock in OnePass" in the extension brings the app forward to unlock, even when it was closed.
 - Inline menu under the focused field, keyboard included. **One-click sign-in** that walks multi-step logins and "Sign in with Google, Apple, Microsoft or GitHub" chains, remembers which provider account you use on each site, and stops as soon as a step leaves the allowed domains.
 - Save and update prompts, never-save list, HTTPS origins only. Payment iframes from other sites are never filled.
 
@@ -156,7 +156,7 @@ Sync storage only ever sees padded ciphertext, and everything it returns is veri
 <details>
 <summary><b>Watchtower</b></summary>
 
-- A score dial and one card per check: weak, reused and old passwords, sites that support 2FA or passkeys where you have not turned them on, breached sites, exposed accounts.
+- A score dial and one card per check: weak, reused and old passwords, sites that support 2FA or passkeys where you have not turned them on, breached sites, exposed accounts, and a funded crypto wallet whose recovery phrase is not protected by Travel Mode.
 - Notifications for new findings, and per-item exclusions.
 - Leaked password check through Have I Been Pwned **k-anonymity** (5-character hash prefix, padded responses). Offline modes available.
 
@@ -201,7 +201,7 @@ All in Settings > Developer on the Mac, and stopped as soon as the app locks (un
 - **Agent-ready MCP**: one command adds OnePass to an AI client, `OnePass.app/Contents/Helpers/onepass-mcp install --client claude-code|claude-desktop|codex|cursor` (`--dry-run` shows the diff, a backup is kept, only the `onepass` entry changes; Settings > Developer gives you the command to copy). Approve each request on the Mac panel or on your iPhone with Face ID, whichever answers first; the agent is told a 4-letter code to match on screen, and the audit log records where you approved. Away from a locked Mac, your iPhone can unlock it for agents only: the app's own screens stay locked, the window lasts 1 hour by default (15 minutes to 8 hours) and ends on sleep, lock or "Lock now" on the phone. Off by default, enrolled per Mac and iPhone pair.
 - **SSH agent**: Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys from your vaults, generated or imported in the app. Approval for every signature, or for 5, 15 or 60 minutes. Agent forwarding refused by default.
 - **Audit log**: hash-chained and signed, readable in the app.
-- **Travel Mode** (Mac and iOS): mark vaults "Safe for Travel", and the others leave the device before you cross a border without being deleted from iCloud. Back home, they come back and are checked against the last manifests seen.
+- **Travel Mode** (Mac and iOS): mark vaults "Safe for Travel", and the others leave the device before you cross a border without being deleted from iCloud. Back home, they come back and are checked against the last manifests seen. Away from home, the app suggests turning it on, and single items can be marked safe for travel.
 - **`onepass` CLI** with `onepass mcp` and `onepass ssh-agent` for development and Linux.
 
 </details>
@@ -306,7 +306,7 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 | | Self-hosting | Platforms | Passkeys | Travel mode | Family and business sharing | Agent and MCP access |
 |---|---|---|---|---|---|---|
-| **OnePass** | Planned after v1. Today sync is CloudKit in your own iCloud | iPhone, iPad, Mac, Apple Watch, Vision Pro. Safari, Chrome and Firefox extension. CLI (development). **No Android, Windows or Linux app** | Yes, created and used inside the Rust core | Manual "Safe for Travel" vaults on Mac and iOS. **Automatic travel detection is being built** | **Being built, not in a release yet:** shared vaults, family, mailbox for invites, multi-account. No business admin console | Built in: MCP server and SSH agent, per-secret approval on Mac or iPhone, signed audit log |
+| **OnePass** | Planned after v1. Today sync is CloudKit in your own iCloud | iPhone, iPad, Mac, Apple Watch, Vision Pro. Safari, Chrome and Firefox extension. CLI (development). **No Android, Windows or Linux app** | Yes, created and used inside the Rust core | "Safe for Travel" vaults and items on Mac and iOS, with a suggestion when you are away from home | Several accounts side by side (personal and business). **Being built, not in a release yet:** shared vaults, family, mailbox for invites. No business admin console | Built in: MCP server and SSH agent, per-secret approval on Mac or iPhone, signed audit log |
 | 1Password | Not offered, none found | macOS, iOS, watchOS, Windows, Android, Linux. Chrome, Safari, Edge, Firefox, Brave ([pricing][1p-price]) | Yes ([pricing][1p-price]) | Yes, every plan ([support][1p-travel]) | Families (up to 5) with shared vaults. Business with admin controls ([pricing][1p-price], [travel][1p-travel]) | Secure Agentic Autofill, early access with Browserbase since Oct 2025, and an MCP server for Environments ([1Password][1p-ai]) |
 | NordPass | Not offered, none found | Windows, macOS, Linux, iOS, Android and browsers ([NordPass][np-pass]) | Yes ([NordPass][np-pass]) | Not documented | Family (6 vaults) with sharing and emergency access. Business plan ([NordPass][np-pass]) | None found |
 | Dashlane | Not offered, none found | iOS, Android, Windows, macOS. Linux only through the browser extension ([Dashlane][dl-pass]) | Yes ([Dashlane][dl-pass]) | Not documented | Friends and Family (10 members). Business with SSO and SCIM ([Dashlane][dl-plans], [business][dl-biz]) | Official MCP server (beta) for Business audit logs, read only. No credential access documented ([Dashlane][dl-mcp]) |
@@ -367,9 +367,17 @@ Spot an error or an out-of-date claim? Open an issue with a link to the vendor's
 [ap-pw]: https://support.apple.com/en-us/120758
 [ap-win]: https://support.apple.com/guide/icloud-windows/set-up-icloud-passwords-icw2babf5e03/icloud
 
+## Privacy
+
+OnePass has no analytics and no telemetry. The Mac app's update check is the one request it makes to GitHub: at launch and every 24 hours it reads the signed update feed of the latest release on GitHub. That is a plain HTTPS GET to `github.com` (redirected to GitHub's release storage) with the usual User-Agent (app name and version, Sparkle version), and nothing else: no account, device or install identifier, no system profile, no cookie. Settings > About > "Automatically Check for Updates" turns it off. The iPhone, iPad, Apple Watch and Vision Pro apps update through the App Store and never check on their own.
+
+Autofill history stays on the device. To put the account you use on a site first, OnePass remembers which suggestion you picked, on which site, in which browser (Safari, Chrome and others) and in which browser profile. A profile is an opaque random id the extension draws once and keeps in that profile's own storage: browsers do not give extensions the profile name. Only item ids, the site, the browser kind, the rank and the time are kept, never a password, username or any other field value. Each event is sealed with a key derived from your account key (AES-256-GCM-SIV) and filed under a keyed hash of the site, in the vault database of that device. It is never synced, never sent to a server and never reaches any analytics service. Events older than 180 days go, with at most 200 per site and 5000 in all. Settings > AutoFill > "Learn from my choices" turns it off and erases it, the button under it clears it, "Forget site" erases that site's events, and Travel Mode erases all of them and records nothing while you travel.
+
+Crypto balances are off by default. Once you turn them on, the iPhone and iPad apps send your wallets' public addresses to the blockchain explorers you pick (mempool.space, PublicNode and the Solana Foundation by default, or your own), and ask CoinGecko for prices unless you turn prices off. Those services see your addresses and your IP address. The recovery phrase and private keys never leave the device.
+
 ## Install
 
-Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions.
+Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (OnePass > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
 
 For Chrome or Firefox, point the browser at the app's relay from a clone of this repository:
 ```bash
@@ -489,7 +497,8 @@ onepass/
 | ✅ | M2b | QR device linking, signed device list, revocation, public computer mode | Done, in the apps (two-device iCloud verification pending) |
 | ✅ | Agent-ready | Approval on iPhone, remote unlock for agents, one-command install in MCP clients | Done (real device and CloudKit verification pending) |
 | ⬜ | M8 | External audit, public launch | Planned |
-| ⬜ | Later | Self-hosted server, sharing and organizations, web app (WASM), recovery codes | Planned |
+| 🟡 | Sharing | Multiple accounts, contacts, shared vaults, family, invite mailbox | Multiple accounts done. Sharing being built |
+| ⬜ | Later | Self-hosted server, organizations, web app (WASM), recovery codes | Planned |
 
 Each milestone has its design spec in [`docs/specs/`](docs/specs/).
 
@@ -512,7 +521,7 @@ Please report security issues privately through [GitHub Security Advisories](htt
 
 OnePass is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). You can use, study, change and share it. If you distribute a modified version, or run one as a network service, you must publish its source under the same license.
 
-For a commercial license without the AGPL terms, write to security@somalabs.me with "License" in the subject. Third-party word lists keep their own licenses, listed in [`core/onepass-core/data/LICENSES.md`](core/onepass-core/data/LICENSES.md).
+For a commercial license without the AGPL terms, write to security@somalabs.me with "License" in the subject. Third-party word lists keep their own licenses, listed in [`core/onepass-core/data/LICENSES.md`](core/onepass-core/data/LICENSES.md). Site icons come from a pack built from Simple Icons (CC0), gilbarbara/logos (CC0) and 2FA Directory (MIT), downloaded whole and never site by site: see [`docs/icon-pack.md`](docs/icon-pack.md) and [`NOTICE`](NOTICE). Logos remain trademarks of their owners.
 
 ---
 

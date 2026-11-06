@@ -34,12 +34,12 @@ public enum AutoLockDelay: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .immediately: String(localized: "Immédiatement", bundle: VaultKitStrings.bundle)
-        case .oneMinute: String(localized: "1 minute", bundle: VaultKitStrings.bundle)
-        case .fiveMinutes: String(localized: "5 minutes", bundle: VaultKitStrings.bundle)
-        case .fifteenMinutes: String(localized: "15 minutes", bundle: VaultKitStrings.bundle)
-        case .oneHour: String(localized: "1 heure", bundle: VaultKitStrings.bundle)
-        case .never: String(localized: "Jamais", bundle: VaultKitStrings.bundle)
+        case .immediately: String(localized: "vaultSettings.immediately", bundle: VaultKitStrings.bundle)
+        case .oneMinute: String(localized: "vaultSettings.n1Minute", bundle: VaultKitStrings.bundle)
+        case .fiveMinutes: String(localized: "vaultSettings.n5Minutes", bundle: VaultKitStrings.bundle)
+        case .fifteenMinutes: String(localized: "vaultSettings.n15Minutes", bundle: VaultKitStrings.bundle)
+        case .oneHour: String(localized: "vaultSettings.n1Hour", bundle: VaultKitStrings.bundle)
+        case .never: String(localized: "vaultSettings.never", bundle: VaultKitStrings.bundle)
         }
     }
 }
@@ -54,6 +54,9 @@ public final class VaultSettings: @unchecked Sendable {
     public init(defaults: UserDefaults = .standard, scope: String? = nil) {
         self.defaults = ScopedDefaults(defaults, prefix: scope.map(ScopedDefaults.prefix(forSlot:)) ?? "")
     }
+
+    /// The suite the settings live in (an added account's scope is made in the same one).
+    public var baseDefaults: UserDefaults { defaults.base }
 
     /// The slot this instance reads, nil for the primary account.
     public var scope: String? {

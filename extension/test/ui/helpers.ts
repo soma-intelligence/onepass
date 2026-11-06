@@ -1,3 +1,4 @@
+import type { Timers } from "../../src/ui/components";
 // Doubles for the extension pages: a scripted service worker, a clock and a
 // visibility observer.
 import type { UiToBg } from "../../src/shared/messages";
@@ -72,4 +73,33 @@ export function button(container: Element, label: string): HTMLButtonElement {
   const b = all.find((x) => text(x) === label) ?? all.find((x) => text(x).includes(label));
   if (!b) throw new Error(`no button "${label}" in: ${text(container)}`);
   return b as HTMLButtonElement;
+}
+
+/** Timers run by hand: `runTimeouts` fires the pending timeouts, `tick` the intervals. */
+export class ManualTimers implements Timers {
+  private n = 0;
+  readonly timeouts = new Map<number, () => void>();
+  readonly intervals = new Map<number, () => void>();
+  setTimeout(fn: () => void) {
+    this.timeouts.set(++this.n, fn);
+    return this.n;
+  }
+  clearTimeout(id: unknown) {
+    this.timeouts.delete(id as number);
+  }
+  setInterval(fn: () => void) {
+    this.intervals.set(++this.n, fn);
+    return this.n;
+  }
+  clearInterval(id: unknown) {
+    this.intervals.delete(id as number);
+  }
+  runTimeouts() {
+    const fns = [...this.timeouts.values()];
+    this.timeouts.clear();
+    fns.forEach((f) => f());
+  }
+  tick() {
+    [...this.intervals.values()].forEach((f) => f());
+  }
 }

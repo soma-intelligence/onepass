@@ -38,6 +38,7 @@ struct GeneralSettings: View {
             #endif
             #if os(iOS)
             AppearanceSection()
+            AppIconSection()
             #endif
             Section {
                 Picker("settings.general.autoLock", selection: Binding(
@@ -50,7 +51,7 @@ struct GeneralSettings: View {
                 }
                 .disabled(shared)
                 .accessibilityIdentifier("settings.autoLock")
-                Toggle("Icônes des sites", isOn: Binding(
+                Toggle("settings.websiteIcons", isOn: Binding(
                     get: { settings.siteIconsEnabled },
                     set: { value in model.updateSettings { $0.siteIconsEnabled = value } }
                 ))
@@ -62,6 +63,7 @@ struct GeneralSettings: View {
                     Text("settings.general.siteIcons.footer")
                 }
             }
+            WifiAutoSection()
             Section {
                 Button("Importer…", systemImage: "square.and.arrow.down") {
                     importing = true
@@ -102,6 +104,25 @@ struct GeneralSettings: View {
             }
         }
         .settingsPage("Général")
+    }
+}
+
+/// "Wi-Fi automatique": the only control of the feature (spec 2026-11-04-wifi-auto).
+private struct WifiAutoSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var wifi = model.wifi
+        Section {
+            Toggle("settings.general.wifiAuto", isOn: $wifi.enabled)
+                .accessibilityIdentifier("settings.wifiAuto")
+        } footer: {
+            #if os(macOS)
+            Text("settings.general.wifiAuto.footer.mac")
+            #else
+            Text("settings.general.wifiAuto.footer")
+            #endif
+        }
     }
 }
 
@@ -265,10 +286,10 @@ struct ProfileSection: View {
                     }
                     #endif
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Nom", text: Binding(
+                    TextField("settings.name", text: Binding(
                         get: { model.settings.displayName },
                         set: { name in model.setProfile(name: name, photo: model.settings.profilePhoto) }
-                    ), prompt: Text("Ton nom"))
+                    ), prompt: Text("settings.name2"))
                     .labelsHidden()
                     .textFieldStyle(.plain)
                     .font(.title3.weight(.semibold))
@@ -296,7 +317,7 @@ struct ProfileSection: View {
                         .accessibilityIdentifier("settings.profile.photo")
                         #endif
                         if model.settings.profilePhoto != nil {
-                            Button("Retirer", role: .destructive) {
+                            Button("common.remove", role: .destructive) {
                                 model.setProfile(name: model.settings.displayName, photo: nil)
                             }
                             .accessibilityIdentifier("settings.profile.removePhoto")

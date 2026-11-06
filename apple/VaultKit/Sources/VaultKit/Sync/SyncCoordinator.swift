@@ -56,6 +56,9 @@ public actor SyncCoordinator: SyncTrigger {
     private let retryDelays: [Duration]
     private let sleep: @Sendable (Duration) async throws -> Void
     private let now: @Sendable () -> Date
+    /// The zone rounds (shared vaults, contacts, family) that follow each private round. An iCloud
+    /// account's zones live on mailboxes under its anchor (sharing spec 13.2).
+    public nonisolated let zoneRounds: ZoneRoundScheduler?
 
     public private(set) var status: SyncStatus
     private var session: Session?
@@ -64,6 +67,7 @@ public actor SyncCoordinator: SyncTrigger {
 
     /// The rounds in progress (one after the other); `rerun` asks for one more.
     private var run: Task<Void, Never>?
+    private var stoppedForMigration = false
     private var rerun = false
     /// Store access is exclusive: rounds and `remoteHasAccount` take turns.
     private var busy = false
@@ -104,9 +108,11 @@ public actor SyncCoordinator: SyncTrigger {
         store: SyncStoreHandle, remote: (any RemoteRecordStore)?, debounce: Duration = .seconds(2),
         retryDelays: [Duration] = SyncCoordinator.retryDelays,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        zones: (any ZoneSyncing)? = nil
     ) {
         self.store = store
+        zoneRounds = zones.map { ZoneRoundScheduler(zones: $0, sleep: sleep, now: now) }
         self.remote = remote
         self.debounce = debounce
         self.retryDelays = retryDelays.isEmpty ? SyncCoordinator.retryDelays : retryDelays
@@ -126,6 +132,18 @@ public actor SyncCoordinator: SyncTrigger {
         kick()
         await run?.value
     }
+
+    /// The account moves to a mailbox (spec D.5): the round in progress ends, then no round runs
+    /// again, so nothing more is sent to iCloud.
+    public func stopForMigration() async {
+        stoppedForMigration = true
+        debounceTask?.cancel()
+        debounceTask = nil
+        await run?.value
+    }
+
+    /// Tests: whether `stopForMigration` ran.
+    public var isStoppedForMigration: Bool { stoppedForMigration }
 
     /// "Réessayer" after "Données refusées": forgets the change token (an empty token is a cleared one),
     /// so the next round fetches everything from scratch through `beginFullFetch` and settles rows the
@@ -243,10 +261,10 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     nonisolated static var noAccountMessage: String {
-        String(localized: "Aucun compte iCloud n'est disponible.", bundle: VaultKitStrings.bundle)
+        String(localized: "sync.noIcloudAccountAvailable", bundle: VaultKitStrings.bundle)
     }
     nonisolated static var zoneUnreadableMessage: String {
-        String(localized: "Impossible de lire ce compte iCloud. Vérifie ta connexion puis réessaie.", bundle: VaultKitStrings.bundle)
+        String(localized: "sync.cantReadIcloudAccount", bundle: VaultKitStrings.bundle)
     }
 
     private func inspectZone(_ remote: any RemoteRecordStore) async throws -> AccountChangeCheck {
@@ -327,12 +345,23 @@ public actor SyncCoordinator: SyncTrigger {
     /// Keeps the session for rebases and starts a round (held vaults can be rebased now).
     public func sessionUnlocked(_ session: Session) async {
         self.session = session
+        await zoneRounds?.sessionUnlocked(session)
         guard remote != nil else { return }
         kick()
     }
 
     public func sessionLocked() async {
         session = nil
+        await zoneRounds?.sessionLocked()
+    }
+
+    /// The app came to the foreground: the zones' wake channels and their 15-minute rounds.
+    public func enterForeground() async {
+        await zoneRounds?.enterForeground()
+    }
+
+    public func enterBackground() async {
+        await zoneRounds?.enterBackground()
     }
 
     /// The session issued a safe exit's epoch: follow it (see the type doc) and run a round now.
@@ -348,6 +377,7 @@ public actor SyncCoordinator: SyncTrigger {
     // MARK: - Rounds
 
     private func kick() {
+        guard !stoppedForMigration else { return }
         if run != nil {
             rerun = true
             return
@@ -359,9 +389,11 @@ public actor SyncCoordinator: SyncTrigger {
         repeat {
             rerun = false
             await acquire()
-            await round()
+            if !stoppedForMigration { await round() }
             release()
-        } while rerun
+            // The zones follow the private round, in the same run (one at a time).
+            if !stoppedForMigration, let zoneRounds { await zoneRounds.afterPrivateRound() }
+        } while rerun && !stoppedForMigration
         run = nil
     }
 
@@ -382,7 +414,7 @@ public actor SyncCoordinator: SyncTrigger {
     private func round() async {
         guard let remote else { return }
         guard await remote.accountAvailable() else {
-            setStatus(.error(String(localized: "Aucun compte iCloud n'est disponible.", bundle: VaultKitStrings.bundle)))
+            setStatus(.error(String(localized: "sync.noIcloudAccountAvailable", bundle: VaultKitStrings.bundle)))
             return
         }
         setStatus(.syncing)
@@ -424,7 +456,7 @@ public actor SyncCoordinator: SyncTrigger {
             setStatus(.offline)
             scheduleRetry(after: nil)
         } catch RemoteStoreError.retryable(let after) {
-            setStatus(.error(String(localized: "Le serveur est momentanément indisponible, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
+            setStatus(.error(String(localized: "sync.serverTemporarilyUnavailableTrying", bundle: VaultKitStrings.bundle)))
             scheduleRetry(after: after)
         } catch RemoteStoreError.recordUnreadable {
             unreadableRounds += 1
@@ -432,7 +464,7 @@ public actor SyncCoordinator: SyncTrigger {
                 Self.log.error("a remote record stays unreadable")
                 setStatus(.error(Self.unreadableMessage))
             } else {
-                setStatus(.error(String(localized: "Le serveur est momentanément indisponible, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
+                setStatus(.error(String(localized: "sync.serverTemporarilyUnavailableTrying", bundle: VaultKitStrings.bundle)))
             }
             scheduleRetry(after: nil)
         } catch RemoteStoreError.accountChanged {
@@ -441,7 +473,7 @@ public actor SyncCoordinator: SyncTrigger {
             setStatus(.accountChanged)
         } catch RoundError.unsettled {
             Self.log.notice("sync round ended with conflicts left")
-            setStatus(.error(String(localized: "La synchronisation n'a pas abouti, nouvel essai bientôt.", bundle: VaultKitStrings.bundle)))
+            setStatus(.error(String(localized: "sync.syncDidntCompleteTrying", bundle: VaultKitStrings.bundle)))
             scheduleRetry(after: nil)
         } catch OnePassError.Integrity(let kind) {
             Self.log.error("remote data refused: \(kind, privacy: .public)")
@@ -492,8 +524,11 @@ public actor SyncCoordinator: SyncTrigger {
             }
             if batch.restartedFromScratch { try await CoreThread.run { try store.beginFullFetch() } }
             let valid = batch.changes.filter(Self.isValid)
-            if valid.count < batch.changes.count {
-                Self.log.notice("skipped \(batch.changes.count - valid.count, privacy: .public) unknown remote records")
+            // Side records (a follower's enroll request) are read by the frozen zone watcher, never
+            // staged and never counted as unknown.
+            let side = CloudKitMapping.sideRecords(in: batch).count
+            if valid.count + side < batch.changes.count {
+                Self.log.notice("skipped \(batch.changes.count - valid.count - side, privacy: .public) unknown remote records")
             }
             let next = batch.token
             let (count, echoed) = try await CoreThread.run {
@@ -528,14 +563,22 @@ public actor SyncCoordinator: SyncTrigger {
                 throw RemoteStoreError.retryable(after: nil)
             }
         }
-        let (vaults, dropped) = try await CoreThread.run {
-            let vaults = try store.commitRemote()
+        let at = UInt64(max(0, now().timeIntervalSince1970.rounded(.down)))
+        let (vaults, dropped, quarantined) = try await CoreThread.run {
+            // The quarantine clock runs in the commit (key rotation v2 spec 8.4): a wipe order for
+            // this device, or a removal whose 7 days ran out, erases the store here, not at the next
+            // re-read of the store.
+            let commit = try store.commitRemoteChecked(now: at)
+            if commit.quarantine == .erased { return (commit.vaults, false, true) }
             // After a fetch from scratch: rows the server did not return are deleted, or queued again
             // after a zone reset (no-op otherwise).
-            return (vaults, try store.finishFullFetch())
+            return (commit.vaults, try store.finishFullFetch(), commit.quarantine != .notQuarantined)
         }
         await refreshIgnoredDeletionCount()
-        if changed > 0 || !Set(vaults).isSubset(of: echoedManifests) || dropped { emitRemoteChange() }
+        // A quarantine is always a change: the session locks, or shows the erased screen.
+        if changed > 0 || !Set(vaults).isSubset(of: echoedManifests) || dropped || quarantined {
+            emitRemoteChange()
+        }
     }
 
     /// Binds the store to the remote's account at the first sync; throws `accountChanged` on any other
@@ -584,7 +627,7 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     nonisolated static var unreadableMessage: String {
-        String(localized: "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera.", bundle: VaultKitStrings.bundle)
+        String(localized: "sync.icloudRecordStillCant", bundle: VaultKitStrings.bundle)
     }
 
     /// The remote lost everything. Step 1, atomic in the core: server tags, staged pages and the change
@@ -599,10 +642,10 @@ public actor SyncCoordinator: SyncTrigger {
     /// Attachment chunks (`RecordKind::Attachment` in the core).
     static let attachmentKind: UInt8 = 25
 
-    /// A record the core can stage: known kind (1 to 10, or an attachment chunk), canonical id,
-    /// version that fits SQLite.
+    /// A record the core can stage: a kind the core knows (`isKnownRecordKind`, never a side kind),
+    /// canonical id, version that fits SQLite.
     static func isValid(_ record: RemoteRecord) -> Bool {
-        ((1...10).contains(record.name.kind) || record.name.kind == attachmentKind)
+        isKnownRecordKind(code: record.name.kind)
             && RecordName(string: record.name.string) == record.name
             && record.version <= UInt64(Int64.max)
     }

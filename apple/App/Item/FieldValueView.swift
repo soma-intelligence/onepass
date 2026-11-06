@@ -7,13 +7,9 @@ import SwiftUI
 import VaultKit
 
 extension String {
-    /// Field labels read like the editor's: "Mot de passe" gives "mot de passe". An acronym first
-    /// ("PIN", "URL") stays as is.
-    var detailLabelCase: String {
-        guard let first, first.isUppercase else { return self }
-        if let second = dropFirst().first, second.isUppercase { return self }
-        return first.lowercased() + dropFirst()
-    }
+    /// Field labels read like the editor's: lowercase in French ("mot de passe"), a capital first in
+    /// English, Spanish and Italian (`LabelCase`). An acronym first ("PIN", "URL") stays as is.
+    var detailLabelCase: String { LabelCase.detail(self) }
 }
 
 /// One non-empty field in the detail view, drawn for its kind as rows of a card. Secrets are masked
@@ -55,7 +51,7 @@ struct FieldValueView: View {
             }
         case .concealed(let value) where itemType == .creditCard && field.id == "number":
             // The network is read from the number's prefix; the badge itself shows no digit.
-            row(value, secret: true, monospaced: true) {
+            row(value, secret: true, monospaced: true, hiddenText: CardMask.text(forNumber: value)) {
                 CardNetworkBadge(network: .detect(number: value))
                     .accessibilityLabel(Text(CardNetworkBadge.CardNetwork.detect(number: value).name))
             }
@@ -112,7 +108,7 @@ struct FieldValueView: View {
 
     private func row<Accessory: View>(
         _ value: String, secret: Bool, monospaced: Bool, label: String? = nil, copyIdentifier: String? = nil,
-        allowsLarge: Bool? = nil, @ViewBuilder accessory: () -> Accessory
+        allowsLarge: Bool? = nil, hiddenText: String? = nil, @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         let session = session
         let onReveal: ((Bool) -> Void)? = secret ? { _ in session.noteActivity() } : nil
@@ -121,7 +117,7 @@ struct FieldValueView: View {
             copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
             // "Afficher en grand" for passwords (barcodes have their own row).
             allowsLarge: allowsLarge ?? (field.kind == .password),
-            concealToken: session.concealGeneration, captured: captured,
+            concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
             onCopy: { copy(value, concealed: secret) },
             onReveal: onReveal,
             accessory: accessory)
@@ -131,16 +127,16 @@ struct FieldValueView: View {
     @ViewBuilder private func sshRows(_ key: FfiSshKey) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if !key.privatePem.isEmpty {
-                row(key.privatePem, secret: true, monospaced: true, label: String(localized: "\(label) (clé privée)"), allowsLarge: false)
+                row(key.privatePem, secret: true, monospaced: true, label: String(localized: "item.privateKey \(label)"), allowsLarge: false)
             }
             if !key.publicOpenssh.isEmpty {
                 if !key.privatePem.isEmpty { CardDivider() }
-                row(key.publicOpenssh, secret: false, monospaced: true, label: String(localized: "clé publique"),
+                row(key.publicOpenssh, secret: false, monospaced: true, label: String(localized: "item.publicKey2"),
                     copyIdentifier: "field.copy.\(field.id).public", allowsLarge: false)
             }
             if !key.fingerprintSha256.isEmpty {
                 if !key.privatePem.isEmpty || !key.publicOpenssh.isEmpty { CardDivider() }
-                row(key.fingerprintSha256, secret: false, monospaced: true, label: String(localized: "empreinte"),
+                row(key.fingerprintSha256, secret: false, monospaced: true, label: String(localized: "item.fingerprint"),
                     copyIdentifier: "field.copy.\(field.id).fingerprint", allowsLarge: false)
             }
         }
@@ -148,7 +144,7 @@ struct FieldValueView: View {
 
     private func copy(_ value: String, concealed: Bool) {
         session.copy(value, concealed: concealed)
-        onCopied(String(localized: "Copié · effacé dans 90 s"))
+        onCopied(String(localized: "app.copiedClearedIn90"))
     }
 
     private func urlRow(url: String) -> some View {
@@ -162,7 +158,7 @@ struct FieldValueView: View {
             EmptyView()
         } menu: {
             if let target {
-                Button("Ouvrir dans le navigateur", systemImage: "arrow.up.forward.app") { openURL(target) }
+                Button("item.openInBrowser", systemImage: "arrow.up.forward.app") { openURL(target) }
             }
         }
     }
@@ -320,7 +316,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel(Text("Actions pour \(label)"))
+                .accessibilityLabel(Text("app.actionsFor \(label)"))
             }
         }
         .opacity(hovered ? 1 : 0)
@@ -343,7 +339,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                     .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                     .frame(width: 44, height: 44)
                     .contentShape(.rect)
-                    .accessibilityLabel(Text("Actions pour \(label)"))
+                    .accessibilityLabel(Text("app.actionsFor \(label)"))
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
@@ -361,7 +357,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 if showsMenu { menu }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .accessibilityLabel(Text("Actions pour \(label)"))
+                    .accessibilityLabel(Text("app.actionsFor \(label)"))
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
@@ -412,6 +408,8 @@ struct ValueRow<Accessory: View>: View {
     let onCopy: () -> Void
     let onReveal: ((Bool) -> Void)?
     let accessory: Accessory
+    /// Drawn instead of the bullets while hidden (a card number shows "•••• 4242").
+    let hiddenText: String?
 
     private let autoHideAfter: TimeInterval = 30
     @State private var revealed = false
@@ -428,10 +426,11 @@ struct ValueRow<Accessory: View>: View {
 
     init(
         label: String, value: String, isSecret: Bool, monospaced: Bool, copyIdentifier: String?,
-        allowsLarge: Bool, concealToken: Int = 0, captured: Bool = false,
+        allowsLarge: Bool, concealToken: Int = 0, captured: Bool = false, hiddenText: String? = nil,
         onCopy: @escaping () -> Void, onReveal: ((Bool) -> Void)?,
         @ViewBuilder accessory: () -> Accessory
     ) {
+        self.hiddenText = hiddenText
         self.label = label
         self.value = value
         self.isSecret = isSecret
@@ -482,7 +481,7 @@ struct ValueRow<Accessory: View>: View {
         DetailRow(
             label: label, copyIdentifier: copyIdentifier, onCopy: onCopy, showsMenu: isSecret || allowsLarge
         ) {
-            Text(hidden ? FieldRow.mask : value)
+            Text(hidden ? (hiddenText ?? FieldRow.mask) : value)
                 .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
                     : monospaced ? .body.monospaced() : .body)
                 .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)
@@ -495,7 +494,7 @@ struct ValueRow<Accessory: View>: View {
                 #endif
                 .textSelection(.disabled)
                 .accessibilityLabel(Text(label))
-                .accessibilityValue(hidden ? Text("masqué") : Text(verbatim: value))
+                .accessibilityValue(hidden ? Text("item.hidden2") : Text(verbatim: value))
         } accessory: {
             accessory
         } menu: {
@@ -505,7 +504,7 @@ struct ValueRow<Accessory: View>: View {
                 }
             }
             if allowsLarge {
-                Button("Afficher en grand", systemImage: "arrow.up.left.and.arrow.down.right") { showLarge() }
+                Button("item.showLarge", systemImage: "arrow.up.left.and.arrow.down.right") { showLarge() }
             }
         }
         .task(id: revealedAt) {
@@ -570,7 +569,7 @@ private struct PasskeyRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 EditorLabel(field.displayLabel.detailLabelCase)
-                Text(passkey.rpId.isEmpty ? String(localized: "Site inconnu") : passkey.rpId)
+                Text(passkey.rpId.isEmpty ? String(localized: "item.unknownWebsite") : passkey.rpId)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if !passkey.userName.isEmpty {
@@ -580,7 +579,7 @@ private struct PasskeyRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Text("Créée le \(FieldDates.day(passkey.createdAt))")
+                Text("item.created \(FieldDates.day(passkey.createdAt))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -620,14 +619,14 @@ private struct LocationRow: View {
                     }
                     // A placed location shows its map below, never raw coordinates.
                     if location.label.isEmpty, location.address?.isEmpty ?? true {
-                        Text(point.isPlaced ? String(localized: "Lieu sur la carte") : LocationEditor.coordinates(location))
+                        Text(point.isPlaced ? String(localized: "item.placeOnMap") : LocationEditor.coordinates(location))
                             .foregroundStyle(point.isPlaced ? .secondary : .primary)
                     }
                 }
             } accessory: {
                 EmptyView()
             } menu: {
-                Button("Ouvrir dans Plans", systemImage: "map") { location.openInMaps() }
+                Button("item.openInMaps", systemImage: "map") { location.openInMaps() }
             }
             if point.isPlaced {
                 LocationMap(point: point, title: location.label)
@@ -637,7 +636,7 @@ private struct LocationRow: View {
                 Button {
                     location.openInMaps()
                 } label: {
-                    Label("Ouvrir dans Plans", systemImage: "map")
+                    Label("item.openInMaps", systemImage: "map")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.readableAccent)
                 }
@@ -671,7 +670,7 @@ private struct BarcodeRow: View {
         } accessory: {
             EmptyView()
         } menu: {
-            Button("Afficher en grand", systemImage: "barcode.viewfinder") { large = true }
+            Button("item.showLarge", systemImage: "barcode.viewfinder") { large = true }
         }
         .sheet(isPresented: $large) {
             BarcodeLargeView(label: field.displayLabel, value: value, format: format)
@@ -697,7 +696,7 @@ struct WebsiteRow: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                EditorLabel(url.label.isEmpty ? String(localized: "site web") : url.label.detailLabelCase)
+                EditorLabel(url.label.isEmpty ? String(localized: "app.website") : url.label.detailLabelCase)
                 if let target = FieldValueView.openable(url.url) {
                     Button {
                         openURL(target)
@@ -712,7 +711,7 @@ struct WebsiteRow: View {
                     #if os(macOS)
                     .pointerStyle(.link)
                     #endif
-                    .accessibilityHint(Text("Ouvrir"))
+                    .accessibilityHint(Text("common.open"))
                     .accessibilityIdentifier("item.url.open.\(index)")
                 } else {
                     Text(url.url).lineLimit(1).truncationMode(.middle)
@@ -760,7 +759,7 @@ struct WebsiteRow: View {
 
     private func copy() {
         model.session.copy(url.url, concealed: false)
-        onCopied(String(localized: "Copié · effacé dans 90 s"))
+        onCopied(String(localized: "app.copiedClearedIn90"))
         #if os(iOS)
         copies += 1
         showsCopied = true

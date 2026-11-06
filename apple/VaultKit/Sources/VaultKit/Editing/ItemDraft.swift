@@ -109,14 +109,14 @@ public struct ItemDraft: Equatable, Sendable {
     /// Label used when the user leaves it blank, in the app's language (it is stored as typed).
     public static func defaultLabel(_ kind: FfiFieldType) -> String {
         switch kind {
-        case .concealed: String(localized: "Champ masqué", bundle: VaultKitStrings.bundle)
+        case .concealed: String(localized: "editing.hiddenField", bundle: VaultKitStrings.bundle)
         case .password: String(localized: "Mot de passe", bundle: VaultKitStrings.bundle)
-        case .date: String(localized: "Date", bundle: VaultKitStrings.bundle)
-        case .url: String(localized: "Site web", bundle: VaultKitStrings.bundle)
-        case .email: String(localized: "Email", bundle: VaultKitStrings.bundle)
-        case .phone: String(localized: "Téléphone", bundle: VaultKitStrings.bundle)
-        case .location: String(localized: "Lieu", bundle: VaultKitStrings.bundle)
-        default: String(localized: "Texte", bundle: VaultKitStrings.bundle)
+        case .date: String(localized: "editing.date", bundle: VaultKitStrings.bundle)
+        case .url: String(localized: "editing.website", bundle: VaultKitStrings.bundle)
+        case .email: String(localized: "editing.email", bundle: VaultKitStrings.bundle)
+        case .phone: String(localized: "editing.phone", bundle: VaultKitStrings.bundle)
+        case .location: String(localized: "editing.place", bundle: VaultKitStrings.bundle)
+        default: String(localized: "editing.text", bundle: VaultKitStrings.bundle)
         }
     }
 

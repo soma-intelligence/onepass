@@ -39,7 +39,7 @@ struct IntegrityFailureView: View {
                     .font(.largeTitle.bold())
                 if let integrityKind {
                     IntegrityBanner(kind: integrityKind)
-                    Text("OnePass a détecté une modification du stockage qu'il n'a pas faite lui-même. Par sécurité, aucune donnée n'est affichée et rien n'est réparé automatiquement.")
+                    Text("root.onepassFoundChangeIn")
                         .foregroundStyle(.secondary)
                 } else {
                     Text(error.localizedMessage)
@@ -50,7 +50,7 @@ struct IntegrityFailureView: View {
                 } else {
                     HStack(spacing: 12) {
                         retryButton(title: "Réessayer")
-                        Button("En savoir plus") { showDetails = true }
+                        Button("root.learnMore") { showDetails = true }
                             .accessibilityIdentifier("integrity.learnMore")
                             .buttonStyle(.glass)
                             .controlSize(.large)
@@ -73,7 +73,7 @@ struct IntegrityFailureView: View {
         .confirmationDialog(
             "Restaurer avec ton Emergency Kit ?", isPresented: $confirmKitRestore, titleVisibility: .visible
         ) {
-            Button("Effacer la copie locale et restaurer", role: .destructive) {
+            Button("root.eraseLocalCopyAnd", role: .destructive) {
                 Task { await recover { try await model?.recoverWithEmergencyKit() } }
             }
             .accessibilityIdentifier("integrity.kitRestore.confirm")
@@ -92,8 +92,8 @@ struct IntegrityFailureView: View {
 
     private var kitRestoreMessage: String {
         cloudKitEnabled
-            ? String(localized: "La copie de ton coffre sur cet appareil est illisible : elle sera effacée. Ton coffre sera ensuite récupéré depuis iCloud avec ton Emergency Kit et ton mot de passe maître. Rien n'est effacé dans iCloud.")
-            : String(localized: "La copie de ton coffre sur cet appareil est illisible : elle sera effacée, puis ton Emergency Kit et ton mot de passe maître seront demandés. Ce build local n'a pas iCloud : seul un coffre encore présent sur cet appareil peut être rouvert.")
+            ? String(localized: "root.copyOfVaultOn2")
+            : String(localized: "root.copyOfVaultOn")
     }
 
     private func retryButton(title: LocalizedStringKey) -> some View {
@@ -115,7 +115,7 @@ struct IntegrityFailureView: View {
     /// iCloud first (when there is one), then the Emergency Kit, then starting over (destructive, last).
     private var recoveryActions: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Si ton coffre existe encore dans iCloud ou si tu as ton Emergency Kit, tu peux le retrouver. Sinon, tu peux repartir de zéro.")
+            Text("root.ifVaultStillExists")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if cloudKitEnabled {
@@ -125,7 +125,7 @@ struct IntegrityFailureView: View {
             Button {
                 confirmKitRestore = true
             } label: {
-                Label("Restaurer avec mon Emergency Kit", systemImage: "doc.text.viewfinder")
+                Label("root.restoreWithMyEmergency", systemImage: "doc.text.viewfinder")
             }
             .buttonStyle(.glass)
             .controlSize(.large)
@@ -134,14 +134,14 @@ struct IntegrityFailureView: View {
             Button(role: .destructive) {
                 confirmStartOver = true
             } label: {
-                Label("Repartir de zéro", systemImage: "trash")
+                Label("root.startOver", systemImage: "trash")
             }
             .buttonStyle(.glass)
             .tint(.red)
             .controlSize(.large)
             .disabled(retrying)
             .accessibilityIdentifier("integrity.startOver")
-            Button("En savoir plus") { showDetails = true }
+            Button("root.learnMore") { showDetails = true }
                 .accessibilityIdentifier("integrity.learnMore")
                 .buttonStyle(.borderless)
         }
@@ -171,13 +171,13 @@ struct IntegrityFailureView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Chaque coffre porte une liste signée de ses éléments et un numéro de version. OnePass vérifie ces signatures à chaque lecture : un élément retiré, ajouté, modifié ou une ancienne version rejouée par le stockage ou par iCloud est refusé.")
+                    Text("root.eachVaultCarriesSigned")
                     if accountMissing {
-                        Text("Le compte que cet appareil connaissait n'est plus dans son stockage local. OnePass ne crée jamais un nouveau compte par-dessus : un stockage modifié pourrait sinon te faire perdre l'accès à ton coffre.")
-                        Text("Récupérer depuis iCloud relance une synchronisation complète. Restaurer avec ton Emergency Kit efface la copie locale puis rouvre ton coffre avec ta Secret Key et ton mot de passe maître. Repartir de zéro efface la copie locale et crée un nouveau coffre ; rien n'est effacé dans iCloud.")
+                        Text("root.accountDeviceKnewNo")
+                        Text("root.recoverFromIcloudRuns")
                     } else {
-                        Text("Réessayer relance une synchronisation complète puis relit le stockage. Si le problème persiste, tes données restent chiffrées et intactes sur tes autres appareils : n'efface rien et utilise un autre appareil ou ton Emergency Kit.")
-                        Text("Exporter une sauvegarde chiffrée garde une copie de ce que cet appareil contient. Garder la version de cet appareil la renvoie vers iCloud ; prendre la version d'iCloud l'abandonne au profit de ce qu'iCloud contient. Les deux enregistrent une restauration signée par ton compte et la détection reste active ensuite.")
+                        Text("root.tryAgainRunsFull")
+                        Text("root.exportingEncryptedBackupKeeps")
                     }
                 }
                 .padding(24)
@@ -211,8 +211,8 @@ struct StartOverConfirmation: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("La copie de ton coffre sur cet appareil sera effacée, avec sa Secret Key et Face ID ou Touch ID pour ce compte. Tu pourras ensuite créer un nouveau coffre.")
-                    Text("Rien n'est effacé dans iCloud : un coffre qui s'y trouve encore reste récupérable avec ton Emergency Kit.")
+                    Text("root.copyOfVaultOn3")
+                    Text("root.nothingErasedInIcloud")
                         .foregroundStyle(.secondary)
                 }
                 Section {
@@ -223,13 +223,13 @@ struct StartOverConfirmation: View {
                         #endif
                         .accessibilityIdentifier("startOver.field")
                 } header: {
-                    Text("Tape EFFACER pour confirmer")
+                    Text("root.typeEraseToConfirm")
                 } footer: {
                     if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Repartir de zéro")
+            .navigationTitle("root.startOver")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -238,7 +238,7 @@ struct StartOverConfirmation: View {
                     Button("Annuler") { dismiss() }.disabled(working)
                 }
                 ToolbarItem(placement: .destructiveAction) {
-                    Button("Effacer", role: .destructive) {
+                    Button("app.erase", role: .destructive) {
                         Task { await run() }
                     }
                     .disabled(!confirmed || working)

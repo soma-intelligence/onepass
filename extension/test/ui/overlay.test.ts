@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import type { ChainView, OverlayAccount, StopReason } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
-import { DONE_CLOSE_MS, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
+import { setLang } from "../../src/shared/i18n";
+import { DONE_CLOSE_MS, STEPS_PREF, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
@@ -52,7 +53,12 @@ class ManualTimers implements Timers {
   }
 }
 
-function setup(chainState: () => ChainView | null, initChain: ChainView | null = null, extra?: (m: UiToBg) => Reply | null) {
+function setup(
+  chainState: () => ChainView | null,
+  initChain: ChainView | null = null,
+  extra?: (m: UiToBg) => Reply | null,
+  prefs?: Map<string, unknown>,
+) {
   const r = root();
   const clock = new Clock();
   const timers = new ManualTimers();
@@ -72,6 +78,14 @@ function setup(chainState: () => ChainView | null, initChain: ChainView | null =
     observe: () => undefined,
     observeSize: (_el, cb) => void sizes.push(cb),
     timers,
+    ...(prefs
+      ? {
+          prefs: {
+            get: async (k: string) => prefs.get(k),
+            set: async (k: string, v: unknown) => void prefs.set(k, v),
+          },
+        }
+      : {}),
   });
   // Clicks are accepted 300 ms after the content appeared.
   const ready = handle.ready.then(() => clock.advance(300));
@@ -89,31 +103,72 @@ const running: ChainView = {
   steps: [{ label: "Clic sur « Continuer avec Google »", state: "done" }],
 };
 
-const rows = (r: HTMLElement) => [...r.querySelectorAll<HTMLButtonElement>(".ov-account > button.row")];
 /** What a row says, part by part: title, second line, action. */
-const says = (el: Element) => [...el.querySelectorAll(".t1, .line2, .pill")].map((x) => x.textContent).join(" | ");
+const says = (el: Element) => [...el.querySelectorAll(".t1, .line2")].map((x) => x.textContent).join(" | ");
 const frame = () => new Promise((r) => setTimeout(r, 40));
+/** Opens "Other logins"; clicks are accepted again 300 ms later. */
+const openPicker = (r: HTMLElement, clock: Clock) => {
+  r.querySelector<HTMLButtonElement>(".ov-others")!.click();
+  clock.advance(300);
+};
+const opts = (r: HTMLElement) => [...r.querySelectorAll<HTMLElement>(".ov-opt")];
+/** An option, part by part: title, then the account line. */
+const optSays = (el: Element) => [...el.querySelectorAll(".t1, .ov-line2")].map((x) => x.textContent).join(" | ");
+const key = (el: Element, k: string) => el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+const typeIn = (input: HTMLInputElement, v: string) => {
+  input.value = v;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+const withInit = (list: OverlayAccount[]) => (m: UiToBg): Reply | null => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: list, chain: null } } : null);
 
 describe("overlay", () => {
-  it("offer: one row per way to sign in, each saying how, one filled action", async () => {
+  it("pill: the first login with its account in full, a text Sign in and x inside; Other logins hangs under it", async () => {
     const { r, handle, worker } = setup(() => null);
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "overlay_init", token: TOKEN });
     expect(text(r)).toContain("Se connecter à atlas-cloud.test");
-    const [pwd, google] = rows(r);
-    expect(says(pwd!)).toBe("Atlas Cloud | alex@atlas.dev · mot de passe et code | Se connecter");
-    expect(says(google!)).toBe("Atlas Perso | Avec Google · alex.perso@example.com | Se connecter");
-    // The provider's glyph rides on the item's art; no brand artwork.
-    expect(google!.querySelector(".way-badge svg.glyph-p_google")).not.toBeNull();
-    expect(pwd!.querySelector(".way-badge")).toBeNull();
-    expect(r.querySelectorAll(".pill-primary")).toHaveLength(1);
-    expect(r.querySelector(".row-fold")!.textContent).toBe("Autre compte Google");
+    const pill = r.querySelector(".ov-pill")!;
+    expect(optSays(pill)).toBe("Atlas Cloud | alex@atlas.dev");
+    expect(pill.querySelector(".ov-signin")!.textContent).toBe("Se connecter");
+    expect(pill.querySelector(".ov-close")).not.toBeNull();
+    expect(r.querySelector(".ov-others")!.textContent).toBe("Autres identifiants");
+    // No chevron button, no rows to unfold inside the capsule.
+    expect(r.querySelector(".ov-more, .row-fold, .pill-primary")).toBeNull();
+    expect(r.querySelectorAll(".ov-pill")).toHaveLength(1);
   });
 
-  it("a click on a row starts the chain; the progress replaces the offer in place", async () => {
-    const { r, handle, worker, timers } = setup(() => running);
+  it("pill with one login only: no Other logins", async () => {
+    const { r, handle } = setup(() => null, null, withInit([accounts[0]!]));
     await handle.ready;
-    rows(r)[1]!.click();
+    expect(r.querySelector(".ov-others")).toBeNull();
+  });
+
+  it("two Google ways with other accounts each: one Other logins, never a row per hidden way", async () => {
+    // The linear.app report: "Other Google accounts" twice.
+    const google = accounts[1]!;
+    const two: OverlayAccount[] = [
+      { ...google, itemId: "it_02", title: "Linear" },
+      { ...google, itemId: "it_03", title: "Linear" },
+    ];
+    const { r, handle, clock } = setup(() => null, null, withInit(two));
+    await handle.ready;
+    expect(r.querySelectorAll(".ov-others")).toHaveLength(1);
+    expect(r.querySelectorAll("[hidden]")).toHaveLength(0);
+    expect(text(r)).not.toContain("Autre compte Google");
+    openPicker(r, clock);
+    // Each way with its default account, then the provider's other account.
+    expect(opts(r)).toHaveLength(4);
+  });
+
+  it("a Sign in with login: the provider's official mark on the icon, the provider before the account", async () => {
+    const { r, handle, worker, timers } = setup(() => running, null, withInit([accounts[1]!, accounts[0]!]));
+    await handle.ready;
+    const pill = r.querySelector(".ov-pill")!;
+    expect(optSays(pill)).toBe("Atlas Perso | Google · alex.perso@example.com");
+    const mark = pill.querySelector(".brand-badge svg.mark-google")!;
+    expect(mark.querySelectorAll("path")).toHaveLength(4);
+    expect([...mark.querySelectorAll("path")].map((p) => p.getAttribute("fill"))).toEqual(["#EA4335", "#4285F4", "#FBBC05", "#34A853"]);
+    button(r, "Se connecter").click();
     await flush();
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_start", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_perso" });
     expect(timers.intervals.size).toBe(1);
@@ -123,18 +178,77 @@ describe("overlay", () => {
     expect(button(r, "Annuler")).toBeTruthy();
   });
 
-  it("the inline picker starts with the other account of the provider", async () => {
+  it("Other logins: the search focused, every login with a key, the first selected; arrows and Enter start one", async () => {
     const { r, handle, worker, clock } = setup(() => running);
     await handle.ready;
-    button(r, "Autre compte Google").click();
-    expect(r.querySelector(".row-fold")!.getAttribute("aria-expanded")).toBe("true");
-    const sub = r.querySelector<HTMLButtonElement>('.ov-sub[data-account="g_pro"] > button')!;
-    expect(says(sub)).toBe("alex.pro@example.com | Google · Google pro | Se connecter");
-    clock.advance(300);
-    sub.click();
+    openPicker(r, clock);
+    const input = r.querySelector<HTMLInputElement>(".ov-search")!;
+    expect(input.placeholder).toBe("Tapez pour trouver un identifiant…");
+    expect(input.ownerDocument.activeElement).toBe(input);
+    expect(r.querySelector(".ov-picker .mark")).not.toBeNull();
+    expect(opts(r).map(optSays)).toEqual([
+      "Atlas Cloud | alex@atlas.dev",
+      "Atlas Perso | Google · alex.perso@example.com",
+      "Atlas Perso | Google · alex.pro@example.com",
+    ]);
+    expect(opts(r).every((o) => o.querySelector(".ov-key svg"))).toBe(true);
+    const selected = () => opts(r).findIndex((o) => o.getAttribute("aria-selected") === "true");
+    expect(selected()).toBe(0);
+    key(input, "ArrowDown");
+    key(input, "ArrowDown");
+    expect(selected()).toBe(2);
+    expect(opts(r)[2]!.classList.contains("selected")).toBe(true);
+    key(input, "ArrowDown");
+    expect(selected()).toBe(0);
+    key(input, "ArrowUp");
+    expect(selected()).toBe(2);
+    key(input, "Enter");
     await flush();
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_start", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_pro" });
     expect(text(r.querySelector(".ov-who")!)).toContain("alex.pro@example.com");
+  });
+
+  it("Other logins: typing filters, nothing found says so, Escape goes back to the pill; the pointer selects and a click starts", async () => {
+    const { r, handle, worker, clock } = setup(() => running);
+    await handle.ready;
+    openPicker(r, clock);
+    const input = r.querySelector<HTMLInputElement>(".ov-search")!;
+    typeIn(input, "PRO");
+    expect(opts(r).map(optSays)).toEqual(["Atlas Perso | Google · alex.pro@example.com"]);
+    typeIn(input, "zzz");
+    expect(opts(r)).toHaveLength(0);
+    expect(r.querySelector(".ov-none")!.textContent).toBe("Aucun identifiant ne correspond");
+    key(input, "Escape");
+    expect(r.querySelector(".ov-picker")).toBeNull();
+    expect(r.querySelector(".ov-pill")).not.toBeNull();
+    clock.advance(300);
+    openPicker(r, clock);
+    const second = opts(r)[1]!;
+    second.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    second.click();
+    await flush();
+    expect(worker.sent.at(-1)).toEqual({ type: "overlay_start", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_perso" });
+  });
+
+  it("logins from several vaults name their vault on a coloured chip, in the pill and the picker; one vault, no chip", async () => {
+    const soma = { id: "v_soma", name: "Soma" };
+    const augura = { id: "v_augura", name: "Augura" };
+    const mixed: OverlayAccount[] = [
+      { ...accounts[0]!, vault: soma },
+      { ...accounts[1]!, vault: augura },
+    ];
+    const { r, handle, clock } = setup(() => null, null, withInit(mixed));
+    await handle.ready;
+    const chip = r.querySelector<HTMLElement>(".ov-pill .vault-chip")!;
+    expect(chip.textContent).toBe("Soma");
+    expect(chip.style.getPropertyValue("--vault")).toMatch(/^#[0-9A-F]{6}$/);
+    openPicker(r, clock);
+    expect(opts(r).map((o) => o.querySelector(".vault-chip")?.textContent)).toEqual(["Soma", "Augura", "Augura"]);
+
+    const same = setup(() => null, null, withInit(mixed.map((a) => ({ ...a, vault: soma }))));
+    await same.handle.ready;
+    expect(same.r.querySelector(".vault-chip")).toBeNull();
   });
 
   it("polls update only the line that says what happens now; Annuler keeps its node and focus", async () => {
@@ -151,6 +265,76 @@ describe("overlay", () => {
     expect(document.activeElement).toBe(cancel);
     expect(r.querySelector(".ov-status")).toBe(status);
     expect(status!.textContent).toBe("Choix de alex.perso@example.com…");
+  });
+
+  it("a password login lists its steps: done ones checked, the one under way, the ones ahead", async () => {
+    const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
+    let now: ChainView = { ...pwd, steps: [{ label: "x", state: "done", what: "user" }] };
+    const { r, handle } = setup(() => now, pwd, undefined, new Map([[STEPS_PREF, true]]));
+    await handle.ready;
+    const items = () => [...r.querySelectorAll(".ov-steps > li")].map((li) => `${li.className}: ${li.querySelector(".ov-step-label, .ov-status")!.textContent}`);
+    // At load: the username under way, the password and the code ahead.
+    expect(items()).toEqual(["ov-step ov-now: Connexion…", "ov-step pending: Mot de passe", "ov-step pending: Code de vérification"]);
+    const status = r.querySelector(".ov-status");
+    await handle.poll();
+    expect(items()).toEqual(["ov-step done: Identifiant rempli", "ov-step ov-now: Connexion…", "ov-step pending: Code de vérification"]);
+    now = { ...now, steps: [...now.steps, { label: "y", state: "done", what: "password" }] };
+    await handle.poll();
+    expect(items()).toEqual(["ov-step done: Identifiant rempli", "ov-step done: Mot de passe rempli", "ov-step ov-now: Connexion…"]);
+    // The line under way keeps its node.
+    expect(r.querySelector(".ov-status")).toBe(status);
+  });
+
+  it("while it runs: one line, the steps folded under Détails, the choice kept", async () => {
+    const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [{ label: "x", state: "done", what: "user" }] };
+    const prefs = new Map<string, unknown>();
+    const { r, handle, clock } = setup(() => pwd, pwd, undefined, prefs);
+    await handle.ready;
+    const shown = () => [...r.querySelectorAll<HTMLElement>(".ov-steps > li")].filter((li) => !li.hidden).map((li) => li.querySelector(".ov-step-label, .ov-status")!.textContent);
+    const details = r.querySelector<HTMLButtonElement>("button.ov-details")!;
+    // Folded by default: only what happens now, read out by a live region.
+    expect(shown()).toEqual(["Connexion…"]);
+    expect(r.querySelector(".ov-status")!.getAttribute("role")).toBe("status");
+    expect(details.textContent).toBe("Détails");
+    expect(details.getAttribute("aria-expanded")).toBe("false");
+    expect(details.getAttribute("aria-controls")).toBe(r.querySelector(".ov-steps")!.id);
+    details.click();
+    expect(shown()).toEqual(["Identifiant rempli", "Connexion…", "Code de vérification"]);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(prefs.get(STEPS_PREF)).toBe(true);
+    // A poll keeps the choice and the button's node.
+    await handle.poll();
+    expect(r.querySelector("button.ov-details")).toBe(details);
+    expect(shown()).toHaveLength(3);
+    clock.advance(0);
+    details.click();
+    expect(shown()).toEqual(["Connexion…"]);
+    expect(prefs.get(STEPS_PREF)).toBe(false);
+  });
+
+  it("the steps open at load when this browser kept them open; Details in English", async () => {
+    setLang("en");
+    try {
+      const pwd: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
+      const { r, handle } = setup(() => pwd, pwd, undefined, new Map([[STEPS_PREF, true]]));
+      await handle.ready;
+      const details = r.querySelector<HTMLButtonElement>("button.ov-details")!;
+      expect(details.textContent).toBe("Details");
+      expect(details.getAttribute("aria-expanded")).toBe("true");
+      expect([...r.querySelectorAll<HTMLElement>(".ov-steps > li")].every((li) => !li.hidden)).toBe(true);
+      expect(r.querySelector(".ov-cancel")!.textContent).toBe("Cancel");
+    } finally {
+      setLang("fr");
+    }
+  });
+
+  it("the close button beside a running chain stops it", async () => {
+    const { r, handle, worker } = setup(() => running, running);
+    await handle.ready;
+    r.querySelector<HTMLButtonElement>("button[aria-label=Fermer]")!.click();
+    await flush();
+    await flush();
+    expect(worker.types().slice(-2)).toEqual(["overlay_stop", "overlay_close"]);
   });
 
   it("Annuler stops the chain and closes the card", async () => {

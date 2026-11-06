@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OnePass</string>
+    <string name="settings_title">Settings</string>
+    <string name="wifi_auto_title">Automatic Wi-Fi</string>
+    <string name="wifi_auto_idle">The networks of your routers join Android as soon as your vault is open.</string>
+    <plurals name="wifi_auto_installed">
+        <item quantity="one">%d network from your vault is known to Android. Your phone joins it by itself.</item>
+        <item quantity="other">%d networks from your vault are known to Android. Your phone joins them by itself.</item>
+    </plurals>
+    <string name="wifi_auto_none">No network to suggest: it takes an SSID and a WPA2 or WPA3 password. Open and enterprise networks stay out.</string>
+    <string name="wifi_auto_pending">Android will ask you once to allow the networks OnePass suggests, the first time one of them is in range.</string>
+    <string name="wifi_auto_rejected">Android turned down the networks OnePass suggests. Tap here to allow them in the app\'s settings.</string>
+    <string name="wifi_auto_off">Off. The networks from OnePass left Android.</string>
+    <string name="wifi_auto_failed">Android refused a network (%s). OnePass tries again at the next change to your vault.</string>
 </resources>

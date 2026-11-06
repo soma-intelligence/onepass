@@ -634,6 +634,94 @@ struct AutoFillModelTests {
         #expect(model.screen == .finished)
     }
 
+    /// An Identity with a birth date and an address, saved by `seed`.
+    private func addIdentity(_ seed: VaultSession, vaultID: String) async throws -> FfiItem {
+        var draft = try seed.newItem(type: .identity, vaultID: vaultID)
+        draft.title = "Zoé Martin"
+        for s in draft.sections.indices {
+            for i in draft.sections[s].fields.indices {
+                switch draft.sections[s].fields[i].id {
+                case "first_name": draft.sections[s].fields[i].value = .text(value: "Zoé")
+                case "birth_date": draft.sections[s].fields[i].value = .date(value: FfiDate(year: 1990, month: 4, day: 12))
+                case "address":
+                    draft.sections[s].fields[i].value = .address(value: FfiAddress(
+                        line1: "1 Main St", line2: "", city: "Palo Alto", postalCode: "94301", region: "CA", country: "US"))
+                default: break
+                }
+            }
+        }
+        fillRequired(&draft)
+        return try await seed.save(draft)
+    }
+
+    @Test func textInsertionListsIdentitiesFirst() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let identity = try await addIdentity(seed, vaultID: login.vaultId)
+        seed.lock()
+
+        let (model, _, _) = f.model(.textToInsert)
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .textItems(let items) = model.screen else {
+            Issue.record("expected the items, got \(model.screen)")
+            return
+        }
+        // "Zoé Martin" sorts after "Exemple" by title, yet comes first.
+        #expect(items.first?.id == identity.id)
+        #expect(items.contains { $0.id == login.id })
+    }
+
+    @Test func textInsertionOffersBirthDateAndAddressParts() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let identity = try await addIdentity(seed, vaultID: login.vaultId)
+        seed.lock()
+
+        let (model, _, done) = f.model(.textToInsert)
+        model.locale = Locale(identifier: "en_US")
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .textItems(let items) = model.screen else {
+            Issue.record("expected the items, got \(model.screen)")
+            return
+        }
+        await model.chooseText(item: try #require(items.first { $0.id == identity.id }))
+        guard case .textFields(let item) = model.screen else {
+            Issue.record("expected the fields, got \(model.screen)")
+            return
+        }
+        let fields = model.insertableFields(of: item)
+        let text = { (id: String) -> String? in
+            guard case .text(let v) = fields.first(where: { $0.id == id })?.value else { return nil }
+            return v
+        }
+        #expect(text("birth_date") == "04/12/1990")
+        #expect(text("address.line1") == "1 Main St")
+        #expect(text("address.city") == "Palo Alto")
+        #expect(text("address.postal_code") == "94301")
+        #expect(text("address.region") == "CA")
+        #expect(text("address.country") == "United States")
+        // An empty part gives no row.
+        #expect(!fields.contains { $0.id == "address.line2" })
+
+        model.locale = Locale(identifier: "fr_FR")
+        let french = model.insertableFields(of: item)
+        #expect(french.first { $0.id == "birth_date" }?.value == .text(value: "12/04/1990"))
+        #expect(french.first { $0.id == "address.country" }?.value == .text(value: "États-Unis"))
+
+        // A part is inserted as its text; a field the item does not offer is refused.
+        let forged = FfiField(
+            id: "address.city", label: "Ville", kind: .text, value: .text(value: "Ailleurs"),
+            required: false, repeatable: false, autofill: true)
+        await model.insert(field: forged)
+        #expect(done.results.isEmpty)
+        await model.insert(field: try #require(french.first { $0.id == "address.city" }))
+        #expect(done.results == [.text("Palo Alto")])
+    }
+
     // MARK: - Guards on writes
 
     @Test func writesRequireShownTargets() async throws {
@@ -927,8 +1015,9 @@ struct AutoFillModelTests {
     // MARK: - Site memory
 
     /// A QuickType fill is remembered and published before the extension locks: the identity of the
-    /// Login used last on the site gets the core's rank 100, a favorite 50, and the system identity
-    /// carries the core's rank as is.
+    /// Login used last on the site gets the core's rank 100 plus its learned bonus (the fill is a
+    /// pick of the system AutoFill), a favorite 50, and the system identity carries the core's rank
+    /// as is.
     @Test func identitiesUseRankFromCore() async throws {
         let store = InMemoryIdentityStore()
         let f = try Fixture(identityStore: store)
@@ -948,7 +1037,7 @@ struct AutoFillModelTests {
 
         let passwords = store.identities.filter { $0.kind == .password }
         let rank = { (item: FfiItem) in passwords.first { $0.recordId == "\(item.vaultId):\(item.id)" }?.rank }
-        #expect(rank(login) == 100)
+        #expect((rank(login) ?? 0) > 100)
         #expect(rank(favorite) == 50)
         #expect(rank(plain) == 0)
 
@@ -1088,4 +1177,314 @@ private func suggestions(_ f: Fixture, service: String, ids: [String]) async thr
     defer { reader.lock() }
     return try await reader.autofillCandidates(service: service, includeAll: false)
         .filter { ids.contains($0.itemId) }
+}
+
+/// Final pass, batch D (provider): apps, generated passwords, lists without service, new Logins
+/// from the list, identities published from the provider.
+@MainActor
+@Suite("AutoFill provider final pass")
+struct AutoFillProviderTests {
+    /// G1: a save from an app stores its App ID in `apps`; the next list for that app offers the
+    /// Login as a match, and the same save again is silent (no duplicate).
+    @Test func saveFromAppThenListMatchesApp() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let save = saveRequest(service: "com.example.chat", serviceIsApp: true, password: "App-Pass-1")
+        let (first, _, firstDone) = f.model(save)
+        await first.start()
+        await first.unlock(password: testPassword)
+        #expect(first.screen == .save(existing: nil))
+        await first.save(title: "", vaultID: login.vaultId, updating: nil)
+        #expect(firstDone.results == [.saved])
+
+        let (list, _, _) = f.model(.credentialList(services: [.app("com.example.chat")], passkey: nil))
+        await list.start()
+        await list.unlock(password: testPassword)
+        guard case .list(let matches, let others) = list.screen else {
+            Issue.record("expected the list, got \(list.screen)")
+            return
+        }
+        #expect(matches.map(\.title) == ["Chat"])
+        #expect(others.contains { $0.itemId == login.id })
+        list.cancel()
+
+        let (again, _, againDone) = f.model(save)
+        await again.start()
+        await again.unlock(password: testPassword)
+        #expect(againDone.results == [.saved])
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        #expect(check.summaries.filter { $0.title == "Chat" }.count == 1)
+        check.lock()
+    }
+
+    /// G2: an App ID that reads like a domain never matches the site of that domain.
+    @Test func appServiceNeverMatchesALookalikeSite() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        try await addLogin(seed, title: "Site", url: "https://example.app")
+        seed.lock()
+
+        let (model, _, _) = f.model(.credentialList(services: [.app("com.example.app")], passkey: nil))
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .list(let matches, let others) = model.screen else {
+            Issue.record("expected the list, got \(model.screen)")
+            return
+        }
+        #expect(matches.isEmpty)
+        #expect(others.contains { $0.title == "Site" })
+        #expect(!model.listWithoutService)
+    }
+
+    /// G3: a generated password the system reports as filled waits in the keychain; the next
+    /// unlocked request saves it, once.
+    @Test func generatedPasswordWithoutFollowUpIsRecoverable() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+        let drafts = GeneratedPasswordDrafts(environment: f.environment)
+        let filled = saveRequest(
+            service: "inscription.exemple.fr", user: "nouveau@exemple.fr", password: "Genere-Fort-42",
+            event: .generatedPasswordFilled)
+        #expect(
+            AutoFillModel.resultWithoutUserInteraction(
+                for: filled, ownAppIDs: [ownApp], drafts: drafts, now: f.h.clock.now) == .saved)
+        #expect(drafts.load(now: f.h.clock.now).count == 1)
+
+        // No save request came. The next request (any list) writes it.
+        let (list, _, _) = f.model(.credentialList(services: ["inscription.exemple.fr"], passkey: nil))
+        await list.start()
+        await list.unlock(password: testPassword)
+        guard case .list(let matches, _) = list.screen else {
+            Issue.record("expected the list, got \(list.screen)")
+            return
+        }
+        #expect(matches.map(\.user) == ["nouveau@exemple.fr"])
+        #expect(drafts.load(now: f.h.clock.now).isEmpty)
+        list.cancel()
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let saved = try #require(check.summaries.first { $0.title == "inscription.exemple.fr" })
+        let item = try await check.loadItem(vaultID: saved.vaultId, itemID: saved.id)
+        #expect(field("password", in: item) == .password(value: "Genere-Fort-42"))
+        #expect(item.urls.map(\.url) == ["https://inscription.exemple.fr"])
+        check.lock()
+    }
+
+    /// G3: the follow-up save keeps its sheet (the draft never writes behind it), and saving or
+    /// refusing it ends the draft.
+    @Test func generatedPasswordFollowUpKeepsItsSheet() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        let drafts = GeneratedPasswordDrafts(environment: f.environment)
+        let (filled, _, filledDone) = f.model(saveRequest(
+            service: "a.exemple.fr", password: "Genere-A-1", event: .generatedPasswordFilled))
+        await filled.start()
+        #expect(filledDone.results == [.saved])
+        #expect(drafts.load(now: f.h.clock.now).count == 1)
+
+        let (sheet, _, sheetDone) = f.model(saveRequest(service: "a.exemple.fr", password: "Genere-A-1"))
+        await sheet.start()
+        await sheet.unlock(password: testPassword)
+        #expect(sheet.screen == .save(existing: nil))
+        await sheet.save(title: "", vaultID: login.vaultId, updating: nil)
+        #expect(sheetDone.results == [.saved])
+        #expect(drafts.load(now: f.h.clock.now).isEmpty)
+
+        // Refused on its sheet: dropped, never written later (another site: a.exemple.fr would match).
+        _ = AutoFillModel.resultWithoutUserInteraction(
+            for: saveRequest(service: "b.exemple-autre.fr", password: "Genere-B-2", event: .generatedPasswordFilled),
+            ownAppIDs: [ownApp], drafts: drafts, now: f.h.clock.now)
+        let (refused, _, _) = f.model(saveRequest(service: "b.exemple-autre.fr", password: "Genere-B-2"))
+        await refused.start()
+        await refused.unlock(password: testPassword)
+        #expect(refused.screen == .save(existing: nil))
+        refused.cancel()
+        #expect(drafts.load(now: f.h.clock.now).isEmpty)
+
+        // An expired draft is dropped too.
+        drafts.add(GeneratedPasswordDraft(
+            SavePasswordRequest(
+                service: "c.exemple.fr", serviceIsApp: false, user: "", password: "Vieux-3", title: nil,
+                event: .generatedPasswordFilled),
+            at: f.h.clock.now.addingTimeInterval(-GeneratedPasswordDrafts.lifetime - 1)), now: f.h.clock.now)
+        #expect(drafts.load(now: f.h.clock.now).isEmpty)
+    }
+
+    /// G3: a waiting draft never overwrites the password of an existing Login (the site may have
+    /// refused the change): it becomes a Login of its own.
+    @Test func generatedPasswordDraftNeverOverwrites() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        let drafts = GeneratedPasswordDrafts(environment: f.environment)
+        _ = AutoFillModel.resultWithoutUserInteraction(
+            for: saveRequest(service: "example.com", password: "Genere-Change-9", event: .generatedPasswordFilled),
+            ownAppIDs: [ownApp], drafts: drafts, now: f.h.clock.now)
+
+        let (list, _, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await list.start()
+        await list.unlock(password: testPassword)
+        list.cancel()
+        #expect(drafts.load(now: f.h.clock.now).isEmpty)
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let kept = try await check.loadItem(vaultID: login.vaultId, itemID: login.id)
+        #expect(field("password", in: kept) == .password(value: loginPassword))
+        var holders = 0
+        for summary in check.summaries where summary.itemType == .login {
+            let item = try await check.loadItem(vaultID: summary.vaultId, itemID: summary.id)
+            if field("password", in: item) == .password(value: "Genere-Change-9") { holders += 1 }
+        }
+        #expect(holders == 1)
+        check.lock()
+    }
+
+    /// G8: without any service, the list says so: nothing to match, every Login offered, the one
+    /// used last first.
+    @Test func listWithoutServiceShowsRecentLoginsFirst() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        try await addLogin(seed, title: "Plus récent", url: "https://autre.exemple.fr")
+        _ = try await seed.noteAutofillUse(recordID: "\(login.vaultId):\(login.id)", service: "example.com")
+        seed.lock()
+
+        let (model, _, _) = f.model(.credentialList(services: [], passkey: nil))
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .list(let matches, let others) = model.screen else {
+            Issue.record("expected the list, got \(model.screen)")
+            return
+        }
+        #expect(model.listWithoutService)
+        #expect(matches.isEmpty)
+        #expect(others.first?.itemId == login.id)
+        #expect(others.count == 2)
+    }
+
+    /// MACAPP-03: "Nouveau login" writes the Login for the request's service and fills it.
+    @Test func createLoginFromListFillsAndSaves() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let (model, session, done) = f.model(.credentialList(services: [.app("com.example.shop")], passkey: nil))
+        await model.start()
+        await model.unlock(password: testPassword)
+        #expect(model.canCreateLogin)
+        let password = try #require(model.generatedPassword())
+        #expect(password.count >= 12)
+        await model.createLogin(title: "", user: "achat@exemple.fr", password: password, vaultID: login.vaultId)
+        #expect(done.results == [.password(user: "achat@exemple.fr", password: password)])
+        #expect(session.state == .locked)
+        #expect(store.identities.contains { $0.serviceIsApp && $0.service == "com.example.shop" })
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let created = try #require(check.summaries.first { $0.title == "Shop" })
+        let item = try await check.loadItem(vaultID: created.vaultId, itemID: created.id)
+        #expect(item.apps == ["com.example.shop"])
+        #expect(item.urls.isEmpty)
+        #expect(field("password", in: item) == .password(value: password))
+        check.lock()
+
+        // Never from a code list, never into a hidden or unknown vault.
+        let (codes, _, codesDone) = f.model(.oneTimeCodeList(services: ["example.com"]))
+        await codes.start()
+        await codes.unlock(password: testPassword)
+        #expect(!codes.canCreateLogin)
+        await codes.createLogin(title: "", user: "x", password: "y", vaultID: login.vaultId)
+        #expect(codesDone.results.isEmpty)
+        let (other, _, otherDone) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await other.start()
+        await other.unlock(password: testPassword)
+        await other.createLogin(title: "", user: "x", password: "y", vaultID: "inconnu")
+        #expect(otherDone.results.isEmpty)
+    }
+
+    /// G10, MACAPP-11: an unlock in the provider publishes the identities (metadata from the core),
+    /// at most once per interval.
+    @Test func providerUnlockPublishesIdentities() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        try await store.removeAll()
+        let before = store.replaceCount
+
+        let (model, session, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await model.start()
+        await model.unlock(password: testPassword)
+        #expect(await eventually { store.identities.contains { $0.service == "example.com" } })
+        #expect(store.replaceCount == before + 1)
+        model.cancel()
+        await session.waitForAutofillIdentities()
+
+        let (again, againSession, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await again.start()
+        await again.unlock(password: testPassword)
+        again.cancel()
+        await againSession.waitForAutofillIdentities()
+        #expect(store.replaceCount == before + 1)
+
+        // Past the interval: once more.
+        f.h.clock.advance(AutoFillModel.publishInterval + 1)
+        let (later, laterSession, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await later.start()
+        await later.unlock(password: testPassword)
+        #expect(await eventually { store.replaceCount == before + 2 })
+        later.cancel()
+        await laterSession.waitForAutofillIdentities()
+    }
+
+    /// G10: right after turning OnePass on, the configuration screen unlocks once and publishes.
+    @Test func configurationPublishesSuggestions() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        try await store.removeAll()
+
+        let (model, _, done) = f.model(.configuration)
+        await model.start()
+        #expect(model.screen == .configuration)
+        await model.publishSuggestionsFromConfiguration()
+        if model.screen == .locked { await model.unlock(password: testPassword) }
+        #expect(model.screen == .configuration)
+        #expect(model.suggestionsPublished)
+        #expect(store.identities.contains { $0.service == "example.com" })
+        #expect(store.identities.contains { $0.kind == .password && $0.user == loginUser })
+        model.cancel()
+        #expect(done.results == [.cancelled(.userCanceled)])
+    }
+
+    /// G12: an app is shown by its name, never its raw identifier.
+    @Test func appsAreShownByName() {
+        #expect(AutoFillService.app("com.burbn.instagram", displayName: "Instagram").shownName == "Instagram")
+        #expect(AutoFillService.app("com.burbn.instagram").shownName == "Instagram")
+        #expect(AutoFillService.site("https://www.exemple.fr/login").shownName == "exemple.fr")
+        let save = SavePasswordRequest(
+            service: "com.burbn.instagram", serviceIsApp: true, user: "", password: "x", title: nil,
+            event: .formDidDisappear, displayName: "Instagram")
+        #expect(AutoFillModel.defaultTitle(for: save) == "Instagram")
+        #expect(AutoFillRequest.savePassword(save).primaryService?.shownName == "Instagram")
+    }
 }

@@ -96,7 +96,8 @@ impl Env {
 fn template() -> &'static PathBuf {
     static T: OnceLock<PathBuf> = OnceLock::new();
     T.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("ssh-template");
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("ssh-template-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let home = tempfile::tempdir().unwrap();
         let o = output({

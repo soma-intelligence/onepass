@@ -1,7 +1,8 @@
 {
   "sourceLanguage" : "fr",
   "strings" : {
-    "Demande d'un agent" : {
+    "notificationService.requestFromAgent" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15,6 +16,12 @@
             "value" : "Solicitud de un agente"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demande d'un agent"
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23,7 +30,8 @@
         }
       }
     },
-    "Demande d'un agent sur %@" : {
+    "notificationService.requestFromAgentOn %@" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35,6 +43,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solicitud de un agente en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demande d'un agent sur %@"
           }
         },
         "it" : {

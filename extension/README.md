@@ -54,14 +54,14 @@ Essayer : `cd extension && npm run build`, puis `make -C apple project` si besoi
 
 ## App Mac (production)
 
-Spec : `docs/superpowers/specs/2026-10-27-release-bridge-design.md`. L'app OnePass sert le pont depuis le coffre déverrouillé, sur `bridge.sock` dans son conteneur App Group ; elle vérifie la signature de chaque client (extension Safari, relais) et chaque client vérifie la sienne. Chrome et Firefox lancent `OnePass.app/Contents/Helpers/onepass-relay` (builds signés par l'équipe seulement) :
+Spec : `docs/superpowers/specs/2026-10-27-release-bridge-design.md`. L'app OnePass sert le pont depuis le coffre déverrouillé, sur `bridge.sock` dans son conteneur App Group ; elle vérifie la signature de chaque client (extension Safari, relais) et chaque client vérifie la sienne. Chrome et Firefox lancent `OnePass.app/Contents/Helpers/onepass-relay` (builds signés par l'équipe seulement). L'app écrit elle-même les manifestes de messagerie native au lancement et à chaque retour au premier plan, pour chaque navigateur installé déjà lancé une fois (spec `docs/superpowers/specs/2026-11-02-browser-auto-pairing-design.md`). Installer l'app et l'extension suffit : Safari et un navigateur signé connu (Chrome, Edge, Brave, Firefox) s'associent sans code, et le popup affiche "Connectée à OnePass". Un autre navigateur, ou une extension oubliée dans l'app, passe par le code et Touch ID. Le script ci-dessous reste un secours de développement :
 
 ```sh
 node scripts/install-app-host.mjs --app /Applications/OnePass.app --browser chrome --extension-id <identifiant>
 node scripts/install-app-host.mjs --app /Applications/OnePass.app --browser firefox
 ```
 
-L'app ne sert que les identifiants de son réglage `ONEPASS_BROWSER_EXTENSIONS` (`apple/project.yml`, Firefox par défaut) : y ajouter l'identifiant Chrome, puis reconstruire. App fermée : "App OnePass introuvable" ; app verrouillée : "OnePass est verrouillé", le bouton met l'app au premier plan. L'appairage s'approuve dans l'app avec Touch ID ; Réglages > Remplissage automatique > Navigateurs liste et oublie les appairages.
+L'app ne sert que les identifiants de son réglage `ONEPASS_BROWSER_EXTENSIONS` (`apple/project.yml`, Firefox par défaut) : y ajouter l'identifiant Chrome, puis reconstruire. App fermée : "App OnePass introuvable" ; app verrouillée : "OnePass est verrouillé", le bouton met l'app au premier plan. L'appairage par code s'approuve dans l'app avec Touch ID ; Réglages > Remplissage automatique > Navigateurs liste les appairages (navigateur vérifié, "Associée automatiquement"), les oublie (ce qui bloque l'association automatique de cette extension) et propose "Autoriser de nouveau".
 
 Test de bout en bout optionnel (relais signé, sonde signée à la place de l'app) : `test/bridge/app-relay.test.ts`, mode d'emploi en tête du fichier et dans `core/onepass-ffi/examples/bridge_probe.rs`.
 

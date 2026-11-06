@@ -78,6 +78,9 @@ function fakes(answer: (r: Record<string, unknown>) => unknown, failLogin = fals
     async (...a: unknown[]) => {
       calls.filler.push([name, ...a]);
       if (name === "fillLogin" && failLogin) throw new Error("boom");
+      // The identity's e-mail went into an identifier field of the group.
+      const onIdentifier = a[4];
+      if (name === "fillIdentity" && typeof onIdentifier === "function") onIdentifier("jo@atlas.dev");
       return 1;
     };
   const filler = {
@@ -158,7 +161,9 @@ describe("planner", () => {
     );
     expect(outcome).toBe("filled");
     expect(calls.filler.map((c) => c[0])).toEqual(["fillIdentity", "fillCard", "fillGenerated"]);
-    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, "menu", ["given_name", "email"]]);
+    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, "menu", ["given_name", "email"], expect.any(Function)]);
+    // The pending Login gets the e-mail the identity wrote (spec 4).
+    expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false, username: "jo@atlas.dev" }]]);
     expect(calls.filler[1]).toEqual(["fillCard", { ...target(), formRef: "f1" }, CARD, "menu", ["cc_number"]]);
     expect(calls.filler[2]).toEqual(["fillGenerated", { ...target(), formRef: "f1" }, "Gen-Secret-42!", ["new_password"]]);
   });
@@ -208,6 +213,16 @@ describe("planner", () => {
     expect(calls.filler[0]?.[3]).toEqual(["totp"]);
   });
 
+  it("passkey_button_keeps_the_chain", async () => {
+    // "Use a passkey" beside a sign-in form: another way in, the chain still runs (ruling R3).
+    const { calls, outcome } = await planAndRun(
+      plan({ action: "open_chain", groups: [loginGroup()] }),
+      context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }, { button_ref: "b2", class: "passkey" }])]),
+    );
+    expect(outcome).toBe("chain");
+    expect(calls.chain).toHaveLength(1);
+  });
+
   it("show_menu_returns_menu", async () => {
     const { calls, outcome } = await planAndRun(plan({ action: "show_menu", confidence: "low", alternatives: [ITEM, CARD] }), context([form("f1", ["username"])]));
     expect(outcome).toBe("menu");
@@ -229,6 +244,21 @@ describe("planner", () => {
     // Made for the generated group's form, through the page's rules (generate.ts).
     expect(calls.generated).toEqual([[target({ formRef: "f1" }), "menu"]]);
     expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
+    expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
+  });
+
+  it("a signup identity without identifier field leaves the pending Login without username", async () => {
+    const { calls } = await planAndRun(
+      plan({
+        intent: "signup",
+        groups: [
+          { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e0", role: "given_name" }] },
+          { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+        ],
+      }),
+      context([form("f1", ["given_name", "new_password"])]),
+    );
+    expect(calls.filler[0]).toHaveLength(5);
     expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
   });
 
@@ -398,6 +428,12 @@ describe("plan_context message", () => {
     });
   });
 
+  it("carries a passkey button (one-click signup)", () => {
+    const f = form("f1", ["email", "new_password"], [{ button_ref: "b1", class: "passkey" }]);
+    const m = parseCsToBg({ ...good, context: { ...good.context, forms: [f] } }) as { context: { forms: FormContext[] } } | null;
+    expect(m?.context.forms[0]?.buttons).toEqual([{ button_ref: "b1", class: "passkey" }]);
+  });
+
   it("rejects malformed contexts", () => {
     const f = good.context.forms[0] as FormContext;
     const bad: unknown[] = [
@@ -481,6 +517,66 @@ describe("privacy", () => {
   });
 });
 
+describe("one-click signup with a passkey offer", () => {
+  const offerPlan = () =>
+    plan({
+      intent: "signup",
+      reasons: ["passkey_offered"],
+      passkey: { form_ref: "f1", button_ref: "b2" },
+      groups: [
+        { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e0", role: "email" }] },
+        { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+      ],
+    });
+  const ctx = () => context([form("f1", ["email", "new_password"], [{ button_ref: "b1", class: "create" }, { button_ref: "b2", class: "passkey" }])]);
+
+  it("asks first: the menu, nothing written, nothing generated", async () => {
+    const { calls, outcome } = await planAndRun(offerPlan(), ctx());
+    expect(outcome).toBe("menu");
+    expect(calls.filler).toEqual([]);
+    expect(calls.generated).toEqual([]);
+    expect(calls.pending).toEqual([]);
+  });
+
+  it("an icon click on another form runs its own groups", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: { ...offerPlan(), groups: [...offerPlan().groups, loginGroup("f2")].map((g) => (g.kind === "login" ? { ...g, kind: "identity" as const, item_id: IDENTITY } : g)) } } : {}));
+    const got = await f.planner.plan(target(), context([...ctx().forms, form("f2", ["username", "current_password"])]));
+    expect(await f.planner.run(target(), got, { form: "f2" })).toBe("filled");
+  });
+
+  it("password: identity, generated password and pending Login, never a submit", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: offerPlan() } : {}));
+    const got = await f.planner.plan(target(), ctx());
+    expect(await f.planner.runSignup(target(), got, "password")).toBe("filled");
+    expect(f.calls.filler.map((c) => c[0])).toEqual(["fillIdentity", "fillGenerated"]);
+    expect(f.calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false, username: "jo@atlas.dev" }]]);
+  });
+
+  it("passkey: the identity only, no password made, nothing saved", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: offerPlan() } : {}));
+    const got = await f.planner.plan(target(), ctx());
+    expect(await f.planner.runSignup(target(), got, "passkey")).toBe("filled");
+    expect(f.calls.filler.map((c) => c[0])).toEqual(["fillIdentity"]);
+    expect(f.calls.generated).toEqual([]);
+    expect(f.calls.remembered).toEqual([]);
+    expect(f.calls.pending).toEqual([]);
+  });
+
+  it("a plan without offer, or not a signup, gets the menu from runSignup", async () => {
+    const f = fakes(() => ({}));
+    expect(await f.planner.runSignup(target(), { ...offerPlan(), passkey: null }, "password")).toBe("menu");
+    expect(await f.planner.runSignup(target(), { ...offerPlan(), intent: "login" }, "passkey")).toBe("menu");
+    expect(f.calls.filler).toEqual([]);
+  });
+
+  it("a plan made for another document runs nothing", async () => {
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: offerPlan() } : {}));
+    const got = await f.planner.plan(target(), ctx());
+    expect(await f.planner.runSignup(target({ documentId: "doc-2" }), got, "password")).toBe("menu");
+    expect(f.calls.filler).toEqual([]);
+  });
+});
+
 describe("plan_context through the router", () => {
   async function bg() {
     const ext = new FakeExt();
@@ -530,6 +626,47 @@ describe("plan_context through the router", () => {
     const token = opened.ok.url.slice(opened.ok.url.indexOf("#") + 1);
     const init = (await ext.send({ type: "menu_init", token }, uiSender(`menu.html#${token}`, 7))) as { ok: { notice?: string } };
     expect(init.ok.notice).toBe("site_refused");
+  });
+
+  it("a signup form that can make a passkey: the menu asks, the passkey choice clicks the site's button", async () => {
+    const ext = new FakeExt();
+    const pairings = new MemoryPairingStore();
+    await new Store(ext, pairings).setPairing(record());
+    const signup = plan({
+      intent: "signup",
+      reasons: ["passkey_offered"],
+      passkey: { form_ref: "f1", button_ref: "b2" },
+      groups: [
+        { form_ref: "f1", kind: "identity", item_id: IDENTITY, fields: [{ field_ref: "f1e0", role: "email" }] },
+        { form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e1", role: "new_password" }] },
+      ],
+    });
+    const client = new FakeClient((r) => {
+      if (r.op === "plan_fill") return { plan: signup };
+      if (r.op === "list_for_origin") return { items: [] };
+      if (r.op === "fill_identity") return { given_name: "Jo", email: "jo@atlas.dev" };
+      return {};
+    });
+    const b = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined });
+    b.install();
+    ext.setFrame(7, 0, `${SITE}/signup`, "doc-1");
+    const page = csSender(`${SITE}/signup`, 7, 0, { documentId: "doc-1" });
+    const forms = [form("f1", ["email", "new_password"], [{ button_ref: "b1", class: "create" }, { button_ref: "b2", class: "passkey" }])];
+    expect(await ext.send({ type: "plan_context", formRef: "f1", context: context(forms) }, page)).toEqual({ ok: { outcome: "menu" } });
+    expect(client.requests.some((r) => r.op === "fill_identity" || r.op === "generate")).toBe(false);
+    const opened = (await ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "signup" }, page)) as { ok: { url: string } };
+    const token = opened.ok.url.slice(opened.ok.url.indexOf("#") + 1);
+    const menu = uiSender(`menu.html#${token}`, 7);
+    const init = (await ext.send({ type: "menu_init", token }, menu)) as { ok: { signup?: unknown } };
+    expect(init.ok.signup).toEqual({ passkey: true });
+    expect(await ext.send({ type: "menu_signup", token, mode: "passkey" }, menu)).toEqual({ ok: {} });
+    const sent = ext.sentToTabs.map((x) => x.message as { type: string; values?: Record<string, string>; ref?: string });
+    expect(sent.find((m) => m.type === "fill")?.values).toEqual({ email: "jo@atlas.dev" });
+    expect(sent.filter((m) => m.type === "fill")).toHaveLength(1);
+    expect(sent.find((m) => m.type === "click_passkey")).toEqual({ type: "click_passkey", origin: SITE, ref: "b2" });
+    expect(client.requests.some((r) => r.op === "generate" || r.op === "save_login")).toBe(false);
+    // The menu is spent.
+    expect(await ext.send({ type: "menu_signup", token, mode: "password" }, menu)).toEqual({ err: "invalid" });
   });
 
   it("plans with the sender's origins and answers the outcome", async () => {

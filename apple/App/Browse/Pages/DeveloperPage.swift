@@ -18,31 +18,31 @@ struct DeveloperPage: View {
                 PageHeader(
                     title: String(localized: "Développeur"), symbol: "chevron.left.forwardslash.chevron.right",
                     color: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255),
-                    message: String(localized: "Utilise tes secrets dans le terminal, avec Git et tes agents IA, sans les copier en clair."))
+                    message: String(localized: "browse.useSecretsInTerminal"))
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
                     DeveloperCard(
                         tile: AnyView(CategoryTile(category: .of(.sshKey), size: 34)),
-                        title: String(localized: "Agent SSH"),
-                        message: String(localized: "Garde tes clés SSH dans un coffre, connecte-toi à tes serveurs et signe tes commits Git, avec une approbation à chaque usage."),
-                        button: String(localized: "Voir l'agent SSH")
+                        title: String(localized: "app.sshAgent"),
+                        message: String(localized: "browse.keepSshKeysIn"),
+                        button: String(localized: "browse.viewSshAgent")
                     ) { show(.ssh) }
                     DeveloperCard(
                         tile: AnyView(PageTile(symbol: "point.3.connected.trianglepath.dotted", color: .purple, size: 34)),
-                        title: String(localized: "Serveur MCP"),
-                        message: String(localized: "Laisse un agent IA utiliser les coffres que tu choisis, sans jamais lui montrer un secret."),
-                        button: String(localized: "Voir le serveur MCP")
+                        title: String(localized: "app.mcpServer"),
+                        message: String(localized: "browse.letAiAgentUse"),
+                        button: String(localized: "browse.viewMcpServer")
                     ) { show(.mcp) }
                     DeveloperCard(
                         tile: AnyView(PageTile(symbol: "terminal.fill", color: .black, size: 34)),
-                        title: String(localized: "CLI"),
-                        message: String(localized: "Gère tes coffres depuis le terminal : recherche, génération, import, Watchtower et sauvegardes."),
-                        button: String(localized: "Voir la CLI")
+                        title: String(localized: "browse.cli"),
+                        message: String(localized: "browse.manageVaultsFromTerminal"),
+                        button: String(localized: "browse.viewCli")
                     ) { guide = .cli }
                     DeveloperCard(
                         tile: AnyView(PageTile(symbol: "checkmark.shield.fill", color: Theme.accent, size: 34)),
-                        title: String(localized: "Secrets sur le disque"),
-                        message: String(localized: "Repère les mots de passe faibles, réutilisés ou compromis rangés dans tes coffres."),
-                        button: String(localized: "Voir Watchtower")
+                        title: String(localized: "browse.secretsOnDisk"),
+                        message: String(localized: "browse.findsWeakReusedOr"),
+                        button: String(localized: "browse.viewWatchtower")
                     ) { model.page = .watchtower }
                 }
             }
@@ -130,9 +130,9 @@ struct DeveloperGuideSheet: View {
 
     private var title: String {
         switch guide {
-        case .ssh: String(localized: "Agent SSH")
-        case .mcp: String(localized: "Serveur MCP")
-        case .cli: String(localized: "CLI")
+        case .ssh: String(localized: "app.sshAgent")
+        case .mcp: String(localized: "app.mcpServer")
+        case .cli: String(localized: "browse.cli")
         }
     }
 
@@ -146,7 +146,7 @@ struct DeveloperGuideSheet: View {
 
     private func copy(_ code: String) {
         model.session.copy(code, concealed: false)
-        model.showToast(String(localized: "Commande copiée"))
+        model.showToast(String(localized: "browse.commandCopied"))
     }
 
     private func step(_ text: String, _ code: String) -> some View {
@@ -157,32 +157,32 @@ struct DeveloperGuideSheet: View {
     }
 
     @ViewBuilder private var ssh: some View {
-        Text("L'agent de la CLI sert les clés SSH de ses coffres à `ssh` et à `git`. Chaque signature demande ton accord dans le terminal, avec le titre de la clé, son empreinte et le programme qui la demande. La clé privée ne quitte jamais le coffre.")
+        Text("browse.cliAgentServesSsh")
             .fixedSize(horizontal: false, vertical: true)
-        step(String(localized: "Crée une clé et rends-la disponible pour l'agent :"),
+        step(String(localized: "browse.createKeyAndMake"),
              #"onepass ssh-key generate --title "Github" --type ed25519 --host github.com --agent"#)
-        step(String(localized: "Lance l'agent, puis indique son socket à ton terminal :"),
+        step(String(localized: "browse.startAgentThenPoint"),
              "onepass ssh-agent\nexport SSH_AUTH_SOCK=~/.onepass-dev/ssh-agent.sock")
-        step(String(localized: "Pour signer tes commits Git avec cette clé :"),
+        step(String(localized: "browse.toSignGitCommits"),
              "git config --global gpg.format ssh\ngit config --global user.signingkey \"$(onepass ssh-key public Github)\"\ngit config --global commit.gpgsign true")
-        step(String(localized: "Écris une configuration SSH pour tes serveurs (OnePass ne modifie jamais ~/.ssh/config, tu ajoutes toi-même la ligne Include affichée) :"),
+        step(String(localized: "browse.writeSshConfigurationFor"),
              "onepass ssh-key config --out ~/.onepass-ssh")
         Button {
             dismiss()
             model.showItems(.category(.sshKey))
         } label: {
-            Label("Voir mes clés SSH", systemImage: "key.fill")
+            Label("browse.viewMySshKeys", systemImage: "key.fill")
         }
     }
 
     @ViewBuilder private var mcp: some View {
-        Text("Le serveur MCP de la CLI parle JSON-RPC sur l'entrée et la sortie standard. Il ne voit que les coffres créés avec l'accès MCP, et chaque usage d'un secret demande ton accord dans le terminal. L'agent reçoit des métadonnées ou le résultat d'une commande masquée, jamais la valeur.")
+        Text("browse.cliMcpServerSpeaks")
             .fixedSize(horizontal: false, vertical: true)
-        step(String(localized: "Crée un coffre réservé aux agents et ranges-y leurs secrets :"),
+        step(String(localized: "browse.createVaultForAgents"),
              #"onepass vault create "Agents" --mcp-access"#)
-        step(String(localized: "Choisis ce que les agents peuvent faire dans ce coffre :"),
+        step(String(localized: "browse.chooseWhatAgentsCan"),
              "onepass mcp policy set --vault Agents --scopes metadata,use")
-        step(String(localized: "Déclare le serveur dans ton client MCP (OnePass ne l'inscrit jamais pour toi) :"),
+        step(String(localized: "browse.addServerToMcp"),
              """
              {
                "mcpServers": {
@@ -193,18 +193,18 @@ struct DeveloperGuideSheet: View {
                }
              }
              """)
-        Text("La politique signée décide des droits du client, `reveal_secret` et `totp_code` demandent Touch ID, et `onepass mcp audit` affiche le journal de chaque accès. Le mot de passe maître est demandé dans le terminal. Sur Mac, l'app sert un serveur MCP sans terminal, avec appairage des clients : Réglages > Développeur.")
+        Text("browse.signedPolicyDecidesWhat")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var cli: some View {
-        Text("La commande `onepass` se compile depuis le dépôt, avec Rust.")
+        Text("browse.onepassCommandBuiltFrom")
             .fixedSize(horizontal: false, vertical: true)
-        step(String(localized: "Installe-la :"),
+        step(String(localized: "browse.installIt"),
              "cargo install --locked --path core/onepass-cli")
-        step(String(localized: "Quelques commandes :"),
+        step(String(localized: "browse.fewCommands"),
              """
              onepass account create
              onepass item list
@@ -212,12 +212,12 @@ struct DeveloperGuideSheet: View {
              onepass watchtower
              onepass import export.csv --vault Personnel
              """)
-        step(String(localized: "Toutes les commandes et leurs options :"), "onepass --help")
+        step(String(localized: "browse.allCommandsAndTheir"), "onepass --help")
     }
 
     private var devModeNote: some View {
         Label {
-            Text("La CLI utilise son propre dossier de données (`~/.onepass-dev`), pas les coffres de cette app. Sur Mac, l'app sert elle-même l'agent SSH et le serveur MCP sur tes coffres : Réglages > Développeur.")
+            Text("browse.cliUsesOwnData")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "info.circle")

@@ -1,3 +1,4 @@
+import AuthenticationServices
 import DesignKit
 import GlanceKit
 import SwiftUI
@@ -25,9 +26,16 @@ struct RootView: View {
     @State private var demoDoorPlayed = false
     #endif
     #endif
+    /// Credentials handed over by another app (Credential Exchange), waiting for the unlock.
+    @State private var credentialExchange: CredentialExchangeRequest?
 
     var body: some View {
         content
+            // Sharing notices. iPhone: on the lock screen only, the home shows them in its blocks
+            // (its large header draws under the top inset).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if showsRootSharingBanners { SharingBanners() }
+            }
             .animation(.smooth(duration: 0.25), value: route)
             #if os(iOS)
             .environment(\.vaultDialTurn, door.dialTurn)
@@ -49,12 +57,16 @@ struct RootView: View {
             }
             #endif
             .onAppear { model.start() }
-            .onChange(of: model.session.state) { _, state in
-                model.sessionStateChanged(state)
+            .onChange(of: model.session.state) { old, state in
+                model.sessionStateChanged(state, from: old)
             }
             // Favorites, titles and codes of the widgets follow the data.
             .onChange(of: model.session.summaries) {
                 model.companion.sessionChanged()
+            }
+            // Wi-Fi automatique: a router item added, edited or synced, or the unlock.
+            .onChange(of: model.primarySession.summariesRevision) {
+                model.wifi.schedule(model)
             }
             // A vault hidden on this device leaves the widgets too.
             .onChange(of: model.session.hiddenVaultIDs) {
@@ -62,11 +74,37 @@ struct RootView: View {
             }
             // A route kept during the onboarding (its account creation unlocks first).
             .onChange(of: model.onboardingInProgress) { _, inProgress in
-                if !inProgress { model.consumePendingRoute() }
+                guard !inProgress else { return }
+                // A new account's onboarding ended: its account is bound to its slot.
+                model.finishAddingAccountIfNeeded()
+                model.consumePendingRoute()
+            }
+            // The services bound to the primary account follow its state, whichever account shows.
+            .onChange(of: model.primarySession.state) { _, state in
+                model.primaryStateChanged(state)
+            }
+            // Passwords > Export Data to Another App > OnePass: the import sheet opens on what the
+            // other app sends (passkeys included) once the vault is unlocked.
+            .onContinueUserActivity(ASCredentialExchangeActivity) { activity in
+                if let token = CredentialExchangeImport.token(of: activity) {
+                    credentialExchange = CredentialExchangeRequest(token: token)
+                }
+            }
+            .sheet(item: Binding(
+                get: { model.session.state == .unlocked ? credentialExchange : nil },
+                set: { if $0 == nil { credentialExchange = nil } }
+            )) { request in
+                ImportSheet(credentialExchange: request.token)
             }
             .onOpenURL { url in
                 // The three `onepass://` links and the verification code links; anything else is
                 // ignored. A code link waits for the unlock like the others.
+                #if os(macOS)
+                if BrowserBridge.isUnlockLink(url) {
+                    model.showForUnlock()
+                    return
+                }
+                #endif
                 if let link = OnePassLink(url: url) {
                     model.open(link)
                 } else if OtpLink.handles(url) {
@@ -76,22 +114,33 @@ struct RootView: View {
             // After the first password unlock where biometrics could be on (`AppModel.biometricOffer`).
             // Only the buttons answer: the setter must not race "Activer" with a refusal.
             .alert(
-                Text("Utiliser \(OnboardingModel.biometryName) pour déverrouiller ?"),
+                Text("root.useToUnlock \(OnboardingModel.biometryName)"),
                 isPresented: Binding(
                     get: {
                         model.biometricOffer != nil && model.session.state == .unlocked
-                            && !model.session.canUseBiometrics
+                            && !model.session.canUseBiometrics && !doorHoldsPresentations
                     },
                     set: { _ in }),
                 presenting: model.biometricOffer
             ) { _ in
-                Button("Activer") { model.answerBiometricOffer(accept: true) }
+                Button("app.turnOn") { model.answerBiometricOffer(accept: true) }
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("biometricOffer.enable")
-                Button("Plus tard", role: .cancel) { model.answerBiometricOffer(accept: false) }
+                Button("app.later", role: .cancel) { model.answerBiometricOffer(accept: false) }
                     .accessibilityIdentifier("biometricOffer.later")
             } message: { _ in
-                Text("La prochaine fois, \(OnboardingModel.biometryName) suffit pour ouvrir OnePass. Le mot de passe maître reste demandé tous les 14 jours et après un redémarrage.")
+                Text("root.nextTimeAllIt \(OnboardingModel.biometryName)")
+            }
+            // Multi-account (spec 7): adding an account, from the account panel, the lock screen or
+            // Réglages > Comptes; the search over every unlocked account when the user chose it.
+            .sheet(isPresented: Binding(
+                get: { model.showAddAccount }, set: { model.showAddAccount = $0 })) {
+                AddAccountSheet()
+            }
+            .sheet(isPresented: Binding(
+                get: { model.showAllAccountsSearch && model.accounts.unifiedSearch },
+                set: { model.showAllAccountsSearch = $0 })) {
+                AllAccountsSearch()
             }
             #if os(macOS)
             .sheet(item: Binding(
@@ -119,33 +168,58 @@ struct RootView: View {
             .background { WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0) }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 updateShield(phase)
+                #if os(iOS)
+                // The door never outlives the scene going to the background (its completions may
+                // not come back): the screen is simply the vault or the lock screen again. Not on
+                // `.inactive`: the Face ID sheet makes the scene inactive around the unlock itself.
+                if phase == .background, door.isActive {
+                    doorGeneration &+= 1
+                    doorSnapshot = nil
+                    door.handle(.interrupted)
+                }
+                #endif
             }
             .onChange(of: windowScene) { _, _ in
+                updateShield(scenePhase)
+            }
+            // The lock screen's own Face ID prompt makes the scene inactive: the shield stays down
+            // for it, so the prompt rises over the lock screen and its dial, not a blank cover.
+            .onChange(of: model.biometricAutoPrompt.promptOnScreen) { _, _ in
                 updateShield(scenePhase)
             }
             #endif
     }
 
     #if os(iOS) || os(visionOS)
-    /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9).
+    /// Above every presentation (sheets, share sheet, alerts): a window of its own (spec 9). Not
+    /// over the lock screen's own biometric prompt, nor while its sheet leaves after a success (the
+    /// dial turns and the door opens right then); always in the background, where the app switcher
+    /// takes its picture.
     private func updateShield(_ phase: ScenePhase) {
         guard let windowScene else { return }
-        PrivacyShieldWindows.shared.setVisible(phase != .active, in: windowScene)
+        let visible = model.biometricAutoPrompt.shieldVisible(in: BiometricAutoPrompt.Phase(phase))
+        PrivacyShieldWindows.shared.setVisible(visible, in: windowScene)
     }
     #endif
 
     #if os(iOS)
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
+    private var doorHoldsPresentations: Bool { door.holdsPresentations }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
     private var vaultScale: CGFloat { door.vaultScale }
     #else
     private var doorKeepsLock: Bool { false }
+    private var doorHoldsPresentations: Bool { false }
     private var doorShowsVault: Bool { false }
     private var vaultScale: CGFloat { 1 }
     #endif
 
     private enum Route: Hashable {
-        case onboarding, lock, unlocked, failed, guest, revoked
+        case onboarding, lock, unlocked, failed, guest, revoked, erased
+        #if DEBUG
+        /// Demo data: its account is being made and filled.
+        case demoPreparing
+        #endif
     }
 
     private var route: Route {
@@ -153,28 +227,53 @@ struct RootView: View {
         let state = model.session.state
         if state == .failed(.deviceRevoked) { return .revoked }
         if case .failed = state { return .failed }
+        // The quarantine erased this device: why, once, before the onboarding.
+        if state == .noAccount, model.session.erasedByQuarantine != nil { return .erased }
+        #if DEBUG
+        if model.demoPreparing { return .demoPreparing }
+        #endif
         if model.onboardingInProgress || state == .noAccount { return .onboarding }
         // An account is in the store but this device lacks its Secret Key: Emergency Kit.
         if model.session.needsSecretKey, state != .unlocked { return .onboarding }
         return state == .unlocked ? .unlocked : .lock
     }
 
+    private var showsRootSharingBanners: Bool {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone { return route == .lock }
+        #endif
+        return true
+    }
+
     @ViewBuilder private var content: some View {
         switch route {
         case .onboarding:
             OnboardingFlow()
+                // A new account's sign up: the account shown before is one tap away.
+                .id(model.accounts.activeSlot)
+                .overlay(alignment: .topLeading) {
+                    if model.canCancelAddingAccount {
+                        Button("common.cancel") { model.cancelAddingAccount() }
+                            .buttonStyle(.glass)
+                            .padding()
+                            .accessibilityIdentifier("accounts.add.cancel")
+                    }
+                }
                 .transition(.opacity)
         case .lock, .unlocked:
             // One branch for both, so the lock screen can stay above the vault while the door
             // opens (the same `LockView`, never a second one: its automatic Face ID runs once).
+            // One view per account: nothing typed or shown for one account stays for another.
             ZStack {
                 if route == .unlocked || doorShowsVault {
                     BrowseRoot()
+                        .id(model.accounts.activeSlot)
                         .scaleEffect(vaultScale)
                         .transition(.opacity)
                 }
                 if route == .lock || doorKeepsLock {
                     LockView()
+                        .id(model.accounts.activeSlot)
                         // Under the door, the lock screen leaves at once: the panels are its picture.
                         .transition(doorKeepsLock ? .identity : .opacity)
                 }
@@ -182,6 +281,9 @@ struct RootView: View {
             .transition(.opacity)
         case .revoked:
             RevokedDeviceView()
+                .transition(.opacity)
+        case .erased:
+            ErasedDeviceView()
                 .transition(.opacity)
         case .guest:
             if let guest = model.publicSession {
@@ -192,6 +294,14 @@ struct RootView: View {
             if case .failed(let error) = model.session.state {
                 IntegrityFailureView(error: error)
             }
+        #if DEBUG
+        case .demoPreparing:
+            ProgressView()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("demo.preparing")
+                .transition(.opacity)
+        #endif
         }
     }
 }
@@ -246,7 +356,8 @@ extension RootView {
             #endif
         } else if old == .unlocked, new == .lock {
             doorSnapshot = nil
-            door.handle(.locked(reduceMotion: reduceMotion))
+            // A lock in the background (auto-lock, app switcher) plays nothing nobody sees.
+            door.handle(.locked(reduceMotion: reduceMotion || scenePhase == .background))
         } else {
             doorSnapshot = nil
             door.handle(.interrupted)
@@ -359,3 +470,9 @@ private struct VaultDoorClosingPassage: View {
     }
 }
 #endif
+
+/// One Credential Exchange hand-over: its one-time token.
+private struct CredentialExchangeRequest: Identifiable {
+    let token: UUID
+    var id: UUID { token }
+}

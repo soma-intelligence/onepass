@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import Security
 import os
@@ -190,27 +191,4 @@ public struct AppSocketLauncher: HostLauncher {
         return SocketHost(handle: handle)
     }
 }
-
-/// The app at the other end of a socket: one descriptor both ways.
-final class SocketHost: HostProcess, @unchecked Sendable {
-    private let handle: FileHandle
-    private let lock = NSLock()
-    private var done = false
-
-    init(handle: FileHandle) {
-        self.handle = handle
-    }
-
-    var input: FileHandle { handle }
-    var output: FileHandle { handle }
-
-    func terminate() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !done else { return }
-        done = true
-        // Wakes the reader thread (end of stream) and tells the app the
-        // connection is over; the descriptor closes with the handle.
-        shutdown(handle.fileDescriptor, SHUT_RDWR)
-    }
-}
+#endif

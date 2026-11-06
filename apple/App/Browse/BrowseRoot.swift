@@ -28,9 +28,23 @@ struct BrowseRoot: View {
                 GeneratorSheet(
                     onUse: { value in
                         model.session.copy(value, concealed: true)
-                        model.showToast(String(localized: "Copié · effacé dans 90 s"))
+                        model.showToast(String(localized: "app.copiedClearedIn90"))
                     },
                     purpose: .copy)
+            }
+            // "Tu voyages ?" > Oui, or "De retour ?" > Désactiver (spec 2026-11-02).
+            .sheet(item: $model.travelSheet) { request in
+                NavigationStack {
+                    TravelSettings(autoConfirm: request == .enter)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Fermer") { model.travelSheet = nil }
+                            }
+                        }
+                }
+                #if os(macOS)
+                .frame(minWidth: 460, minHeight: 520)
+                #endif
             }
             // Fichier > Importer… (⌘⇧I): exports of other password managers.
             .sheet(isPresented: $model.showImport) {
@@ -56,7 +70,7 @@ struct BrowseRoot: View {
             .sheet(item: $model.totpPasswordRequest) { ref in
                 PasswordPromptSheet(
                     title: "Copier le code à usage unique",
-                    footer: "Le mot de passe maître est demandé pour copier le code à usage unique."
+                    footer: "browse.masterPasswordRequiredTo"
                 ) { password in
                     try await model.session.verifyMasterPassword(password)
                     await model.copyTotpCode(ref)
@@ -221,9 +235,9 @@ private struct DiscardConfirmation: ViewModifier {
                 model.confirmDiscard()
             }
             .accessibilityIdentifier("discard.confirm")
-            Button("Continuer la modification", role: .cancel) { model.pendingDiscard = nil }
+            Button("app.keepEditing", role: .cancel) { model.pendingDiscard = nil }
         } message: {
-            Text("Les modifications de cet élément ne sont pas enregistrées.")
+            Text("browse.changesToItemArent")
         }
     }
 

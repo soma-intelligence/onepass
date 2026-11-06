@@ -7,7 +7,7 @@ use onepass_core::Id;
 use onepass_core::model::{
     Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, Item, ItemType, ItemUrl,
     Location, LoginMethod, MatchRule, PasskeyCredential, PasswordHistoryEntry, Provider, Section,
-    SshKeyValue,
+    SshKeyValue, TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG,
 };
 use onepass_core::vault::{Vault, VaultMeta};
 use time::{Date, Month, OffsetDateTime};
@@ -180,6 +180,11 @@ pub(crate) fn type_label(t: ItemType) -> &'static str {
 }
 
 // ---- providers ------------------------------------------------------------
+
+/// The stable id of a provider (`google`, `apple`, `oidc:<domain>`...).
+pub(crate) fn provider_id(p: &Provider) -> String {
+    provider_to_string(p)
+}
 
 fn provider_to_string(p: &Provider) -> String {
     match p {
@@ -554,13 +559,29 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
+/// The tags the UI shows: the reserved Travel Mode tags are booleans, the
+/// "not a duplicate of" markers (`duplicates::DISTINCT_TAG_PREFIX`) and the
+/// import source (`import::SOURCE_TAG_PREFIX`) are kept by the core across
+/// an edit.
+fn visible_tags(tags: &[String]) -> Vec<String> {
+    tags.iter()
+        .filter(|t| {
+            *t != TRAVEL_HIDDEN_TAG
+                && *t != TRAVEL_GUARD_TAG
+                && !onepass_core::duplicates::is_distinct_tag(t)
+                && !onepass_core::import::is_source_tag(t)
+        })
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
     FfiItem {
         id: id_hex(i.id),
         vault_id: id_hex(i.vault_id),
         item_type: i.item_type.into(),
         title: i.title.clone(),
-        tags: i.tags.clone(),
+        tags: visible_tags(&i.tags),
         favorite: i.favorite,
         color: i.color.clone(),
         notes: i.notes.clone(),
@@ -591,6 +612,8 @@ pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
         password_history_count: count(i.password_history.len()),
         attachment_count: count(i.attachments.len()),
         attachments: i.attachments.iter().map(attachment_to_ffi).collect(),
+        travel_hidden: i.travel_hidden(),
+        travel_guard: i.travel_guarded(),
     }
 }
 
@@ -608,7 +631,7 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         title: i.title.clone(),
         subtitle: i.subtitle(),
         favorite: i.favorite,
-        tags: i.tags.clone(),
+        tags: visible_tags(&i.tags),
         primary_url: primary,
         archived: i.archived,
         trashed_at: i.trashed_at.map(ts),
@@ -619,19 +642,53 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
             _ => None,
         }),
         card_brand: card_brand_of(i),
+        card_last4: card_number_of(i).and_then(onepass_core::model::checks::card_last4),
+        passkey_count: count(
+            i.sections
+                .iter()
+                .flat_map(|s| &s.fields)
+                .filter(|f| matches!(f.value, FieldValue::Passkey(_)))
+                .count(),
+        ),
+        has_places: has_places(i),
+        travel_hidden: i.travel_hidden(),
+        travel_guard: i.travel_guarded(),
+    }
+}
+
+/// A placed point among the item's location fields and own locations: in range
+/// and not the editor's blank (0, 0), as `GeoPoint.isPlaced` on the Apple side.
+fn has_places(item: &Item) -> bool {
+    let placed = |lat: f64, lon: f64| {
+        lat.is_finite()
+            && lon.is_finite()
+            && (-90.0..=90.0).contains(&lat)
+            && (-180.0..=180.0).contains(&lon)
+            && !(lat == 0.0 && lon == 0.0)
+    };
+    item.locations.iter().any(|l| placed(l.lat, l.lon))
+        || item
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .any(|f| matches!(&f.value, FieldValue::Location(l) if placed(l.lat, l.lon)))
+}
+
+/// The number of a credit card, `None` for any other type.
+fn card_number_of(item: &Item) -> Option<&str> {
+    if item.item_type != ItemType::CreditCard {
+        return None;
+    }
+    match item.field("number").map(|f| &f.value) {
+        Some(FieldValue::Concealed(n)) => Some(n.as_str()),
+        Some(FieldValue::Text(n)) => Some(n.as_str()),
+        _ => None,
     }
 }
 
 /// The card network of a credit card, from the BIN of its number.
 fn card_brand_of(item: &Item) -> Option<String> {
-    if item.item_type != ItemType::CreditCard {
-        return None;
-    }
-    let number = match item.field("number").map(|f| &f.value) {
-        Some(FieldValue::Concealed(n)) => n.as_str(),
-        Some(FieldValue::Text(n)) => n.as_str(),
-        _ => return None,
-    };
+    let number = card_number_of(item)?;
     match onepass_core::model::checks::card_brand(number) {
         onepass_core::model::checks::CardBrand::Unknown => None,
         brand => Some(crate::brand_name(brand).to_owned()),
@@ -663,7 +720,7 @@ pub(crate) fn item_to_core(
         vault_id: parse_id(&f.vault_id)?,
         item_type: f.item_type.into(),
         title: f.title.clone(),
-        tags: f.tags.clone(),
+        tags: visible_tags(&f.tags),
         favorite: f.favorite,
         color: f.color.clone(),
         custom_icon: stored.and_then(|s| s.custom_icon.clone()),
@@ -712,6 +769,19 @@ pub(crate) fn item_to_core(
             .map(|s| s.usage_forgotten.clone())
             .unwrap_or_default(),
     };
+    item.set_travel_hidden(f.travel_hidden);
+    item.set_travel_guarded(f.travel_guard);
+    if let Some(s) = stored {
+        item.tags.extend(
+            s.tags
+                .iter()
+                .filter(|t| {
+                    onepass_core::duplicates::is_distinct_tag(t)
+                        || onepass_core::import::is_source_tag(t)
+                })
+                .cloned(),
+        );
+    }
     if let Some(old) = stored.and_then(password_of)
         && !old.is_empty()
         && password_of(&item) != Some(old)
@@ -746,11 +816,16 @@ pub(crate) fn meta_to_core(m: &FfiVaultMeta) -> VaultMeta {
     }
 }
 
-pub(crate) fn vault_to_ffi(v: &Vault, item_count: u32) -> FfiVault {
+pub(crate) fn vault_to_ffi(
+    v: &Vault,
+    item_count: u32,
+    shared: Option<crate::sharing::FfiSharedVault>,
+) -> FfiVault {
     FfiVault {
         id: id_hex(v.id),
         meta: meta_to_ffi(&v.meta),
         item_count,
+        shared,
     }
 }
 

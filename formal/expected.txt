@@ -360,3 +360,68 @@ sharing_no_role_check.pv | event(ManifestAccepted(d,v_18,w_8,g_21)) ==> event(Me
 sharing_no_role_check.pv | not event(ManifestAccepted(d,v_18,dave,g_21)) | false
 # Sanité : Carol lit l'item de Bob.
 sharing_no_role_check.pv | not event(ManifestAccepted(carol,v_18,bob,g1)) | false
+
+# recovery.pv : aide à la récupération par l'organisateur (spec 2026-10-30-sharing-families-design.md,
+# 11.4 à 11.7 et 17 ; arbitrages B-1 et B-2 du plan Famille). RK = HKDF(S_org || S_store), S_org
+# enveloppé pour la clé de l'organisateur épinglée au niveau Vérifié, S_store dans la base privée du
+# membre (en clair sur iCloud, scellé sous la Secret Key sur la boîte), inscription signée qui lie
+# l'enveloppe, demande signée, annulation par un appareil du membre, remise en face à face (canal
+# privé). Un organisateur honnête et un organisateur tenu par l'attaquant ; le serveur est hostile.
+# L'organisateur seul n'obtient pas le keyset (il lui manque S_store).
+recovery.pv | not attacker(ks_org[]) | true
+# Le serveur seul non plus, même s'il lit la base privée (il lui manque S_org).
+recovery.pv | not attacker(ks_srv[]) | true
+# Déroulé complet avec un organisateur honnête : le keyset reste secret.
+recovery.pv | not attacker(ks_main[]) | true
+# Compte sur la boîte (11.7, décision 18) : organisateur et opérateur de la boîte alliés n'ont pas
+# S_store, scellé sous la Secret Key.
+recovery.pv | not attacker(ks_box[]) | true
+# Un keyset récupéré suit une inscription du membre et une remise par l'organisateur qu'il a choisi,
+# pour cette inscription.
+recovery.pv | event(Recovered(m_12,k_8)) ==> event(Enrolled(m_12,o_10,e_30)) && event(Released(o_10,m_12,e_30)) | true
+# Le nouvel appareil n'ouvre que le keyset du membre. Sans le hash de l'enveloppe dans l'inscription
+# signée, un serveur qui lit la base y substitue son S_org et son slot : cette requête tombait.
+recovery.pv | event(Recovered(m_main,k_8)) ==> k_8 = ks_main[] | true
+recovery.pv | event(Recovered(m_srv,k_8)) ==> k_8 = ks_srv[] | true
+# L'organisateur ne s'arrête que sur une annulation signée par un appareil du membre ; il ne remet
+# qu'après sa propre demande signée.
+recovery.pv | event(CancelSeen(o_10,m_12,e_30)) ==> event(CancelSigned(m_12,e_30)) | true
+recovery.pv | event(Released(o_10,m_12,e_30)) ==> event(RequestSigned(o_10,m_12,e_30)) | true
+# Limite documentée (ruling F-03, spec 11.6 et 20) : organisateur et stockage alliés ouvrent le
+# keyset ; sur la boîte, organisateur et détenteur de l'Emergency Kit (11.7).
+recovery.pv | not attacker(ks_ally[]) | false
+recovery.pv | not attacker(ks_kit[]) | false
+# Sanité : les deux déroulés complets récupèrent, une annulation arrête l'organisateur.
+recovery.pv | not event(Recovered(m_main,k_8)) | false
+recovery.pv | not event(Recovered(m_srv,k_8)) | false
+recovery.pv | not event(CancelSeen(o_10,m_main,e_30)) | false
+
+# recovery_autoenroll.pv : témoin négatif, inscription décidée par le serveur vers une clé
+# d'organisateur qu'il fournit (non épinglée) ; base privée lue par le serveur. Attendu faux : le
+# keyset tombe au serveur seul (A9, A10).
+recovery_autoenroll.pv | not attacker(ks_auto[]) | false
+# Sanité : l'inscription a lieu.
+recovery_autoenroll.pv | not event(Enrolled(m_auto,o_1,e_4)) | false
+
+# mailbox.pv : boîte aux lettres (spec multiplateforme 11). Serveur qui applique sa règle
+# d'accès, relais T-RDV à l'attaquant, appairage de bridge.pv abstrait par sa clé de session
+# (P10, P11), TLS entre appareil et serveur, QR hors bande.
+# M1 : sans identifiant inscrit dans la boîte, personne n'en obtient les enregistrements.
+mailbox.pv | not attacker(blob_access(mbx_h[])) | true
+# M2 : le serveur n'inscrit une clé dans la boîte qu'avec un ticket qu'un appareil inscrit a émis pour elle.
+mailbox.pv | event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4)) | true
+# M3 : un appareil ne change de lieu de synchronisation que pour un SyncHome signé par le compte.
+mailbox.pv | event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4)) | true
+# Sanité : un nouvel appareil est inscrit puis lit, un appareil existant suit le SyncHome.
+mailbox.pv | not event(Enrolled(mbx_h[],k_4)) | false
+mailbox.pv | not event(NewcomerRead(m_13)) | false
+mailbox.pv | not event(Switched(dev_d,h_4)) | false
+
+# mailbox_unsigned_ticket_broken.pv : témoin négatif, le serveur prend un ticket sans en vérifier
+# la signature. Attaque attendue : l'attaquant écrit un ticket pour sa propre clé au nom de A,
+# s'inscrit dans la boîte et la lit ; M3 ne dépend pas du ticket.
+mailbox_unsigned_ticket_broken.pv | not attacker(blob_access(mbx_h[])) | false
+mailbox_unsigned_ticket_broken.pv | event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4)) | false
+mailbox_unsigned_ticket_broken.pv | event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4)) | true
+# Sanité.
+mailbox_unsigned_ticket_broken.pv | not event(NewcomerRead(m_13)) | false

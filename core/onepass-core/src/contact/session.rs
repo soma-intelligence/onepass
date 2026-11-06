@@ -50,7 +50,7 @@ use zeroize::Zeroizing;
 
 use super::book::{ContactEntry, ContactLevel, check_card_lineage};
 use super::lineage::roster_at;
-use super::{CONTACT_LABEL, SignedContactCard};
+use super::{CONTACT_LABEL, SignedContactCard, is_contact_zone_creator};
 use crate::crypto::kem::{unwrap_key_labeled, wrap_key_labeled};
 use crate::crypto::sign::MLDSA_SIG_LEN;
 use crate::crypto::{
@@ -63,6 +63,7 @@ use crate::pairing::{
     CLOCK_SKEW_SECS, Channel, KeyExchange, PairingQr, QR_LIFETIME_SECS, sas, sha256, transcript,
 };
 use crate::repo::Repository;
+use crate::share::SignedContactZoneOffer;
 use crate::store::RecordStore;
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -146,6 +147,17 @@ pub enum ContactMessage {
     Confirmed,
     /// The session is over.
     End,
+    /// The creator's signed offer of the pair's mailbox
+    /// (`SignedContactZoneOffer`, sharing spec 13.5), after both cards.
+    ZoneOffer(Vec<u8>),
+    /// The organizer's half of an organizer-assisted recovery (sharing
+    /// spec 11.5 step 4), sent face to face once the organizer confirmed
+    /// the SAS; only a recovery session (`ContactResponder::new_for_recovery`)
+    /// takes it.
+    RecoveryShare {
+        enrollment_id: Id,
+        s_org: Zeroizing<[u8; 32]>,
+    },
 }
 
 impl ContactMessage {
@@ -174,6 +186,9 @@ impl ContactMessage {
                 return Err(BAD);
             }
         }
+        if let ContactMessage::ZoneOffer(o) = &msg {
+            SignedContactZoneOffer::decode(o).map_err(|_| BAD)?;
+        }
         Ok(msg)
     }
 }
@@ -192,6 +207,9 @@ pub enum ContactOutcome {
     /// The peer pinned this side's card (`Confirmed`), or ended the
     /// session (`End`).
     Done,
+    /// The peer's offer of the pair's mailbox, to hand to
+    /// `Repository::finish_contact_session`.
+    PeerZoneOffer(Vec<u8>),
 }
 
 /// A peer card from a completed face-to-face session: checked (signatures,
@@ -240,6 +258,15 @@ struct Session {
     released: bool,
     pinned_sent: bool,
     peer_pinned: bool,
+    /// This side sent its zone offer, or received the peer's: one offer
+    /// per session, from one side.
+    offer_seen: bool,
+    /// A recovery session: no card goes either way, and the only payload
+    /// is one `RecoveryShare` from the initiator.
+    recovery: bool,
+    /// The local user confirmed the SAS of a recovery session.
+    sas_confirmed: bool,
+    share_done: bool,
     failed: bool,
 }
 
@@ -254,6 +281,10 @@ impl Session {
             released: false,
             pinned_sent: false,
             peer_pinned: false,
+            offer_seen: false,
+            recovery: false,
+            sas_confirmed: false,
+            share_done: false,
             failed: false,
         }
     }
@@ -280,7 +311,7 @@ impl Session {
         now: i64,
     ) -> Result<Vec<u8>> {
         self.live()?;
-        if self.confirmed {
+        if self.confirmed || self.recovery {
             return Err(refused("already confirmed"));
         }
         let device = keys.public(me)?;
@@ -324,7 +355,7 @@ impl Session {
     fn take(&mut self, frame: &[u8], now: i64) -> Result<ContactOutcome> {
         let plain = self.channel.open_bytes_at(frame, now)?;
         match ContactMessage::decode(&plain)? {
-            ContactMessage::Card { card, device, pop } if self.peer.is_none() => {
+            ContactMessage::Card { card, device, pop } if self.peer.is_none() && !self.recovery => {
                 check_card(&card, &device, &pop, &self.transcript)?;
                 if self.own_account == Some(card.card.account_id) {
                     return Err(refused("own account"));
@@ -351,6 +382,10 @@ impl Session {
                 self.channel.close();
                 Ok(ContactOutcome::Done)
             }
+            ContactMessage::ZoneOffer(o) if self.released && !self.offer_seen => {
+                self.offer_seen = true;
+                Ok(ContactOutcome::PeerZoneOffer(o))
+            }
             _ => Err(refused("unexpected message")),
         }
     }
@@ -363,6 +398,18 @@ impl Session {
             card: card.clone(),
             transcript_hash: self.transcript,
         })
+    }
+
+    fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.live()?;
+        if !self.released || self.offer_seen {
+            return Err(refused("no zone offer now"));
+        }
+        let msg = ContactMessage::ZoneOffer(offer.to_vec()).encode()?;
+        ContactMessage::decode(&msg)?;
+        let frame = self.channel.seal_bytes_at(&msg, false, now)?;
+        self.offer_seen = true;
+        Ok(frame)
     }
 
     fn confirm_pinned(&mut self, now: i64) -> Result<Vec<u8>> {
@@ -381,6 +428,67 @@ impl Session {
         self.live()?;
         self.channel
             .seal_bytes_at(&ContactMessage::End.encode()?, true, now)
+    }
+
+    /// The local user confirmed the SAS of a recovery session (no card).
+    fn confirm_sas_for_recovery(&mut self) -> Result<()> {
+        self.live()?;
+        if self.confirmed || self.peer.is_some() {
+            return Err(refused("not a recovery session"));
+        }
+        self.recovery = true;
+        self.sas_confirmed = true;
+        Ok(())
+    }
+
+    /// The `RecoveryShare` frame, once, after `confirm_sas_for_recovery`.
+    fn send_recovery_share(
+        &mut self,
+        enrollment_id: Id,
+        s_org: &Zeroizing<[u8; 32]>,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        self.live()?;
+        if !self.recovery || !self.sas_confirmed || self.share_done {
+            return Err(refused("sas not confirmed"));
+        }
+        let msg = ContactMessage::RecoveryShare {
+            enrollment_id,
+            s_org: s_org.clone(),
+        }
+        .encode()?;
+        let frame = self.channel.seal_bytes_at(&msg, false, now)?;
+        self.share_done = true;
+        Ok(frame)
+    }
+
+    /// Open the initiator's `RecoveryShare` (recovery responder only, once).
+    /// Anything else closes the session.
+    fn take_recovery_share(&mut self, frame: &[u8], now: i64) -> Result<(Id, Zeroizing<[u8; 32]>)> {
+        self.live()?;
+        let r = (|| {
+            if !self.recovery || self.share_done {
+                return Err(refused("unexpected message"));
+            }
+            let plain = self.channel.open_bytes_at(frame, now)?;
+            match ContactMessage::decode(&plain)? {
+                ContactMessage::RecoveryShare {
+                    enrollment_id,
+                    s_org,
+                } => Ok((enrollment_id, s_org)),
+                _ => Err(refused("unexpected message")),
+            }
+        })();
+        match r {
+            Ok(v) => {
+                self.share_done = true;
+                Ok(v)
+            }
+            Err(e) => {
+                self.fail();
+                Err(e)
+            }
+        }
     }
 
     #[cfg(all(feature = "dev-fast-kdf", debug_assertions))]
@@ -437,6 +545,8 @@ pub struct ContactResponder {
     expires_at: i64,
     transcript: [u8; 32],
     session: Option<Session>,
+    /// Made by `new_for_recovery`.
+    recovery: bool,
 }
 
 impl ContactResponder {
@@ -463,8 +573,27 @@ impl ContactResponder {
             expires_at: qr.expires_at,
             transcript: transcript(&qr.to_text(), &hello),
             session: None,
+            recovery: false,
         };
         Ok((responder, qr, hello))
+    }
+
+    /// The member's new device in an organizer-assisted recovery (sharing
+    /// spec 11.5 step 4): a session that sends no card and takes only the
+    /// organizer's `RecoveryShare` (`recover_with_share`).
+    pub fn new_for_recovery(now: i64) -> Result<(ContactResponder, PairingQr, Vec<u8>)> {
+        let (mut r, qr, hello) = ContactResponder::new(now)?;
+        r.recovery = true;
+        Ok((r, qr, hello))
+    }
+
+    /// See `Session::take_recovery_share`.
+    pub(crate) fn take_recovery_share(
+        &mut self,
+        frame: &[u8],
+        now: i64,
+    ) -> Result<(Id, Zeroizing<[u8; 32]>)> {
+        self.session()?.take_recovery_share(frame, now)
     }
 
     /// Take the session key from the initiator's KeyExchange and return the
@@ -487,7 +616,9 @@ impl ContactResponder {
             now.checked_add(CONTACT_SESSION_SECS)
                 .ok_or(refused("time"))?,
         );
-        self.session = Some(Session::new(channel, self.transcript));
+        let mut session = Session::new(channel, self.transcript);
+        session.recovery = self.recovery;
+        self.session = Some(session);
         Ok(code)
     }
 
@@ -526,6 +657,12 @@ impl ContactResponder {
     /// `Repository::finish_contact_session` pins.
     pub fn verified_peer(&self) -> Option<VerifiedPeer> {
         self.session.as_ref().and_then(Session::verified_peer)
+    }
+
+    /// The creator's `ZoneOffer` frame (`seal_contact_zone_offer`), once
+    /// both cards are through; one offer per session.
+    pub fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.session()?.send_zone_offer(offer, now)
     }
 
     /// The `Confirmed` frame, once the peer's card was handed over.
@@ -620,10 +757,32 @@ impl ContactInitiator {
         self.session.on_frame(frame, now)
     }
 
+    /// The organizer compared the SAS with the member's new device, face
+    /// to face, in a recovery session: no card goes either way after it
+    /// (`Repository::release_recovery_share`).
+    pub fn confirm_sas_for_recovery(&mut self) -> Result<()> {
+        self.session.confirm_sas_for_recovery()
+    }
+
+    /// See `Session::send_recovery_share`.
+    pub(crate) fn send_recovery_share(
+        &mut self,
+        enrollment_id: Id,
+        s_org: &Zeroizing<[u8; 32]>,
+        now: i64,
+    ) -> Result<Vec<u8>> {
+        self.session.send_recovery_share(enrollment_id, s_org, now)
+    }
+
     /// The peer's checked card, once the local user confirmed: what
     /// `Repository::finish_contact_session` pins.
     pub fn verified_peer(&self) -> Option<VerifiedPeer> {
         self.session.verified_peer()
+    }
+
+    /// See `ContactResponder::send_zone_offer`.
+    pub fn send_zone_offer(&mut self, offer: &[u8], now: i64) -> Result<Vec<u8>> {
+        self.session.send_zone_offer(offer, now)
     }
 
     /// The `Confirmed` frame, once the peer's card was handed over.
@@ -680,13 +839,30 @@ impl fmt::Debug for ContactInitiator {
 
 impl<S: RecordStore> Repository<S> {
     /// Pin the peer of a completed face-to-face session at `Verified`, with
-    /// the session's transcript hash (`pin_contact`, whose refusals apply).
-    pub fn finish_contact_session(&mut self, peer: VerifiedPeer, now: i64) -> Result<ContactEntry> {
-        self.pin_contact(
+    /// the session's transcript hash (`pin_contact`, whose refusals apply),
+    /// and the pair's mailbox (decision 16): the creator (the smaller
+    /// account id) needs its own access of the pair's zone with a home and
+    /// no offer; the other side needs the creator's `zone_offer`, whose
+    /// access is written in the same transaction as the pin. Otherwise
+    /// `Validation("contact", "no zone")` and nothing is pinned.
+    pub fn finish_contact_session(
+        &mut self,
+        peer: VerifiedPeer,
+        zone_offer: Option<&[u8]>,
+        now: i64,
+    ) -> Result<ContactEntry> {
+        let creator = is_contact_zone_creator(
+            self.account.params.account_id,
+            peer.card.card.account_id,
+            None,
+        );
+        let access = self.contact_zone_on_pin(&peer.card, creator, zone_offer)?;
+        self.pin_with(
             &peer.card,
             ContactLevel::Verified,
             peer.transcript_hash,
             now,
+            access,
         )
     }
 }

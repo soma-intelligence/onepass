@@ -352,6 +352,22 @@ fn plan_fill_round_trip() {
     );
     assert_eq!(again["ok"]["plan"]["confidence"], "high", "{again}");
     assert_eq!(again["ok"]["plan"]["groups"][0]["item_id"], first.as_str());
+    // The autofill history of the device (SQLite store): the session's
+    // browser and profile, then a pick.
+    let client = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 5, "op": "client_info", "browser": "chrome",
+               "profile_id": "0b8f-profile"}),
+    );
+    assert_eq!(client["ok"], json!({}), "{client}");
+    let picked = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 6, "op": "note_autofill", "ctx": "menu", "origin": ATLAS,
+               "action": "picked", "item_id": first, "rank": 0}),
+    );
+    assert_eq!(picked["ok"], json!({}), "{picked}");
     assert!(host.wait().success());
 
     let audit = fs::read_to_string(env.data.join("audit.log")).unwrap();

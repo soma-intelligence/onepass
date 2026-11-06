@@ -67,7 +67,7 @@ struct SecretKeyScanner: UIViewControllerRepresentable {
 
 /// The scanner in a sheet with a cancel button. `title` and `accept` default to the Emergency Kit.
 struct SecretKeyScannerSheet: View {
-    var title: LocalizedStringKey = "QR code du kit"
+    var title: LocalizedStringKey = "onboarding.kitQrCode"
     var accept: (String) -> String? = EmergencyKit.parsePayload
     let onKey: (String) -> Void
     @Environment(\.dismiss) private var dismiss

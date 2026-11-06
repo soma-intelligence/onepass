@@ -14,13 +14,13 @@ use std::fmt;
 use aws_lc_rs::agreement::{self, PrivateKey, UnparsedPublicKey, X25519};
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{self, SHA3_256, SHA256};
-use aws_lc_rs::encoding::{AsBigEndian, Curve25519SeedBin};
 use aws_lc_rs::kem::{Ciphertext, DecapsulationKey, EncapsulationKey, ML_KEM_1024};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::aead::{Aad, BlobKind, HEADER_LEN, LEN_PREFIX, TAG_LEN, open, padded_len, seal};
 use super::key::{SymmetricKey, hkdf32};
+use super::random::fill_random;
 use crate::{Error, Id, Result};
 
 pub(crate) const MLKEM_PUBLIC_LEN: usize = 1568;
@@ -64,11 +64,9 @@ pub struct HybridKemPublic {
 
 impl HybridKemSecret {
     pub fn generate() -> Result<HybridKemSecret> {
-        let dk = DecapsulationKey::generate(&ML_KEM_1024).map_err(|_| Error::Crypto)?;
-        let dk_bytes = dk.key_bytes().map_err(|_| Error::Crypto)?;
-        let x = PrivateKey::generate(&X25519).map_err(|_| Error::Crypto)?;
-        let seed: Curve25519SeedBin<'static> = x.as_be_bytes().map_err(|_| Error::Crypto)?;
-        Self::from_parts(dk_bytes.as_ref(), seed.as_ref())
+        let dk = mlkem_generate()?;
+        let x = x25519_generate()?;
+        Self::from_parts(&dk, &*x)
     }
 
     /// `mlkem (3168) || x25519 (32)`.
@@ -269,7 +267,8 @@ fn wrap_with_info(
         .map_err(|_| Error::InvalidFormat("mlkem public key"))?;
     let (ct, ss_mlkem) = ek.encapsulate().map_err(|_| Error::Crypto)?;
 
-    let eph = PrivateKey::generate(&X25519).map_err(|_| Error::Crypto)?;
+    let eph =
+        PrivateKey::from_private_key(&X25519, &*x25519_generate()?).map_err(|_| Error::Crypto)?;
     let eph_pub = x25519_public(&eph)?;
     let ss_x25519 = x25519_agree(&eph, &recipient.x25519)?;
 
@@ -368,11 +367,42 @@ fn unwrap_split(
     Ok(key)
 }
 
-/// Generate a raw ML-KEM-1024 decapsulation key (3168 bytes).
-pub(crate) fn mlkem_generate() -> Result<Zeroizing<Vec<u8>>> {
-    let dk = DecapsulationKey::generate(&ML_KEM_1024).map_err(|_| Error::Crypto)?;
-    let bytes = dk.key_bytes().map_err(|_| Error::Crypto)?;
-    Ok(Zeroizing::new(bytes.as_ref().to_vec()))
+/// Generate a raw ML-KEM-1024 decapsulation key (3168 bytes, FIPS 203
+/// layout) from 64 hedged random bytes (`d || z`, `crypto::random`).
+///
+/// aws-lc has no seeded ML-KEM key generation, so the deterministic
+/// `ML-KEM.KeyGen_internal(d, z)` step runs in `libcrux-ml-kem` (formally
+/// verified, cross-checked against aws-lc by `tests/differential.rs`). The
+/// key is then checked by aws-lc (FIPS 203 input check) and by a pairwise
+/// consistency test (aws-lc encapsulates to it, aws-lc decapsulates) before
+/// it is returned. Only where the randomness comes from changes: the key
+/// format is the one aws-lc writes.
+pub fn mlkem_generate() -> Result<Zeroizing<Vec<u8>>> {
+    let mut seed = Zeroizing::new([0u8; 64]);
+    fill_random(&mut *seed)?;
+    let dk = {
+        // libcrux's key pair may not be wiped on drop: kept to this block.
+        let pair = libcrux_ml_kem::mlkem1024::generate_key_pair(*seed);
+        Zeroizing::new(pair.private_key().as_slice().to_vec())
+    };
+    let ek = mlkem_check_secret(&dk).map_err(|_| Error::Crypto)?;
+    // Pairwise consistency test, all in aws-lc.
+    let enc = EncapsulationKey::new(&ML_KEM_1024, &ek).map_err(|_| Error::Crypto)?;
+    let (ct, ss) = enc.encapsulate().map_err(|_| Error::Crypto)?;
+    let dec = DecapsulationKey::new(&ML_KEM_1024, &dk).map_err(|_| Error::Crypto)?;
+    let ss2 = dec
+        .decapsulate(Ciphertext::from(ct.as_ref()))
+        .map_err(|_| Error::Crypto)?;
+    verify_slices_are_equal(ss.as_ref(), ss2.as_ref()).map_err(|_| Error::Crypto)?;
+    Ok(dk)
+}
+
+/// A new X25519 secret (32 hedged random bytes; aws-lc clamps at use).
+pub fn x25519_generate() -> Result<Zeroizing<[u8; 32]>> {
+    let mut x = Zeroizing::new([0u8; 32]);
+    fill_random(&mut *x)?;
+    PrivateKey::from_private_key(&X25519, &*x).map_err(|_| Error::Crypto)?;
+    Ok(x)
 }
 
 /// Input check of a raw decapsulation key (FIPS 203: embedded key matches

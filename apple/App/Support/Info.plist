@@ -5,7 +5,7 @@
 	<key>AppIdentifierPrefix</key>
 	<string>$(AppIdentifierPrefix)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>fr</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>OnePass</string>
 	<key>CFBundleExecutable</key>
@@ -42,13 +42,12 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_onepass-pair._tcp</string>
+		<string>_onepass-contact._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification.</string>
@@ -57,9 +56,13 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>ASCredentialExchangeActivity</string>
+	</array>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
 	<key>OnePassBrowserExtensions</key>
@@ -68,6 +71,28 @@
 	<string>$(ONEPASS_CLOUDKIT_CONTAINER)</string>
 	<key>OnePassKeychainGroup</key>
 	<string>$(ONEPASS_KEYCHAIN_GROUP)</string>
+	<key>OnePassMailboxSignup</key>
+	<string>$(ONEPASS_MAILBOX_SIGNUP)</string>
+	<key>OnePassMailboxURL</key>
+	<string>$(ONEPASS_MAILBOX_URL)</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>$(ONEPASS_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(ONEPASS_SPARKLE_PUBLIC_KEY)</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -80,7 +80,7 @@ paired("smart_fill_checkout_fills_card_identity_email_never_pays", async ({ ext 
   expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "checkout", action: "fill" });
 });
 
-paired("smart_fill_signup_generates_password_never_submits_then_offers_save", async ({ ext }) => {
+paired("smart_fill_signup_generates_password_never_submits_then_saves_it", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/signup`);
   const submits = await countSubmits(page);
@@ -98,9 +98,33 @@ paired("smart_fill_signup_generates_password_never_submits_then_offers_save", as
   await page.locator("#email").fill("new.user@atlas.dev");
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 15_000 });
-  const save = await ext.extFrame(page, "save");
-  await expect(save.locator("body")).toContainText("Enregistrer le login", { timeout: 15_000 });
-  await expect(save.locator("body")).toContainText("new.user@atlas.dev");
+  // The generated password was saved as a pending Login before the submit
+  // (save-before-submit): the submission confirms that item, with the
+  // submitted address, and asks nothing (the card only says it is saved).
+  const saved = audited(ext, "save_login");
+  expect(saved).toHaveLength(1);
+  await expect.poll(() => audited(ext, "confirm_pending").length, { timeout: 15_000 }).toBe(1);
+  expect(audited(ext, "confirm_pending")[0]?.item_id).toBe(saved[0]?.item_id);
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText("new.user@atlas.dev");
+  await expect(card.locator("button", { hasText: "Enregistrer" })).toHaveCount(0);
+});
+
+paired("smart_fill_signup_handle_username", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/signup-handle`);
+  await clickIcon(ext, page, "#new-password");
+  await expect(page.locator("#new-password")).not.toHaveValue("", { timeout: 15_000 });
+  // MS-06: the e-mail in its own field, the username a handle the field's pattern accepts.
+  await expect(page.locator("#email")).toHaveValue(FX.identity.email);
+  const handle = await page.locator("#username").inputValue();
+  expect(handle).toMatch(/^[a-z0-9_.]{3,20}$/);
+  expect(handle).toContain("alex");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 15_000 });
+  await expect.poll(() => audited(ext, "confirm_pending").length, { timeout: 15_000 }).toBe(1);
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText(handle);
 });
 
 paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
@@ -111,16 +135,11 @@ paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
   const menu = await ext.extFrame(page, "menu");
   await menu.waitForLoadState("domcontentloaded");
   expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ action: "show_menu" });
+  // The pick signs in to the end (identifier, password, code), and the chain notes it at its end.
   await ext.pickRow(menu, "Atlas Cloud", FX.atlas.email);
-  await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
-  // The user sends the identifier: the page moves on, the pick is noted.
-  await page.locator("#next").click();
-  await expect(page).toHaveURL(`${ATLAS}/multistep/password`);
-  await expect.poll(() => audited(ext, "note_fill").length, { timeout: 10_000 }).toBe(1);
-  // One click on the password page: the remembered account, the chain to the end (done).
-  await clickIcon(ext, page, "#password");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect.poll(async () => (await ext.chainState())?.status, { timeout: 20_000 }).toBe("done");
+  await expect.poll(() => audited(ext, "note_fill").length, { timeout: 10_000 }).toBe(1);
   await page.goto(`${ATLAS}/logout`);
 
   // Next time: the same account, no menu.
@@ -130,4 +149,68 @@ paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
   await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
   expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ action: "open_chain", confidence: "high" });
   expect(ext.findExtFrame(page, "menu")).toBeUndefined();
+});
+
+// One-click signup (2026-11-02): a form that can make a passkey asks first.
+
+/** The menu's signup row (`password` or `passkey`), clicked past its click guard. */
+async function pickSignup(ext: Ext, page: Page, mode: "password" | "passkey"): Promise<void> {
+  const menu = await ext.extFrame(page, "menu");
+  const row = menu.locator(`button.row[data-signup="${mode}"]`);
+  await expect(row).toHaveCount(1);
+  await ext.settle();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    if (menu.isDetached()) return;
+    await row.click({ timeout: 5_000 }).catch(() => undefined);
+    const closed = await row
+      .waitFor({ state: "detached", timeout: 1_000 })
+      .then(() => true)
+      .catch(() => menu.isDetached());
+    if (closed) return;
+    await ext.settle();
+  }
+}
+
+paired("smart_fill_signup_with_passkey_asks_then_fills_with_a_password", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/signup-passkey`);
+  const submits = await countSubmits(page);
+  await clickIcon(ext, page, "#new-password");
+  // Asked first: nothing written before the choice.
+  const menu = await ext.extFrame(page, "menu");
+  await expect(menu.locator('button.row[data-signup="passkey"]')).toHaveCount(1);
+  await expect(page.locator("#new-password")).toHaveValue("");
+  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
+  await pickSignup(ext, page, "password");
+  await expect(page.locator("#new-password")).not.toHaveValue("", { timeout: 15_000 });
+  const pw = await page.locator("#new-password").inputValue();
+  await expect(page.locator("#confirm-password")).toHaveValue(pw);
+  await expect(page.locator("#email")).toHaveValue(FX.identity.email);
+  await expect(page.locator("#given-name")).toHaveValue(FX.identity.given);
+  await ext.settle(1500);
+  expect(await submits()).toBe(0);
+  await expect(page.locator("#result")).not.toHaveAttribute("data-status", /.+/);
+  expect(page.url()).toBe(`${ATLAS}/signup-passkey`);
+});
+
+paired("smart_fill_signup_passkey_choice_opens_the_onepass_window", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/signup-passkey`);
+  const submits = await countSubmits(page);
+  await clickIcon(ext, page, "#email");
+  const opened = ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 20_000 });
+  await pickSignup(ext, page, "passkey");
+  // The identity, then the site's own passkey button: OnePass's window asks.
+  const win = await opened;
+  await expect(win.getByRole("heading", { name: "Enregistrer une passkey" })).toBeVisible();
+  await expect(win.getByText(FX.identity.email)).toBeVisible();
+  await expect(page.locator("#email")).toHaveValue(FX.identity.email);
+  // No password made, nothing created before the user's click in the window.
+  await expect(page.locator("#new-password")).toHaveValue("");
+  expect(ext.audit()).not.toContain("passkey_create");
+  await ext.settle();
+  await win.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.locator("#result")).toHaveAttribute("data-status", "Créée", { timeout: 15_000 });
+  expect(ext.audit()).toContain("passkey_create");
+  expect(await submits()).toBe(0);
 });

@@ -6,78 +6,78 @@ import VaultKit
 /// (the `VaultBadge` palette). Vaults made before the larger set keep their outline symbols.
 enum VaultStyle {
     static let catalog: [(symbol: String, label: String)] = [
-        ("folder.fill", String(localized: "Dossier")),
-        ("archivebox.fill", String(localized: "Archives")),
-        ("house.fill", String(localized: "Maison")),
-        ("building.2.fill", String(localized: "Bureau")),
+        ("folder.fill", String(localized: "app.folder")),
+        ("archivebox.fill", String(localized: "vaults.archives")),
+        ("house.fill", String(localized: "vaults.house")),
+        ("building.2.fill", String(localized: "vaults.office")),
         ("building.columns.fill", String(localized: "Banque")),
         ("briefcase.fill", String(localized: "Travail")),
-        ("person.fill", String(localized: "Personne")),
-        ("person.2.fill", String(localized: "Duo")),
+        ("person.fill", String(localized: "vaults.person")),
+        ("person.2.fill", String(localized: "vaults.twoPeople")),
         ("figure.2.and.child.holdinghands", String(localized: "Famille")),
-        ("heart.fill", String(localized: "Cœur")),
-        ("star.fill", String(localized: "Étoile")),
-        ("crown.fill", String(localized: "Couronne")),
-        ("cart.fill", String(localized: "Panier")),
-        ("bag.fill", String(localized: "Achats")),
-        ("gift.fill", String(localized: "Cadeau")),
-        ("creditcard.fill", String(localized: "Carte bancaire")),
-        ("banknote.fill", String(localized: "Argent")),
-        ("chart.bar.fill", String(localized: "Finances")),
-        ("scalemass.fill", String(localized: "Juridique")),
-        ("doc.text.fill", String(localized: "Documents")),
-        ("envelope.fill", String(localized: "Courrier")),
-        ("phone.fill", String(localized: "Téléphone")),
-        ("bubble.left.and.bubble.right.fill", String(localized: "Messages")),
-        ("globe.americas.fill", String(localized: "Monde")),
+        ("heart.fill", String(localized: "vaults.heart")),
+        ("star.fill", String(localized: "vaults.star")),
+        ("crown.fill", String(localized: "vaults.crown")),
+        ("cart.fill", String(localized: "vaults.cart")),
+        ("bag.fill", String(localized: "vaults.shopping")),
+        ("gift.fill", String(localized: "vaults.gift")),
+        ("creditcard.fill", String(localized: "vaults.creditCard")),
+        ("banknote.fill", String(localized: "vaults.money")),
+        ("chart.bar.fill", String(localized: "vaults.finances")),
+        ("scalemass.fill", String(localized: "vaults.legal")),
+        ("doc.text.fill", String(localized: "vaults.documents")),
+        ("envelope.fill", String(localized: "vaults.mail")),
+        ("phone.fill", String(localized: "app.phone")),
+        ("bubble.left.and.bubble.right.fill", String(localized: "vaults.messages")),
+        ("globe.americas.fill", String(localized: "vaults.world")),
         ("airplane", String(localized: "Voyage")),
-        ("car.fill", String(localized: "Voiture")),
-        ("sailboat.fill", String(localized: "Bateau")),
-        ("tram.fill", String(localized: "Transports")),
-        ("map.fill", String(localized: "Carte")),
-        ("mountain.2.fill", String(localized: "Montagne")),
-        ("tent.fill", String(localized: "Camping")),
-        ("tree.fill", String(localized: "Nature")),
-        ("leaf.fill", String(localized: "Feuille")),
-        ("flame.fill", String(localized: "Flamme")),
-        ("drop.fill", String(localized: "Goutte")),
-        ("bolt.fill", String(localized: "Énergie")),
-        ("sun.max.fill", String(localized: "Soleil")),
-        ("moon.stars.fill", String(localized: "Nuit")),
-        ("cloud.fill", String(localized: "Nuage")),
-        ("snowflake", String(localized: "Hiver")),
-        ("graduationcap.fill", String(localized: "Études")),
-        ("book.fill", String(localized: "Livre")),
-        ("pencil.and.outline", String(localized: "Écriture")),
-        ("paintbrush.fill", String(localized: "Art")),
-        ("music.note", String(localized: "Musique")),
-        ("film.fill", String(localized: "Cinéma")),
-        ("camera.fill", String(localized: "Photo")),
-        ("gamecontroller.fill", String(localized: "Jeux")),
-        ("dice.fill", String(localized: "Dés")),
-        ("puzzlepiece.fill", String(localized: "Puzzle")),
-        ("tennisball.fill", String(localized: "Sport")),
-        ("dumbbell.fill", String(localized: "Fitness")),
-        ("figure.run", String(localized: "Course")),
-        ("cross.case.fill", String(localized: "Santé")),
-        ("pills.fill", String(localized: "Médicaments")),
-        ("pawprint.fill", String(localized: "Animaux")),
-        ("cup.and.saucer.fill", String(localized: "Café")),
-        ("fork.knife", String(localized: "Restaurants")),
-        ("wrench.and.screwdriver.fill", String(localized: "Outils")),
-        ("hammer.fill", String(localized: "Bricolage")),
-        ("terminal.fill", String(localized: "Terminal")),
-        ("chevron.left.forwardslash.chevron.right", String(localized: "Code")),
-        ("server.rack", String(localized: "Serveurs")),
-        ("cpu.fill", String(localized: "Matériel")),
-        ("wifi", String(localized: "Wi-Fi")),
-        ("atom", String(localized: "Science")),
-        ("testtube.2", String(localized: "Laboratoire")),
-        ("key.fill", String(localized: "Clé")),
-        ("lock.fill", String(localized: "Cadenas")),
-        ("shield.fill", String(localized: "Bouclier")),
-        ("flag.fill", String(localized: "Drapeau")),
-        ("sparkles", String(localized: "Étincelles")),
+        ("car.fill", String(localized: "vaults.car")),
+        ("sailboat.fill", String(localized: "vaults.boat")),
+        ("tram.fill", String(localized: "vaults.transit")),
+        ("map.fill", String(localized: "vaults.map")),
+        ("mountain.2.fill", String(localized: "vaults.mountain")),
+        ("tent.fill", String(localized: "vaults.camping")),
+        ("tree.fill", String(localized: "vaults.nature")),
+        ("leaf.fill", String(localized: "vaults.leaf")),
+        ("flame.fill", String(localized: "vaults.flame")),
+        ("drop.fill", String(localized: "vaults.drop")),
+        ("bolt.fill", String(localized: "vaults.energy")),
+        ("sun.max.fill", String(localized: "vaults.sun")),
+        ("moon.stars.fill", String(localized: "vaults.night")),
+        ("cloud.fill", String(localized: "vaults.cloud")),
+        ("snowflake", String(localized: "vaults.winter")),
+        ("graduationcap.fill", String(localized: "vaults.school")),
+        ("book.fill", String(localized: "vaults.book")),
+        ("pencil.and.outline", String(localized: "vaults.writing")),
+        ("paintbrush.fill", String(localized: "vaults.art")),
+        ("music.note", String(localized: "vaults.music")),
+        ("film.fill", String(localized: "vaults.movies")),
+        ("camera.fill", String(localized: "vaults.photo")),
+        ("gamecontroller.fill", String(localized: "vaults.games")),
+        ("dice.fill", String(localized: "vaults.dice")),
+        ("puzzlepiece.fill", String(localized: "vaults.puzzle")),
+        ("tennisball.fill", String(localized: "vaults.sports")),
+        ("dumbbell.fill", String(localized: "vaults.fitness")),
+        ("figure.run", String(localized: "vaults.running")),
+        ("cross.case.fill", String(localized: "vaults.health")),
+        ("pills.fill", String(localized: "vaults.medication")),
+        ("pawprint.fill", String(localized: "vaults.pets")),
+        ("cup.and.saucer.fill", String(localized: "vaults.coffee")),
+        ("fork.knife", String(localized: "vaults.restaurants")),
+        ("wrench.and.screwdriver.fill", String(localized: "vaults.tools")),
+        ("hammer.fill", String(localized: "vaults.diy")),
+        ("terminal.fill", String(localized: "vaults.terminal")),
+        ("chevron.left.forwardslash.chevron.right", String(localized: "vaults.code")),
+        ("server.rack", String(localized: "vaults.servers")),
+        ("cpu.fill", String(localized: "vaults.hardware")),
+        ("wifi", String(localized: "vaults.wiFi")),
+        ("atom", String(localized: "vaults.science")),
+        ("testtube.2", String(localized: "vaults.lab")),
+        ("key.fill", String(localized: "app.key")),
+        ("lock.fill", String(localized: "vaults.lock")),
+        ("shield.fill", String(localized: "vaults.shield")),
+        ("flag.fill", String(localized: "vaults.flag")),
+        ("sparkles", String(localized: "vaults.sparkles")),
     ]
 
     static let icons = catalog.map(\.symbol)
@@ -99,25 +99,25 @@ enum VaultStyle {
 
     static func colorLabel(_ name: String) -> String {
         switch name {
-        case "red": String(localized: "Rouge")
-        case "orange": String(localized: "Orange")
-        case "amber": String(localized: "Ambre")
-        case "yellow": String(localized: "Jaune")
-        case "lime": String(localized: "Citron vert")
-        case "green": String(localized: "Vert")
-        case "mint": String(localized: "Menthe")
-        case "teal": String(localized: "Turquoise")
-        case "cyan": String(localized: "Cyan")
-        case "sky": String(localized: "Ciel")
-        case "blue": String(localized: "Bleu")
-        case "indigo": String(localized: "Indigo")
-        case "purple": String(localized: "Violet")
-        case "pink": String(localized: "Rose")
-        case "rose": String(localized: "Rose poudré")
-        case "brown": String(localized: "Brun")
-        case "graphite": String(localized: "Graphite")
-        case "gray": String(localized: "Gris")
-        default: String(localized: "Gris")
+        case "red": String(localized: "vaults.red")
+        case "orange": String(localized: "vaults.orange")
+        case "amber": String(localized: "vaults.amber")
+        case "yellow": String(localized: "vaults.yellow")
+        case "lime": String(localized: "vaults.lime")
+        case "green": String(localized: "vaults.green")
+        case "mint": String(localized: "vaults.mint")
+        case "teal": String(localized: "vaults.teal")
+        case "cyan": String(localized: "vaults.cyan")
+        case "sky": String(localized: "vaults.sky")
+        case "blue": String(localized: "vaults.blue")
+        case "indigo": String(localized: "vaults.indigo")
+        case "purple": String(localized: "vaults.purple")
+        case "pink": String(localized: "vaults.pink")
+        case "rose": String(localized: "vaults.rose")
+        case "brown": String(localized: "vaults.brown")
+        case "graphite": String(localized: "vaults.graphite")
+        case "gray": String(localized: "vaults.gray")
+        default: String(localized: "vaults.gray")
         }
     }
 
@@ -175,6 +175,8 @@ struct VaultEditorView: View {
     @State private var confirmDelete = false
     @FocusState private var nameFocused: Bool
 
+    @State private var sharingVault = false
+
     init(vault: FfiVault?, onDone: @escaping () -> Void) {
         self.vault = vault
         self.onDone = onDone
@@ -196,7 +198,7 @@ struct VaultEditorView: View {
                             .shadow(color: VaultBadge.color(named: color).opacity(0.35), radius: 14, y: 6)
                             .animation(.spring(duration: 0.35, bounce: 0.3), value: color)
                             .animation(.spring(duration: 0.35, bounce: 0.3), value: icon)
-                        TextField("Nom du coffre", text: $name, prompt: Text("Projet Atlas"))
+                        TextField("vaults.vaultName", text: $name, prompt: Text("Projet Atlas"))
                             .labelsHidden()
                             .textFieldStyle(.plain)
                             .multilineTextAlignment(.center)
@@ -212,7 +214,7 @@ struct VaultEditorView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                 }
-                Section("Couleur") {
+                Section("vaults.color") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)], spacing: 10) {
                         ForEach(VaultStyle.colors, id: \.self) { name in
                             colorButton(name)
@@ -220,7 +222,7 @@ struct VaultEditorView: View {
                     }
                     .padding(.vertical, 6)
                 }
-                Section("Icône") {
+                Section("vaults.icon") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 46), spacing: 8)], spacing: 8) {
                         ForEach(VaultStyle.icons, id: \.self) { symbol in
                             iconButton(symbol)
@@ -229,12 +231,13 @@ struct VaultEditorView: View {
                     .padding(.vertical, 6)
                 }
                 Section {
-                    Toggle("Sûr en voyage", isOn: $travelSafe)
+                    Toggle("app.safeForTravel", isOn: $travelSafe)
                         .accessibilityIdentifier("vault.editor.travelSafe")
                 } footer: {
-                    Text("En Travel Mode, les coffres qui ne sont pas sûrs en voyage quittent tes appareils jusqu'à ton retour.")
+                    Text("vaults.inTravelModeVaults")
                 }
                 if let vault {
+                    shareSection(vault)
                     deleteSection(vault)
                 }
                 if let errorMessage {
@@ -246,7 +249,7 @@ struct VaultEditorView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(vault == nil ? Text("Nouveau coffre") : Text("Coffre"))
+            .navigationTitle(vault == nil ? Text("Nouveau coffre") : Text("term.vault"))
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -282,28 +285,50 @@ struct VaultEditorView: View {
         !model.session.summaries.contains { $0.vaultId == vault.id && $0.trashedAt == nil }
     }
 
+    /// "Partage" (sharing spec 10): the members of a shared vault, or "Partager" on a private one.
+    @ViewBuilder private func shareSection(_ vault: FfiVault) -> some View {
+        Section("sharing.vault.section") {
+            if model.session.sharedRole(of: vault.id) != nil {
+                NavigationLink {
+                    MembersView(vaultID: vault.id)
+                } label: {
+                    Label("sharing.vault.members", systemImage: "person.2")
+                }
+                .accessibilityIdentifier("vault.editor.members")
+            } else {
+                Button {
+                    sharingVault = true
+                } label: {
+                    Label("sharing.vault.share", systemImage: "person.crop.circle.badge.plus")
+                }
+                .accessibilityIdentifier("vault.editor.share")
+                .sheet(isPresented: $sharingVault) { ShareVaultSheet(vaultID: vault.id) }
+            }
+        }
+    }
+
     private func deleteSection(_ vault: FfiVault) -> some View {
         let last = model.session.allVaults.count <= 1
         let empty = isEmpty(vault)
         return Section {
-            Button("Supprimer le coffre", systemImage: "trash", role: .destructive) { confirmDelete = true }
+            Button("vaults.deleteVault", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 .disabled(last || !empty || saving)
                 .accessibilityIdentifier("vault.editor.delete")
         } footer: {
             if last {
-                Text("Le dernier coffre ne peut pas être supprimé.")
+                Text("vaults.lastVaultCantDeleted")
             } else if !empty {
-                Text("Vide ce coffre avant de le supprimer. Les éléments à la corbeille partent avec lui.")
+                Text("vaults.emptyVaultBeforeDeleting")
             }
         }
         .confirmationDialog(
             Text("Supprimer « \(vault.meta.name) » ?"), isPresented: $confirmDelete, titleVisibility: .visible
         ) {
-            Button("Supprimer le coffre", role: .destructive) { delete(vault) }
+            Button("vaults.deleteVault", role: .destructive) { delete(vault) }
                 .accessibilityIdentifier("vault.editor.delete.confirm")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Il disparaît de tous tes appareils, avec les éléments de sa corbeille.")
+            Text("vaults.itDisappearsFromAll")
         }
     }
 

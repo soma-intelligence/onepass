@@ -23,7 +23,8 @@ final class NoSaveSheetUITests: XCTestCase {
     private static let sheetWatch: TimeInterval = 10
 
     /// Debug: the app's own test store, defaults suite and keychain service, never the real ones.
-    private static let isolated = ["-OnePassTestIsolation", "YES"]
+    /// In French whatever the simulator's language: the steps look for French button labels.
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR"]
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -142,8 +143,12 @@ final class NoSaveSheetUITests: XCTestCase {
     private func createAccount(_ app: XCUIApplication) {
         tap(app.buttons["onboarding.create"])
         tap(app.buttons["onboarding.primary"])
-        type(Self.password, into: secretField(app, "onboarding.password"))
-        type(Self.password, into: secretField(app, "onboarding.confirm"))
+        // Return moves to the confirmation (905c8d41): with the keyboard up the confirmation sits
+        // below the fold, and a drag from 70 % of the screen lands on the keyboard, not the form.
+        type(Self.password + "\n", into: secretField(app, "onboarding.password"))
+        let confirm = secretField(app, "onboarding.confirm")
+        if !(confirm.value(forKey: "hasKeyboardFocus") as? Bool ?? false) { tap(confirm) }
+        confirm.typeText(Self.password)
         tap(app.buttons["onboarding.primary"])
         let kitStored = app.buttons["onboarding.kitStored"]
         XCTAssertTrue(kitStored.waitForExistence(timeout: Self.kdfTimeout), "account not created")
@@ -184,10 +189,11 @@ final class NoSaveSheetUITests: XCTestCase {
         secretField(app, "editor.field.password")
     }
 
-    /// Swipes the form up until the element exists (a lazy form only builds the rows on screen).
+    /// Swipes the form up until the element is on screen (a lazy form only builds the rows on
+    /// screen, and a row already built may still sit below the fold).
     private func scrollDown(_ app: XCUIApplication, to element: XCUIElement) {
         var swipes = 0
-        while !element.exists, swipes < 8 {
+        while !(element.exists && element.isHittable), swipes < 8 {
             app.swipeUp()
             swipes += 1
         }

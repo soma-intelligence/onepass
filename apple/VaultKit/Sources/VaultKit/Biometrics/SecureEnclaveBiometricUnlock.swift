@@ -104,7 +104,7 @@ public struct SecureEnclaveKeyring: EnclaveKeyring {
     public func decrypt(_ data: Data, tag: String, prompt: String) async throws -> Data {
         let context = ContextBox(LAContext())
         context.value.localizedReason = prompt
-        context.value.localizedFallbackTitle = String(localized: "Utiliser le mot de passe maître", bundle: VaultKitStrings.bundle)
+        context.value.localizedFallbackTitle = String(localized: "biometrics.useMasterPassword", bundle: VaultKitStrings.bundle)
         // SecKey decryption blocks while the system biometric sheet is up: run it off the
         // caller's thread, and dismiss the sheet if the calling task is cancelled.
         return try await withTaskCancellationHandler {

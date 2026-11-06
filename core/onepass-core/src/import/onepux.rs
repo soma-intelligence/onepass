@@ -7,9 +7,15 @@
 //! [`FIELD_MAP`]; anything else lands in the `imported` section. Fields are
 //! always matched by id, kind or designation, never by their label (labels
 //! follow the language of the 1Password app). A "sign in with" field
-//! (`ssoLogin`) becomes the login's provider method, linked to the item of
-//! that account when it is in the same export. Entries under `files/` are
-//! attachments, skipped with a warning (ruling 19).
+//! (`ssoLogin`, also read as `sso` or `signInWith`) becomes the login's
+//! provider method, linked to the item of that account when it is in the
+//! same export, whatever the item's category: an item that signs in with a
+//! provider is a Login, never a Secure Note. Its account email becomes the
+//! username when the login has none. 1PUX never carries a passkey's private
+//! key: a passkey there only raises `passkey_needs_cxf` (Credential Exchange
+//! brings the key). Every item is tagged with its source
+//! (`SOURCE_TAG_PREFIX`), so a later import finds it. Entries under `files/`
+//! are attachments, skipped with a warning (ruling 19).
 //! Secrets come out of serde_json as `String`s and are moved into
 //! `Zeroizing` without a copy; the parser's transient buffers inside
 //! serde_json are the limit of that guarantee.
@@ -29,7 +35,8 @@ use crate::model::{
 use super::build::Draft;
 use super::json::{Lenient, Slots};
 use super::limits::{MAX_RECORDS, zip_entries};
-use super::{Import, Warning};
+use super::{Import, SOURCE_TAG_PREFIX, Warning};
+use crate::model::PasskeyCredential;
 
 /// `(categoryUuid, 1Password field id, OnePass template field id)`.
 pub(crate) const FIELD_MAP: &[(&str, &str, &str)] = &[
@@ -309,6 +316,8 @@ struct Vault {
 #[serde(default)]
 struct VaultAttrs {
     #[serde(deserialize_with = "lenient")]
+    uuid: Option<String>,
+    #[serde(deserialize_with = "lenient")]
     name: Option<String>,
 }
 
@@ -346,6 +355,10 @@ struct Details {
     sections: Lenient<RawSection>,
     #[serde(rename = "passwordHistory")]
     password_history: Lenient<HistoryEntry>,
+    /// Passkey metadata, one object or a list (never the private key in
+    /// the exports seen so far).
+    passkey: Value,
+    passkeys: Value,
 }
 
 #[derive(Deserialize, Default)]
@@ -447,6 +460,7 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
     let mut links: Vec<(Option<String>, Option<String>)> = Vec::new();
     for vault in root.accounts.list.into_iter().flat_map(|a| a.vaults.list) {
         let folder = vault.attrs.name.unwrap_or_default();
+        let vault_uuid = vault.attrs.uuid.unwrap_or_default();
         for raw in vault.items.0 {
             let entry = index;
             index = index.saturating_add(1);
@@ -472,10 +486,28 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
                     code: "unsupported_entry",
                 });
             }
-            let uuid = raw.uuid.as_deref().map(str::trim).map(str::to_owned);
-            let (mut d, account) = item_draft(raw);
+            let uuid = raw
+                .uuid
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(str::to_owned);
+            let (mut d, account, keyless_passkey) = item_draft(raw);
             d.folder(&folder);
+            // 1Password item uuids are unique within a vault only.
+            if let Some(uuid) = &uuid {
+                d.tag(&format!(
+                    "{SOURCE_TAG_PREFIX}1pux:{}/{uuid}",
+                    vault_uuid.trim()
+                ));
+            }
             d.finish(entry, &mut out);
+            if keyless_passkey {
+                out.warnings.push(Warning {
+                    entry,
+                    code: "passkey_needs_cxf",
+                });
+            }
             links.push((uuid, account));
         }
     }
@@ -497,48 +529,249 @@ pub(crate) fn parse_1pux(b: &[u8]) -> Result<Import> {
 /// the item of its account. The ids are replaced when the import is
 /// written, the accounts remapped with them (`onepass-ffi`). A reference
 /// to an item that is not in the export keeps the placeholder
-/// `Id([0; 16])`: the login keeps its provider, with no account item.
+/// `Id([0; 16])`: the login keeps its provider, with no account item. A
+/// provider the field did not name ("sign in with" another 1Password item)
+/// is guessed from that account item (`account_provider`). A login without
+/// a username takes its account item's username (the account email).
 fn link_providers(out: &mut Import, links: &[(Option<String>, Option<String>)]) {
     for it in &mut out.items {
         it.item.id = Id::new();
     }
-    let ids: Vec<Id> = out.items.iter().map(|it| it.item.id).collect();
-    let id_of = |uuid: &str| {
+    // Per item: id, the provider it looks like, and its username.
+    let facts: Vec<(Id, Provider, String)> = out
+        .items
+        .iter()
+        .map(|it| {
+            let user = match it.item.field("username").map(|f| &f.value) {
+                Some(FieldValue::Text(u) | FieldValue::Email(u)) => u.trim().to_owned(),
+                _ => String::new(),
+            };
+            (it.item.id, account_provider(&it.item), user)
+        })
+        .collect();
+    let account_of = |uuid: &str| {
         links
             .iter()
-            .zip(&ids)
+            .zip(&facts)
             .find(|((u, _), _)| u.as_deref() == Some(uuid))
-            .map(|(_, id)| *id)
+            .map(|(_, f)| f)
     };
     for (it, (_, account)) in out.items.iter_mut().zip(links) {
-        let Some(account) = account.as_deref().and_then(id_of) else {
-            continue;
-        };
+        let target = account.as_deref().and_then(account_of);
+        let mut linked = false;
         for m in &mut it.item.login_methods {
-            if let LoginMethod::Provider { account: a, .. } = m {
-                *a = account;
+            if let LoginMethod::Provider {
+                provider,
+                account: a,
+                ..
+            } = m
+            {
+                if *provider == unnamed_provider() {
+                    *provider = target.map_or_else(
+                        || Provider::CustomOidc(OTHER_ACCOUNT.to_owned()),
+                        |(_, p, _)| p.clone(),
+                    );
+                }
+                if let Some((id, _, _)) = target {
+                    *a = *id;
+                    linked = true;
+                }
             }
+        }
+        if linked
+            && let Some((_, _, user)) = target
+            && !user.is_empty()
+            && let Some(f) = it.item.field_mut("username")
+            && is_blank_value(&f.value)
+        {
+            f.value = FieldValue::Text(user.clone());
         }
     }
 }
 
-/// OnePass provider of a 1Password `ssoLogin` provider name. An unknown
-/// name is kept as a custom OIDC provider.
-fn provider_of(raw: &str) -> Provider {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "google" => Provider::Google,
-        "apple" => Provider::Apple,
-        "microsoft" => Provider::Microsoft,
-        "github" => Provider::GitHub,
-        "facebook" => Provider::Facebook,
-        "x" | "twitter" => Provider::X,
-        "linkedin" => Provider::LinkedIn,
-        "discord" => Provider::Discord,
-        "slack" => Provider::Slack,
-        "okta" => Provider::Okta,
-        "entra_id" | "entra" | "azure" => Provider::EntraId,
-        _ => Provider::CustomOidc(raw.trim().to_owned()),
+fn is_blank_value(v: &FieldValue) -> bool {
+    match v {
+        FieldValue::Empty => true,
+        FieldValue::Text(t) | FieldValue::Email(t) => t.trim().is_empty(),
+        _ => false,
     }
+}
+
+/// Provider name of a "sign in with" another item whose provider is
+/// unknown: the 1Password item does not say, the account item has no
+/// address, nor is it in the export.
+const OTHER_ACCOUNT: &str = "autre compte";
+
+/// Placeholder of a provider to guess from the account item, replaced by
+/// `link_providers` before the import is returned.
+fn unnamed_provider() -> Provider {
+    Provider::CustomOidc(String::new())
+}
+
+/// The provider an account item belongs to, from its title and addresses
+/// ("Google", accounts.google.com); else a custom provider named by its
+/// address, else by its title.
+fn account_provider(item: &crate::model::Item) -> Provider {
+    let hosts: Vec<String> = item
+        .urls
+        .iter()
+        .filter_map(|u| crate::watchtower::host::host_of(&u.url))
+        .collect();
+    let text = std::iter::once(item.title.as_str())
+        .chain(hosts.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if let Some(p) = known_provider(&text) {
+        return p;
+    }
+    let name = hosts.first().map_or(item.title.trim(), String::as_str);
+    if name.is_empty() {
+        Provider::CustomOidc(OTHER_ACCOUNT.to_owned())
+    } else {
+        Provider::CustomOidc(name.to_owned())
+    }
+}
+
+/// A well-known provider named anywhere in `text` (case-insensitive).
+/// Entra comes before Microsoft ("Microsoft Entra ID").
+fn known_provider(text: &str) -> Option<Provider> {
+    let t = text.to_lowercase();
+    let words: Vec<&str> = t
+        .split(|c: char| !c.is_alphanumeric() && c != '.')
+        .filter(|w| !w.is_empty())
+        .collect();
+    let has = |k: &str| t.contains(k);
+    let word = |k: &str| words.contains(&k);
+    Some(
+        if has("entra") || has("azuread") || has("azure ad") || word("azure") {
+            Provider::EntraId
+        } else if has("google") || has("gmail") {
+            Provider::Google
+        } else if has("github") {
+            Provider::GitHub
+        } else if word("apple") || has("appleid") || has("icloud") || has("apple.com") {
+            Provider::Apple
+        } else if has("microsoft") || has("outlook") || has("hotmail") || has("live.com") {
+            Provider::Microsoft
+        } else if has("facebook") || word("meta") || has("fb.com") {
+            Provider::Facebook
+        } else if has("linkedin") {
+            Provider::LinkedIn
+        } else if has("discord") {
+            Provider::Discord
+        } else if has("slack") {
+            Provider::Slack
+        } else if has("okta") {
+            Provider::Okta
+        } else if word("x") || word("x.com") || has("twitter") {
+            Provider::X
+        } else {
+            return None;
+        },
+    )
+}
+
+/// OnePass provider of a 1Password `ssoLogin` provider name: a known name
+/// ("google", "GitHub", "facebook.com", "Sign in with Apple"), or `None`
+/// when the field names no provider ("", "other", "item": sign in with
+/// another 1Password item). An unknown name is kept as a custom OIDC
+/// provider.
+fn provider_of(raw: &str) -> Option<Provider> {
+    let name = raw.trim();
+    let lower = name.to_lowercase();
+    let lower = lower
+        .strip_prefix("sign in with ")
+        .or_else(|| lower.strip_prefix("se connecter avec "))
+        .unwrap_or(&lower)
+        .trim();
+    if matches!(
+        lower,
+        "" | "other" | "item" | "login" | "custom" | "1password" | "onepassword" | "1password item"
+    ) {
+        return None;
+    }
+    Some(match lower {
+        "x" | "twitter" => Provider::X,
+        "entra_id" | "entra" | "azure" => Provider::EntraId,
+        _ => known_provider(lower).unwrap_or_else(|| Provider::CustomOidc(name.to_owned())),
+    })
+}
+
+/// A field value key that holds a "sign in with" (`ssoLogin`, and the
+/// spellings `sso` and `signInWith`).
+fn is_sso_key(k: &str) -> bool {
+    ["ssoLogin", "sso", "signInWith"]
+        .iter()
+        .any(|s| s.eq_ignore_ascii_case(k))
+}
+
+/// The item has a "sign in with" field.
+fn has_sso(details: &Details) -> bool {
+    details
+        .sections
+        .list
+        .iter()
+        .flat_map(|s| &s.fields.list)
+        .any(|f| match &f.value {
+            Value::Object(m) => m.keys().any(|k| is_sso_key(k)),
+            _ => false,
+        })
+}
+
+/// Passkey objects of an item: `details.passkey`, `details.passkeys`, and
+/// section values under a `passkey` key.
+fn passkey_objects(details: &Details) -> Vec<&Map<String, Value>> {
+    fn objects(v: &Value) -> Vec<&Map<String, Value>> {
+        match v {
+            Value::Object(m) => vec![m],
+            Value::Array(a) => a.iter().filter_map(Value::as_object).collect(),
+            _ => Vec::new(),
+        }
+    }
+    let mut out = objects(&details.passkey);
+    out.extend(objects(&details.passkeys));
+    for f in details.sections.list.iter().flat_map(|s| &s.fields.list) {
+        if let Value::Object(m) = &f.value {
+            for (k, v) in m {
+                if k.eq_ignore_ascii_case("passkey") {
+                    out.extend(objects(v));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Text member `keys[0]` (or the next spelling) of a JSON object.
+fn member(m: &Map<String, Value>, keys: &[&str]) -> String {
+    keys.iter()
+        .find_map(|k| match m.get(*k) {
+            Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_owned()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+/// A passkey with its private key, or `None` when any part is missing.
+fn full_passkey(m: &Map<String, Value>) -> Option<PasskeyCredential> {
+    let b64 = super::cxf::b64;
+    let credential_id = b64(&member(m, &["credentialId", "credentialID", "id"]))?;
+    let key = b64(&member(m, &["privateKey", "key"]))?;
+    if credential_id.is_empty() || key.is_empty() {
+        return None;
+    }
+    let user_handle = match member(m, &["userHandle", "userId"]).as_str() {
+        "" => Vec::new(),
+        h => b64(h)?,
+    };
+    Some(PasskeyCredential {
+        rp_id: member(m, &["rpId", "rpID", "relyingParty"]),
+        user_name: member(m, &["userName", "username"]),
+        user_handle,
+        credential_id,
+        private_key: Zeroizing::new(key),
+        created_at: OffsetDateTime::UNIX_EPOCH,
+    })
 }
 
 /// Elements of the item's nested lists that did not decode.
@@ -589,9 +822,9 @@ fn slot_kind(t: ItemType, id: &str) -> Option<FieldType> {
         .map(|f| f.kind)
 }
 
-/// The draft of one item, and the 1Password uuid of the account its
-/// "sign in with" field points to.
-fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
+/// The draft of one item, the 1Password uuid of the account its "sign in
+/// with" field points to, and whether it held a passkey without its key.
+fn item_draft(raw: RawItem) -> (Draft, Option<String>, bool) {
     let mut account: Option<String> = None;
     let RawItem {
         uuid: _,
@@ -605,7 +838,14 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
     } = raw;
     let category = category_uuid.unwrap_or_default();
     let category = category.trim();
-    let kind = category_type(category);
+    // An item that signs in with a provider is a login, whatever category
+    // carried it (unknown, missing, Password): never a secure note.
+    let kind = match category_type(category) {
+        ItemType::SecureNote | ItemType::Password if category != "003" && has_sso(&details) => {
+            ItemType::Login
+        }
+        k => k,
+    };
     let mut d = Draft::new(kind);
     // A 1Password login stays a login, with or without username and password.
     if kind == ItemType::Login {
@@ -650,10 +890,12 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
     );
 
     let mut filled: Vec<&'static str> = Vec::new();
+    let mut has_user = false;
     for f in &details.login_fields.list {
         let value = secret(&f.value);
         match f.designation.as_deref().map(str::trim) {
             Some(id @ ("username" | "password")) if !value.trim().is_empty() => {
+                has_user |= id == "username";
                 d.set(id, value);
             }
             _ => {
@@ -675,6 +917,22 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
             d.extra("password", password, true);
         }
     }
+    // Passkeys: imported with their private key when the export has it,
+    // else only their account name, and a `passkey_needs_cxf` warning.
+    let mut keyless_passkey = false;
+    for m in passkey_objects(&details) {
+        match full_passkey(m) {
+            Some(p) if kind == ItemType::Login => d.set_value("passkeys", FieldValue::Passkey(p)),
+            _ => {
+                keyless_passkey = true;
+                let user = member(m, &["userName", "username"]);
+                if kind == ItemType::Login && !has_user && !user.is_empty() {
+                    d.set("username", &user);
+                    has_user = true;
+                }
+            }
+        }
+    }
     let mut first_email: Option<String> = None;
     for field in details
         .sections
@@ -682,6 +940,12 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
         .into_iter()
         .flat_map(|s| s.fields.list)
     {
+        // Passkey values were read above.
+        if let Value::Object(m) = &field.value
+            && m.keys().any(|k| k.eq_ignore_ascii_case("passkey"))
+        {
+            continue;
+        }
         let id = some(&field.id).trim().to_owned();
         let label = match (some(&field.title).trim(), id.as_str()) {
             ("", "") => "Champ".to_owned(),
@@ -693,9 +957,31 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
             .find(|(c, src, _)| *c == category && *src == id)
             .map(|(_, _, t)| *t);
         let (value, rest) = field_value(field.value);
-        if let Val::Sso { provider, item } = &value {
+        if let Val::Sso {
+            provider,
+            item,
+            email,
+        } = &value
+        {
             if kind == ItemType::Login {
-                d.provider(provider_of(provider));
+                let p = match provider_of(provider) {
+                    Some(p) => p,
+                    // Sign in with another 1Password item: guessed from it.
+                    None if item.is_some() => unnamed_provider(),
+                    None => Provider::CustomOidc(OTHER_ACCOUNT.to_owned()),
+                };
+                match email {
+                    Some(e) if e.to_ascii_lowercase().ends_with("privaterelay.appleid.com") => {
+                        d.provider_relay(p, e);
+                    }
+                    _ => d.provider(p),
+                }
+                if let Some(e) = email
+                    && !has_user
+                {
+                    d.set("username", e);
+                    has_user = true;
+                }
                 if account.is_none() {
                     account.clone_from(item);
                 }
@@ -745,7 +1031,7 @@ fn item_draft(raw: RawItem) -> (Draft, Option<String>) {
         let when = h.time.as_deref().and_then(unix).unwrap_or(item_time);
         d.history(secret(&h.value), when);
     }
-    (d, account)
+    (d, account, keyless_passkey)
 }
 
 /// A decoded 1PUX field value.
@@ -769,6 +1055,7 @@ enum Val {
     Sso {
         provider: String,
         item: Option<String>,
+        email: Option<String>,
     },
     /// Unknown kind: compact JSON, hidden when it is an object.
     Unknown {
@@ -790,7 +1077,7 @@ impl Val {
 }
 
 /// Value kinds this importer decodes.
-const KNOWN_KINDS: [&str; 18] = [
+const KNOWN_KINDS: [&str; 20] = [
     "string",
     "url",
     "phone",
@@ -807,6 +1094,8 @@ const KNOWN_KINDS: [&str; 18] = [
     "sshKey",
     "reference",
     "ssoLogin",
+    "sso",
+    "signInWith",
     "formattedText",
     "file",
 ];
@@ -891,21 +1180,13 @@ fn decode(kind: &str, inner: Value) -> Val {
             other => text(other, true),
         },
         "reference" => Val::None,
-        "ssoLogin" => match inner {
-            Value::Object(mut m) => {
-                let provider = take(&mut m, "provider");
-                let item = match m.remove("item") {
-                    Some(Value::Object(mut r)) => {
-                        Some(take(&mut r, "itemUuid")).filter(|u| !u.is_empty())
-                    }
-                    _ => None,
-                };
-                if provider.is_empty() {
-                    Val::None
-                } else {
-                    Val::Sso { provider, item }
-                }
-            }
+        k if is_sso_key(k) => match inner {
+            Value::Object(m) => sso(&m),
+            Value::String(provider) if !provider.trim().is_empty() => Val::Sso {
+                provider: provider.trim().to_owned(),
+                item: None,
+                email: None,
+            },
             other => text(other, false),
         },
         // Rich text: its plain form.
@@ -942,6 +1223,39 @@ fn decode(kind: &str, inner: Value) -> Val {
             other => text(other, false),
         },
         _ => text(inner, false),
+    }
+}
+
+/// A "sign in with" object: the provider, the account item it points to
+/// (`item.itemUuid`, `item.uuid`, `itemUuid`, or `item` as a string) and
+/// the account email, under the spellings seen in exports.
+fn sso(m: &Map<String, Value>) -> Val {
+    let provider = member(m, &["provider", "providerName", "name", "type"]);
+    let item = match m.get("item") {
+        Some(Value::Object(r)) => Some(member(r, &["itemUuid", "uuid", "id"])),
+        Some(Value::String(u)) => Some(u.trim().to_owned()),
+        _ => Some(member(m, &["itemUuid"])),
+    }
+    .filter(|u| !u.is_empty());
+    let email = Some(member(
+        m,
+        &[
+            "email",
+            "accountEmail",
+            "username",
+            "userName",
+            "accountName",
+        ],
+    ))
+    .filter(|e| !e.is_empty());
+    if provider.is_empty() && item.is_none() {
+        Val::None
+    } else {
+        Val::Sso {
+            provider,
+            item,
+            email,
+        }
     }
 }
 
@@ -1171,7 +1485,10 @@ mod tests {
         assert!(item.favorite);
         assert!(!item.archived);
         assert_eq!(item.notes, "Main mailbox");
-        assert_eq!(item.tags, vec!["mail", "work"]);
+        assert_eq!(
+            item.tags,
+            vec!["mail", "work", "onepass:src:1pux:v-personal/i-login"]
+        );
         let urls: Vec<_> = item.urls.iter().map(|u| u.url.as_str()).collect();
         assert_eq!(
             urls,
@@ -1999,5 +2316,146 @@ mod tests {
             validate(&it.item).unwrap();
         }
         assert_eq!(text(&by_title(&imp, "No user").item, "password"), "pw");
+    }
+
+    // ---- Sign in with, every provider variant (fixture 1pux-sign-in-with) ----
+
+    const SIGN_IN_WITH: &[u8] =
+        include_bytes!("../../tests/fixtures/import/1pux-sign-in-with.data.json");
+
+    fn sign_in_with() -> Import {
+        parse_1pux(&zip_of(&[("export.data", SIGN_IN_WITH)])).unwrap()
+    }
+
+    fn relay(item: &Item) -> Option<String> {
+        item.login_methods.iter().find_map(|m| match m {
+            LoginMethod::Provider { relay_email, .. } => relay_email.clone(),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn every_sign_in_with_variant_is_a_login_with_its_provider() {
+        use crate::model::Provider as P;
+        let imp = sign_in_with();
+        for (title, provider) in [
+            ("Notion", P::Google),
+            ("Figma", P::GitHub),
+            ("TestFlight", P::Apple),
+            ("Azure DevOps", P::Microsoft),
+            ("Instagram", P::Facebook),
+            (
+                "Internal Wiki",
+                P::CustomOidc("login.corp.example.com".into()),
+            ),
+            ("Gist mirror", P::GitHub),
+        ] {
+            let item = &by_title(&imp, title).item;
+            assert_eq!(item.item_type, ItemType::Login, "{title}");
+            let got: Vec<_> = providers(item).into_iter().map(|(p, _)| p).collect();
+            assert_eq!(got, vec![provider], "{title}");
+            assert!(
+                imported(item).is_empty(),
+                "{title}: no raw JSON left behind"
+            );
+            validate(item).unwrap();
+        }
+        assert!(
+            imp.items
+                .iter()
+                .all(|it| it.item.item_type != ItemType::SecureNote),
+            "no sign-in-with item may fall back to a secure note"
+        );
+        let codes: Vec<_> = imp.warnings.iter().map(|w| w.code).collect();
+        assert!(!codes.contains(&"to_secure_note"), "{codes:?}");
+        assert!(!codes.contains(&"login_to_password"), "{codes:?}");
+    }
+
+    #[test]
+    fn sign_in_with_links_account_and_takes_its_email() {
+        let imp = sign_in_with();
+        let google = by_title(&imp, "Google").item.id;
+        let notion = &by_title(&imp, "Notion").item;
+        assert_eq!(providers(notion)[0].1, google);
+        assert_eq!(text(notion, "username"), "alice.invented@example.com");
+        assert!(notion.favorite);
+        // The email of the field itself.
+        assert_eq!(
+            text(&by_title(&imp, "Figma").item, "username"),
+            "alice-gh@example.com"
+        );
+        // Hide My Email: the relay address is the username and the method's relay email.
+        let tf = &by_title(&imp, "TestFlight").item;
+        assert_eq!(
+            text(tf, "username"),
+            "x7k2invented@privaterelay.appleid.com"
+        );
+        assert_eq!(
+            relay(tf).as_deref(),
+            Some("x7k2invented@privaterelay.appleid.com")
+        );
+        // Sign in with another 1Password item: linked, provider guessed from that item.
+        let corp = by_title(&imp, "Corp account").item.id;
+        let wiki = &by_title(&imp, "Internal Wiki").item;
+        assert_eq!(providers(wiki)[0].1, corp);
+        assert_eq!(text(wiki, "username"), "alice@corp.example.com");
+        let dev = by_title(&imp, "Dev account").item.id;
+        let gist = &by_title(&imp, "Gist mirror").item;
+        assert_eq!(providers(gist)[0].1, dev);
+        assert_eq!(text(gist, "username"), "alice-dev");
+    }
+
+    #[test]
+    fn every_item_carries_its_1password_source() {
+        let imp = sign_in_with();
+        let notion = &by_title(&imp, "Notion").item;
+        assert!(
+            notion
+                .tags
+                .contains(&"onepass:src:1pux:vault-perso/notion-sso".to_owned()),
+            "{:?}",
+            notion.tags
+        );
+        assert!(notion.tags.contains(&"work".to_owned()));
+        for it in &imp.items {
+            let n = it
+                .item
+                .tags
+                .iter()
+                .filter(|t| t.starts_with(crate::import::SOURCE_TAG_PREFIX))
+                .count();
+            assert_eq!(n, 1, "{}", it.item.title);
+        }
+    }
+
+    #[test]
+    fn passkey_metadata_without_key_keeps_the_login_and_says_so() {
+        let imp = sign_in_with();
+        let (pos, it) = imp
+            .items
+            .iter()
+            .enumerate()
+            .find(|(_, i)| i.item.title == "WebAuthn demo")
+            .unwrap();
+        let item = &it.item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username"), "alice");
+        assert!(
+            item.sections
+                .iter()
+                .flat_map(|s| &s.fields)
+                .all(|f| !matches!(f.value, FieldValue::Passkey(_))),
+            "no passkey without its private key"
+        );
+        let entry = u32::try_from(pos).unwrap();
+        assert_eq!(
+            imp.warnings
+                .iter()
+                .filter(|w| w.code == "passkey_needs_cxf")
+                .map(|w| w.entry)
+                .collect::<Vec<_>>(),
+            vec![entry]
+        );
+        assert!(imported(item).is_empty());
     }
 }

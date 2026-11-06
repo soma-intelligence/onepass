@@ -91,4 +91,21 @@ struct VaultDoorPassageTests {
             #expect(door.vaultScale == 1)
         }
     }
+
+    /// An alert raised by the unlock itself (the Face ID offer) waits for the door: shown at once it
+    /// is drawn over the lock screen, brings the keyboard back and rides the parting panels.
+    @Test func presentationsWaitForTheOpenDoor() {
+        var door = VaultDoorPassage()
+        #expect(!door.holdsPresentations)
+        door.handle(.unlocked(reduceMotion: false))
+        #expect(door.holdsPresentations)
+        door.handle(.turnFinished)
+        #expect(door.holdsPresentations)
+        door.handle(.panelsOpened)
+        #expect(!door.holdsPresentations)
+
+        // Reduce Motion: the plain crossfade, nothing to wait for.
+        door.handle(.unlocked(reduceMotion: true))
+        #expect(!door.holdsPresentations)
+    }
 }

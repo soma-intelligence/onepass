@@ -84,7 +84,7 @@ struct HostDeviceSheet: View {
                 outcome(
                     symbol: "iphone", tint: .secondary, title: "Utilise ton iPhone ou ton iPad",
                     message: String(
-                        localized: "Une session invitée se prête depuis un iPhone ou un iPad. Ce Mac ne prête pas d'éléments."
+                        localized: "pairing.guestSessionLentFrom"
                     ), identifier: "host.public")
                 .onAppear { flow.cancel() }
             } else {
@@ -100,7 +100,7 @@ struct HostDeviceSheet: View {
         case .done:
             outcome(
                 symbol: "checkmark.circle.fill", tint: .green, title: "Appareil ajouté",
-                message: String(localized: "Il te demande maintenant ton mot de passe maître."), identifier: "host.outcome")
+                message: String(localized: "pairing.itNowAsksFor"), identifier: "host.outcome")
         case .failed(let failure):
             outcome(
                 symbol: "exclamationmark.triangle.fill", tint: .red, title: "L'appairage n'a pas abouti",
@@ -113,8 +113,8 @@ struct HostDeviceSheet: View {
     private func hosting(_ code: FfiHostCode) -> some View {
         VStack(spacing: 18) {
             VStack(spacing: 6) {
-                Text("Sur le nouvel appareil").font(.title3.bold())
-                Text("Choisis « J'ai déjà OnePass sur un autre appareil », puis scanne ce QR code avec la caméra de OnePass, ou saisis le code.")
+                Text("pairing.onNewDevice").font(.title3.bold())
+                Text("pairing.chooseIAlreadyHave")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -122,7 +122,7 @@ struct HostDeviceSheet: View {
             }
             PairingQRView(text: code.qrText, expiresAt: Date(timeIntervalSince1970: TimeInterval(code.expiresAt)))
             VStack(spacing: 6) {
-                Text("Ou saisis ce code")
+                Text("pairing.orTypeCode")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Text(verbatim: code.shortText)
@@ -155,7 +155,7 @@ struct HostDeviceSheet: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(peer.name).font(.headline)
-                        Text("\(DeviceKindText.kind(peer.kind)) · demande un accès \(DeviceKindText.mode(mode))")
+                        Text("pairing.asksForAccess \(DeviceKindText.kind(peer.kind)) \(DeviceKindText.mode(mode))")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -172,7 +172,7 @@ struct HostDeviceSheet: View {
             } header: {
                 Text("Code de vérification")
             } footer: {
-                Text("Le même code doit s'afficher sur le nouvel appareil. S'il est différent, quelqu'un d'autre essaie de se connecter.")
+                Text("pairing.sameCodeMustAppear")
             }
             if flow.approvalError != nil {
                 Section {
@@ -187,7 +187,7 @@ struct HostDeviceSheet: View {
                     if let error = flow.approvalError, error != .passwordRequired {
                         Text(error.localizedMessage).foregroundStyle(.red)
                     } else {
-                        Text("Confirme avec ton mot de passe maître.")
+                        Text("pairing.confirmWithMasterPassword")
                     }
                 }
             }
@@ -196,14 +196,14 @@ struct HostDeviceSheet: View {
                     Task { await approve(flow, mode: mode) }
                 } label: {
                     HStack {
-                        Text("Les codes sont identiques").font(.headline)
+                        Text("pairing.codesMatch").font(.headline)
                         Spacer()
                         if approving { ProgressView().controlSize(.small) }
                     }
                 }
                 .disabled(approving || (flow.approvalError != nil && password.isEmpty))
                 .accessibilityIdentifier("host.codesMatch")
-                Button("Ils sont différents", role: .destructive) { flow.cancel() }
+                Button("pairing.theyreDifferent", role: .destructive) { flow.cancel() }
                     .disabled(approving)
                     .accessibilityIdentifier("host.codesDiffer")
             }

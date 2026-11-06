@@ -37,14 +37,13 @@ paired("menu_fill_login", async ({ ext }) => {
   const records = Object.entries(await ext.sessionStorage()).filter(([k]) => k.startsWith("menu:"));
   expect(records).toHaveLength(1);
   expect((records[0]?.[1] as { documentId?: unknown }).documentId).toEqual(expect.any(String));
+  // Remplir on a sign-in form signs in: filled, then sent by OnePass.
   await ext.pickRow(menu, "Atlas Cloud");
-  await expect(page.locator("#email")).toHaveValue(FX.atlas.email);
-  await expect(page.locator("#password")).toHaveValue(FX.atlas.password);
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
   // The host journaled the secret it returned (no value): positive control of S3 and S9.
   expect(ext.audit()).toContain('"op":"fill_login"');
   expect(ext.audit()).not.toContain(FX.atlas.password);
-  await page.locator("#submit").click();
-  await expect(page.locator("#status")).toHaveText("Connecté");
 
   // The pairing survives a service worker restart (IndexedDB): fill again, no new pairing.
   await (await ext.worker()).evaluate(() => {
@@ -54,8 +53,8 @@ paired("menu_fill_login", async ({ ext }) => {
   await page.goto(`${ATLAS}/logout`);
   const again = await ext.openMenu(page, "#email");
   await ext.pickRow(again, "Atlas Cloud (multi)");
-  await expect(page.locator("#email")).toHaveValue(FX.ops.email);
-  await expect(page.locator("#password")).toHaveValue(FX.ops.password);
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.ops.email);
   expect(ext.host.codes()).toHaveLength(1);
   // A new worker served this fill: the in-memory marker is gone.
   const marker = await (await ext.worker()).evaluate(() => (globalThis as { e2eMarker?: number }).e2eMarker);
@@ -71,10 +70,11 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login ?")).toBeVisible();
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
   await ext.settle();
   await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/enregistré$/)).toBeVisible();
+  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
 
   await page.goto(`${ATLAS}/logout`);
   const menu = await ext.openMenu(page, "#email");
@@ -82,10 +82,76 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await expect(saved).toHaveCount(1);
   const title = (await saved.locator(".t1").textContent()) ?? "";
   await ext.pickRow(menu, title, "alex.new@atlas.dev");
-  await expect(page.locator("#email")).toHaveValue("alex.new@atlas.dev");
-  await expect(page.locator("#password")).toHaveValue("Nouv-Pass-0042");
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText("alex.new@atlas.dev");
+});
+
+// ---- founder bug 2026-11-03: no prompt after signing in with credentials OnePass did not know ----
+
+paired("save_after_identifier_then_password", async ({ ext }) => {
+  const { page } = ext;
+  // Identifier first, password on the next page (most large sites): the password page has no identifier field.
+  await page.goto(`${ATLAS}/multistep`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#next").click();
+  await expect(page).toHaveURL(`${ATLAS}/multistep/password`);
+  await page.locator("#password").fill("Nouv-Pass-0042");
+  await page.locator("#submit").click();
+  await expect(page).toHaveURL(`${ATLAS}/multistep/otp`);
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
+  await ext.settle();
+  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
+  expect(ext.audit()).toContain('"op":"save_login"');
+  expect(ext.audit()).not.toContain("Nouv-Pass-0042");
+});
+
+paired("failed_login_offers_nothing", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Mauvais-Pass-1");
+  await page.locator("#submit").click();
+  await expect(page.locator("#error")).toHaveText("Identifiant ou mot de passe incorrect");
+  // Well past every settle delay: still nothing (the site asked for the password again).
+  await ext.settle(4000);
+  expect(ext.findExtFrame(page, "save")).toBeUndefined();
+  // The right password then: proposed.
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Nouv-Pass-0042");
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+});
+
+paired("save_card_stacks_beside_another_manager", async ({ ext }) => {
+  const { page } = ext;
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.goto(`${ATLAS}/login-other-manager`);
+  await page.locator("#email").fill("alex.new@atlas.dev");
+  await page.locator("#password").fill("Nouv-Pass-0042");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Connecté");
+  const save = await ext.extFrame(page, "save");
+  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await ext.settle();
+  const theirs = await page.locator("#other-manager-notification").boundingBox();
+  const ours = await (await save.frameElement()).boundingBox();
+  expect(theirs).not.toBeNull();
+  expect(ours).not.toBeNull();
+  const a = theirs!;
+  const b = ours!;
+  const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  expect(overlap).toBe(false);
+  // Right under theirs, a small gap, same corner.
+  expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+  expect(b.y - (a.y + a.height)).toBeLessThanOrEqual(16);
+  // Theirs goes away: ours moves back up to the corner.
+  await page.evaluate(() => document.getElementById("other-manager-notification")?.remove());
+  await expect.poll(async () => (await (await save.frameElement()).boundingBox())?.y ?? -1, { timeout: 5000 }).toBeLessThan(a.y + a.height);
 });
 
 paired("change_password_updates_item", async ({ ext }) => {
@@ -105,20 +171,18 @@ paired("change_password_updates_item", async ({ ext }) => {
   await expect(page.locator("#status")).toHaveText("Mot de passe modifié");
 
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByRole("tab", { name: "Mettre à jour (1)" })).toBeVisible();
-  await ext.settle();
-  await save.getByRole("tab", { name: "Mettre à jour (1)" }).click();
+  await expect(save.getByText("Mettre à jour le mot de passe pour atlas-cloud.test ?")).toBeVisible();
+  await expect(save.getByText(`Atlas Cloud (multi) · ${FX.ops.email}`)).toBeVisible();
   await ext.settle();
   await save.getByRole("button", { name: "Mettre à jour", exact: true }).click();
-  await expect(save.getByText("Atlas Cloud (multi) mis à jour")).toBeVisible();
+  await expect(save.getByText("Mot de passe mis à jour")).toBeVisible();
 
   // The item now fills the new password, which the site accepts.
   await page.goto(`${ATLAS}/login`);
   const menu = await ext.openMenu(page, "#email");
   await ext.pickRow(menu, "Atlas Cloud (multi)");
-  await expect(page.locator("#password")).toHaveValue(generated);
-  await page.locator("#submit").click();
-  await expect(page.locator("#status")).toHaveText("Connecté");
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  expect(ext.server.users.get(FX.ops.email)).toBe(generated);
 });
 
 paired("signup_generates_password", async ({ ext }) => {
@@ -135,15 +199,70 @@ paired("signup_generates_password", async ({ ext }) => {
   await expect(page.locator("#status")).toHaveText("Connecté");
   expect(ext.server.users.get("alex.signup@atlas.dev")).toBe(generated);
 
-  // The generated password feeds the save proposal.
-  const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login ?")).toBeVisible();
-  await ext.settle();
-  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/enregistré$/)).toBeVisible();
+  // The generated password was saved as a pending login at fill time; the
+  // submission confirms it with the username, no question asked: the card
+  // only says it is saved.
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"confirm_pending"');
+  const card = await ext.extFrame(page, "save");
+  await expect(card.locator(".saved")).toContainText("alex.signup@atlas.dev");
+  await expect(card.locator("button", { hasText: "Enregistrer" })).toHaveCount(0);
+  expect(ext.audit()).not.toContain(generated);
   await page.goto(`${ATLAS}/logout`);
   const again = await ext.openMenu(page, "#email");
   await expect(again.locator("button.row").filter({ hasText: "alex.signup@atlas.dev" })).toHaveCount(1);
+});
+
+paired("save_card_after_checkout", async ({ ext }) => {
+  const { page } = ext;
+  // A test card number (Luhn valid, not a real card), typed by hand.
+  const typeCard = async () => {
+    await page.goto(`${ATLAS}/checkout`);
+    await page.locator("#cc-name").fill("Sam Leroy");
+    await page.locator("#cc-number").fill("5555 5555 5555 4444");
+    await page.locator("#cc-exp").fill("07/31");
+    await page.locator("#cc-csc").fill("987");
+    await page.locator("#submit").click();
+    await expect(page.locator("#status")).toHaveText("Paiement accepté");
+  };
+  await typeCard();
+  const card = await ext.extFrame(page, "save");
+  await expect(card.getByText("Enregistrer cette carte ?")).toBeVisible();
+  await expect(card.getByText("Carte •••• 4444 · exp. 07/31")).toBeVisible();
+  await ext.settle();
+  await card.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(card.getByText("Carte enregistrée")).toBeVisible();
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"save_card"');
+  expect(ext.audit()).not.toContain("5555555555554444");
+  const saves = () => (ext.audit().match(/"op":"save_card"/g) ?? []).length;
+  expect(saves()).toBe(1);
+  // The same card typed again by hand: the card still shows (a page must not learn what the
+  // vault holds), and its Save writes nothing.
+  await typeCard();
+  const again = await ext.extFrame(page, "save");
+  await expect(again.getByText("Enregistrer cette carte ?")).toBeVisible();
+  await ext.settle();
+  await again.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(again.getByText("Déjà dans OnePass")).toBeVisible();
+  expect(saves()).toBe(1);
+});
+
+paired("save_address_after_shipping", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/shipping`);
+  await page.locator("#given-name").fill("Sam");
+  await page.locator("#family-name").fill("Leroy");
+  await page.locator("#address-line1").fill("8 avenue des Tilleuls");
+  await page.locator("#postal-code").fill("69003");
+  await page.locator("#city").fill("Lyon");
+  await page.locator("#submit").click();
+  await expect(page.locator("#status")).toHaveText("Adresse enregistrée");
+  const card = await ext.extFrame(page, "save");
+  await expect(card.getByText("Enregistrer cette adresse ?")).toBeVisible();
+  await expect(card.getByText("8 avenue des Tilleuls, 69003, Lyon")).toBeVisible();
+  await ext.settle();
+  await card.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(card.getByText("Identité enregistrée")).toBeVisible();
+  await expect.poll(() => ext.audit(), { timeout: 15_000 }).toContain('"op":"save_identity"');
 });
 
 paired("chain_single_page", async ({ ext }) => {
@@ -263,13 +382,11 @@ paired("menu_keyboard_from_the_field", async ({ ext }) => {
   await expect(menu.locator("button.row.active .t1")).toHaveText("Atlas Cloud (multi)");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#email")).toHaveValue(FX.ops.email);
-  await expect(page.locator("#password")).toHaveValue(FX.ops.password);
-  // Return picked the row: the page's form was not submitted.
-  await expect(page.locator("#status")).toHaveCount(0);
-  expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+  // Return picked the highlighted row (not the page's empty form): signed in as that login.
+  await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.ops.email);
   // Escape closes; the focus stays where it was.
-  await page.locator("#email").fill("");
+  await page.goto(`${ATLAS}/logout`);
   await ext.openMenu(page, "#email");
   await page.keyboard.press("Escape");
   await expect.poll(() => ext.findExtFrame(page, "menu")).toBeUndefined();

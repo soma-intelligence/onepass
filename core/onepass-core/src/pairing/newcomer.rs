@@ -3,11 +3,16 @@
 
 use std::fmt;
 
+use crate::account::AccountParams;
 use crate::crypto::kem::unwrap_key_labeled;
 use crate::crypto::{HybridKemSecret, SecretKey, random_array};
 use crate::device_keys::{DeviceKeys, DevicePublic, sign_pop};
 use crate::devices::{DeviceMode, check_name};
+use crate::store::{RecordKind, account_record_id};
+use crate::synchome::{SyncBackend, SyncHomeBody, verify_sync_home};
+use crate::{Error, IntegrityError};
 use crate::{Id, Result};
+use onepass_mailbox_proto::SignedEnrollTicket;
 
 use super::channel::Channel;
 use super::invite::signed_hello;
@@ -53,6 +58,12 @@ pub struct Newcomer {
     key: Option<DevicePublic>,
     /// The account a `FullV2` granted.
     granted_account: Option<Id>,
+    /// The mailbox credential key this device sent (mailbox spec 4.12).
+    mailbox_credential: Option<[u8; 32]>,
+    /// From a `FullV2`: the account's home, verified against the account
+    /// key of the granted snapshot, and the enroll ticket checked against
+    /// `mailbox_credential` (encoded as the proto encodes it).
+    home: Option<(SyncHomeBody, Option<Vec<u8>>)>,
 }
 
 impl Newcomer {
@@ -96,6 +107,8 @@ impl Newcomer {
             device,
             key: None,
             granted_account: None,
+            mailbox_credential: None,
+            home: None,
         };
         Ok((newcomer, qr, hello))
     }
@@ -137,6 +150,8 @@ impl Newcomer {
             device,
             key: None,
             granted_account: None,
+            mailbox_credential: None,
+            home: None,
         };
         Ok((newcomer, frame))
     }
@@ -177,6 +192,8 @@ impl Newcomer {
             device,
             key: None,
             granted_account: None,
+            mailbox_credential: None,
+            home: None,
         };
         Ok((newcomer, join_hello))
     }
@@ -243,6 +260,18 @@ impl Newcomer {
     /// over the session transcript hash. The approver then grants a
     /// `FullV2`. Refused for a public session (no key to pin).
     pub fn confirm_with_key(&mut self, keys: &DeviceKeys) -> Result<Vec<u8>> {
+        self.confirm_with_key_and_mailbox(keys, None)
+    }
+
+    /// `confirm_with_key`, with the public key of the mailbox credential
+    /// this device wants enrolled (mailbox spec 4.12): it travels only
+    /// inside the SAS-confirmed channel, and the approver answers with an
+    /// enroll ticket for it when the account lives on a mailbox.
+    pub fn confirm_with_key_and_mailbox(
+        &mut self,
+        keys: &DeviceKeys,
+        mailbox_credential: Option<[u8; 32]>,
+    ) -> Result<Vec<u8>> {
         if self.state != State::KeyReady {
             return Err(refused("nothing to confirm"));
         }
@@ -254,9 +283,10 @@ impl Newcomer {
         let frame = self.channel_mut()?.seal(&Message::ConfirmedWithKey {
             device: public.clone(),
             pop,
-            mailbox_credential: None,
+            mailbox_credential,
         })?;
         self.key = Some(public);
+        self.mailbox_credential = mailbox_credential;
         self.state = State::Confirmed;
         Ok(frame)
     }
@@ -349,6 +379,7 @@ impl Newcomer {
             Grant::FullV2(g) if self.mode != DeviceMode::Public && g.full.mode == self.mode => {
                 let me = self.key.as_ref().ok_or(refused("grant does not match"))?;
                 self.check_v2(g, me)?;
+                self.home = self.check_mailbox(g)?;
                 self.granted_account = Some(g.full.account_id);
             }
             _ => return Err(refused("grant does not match the requested mode")),
@@ -368,6 +399,77 @@ impl Newcomer {
             return Err(refused("device id"));
         }
         check_trust_for(&g.trust, me)
+    }
+
+    /// The home and ticket of a `FullV2` (mailbox spec 4.12, 5.2), checked
+    /// before this device calls any server: the `SyncHome` signed by the
+    /// account key of the granted snapshot (its params verified by the
+    /// identity at the head of the granted lineage), and a ticket only for
+    /// a mailbox home, for this device's credential, that mailbox and URL.
+    fn check_mailbox(&self, g: &FullGrantV2) -> Result<Option<(SyncHomeBody, Option<Vec<u8>>)>> {
+        let Some(sync) = &g.sync else {
+            if g.enroll.is_some() {
+                return Err(refused("ticket without a home"));
+            }
+            return Ok(None);
+        };
+        let identity = g
+            .trust
+            .lineage
+            .last()
+            .ok_or(Error::InvalidFormat("trust snapshot"))?
+            .identity_pub();
+        // Generation 0 keeps its records under the account id (spec 6.6).
+        let rid = account_record_id(
+            g.full.account_id,
+            (g.trust.lineage.len() > 1).then_some(identity),
+        );
+        let params = g
+            .full
+            .snapshot
+            .iter()
+            .find(|r| r.kind == RecordKind::AccountParams.code() && r.id == rid)
+            .ok_or(refused("home without account params"))?;
+        let params = AccountParams::decode_verified(&params.data, identity)?;
+        if params.account_id != g.full.account_id {
+            return Err(IntegrityError::WrongContext.into());
+        }
+        let home = verify_sync_home(sync, &params.signing_pub, params.account_id, None)?;
+        let Some(t) = &g.enroll else {
+            return Ok(Some((home, None)));
+        };
+        let SyncBackend::Mailbox { url, mailbox_id } = &home.backend else {
+            return Err(refused("ticket for a CloudKit account"));
+        };
+        let mine = self
+            .mailbox_credential
+            .ok_or(refused("ticket not asked for"))?;
+        let ticket: SignedEnrollTicket =
+            onepass_mailbox_proto::decode(t).map_err(|_| Error::InvalidFormat("enroll ticket"))?;
+        if ticket.ticket.new_credential_pub != mine
+            || ticket.ticket.mailbox_id != *mailbox_id
+            || ticket.ticket.mailbox_url != *url
+        {
+            return Err(refused("enroll ticket"));
+        }
+        Ok(Some((home, Some(t.clone()))))
+    }
+
+    /// The account's home from a `FullV2`, verified (`None`: the approver
+    /// sent none, an older approver or an account from before the mailbox).
+    pub fn sync_home(&self) -> Option<&SyncHomeBody> {
+        self.home.as_ref().map(|(h, _)| h)
+    }
+
+    /// The mailbox to join and the encoded enroll ticket, once a `FullV2`
+    /// carried both, checked against this device's credential and the
+    /// verified home (`None`: no mailbox to join; a CloudKit account or an
+    /// older approver).
+    pub fn mailbox_enrollment(&self) -> Option<(SyncHomeBody, Vec<u8>)> {
+        match &self.home {
+            Some((h, Some(t))) => Some((h.clone(), t.clone())),
+            _ => None,
+        }
     }
 
     pub fn seal(&mut self, msg: &Message) -> Result<Vec<u8>> {

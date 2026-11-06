@@ -97,12 +97,12 @@ Versions lues dans `core/Cargo.lock` et `extension/package-lock.json` le jour de
 
 ## 9. Générateur aléatoire
 
-- **Rôle.** Toutes les clés, graines, sels et nonces du cœur : `fill_random` et `random_array` (`core/onepass-core/src/crypto/random.rs`) sur `aws_lc_rs::rand::fill` ; le pont appelle `aws_lc_rs::rand::fill` directement (`session.rs`, `pairing.rs`) ; l'extension `crypto.getRandomValues` (`extension/src/bridge/bytes.ts`, `randomBytes`). Les clés ML-KEM, ML-DSA et X25519 générées par aws-lc tirent leur aléa du même générateur.
-- **Niveau visé.** 256 bits ; générateur déterministe d'aws-lc (à base de CTR-DRBG) alimenté par l'entropie du système, ou aléa du navigateur.
-- **Pourquoi.** Un seul générateur, celui de la bibliothèque crypto déjà utilisée, sans repli maison. Une erreur du générateur remonte en `Error::Crypto`, jamais en clé nulle.
-- **Écartés.** Le crate `rand` (couche de plus sans gain), un générateur propre au projet.
-- **Limites connues.** `random_array` rend une copie non effacée : réservée aux valeurs publiques ou recopiées aussitôt dans un tampon effacé (documenté dans `random.rs`). Les clés `SymmetricKey` sont tirées directement dans leur emplacement verrouillé (`key.rs`, `generate`).
-- **Preuves.** `random.rs`, tests unitaires (tirages distincts et non nuls). Pas de test statistique : il n'en prouverait rien.
+- **Rôle.** Tout l'aléa frais du cœur et du pont (clés, graines, sels, nonces) : `fill_random` et `random_array` (`core/onepass-core/src/crypto/random.rs`), un aléa couvert : HKDF-SHA-512 sur 64 octets du générateur d'aws-lc, une graine d'appareil gardée dans le trousseau, un compteur et une étiquette d'instance (détail dans `README.md`, section 17). L'extension tire avec `crypto.getRandomValues` (`extension/src/bridge/bytes.ts`).
+- **Niveau visé.** 256 bits ; il faut casser à la fois le générateur du système et lire la graine d'appareil pour prévoir une sortie.
+- **Pourquoi.** Debian 2008 et Android 2013 : un générateur du système défaillant ne se voit pas à l'usage. Une seule fonction, construite sur HMAC-SHA-512 d'aws-lc, sans nouveau générateur maison. Une erreur du générateur remonte en `Error::Crypto`, jamais en clé nulle.
+- **Écartés.** Le crate `rand` ; mélanger la Secure Enclave (elle n'exporte aucun octet aléatoire).
+- **Limites connues.** `random_array` rend une copie non effacée (valeurs publiques ou recopiées aussitôt). L'aléa interne d'aws-lc pendant une opération (encapsulation ML-KEM, nonce ECDSA, génération RSA de l'agent SSH) n'est pas couvert. `libcrux-ml-kem` prend sa graine par valeur : une copie de pile non effacée.
+- **Preuves.** `random.rs` (valeur connue, non-répétition, générateur constant simulé), `tests/rng_guard.rs` (aucun tirage direct hors liste blanche).
 
 ## 10. Clé de chiffrement d'archive (KEK)
 

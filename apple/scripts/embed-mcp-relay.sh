@@ -16,6 +16,12 @@ export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
 CORE_DIR="${PROJECT_DIR}/../core"
 DEST_DIR="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
 RELAY="$DEST_DIR/onepass-mcp"
+# Mac App Store build: every executable must be sandboxed, and MCP clients launch this relay
+# from outside any sandbox. The App Store build ships without it.
+if [ "${ONEPASS_APP_STORE:-NO}" = YES ]; then
+  rm -f "$RELAY"
+  exit 0
+fi
 
 if [ "${CONFIGURATION:-Debug}" = Debug ]; then
   PROFILE=debug

@@ -14,7 +14,7 @@ struct WatchSettings: View {
                 content(phone)
             } else {
                 Section {
-                    Label("Non disponible sur cet appareil", systemImage: "applewatch.slash")
+                    Label("settings.notAvailableOnDevice", systemImage: "applewatch.slash")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -32,7 +32,7 @@ struct WatchSettings: View {
             }
         } else {
             Section {
-                Toggle("Envoyer à l'Apple Watch", isOn: $phone.isEnabled)
+                Toggle("settings.sendToAppleWatch", isOn: $phone.isEnabled)
                     .accessibilityIdentifier("settings.watch.enabled")
                     .onChange(of: phone.isEnabled) { _, enabled in
                         if enabled { Task { await phone.vaultChanged() } }
@@ -42,11 +42,11 @@ struct WatchSettings: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("settings.watch.status")
                 } else {
-                    Label("Désactivé", systemImage: "pause.circle").foregroundStyle(.secondary)
+                    Label("app.off", systemImage: "pause.circle").foregroundStyle(.secondary)
                         .accessibilityIdentifier("settings.watch.status")
                 }
                 if let last = phone.lastSent {
-                    LabeledContent("Dernier envoi", value: Self.relative(last))
+                    LabeledContent("settings.lastSent", value: Self.relative(last))
                         .accessibilityIdentifier("settings.watch.lastSent")
                 }
                 if let issue = phone.lastError {
@@ -70,17 +70,17 @@ struct WatchSettings: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
             Section {
-                Button("Retirer de l'Apple Watch", role: .destructive) {
+                Button("settings.removeFromAppleWatch", role: .destructive) {
                     confirmWipe = true
                 }
                 .confirmationDialog(
                     "Retirer les données de l'Apple Watch ?", isPresented: $confirmWipe,
                     titleVisibility: .visible
                 ) {
-                    Button("Retirer de l'Apple Watch", role: .destructive) { phone.wipeWatch() }
+                    Button("settings.removeFromAppleWatch", role: .destructive) { phone.wipeWatch() }
                     Button("Annuler", role: .cancel) {}
                 } message: {
-                    Text("La montre oublie tous les éléments reçus et l'envoi est coupé.")
+                    Text("settings.watchForgetsEveryItem")
                 }
                 .accessibilityIdentifier("settings.watch.wipe")
             } footer: {
@@ -99,15 +99,15 @@ struct WatchSettings: View {
     @ViewBuilder private func statusRow(_ status: CompanionStatus) -> some View {
         switch status {
         case .ready:
-            Label("Prête", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label("settings.ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         case .notPaired:
-            Label("Aucune Apple Watch appairée", systemImage: "applewatch.slash")
+            Label("settings.noPairedAppleWatch", systemImage: "applewatch.slash")
                 .foregroundStyle(.secondary)
         case .appNotInstalled:
-            Label("Installe OnePass sur ton Apple Watch", systemImage: "arrow.down.app")
+            Label("settings.installOnepassOnApple", systemImage: "arrow.down.app")
                 .foregroundStyle(.orange)
         case .unsupported:
-            Label("Non disponible sur cet appareil", systemImage: "applewatch.slash")
+            Label("settings.notAvailableOnDevice", systemImage: "applewatch.slash")
                 .foregroundStyle(.secondary)
         }
     }

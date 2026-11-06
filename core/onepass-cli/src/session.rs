@@ -1339,8 +1339,9 @@ fn erase_leftovers(ctx: &Ctx, at_rest: &Stored) {
 }
 
 /// The quarantine clock (spec 8.4, O1), before anything opens: a device
-/// locked by a valid lineage record erases itself 7 days after `since`
-/// (`quarantine_tick` with the device clock), and until then refuses with
+/// locked by a valid lineage record erases itself after 7 days of forward
+/// device clock time from its first reading (`quarantine_tick`; a clock set
+/// back counts nothing but never stops the count), and until then refuses with
 /// the date and the way out. No password: a locked store does not open.
 fn guard_lock(ctx: &Ctx, at_rest: &Stored) -> Result<(), CliError> {
     let mut store = stored(SqliteStore::open(&ctx.store_path()))?;

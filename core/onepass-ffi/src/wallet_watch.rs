@@ -8,7 +8,7 @@ use onepass_core::model::{FieldValue, ItemType};
 use onepass_core::wallet_watch::{self, AddressKind, Chain, bip32, seed};
 use zeroize::Zeroizing;
 
-use crate::convert::parse_id;
+use crate::convert::{id_hex, parse_id};
 use crate::error::{OnePassError, invalid};
 use crate::session::{Session, find_item, find_vault};
 
@@ -127,6 +127,15 @@ pub fn watch_gap_limit() -> u32 {
     wallet_watch::GAP_LIMIT
 }
 
+/// A new 256-bit key for the app's encrypted balance cache, from the core's
+/// hedged random source (`crypto::random`). The app keeps it in its keychain.
+#[uniffi::export]
+pub fn watch_cache_key() -> Result<Vec<u8>, OnePassError> {
+    let mut key = Zeroizing::new(vec![0u8; 32]);
+    onepass_core::crypto::random::fill_random(&mut key)?;
+    Ok(key.to_vec())
+}
+
 fn text(value: &FieldValue) -> Option<&str> {
     match value {
         FieldValue::Mnemonic(s) | FieldValue::Concealed(s) | FieldValue::Password(s) => Some(s),
@@ -135,8 +144,130 @@ fn text(value: &FieldValue) -> Option<&str> {
     }
 }
 
+/// The public watch data of one crypto wallet item. Read from its public
+/// fields only: the phrase and keys never leave the core for this.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiWalletWatch {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+    /// Valid `public_addresses` entries, canonical, without duplicates.
+    pub addresses: Vec<FfiWatchAddress>,
+    /// Entries that fail their format check (shown as such, never queried).
+    pub invalid_entries: Vec<String>,
+    /// The `xpub` field when it parses as an account-level xpub/ypub/zpub.
+    pub xpub: Option<String>,
+    /// The `xpub` field is filled but does not parse (or is a private key).
+    pub xpub_invalid: bool,
+    /// A recovery phrase is stored ("Dériver les adresses publiques" can run).
+    pub has_phrase: bool,
+    /// The phrase is stored without per-item Travel Mode protection.
+    pub phrase_unprotected: bool,
+}
+
+/// An item the app holds a non-zero watched balance for.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiItemKey {
+    pub vault_id: String,
+    pub item_id: String,
+}
+
+fn wallet_watch_of(item: &onepass_core::model::Item) -> FfiWalletWatch {
+    let fields = || item.sections.iter().flat_map(|s| s.fields.iter());
+    let mut addresses: Vec<FfiWatchAddress> = Vec::new();
+    let mut invalid_entries = Vec::new();
+    for f in fields().filter(|f| f.id == "public_addresses") {
+        let FieldValue::Text(t) = &f.value else {
+            continue;
+        };
+        if t.trim().is_empty() {
+            continue;
+        }
+        match wallet_watch::parse_entry(t) {
+            Ok(a) => {
+                let a = to_ffi(&a);
+                if !addresses
+                    .iter()
+                    .any(|b| b.chain == a.chain && b.address == a.address)
+                {
+                    addresses.push(a);
+                }
+            }
+            Err(_) => invalid_entries.push(t.trim().to_owned()),
+        }
+    }
+    let xpub_text = fields()
+        .find(|f| f.id == "xpub")
+        .and_then(|f| match &f.value {
+            FieldValue::Text(t) if !t.trim().is_empty() => Some(t.trim().to_owned()),
+            _ => None,
+        });
+    let xpub = xpub_text
+        .as_ref()
+        .filter(|t| bip32::ExtendedPub::parse(t).is_ok())
+        .cloned();
+    let has_phrase = fields().any(|f| {
+        f.id == "recovery_phrase"
+            && matches!(&f.value, FieldValue::Mnemonic(s) if !s.trim().is_empty())
+    });
+    FfiWalletWatch {
+        vault_id: id_hex(item.vault_id),
+        item_id: id_hex(item.id),
+        title: item.title.clone(),
+        addresses,
+        invalid_entries,
+        xpub_invalid: xpub_text.is_some() && xpub.is_none(),
+        xpub,
+        has_phrase,
+        phrase_unprotected: wallet_watch::phrase_unprotected(item),
+    }
+}
+
 #[uniffi::export]
 impl Session {
+    /// The watch data of every crypto wallet item not in the trash (archived
+    /// ones included), vault by vault.
+    pub fn watch_wallets(&self) -> Result<Vec<FfiWalletWatch>, OnePassError> {
+        self.with(|repo| {
+            let mut out = Vec::new();
+            for vault in repo.vaults()? {
+                for item in repo.items(&vault)? {
+                    if item.item_type != ItemType::CryptoWallet || item.trashed_at.is_some() {
+                        continue;
+                    }
+                    out.push(wallet_watch_of(&item));
+                }
+            }
+            Ok(out)
+        })
+    }
+
+    /// Watchtower: among `funded` (wallets with a non-zero watched balance),
+    /// those that store a recovery phrase without per-item Travel Mode
+    /// protection. Unknown or unreadable items are left out.
+    pub fn watch_unprotected_wallets(
+        &self,
+        funded: Vec<FfiItemKey>,
+    ) -> Result<Vec<FfiItemKey>, OnePassError> {
+        self.with(|repo| {
+            let mut out = Vec::new();
+            for key in &funded {
+                let (Ok(vid), Ok(iid)) = (parse_id(&key.vault_id), parse_id(&key.item_id)) else {
+                    continue;
+                };
+                let Ok(vault) = find_vault(repo, vid) else {
+                    continue;
+                };
+                if let Ok(item) = find_item(repo, &vault, iid)
+                    && wallet_watch::phrase_unprotected(&item)
+                {
+                    out.push(key.clone());
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// "Dériver les adresses publiques de cette phrase": reads the stored
     /// recovery phrase (and BIP39 passphrase) of a crypto wallet item in
     /// memory, derives the public watch data, wipes the secrets and returns

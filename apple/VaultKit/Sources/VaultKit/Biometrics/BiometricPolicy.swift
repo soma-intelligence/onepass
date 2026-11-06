@@ -52,13 +52,13 @@ public enum PasswordReason: Sendable, Equatable {
     /// French message for the unlock screen.
     public var message: String {
         switch self {
-        case .expired: String(localized: "Le mot de passe maître est demandé régulièrement.", bundle: VaultKitStrings.bundle)
-        case .rebooted: String(localized: "Le mot de passe maître est demandé après un redémarrage.", bundle: VaultKitStrings.bundle)
-        case .invalidated: String(localized: "La biométrie a changé : saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
-        case .notEnrolled: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
-        case .userChosePassword: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
-        case .lockedOut: String(localized: "La biométrie est temporairement bloquée : saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
-        case .unverified: String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+        case .expired: String(localized: "biometrics.masterPasswordRequiredFrom", bundle: VaultKitStrings.bundle)
+        case .rebooted: String(localized: "biometrics.masterPasswordRequiredAfter", bundle: VaultKitStrings.bundle)
+        case .invalidated: String(localized: "biometrics.biometricsChangedEnterMaster", bundle: VaultKitStrings.bundle)
+        case .notEnrolled: String(localized: "vaultKit.enterMasterPassword", bundle: VaultKitStrings.bundle)
+        case .userChosePassword: String(localized: "vaultKit.enterMasterPassword", bundle: VaultKitStrings.bundle)
+        case .lockedOut: String(localized: "biometrics.biometricsTemporarilyLockedEnter", bundle: VaultKitStrings.bundle)
+        case .unverified: String(localized: "vaultKit.enterMasterPassword", bundle: VaultKitStrings.bundle)
         }
     }
 }

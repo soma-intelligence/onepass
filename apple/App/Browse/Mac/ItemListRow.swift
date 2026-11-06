@@ -19,23 +19,23 @@ struct ItemListRow: View {
     /// A login with no username that signs in with a provider: "Se connecte avec GitHub".
     private var signInLine: String? {
         guard summary.subtitle.isEmpty, let provider = summary.signInProvider else { return nil }
-        return String(localized: "Se connecte avec \(LoginProvider.displayName(provider))")
+        return String(localized: "browse.signsInWith \(LoginProvider.displayName(provider))")
     }
 
     private var secondLine: String {
-        let line = signInLine ?? summary.subtitle
+        let line = signInLine ?? summary.listSubtitle
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
     /// The icon already on this device: shown on the first frame, before the task answers.
     private var cachedIcon: Data? {
-        summary.primaryUrl.flatMap { model.iconLoader.cachedIcon(for: $0) }
+        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 34, brand: summary.cardBrand)
-                .favoriteBadge(summary.favorite, iconSize: 34)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 40, brand: summary.cardBrand)
+                .favoriteBadge(summary.favorite, iconSize: 40)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
                     .font(.body.weight(.semibold))
@@ -46,6 +46,14 @@ struct ItemListRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            // Travel Mode per item (spec 2026-11-02): what leaves or locks harder while travelling.
+            if summary.travelHidden || summary.travelGuard {
+                Image(systemName: summary.travelHidden ? "airplane" : "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(summary.travelHidden ? "item.travel.hidden" : "item.travel.guard")
+                    .accessibilityLabel(summary.travelHidden ? Text("item.travel.hidden") : Text("item.travel.guard"))
+            }
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
@@ -56,7 +64,7 @@ struct ItemListRow: View {
                 siteIcon = nil
                 return
             }
-            siteIcon = await model.iconLoader.icon(for: url)
+            siteIcon = await model.iconLoader.icon(for: url, title: summary.title)
         }
     }
 }

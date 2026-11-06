@@ -62,6 +62,8 @@ struct NewItemSheet: View {
     /// The pointer over "Plus de catégories": its fan of tiles opens a little wider.
     @State private var hoveringMore = false
     @FocusState private var searchFocused: Bool
+    /// iPhone: height of the floating header, where the scrolled tiles fade out.
+    @State private var headerHeight: CGFloat = 160
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
     private let inPhoneSheet: Bool
@@ -120,68 +122,20 @@ struct NewItemSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                Button {
-                    close()
-                } label: {
-                    Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        #if os(iOS)
-                        // 44 pt target around the 28 pt glyph.
-                        .contentShape(Rectangle().inset(by: -8))
-                        #else
-                        .contentShape(.rect)
-                        #endif
+            #if os(iOS)
+            // iPhone: the title and the search field float over the tiles, which scroll up under them
+            // and fade out there as under every other header of the app.
+            // The fade goes on the tiles, under the bar: the title and the field stay sharp on top.
+            scrollContent
+                .headerFade(color: Color(uiColor: .systemBackground), header: headerHeight)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    header
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
                 }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel(Text("Fermer"))
-                .accessibilityIdentifier("newItem.close")
-            }
-            .padding([.top, .horizontal], 14)
-
-            Text("Que veux-tu ajouter ?")
-                .font(.title.weight(.bold))
-                .padding(.bottom, 16)
-
-            searchField
-                .padding(.horizontal, Self.searchInset)
-                .padding(.bottom, 22)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if trimmed.isEmpty {
-                        LazyVGrid(columns: Self.columns, spacing: 12) {
-                            ForEach(Self.featured, id: \.self) { type in
-                                BigTypeTile(type: type) { pick(type) }
-                            }
-                        }
-                        moreCategories
-                        if showAll {
-                            allCategories
-                                .transition(revealTransition)
-                        }
-                    } else {
-                        if let website {
-                            WebsiteTile(title: website.title, host: website.url) { pickWebsite(website) }
-                            signInChips(website)
-                        }
-                        if groups.isEmpty, website == nil {
-                            ContentUnavailableView.search(text: query).padding(.top, 20)
-                        } else {
-                            allCategories
-                        }
-                    }
-                }
-                .padding(.horizontal, Self.sideInset)
-                .padding(.bottom, 16)
-            }
-            .scrollDismissesKeyboard(.immediately)
-            // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
-            // with the trackpad or wheel, the bar stays out of the animation.
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
+            #else
+            header
+            scrollContent
+            #endif
 
             Divider().padding(.horizontal, Self.sideInset)
             Button {
@@ -196,13 +150,16 @@ struct NewItemSheet: View {
                     model.showImport = true
                 }
             } label: {
-                Label("Importer depuis un autre gestionnaire", systemImage: "square.and.arrow.down")
+                Label("browse.importFromAnotherPassword", systemImage: "square.and.arrow.down")
                     .font(.body.weight(.medium))
             }
             .buttonStyle(.borderless)
             .padding(.vertical, 16)
             .accessibilityIdentifier("newItem.import")
         }
+        // A violet and indigo glow behind the title, fading out a third of the way down. It lies
+        // over the header and the tiles alike, so whatever scrolls up under the title takes it.
+        .overlay(alignment: .top) { SheetGlow() }
         #if os(macOS)
         .frame(width: 600, height: 620)
         #endif
@@ -210,12 +167,85 @@ struct NewItemSheet: View {
         .onAppear { if !inPhoneSheet { searchFocused = true } }
     }
 
+    /// The close button, "Que veux-tu ajouter ?" and the search field.
+    private var header: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    close()
+                } label: {
+                    Image(systemName: "xmark").font(.body.weight(.semibold))
+                        #if os(iOS)
+                        // A 44 pt Liquid Glass circle, like the system close buttons.
+                        .frame(width: 30, height: 30)
+                        #else
+                        .frame(width: 20, height: 20)
+                        #endif
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel(Text("Fermer"))
+                .accessibilityIdentifier("newItem.close")
+            }
+            .padding([.top, .horizontal], 14)
+
+            Text("browse.whatDoWantTo")
+                .font(.title.weight(.bold))
+                .padding(.bottom, 16)
+
+            searchField
+                .padding(.horizontal, Self.searchInset)
+                .padding(.bottom, 22)
+        }
+    }
+
+    /// The tiles, the categories, or what the search found.
+    private var scrollContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if trimmed.isEmpty {
+                    LazyVGrid(columns: Self.columns, spacing: 12) {
+                        ForEach(Self.featured, id: \.self) { type in
+                            BigTypeTile(type: type) { pick(type) }
+                        }
+                    }
+                    moreCategories
+                    if showAll {
+                        allCategories
+                            .transition(revealTransition)
+                    }
+                } else {
+                    if let website {
+                        WebsiteTile(title: website.title, host: website.url) { pickWebsite(website) }
+                        signInChips(website)
+                    }
+                    if groups.isEmpty, website == nil {
+                        ContentUnavailableView.search(text: query).padding(.top, 20)
+                    } else {
+                        allCategories
+                    }
+                }
+            }
+            .padding(.horizontal, Self.sideInset)
+            .padding(.bottom, 16)
+        }
+        #if !os(visionOS)
+        .scrollDismissesKeyboard(.immediately)
+        #endif
+        // No scroll bar flashing and resizing while the categories unfold: the sheet scrolls
+        // with the trackpad or wheel, the bar stays out of the animation.
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
 
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Rechercher un site ou une catégorie", text: $query)
+            TextField("browse.searchForSiteOr", text: $query)
                 .textFieldStyle(.plain)
                 .font(Self.searchFont)
                 .focused($searchFocused)
@@ -353,7 +383,7 @@ struct NewItemSheet: View {
                 } label: {
                     HStack(spacing: 7) {
                         ProviderMark(provider: provider, size: 20)
-                        Text("Se connecte avec \(provider.name)").font(.callout.weight(.medium))
+                        Text("browse.signsInWith \(provider.name)").font(.callout.weight(.medium))
                     }
                     .padding(.leading, 5)
                     .padding(.trailing, 11)
@@ -393,6 +423,41 @@ struct NewItemSheet: View {
 }
 
 /// A large tile of the common types: the type's glyph, its name, a "+" on hover.
+/// The "+" sheet's top glow: an indigo light from the top left and a violet one from the top right,
+/// both gone a third of the way down. Screen blend in dark mode (it lights what lies under it, cards
+/// included), a light tint in light mode. Never takes a touch.
+private struct SheetGlow: View {
+    @Environment(\.colorScheme) private var scheme
+
+    private static let indigo = Color(red: 0.36, green: 0.40, blue: 0.86)
+    private static let violet = Color(red: 0.58, green: 0.42, blue: 0.86)
+
+    var body: some View {
+        let dark = scheme == .dark
+        GeometryReader { proxy in
+            let height = max(proxy.size.height * 0.42, 260)
+            ZStack {
+                EllipticalGradient(
+                    colors: [Self.indigo.opacity(dark ? 0.70 : 0.22), .clear],
+                    center: UnitPoint(x: 0.18, y: 0.0), startRadiusFraction: 0, endRadiusFraction: 0.75)
+                EllipticalGradient(
+                    colors: [Self.violet.opacity(dark ? 0.65 : 0.20), .clear],
+                    center: UnitPoint(x: 0.80, y: 0.05), startRadiusFraction: 0, endRadiusFraction: 0.70)
+            }
+            .frame(height: height)
+            // Eased out at the bottom so no edge shows where the glow ends.
+            .mask(LinearGradient(stops: [
+                .init(color: .black, location: 0), .init(color: .black, location: 0.45),
+                .init(color: .black.opacity(0.4), location: 0.75), .init(color: .clear, location: 1),
+            ], startPoint: .top, endPoint: .bottom))
+            .blendMode(dark ? .screen : .normal)
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct BigTypeTile: View {
     let type: FfiItemType
     let action: () -> Void
@@ -400,12 +465,12 @@ private struct BigTypeTile: View {
 
     // iPhone: three narrow tiles a row, the name on up to two lines.
     #if os(iOS)
-    private static let art: CGFloat = 40
-    private static let spacing: CGFloat = 12
+    private static let art: CGFloat = 32
+    private static let spacing: CGFloat = 8
     private static let font = Font.subheadline.weight(.semibold)
     private static let lines = 2
-    private static let padding: CGFloat = 12
-    private static let height: CGFloat = 104
+    private static let padding: CGFloat = 10
+    private static let height: CGFloat = 84
     #else
     private static let art: CGFloat = 44
     private static let spacing: CGFloat = 18
@@ -430,7 +495,9 @@ private struct BigTypeTile: View {
                 Text(category.singular)
                     .font(Self.font)
                     .foregroundStyle(.primary)
-                    .lineLimit(Self.lines)
+                    // Every tile reserves the same lines: a name on two lines ("API credential")
+                    // no longer makes its tile taller than its neighbours.
+                    .lineLimit(Self.lines, reservesSpace: true)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -462,7 +529,7 @@ private struct WebsiteTile: View {
             HStack(spacing: 12) {
                 CategoryTile(category: ItemCategory.of(.login), size: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Nouvelle connexion pour \(title)").font(.body.weight(.medium))
+                    Text("browse.newLoginFor \(title)").font(.body.weight(.medium))
                     if !host.isEmpty {
                         Text(host).font(.callout).foregroundStyle(.secondary)
                     }

@@ -808,6 +808,7 @@ dependencies = [
  "csv",
  "data-encoding",
  "libc",
+ "onepass-mailbox-proto",
  "postcard",
  "prost",
  "quick-xml",
@@ -904,6 +905,7 @@ dependencies = [
  "onepass-core",
  "onepass-guard",
  "onepass-peer",
+ "serde_json",
  "zeroize",
 ]
 

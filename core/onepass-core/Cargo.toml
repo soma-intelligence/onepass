@@ -7,14 +7,22 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# The enroll ticket a pairing grant carries (mailbox spec 4.12): decoded
+# and checked against this device's credential before any network call.
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 serde.workspace = true
 uuid.workspace = true
 aws-lc-rs.workspace = true
 zeroize.workspace = true
+# Registrable domains (eTLD+1) for duplicate detection.
+psl.workspace = true
 data-encoding.workspace = true
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
 unicode-normalization = "0.1.26"
 slh-dsa = "=0.1.0"
+# Seeded ML-KEM-1024 key generation from hedged randomness (crypto::kem::
+# mlkem_generate): aws-lc has none. Keygen only, checked by aws-lc after.
+libcrux-ml-kem = { version = "0.0.11", default-features = false, features = ["mlkem1024"] }
 # Not used directly: slh-dsa 0.1.0 only builds against this prerelease
 # (later 2.3.0-pre releases moved to rand_core 0.9). Remove with slh-dsa 0.2.
 signature = "=2.3.0-pre.4"
@@ -28,7 +36,7 @@ csv = "1"
 serde_json = "1"
 quick-xml = "0.42.0"
 zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
-k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
+k256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 ripemd = "0.1"
 sha3 = "0.10"
 
@@ -81,6 +89,8 @@ serde_json = "1"
 libcrux-ml-kem = "0.0.11"
 libcrux-ml-dsa = "0.0.11"
 tempfile = "3"
+# Frozen mailbox credential id vector (tests/zone_access.rs).
+onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 # Differential test only (tests/slh_dsa_differential.rs): the release
 # candidate the identity key moves to once it is stable (Ruling 13).
 slh-dsa-next = { package = "slh-dsa", version = "=0.2.0-rc.5" }
@@ -130,6 +140,16 @@ required-features = ["dev-fast-kdf"]
 name = "contact_vectors"
 required-features = ["dev-fast-kdf"]
 
+# Contact verification sessions and invite links over fast-KDF test
+# accounts, pinned through the dev-only helper: needs the dev floor.
+[[test]]
+name = "contact_session"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "contact_invite"
+required-features = ["dev-fast-kdf"]
+
 # Spec 12 attack regressions of key rotation v2: needs the dev floor.
 [[test]]
 name = "rotation_v2_attacks"
@@ -138,4 +158,41 @@ required-features = ["dev-fast-kdf"]
 # Two real accounts in two store files (multi-account spec M1).
 [[test]]
 name = "profiles"
+required-features = ["dev-fast-kdf"]
+
+# Zone accesses over fast-KDF accounts (sharing plan 2, Task 5b).
+[[test]]
+name = "zone_access"
+required-features = ["dev-fast-kdf"]
+
+# Shared vaults over fast-KDF accounts (sharing plan 2, Tasks 6 to 15).
+[[test]]
+name = "share_vaults"
+required-features = ["dev-fast-kdf"]
+
+# Sharing attack regressions (sharing spec 16, plan 2 Task 16).
+[[test]]
+name = "sharing_attacks"
+required-features = ["dev-fast-kdf"]
+
+# The family (sharing plan 3, Tasks 1 and 2).
+[[test]]
+name = "family"
+required-features = ["dev-fast-kdf"]
+
+# Item sends between contacts (sharing plan 3, Task 7).
+[[test]]
+name = "item_send"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "recovery"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "family_attacks"
+required-features = ["dev-fast-kdf"]
+
+[[test]]
+name = "duplicates"
 required-features = ["dev-fast-kdf"]

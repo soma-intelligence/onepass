@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: a throwaway vault of test routers for automatic Wi-Fi.
+     adb shell am start -n me.somalabs.onepass/.WifiDemoActivity -e step seed|edit|clear -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".WifiDemoActivity"
+            android:exported="true" />
+    </application>
+</manifest>

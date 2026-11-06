@@ -117,6 +117,25 @@ public enum CloudKitMapping {
         RemoteBatch(changes: changes, moreComing: moreComing && token != nil, token: token)
     }
 
+    // MARK: - Side records
+
+    /// The kind of a follower's mailbox enroll request (cross-platform spec D.5), written in the
+    /// frozen zone of a migrated account. Never a record kind: never handed to the core's store.
+    public static let sideKindMailboxEnrollRequest: UInt8 = OnePassCore.sideKindMailboxEnrollRequest()
+    /// The account's signed home (`RecordKind::SyncHome`).
+    public static let syncHomeKind: UInt8 = 27
+
+    /// Whether `record` is a side record.
+    public static func isSideRecord(_ record: RemoteRecord) -> Bool {
+        record.name.kind == sideKindMailboxEnrollRequest
+            && RecordName(string: record.name.string) == record.name
+    }
+
+    /// The side records of a fetched page, kept apart from what the store stages.
+    public static func sideRecords(in batch: RemoteBatch) -> [RemoteRecord] {
+        batch.changes.filter(isSideRecord)
+    }
+
     // MARK: - Errors
 
     /// A zone that is gone from the server.
@@ -168,9 +187,9 @@ public enum CloudKitMapping {
         case .requestRateLimited, .zoneBusy, .serviceUnavailable:
             return .retryable(after: ck.retryAfterSeconds.map { .seconds($0) })
         case .limitExceeded:
-            return .other(String(localized: "Lot trop volumineux pour iCloud", bundle: VaultKitStrings.bundle))
+            return .other(String(localized: "sync.batchTooLargeFor", bundle: VaultKitStrings.bundle))
         case .quotaExceeded:
-            return .other(String(localized: "Espace iCloud insuffisant.", bundle: VaultKitStrings.bundle))
+            return .other(String(localized: "sync.notEnoughIcloudStorage", bundle: VaultKitStrings.bundle))
         default:
             return .other(ErrorText.cloudKit(ck.code.rawValue).text)
         }

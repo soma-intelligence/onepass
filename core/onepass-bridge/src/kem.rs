@@ -7,8 +7,11 @@
 //! `HKDF-SHA256(salt = label, ikm = ss_m || ss_x, info = SHA-256(ct ||
 //! pk_x))`.
 //!
-//! The production path uses `aws-lc-rs` only. `aws-lc-rs` has no seeded
-//! ML-KEM key generation or encapsulation, so the deterministic helpers
+//! The production path uses `aws-lc-rs`, except key generation: it takes
+//! hedged randomness from `onepass_core::crypto::kem` (whose seeded ML-KEM
+//! key generation runs in `libcrux-ml-kem`, checked by aws-lc after).
+//! `aws-lc-rs` has no seeded ML-KEM key generation or encapsulation, so the
+//! deterministic helpers
 //! (`from_seeds`, `encapsulate_deterministic`), compiled only under `test`
 //! or feature `vectors`, take the ML-KEM step from `libcrux-ml-kem` (an
 //! optional dependency enabled by `vectors`, never in a shipped build).
@@ -18,8 +21,8 @@
 
 use aws_lc_rs::agreement::{self, PrivateKey, UnparsedPublicKey, X25519};
 use aws_lc_rs::digest::{self, SHA256};
-use aws_lc_rs::encoding::{AsBigEndian, Curve25519SeedBin};
 use aws_lc_rs::kem::{Ciphertext, DecapsulationKey, EncapsulationKey, ML_KEM_1024};
+use onepass_core::crypto::kem;
 use zeroize::Zeroizing;
 
 use crate::{BridgeError, Result};
@@ -86,11 +89,10 @@ impl KemPublic {
 
 impl KemSecret {
     pub fn generate() -> Result<KemSecret> {
-        let dk = DecapsulationKey::generate(&ML_KEM_1024).map_err(|_| BridgeError::Crypto)?;
-        let dk_bytes = dk.key_bytes().map_err(|_| BridgeError::Crypto)?;
-        let x = PrivateKey::generate(&X25519).map_err(|_| BridgeError::Crypto)?;
-        let seed: Curve25519SeedBin<'static> = x.as_be_bytes().map_err(|_| BridgeError::Crypto)?;
-        Self::from_parts(dk_bytes.as_ref(), seed.as_ref())
+        // Hedged randomness (onepass_core::crypto::random) for both halves.
+        let dk = kem::mlkem_generate().map_err(|_| BridgeError::Crypto)?;
+        let x = kem::x25519_generate().map_err(|_| BridgeError::Crypto)?;
+        Self::from_parts(&dk, &*x)
     }
 
     fn from_parts(mlkem: &[u8], x25519: &[u8]) -> Result<KemSecret> {
@@ -200,7 +202,8 @@ pub fn encapsulate(pk: &KemPublic) -> Result<([u8; CT_LEN], Zeroizing<[u8; 32]>)
     let ek = EncapsulationKey::new(&ML_KEM_1024, &pk.bytes[..MLKEM_PUBLIC_LEN])
         .map_err(|_| BridgeError::BadFrame("kem public key"))?;
     let (ct_m, ss_m) = ek.encapsulate().map_err(|_| BridgeError::Crypto)?;
-    let eph = PrivateKey::generate(&X25519).map_err(|_| BridgeError::Crypto)?;
+    let x = kem::x25519_generate().map_err(|_| BridgeError::Crypto)?;
+    let eph = PrivateKey::from_private_key(&X25519, &*x).map_err(|_| BridgeError::Crypto)?;
     finish_encaps(pk, ct_m.as_ref(), ss_m.as_ref(), &eph)
 }
 

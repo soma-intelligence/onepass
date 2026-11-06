@@ -1,15 +1,20 @@
 // A scripted stand-in for BridgeClient (same interface, no cryptography).
 import { BridgeError } from "../../src/bridge/bytes";
-import type { Op, RequestFor, ResponseFor } from "../../src/bridge/client";
+import type { Op, PairOptions, RequestFor, ResponseFor } from "../../src/bridge/client";
 import type { PairingRecord } from "../../src/bridge/pairing";
 import type { BridgeLike } from "../../src/background/session";
 
 export type Answer = (req: Record<string, unknown>) => unknown;
 
+/** Reports of the autofill history (history.ts): answered `{}`, recorded in `history`. */
+const HISTORY_OPS: ReadonlySet<string> = new Set(["client_info", "note_autofill"]);
+
 export class FakeClient implements BridgeLike {
   open_ = false;
   closed = false;
   readonly requests: Record<string, unknown>[] = [];
+  /** The autofill history reports (`client_info`, `note_autofill`), kept apart from `requests`. */
+  readonly history: Record<string, unknown>[] = [];
   openCalls = 0;
   /** Opened with this pairing id (hex of the first bytes). */
   openedWith: PairingRecord | undefined;
@@ -17,7 +22,7 @@ export class FakeClient implements BridgeLike {
   constructor(
     private readonly answer: Answer = () => ({}),
     private readonly openImpl: () => Promise<void> = async () => undefined,
-    private readonly pairImpl?: (sasCb: (sas: string) => Promise<boolean>) => Promise<PairingRecord>,
+    private readonly pairImpl?: (sasCb: (sas: string) => Promise<boolean>, opts?: PairOptions) => Promise<PairingRecord>,
   ) {}
 
   get isOpen(): boolean {
@@ -32,13 +37,22 @@ export class FakeClient implements BridgeLike {
     this.open_ = true;
   }
 
-  async pair(_extName: string, _browser: string, confirmCodes: (sas: string) => Promise<boolean>): Promise<PairingRecord> {
+  async pair(
+    _extName: string,
+    _browser: string,
+    confirmCodes: (sas: string) => Promise<boolean>,
+    opts?: PairOptions,
+  ): Promise<PairingRecord> {
     if (!this.pairImpl) throw new BridgeError("transport");
-    return this.pairImpl(confirmCodes);
+    return this.pairImpl(confirmCodes, opts);
   }
 
   async request<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>> {
     if (!this.isOpen) throw new BridgeError("closed");
+    if (HISTORY_OPS.has(req.op)) {
+      this.history.push(req as Record<string, unknown>);
+      return {} as ResponseFor<O>;
+    }
     this.requests.push(req as Record<string, unknown>);
     const r = this.answer(req as Record<string, unknown>);
     if (r instanceof Error) throw r;

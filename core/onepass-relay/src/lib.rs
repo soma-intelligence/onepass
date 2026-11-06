@@ -13,6 +13,8 @@
 //! plus `"extension"` from the relay), then bridge envelopes byte for byte,
 //! with the native messaging framing (1 MiB cap).
 
+pub mod launcher;
+pub mod open_app;
 pub mod preamble;
 pub mod rendezvous;
 pub mod server;

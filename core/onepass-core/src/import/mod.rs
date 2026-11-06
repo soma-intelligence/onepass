@@ -24,6 +24,7 @@ pub(crate) mod limits;
 pub(crate) mod nordpass;
 pub(crate) mod onepux;
 pub(crate) mod pdf_text;
+pub mod reimport;
 pub(crate) mod roboform;
 pub mod text;
 
@@ -149,12 +150,25 @@ pub struct ImportedItem {
 
 /// A fallback applied to one source entry. Codes: `field_moved`,
 /// `login_to_password`, `to_secure_note`, `totp_moved`,
-/// `attachment_skipped`, `unsupported_entry`, `bad_date`.
+/// `attachment_skipped`, `unsupported_entry`, `bad_date`, `passkey_needs_cxf`
+/// (a 1PUX passkey without its private key: only Credential Exchange
+/// carries it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Warning {
     /// Zero-based index of the entry in the source.
     pub entry: u32,
     pub code: &'static str,
+}
+
+/// Prefix of the reserved tag naming the source of an imported item:
+/// `onepass:src:<format>:<source id>` (1PUX: `1pux:<vault uuid>/<item uuid>`,
+/// CXF: `cxf:<item id>`). Hidden from the UI and kept across edits: a later
+/// import of the same source finds the item by it (`reimport`).
+pub const SOURCE_TAG_PREFIX: &str = "onepass:src:";
+
+/// True for a `SOURCE_TAG_PREFIX` tag.
+pub fn is_source_tag(tag: &str) -> bool {
+    tag.starts_with(SOURCE_TAG_PREFIX)
 }
 
 /// Longest prefix examined for a CSV header line.

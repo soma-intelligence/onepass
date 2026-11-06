@@ -65,6 +65,11 @@ export const AUTOCOMPLETE_ROLES: Readonly<Record<string, ScoredRole>> = {
   "tel-national": "tel",
   organization: "organization",
   bday: "bday",
+  // One role for the whole date and each of its parts: the filler reads
+  // which part a field takes (content/date.ts).
+  "bday-day": "bday",
+  "bday-month": "bday",
+  "bday-year": "bday",
   "street-address": "address_line1",
   "address-line1": "address_line1",
   "address-line2": "address_line2",
@@ -430,6 +435,13 @@ export const PAY_WORDS =
 /** Buttons that create an account. */
 export const CREATE_WORDS =
   /\b(create|creer|create (an |your |my )?(free )?(account|profile)|get started|start (a |your )?(free )?trial|sign ?up|register|registration|join|join now|creer (un |mon |votre )?compte|s inscrire|inscription|inscrivez vous|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma |a minha )?conta|registreren|account aanmaken)\b/;
+
+/**
+ * Buttons that make a passkey ("Sign up with a passkey", "Créer une clé
+ * d'accès"); a button that also says sign in is a way in, not this.
+ */
+export const PASSKEY_WORDS =
+  /\b(pass ?keys?|cles? d acces|cle d identification|hauptschlussel|clave de acceso|chiave di accesso|chave de acesso|toegangssleutel)\b/;
 
 /** Wording of a "continue" step, without the sign-in verbs. */
 export const NEXT_WORDS =

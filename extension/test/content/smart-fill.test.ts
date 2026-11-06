@@ -191,7 +191,7 @@ describe("a plan's submit (planned)", () => {
   });
 
   it("refuses a button the page relabelled pay or create since the plan", () => {
-    for (const label of ["Pay now", "Create account"]) {
+    for (const label of ["Pay now", "Create account", "Sign up with a passkey"]) {
       setPage(LOGIN);
       s = start();
       const f = formById(s, "login");
@@ -203,6 +203,16 @@ describe("a plan's submit (planned)", () => {
       s.cs.stop();
     }
     s = null;
+  });
+
+  it("keeps a sign-in whose form also shows a passkey button", () => {
+    setPage(LOGIN);
+    s = start();
+    const f = formById(s, "login");
+    document.getElementById("login")!.insertAdjacentHTML("beforeend", '<button type="button">Use a passkey</button>');
+    const n = clicks();
+    expect(s.ext.deliver({ type: "submit", origin: ORIGIN, ref: f.ref, planned: true })).toEqual({ ok: true });
+    expect(n()).toBe(1);
   });
 
   it("refuses another pay button added to the form", () => {
@@ -224,5 +234,43 @@ describe("a plan's submit (planned)", () => {
     expect(n()).toBe(0);
     expect(s.ext.deliver({ type: "submit", origin: ORIGIN, ref: f.ref })).toEqual({ ok: true });
     expect(n()).toBe(1);
+  });
+});
+
+describe("the signup menu's passkey choice (click_passkey)", () => {
+  const SIGNUP = `
+    <form id="signup"><input type="email" id="e" autocomplete="email">
+      <input type="password" id="np" autocomplete="new-password">
+      <button type="button" id="pk">Sign up with a passkey</button>
+      <button type="submit" id="go">Create account</button></form>`;
+
+  const buttonRef = (label: RegExp): string => {
+    const r = s!.ext.deliver({ type: "plan_request" }) as { context: { forms: { buttons: { button_ref: string; class: string }[] }[] } };
+    const b = r.context.forms[0]!.buttons.find((x) => x.class === "passkey");
+    expect(b).toBeDefined();
+    expect(label.test(document.getElementById("pk")!.textContent ?? "")).toBe(true);
+    return b!.button_ref;
+  };
+
+  it("clicks the passkey button", () => {
+    setPage(SIGNUP);
+    s = start();
+    let n = 0;
+    document.getElementById("pk")!.addEventListener("click", () => void n++);
+    const ref = buttonRef(/passkey/);
+    expect(s.ext.deliver({ type: "click_passkey", origin: ORIGIN, ref })).toEqual({ ok: true });
+    expect(n).toBe(1);
+  });
+
+  it("refuses a button relabelled since the plan, and another origin", () => {
+    setPage(SIGNUP);
+    s = start();
+    let n = 0;
+    document.getElementById("pk")!.addEventListener("click", () => void n++);
+    const ref = buttonRef(/passkey/);
+    expect(s.ext.deliver({ type: "click_passkey", origin: "https://evil.test", ref })).toEqual({ ok: false });
+    document.getElementById("pk")!.textContent = "Delete my data";
+    expect(s.ext.deliver({ type: "click_passkey", origin: ORIGIN, ref })).toEqual({ ok: false });
+    expect(n).toBe(0);
   });
 });

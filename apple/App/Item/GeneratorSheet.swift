@@ -11,9 +11,9 @@ struct GeneratorSheet: View {
         var id: Self { self }
         var label: String {
             switch self {
-            case .characters: String(localized: "Caractères")
-            case .words: String(localized: "Phrase de passe")
-            case .pin: String(localized: "PIN")
+            case .characters: String(localized: "item.characters")
+            case .words: String(localized: "item.passphrase")
+            case .pin: String(localized: "item.pin")
             }
         }
     }
@@ -43,9 +43,9 @@ struct GeneratorSheet: View {
     @State private var failed = false
 
     static let separators: [(String, String)] = [
-        ("-", String(localized: "Tiret")), (".", String(localized: "Point")),
-        ("_", String(localized: "Tiret bas")), (" ", String(localized: "Espace")),
-        (",", String(localized: "Virgule")),
+        ("-", String(localized: "item.hyphen")), (".", String(localized: "item.period")),
+        ("_", String(localized: "item.underscore")), (" ", String(localized: "item.space")),
+        (",", String(localized: "item.comma")),
     ]
 
     var recipe: FfiPasswordRecipe {
@@ -69,14 +69,14 @@ struct GeneratorSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("generator.value")
                     StrengthMeter(bits: passwordEntropyBits(recipe: recipe))
-                    Button("Régénérer", systemImage: "arrow.clockwise") { regenerate() }
+                    Button("item.regenerate", systemImage: "arrow.clockwise") { regenerate() }
                         .accessibilityIdentifier("generator.regenerate")
                     if failed {
                         Text(VaultError.invalidInputMessage("recipe")).foregroundStyle(.red).font(.footnote)
                     }
                 }
                 Section {
-                    Picker("Type", selection: $mode) {
+                    Picker("app.type", selection: $mode) {
                         ForEach(Mode.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
@@ -86,15 +86,15 @@ struct GeneratorSheet: View {
                         stepperSlider("Longueur", value: $length, range: 8...100)
                         Toggle("Chiffres", isOn: $digits)
                         Toggle("Symboles", isOn: $symbols)
-                        Toggle("Sans caractères ambigus", isOn: $avoidAmbiguous)
+                        Toggle("item.noLookAlikeCharacters", isOn: $avoidAmbiguous)
                     case .words:
                         stepperSlider("Mots", value: $wordCount, range: 3...10)
-                        Picker("Séparateur", selection: $separator) {
+                        Picker("item.separator", selection: $separator) {
                             ForEach(Self.separators, id: \.0) { Text($0.1).tag($0.0) }
                         }
-                        Picker("Langue", selection: $french) {
-                            Text("Français").tag(true)
-                            Text("Anglais").tag(false)
+                        Picker("item.language", selection: $french) {
+                            Text("item.french").tag(true)
+                            Text("item.english").tag(false)
                         }
                     case .pin:
                         stepperSlider("Chiffres", value: $pinLength, range: 4...12)
@@ -102,7 +102,7 @@ struct GeneratorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Générateur")
+            .navigationTitle("item.generator")
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

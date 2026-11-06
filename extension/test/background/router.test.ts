@@ -118,7 +118,8 @@ describe("router", () => {
 
   it("menu open, init and pick fill the bound frame", async () => {
     const { ext, client } = await setup();
-    const token = await openMenu(ext);
+    // A sign-up form: the pick fills (on a sign-in form it runs the chain, pages.test.ts).
+    const token = await openMenu(ext, { formKind: "signup" });
     const ui = uiSender(`menu.html#${token}`, 7);
     await ext.send({ type: "menu_init", token }, ui);
     expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
@@ -127,7 +128,7 @@ describe("router", () => {
       ctx: "menu",
       item_id: "it_01",
       origin: SITE,
-      fields: ["username", "password"],
+      fields: ["username"],
     });
     expect(ext.sentToTabs).toEqual([
       {
@@ -140,6 +141,27 @@ describe("router", () => {
         },
         options: { documentId: "doc-1" },
       },
+    ]);
+    // The autofill history: the browser profile once, the list, the pick at its rank. Ids only.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(client.history[0]).toEqual(expect.objectContaining({ op: "client_info", browser: expect.any(String) }));
+    const notes = client.history.filter((r) => r.op === "note_autofill");
+    expect(notes.map((r) => r.action)).toEqual(["shown", "picked"]);
+    expect(notes[1]).toEqual({ op: "note_autofill", ctx: "menu", origin: SITE, action: "picked", item_id: "it_01", rank: 0 });
+    expect(JSON.stringify(client.history)).not.toContain("pw-1");
+  });
+
+  it("a menu closed without a pick is a dismissal of its first entry", async () => {
+    const { ext, client } = await setup();
+    const token = await openMenu(ext);
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await ext.send({ type: "menu_init", token }, ui);
+    await ext.send({ type: "menu_close", token }, ui);
+    await new Promise((r) => setTimeout(r, 0));
+    const notes = client.history.filter((r) => r.op === "note_autofill");
+    expect(notes.map((r) => [r.action, r.item_id ?? null])).toEqual([
+      ["shown", null],
+      ["dismissed", "it_01"],
     ]);
   });
 
@@ -285,6 +307,21 @@ describe("message validation", () => {
     expect(parseCsToBg({ type: "account_click", email: "x".repeat(400), ref: "c1" })).toBeNull();
   });
 
+  it("submitted_form: only its kind's roles, bounded, a card needs its number, never a security code", () => {
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_number: "4111111111111111", cc_exp: " ", cc_name: "A" } })).toEqual({
+      type: "submitted_form",
+      formRef: "f1",
+      kind: "card",
+      values: { cc_number: "4111111111111111", cc_name: "A" },
+    });
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_number: "4111111111111111", cc_csc: "123" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "card", values: { cc_name: "A" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: { city: "Paris", password: "x" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: { city: "x".repeat(300) } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "login", values: { city: "Paris" } })).toBeNull();
+    expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: {} })).toBeNull();
+  });
+
   it("validates UI messages", () => {
     const token = "A".repeat(22);
     expect(parseUiToBg({ type: "menu_pick", token, itemId: "it_01", extra: 1 })).toEqual({
@@ -293,6 +330,8 @@ describe("message validation", () => {
       itemId: "it_01",
     });
     expect(parseUiToBg({ type: "menu_pick", token, itemId: "" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_signup", token, mode: "passkey", x: 1 })).toEqual({ type: "menu_signup", token, mode: "passkey" });
+    expect(parseUiToBg({ type: "menu_signup", token, mode: "both" })).toBeNull();
     expect(parseUiToBg({ type: "save_decide", token, decision: "steal" })).toBeNull();
     expect(
       parseUiToBg({
@@ -300,6 +339,15 @@ describe("message validation", () => {
         token,
         decision: "save",
         edits: { title: "Atlas", username: "alex@atlas.dev", password: "p", vaultId: "v1", rule: "domain", tags: ["web"] },
+      }),
+    ).not.toBeNull();
+    // A card opened while locked has no vault list yet: no vault chosen, the default one is used.
+    expect(
+      parseUiToBg({
+        type: "save_decide",
+        token,
+        decision: "save",
+        edits: { title: "Atlas", username: "alex@atlas.dev", password: "", vaultId: "", rule: "domain", tags: [] },
       }),
     ).not.toBeNull();
     expect(parseUiToBg({ type: "popup_search", query: "q".repeat(300) })).toBeNull();
@@ -352,7 +400,29 @@ describe("message validation", () => {
       provider: "x",
     });
     expect(parseUiToBg({ type: "overlay_start", token, itemId: "it_01", provider: 3 })).toBeNull();
-    for (const type of ["menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
+    // iOS unlock sheet: the master password is text of 1 to 1024 UTF-8 bytes, nothing else.
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "mot de passe" })).toEqual({
+      type: "menu_unlock_password",
+      token,
+      password: "mot de passe",
+    });
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "mot de passe" })).toEqual({ type: "popup_unlock_password", password: "mot de passe" });
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "" })).toBeNull();
+    expect(parseUiToBg({ type: "popup_unlock_password", password: "é".repeat(513) })).toBeNull();
+    expect(parseUiToBg({ type: "popup_unlock_password" })).toBeNull();
+    expect(parseUiToBg({ type: "popup_vault", extra: 1 })).toEqual({ type: "popup_vault" });
+    expect(parseUiToBg({ type: "menu_resume", token })).toEqual({ type: "menu_resume", token });
+    expect(parseUiToBg({ type: "menu_resume", token: "short" })).toBeNull();
+    // The Face ID tap says so; the automatic try says nothing; any other value is refused.
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: true })).toEqual({ type: "menu_unlock_biometric", token, gesture: true });
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token })).toEqual({ type: "menu_unlock_biometric", token });
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: false })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_biometric", token, gesture: "yes" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "" })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: 3 })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token, password: "é".repeat(513) })).toBeNull();
+    expect(parseUiToBg({ type: "menu_unlock_password", token: "short", password: "x" })).toBeNull();
+    for (const type of ["menu_vault", "menu_unlock_biometric", "menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
       expect(parseUiToBg({ type, token, password: "x" })).toEqual({ type, token });
       expect(parseUiToBg({ type, token: "short" })).toBeNull();
     }

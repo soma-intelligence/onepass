@@ -66,8 +66,9 @@ pub(crate) struct Draft {
     /// Warnings raised while filling (`bad_date`, `totp_moved`).
     codes: Vec<&'static str>,
     /// Sign-in providers of a login (Google, Apple...). Their account item
-    /// is the placeholder `Id([0; 16])` until the parser resolves it.
-    providers: Vec<Provider>,
+    /// is the placeholder `Id([0; 16])` until the parser resolves it. The
+    /// second member is the relay address (Hide My Email) used with it.
+    providers: Vec<(Provider, Option<String>)>,
     /// The source says this is a login: it stays one without a username.
     keep_login: bool,
 }
@@ -106,8 +107,21 @@ impl Draft {
     /// parser once every item is built (see `Import` ids); a login with a
     /// provider may leave its username blank (`model::validate`).
     pub(crate) fn provider(&mut self, p: Provider) {
-        if !self.providers.contains(&p) {
-            self.providers.push(p);
+        if !self.providers.iter().any(|(q, _)| *q == p) {
+            self.providers.push((p, None));
+        }
+    }
+
+    /// Same, with the relay address the site knows the account by (Sign in
+    /// with Apple's Hide My Email).
+    pub(crate) fn provider_relay(&mut self, p: Provider, relay: &str) {
+        self.provider(p.clone());
+        let relay = relay.trim();
+        if let Some((_, r)) = self.providers.iter_mut().find(|(q, _)| *q == p)
+            && r.is_none()
+            && !relay.is_empty()
+        {
+            *r = Some(relay.to_owned());
         }
     }
 
@@ -335,11 +349,16 @@ impl Draft {
                 item.login_methods.push(LoginMethod::Password);
             }
             item.login_methods
-                .extend(providers.into_iter().map(|provider| LoginMethod::Provider {
-                    provider,
-                    account: Id([0; 16]),
-                    relay_email: None,
+                .extend(providers.into_iter().map(|(provider, relay_email)| {
+                    LoginMethod::Provider {
+                        provider,
+                        account: Id([0; 16]),
+                        relay_email,
+                    }
                 }));
+        }
+        if kind == ItemType::Login {
+            passkey_login(&mut item);
         }
         if keep_login
             && kind == ItemType::Login
@@ -350,6 +369,34 @@ impl Draft {
         }
         settle(&mut item, codes);
         item
+    }
+}
+
+/// A Login that holds a passkey signs in with it: `Passkey` joins its login methods (after
+/// `Password` when it has one), and a Login without a username takes the passkey's account name,
+/// so a passkey exported alone stays a Login instead of falling back to a secure note.
+fn passkey_login(item: &mut Item) {
+    let first_user = item
+        .sections
+        .iter()
+        .filter(|s| s.id != IMPORTED_ID)
+        .flat_map(|s| &s.fields)
+        .find_map(|f| match &f.value {
+            FieldValue::Passkey(p) => Some(p.user_name.clone()),
+            _ => None,
+        });
+    let Some(user) = first_user else { return };
+    if !has_value(item, "username")
+        && !user.is_empty()
+        && let Some(f) = item.field_mut("username")
+    {
+        f.value = FieldValue::Text(user);
+    }
+    if item.login_methods.is_empty() && has_value(item, "password") {
+        item.login_methods.push(LoginMethod::Password);
+    }
+    if !item.login_methods.contains(&LoginMethod::Passkey) {
+        item.login_methods.push(LoginMethod::Passkey);
     }
 }
 

@@ -12,12 +12,14 @@
 import type { FillField, Summary } from "../bridge/client";
 import { parseOrigin } from "../shared/domain";
 import type { FormInfo, FormKind, PlanOut } from "../shared/messages";
-import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupSuggestions } from "../shared/ui";
+import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupStatus, PopupSuggestions } from "../shared/ui";
 import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
 import type { FormGenerator, Generated } from "./generate";
+import type { AutofillHistory } from "./history";
 import type { PairingFlow } from "./pairing";
+import type { NativeVault, NativeVaultCall } from "./safari";
 import type { Handlers } from "./router";
 import { BgError, type Session } from "./session";
 
@@ -37,7 +39,17 @@ export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
   session: Pick<Session, "request" | "onLocked">;
-  pairing: Pick<PairingFlow, "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing">;
+  /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
+  openApp?: () => Promise<boolean>;
+  /**
+   * The native vault of the iOS Safari handler (IOSSAF-01): the popup's unlock sheet. Rejects
+   * with "invalid" where there is none (macOS, other browsers): the popup keeps the app button.
+   */
+  nativeVault?: (call: NativeVaultCall) => Promise<NativeVault>;
+  pairing: Pick<
+    PairingFlow,
+    "startPairing" | "confirmPairing" | "cancelPairing" | "forgetPairing" | "autoPair" | "takeJustPaired"
+  >;
   filler: Pick<Filler, "fillLogin" | "fillCard" | "fillIdentity" | "fillGenerated">;
   analyses: Pick<PageAnalyses, "top">;
   /**
@@ -58,10 +70,14 @@ export interface PopupDeps {
   smartFill?: (tabId: number) => Promise<void>;
   /** The site memory of `origin`'s site was forgotten (the penalty goes too). */
   onForgetSite?: (origin: string) => Promise<void>;
+  /** The on-device autofill history: suggestions shown, the one filled (history.ts). */
+  history?: Pick<AutofillHistory, "shown" | "picked">;
   now?: () => number;
 }
 
 const LOGIN_KINDS: readonly FormKind[] = ["login", "otp", "change_password", "signup"];
+/** The popup's suggestion list in the autofill history. */
+const POPUP_LIST = "popup";
 
 /** Fields of a login item disclosed for each form kind (least disclosure). */
 export function loginFields(kind: FormKind): FillField[] {
@@ -186,14 +202,14 @@ export class PopupBackend {
     return { t, host: tab.host, kind: form.kind };
   }
 
-  async status() {
+  async status(): Promise<PopupStatus> {
     const s = await this.deps.session.request({ op: "status" });
     if (s.locked) {
       this.known.clear();
       this.clearHistory();
       this.deps.onLock?.();
     }
-    return s;
+    return this.deps.pairing.takeJustPaired() ? { ...s, connected: true } : s;
   }
 
   async suggestions(): Promise<PopupSuggestions> {
@@ -208,10 +224,10 @@ export class PopupBackend {
       // No content script, a locked vault: the suggestions alone.
       plan = null;
     }
-    if (!plan) return { domain: tab.host, items };
-    const out: PopupSuggestions = { domain: tab.host, items: alternativesFirst(items, rankedIds(plan)) };
-    const line = planLine(plan, items);
+    const out: PopupSuggestions = { domain: tab.host, items: plan ? alternativesFirst(items, rankedIds(plan)) : items };
+    const line = plan ? planLine(plan, items) : null;
     if (line) out.plan = line;
+    void this.deps.history?.shown(POPUP_LIST, "popup", tab.origin, out.items.map((x) => x.item_id));
     return out;
   }
 
@@ -255,6 +271,8 @@ export class PopupBackend {
 
   async fill(itemId: string): Promise<{ domain: string }> {
     const { summary } = this.item(itemId);
+    // A suggestion chosen (its rank in the list shown), for the ranking.
+    void this.deps.history?.picked(POPUP_LIST, itemId);
     if (summary.kind === "card") {
       const { t, host } = await this.target(["card"]);
       await this.deps.filler.fillCard(t, itemId, "popup");
@@ -302,6 +320,12 @@ export class PopupBackend {
     historyEntries = [];
   }
 
+  /** One native vault call for the popup's unlock sheet; "invalid" where there is no native vault. */
+  private async vault(call: NativeVaultCall): Promise<NativeVault> {
+    if (!this.deps.nativeVault) throw new BgError("invalid");
+    return this.deps.nativeVault(call);
+  }
+
   /** "Oublier cet appairage" (spec 6.4): drops the record and everything the popup was shown. */
   async forget(): Promise<Record<string, never>> {
     await this.deps.pairing.forgetPairing();
@@ -313,7 +337,13 @@ export class PopupBackend {
   handlers(): Handlers["ui"] {
     return {
       popup_status: async () => this.status(),
-      popup_unlock: async () => this.deps.session.request({ op: "unlock" }),
+      popup_unlock: async () => {
+        await this.deps.openApp?.();
+        return this.deps.session.request({ op: "unlock" });
+      },
+      popup_vault: async () => this.vault({ op: "vault_state" }),
+      popup_unlock_biometric: async () => this.vault({ op: "unlock_biometric" }),
+      popup_unlock_password: async (m) => this.vault({ op: "unlock_password", password: m.password }),
       popup_suggestions: async () => this.suggestions(),
       popup_search: async (m) => this.search(m.query),
       popup_item: async (m) => this.getItem(m.itemId),
@@ -323,6 +353,7 @@ export class PopupBackend {
       popup_fill_generated: async (m) => this.fillGenerated(m.password),
       popup_generate: async (m) => this.generate(m.kind, m.length, m.symbols),
       popup_history: async () => this.history(),
+      popup_pair_auto: async () => ({ paired: await this.deps.pairing.autoPair(true) }),
       popup_pair_start: async () => this.deps.pairing.startPairing(),
       popup_pair_approve: async () => {
         await this.deps.pairing.confirmPairing();

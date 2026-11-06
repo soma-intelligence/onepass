@@ -31,10 +31,10 @@ public enum VaultError: Error, Equatable, Sendable {
             case .InvalidInput(let what):
                 self = what == "account exists" ? .accountExists : .other(Self.invalidInputMessage(what))
             case .Store:
-                self = .other(String(localized: "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit.", bundle: VaultKitStrings.bundle))
+                self = .other(String(localized: "session.onepasssLocalStorageCant", bundle: VaultKitStrings.bundle))
             case .Crypto:
-                self = .other(String(localized: "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass.", bundle: VaultKitStrings.bundle))
-            case .PasskeyExcluded: self = .other(String(localized: "Ce compte a déjà une passkey OnePass pour ce site.", bundle: VaultKitStrings.bundle))
+                self = .other(String(localized: "session.onepassCouldntEncryptOr", bundle: VaultKitStrings.bundle))
+            case .PasskeyExcluded: self = .other(String(localized: "session.accountAlreadyHasOnepass", bundle: VaultKitStrings.bundle))
             // The remote unlock envelope no longer opens the account: unlock here.
             case .RemoteUnlockStale: self = .passwordRequired
             // Key rotation v2 (core spec 8.1, 8.4): the app has no screens for these yet.
@@ -50,6 +50,22 @@ public enum VaultError: Error, Equatable, Sendable {
                 self = .other(String(localized: "Cet appareil ne figure pas dans les clés du compte.", bundle: VaultKitStrings.bundle))
             case .IdentityLeft:
                 self = .passwordRequired
+            // The mailbox (spec 4.6, 4.13): the sync status carries the details.
+            case .ClockSkew:
+                self = .other(MailboxSyncCoordinator.clockSkewMessage)
+            case .MailboxUnavailable:
+                self = .other(MailboxSyncCoordinator.retryingMessage)
+            case .Forbidden:
+                self = .other(String(localized: "sync.mailbox.forbidden", bundle: VaultKitStrings.bundle))
+            // Sharing (sharing spec 7, 9, 12): refusals the screens tell apart.
+            case .ReadOnlyRole:
+                self = .other(String(localized: "sharing.error.readOnlyRole", bundle: VaultKitStrings.bundle))
+            case .ContactNotVerified:
+                self = .other(String(localized: "sharing.error.contactNotVerified", bundle: VaultKitStrings.bundle))
+            case .MembershipFork:
+                self = .integrity(kind: "membership_fork")
+            case .IdentityPending:
+                self = .other(String(localized: "sharing.error.identityPending", bundle: VaultKitStrings.bundle))
             }
         case let error as BiometricError:
             switch error {
@@ -75,32 +91,32 @@ public enum VaultError: Error, Equatable, Sendable {
 
     /// The message of an error nothing else words.
     static var unexpectedMessage: String {
-        String(localized: "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass.", bundle: VaultKitStrings.bundle)
+        String(localized: "session.somethingUnexpectedWentWrong", bundle: VaultKitStrings.bundle)
     }
 
     /// French message for the UI (core validation reasons translated).
     public var localizedMessage: String {
         switch self {
         case .wrongPassword:
-            String(localized: "Mot de passe incorrect.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.incorrectPassword", bundle: VaultKitStrings.bundle)
         case .lockedOut(let until):
-            String(localized: "Trop d'essais. Réessaie après \(until.formatted(date: .omitted, time: .standard)).", bundle: VaultKitStrings.bundle)
+            String(localized: "session.tooManyAttemptsTry \(until.formatted(date: .omitted, time: .standard))", bundle: VaultKitStrings.bundle)
         case .integrity(let kind):
-            String(localized: "Données refusées : \(Self.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.dataRefused \(Self.integrityLabel(kind))", bundle: VaultKitStrings.bundle)
         case .validation(_, let reason):
             Self.validationMessage(reason)
         case .accountExists:
-            String(localized: "Un compte OnePass existe déjà sur cet appareil.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.onepassAccountAlreadyExists", bundle: VaultKitStrings.bundle)
         case .notFound:
-            String(localized: "Élément introuvable.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.itemNotFound", bundle: VaultKitStrings.bundle)
         case .conflict:
-            String(localized: "L'élément a changé entre-temps. Réessaie.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.itemChangedInMeantime", bundle: VaultKitStrings.bundle)
         case .biometricsUnavailable:
-            String(localized: "La biométrie n'est pas disponible sur cet appareil.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.biometricsArentAvailableOn", bundle: VaultKitStrings.bundle)
         case .passwordRequired:
-            String(localized: "Saisis ton mot de passe maître.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.enterMasterPassword", bundle: VaultKitStrings.bundle)
         case .deviceRevoked:
-            String(localized: "Cet appareil a été retiré de ton compte OnePass.", bundle: VaultKitStrings.bundle)
+            String(localized: "session.deviceWasRemovedFrom", bundle: VaultKitStrings.bundle)
         case .other(let message):
             message
         }
@@ -114,41 +130,41 @@ public enum VaultError: Error, Equatable, Sendable {
     /// formed Secret Key of another account (the core cannot tell them apart).
     public var restoreMessage: String {
         self == .wrongPassword
-            ? String(localized: "Cette Secret Key ne correspond pas à ce compte, ou le mot de passe est faux.", bundle: VaultKitStrings.bundle)
+            ? String(localized: "session.secretKeyDoesntMatch", bundle: VaultKitStrings.bundle)
             : localizedMessage
     }
 
     /// French text for a core validation reason (English, fixed strings).
     public static func validationMessage(_ reason: String) -> String {
         switch reason {
-        case secretKeyFormat: String(localized: "Format de Secret Key incorrect : 53 caractères attendus (lettres et chiffres).", bundle: VaultKitStrings.bundle)
+        case secretKeyFormat: String(localized: "session.incorrectSecretKeyFormat", bundle: VaultKitStrings.bundle)
         case secretKeyChecksum:
-            String(localized: "Cette Secret Key contient une faute de frappe : vérifie chaque caractère sur ton Emergency Kit.", bundle: VaultKitStrings.bundle)
-        case "is required": String(localized: "Champ obligatoire", bundle: VaultKitStrings.bundle)
-        case "is not a valid card number": String(localized: "Numéro de carte invalide", bundle: VaultKitStrings.bundle)
-        case "is not a valid IBAN": String(localized: "IBAN invalide", bundle: VaultKitStrings.bundle)
-        case "is not a valid recovery phrase": String(localized: "Phrase de récupération invalide", bundle: VaultKitStrings.bundle)
-        case "is not a valid national number": String(localized: "Numéro invalide", bundle: VaultKitStrings.bundle)
-        case "must not be empty": String(localized: "Ne peut pas être vide", bundle: VaultKitStrings.bundle)
-        case "too weak": String(localized: "Trop facile à deviner : allonge-la ou ajoute des mots.", bundle: VaultKitStrings.bundle)
-        case "this device": String(localized: "Cet appareil ne peut pas se retirer lui-même.", bundle: VaultKitStrings.bundle)
-        default: String(localized: "Valeur invalide", bundle: VaultKitStrings.bundle)
+            String(localized: "session.secretKeyHasTypo", bundle: VaultKitStrings.bundle)
+        case "is required": String(localized: "session.requiredField", bundle: VaultKitStrings.bundle)
+        case "is not a valid card number": String(localized: "session.invalidCardNumber", bundle: VaultKitStrings.bundle)
+        case "is not a valid IBAN": String(localized: "session.invalidIban", bundle: VaultKitStrings.bundle)
+        case "is not a valid recovery phrase": String(localized: "session.invalidRecoveryPhrase", bundle: VaultKitStrings.bundle)
+        case "is not a valid national number": String(localized: "session.invalidNumber", bundle: VaultKitStrings.bundle)
+        case "must not be empty": String(localized: "session.cantEmpty", bundle: VaultKitStrings.bundle)
+        case "too weak": String(localized: "session.tooEasyToGuess", bundle: VaultKitStrings.bundle)
+        case "this device": String(localized: "session.deviceCannotRemoveItself", bundle: VaultKitStrings.bundle)
+        default: String(localized: "session.invalidValue", bundle: VaultKitStrings.bundle)
         }
     }
 
     /// French text for a core `InvalidInput { what }` (never a value, only what was refused).
     public static func invalidInputMessage(_ what: String) -> String {
         switch what {
-        case "passkey": String(localized: "Clé d'accès inconnue.", bundle: VaultKitStrings.bundle)
-        case "date", "month", "timestamp": String(localized: "Date invalide.", bundle: VaultKitStrings.bundle)
-        case "recipe": String(localized: "Réglages du générateur invalides.", bundle: VaultKitStrings.bundle)
-        case "passphrase": String(localized: "Phrase de passe illisible.", bundle: VaultKitStrings.bundle)
-        case "last vault": String(localized: "Le dernier coffre ne peut pas être supprimé.", bundle: VaultKitStrings.bundle)
-        case "vault not empty": String(localized: "Vide ce coffre avant de le supprimer.", bundle: VaultKitStrings.bundle)
-        case "account not synced": String(localized: "Synchronise d'abord cet appareil.", bundle: VaultKitStrings.bundle)
+        case "passkey": String(localized: "session.unknownPasskey", bundle: VaultKitStrings.bundle)
+        case "date", "month", "timestamp": String(localized: "session.invalidDate", bundle: VaultKitStrings.bundle)
+        case "recipe": String(localized: "session.invalidGeneratorSettings", bundle: VaultKitStrings.bundle)
+        case "passphrase": String(localized: "session.unreadablePassphrase", bundle: VaultKitStrings.bundle)
+        case "last vault": String(localized: "session.lastVaultCannotDeleted", bundle: VaultKitStrings.bundle)
+        case "vault not empty": String(localized: "session.emptyVaultBeforeDeleting", bundle: VaultKitStrings.bundle)
+        case "account not synced": String(localized: "vaultKit.syncDeviceFirst", bundle: VaultKitStrings.bundle)
         case "pairing snapshot too large":
-            String(localized: "Ce compte est trop gros pour être copié par appairage.", bundle: VaultKitStrings.bundle)
-        default: developerMessage(what) ?? importMessage(what) ?? String(localized: "Valeur invalide.", bundle: VaultKitStrings.bundle)
+            String(localized: "vaultKit.accountTooLargeTo", bundle: VaultKitStrings.bundle)
+        default: developerMessage(what) ?? importMessage(what) ?? String(localized: "session.invalidValue2", bundle: VaultKitStrings.bundle)
         }
     }
 
@@ -158,41 +174,41 @@ public enum VaultError: Error, Equatable, Sendable {
         if what.hasPrefix("SSH key: ") {
             let reason = what.dropFirst("SSH key: ".count)
             if reason == "wrong passphrase" {
-                return String(localized: "Phrase de passe incorrecte.", bundle: VaultKitStrings.bundle)
+                return String(localized: "session.wrongPassphrase", bundle: VaultKitStrings.bundle)
             }
             if reason.hasPrefix("the key is encrypted") {
-                return String(localized: "Cette clé est chiffrée : saisis sa phrase de passe.", bundle: VaultKitStrings.bundle)
+                return String(localized: "session.keyEncryptedEnterPassphrase", bundle: VaultKitStrings.bundle)
             }
             if reason.hasPrefix("unsupported") {
-                return String(localized: "Ce type de clé SSH n'est pas pris en charge.", bundle: VaultKitStrings.bundle)
+                return String(localized: "session.sshKeyTypeNot", bundle: VaultKitStrings.bundle)
             }
-            return String(localized: "Clé SSH illisible.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.unreadableSshKey", bundle: VaultKitStrings.bundle)
         }
         switch what {
         case "unsynced changes":
-            return String(localized: "Des modifications de ces coffres ne sont pas encore dans iCloud. Synchronise, puis réessaie.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.someChangesToThese", bundle: VaultKitStrings.bundle)
         case "upstream does not hold the vault":
-            return String(localized: "iCloud n'a pas encore une copie complète de ces coffres. Synchronise, puis réessaie : rien n'a été retiré.", bundle: VaultKitStrings.bundle)
-        case "no vault leaves":
-            return String(localized: "Tous tes coffres sont marqués sûrs en voyage : aucun ne quitterait cet appareil.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.icloudDoesNotHold", bundle: VaultKitStrings.bundle)
+        case "no vault leaves", "nothing leaves":
+            return String(localized: "travel.error.nothingLeaves", bundle: VaultKitStrings.bundle)
         case "travel mode already on":
-            return String(localized: "Le Travel Mode est déjà activé.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.travelModeAlreadyOn", bundle: VaultKitStrings.bundle)
         case "travel mode off":
-            return String(localized: "Le Travel Mode n'est pas activé.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.travelModeNotOn", bundle: VaultKitStrings.bundle)
         case "another agent is serving this socket":
-            return String(localized: "Un autre agent SSH utilise déjà ce socket.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.anotherSshAgentAlready", bundle: VaultKitStrings.bundle)
         case "socket path too long":
-            return String(localized: "Le chemin du socket est trop long pour macOS.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.socketPathTooLong", bundle: VaultKitStrings.bundle)
         case "cannot listen on the agent socket", "cannot listen on the MCP socket":
-            return String(localized: "Impossible d'ouvrir le socket.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.socketCouldNotOpened", bundle: VaultKitStrings.bundle)
         case "program identity":
-            return String(localized: "Impossible de vérifier la signature de ce programme.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.signatureOfProgramCould", bundle: VaultKitStrings.bundle)
         case "scope":
-            return String(localized: "Autorisation inconnue.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.unknownPermission", bundle: VaultKitStrings.bundle)
         case "host bookmark":
-            return String(localized: "Un hôte s'écrit en un seul mot, sans espace ni guillemet.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.hostOneWordWithout", bundle: VaultKitStrings.bundle)
         case "key comment":
-            return String(localized: "Le commentaire de la clé ne doit pas contenir de caractère de contrôle.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.keyCommentMustNot", bundle: VaultKitStrings.bundle)
         default:
             return nil
         }
@@ -203,24 +219,24 @@ public enum VaultError: Error, Equatable, Sendable {
     public static func importMessage(_ what: String) -> String? {
         let lower = what.lowercased()
         if lower.hasPrefix("encrypted bitwarden") {
-            return String(localized: "Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.bitwardenExportEncryptedExport", bundle: VaultKitStrings.bundle)
         }
         if lower.hasPrefix("encrypted dashlane") {
-            return String(localized: "Cet export Dashlane est chiffré. Refais l'export en CSV, puis réessaie.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.dashlaneExportEncryptedExport", bundle: VaultKitStrings.bundle)
         }
         if lower.hasPrefix("keepass kdbx") {
-            return String(localized: "Les bases KeePass (.kdbx) ne se lisent pas directement. Exporte-la en XML KeePass 2, puis réessaie.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.keepassDatabasesKdbxCant", bundle: VaultKitStrings.bundle)
         }
         if lower.hasPrefix("onepass archive") {
-            return String(localized: "C'est une archive OnePass chiffrée : elle ne s'importe pas ici.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.encryptedOnepassArchiveIt", bundle: VaultKitStrings.bundle)
         }
-        if lower == "import format" { return String(localized: "Format d'import inconnu.", bundle: VaultKitStrings.bundle) }
+        if lower == "import format" { return String(localized: "session.unknownImportFormat", bundle: VaultKitStrings.bundle) }
         if lower == "import file too large" || lower.hasPrefix("too many") || lower.hasSuffix("too large") {
-            return String(localized: "Ce fichier est trop gros pour être importé.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.fileTooLargeTo", bundle: VaultKitStrings.bundle)
         }
         let markers = ["csv", "json", "xml", "zip", "1pux", "utf-8", "otpauth", "wifi qr", "keepass", "dashlane"]
         if markers.contains(where: lower.contains) {
-            return String(localized: "Ce fichier ne correspond pas au format choisi, ou il est abîmé.", bundle: VaultKitStrings.bundle)
+            return String(localized: "session.fileDoesntMatchChosen", bundle: VaultKitStrings.bundle)
         }
         return nil
     }
@@ -228,18 +244,19 @@ public enum VaultError: Error, Equatable, Sendable {
     /// Plain French description of a detected attack (core `Integrity { kind }`).
     public static func integrityLabel(_ kind: String) -> String {
         switch kind {
-        case "account_missing": String(localized: "Le compte a disparu du stockage.", bundle: VaultKitStrings.bundle)
-        case "vault_missing": String(localized: "Un vault a disparu du stockage.", bundle: VaultKitStrings.bundle)
-        case "manifest_rollback": String(localized: "Ancienne version rejouée.", bundle: VaultKitStrings.bundle)
-        case "manifest_missing_item": String(localized: "Un élément a été retenu ou supprimé du stockage.", bundle: VaultKitStrings.bundle)
-        case "manifest_unexpected_item": String(localized: "Un élément inconnu a été ajouté au stockage.", bundle: VaultKitStrings.bundle)
-        case "manifest_item_mismatch": String(localized: "Un élément ne correspond pas à la liste signée du vault.", bundle: VaultKitStrings.bundle)
-        case "commitment", "aead": String(localized: "Des données chiffrées ont été modifiées.", bundle: VaultKitStrings.bundle)
-        case "signature", "params_unsigned": String(localized: "Une signature est invalide.", bundle: VaultKitStrings.bundle)
-        case "params_downgrade": String(localized: "Les paramètres de sécurité du compte ont été affaiblis.", bundle: VaultKitStrings.bundle)
-        case "wrong_kind", "wrong_context": String(localized: "Un enregistrement a été déplacé ou substitué.", bundle: VaultKitStrings.bundle)
-        case "epoch_rollback": String(localized: "Une ancienne restauration du coffre a été rejouée.", bundle: VaultKitStrings.bundle)
-        default: String(localized: "Le stockage ne correspond pas à ce qui était attendu.", bundle: VaultKitStrings.bundle)
+        case "account_missing": String(localized: "session.accountDisappearedFromStorage", bundle: VaultKitStrings.bundle)
+        case "vault_missing": String(localized: "integrity.vaultMissing", bundle: VaultKitStrings.bundle)
+        case "manifest_rollback": String(localized: "session.oldVersionWasReplayed", bundle: VaultKitStrings.bundle)
+        case "manifest_missing_item": String(localized: "session.itemWasHeldBack", bundle: VaultKitStrings.bundle)
+        case "manifest_unexpected_item": String(localized: "session.unknownItemWasAdded", bundle: VaultKitStrings.bundle)
+        case "manifest_item_mismatch": String(localized: "integrity.manifestItemMismatch", bundle: VaultKitStrings.bundle)
+        case "commitment", "aead": String(localized: "session.encryptedDataWasModified", bundle: VaultKitStrings.bundle)
+        case "signature", "params_unsigned": String(localized: "session.signatureInvalid", bundle: VaultKitStrings.bundle)
+        case "params_downgrade": String(localized: "session.accountsSecuritySettingsWere", bundle: VaultKitStrings.bundle)
+        case "wrong_kind", "wrong_context": String(localized: "session.recordWasMovedOr", bundle: VaultKitStrings.bundle)
+        case "epoch_rollback": String(localized: "session.oldRestoreOfVault", bundle: VaultKitStrings.bundle)
+        case "membership_fork": String(localized: "sharing.error.membershipFork", bundle: VaultKitStrings.bundle)
+        default: String(localized: "session.storageDoesntMatchWhat", bundle: VaultKitStrings.bundle)
         }
     }
 }

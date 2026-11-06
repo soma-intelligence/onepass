@@ -21,7 +21,7 @@ use crate::model::{FieldValue, ItemType, PasskeyCredential};
 use super::build::{Draft, otpauth_from_parts};
 use super::json::{Lenient, Slots};
 use super::limits::{MAX_INPUT, MAX_RECORDS};
-use super::{Import, Warning};
+use super::{Import, SOURCE_TAG_PREFIX, Warning};
 
 /// Text of a scalar JSON value; an object gives its `value` member.
 fn scalar(v: Value) -> Option<Zeroizing<String>> {
@@ -90,6 +90,8 @@ struct Account {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawItem {
+    /// The exporter's item id: kept as the item's source tag.
+    id: F,
     title: F,
     favorite: F,
     #[serde(rename = "creationAt")]
@@ -155,7 +157,7 @@ struct Cred {
 }
 
 /// Base64url or base64, with or without padding.
-fn b64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64(s: &str) -> Option<Vec<u8>> {
     let t = s.trim().trim_end_matches('=');
     BASE64URL_NOPAD
         .decode(t.as_bytes())
@@ -380,6 +382,9 @@ fn item(raw: &RawItem, entry: u32, out: &mut Import) {
     for t in &raw.tags {
         d.tag(t.get());
     }
+    if !raw.id.get().trim().is_empty() {
+        d.tag(&format!("{SOURCE_TAG_PREFIX}cxf:{}", raw.id.get().trim()));
+    }
     date(&mut d, "Date de création", &raw.creation_at, Draft::created);
     date(
         &mut d,
@@ -499,7 +504,7 @@ mod tests {
         assert_eq!(item.item_type, ItemType::Login);
         assert_eq!(item.title, "Example Login");
         assert!(item.favorite);
-        assert_eq!(item.tags, ["work", "demo"]);
+        assert_eq!(item.tags, ["work", "demo", "onepass:src:cxf:i1"]);
         assert_eq!(item.urls.len(), 2);
         assert_eq!(item.urls[0].url, "https://example.com/login");
         assert!(item.urls[0].primary);
@@ -671,6 +676,79 @@ mod tests {
         assert!(parse_cxf(b"not json").is_err());
         assert!(parse_cxf(b"[]").is_err());
         assert!(parse(r#"{"accounts":null}"#).items.is_empty());
+    }
+
+    /// The JSON `ASExportedCredentialData` encodes (iOS 26 Credential Exchange): base64url without
+    /// padding, `creationAt` in Unix seconds, `username` on the passkey, `version` as an object.
+    #[test]
+    fn cxf_apple_credential_exchange_passkey() {
+        let json = br#"{"accounts":[{"collections":[],"email":"","id":"AQ","items":[{"creationAt":1700000000,
+            "credentials":[{"credentialId":"AQID-g","key":"MIGH","rpId":"webauthn.io","type":"passkey",
+            "userDisplayName":"Quentin","userHandle":"CQgH","username":"quentin"},
+            {"password":{"fieldType":"concealed-string","value":"pw"},"type":"basic-auth",
+            "username":{"fieldType":"string","value":"q@x.io"}}],
+            "id":"qrs","modifiedAt":1700000000,"scope":{"androidApps":[],"urls":["https://webauthn.io"]},
+            "title":"WebAuthn"}],"username":""}],"exporterDisplayName":"Passwords",
+            "exporterRpId":"com.apple.Passwords","timestamp":1700000000,"version":{"major":1,"minor":0}}"#;
+        let out = parse_cxf(json).unwrap();
+        assert_eq!(out.items.len(), 1);
+        assert!(out.warnings.is_empty());
+        let item = &out.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("q@x.io"));
+        let Some(FieldValue::Passkey(p)) = item.field("passkeys").map(|f| &f.value) else {
+            panic!("passkey")
+        };
+        assert_eq!(p.rp_id, "webauthn.io");
+        assert_eq!(p.user_name, "quentin");
+        assert_eq!(p.credential_id, [1, 2, 3, 250]);
+        assert_eq!(p.user_handle, [9, 8, 7]);
+        assert_eq!(p.private_key.as_slice(), [0x30, 0x81, 0x87]);
+        assert_eq!(p.created_at.unix_timestamp(), 1_700_000_000);
+    }
+
+    /// Passwords exports a passkey alone (no basic-auth): still a Login, signed in with that passkey,
+    /// its account name as the username. Never a secure note.
+    #[test]
+    fn cxf_passkey_alone_is_a_login() {
+        let json = br#"{"accounts":[{"items":[{"title":"GitHub","creationAt":1760000000,
+            "scope":{"urls":["https://github.com"]},
+            "credentials":[{"type":"passkey","credentialId":"AQID","rpId":"github.com",
+            "username":"camille","userDisplayName":"Camille","userHandle":"CQgH","key":"MIGH"}]}]}]}"#;
+        let out = parse_cxf(json).unwrap();
+        assert!(
+            out.warnings.is_empty(),
+            "{:?}",
+            out.warnings.iter().map(|w| w.code).collect::<Vec<_>>()
+        );
+        let item = &out.items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("camille"));
+        assert_eq!(item.login_methods, [crate::model::LoginMethod::Passkey]);
+        assert!(matches!(
+            item.field("passkeys").map(|f| &f.value),
+            Some(FieldValue::Passkey(_))
+        ));
+        validate(item).unwrap();
+    }
+
+    /// A password beside the passkey: both sign-in methods, the password's username kept.
+    #[test]
+    fn cxf_passkey_and_password_keep_both_methods() {
+        let json = br#"{"accounts":[{"items":[{"title":"WebAuthn",
+            "credentials":[{"type":"passkey","credentialId":"AQID","rpId":"webauthn.io",
+            "username":"camille","userHandle":"CQgH","key":"MIGH"},
+            {"type":"basic-auth","username":"c@example.com","password":"fictif"}]}]}]}"#;
+        let item = &parse_cxf(json).unwrap().items[0].item;
+        assert_eq!(item.item_type, ItemType::Login);
+        assert_eq!(text(item, "username").as_deref(), Some("c@example.com"));
+        assert_eq!(
+            item.login_methods,
+            [
+                crate::model::LoginMethod::Password,
+                crate::model::LoginMethod::Passkey
+            ]
+        );
     }
 
     #[test]

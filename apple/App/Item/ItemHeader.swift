@@ -13,7 +13,7 @@ struct ItemHeader: View {
 
     private var subtitle: String {
         let category = ItemCategory.of(item.itemType).singular
-        let summary = model.session.summaries.first { $0.id == item.id }?.subtitle ?? ""
+        let summary = model.session.summaries.first { $0.id == item.id }?.listSubtitle ?? ""
         return summary.isEmpty ? category : "\(category) · \(summary)"
     }
 
@@ -32,13 +32,13 @@ struct ItemHeader: View {
             .padding(.vertical, 2)
             .background(.fill.quaternary, in: Capsule())
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("Coffre \(vault.meta.name)"))
+            .accessibilityLabel(Text("item.vault \(vault.meta.name)"))
         }
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? primaryURL.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 64, brand: item.cardBrandName)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title), size: 64, brand: item.cardBrandName)
                 .favoriteBadge(item.favorite, iconSize: 64)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -77,7 +77,7 @@ struct ItemHeader: View {
                 siteIcon = nil
                 return
             }
-            siteIcon = await model.iconLoader.icon(for: url)
+            siteIcon = await model.iconLoader.icon(for: url, title: item.title)
         }
     }
 }

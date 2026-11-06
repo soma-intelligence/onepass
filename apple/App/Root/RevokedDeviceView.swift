@@ -5,7 +5,9 @@ import VaultKit
 /// The signed device list marked this device revoked: the session is locked and its OnePass data
 /// kept (rule 8.4 of the key rotation v2 spec: a revoked device can sign that list too). "Effacer cet
 /// appareil" erases it after a confirmation. When the erase failed (L6), the screen says so and
-/// "Réessayer" tries again (also once on appear, after a relaunch).
+/// "Réessayer" tries again (also once on appear, after a relaunch). A device the key lineage removed
+/// (quarantine, also every old device after a recovery) shows the date it erases itself and the time
+/// left (founder decision 2026-11-03).
 struct RevokedDeviceView: View {
     @Environment(AppModel.self) private var model
     @State private var confirmErase = false
@@ -24,14 +26,26 @@ struct RevokedDeviceView: View {
                 .accessibilityIdentifier("revoked.message")
             Group {
                 if eraseFailed {
-                    Text("Ses données OnePass n'ont pas encore pu être effacées. OnePass réessaie à chaque ouverture ; tu peux aussi réessayer maintenant.")
+                    Text("root.onepassDataCouldNot")
                 } else {
-                    Text("Ses données OnePass restent chiffrées sur cet appareil tant que tu ne l'effaces pas. Si tu ne l'as pas retiré depuis un autre de tes appareils, un appareil déjà retiré a pu le faire : vérifie tes appareils avant d'effacer.")
+                    Text("root.onepassDataStaysEncrypted")
                 }
             }
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .accessibilityIdentifier("revoked.detail")
+            if let eraseAt = model.session.quarantineEraseAt, !eraseFailed {
+                // Key rotation v2 quarantine: the date the device erases itself and the time left.
+                VStack(spacing: 4) {
+                    Text("root.quarantineErasesOn \(eraseAt.formatted(date: .long, time: .shortened))")
+                    Text("root.quarantineTimeLeft \(Text(eraseAt, style: .relative))")
+                        .monospacedDigit()
+                }
+                .font(.callout.weight(.medium))
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("revoked.eraseAt")
+            }
             Button {
                 if eraseFailed {
                     Task { await model.session.refresh() }
@@ -53,15 +67,65 @@ struct RevokedDeviceView: View {
         .confirmationDialog(
             "Effacer les données OnePass de cet appareil ?", isPresented: $confirmErase, titleVisibility: .visible
         ) {
-            Button("Effacer", role: .destructive) { Task { await model.session.eraseRevokedDevice() } }
+            Button("app.erase", role: .destructive) { Task { await model.session.eraseRevokedDevice() } }
                 .accessibilityIdentifier("revoked.confirmErase")
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Ce qui n'a pas encore été synchronisé sera perdu. Tu pourras l'ajouter de nouveau depuis un autre appareil ou avec ton Emergency Kit.")
+            Text("root.anythingNotSyncedYet")
         }
         .task {
             // After a relaunch the erase is tried again at once.
             if eraseFailed { await model.session.refresh() }
         }
+    }
+}
+
+/// The quarantine erased this device (key rotation v2 spec 8.4, founder decision 2026-11-03): 7 days
+/// after the account was recovered on another device or after another device removed this one, or at
+/// once when another device marked it stolen. Says why and what to do (sign in again with the
+/// Emergency Kit), once, before the onboarding. "Continuer" forgets the notice.
+struct ErasedDeviceView: View {
+    @Environment(AppModel.self) private var model
+
+    private var reason: LocalizedStringKey {
+        switch model.session.erasedByQuarantine {
+        case .recovered: "root.erasedRecovered"
+        case .stolen: "root.erasedStolen"
+        case .removed, .none: "root.erasedRemoved"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.shield")
+                .font(.system(size: 52, weight: .light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("root.erasedTitle")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("erased.title")
+            Text(reason)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("erased.reason")
+            Text("root.erasedWhatToDo")
+                .font(.callout.weight(.medium))
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("erased.next")
+            Button {
+                model.session.dismissErasedNotice()
+            } label: {
+                Text("common.continue")
+                    .font(.headline).frame(minWidth: 160).frame(height: Platform.isMac ? 24 : 40)
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .accessibilityIdentifier("erased.continue")
+        }
+        .frame(maxWidth: 440)
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

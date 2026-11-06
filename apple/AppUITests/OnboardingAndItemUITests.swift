@@ -154,8 +154,9 @@ final class OnboardingAndItemUITests: XCTestCase {
         assertPasswordOnlyLockScreen(app)
         unlock(app)
 
-        // The row is still there.
-        tap(tabButton(app, id: "tab.search", label: "Rechercher"))
+        // The item is still there. The empty search lists the items opened this session, and
+        // those are forgotten on lock: it is found by its name.
+        searchAtlas(app)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after unlock")
 
         // Relaunched (same isolated store, no reset): the same password-only lock screen.
@@ -165,7 +166,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         relaunched.launch()
         assertPasswordOnlyLockScreen(relaunched)
         unlock(relaunched)
-        tap(tabButton(relaunched, id: "tab.search", label: "Rechercher"))
+        searchAtlas(relaunched)
         XCTAssertTrue(row(relaunched).waitForExistence(timeout: Self.uiTimeout), "row missing after relaunch")
     }
 
@@ -181,14 +182,16 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: Self.kdfTimeout), "debug account not unlocked")
         let seeded = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
         tap(search)
-        XCTAssertTrue(seeded.waitForExistence(timeout: Self.kdfTimeout), "debug items not seeded")
+        // Before a query the search screen shows its category tiles (f09227ed), no rows.
+        let loginTile = app.descendants(matching: .any)["search.browse.login"].firstMatch
+        XCTAssertTrue(loginTile.waitForExistence(timeout: Self.kdfTimeout), "search screen not shown")
 
         let field = app.searchFields.firstMatch
         if !field.waitForExistence(timeout: 3) { search.tap() }
         tap(field)
         field.typeText("atlas")
         let other = app.descendants(matching: .any)["list.row.Codes du portail"].firstMatch
-        XCTAssertTrue(seeded.waitForExistence(timeout: Self.uiTimeout), "search did not find the item")
+        XCTAssertTrue(seeded.waitForExistence(timeout: Self.kdfTimeout), "debug items not seeded or not found")
         XCTAssertTrue(other.waitForNonExistence(timeout: Self.uiTimeout), "query not applied")
 
         // Open the result, then come back with the navigation bar's back button.
@@ -236,7 +239,14 @@ final class OnboardingAndItemUITests: XCTestCase {
         }
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(menu.waitForExistence(timeout: Self.uiTimeout), "Accueil not shown after coming back")
+        // iPhone locks as soon as the app leaves the screen (default since d8e39c80): unlock the
+        // debug account (`AppModel.debugPassword`), then Accueil, never the search, comes back.
+        let lockField = app.secureTextFields["lock.password"]
+        if lockField.waitForExistence(timeout: Self.uiTimeout) {
+            type("ruisseau-tapis-orage-comete", into: lockField)
+            tap(app.buttons["lock.unlock"])
+        }
+        XCTAssertTrue(menu.waitForExistence(timeout: Self.kdfTimeout), "Accueil not shown after coming back")
         let again = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         again.name = "accueil-after-item-and-background"
         again.lifetime = .keepAlways
@@ -250,6 +260,30 @@ final class OnboardingAndItemUITests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: Self.uiTimeout), "search did not open")
         XCTAssertFalse(app.descendants(matching: .any)["autofill.tip"].exists, "AutoFill card shown during a search")
         XCTAssertFalse(menu.isHittable, "Accueil shown during a search")
+    }
+
+    // MARK: - Demo data
+
+    /// `-OnePassDemoData YES`: the demo account is made at launch (seconds with the real Argon2id,
+    /// far more on a busy Mac), and the onboarding never shows meanwhile. Once seeded, the Crypto
+    /// screen (`-OnePassDemoList crypto`) shows the demo wallets' balance from recorded answers.
+    func testDemoDataOpensTheVaultWithCryptoBalances() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
+        app.launch()
+
+        let welcome = app.buttons["onboarding.create"]
+        let total = app.descendants(matching: .any)["crypto.total"].firstMatch
+        let deadline = Date().addingTimeInterval(Self.kdfTimeout)
+        while !total.exists, Date() < deadline {
+            XCTAssertFalse(welcome.exists, "onboarding shown while the demo account is made")
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTAssertTrue(total.exists, "Crypto screen without a total")
+        // Recorded answers: a non-zero balance in the user's currency.
+        XCTAssertTrue(total.label.contains(where: { ("1"..."9").contains($0) }), "zero crypto total: \(total.label)")
+        XCTAssertTrue(app.descendants(matching: .any)["crypto.coin.bitcoin"].firstMatch.exists, "no Bitcoin holding")
+        XCTAssertTrue(app.descendants(matching: .any)["crypto.coin.ethereum"].firstMatch.exists, "no Ethereum holding")
     }
 
     // MARK: - Unfolded iPhone
@@ -314,6 +348,17 @@ final class OnboardingAndItemUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Rechercher, then "atlas" typed unless the row already shows (a query kept from before).
+    private func searchAtlas(_ app: XCUIApplication) {
+        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        tap(search)
+        if row(app).waitForExistence(timeout: 2) { return }
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 3) { search.tap() }
+        tap(field)
+        field.typeText("atlas")
+    }
 
     private func row(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["list.row.\(Self.title)"].firstMatch

@@ -46,10 +46,15 @@ import {
 import { domGeometry, type Geometry } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
-import { checkFrameUrl, createFrames, createShell, type Shell } from "./frames";
+import { usernameFits } from "./username-fit";
+import { checkFrameUrl, createFrames, createShell, type Layout, type Shell, watchLayout } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { createSubmitWatcher } from "./submit";
+import { cornerOccupants, knownOccupantsIn } from "./occupants";
+
+/** While the save card shows, other managers' corner UI is looked at this often. */
+const OCCUPANT_POLL_MS = 750;
 import type { RecorderHooks } from "../dev/recorder-content";
 
 type Sender = { id?: string };
@@ -82,6 +87,8 @@ export interface ContentOptions {
    * it, else open roots only.
    */
   shadowRootOf?: ShadowRootOf;
+  /** The in-page layout (touch, bottom sheet); a live `watchLayout` of the window by default. */
+  layout?: () => Layout;
 }
 
 export interface ContentScript {
@@ -322,14 +329,30 @@ export function createContentScript(o: ContentOptions): ContentScript {
       case "click":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.clickRef(m.ref);
         break;
+      case "click_passkey":
+        // The user's choice in the signup menu; only in the top frame it was made for.
+        if (pinned(m.origin) && typeof m.ref === "string" && window === window.top) ok = parts.submit.clickPasskey(m.ref);
+        break;
       case "submit":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref, m.planned === true);
         break;
-      case "smart_fill":
+      case "smart_fill": {
         // Our worker, on a click in the popup or the command's key: a gesture of the user.
-        void smartFill(null);
+        if (m.fieldRef === undefined) {
+          void smartFill(null);
+          ok = true;
+          break;
+        }
+        // The field of a menu the user unlocked from (the sheet, or the app): that very field
+        // again, at the origin its menu opened on, or nothing.
+        if (typeof m.fieldRef !== "string" || !pinned(m.origin)) break;
+        const el = refs.get(m.fieldRef);
+        const t = el ? parts.icons.targetOf(el) : undefined;
+        if (!t || !t.el.isConnected) break;
+        void smartFill(t);
         ok = true;
         break;
+      }
       case "plan_request": {
         // A context to plan with (popup line, chain replan): no hash, nothing typed leaves.
         const origin = currentOrigin();
@@ -354,6 +377,17 @@ export function createContentScript(o: ContentOptions): ContentScript {
         if (!found) break;
         const { pattern } = collectPasswordContext(found.container, found.fields);
         sendResponse({ ok: true, matches: patternMatches(pattern, m.candidate) });
+        return undefined;
+      }
+      case "username_check": {
+        // A sign-up identifier against the username field's own attributes (MS-06).
+        if (!pinned(m.origin) || typeof m.formRef !== "string" || typeof m.candidate !== "string" || !parts) break;
+        const form = lineage.resolve(m.formRef, parts.observer.refresh());
+        const fi = form?.fields.find((x) => x.role === "username");
+        const el = fi ? refs.get(fi.ref) : null;
+        if (!el) break;
+        const fit = usernameFits(el, m.candidate);
+        sendResponse(fit.maxLength !== undefined ? { ok: true, matches: fit.matches, max_length: fit.maxLength } : { ok: true, matches: fit.matches });
         return undefined;
       }
       case "show_frame": {
@@ -415,16 +449,42 @@ export function createContentScript(o: ContentOptions): ContentScript {
       if (parts || stopped || currentOrigin() === null) return;
       shell ??= createShell(doc);
       const sh = shell;
-      const frames = createFrames({ shell: sh, doc, geometry });
+      // Other password managers' UI: our card and icons go beside it, never under or over.
+      const own = { isOwn: (n: Node) => sh.isHost(n) };
+      // Touch or not, sheet or popover: live (a trackpad, a rotation, Slide Over change it).
+      let layout = o.layout;
+      if (!layout) {
+        const watch = watchLayout(view);
+        watch.onChange(queueLayout);
+        cleanups.push(() => watch.destroy());
+        layout = () => watch.current();
+      }
+      const currentLayout = layout;
+      const frames = createFrames({ shell: sh, doc, geometry, layout: currentLayout, occupants: () => cornerOccupants(doc, own) });
       const icons = createIcons({
         shell: sh,
         doc,
         refs,
         geometry,
+        layout: currentLayout,
         isTrusted,
         onOpen: (t) => void smartFill(t),
         onLayout: queueLayout,
+        avoid: (zone) => knownOccupantsIn(doc, zone, own),
       });
+      // They come, move and go: what is added to or removed from the top of the document, and,
+      // while our save card shows, a cheap look every OCCUPANT_POLL_MS (theirs may move inside a shadow root).
+      const MO = view?.MutationObserver;
+      if (MO) {
+        const mo = new MO(() => queueLayout());
+        if (doc.documentElement) mo.observe(doc.documentElement, { childList: true });
+        if (doc.body) mo.observe(doc.body, { childList: true });
+        cleanups.push(() => mo.disconnect());
+      }
+      const poll = setInterval(() => {
+        if (parts?.frames.has("save")) queueLayout();
+      }, OCCUPANT_POLL_MS);
+      cleanups.push(() => clearInterval(poll));
       const observer = createObserver({
         doc,
         analyze,
@@ -469,6 +529,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         analyze: () => observer.refresh(),
         resolve: (ref, a) => lineage.resolve(ref, a),
         onCredentials: (c) => void send(c),
+        onIdentifier: (c) => void send(c),
+        onForm: (c) => void send(c),
         onStep: (c) => recorder?.step(c),
         listen: (t, type, fn, options) => tree.listen(t, type, fn, options),
       });
@@ -479,6 +541,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
       // Unfiltered: a scroll of a host itself is not seen inside its root.
       listen(target, "scroll", queueLayout, { capture: true, passive: true }, false);
       listen(target, "resize", queueLayout, { passive: true });
+      // iOS: the keyboard moves the visual viewport only (the touch sheet sits on it).
+      const vv = view?.visualViewport;
+      if (vv) {
+        listen(vv, "resize", queueLayout, { passive: true }, false);
+        listen(vv, "scroll", queueLayout, { passive: true }, false);
+      }
       listen(
         doc,
         "keydown",
@@ -554,7 +622,10 @@ export function createContentScript(o: ContentOptions): ContentScript {
         (e) => {
           // A click into an empty field offers its logins, as the browser's
           // own autofill does; only when the worker has something for it.
-          if (!isTrusted(e) || parts?.frames.has("menu")) return;
+          // Not on a touch screen (IOSSAF-08, IPAD-01): the tap raises the keyboard and iOS
+          // scrolls the field above it, where a sheet would sit; the field's icon (one tap, the
+          // fill itself) and the keyboard's own bar offer the same there.
+          if (!isTrusted(e) || parts?.frames.has("menu") || currentLayout().touch) return;
           const t = icons.targetOf(e.target);
           if (!t || !(t.el instanceof HTMLInputElement) || t.el.value !== "") return;
           void openMenu(t, true);

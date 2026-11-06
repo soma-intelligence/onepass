@@ -2,13 +2,17 @@ import ImageIO
 import SwiftUI
 import VaultKit
 
-/// Row icon: the site icon when one was loaded, otherwise the illustrated category artwork
-/// (for logins, the teal tile carries the title's first letter when there is one).
+/// Row icon: the brand icon `ItemIconResolver` found (the person's choice, the icon pack, else the
+/// site's own icon when sharp enough), otherwise the illustrated category artwork (for logins, the
+/// teal monogram tile with the title's first letter when there is one).
 public struct ItemIcon: View {
     private let type: FfiItemType
     private let title: String
     private let size: CGFloat
     private let image: CGImage?
+    private let treatment: SiteIconTreatment
+
+    @Environment(\.colorScheme) private var colorScheme
 
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
@@ -20,7 +24,9 @@ public struct ItemIcon: View {
         self.type = type
         self.title = title
         self.size = size
-        self.image = siteIcon.flatMap(Self.filled)
+        let prepared = siteIcon.flatMap(Self.prepared)
+        self.image = prepared?.image
+        self.treatment = prepared?.treatment ?? .fullBleed
         self.brand = type == .creditCard ? brand : nil
     }
 
@@ -39,7 +45,11 @@ public struct ItemIcon: View {
 
     private final class Box: @unchecked Sendable {
         let image: CGImage
-        init(_ image: CGImage) { self.image = image }
+        let treatment: SiteIconTreatment
+        init(_ image: CGImage, _ treatment: SiteIconTreatment) {
+            self.image = image
+            self.treatment = treatment
+        }
     }
 
     nonisolated(unsafe) private static let cache: NSCache<NSData, Box> = {
@@ -48,13 +58,120 @@ public struct ItemIcon: View {
         return cache
     }()
 
-    /// The site icon decoded, its plain margin trimmed (cached per icon: rows redraw often).
-    nonisolated static func filled(_ data: Data) -> CGImage? {
-        if let hit = cache.object(forKey: data as NSData) { return hit.image }
+    /// The site icon decoded, a plain white or black square around its mark cleared, and how it
+    /// sits on its tile (`SiteIconTreatment`): artwork shaped like an app icon fills the tile, any
+    /// other mark is set at one optical size in the middle of a square (`framedMark`). Cached per
+    /// icon: rows redraw often.
+    nonisolated static func prepared(_ data: Data) -> (image: CGImage, treatment: SiteIconTreatment)? {
+        if let hit = cache.object(forKey: data as NSData) { return (hit.image, hit.treatment) }
         guard let decoded = decode(data) else { return nil }
-        let result = trimmed(decoded) ?? decoded
-        cache.setObject(Box(result), forKey: data as NSData)
-        return result
+        var (result, treatment) = SiteIconTreatment.prepare(decoded)
+        if case .mark = treatment, let ink = Ink(result) {
+            if ink.isAppIcon, let cropped = result.cropping(to: ink.rect(in: result)) {
+                // A rounded square on a transparent canvas (an app icon) is full-bleed artwork.
+                (result, treatment) = (cropped, .fullBleed)
+            } else if let framed = framedMark(result, ink: ink) {
+                result = framed
+            }
+        } else {
+            result = trimmed(result) ?? result
+        }
+        cache.setObject(Box(result, treatment), forKey: data as NSData)
+        return (result, treatment)
+    }
+
+    /// Share of the tile a mark's box covers, as the square root of its area: a wide mark and a
+    /// tall one read the same size, like the glyphs in Apple's own lists.
+    static let markOpticalSide: CGFloat = 0.58
+    /// Longest side of a mark's box, as a share of the tile: a long mark stays inside the tile.
+    static let markMaxSide: CGFloat = 0.74
+
+    /// Where a mark's ink is in its image (alpha over 10%), read on a 128 pixel copy.
+    struct Ink {
+        /// Box of the ink, 0...1 of the image, origin top left.
+        let minX: Double, minY: Double, maxX: Double, maxY: Double
+        /// Share of the box with ink.
+        let fill: Double
+        /// The box's four corners have no ink (a rounded shape, not a square one).
+        let roundCorners: Bool
+
+        var width: Double { maxX - minX }
+        var height: Double { maxY - minY }
+
+        /// Square-ish, rounded corners, filled almost edge to edge and nearly as large as the image:
+        /// an app icon with transparent corners (about 96% filled). A disc (79% filled) or a square
+        /// mark (Microsoft's four squares: ink in the corners) stays a mark.
+        var isAppIcon: Bool {
+            let ratio = width / max(height, 0.0001)
+            return ratio > 0.92 && ratio < 1.08 && fill > 0.9 && roundCorners && min(width, height) > 0.6
+        }
+
+        func rect(in image: CGImage) -> CGRect {
+            CGRect(x: minX * Double(image.width), y: minY * Double(image.height),
+                width: width * Double(image.width), height: height * Double(image.height)).integral
+        }
+
+        init?(_ image: CGImage) {
+            let side = 128
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                    space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                let pixels = context.data?.bindMemory(to: UInt8.self, capacity: side * side * 4)
+            else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            var x0 = side, y0 = side, x1 = -1, y1 = -1, inked = 0
+            for y in 0..<side {
+                for x in 0..<side where pixels[(y * side + x) * 4 + 3] > 25 {
+                    x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y)
+                    inked += 1
+                }
+            }
+            guard x1 >= x0, y1 >= y0 else { return nil }
+            let area = Double((x1 - x0 + 1) * (y1 - y0 + 1))
+            roundCorners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].allSatisfy { pixels[($0.1 * side + $0.0) * 4 + 3] <= 25 }
+            (minX, minY) = (Double(x0) / Double(side), Double(y0) / Double(side))
+            (maxX, maxY) = (Double(x1 + 1) / Double(side), Double(y1 + 1) / Double(side))
+            fill = Double(inked) / area
+        }
+    }
+
+    /// The mark redrawn in the middle of a transparent square at one optical size
+    /// (`markOpticalSide`, at most `markMaxSide` on its long side), whatever margin its source had:
+    /// a glyph drawn edge to edge and a favicon with a wide margin end up the same size on the tile.
+    nonisolated static func framedMark(_ image: CGImage, ink: Ink) -> CGImage? {
+        let w = ink.width, h = ink.height
+        guard w > 0, h > 0 else { return nil }
+        let scale = min(markOpticalSide / sqrt(w * h), markMaxSide / max(w, h))
+        // As many pixels as the source gives the mark, at most 256: a small favicon is not blown up.
+        let sourceSide = Double(max(image.width, image.height)) * max(w, h)
+        let side = Int(min(256, max(64, (sourceSide / (max(w, h) * scale)).rounded())))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+            let cropped = image.cropping(to: ink.rect(in: image))
+        else { return nil }
+        context.interpolationQuality = .high
+        let s = Double(side)
+        let drawn = CGRect(x: (s - w * scale * s) / 2, y: (s - h * scale * s) / 2, width: w * scale * s, height: h * scale * s)
+        context.draw(cropped, in: drawn)
+        return context.makeImage()
+    }
+
+    /// The decoded, trimmed image alone.
+    nonisolated static func filled(_ data: Data) -> CGImage? {
+        prepared(data)?.image
+    }
+
+    /// The tile behind a mark (`SiteIconTreatment.mark`): every mark sits on a tile the size of an
+    /// app icon, so a row of glyphs and app icons lines up. The tile is a quiet grey of the
+    /// appearance (a one color mark is drawn in the text color on it), light for a colored mark
+    /// that is mostly black in dark mode, dark for one almost all white in light mode.
+    static func markBackground(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Color {
+        let neutral = darkMode ? Color(white: 0.2) : Color(white: 0.95)
+        if monochrome { return neutral }
+        if darkMode { return darkShare > 0.5 ? Color(white: 0.94) : neutral }
+        return pale > 0.85 ? Color(white: 0.19) : neutral
     }
 
     /// Many sites ship their mark small in the middle of a plain square (white or transparent):
@@ -122,6 +239,13 @@ public struct ItemIcon: View {
     }
 
     private var category: ItemCategory { .of(type) }
+
+    /// A thin edge around a tile, like app icons in Apple's lists: a white app icon in a white
+    /// list, or a black one in a dark list, keeps its shape.
+    private var hairline: some View {
+        RoundedRectangle(cornerRadius: corner, style: .continuous)
+            .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 0.5)
+    }
     private var corner: CGFloat { size * 9 / 38 }
     private var side: CGFloat { size * min(scale, 1.6) }
 
@@ -130,32 +254,37 @@ public struct ItemIcon: View {
             if image == nil, let brand, let color = Self.brandColor(brand) {
                 BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
+            } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment {
+                let tile = Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark)
+                // The image already holds the mark at its optical size in a square (`framedMark`).
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .renderingMode(monochrome ? .template : .original)
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .foregroundStyle(.primary)
+                    .frame(width: side, height: side)
+                    .background {
+                        RoundedRectangle(cornerRadius: corner, style: .continuous).fill(tile)
+                    }
+                    .overlay { hairline }
             } else if let image, Self.isLowResolution(image, side: side) {
-                // A small favicon is not stretched into a blur: it sits at its own size (one
-                // source pixel per screen pixel on Retina, at most 60% of the tile), crisp, on a
-                // neutral tile.
-                Image(decorative: image, scale: 2)
+                // A small favicon, bare: at most one point per source pixel and 85% of the square.
+                Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: min(side * 0.6, CGFloat(image.width) / 2), height: min(side * 0.6, CGFloat(image.height) / 2))
+                    .frame(width: min(side * 0.85, CGFloat(image.width)), height: min(side * 0.85, CGFloat(image.height)))
                     .frame(width: side, height: side)
-                    .background(Color.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08)))
             } else if let image {
+                // Edge to edge artwork, rounded like an app icon, no border.
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: side, height: side)
-                    .background(Color.primary.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08)))
+                    .overlay { hairline }
             } else {
                 CategoryArtwork(type: type, size: side, monogram: type == .login ? title : nil)
             }

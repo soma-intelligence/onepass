@@ -12,11 +12,11 @@ struct GeneratorControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: Self.kind) {
             ControlWidgetButton(action: OpenURLIntent(OnePassLink.generator.url)) {
-                Label("Générer un mot de passe", systemImage: "key.horizontal")
+                Label("controls.generatePassword", systemImage: "key.horizontal")
             }
         }
-        .displayName("Générer un mot de passe")
-        .description("Ouvre le générateur de mots de passe de OnePass.")
+        .displayName("controls.generatePassword")
+        .description("controls.opensOnepassPasswordGenerator")
     }
 }
 
@@ -27,11 +27,11 @@ struct SearchControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: Self.kind) {
             ControlWidgetButton(action: OpenURLIntent(OnePassLink.search.url)) {
-                Label("Rechercher dans OnePass", systemImage: "magnifyingglass")
+                Label("controls.searchOnepass", systemImage: "magnifyingglass")
             }
         }
-        .displayName("Rechercher dans OnePass")
-        .description("Ouvre la recherche de OnePass.")
+        .displayName("controls.searchOnepass")
+        .description("controls.opensOnepassSearch")
     }
 }
 
@@ -42,10 +42,10 @@ struct LockControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: Self.kind) {
             ControlWidgetButton(action: LockControlIntent()) {
-                Label("Verrouiller OnePass", systemImage: "lock.fill")
+                Label("widgets.lockOnepass", systemImage: "lock.fill")
             }
         }
-        .displayName("Verrouiller OnePass")
-        .description("Verrouille OnePass sur cet appareil.")
+        .displayName("widgets.lockOnepass")
+        .description("widgets.locksOnepassOnDevice")
     }
 }

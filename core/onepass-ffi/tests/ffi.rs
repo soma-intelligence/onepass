@@ -841,6 +841,37 @@ fn summaries_have_no_secret_values() {
     assert!(!format!("{saved:?}").contains(password));
 }
 
+#[test]
+fn summaries_say_which_items_hold_a_place() {
+    let fx = fixture();
+    let place = |lat: f64, lon: f64| FfiLocation {
+        label: "Lieu".into(),
+        address: None,
+        lat,
+        lon,
+        radius_m: 100,
+        suggest_nearby: false,
+    };
+    let named = |title: &str| {
+        let mut item = login(&fx, title);
+        set_username(&mut item, "camille@exemple.fr");
+        item
+    };
+    let mut placed = named("Boulangerie");
+    placed.locations = vec![place(48.8566, 2.3522)];
+    let placed = fx.session.save_item(placed).unwrap();
+    // The editor's blank location (0, 0) is not a place.
+    let mut blank = named("Sans lieu");
+    blank.locations = vec![place(0.0, 0.0)];
+    let blank = fx.session.save_item(blank).unwrap();
+    let plain = fx.session.save_item(named("Banque")).unwrap();
+    let summaries = fx.session.item_summaries().unwrap();
+    let has = |id: &str| summaries.iter().find(|s| s.id == id).unwrap().has_places;
+    assert!(has(&placed.id));
+    assert!(!has(&blank.id));
+    assert!(!has(&plain.id));
+}
+
 // ---- sync -----------------------------------------------------------------
 
 #[test]
@@ -1910,23 +1941,151 @@ fn import_items_into_vault_with_new_ids_and_folder_tags() {
 
     let done = fx
         .session
-        .import_items(format.clone(), csv.clone(), fx.vault_id.clone())
+        .import_items(format.clone(), csv.clone(), fx.vault_id.clone(), vec![])
         .unwrap();
     assert_eq!(done.items, 2);
+    let mail_first = fx
+        .session
+        .item_summaries()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.title == "Mail")
+        .unwrap();
+    assert_eq!(mail_first.tags, vec!["Personal".to_owned()]);
+    assert!(mail_first.favorite);
+
+    // The same file again: Mail is an exact duplicate (skipped unless asked
+    // otherwise), the note has nothing to match on and is added again.
+    let preview = fx
+        .session
+        .preview_import_into(format.clone(), csv.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(preview.duplicates.len(), 1);
+    let d = &preview.duplicates[0];
+    assert_eq!((d.index, d.exact), (0, true));
+    assert_eq!(
+        (d.suggested, d.choice),
+        (FfiImportChoice::Skip, FfiImportChoice::Skip)
+    );
+    assert_eq!(d.existing.id, mail_first.id);
+    assert_eq!(d.incoming.title, "Mail");
+    assert_eq!(d.signals, vec![FfiDuplicateSignal::SameLogin]);
+    assert_eq!((preview.skipped_duplicates, preview.added), (1, 1));
     let again = fx
         .session
-        .import_items(format, csv, fx.vault_id.clone())
+        .import_items(format.clone(), csv.clone(), fx.vault_id.clone(), vec![])
         .unwrap();
-    assert_eq!(again.items, 2);
-
+    assert_eq!((again.skipped_duplicates, again.added), (1, 1));
     let all = fx.session.item_summaries().unwrap();
-    assert_eq!(all.len(), 4, "a second import adds, never overwrites");
+    assert_eq!(
+        all.len(),
+        3,
+        "a second import never overwrites nor doubles Mail"
+    );
+    assert_eq!(all.iter().filter(|s| s.title == "Mail").count(), 1);
+
+    // Imported anyway: a separate copy, never folded.
+    let anyway = fx
+        .session
+        .import_items(
+            format,
+            csv,
+            fx.vault_id.clone(),
+            vec![FfiImportDecision {
+                index: 0,
+                choice: FfiImportChoice::Import,
+            }],
+        )
+        .unwrap();
+    assert_eq!(anyway.separate, 1);
+    let all = fx.session.item_summaries().unwrap();
     let mail: Vec<_> = all.iter().filter(|s| s.title == "Mail").collect();
     assert_eq!(mail.len(), 2);
     assert_ne!(mail[0].id, mail[1].id);
     assert!(mail.iter().all(|s| s.vault_id == fx.vault_id));
-    assert_eq!(mail[0].tags, vec!["Personal".to_owned()]);
-    assert!(mail[0].favorite);
+    // The "not a duplicate" marker is hidden like every reserved tag.
+    assert!(
+        mail.iter()
+            .all(|s| s.tags.iter().all(|t| !t.starts_with("onepass:")))
+    );
+}
+
+#[test]
+fn import_merges_a_near_duplicate_into_the_vault_item() {
+    let fx = fixture();
+    let first =
+        b"name,url,username,password\nShop,https://shop-invented.com,bob,Pw-Invented-1\n".to_vec();
+    fx.session
+        .import_items("chrome-csv".into(), first, fx.vault_id.clone(), vec![])
+        .unwrap();
+    let shop = fx.session.item_summaries().unwrap().remove(0);
+    let changed = b"name,url,username,password\nShop,https://www.shop-invented.com/account,bob,Pw-Invented-2\n".to_vec();
+    let preview = fx
+        .session
+        .preview_import_into("chrome-csv".into(), changed.clone(), fx.vault_id.clone())
+        .unwrap();
+    let d = &preview.duplicates[0];
+    assert!(!d.exact);
+    assert_eq!(d.choice, FfiImportChoice::Merge);
+    assert!(d.differences.contains(&FfiDuplicateAspect::Password));
+    assert!(d.differences.contains(&FfiDuplicateAspect::Websites));
+    assert_eq!(preview.merged, 1);
+
+    // Skip writes nothing.
+    let skipped = fx
+        .session
+        .import_items(
+            "chrome-csv".into(),
+            changed.clone(),
+            fx.vault_id.clone(),
+            vec![FfiImportDecision {
+                index: 0,
+                choice: FfiImportChoice::Skip,
+            }],
+        )
+        .unwrap();
+    assert_eq!((skipped.skipped_duplicates, skipped.added), (1, 0));
+    let same = fx
+        .session
+        .item(fx.vault_id.clone(), shop.id.clone())
+        .unwrap();
+    assert_eq!(same.urls.len(), 1);
+
+    // Merge (the suggestion): same item, both addresses, no password lost.
+    let merged = fx
+        .session
+        .import_items("chrome-csv".into(), changed, fx.vault_id.clone(), vec![])
+        .unwrap();
+    assert_eq!((merged.merged, merged.added), (1, 0));
+    let all = fx.session.item_summaries().unwrap();
+    assert_eq!(all.len(), 1, "merged, not added");
+    let item = fx
+        .session
+        .item(fx.vault_id.clone(), shop.id.clone())
+        .unwrap();
+    assert_eq!(item.urls.len(), 2);
+    let password = |item: &onepass_ffi::FfiItem| {
+        item.sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find_map(|f| match (&f.id[..], &f.value) {
+                ("password", FfiFieldValue::Password { value }) => Some(value.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let current = password(&item);
+    let history: Vec<String> = fx
+        .session
+        .password_history(fx.vault_id.clone(), shop.id.clone())
+        .unwrap()
+        .into_iter()
+        .map(|h| h.value)
+        .collect();
+    let mut all_pw = history;
+    all_pw.push(current);
+    assert!(all_pw.contains(&"Pw-Invented-1".to_owned()));
+    assert!(all_pw.contains(&"Pw-Invented-2".to_owned()));
 }
 
 /// A 1PUX export holding `data` as its `export.data`.
@@ -1964,10 +2123,17 @@ fn reimport_1pux_updates_instead_of_duplicating() {
     assert_eq!((preview.items, preview.updated), (2, 0));
     let done = fx
         .session
-        .import_items(format.clone(), bytes.clone(), fx.vault_id.clone())
+        .import_items(format.clone(), bytes.clone(), fx.vault_id.clone(), vec![])
         .unwrap();
     assert_eq!((done.items, done.updated), (2, 0));
+    assert_eq!((done.added, done.fixed, done.unchanged), (2, 0, 0));
     let first = fx.session.item_summaries().unwrap();
+    // The import source is a reserved tag: never shown.
+    assert!(
+        first
+            .iter()
+            .all(|s| s.tags.iter().all(|t| !t.starts_with("onepass:")))
+    );
     assert_eq!(first.len(), before + 2);
 
     // "Sign in with" points at the account item, by its final id.
@@ -1993,11 +2159,13 @@ fn reimport_1pux_updates_instead_of_duplicating() {
         .preview_import_into(format.clone(), bytes.clone(), fx.vault_id.clone())
         .unwrap();
     assert_eq!((preview.items, preview.updated), (2, 2));
+    assert_eq!(preview.unchanged, 2);
     let again = fx
         .session
-        .import_items(format, bytes, fx.vault_id.clone())
+        .import_items(format, bytes, fx.vault_id.clone(), vec![])
         .unwrap();
     assert_eq!((again.items, again.updated), (2, 2));
+    assert_eq!((again.added, again.fixed, again.unchanged), (0, 0, 2));
     let second = fx.session.item_summaries().unwrap();
     assert_eq!(second.len(), before + 2, "a re-import never duplicates");
     let ids = |list: &[FfiItemSummary]| {
@@ -2017,12 +2185,95 @@ fn reimport_1pux_updates_instead_of_duplicating() {
 }
 
 #[test]
+fn reimport_1pux_turns_an_older_broken_note_back_into_its_login() {
+    let fx = fixture();
+    // What the importer before 2026-10-28 left for "Notes app": a secure
+    // note with the site and the source vault as a tag, no source id.
+    let mut note = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::SecureNote,
+            "Notes app".into(),
+        )
+        .unwrap();
+    for f in note.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "content" {
+            f.value = FfiFieldValue::Text {
+                value: "{\"ssoLogin\":\"apple\"}".into(),
+            };
+        }
+    }
+    note.urls = vec![FfiUrl {
+        label: String::new(),
+        url: "https://notes.example.com".into(),
+        rule: FfiMatchRule::Domain,
+        primary: true,
+    }];
+    note.tags = vec!["Personal".into(), "mine".into()];
+    note.favorite = true;
+    let note = fx.session.save_item(note).unwrap();
+
+    let bytes = pux(PUX_DATA);
+    let preview = fx
+        .session
+        .preview_import_into("1pux".into(), bytes.clone(), fx.vault_id.clone())
+        .unwrap();
+    assert_eq!(
+        (
+            preview.added,
+            preview.converted,
+            preview.fixed,
+            preview.archived_duplicates
+        ),
+        (1, 1, 0, 0),
+        "dry run"
+    );
+    let done = fx
+        .session
+        .import_items("1pux".into(), bytes.clone(), fx.vault_id.clone(), vec![])
+        .unwrap();
+    assert_eq!((done.added, done.converted), (1, 1));
+
+    let all = fx.session.item_summaries().unwrap();
+    let live: Vec<_> = all.iter().filter(|s| !s.archived).collect();
+    assert_eq!(live.len(), 2, "the login and its account, no duplicate");
+    let app = fx
+        .session
+        .item(fx.vault_id.clone(), note.id.clone())
+        .unwrap();
+    assert_eq!(app.item_type, FfiItemType::Login, "same id, now a login");
+    assert!(app.favorite);
+    assert!(app.tags.contains(&"mine".to_owned()));
+    assert!(app.tags.iter().all(|t| !t.starts_with("onepass:")));
+    assert!(
+        matches!(&app.login_methods[..], [FfiLoginMethod::Provider { provider, .. }] if provider == "apple")
+    );
+    // The old note is kept, archived, never deleted.
+    let archived: Vec<_> = all.iter().filter(|s| s.archived).collect();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].item_type, FfiItemType::SecureNote);
+    assert_ne!(archived[0].id, note.id);
+
+    let again = fx
+        .session
+        .import_items("1pux".into(), bytes, fx.vault_id.clone(), vec![])
+        .unwrap();
+    assert_eq!(
+        (again.added, again.converted, again.fixed, again.unchanged),
+        (0, 0, 0, 2)
+    );
+    assert_eq!(fx.session.item_summaries().unwrap().len(), all.len());
+}
+
+#[test]
 fn import_into_unknown_vault_writes_nothing() {
     let fx = fixture();
     let csv = b"name,url,username,password\nA,https://a.example.com,u,p\n".to_vec();
     let other = "0".repeat(32);
     assert_eq!(
-        fx.session.import_items("chrome-csv".into(), csv, other),
+        fx.session
+            .import_items("chrome-csv".into(), csv, other, vec![]),
         Err(OnePassError::NotFound)
     );
     assert!(fx.session.item_summaries().unwrap().is_empty());
@@ -2110,4 +2361,46 @@ fn seed_profile_publishes_when_none() {
         ("Camille", &[1u8, 2][..])
     );
     assert_eq!(seeded.updated_at, 0);
+}
+
+#[test]
+fn card_summary_carries_last4_never_the_number() {
+    let fx = fixture();
+    let mut card = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::CreditCard,
+            "Amex Platinum".into(),
+        )
+        .unwrap();
+    fill(&mut card);
+    for f in card.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "number" {
+            f.value = text("3782 822463 10005");
+        }
+    }
+    fx.session.save_item(card).unwrap();
+    let mut note = fx
+        .session
+        .new_item(fx.vault_id.clone(), FfiItemType::SecureNote, "Note".into())
+        .unwrap();
+    fill(&mut note);
+    fx.session.save_item(note).unwrap();
+
+    let summaries = fx.session.item_summaries().unwrap();
+    let card = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::CreditCard)
+        .unwrap();
+    assert_eq!(card.card_last4.as_deref(), Some("0005"));
+    assert_eq!(card.card_brand.as_deref(), Some("amex"));
+    let shown = format!("{card:?}");
+    assert!(!shown.contains("378282246310005"), "{shown}");
+    assert!(!shown.contains("822463"), "{shown}");
+    let note = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::SecureNote)
+        .unwrap();
+    assert_eq!(note.card_last4, None);
 }

@@ -37,6 +37,29 @@ struct CloudKitMappingTests {
     }
 
     /// The signed lists (8 device list, 9 vault list, 10 approver list) map like any record kind.
+    /// The account's `SyncHome` (kind 27) and the follower's enroll request (side kind 28) cross
+    /// CloudKit like any record.
+    @Test func syncHomeRoundTripsThroughCloudKit() throws {
+        for kind: UInt8 in [27, CloudKitMapping.sideKindMailboxEnrollRequest] {
+            let name = RecordName(kind: kind, id: "00112233445566778899aabbccddeeff")
+            let remote = RemoteRecord(name: name, version: 2, data: Data([4, 2]), serverMeta: nil)
+            let record = try CloudKitMapping.record(from: remote, zoneID: Self.zone)
+            #expect(record["kind"] as? Int64 == Int64(kind))
+            let back = try CloudKitMapping.remote(from: record)
+            #expect(back.name == name && back.version == 2 && back.data == remote.data)
+        }
+    }
+
+    @Test func sideRecordsAreFoundInABatch() {
+        let id = "00112233445566778899aabbccddeeff"
+        let side = RemoteRecord(name: RecordName(kind: 28, id: id), version: 1, data: Data([1]), serverMeta: nil)
+        let item = RemoteRecord(name: RecordName(kind: 5, id: id), version: 1, data: Data([1]), serverMeta: nil)
+        let batch = CloudKitMapping.batch(changes: [item, side], moreComing: false, token: nil)
+        #expect(CloudKitMapping.sideKindMailboxEnrollRequest == 28)
+        #expect(CloudKitMapping.sideRecords(in: batch) == [side])
+        #expect(!CloudKitMapping.isSideRecord(item))
+    }
+
     @Test func signedListKindsRoundtrip() throws {
         for kind: UInt8 in [8, 9, 10] {
             let name = RecordName(kind: kind, id: "00112233445566778899aabbccddeeff")

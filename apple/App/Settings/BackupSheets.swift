@@ -57,7 +57,7 @@ struct RestoreSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Restaurer une sauvegarde")
+            .navigationTitle("settings.restoreBackup")
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -67,7 +67,7 @@ struct RestoreSheet: View {
                 }
                 if done == nil, let preview {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Restaurer") { Task { await restore() } }
+                        Button("app.restore") { Task { await restore() } }
                             .disabled(busy || preview.items == 0)
                             .accessibilityIdentifier("restore.confirm")
                     }
@@ -94,21 +94,21 @@ struct RestoreSheet: View {
 
     @ViewBuilder private var chooseSection: some View {
         Section {
-            Text("Choisis un fichier .onepass : une sauvegarde chiffrée de ce compte, ou une sauvegarde d'un autre compte avec sa phrase de passe. Rien de ce qui est déjà dans OnePass n'est remplacé.")
+            Text("settings.chooseOnepassFileEncrypted")
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Choisir une sauvegarde…", systemImage: "doc.badge.arrow.up") { picking = true }
+            Button("settings.chooseBackup", systemImage: "doc.badge.arrow.up") { picking = true }
                 .accessibilityIdentifier("restore.choose")
         }
     }
 
     @ViewBuilder private func fileSection(_ info: FfiArchiveInfo) -> some View {
         Section {
-            LabeledContent("Fichier") {
+            LabeledContent("app.file") {
                 Text(verbatim: fileName).lineLimit(1).truncationMode(.middle)
             }
-            LabeledContent("Type", value: info.kind == .backup
-                ? String(localized: "Sauvegarde du compte") : String(localized: "Export OnePass"))
-            LabeledContent("Créée le") {
+            LabeledContent("app.type", value: info.kind == .backup
+                ? String(localized: "settings.accountBackup") : String(localized: "settings.onepassExport"))
+            LabeledContent("settings.created") {
                 Text(Date(timeIntervalSince1970: TimeInterval(info.createdAt)), format: .dateTime.day().month().year().hour().minute())
             }
             Label(Self.signatureLine(info, verified: preview?.signatureVerified ?? false), systemImage: Self.signatureSymbol(info, verified: preview?.signatureVerified ?? false))
@@ -119,69 +119,69 @@ struct RestoreSheet: View {
 
     @ViewBuilder private var passphraseSection: some View {
         Section {
-            SecureField("Phrase de passe de la sauvegarde", text: $passphrase)
+            SecureField("app.backupPassphrase", text: $passphrase)
                 .privacySensitive()
                 .onSubmit { Task { await open() } }
                 .accessibilityIdentifier("restore.passphrase")
-            Button("Ouvrir") { Task { await open() } }
+            Button("common.open") { Task { await open() } }
                 .disabled(passphrase.isEmpty || busy)
                 .accessibilityIdentifier("restore.open")
         } footer: {
-            Text("Cette sauvegarde n'est pas pour ce compte : elle s'ouvre avec la phrase de passe choisie à l'export.")
+            Text("settings.backupNotForAccount")
         }
     }
 
     @ViewBuilder private func previewSection(_ p: FfiRestoreSummary) -> some View {
         Section {
             if p.items == 0 {
-                Label("Tout ce que contient cette sauvegarde est déjà dans OnePass.", systemImage: "checkmark.circle")
+                Label("settings.everythingInBackupAlready", systemImage: "checkmark.circle")
             } else {
                 Label(ImportSheet.countsLine(p.byType), systemImage: "tray.and.arrow.down")
                     .accessibilityIdentifier("restore.counts")
             }
             if p.vaultsCreated > 0 {
                 Label(p.vaultsCreated == 1
-                    ? String(localized: "1 coffre sera créé")
-                    : String(localized: "\(p.vaultsCreated) coffres seront créés"), systemImage: "lock.rectangle.stack")
+                    ? String(localized: "settings.n1VaultWillCreated")
+                    : String(localized: "settings.vaultsWillCreated \(p.vaultsCreated)"), systemImage: "lock.rectangle.stack")
             }
             if p.skipped > 0 {
                 Label(p.skipped == 1
-                    ? String(localized: "1 élément déjà présent, laissé tel quel")
-                    : String(localized: "\(p.skipped) éléments déjà présents, laissés tels quels"), systemImage: "arrow.uturn.right")
+                    ? String(localized: "settings.n1ItemAlreadyHere")
+                    : String(localized: "settings.itemsAlreadyHereLeft \(p.skipped)"), systemImage: "arrow.uturn.right")
                     .foregroundStyle(.secondary)
             }
         } header: {
             Text("Contenu")
         } footer: {
-            Text("Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils.")
+            Text("settings.itemsKeepTheirIdentifier")
         }
     }
 
     @ViewBuilder private func doneSection(_ d: FfiRestoreSummary) -> some View {
         Section {
             Label(d.items == 1
-                ? String(localized: "1 élément restauré")
-                : String(localized: "\(d.items) éléments restaurés"), systemImage: "checkmark.seal.fill")
+                ? String(localized: "settings.n1ItemRestored")
+                : String(localized: "settings.itemsRestored \(d.items)"), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
                 .accessibilityIdentifier("restore.done")
             if !d.byType.isEmpty { Text(ImportSheet.countsLine(d.byType)).foregroundStyle(.secondary) }
             if d.skipped > 0 {
                 Text(d.skipped == 1
-                    ? String(localized: "1 élément était déjà là.")
-                    : String(localized: "\(d.skipped) éléments étaient déjà là.")).foregroundStyle(.secondary)
+                    ? String(localized: "settings.n1ItemWasAlready")
+                    : String(localized: "settings.itemsWereAlreadyHere \(d.skipped)")).foregroundStyle(.secondary)
             }
             if d.epoch == nil {
-                Label("Les éléments sont restaurés, mais la restauration n'a pas pu être enregistrée pour tes autres appareils. Synchronise, puis restaure à nouveau ce fichier.", systemImage: "exclamationmark.triangle.fill")
+                Label("settings.itemsRestoredButRestore", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             }
         }
     }
 
     static func signatureLine(_ info: FfiArchiveInfo, verified: Bool) -> String {
-        if verified { return String(localized: "Signature de ton compte vérifiée") }
-        if info.forThisAccount { return String(localized: "Signée par ton compte : la signature est vérifiée à l'ouverture") }
-        if info.signed { return String(localized: "Signée par un autre compte : seule la phrase de passe protège ce fichier") }
-        return String(localized: "Non signée : seule la phrase de passe protège ce fichier")
+        if verified { return String(localized: "settings.accountsSignatureVerified") }
+        if info.forThisAccount { return String(localized: "settings.signedByAccountSignature") }
+        if info.signed { return String(localized: "settings.signedByAnotherAccount") }
+        return String(localized: "settings.notSignedOnlyPassphrase")
     }
 
     static func signatureSymbol(_ info: FfiArchiveInfo, verified: Bool) -> String {
@@ -202,7 +202,7 @@ struct RestoreSheet: View {
             return data
         }.value
         guard let read else {
-            errorMessage = String(localized: "Ce fichier n'a pas pu être lu, ou il est trop gros.")
+            errorMessage = String(localized: "settings.fileCouldNotRead")
             return
         }
         await take(read, named: url.lastPathComponent)
@@ -316,7 +316,7 @@ struct PlaintextExportSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Export non chiffré")
+            .navigationTitle("settings.unencryptedExport")
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -326,7 +326,7 @@ struct PlaintextExportSheet: View {
                 }
                 if csv == nil {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Exporter", action: export)
+                        Button("common.export", action: export)
                             .disabled(!canExport)
                             .accessibilityIdentifier("plaintext.confirm")
                     }
@@ -334,13 +334,13 @@ struct PlaintextExportSheet: View {
             }
             #if os(macOS)
             .alert("Cet emplacement est synchronisé dans le cloud", isPresented: $cloudWarning) {
-                Button("Enregistrer quand même", role: .destructive) {
+                Button("app.saveAnyway", role: .destructive) {
                     if let url = cloudDestination { write(to: url) }
                     cloudDestination = nil
                 }
                 Button("Annuler", role: .cancel) { cloudDestination = nil }
             } message: {
-                Text("Le fichier, en clair, sera copié sur les serveurs de ce service et sur tes autres appareils.")
+                Text("settings.fileUnencryptedWillCopied")
             }
             #else
             .sheet(item: $sharedFile, onDismiss: removeSharedFile) { file in
@@ -359,12 +359,12 @@ struct PlaintextExportSheet: View {
     @ViewBuilder private var warningSection: some View {
         Section {
             Label {
-                Text("Ce fichier n'est pas chiffré. Toute personne ou app qui y accède lit tous tes mots de passe, codes et notes. Un tableur peut exécuter une cellule qui commence par « = ». Les passkeys et les lieux n'y figurent pas.")
+                Text("settings.fileNotEncryptedAnyone")
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
             }
-            Text("Pour une copie de sécurité, préfère la sauvegarde chiffrée. N'utilise ce fichier que pour passer à un autre gestionnaire, puis supprime-le.")
+            Text("settings.forSafetyCopyUse")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -372,7 +372,7 @@ struct PlaintextExportSheet: View {
 
     @ViewBuilder private var entry: some View {
         Section {
-            Toggle("Je comprends que ce fichier n'est pas chiffré", isOn: $understood)
+            Toggle("settings.iUnderstandFileNot", isOn: $understood)
                 .accessibilityIdentifier("plaintext.understood")
         }
         Section("Coffres") {
@@ -390,19 +390,19 @@ struct PlaintextExportSheet: View {
                 .onSubmit(export)
                 .accessibilityIdentifier("plaintext.password")
         } footer: {
-            Text("Les éléments de la corbeille ne sont pas exportés.")
+            Text("settings.itemsInRecentlyDeleted")
         }
     }
 
     @ViewBuilder private var ready: some View {
         Section {
-            Label(saved ? LocalizedStringKey("Fichier enregistré.") : "Export prêt.", systemImage: "checkmark.circle")
+            Label(saved ? LocalizedStringKey("settings.fileSaved") : "Export prêt.", systemImage: "checkmark.circle")
                 .foregroundStyle(saved ? .green : .primary)
             Text(verbatim: fileName).font(.footnote.monospaced()).foregroundStyle(.secondary)
-            Button("Enregistrer le fichier…", action: saveFile)
+            Button("settings.saveFile", action: saveFile)
                 .accessibilityIdentifier("plaintext.save")
         } footer: {
-            Text("Supprime le fichier dès que tu n'en as plus besoin, corbeille comprise.")
+            Text("settings.deleteFileAsSoon")
         }
     }
 
@@ -432,7 +432,7 @@ struct PlaintextExportSheet: View {
         Task {
             guard let url = await KitSavePanel.chooseDestination(
                 fileName: fileName, contentType: .commaSeparatedText,
-                message: String(localized: "Ce fichier n'est pas chiffré. Choisis un emplacement hors ligne et supprime-le après usage."))
+                message: String(localized: "settings.fileNotEncryptedChoose"))
             else { return }
             if KitDestination.isCloudSynced(url) {
                 cloudDestination = url
@@ -448,7 +448,7 @@ struct PlaintextExportSheet: View {
             temporaryFile = url
             sharedFile = SharedPlaintextFile(url: url)
         } catch {
-            errorMessage = ErrorText.appending(error, to: String(localized: "Le fichier n'a pas pu être préparé."))
+            errorMessage = ErrorText.appending(error, to: String(localized: "settings.fileCouldNotPrepared"))
         }
         #endif
     }
@@ -462,7 +462,7 @@ struct PlaintextExportSheet: View {
             try PlaintextExportFile.writeNew(csv, to: url)
             saved = true
         } catch {
-            errorMessage = ErrorText.appending(error, to: String(localized: "Le fichier n'a pas pu être enregistré."))
+            errorMessage = ErrorText.appending(error, to: String(localized: "settings.fileCouldNotSaved"))
         }
     }
     #else

@@ -202,10 +202,15 @@ impl Session {
 
     pub fn vaults(&self) -> Result<Vec<FfiVault>, OnePassError> {
         self.with(|repo| {
+            let mut shared = repo.shared_vaults()?;
             let mut out = Vec::new();
             for v in repo.vaults()? {
                 let items = repo.items(&v)?;
-                out.push(vault_to_ffi(&v, live_count(&items)));
+                let info = shared
+                    .iter()
+                    .position(|s| s.vault_id == v.id)
+                    .map(|i| crate::sharing::shared_to_ffi(&shared.swap_remove(i)));
+                out.push(vault_to_ffi(&v, live_count(&items), info));
             }
             Ok(out)
         })
@@ -214,7 +219,7 @@ impl Session {
     pub fn create_vault(&self, meta: FfiVaultMeta) -> Result<FfiVault, OnePassError> {
         self.with(|repo| {
             let v = repo.create_vault(meta_to_core(&meta))?;
-            Ok(vault_to_ffi(&v, 0))
+            Ok(vault_to_ffi(&v, 0, None))
         })
     }
 
@@ -228,7 +233,12 @@ impl Session {
             let vault = find_vault(repo, id)?;
             let v = repo.update_vault_meta(&vault, meta_to_core(&meta))?;
             let items = repo.items(&v)?;
-            Ok(vault_to_ffi(&v, live_count(&items)))
+            let info = repo
+                .shared_vaults()?
+                .iter()
+                .find(|s| s.vault_id == v.id)
+                .map(crate::sharing::shared_to_ffi);
+            Ok(vault_to_ffi(&v, live_count(&items), info))
         })
     }
 
@@ -509,7 +519,7 @@ impl SyncStoreHandle {
         }))
     }
 
-    fn guard(&self) -> MutexGuard<'_, SyncStore> {
+    pub(crate) fn guard(&self) -> MutexGuard<'_, SyncStore> {
         self.store.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

@@ -34,7 +34,7 @@ public struct CardNetworkBadge: View {
             case .cb: "CB"
             case .unionPay: "UnionPay"
             case .jcb: "JCB"
-            case .unknown: String(localized: "Carte bancaire", bundle: DesignKitStrings.bundle)
+            case .unknown: String(localized: "designKit.creditCard", bundle: DesignKitStrings.bundle)
             }
         }
     }

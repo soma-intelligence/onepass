@@ -1,0 +1,161 @@
+name: icon-pack
+
+# Rebuilds the site icon pack every week from the latest upstream sets and publishes it,
+# signed, to the rolling release `icon-pack` (never marked Latest: the Mac updater reads
+# releases/latest). The app downloads the whole pack from there, the same file for everyone,
+# and only when the manifest's Ed25519 signature verifies (docs/icon-pack.md).
+#
+#   schedule (Monday 06:00 UTC)   build, sign, publish
+#   workflow_dispatch             same; `publish: false` builds and keeps the files as
+#                                 workflow artifacts only
+#
+# Upstream archives are untrusted data: each is unpacked in its own empty folder, nothing in
+# them runs, Python runs with -I, SVG text is checked before resvg draws it (no scripts, no
+# external or local files, no text). Rules as in release.yml: actions pinned by commit SHA,
+# no cache, no persisted credentials, permissions per job, the signing key only in the
+# step that signs, behind the `icon-pack` environment.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Sign and publish to the icon-pack release"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: icon-pack
+  cancel-in-progress: false
+
+env:
+  RESVG_VERSION: "0.49.0"
+
+jobs:
+  build:
+    name: build the pack
+    # The schedule runs in the public repository only (a private copy builds on demand).
+    if: github.event_name != 'schedule' || github.repository == 'soma-intelligence/onepass'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Tools (resvg, cwebp)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q webp
+          cargo install --locked "resvg@$RESVG_VERSION" --root "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+      - name: Tests of the pack script
+        run: python3 -I scripts/test_icon_pack.py
+      - name: Upstream sets at their latest commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          up="$RUNNER_TEMP/upstream"
+          mkdir -p "$up"
+          printf '{' > "$RUNNER_TEMP/sources.json"
+          first=1
+          for spec in "simple-icons simple-icons/simple-icons develop CC0-1.0" \
+                      "logos gilbarbara/logos main CC0-1.0" \
+                      "2fa-directory 2factorauth/twofactorauth master MIT"; do
+            read -r name repo branch license <<< "$spec"
+            commit=$(gh api "repos/$repo/commits/$branch" --jq .sha)
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "bad commit for $repo" >&2; exit 1; }
+            mkdir "$up/$name" "$up/$name.src"
+            curl -fsSL --proto '=https' -o "$up/$name/archive.tgz" "https://codeload.github.com/$repo/tar.gz/$commit"
+            sha=$(sha256sum "$up/$name/archive.tgz" | cut -d' ' -f1)
+            tar -xzf "$up/$name/archive.tgz" -C "$up/$name.src" --strip-components=1 --no-same-owner --no-same-permissions
+            [[ $first == 1 ]] || printf ',' >> "$RUNNER_TEMP/sources.json"
+            first=0
+            printf '"%s":{"repository":"%s","commit":"%s","archive_sha256":"%s","license":"%s"}' \
+              "$name" "$repo" "$commit" "$sha" "$license" >> "$RUNNER_TEMP/sources.json"
+          done
+          printf '}\n' >> "$RUNNER_TEMP/sources.json"
+          cat "$RUNNER_TEMP/sources.json"
+      - name: Brand icons of the hand-picked list (their App Store icon or their site's icon)
+        run: python3 -I scripts/icon_pack.py sites --out "$RUNNER_TEMP/sites"
+      - name: Version
+        id: version
+        run: echo "version=$(date -u +%Y%m%d)$(printf '%02d' $(( GITHUB_RUN_NUMBER % 100 )))" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          up="$RUNNER_TEMP/upstream"
+          python3 -I scripts/icon_pack.py build --simple-icons "$up/simple-icons.src" --logos "$up/logos.src" \
+            --twofa "$up/2fa-directory.src" --sources "$RUNNER_TEMP/sources.json" --version "$VERSION" \
+            --size 256 --sites "$RUNNER_TEMP/sites" --out out
+          ls -l out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: icon-pack
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    name: sign and publish
+    needs: build
+    if: github.repository == 'soma-intelligence/onepass' && (github.event_name == 'schedule' || inputs.publish)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: icon-pack
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: icon-pack
+          path: out
+      - name: Sign the manifest
+        env:
+          ICON_PACK_ED_PRIVATE_KEY: ${{ secrets.ICON_PACK_ED_PRIVATE_KEY }}
+        run: |
+          [ -n "$ICON_PACK_ED_PRIVATE_KEY" ] || { echo "ICON_PACK_ED_PRIVATE_KEY is not set (docs/icon-pack.md)" >&2; exit 1; }
+          python3 -I scripts/icon_pack.py sign --manifest out/icon-pack-manifest.json
+      - name: Verify with the public key the app trusts
+        env:
+          PUBLIC_KEY: ${{ vars.ICON_PACK_ED_PUBLIC_KEY }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 -I scripts/icon_pack.py verify --manifest out/icon-pack-manifest.json \
+            --pack "out/onepass-icons-$VERSION.bin" --public-key "$PUBLIC_KEY"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            out/onepass-icons-*.bin
+            out/icon-pack-manifest.json
+      - name: Publish to the icon-pack release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view icon-pack --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create icon-pack --repo "$GITHUB_REPOSITORY" --prerelease --latest=false \
+              --title "Site icon pack" --notes "Brand icons for OnePass, rebuilt weekly from Simple Icons (CC0-1.0), gilbarbara/logos (CC0-1.0) and 2FA Directory (MIT). Logos remain trademarks of their owners. See docs/icon-pack.md."
+          fi
+          # The pack first, the manifest and its signature last: a client that reads the new
+          # manifest finds its pack already there.
+          gh release upload icon-pack --repo "$GITHUB_REPOSITORY" --clobber "out/onepass-icons-$VERSION.bin"
+          gh release upload icon-pack --repo "$GITHUB_REPOSITORY" --clobber \
+            out/icon-pack-manifest.json.sig out/icon-pack-manifest.json
+          # Keep the current pack and the previous one (a client may hold the old manifest).
+          gh release view icon-pack --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -E '^onepass-icons-[0-9]+\.bin$' | sort -r | tail -n +3 \
+            | while read -r old; do gh release delete-asset icon-pack "$old" --repo "$GITHUB_REPOSITORY" --yes; done

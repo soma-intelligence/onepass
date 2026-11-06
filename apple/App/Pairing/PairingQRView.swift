@@ -50,7 +50,7 @@ struct PairingStep: View {
             Button {
                 scanningInvite = true
             } label: {
-                Label("Scanner le code de mon autre appareil", systemImage: "qrcode.viewfinder")
+                Label("pairing.scanMyOtherDevices", systemImage: "qrcode.viewfinder")
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
             }
@@ -62,7 +62,7 @@ struct PairingStep: View {
                     model.joinInvite(text)
                 }
             }
-            Text("Ton autre appareil est un Mac ? Ouvre le menu de ton compte, puis « Configurer un appareil ».")
+            Text("pairing.otherDeviceMacOpen")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             #endif
@@ -80,7 +80,7 @@ struct PairingStep: View {
                 Button {
                     Task { await flow.confirmCode() }
                 } label: {
-                    Text("Les codes sont identiques")
+                    Text("pairing.codesMatch")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .frame(height: Platform.isMac ? 28 : 40)
@@ -91,7 +91,7 @@ struct PairingStep: View {
                 Button(role: .destructive) {
                     flow.rejectCode()
                 } label: {
-                    Text("Ils sont différents")
+                    Text("pairing.theyreDifferent")
                         .frame(maxWidth: .infinity)
                         .frame(height: Platform.isMac ? 28 : 40)
                 }
@@ -133,7 +133,7 @@ private struct InviteScanSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Vise le code affiché par ton Mac ou ton autre appareil, devant toi.")
+                Text("pairing.pointAtCodeMac")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -144,7 +144,7 @@ private struct InviteScanSheet: View {
             }
             .padding(20)
             .frame(maxHeight: .infinity, alignment: .top)
-            .navigationTitle("Scanner le code")
+            .navigationTitle("pairing.scanCode")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -157,7 +157,7 @@ private struct InviteScanSheet: View {
     @ViewBuilder private var scanner: some View {
         #if DEBUG
         if let injected = UserDefaults.standard.string(forKey: "OnePassPairingInviteText"), !injected.isEmpty {
-            Label("Code injecté (Debug)", systemImage: "ladybug")
+            Label("pairing.injectedCodeDebug", systemImage: "ladybug")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.fill.tertiary)
                 .task { onInvite(injected) }
@@ -178,7 +178,7 @@ private struct InviteScanSheet: View {
         } else {
             ContentUnavailableView(
                 "Caméra indisponible", systemImage: "camera",
-                description: Text("Cet appareil ne peut pas lire de QR code."))
+                description: Text("pairing.deviceCantReadQr"))
                 .background(.fill.tertiary)
         }
     }
@@ -205,15 +205,15 @@ struct PairingQRView: View {
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: Platform.isMac ? 260 : 280)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityLabel(Text("QR code d'appairage"))
+                    .accessibilityLabel(Text("pairing.pairingQrCode"))
                     .accessibilityIdentifier("pairing.qr")
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let left = max(0, Int(expiresAt.timeIntervalSince(context.date).rounded(.up)))
                 Group {
                     switch renewal {
-                    case .every30s: Text("Un nouveau code s'affiche toutes les 30 s. Celui-ci reste valable \(left) s.")
-                    case .beforeExpiry: Text("Ce code reste valable \(left) s. Un nouveau le remplace avant la fin.")
+                    case .every30s: Text("pairing.newCodeShowsEvery \(left)")
+                    case .beforeExpiry: Text("pairing.codeStaysValidFor \(left)")
                     }
                 }
                     .font(.footnote.monospacedDigit())

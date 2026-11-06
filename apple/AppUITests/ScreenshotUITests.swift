@@ -83,3 +83,113 @@ final class ScreenshotUITests: XCTestCase {
         }
     }
 }
+
+/// Captures of the iPhone lists for the 2026-11-02 review (header fade, swipe actions, the "+" sheet,
+/// search, Watchtower, À proximité): skipped unless `ONEPASS_FEEDBACK_DIR` is set (xcodebuild passes
+/// `TEST_RUNNER_ONEPASS_FEEDBACK_DIR`). Demonstration data only, dark appearance.
+@MainActor
+final class ListsFeedbackCaptureUITests: XCTestCase {
+    private var directory: URL!
+
+    override func setUp() async throws {
+        continueAfterFailure = true
+    }
+
+    private func shot(_ name: String) {
+        let png = XCUIScreen.main.screenshot().pngRepresentation
+        try? png.write(to: directory.appendingPathComponent("\(name).png"))
+    }
+
+    private func launch(_ arguments: [String], ready: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO"] + arguments
+        app.launch()
+        let element = app.descendants(matching: .any)[ready].firstMatch
+        XCTAssertTrue(element.waitForExistence(timeout: 90), "\(ready) not shown")
+        Thread.sleep(forTimeInterval: 1.2)
+        return app
+    }
+
+    /// Drags the content up by `points`, slowly, and leaves it there.
+    private func scroll(_ app: XCUIApplication, by points: CGFloat, from y: CGFloat = 0.7) {
+        let start = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y))
+        let end = start.withOffset(CGVector(dx: 0, dy: -points))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 0.8)
+    }
+
+    func testCaptureListsFeedback() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let folder = environment["ONEPASS_FEEDBACK_DIR"], !folder.isEmpty else {
+            throw XCTSkip("captures only")
+        }
+        directory = URL(fileURLWithPath: folder, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+
+        // All items: the bar at rest, then scrolled (header edge), then a row swiped open.
+        var app = launch(["-OnePassDemoTab", "items", "-OnePassDemoList", "all"], ready: "list.row.API Cartes Atlas")
+        shot("01-all-items-rest")
+        scroll(app, by: 260)
+        shot("02-all-items-scrolled")
+        app.terminate()
+        app = launch(["-OnePassDemoTab", "items", "-OnePassDemoList", "all"], ready: "list.row.API Cartes Atlas")
+        let row = app.descendants(matching: .any)["list.row.API Cartes Atlas"].firstMatch
+        let right = row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+        right.press(forDuration: 0.05, thenDragTo: right.withOffset(CGVector(dx: -170, dy: 0)), withVelocity: .slow,
+            thenHoldForDuration: 0.2)
+        Thread.sleep(forTimeInterval: 0.8)
+        shot("03-all-items-swipe")
+        app.terminate()
+
+        // The "+" sheet scrolled under its title and search field.
+        app = launch(["-OnePassDemoNewItem", "YES"], ready: "newItem.search")
+        shot("04-new-item-rest")
+        scroll(app, by: 220, from: 0.75)
+        shot("05-new-item-scrolled")
+        app.terminate()
+
+        // Search: before typing, results, nothing found.
+        app = launch(["-OnePassDemoTab", "search"], ready: "search.browse.login")
+        shot("06-search-start")
+        app.terminate()
+        app = launch(["-OnePassDemoQuery", "atlas"], ready: "list.row.API Cartes Atlas")
+        shot("07-search-results")
+        app.terminate()
+        app = launch(["-OnePassDemoQuery", "zzqx"], ready: "search.empty")
+        shot("08-search-nothing")
+        app.terminate()
+
+        // Watchtower: a check's items, scrolled (the header of a pushed list), then a new scan.
+        app = launch(["-OnePassDemoTab", "watchtower"], ready: "page.watchtower")
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'watchtower.show.'"))
+            .firstMatch
+        if card.waitForExistence(timeout: 20) {
+            card.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shot("09-watchtower-list-rest")
+            scroll(app, by: 200)
+            shot("10-watchtower-list-scrolled")
+            app.navigationBars.buttons.firstMatch.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        let top = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 300)), withVelocity: .fast,
+            thenHoldForDuration: 0.1)
+        Thread.sleep(forTimeInterval: 0.25)
+        shot("11-watchtower-scan")
+        app.terminate()
+
+        // À proximité from Éléments (the simulator's location is set by the caller).
+        app = launch(["-OnePassDemoTab", "items"], ready: "items.vaults.new")
+        let nearby = app.descendants(matching: .any)["items.nearby"].firstMatch
+        if !nearby.waitForExistence(timeout: 5) { app.swipeUp() }
+        if nearby.waitForExistence(timeout: 10) {
+            nearby.tap()
+            Thread.sleep(forTimeInterval: 3)
+            shot("12-nearby")
+        }
+        app.terminate()
+    }
+}

@@ -59,6 +59,27 @@ struct AutoFillSessionTests {
         #expect(ids.first?.recordId.hasSuffix(item.id) == true)
     }
 
+    /// A pick in the system AutoFill lands in the device's autofill history; off erases it and keeps
+    /// nothing, clear erases it.
+    @Test func autofillHistoryRecordsPicksAndSwitchErases() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = autofillSession(h, store: InMemoryIdentityStore())
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let item = try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        #expect(try await session.autofillHistoryEnabled())
+        #expect(try await session.autofillHistoryCount() == 0)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        #expect(try await session.autofillHistoryCount() == 1)
+        #expect(try await session.clearAutofillHistory() == 1)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        try await session.setAutofillHistoryEnabled(false)
+        #expect(try await session.autofillHistoryEnabled() == false)
+        #expect(try await session.autofillHistoryCount() == 0)
+        _ = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", service: "atlas.exemple.fr")
+        #expect(try await session.autofillHistoryCount() == 0)
+    }
+
     @Test func settingOffClearsStore() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }
@@ -193,6 +214,25 @@ struct AutoFillSessionTests {
         try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
         session.lock()
         await session.waitForReleasedSessions()
+        #expect(store.inner.identities.isEmpty)
+        store.open()
+        await session.waitForAutofillIdentities()
+        #expect(store.inner.identities.map(\.service) == ["atlas.exemple.fr"])
+    }
+
+    /// The AutoFill extension publishes after a pick, then fills: a system store that does not
+    /// answer (the iOS 27.0 Simulator's) holds the fill back `limit` at most, and the read list
+    /// is still published when the store answers.
+    @Test func publishNowDoesNotHangOnASilentStore() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let store = GatedIdentityStore()
+        let session = autofillSession(h, store: store, debounce: .seconds(600))
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await addLogin(session, title: "Atlas", url: "https://atlas.exemple.fr")
+        let start = ContinuousClock.now
+        await session.publishAutofillIdentitiesNow(limit: .milliseconds(200))
+        #expect(ContinuousClock.now - start < .seconds(5))
         #expect(store.inner.identities.isEmpty)
         store.open()
         await session.waitForAutofillIdentities()

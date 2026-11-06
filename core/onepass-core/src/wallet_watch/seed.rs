@@ -11,7 +11,7 @@ use std::num::NonZeroU32;
 use aws_lc_rs::hmac::{self, HMAC_SHA512};
 use aws_lc_rs::pbkdf2::{PBKDF2_HMAC_SHA512, derive};
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
-use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::sec1::ToSec1Point;
 use k256::{ProjectivePoint, Scalar};
 use sha3::{Digest, Keccak256};
 use unicode_normalization::UnicodeNormalization;
@@ -164,7 +164,7 @@ fn bitcoin_zpub(seed: &[u8]) -> Result<String> {
 
 fn ethereum_address(seed: &[u8]) -> Result<String> {
     let (node, _) = Node::secp_path(seed, &[44 | HARD, 60 | HARD, HARD, 0, 0])?;
-    let point = public_point(&node.key)?.to_affine().to_encoded_point(false);
+    let point = public_point(&node.key)?.to_affine().to_sec1_point(false);
     let hash = Keccak256::digest(&point.as_bytes()[1..]);
     let addr: [u8; 20] = hash[12..].try_into().map_err(|_| Error::Crypto)?;
     Ok(eip55(&addr))

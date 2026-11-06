@@ -12,14 +12,14 @@ struct TextItemsView: View {
     @State private var busy = false
 
     var body: some View {
-        AutoFillScaffold(title: Text("Choisis un élément"), model: model) {
+        AutoFillScaffold(title: Text("views.chooseItem"), model: model) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     SessionErrorText(session: session)
                         .padding(.horizontal, 6)
-                    AutoFillLabel(query.isEmpty ? "tous les éléments" : "résultats")
+                    AutoFillLabel(query.isEmpty ? "views.allItems" : "views.results")
                     if shown.isEmpty {
-                        Text(query.isEmpty ? "Aucun élément." : "Aucun résultat.")
+                        Text(query.isEmpty ? "views.noItems" : "views.noResults")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(14)
@@ -33,7 +33,7 @@ struct TextItemsView: View {
                                 } label: {
                                     AutoFillRow(
                                         type: item.itemType, title: item.title,
-                                        detail: item.subtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.subtitle,
+                                        detail: item.listSubtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.listSubtitle,
                                         url: item.primaryUrl
                                     ) {
                                         Image(systemName: "chevron.forward")
@@ -53,7 +53,7 @@ struct TextItemsView: View {
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.immediately)
-            .searchable(text: $query, prompt: Text("Rechercher dans OnePass"))
+            .searchable(text: $query, prompt: Text("views.searchOnepass"))
             .disabled(busy)
         }
     }
@@ -85,7 +85,7 @@ struct TextFieldsView: View {
     @State private var busy = false
 
     var body: some View {
-        AutoFillScaffold(title: Text("Choisis un champ"), model: model, back: { Task { await model.showTextItems() } }) {
+        AutoFillScaffold(title: Text("views.chooseField"), model: model, back: { Task { await model.showTextItems() } }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     AutoFillHeader(
@@ -95,10 +95,10 @@ struct TextFieldsView: View {
                         .padding(.bottom, 14)
                     SessionErrorText(session: session)
                         .padding(.horizontal, 6)
-                    AutoFillLabel("champ à insérer")
+                    AutoFillLabel("views.fieldToInsert")
                     let fields = model.insertableFields(of: item)
                     if fields.isEmpty {
-                        Text("Aucun champ à insérer dans cet élément.")
+                        Text("views.itemHasNoFields")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(14)
@@ -116,7 +116,7 @@ struct TextFieldsView: View {
                                                 .foregroundStyle(.primary)
                                                 .lineLimit(1)
                                         }
-                                        .accessibilityValue(Self.isSecret(field) ? Text("masqué") : Text(verbatim: Self.preview(field)))
+                                        .accessibilityValue(Self.isSecret(field) ? Text("views.hidden") : Text(verbatim: Self.preview(field)))
                                         Image(systemName: "text.insert")
                                             .font(.system(size: 16, weight: .medium))
                                             .foregroundStyle(Theme.readableAccent)
@@ -148,11 +148,8 @@ struct TextFieldsView: View {
         }
     }
 
-    /// "Mot de passe" gives "mot de passe", as the app's labels; an acronym ("PIN") stays.
-    private static func labelCase(_ label: String) -> String {
-        guard let first = label.first, !(label.dropFirst().first?.isUppercase ?? false) else { return label }
-        return first.lowercased() + label.dropFirst()
-    }
+    /// As the app's labels: lowercase in French, a capital first elsewhere (`LabelCase`).
+    private static func labelCase(_ label: String) -> String { LabelCase.detail(label) }
 
     private static func isSecret(_ field: FfiField) -> Bool {
         switch field.kind {

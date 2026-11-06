@@ -63,9 +63,6 @@ struct ItemEditorView: View {
                     ForEach(Array(item.sections.enumerated()), id: \.element.id) { _, section in
                         if !visibleRows(section).isEmpty { fieldSection(section) }
                     }
-                    if item.itemType == .login {
-                        LoginMethodCard(item: $editor.draft.item)
-                    }
                     // Websites and the folded fields share one block: two lone "+" rows read as clutter.
                     EditorCard {
                         UrlListEditor(editor: editor)
@@ -75,7 +72,7 @@ struct ItemEditorView: View {
                     notesCard
                     locationsCard
                     VStack(alignment: .leading, spacing: 8) {
-                        EditorLabel("tags").padding(.leading, 16)
+                        EditorLabel(String(localized: "item.tags")).padding(.leading, 16)
                         TagEditor(draft: $editor.draft).padding(.horizontal, 16)
                     }
                     optionsCard
@@ -88,7 +85,9 @@ struct ItemEditorView: View {
                 .textFieldStyle(.plain)
                 #endif
             }
+            #if !os(visionOS)
             .scrollDismissesKeyboard(.interactively)
+            #endif
             #if os(macOS)
             // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
             // Enregistrer (they float without glass of their own).
@@ -139,14 +138,14 @@ struct ItemEditorView: View {
         }
         .confirmationDialog("Abandonner les modifications ?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Abandonner", role: .destructive) { onDone(nil) }
-            Button("Continuer la modification", role: .cancel) {}
+            Button("app.keepEditing", role: .cancel) {}
         }
         .confirmationDialog(
             "Supprimer la passkey ?",
             isPresented: Binding(get: { passkeyRemoval != nil }, set: { if !$0 { passkeyRemoval = nil } }),
             titleVisibility: .visible, presenting: passkeyRemoval
         ) { removal in
-            Button("Supprimer la passkey", role: .destructive) {
+            Button("item.deletePasskey", role: .destructive) {
                 if let i = editor.index(of: removal.key, sectionID: removal.sectionID) {
                     editor.removePasskey(sectionID: removal.sectionID, fieldIndex: i)
                 }
@@ -155,7 +154,7 @@ struct ItemEditorView: View {
             .accessibilityIdentifier("editor.passkey.confirmRemove")
             Button("Annuler", role: .cancel) { passkeyRemoval = nil }
         } message: { _ in
-            Text("Après l'enregistrement, tu ne pourras plus te connecter à ce site avec cette passkey. Le site la garde dans ton compte : supprime-la aussi dans ses réglages.")
+            Text("item.onceSaveWontAble")
         }
         .interactiveDismissDisabled(editor.isDirty)
         // A lock or a navigation asks first while the draft has unsaved changes (`AppModel.perform`).
@@ -210,7 +209,7 @@ struct ItemEditorView: View {
                 .tracking(0.6)
             #endif
             HStack(alignment: .center, spacing: 16) {
-                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? primaryURL.flatMap { model.iconLoader.cachedIcon(for: $0) }, size: 64, brand: item.cardBrandName)
+                ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title), size: 64, brand: item.cardBrandName)
                     .favoriteBadge(item.favorite, iconSize: 64)
                     // Follows the website being typed: a new address loads its icon.
                     .task(id: primaryURL) {
@@ -218,9 +217,9 @@ struct ItemEditorView: View {
                             siteIcon = nil
                             return
                         }
-                        siteIcon = await model.iconLoader.icon(for: url)
+                        siteIcon = await model.iconLoader.icon(for: url, title: item.title)
                     }
-                TextField("Titre", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
+                TextField("app.title", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
                     .textFieldStyle(.plain)
                     .font(.system(size: 26, weight: .bold))
                     .focused($titleFocused)
@@ -270,17 +269,27 @@ struct ItemEditorView: View {
                             field.kind != .passkey, field.kind != .file
                         {
                             CardDivider()
-                            AddRowButton(title: String(localized: "ajouter \(field.displayLabel(itemType: item.itemType).lowercasedFirst)")) {
+                            AddRowButton(title: String(localized: "item.add2 \(field.displayLabel(itemType: item.itemType).lowercasedFirst)")) {
                                 editor.addRepeat(of: field.id, in: section.id)
                                 pinLastRow(of: field.id, in: section.id)
                             }
-                            .accessibilityLabel(Text("Ajouter \(field.displayLabel(itemType: item.itemType))"))
+                            .accessibilityLabel(Text("item.add \(field.displayLabel(itemType: item.itemType))"))
                             .accessibilityIdentifier("editor.repeat.\(field.id)")
                         }
                     }
                 }
+                // The login's passkeys sit in its card, like the username: the last row adds one.
+                if isLoginCard(section) {
+                    if !rows.isEmpty { CardDivider() }
+                    AddPasskeyRow(item: item, editing: true) { editor.addURL() }
+                }
             }
         }
+    }
+
+    /// The first card of a login (username, password, passkeys).
+    private func isLoginCard(_ section: FfiSection) -> Bool {
+        item.itemType == .login && section.id == item.sections.first?.id
     }
 
     @ViewBuilder private func fieldRow(sectionID: String, key: UUID, field: FfiField, isCustom: Bool) -> some View {
@@ -289,12 +298,21 @@ struct ItemEditorView: View {
         HStack(alignment: .center, spacing: 12) {
             if isCustom {
                 VStack(alignment: .leading, spacing: 4) {
-                    TextField("Libellé", text: labelBinding(sectionID, key), prompt: Text(ItemDraft.defaultLabel(field.kind)))
+                    TextField("item.label", text: labelBinding(sectionID, key), prompt: Text(ItemDraft.defaultLabel(field.kind)))
                         .font(.callout)
                         .foregroundStyle(Theme.accent)
                         .accessibilityIdentifier("editor.label.\(field.id)")
                     FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
                     errorText(sectionID, index)
+                }
+            } else if item.itemType == .login, field.id == "username", sectionID == item.sections.first?.id {
+                // "Se connecter avec" lives in the username row: a provider stands in for it.
+                LoginUsernameRow(
+                    item: $editor.draft.item,
+                    label: isRequired(field) ? "\(field.displayLabel(itemType: item.itemType).lowercasedFirst) *" : field.displayLabel(itemType: item.itemType).lowercasedFirst,
+                    message: editor.message(sectionID: sectionID, fieldIndex: index)
+                ) {
+                    FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding(sectionID, key))
                 }
             } else {
                 EditorRow(
@@ -309,7 +327,7 @@ struct ItemEditorView: View {
                 RemoveRowButton {
                     passkeyRemoval = PasskeyRemoval(sectionID: sectionID, key: key)
                 }
-                .accessibilityLabel(Text("Supprimer la passkey"))
+                .accessibilityLabel(Text("item.deletePasskey"))
                 .accessibilityIdentifier("editor.remove.\(field.id)")
             } else if removable {
                 RemoveRowButton {
@@ -337,7 +355,7 @@ struct ItemEditorView: View {
             addingField.toggle()
         } label: {
             HStack {
-                Label("ajouter plus", systemImage: "plus")
+                Label("item.addMore", systemImage: "plus")
                     .foregroundStyle(Theme.accent)
                 Spacer()
                 Image(systemName: "chevron.down").foregroundStyle(.secondary)
@@ -427,7 +445,7 @@ struct ItemEditorView: View {
                 .accessibilityIdentifier("editor.location.\(index)")
                 CardDivider()
             }
-            AddRowButton(title: item.locations.isEmpty ? String(localized: "ajouter un lieu") : String(localized: "ajouter un autre lieu")) {
+            AddRowButton(title: item.locations.isEmpty ? String(localized: "item.addPlace2") : String(localized: "item.addAnotherPlace")) {
                 searchingPlace = true
             }
             .accessibilityIdentifier("editor.location")
@@ -442,7 +460,7 @@ struct ItemEditorView: View {
     private var notesCard: some View {
         EditorCard {
             VStack(alignment: .leading, spacing: 4) {
-                EditorLabel("notes")
+                EditorLabel(String(localized: "item.notes"))
                 // No inner box: the note reads as part of its card.
                 TextEditor(text: $editor.draft.item.notes)
                     .scrollContentBackground(.hidden)
@@ -451,7 +469,7 @@ struct ItemEditorView: View {
                     .frame(minHeight: 48)
                     .overlay(alignment: .topLeading) {
                         if item.notes.isEmpty {
-                            Text("Ajoute des notes sur cet élément.")
+                            Text("item.addNotesAboutItem")
                                 .foregroundStyle(.tertiary)
                                 .padding(.leading, 5)
                                 .allowsHitTesting(false)
@@ -468,7 +486,7 @@ struct ItemEditorView: View {
         VStack(alignment: .leading, spacing: 8) {
             EditorCard {
                 HStack {
-                    Text("Coffre")
+                    Text("term.vault")
                     Spacer()
                     VaultPicker(vaultID: $editor.targetVaultID).labelsHidden().fixedSize()
                 }
@@ -481,18 +499,36 @@ struct ItemEditorView: View {
                     .accessibilityIdentifier("editor.onWatch")
                 CardDivider()
                 OptionToggle(title: "Confirmer avant d'afficher", isOn: $editor.draft.item.reprompt)
-                    .help("Face ID, Touch ID ou le mot de passe maître sera demandé avant d'afficher cet élément.")
+                    .help("item.faceIdTouchId")
                     .accessibilityIdentifier("editor.reprompt")
             }
+            // Travel Mode per item (spec 2026-11-02): hidden leaves the device, extra protection asks
+            // for the password and biometrics while travelling.
+            EditorCard {
+                OptionToggle(title: "item.travel.hidden", isOn: $editor.draft.item.travelHidden)
+                    .help("item.travel.hidden.help")
+                    .accessibilityIdentifier("editor.travelHidden")
+                CardDivider()
+                OptionToggle(title: "item.travel.guard", isOn: $editor.draft.item.travelGuard)
+                    .help("item.travel.guard.help")
+                    .disabled(editor.draft.item.travelHidden)
+                    .accessibilityIdentifier("editor.travelGuard")
+            }
+            Text(editor.draft.item.travelHidden
+                ? "item.travel.footer.hidden"
+                : "item.travel.footer")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
 
         }
     }
 
     static let customKinds: [(FfiFieldType, String)] = [
-        (.text, String(localized: "Texte")), (.concealed, String(localized: "Masqué")),
-        (.password, String(localized: "Mot de passe")), (.date, String(localized: "Date")),
-        (.url, String(localized: "URL")), (.email, String(localized: "Email")),
-        (.phone, String(localized: "Téléphone")), (.location, String(localized: "Lieu")),
+        (.text, String(localized: "item.text")), (.concealed, String(localized: "item.hidden")),
+        (.password, String(localized: "term.password")), (.date, String(localized: "Date")),
+        (.url, String(localized: "item.url")), (.email, String(localized: "item.email")),
+        (.phone, String(localized: "app.phone")), (.location, String(localized: "item.place")),
     ]
 
     /// A login that signs in through a provider needs no username (core validation).
@@ -709,7 +745,7 @@ private struct AddFieldPopover: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Rechercher un champ", text: $query)
+                TextField("item.searchFields", text: $query)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .accessibilityIdentifier("editor.addField.search")
@@ -726,7 +762,7 @@ private struct AddFieldPopover: View {
                             heading("Champs du modèle")
                             Spacer()
                             if hidden.count > 1, trimmed.isEmpty {
-                                Button("Tout afficher", action: showAll)
+                                Button("item.showAll", action: showAll)
                                     .buttonStyle(.plain)
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(Theme.accent)
@@ -750,7 +786,7 @@ private struct AddFieldPopover: View {
                         }
                     }
                     if shownHidden.isEmpty, shownKinds.isEmpty {
-                        Text("Aucun champ ne correspond.")
+                        Text("item.noMatchingField")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)

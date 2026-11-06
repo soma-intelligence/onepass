@@ -18,6 +18,7 @@ apple/
   VaultKit/                 paquet Swift : liaisons UniFFI et logique Apple
   DesignKit/                paquet Swift : couleurs, icônes de catégorie, composants
   CompanionKit/             paquet Swift : widgets (GlanceKit) et lien iPhone-montre (CompanionLink)
+  UpdateKit/                paquet Swift : mises à jour de l'app Mac par Sparkle (Developer ID seulement)
   App/                      cible unique iOS, iPadOS, macOS natif et visionOS (SwiftUI)
   AutoFill/                 extension OnePassAutoFill (fournisseur de remplissage automatique, SwiftUI)
   AutoFillHost/             app hôte de test de l'AutoFill (iOS, non livrée)
@@ -264,6 +265,7 @@ Ce que livre le jalon 3 :
 - **Insertion de texte** (iOS 18 et plus) : n'importe quel champ d'un item dans n'importe quel champ.
 - **Conteneur partagé** : la base et les réglages passent dans le conteneur App Group (`group.me.somalabs.onepass` sur iOS, `<préfixe d'équipe>me.somalabs.onepass` sur Mac), migrés au lancement sans jamais rien supprimer.
 - **Fin de la feuille "Enregistrer le mot de passe ?"** après l'enregistrement d'un Login, quand OnePass est le fournisseur (iOS 26.2 et plus).
+- Liste **Passkeys** (onglet Éléments sur iPhone, barre latérale sur Mac et iPad) : les éléments qui portent au moins une passkey (2026-11-02).
 - Page **Remplissage automatique** dans les réglages (état, activation, codes de vérification, interrupteur "Suggestions au-dessus du clavier" qui vide le magasin du système quand il est coupé) et carte d'activation sur l'Accueil.
 
 ### Limites du jalon 3
@@ -281,7 +283,7 @@ Ce qui demande un build signé ou un appareil réel (spec, section 10) :
 
 Hors périmètre du jalon 3 (spec, section 11) :
 
-- Import et export de passkeys par FIDO Credential Exchange (`ASCredentialImportManager`, `ASCredentialExportManager`) : avec l'import et l'export du jalon 5.
+- Export de passkeys par FIDO Credential Exchange (`ASCredentialExportManager`). L'import est livré (2026-11-02) : Mots de passe > Exporter vers une autre app > OnePass ouvre la feuille Importer (`CredentialExchangeImport`, spec `2026-11-02-passkeys-on-iphone-design.md`).
 - Quick Access et barre de menus du Mac : jalon ultérieur.
 - Vision Pro (jalon 6), extension Safari et icône dans le champ des pages web (jalon 4). Aucun fournisseur ne peut dessiner dans les champs des autres apps : l'expérience système est la barre QuickType, la touche clé et la feuille passkey.
 - Signal des passkeys inconnues ou renommées au système (`reportUnknownPublicKeyCredential`, `reportAllAcceptedPublicKeyCredentials`).
@@ -395,7 +397,7 @@ Avant le premier build signé qui utilise ces fonctions, dans CloudKit Console, 
 
 1. Type d'enregistrement `RemoteMessage` (créé au premier envoi en développement, ou à la main) avec les champs `to` (String), `blob` (Bytes) et `expires_at` (Date/Time). Les enregistrements vivent dans la zone privée `AgentRequests`, créée par l'app.
 2. Index : `to` en Queryable (abonnement et lecture du destinataire), `expires_at` en Queryable et Sortable (purge des enregistrements expirés, comparaison `<`), `recordName` en Queryable (sans lui, CloudKit refuse toute requête sur ce type).
-   Le fichier `apple/cloudkit/RemoteMessage.ckdb` décrit ce type et ces index (`RemoteChannelSchemaTests` garde les trois index). Vérifier sans rien changer : `xcrun cktool validate-schema --team-id <équipe> --container-id <conteneur> --environment development --file apple/cloudkit/RemoteMessage.ckdb` ; importer en développement : `import-schema` avec les mêmes arguments. Le conteneur est `iCloud.me.somalabs.onepass`, ou `iCloud.me.quentincaron.onepass` pour le build personnel de `install-iphone.sh` (un build signé en développement lit l'environnement de développement).
+   Le fichier `apple/cloudkit/RemoteMessage.ckdb` décrit tout le schéma du conteneur : ce type et ces index, `OPRecord` de la synchronisation (`kind`, `version`, `data` chiffré) et `Users`, car `import-schema` remplace le schéma de développement et un fichier partiel retirerait `OPRecord`. `RemoteChannelSchemaTests` en vérifie la syntaxe, les trois index et l'accord avec les champs que le code écrit. Le jeton de gestion s'enregistre une fois (`xcrun cktool save-token --type management`). Vérifier sans rien changer : `xcrun cktool validate-schema --team-id <équipe> --container-id <conteneur> --environment development --file apple/cloudkit/RemoteMessage.ckdb` ; importer en développement : `import-schema` avec les mêmes arguments. Le conteneur est `iCloud.me.somalabs.onepass`, ou `iCloud.me.quentincaron.onepass` pour le build personnel de `install-iphone.sh` (un build signé en développement lit l'environnement de développement).
 3. Déployer le schéma vers la production (« Deploy Schema Changes ») : sans ces index en production, l'abonnement et les requêtes échouent et l'app retombe sur le panneau du Mac seul.
 
 ### Ce qui demande de vrais appareils

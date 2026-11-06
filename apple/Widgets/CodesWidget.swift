@@ -11,8 +11,8 @@ struct CodesWidget: Widget {
             CodesWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("Codes")
-        .description("Les codes à usage unique de tes favoris.")
+        .configurationDisplayName("codesWidget.codes")
+        .description("codesWidget.oneTimeCodesFrom")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular])
     }
 }
@@ -28,7 +28,7 @@ struct CodesWidgetView: View {
         case .stale:
             GlanceMessage.stale
         case .available(let snapshot) where snapshot.codes.isEmpty:
-            GlanceMessage(symbol: "star", text: "Ajoute un favori avec un code")
+            GlanceMessage(symbol: "star", text: "codesWidget.addFavoriteWithCode")
         case .available(let snapshot):
             content(snapshot.codes)
         }
@@ -82,12 +82,12 @@ struct CodesWidgetView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             } else {
-                Text("Ouvre OnePass pour actualiser")
+                Text("widgets.openOnepassToRefresh")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             if more > 0 {
-                Text("+ \(more) autres")
+                Text("widgets.more \(more)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -115,7 +115,7 @@ struct CodesWidgetView: View {
                         .frame(width: 36, alignment: .trailing)
                 }
             } else {
-                Text("Ouvre OnePass pour actualiser").font(.caption2)
+                Text("widgets.openOnepassToRefresh").font(.caption2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

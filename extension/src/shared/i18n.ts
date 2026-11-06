@@ -4,10 +4,10 @@
 // shared actions (term.*, common.*) are copied from scripts/i18n/glossary.json. Rules:
 // docs/i18n.md (no sentence built from fragments, plurals through tn()).
 import { ext } from "./browser";
-import fr from "./l10n/fr.json";
-import en from "./l10n/en.json";
-import es from "./l10n/es.json";
-import it from "./l10n/it.json";
+import fr from "./l10n/fr.json" with { type: "json" };
+import en from "./l10n/en.json" with { type: "json" };
+import es from "./l10n/es.json" with { type: "json" };
+import it from "./l10n/it.json" with { type: "json" };
 
 export type Lang = "fr" | "en" | "es" | "it";
 export const LANGS: readonly Lang[] = ["fr", "en", "es", "it"];

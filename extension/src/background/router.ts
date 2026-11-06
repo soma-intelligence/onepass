@@ -14,6 +14,10 @@ import { MAX_CLASSIFY_FIELDS } from "../shared/model-labels";
 import {
   type ButtonClass,
   type ButtonContext,
+  CARD_SUBMIT_ROLES,
+  IDENTITY_SUBMIT_ROLES,
+  type SavedFormKind,
+  type SubmittedValues,
   type CsToBg,
   type FieldContext,
   type FieldInfo,
@@ -30,6 +34,7 @@ import {
   type Prefilled,
   type ProviderId,
   type SaveEdits,
+  type SignupMode,
   type UiToBg,
 } from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
@@ -227,7 +232,7 @@ function analysis(v: unknown): PageAnalysis {
 // and frame kind the content script may add are dropped, never read.
 
 const PREFILLED: ReadonlySet<string> = new Set<Prefilled>(["empty", "typed", "ours"]);
-const BUTTON_CLASSES: ReadonlySet<string> = new Set<ButtonClass>(["submit", "next", "pay", "create", "other"]);
+const BUTTON_CLASSES: ReadonlySet<string> = new Set<ButtonClass>(["submit", "next", "pay", "create", "other", "passkey"]);
 /** serde `[u8; 32]`. */
 const USERNAME_HASH_LEN = 32;
 
@@ -322,6 +327,12 @@ export function parseCsToBg(m: unknown): CsToBg | null {
           password: str(o.password, MAX_PASSWORD, 1),
           isNew: bool(o.isNew),
         };
+      case "submitted_identifier":
+        return { type: "submitted_identifier", formRef: ref(o.formRef), username: str(o.username, MAX_USERNAME, 1) };
+      case "submitted_form": {
+        const kind = member<SavedFormKind>(o.kind, SAVED_FORM_KINDS);
+        return { type: "submitted_form", formRef: ref(o.formRef), kind, values: submittedValues(o.values, kind) };
+      }
       case "provider_click":
         return { type: "provider_click", provider: member<ProviderId>(o.provider, PROVIDER_IDS), ref: ref(o.ref) };
       case "account_click":
@@ -352,13 +363,33 @@ function edits(v: unknown): SaveEdits {
     title: str(o.title, MAX_TITLE),
     username: str(o.username, MAX_USERNAME),
     password: str(o.password, MAX_PASSWORD),
-    vaultId: str(o.vaultId, MAX_ITEM_ID, 1),
+    // Empty from a card opened while locked: it had no vault list, the worker picks the default one.
+    vaultId: str(o.vaultId, MAX_ITEM_ID),
     rule: member<SaveEdits["rule"]>(o.rule, new Set(["domain", "exact_host", "exact_url", "never"])),
     tags: list(o.tags, MAX_TAGS, (t) => str(t, MAX_TAG, 1)),
   };
 }
 
 const itemId = (v: unknown) => str(v, MAX_ITEM_ID, 1);
+
+const SAVED_FORM_KINDS: ReadonlySet<string> = new Set<SavedFormKind>(["card", "identity"]);
+/** Longest value a sent card or identity form may report. */
+const MAX_FORM_VALUE = 256;
+
+/** The values of a sent form: only the roles of its kind, non-empty, bounded; at least one. */
+function submittedValues(v: unknown, kind: SavedFormKind): SubmittedValues {
+  const o = obj(v);
+  const roles: readonly string[] = kind === "card" ? CARD_SUBMIT_ROLES : IDENTITY_SUBMIT_ROLES;
+  const out: Record<string, string> = {};
+  for (const k of Object.keys(o)) {
+    if (!roles.includes(k)) throw new Invalid();
+    const value = str(o[k], MAX_FORM_VALUE);
+    if (value.trim() !== "") out[k] = value;
+  }
+  if (Object.keys(out).length === 0) throw new Invalid();
+  if (kind === "card" && out.cc_number === undefined) throw new Invalid();
+  return out as SubmittedValues;
+}
 
 const MENU_KEYS: ReadonlySet<string> = new Set(["down", "up", "enter"]);
 /** Frame heights a page may ask for (the content script clamps again per kind). */
@@ -370,6 +401,15 @@ function height(v: unknown): number {
 }
 
 const GEN_KINDS: ReadonlySet<string> = new Set(["smart", "random", "memorable", "pin"]);
+const SIGNUP_MODES: ReadonlySet<SignupMode> = new Set<SignupMode>(["password", "passkey"]);
+
+/** A master password for the native unlock: text, 1 to 1024 UTF-8 bytes (RelayRequest.maxPassword). */
+function masterPassword(v: unknown): string {
+  if (typeof v !== "string") throw new Invalid();
+  const n = new TextEncoder().encode(v).length;
+  if (n === 0 || n > 1024) throw new Invalid();
+  return v;
+}
 
 /** A fully validated, rebuilt extension page message, or null. */
 export function parseUiToBg(m: unknown): UiToBg | null {
@@ -380,6 +420,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_generate":
       case "menu_new_login":
       case "menu_unlock":
+      case "menu_vault":
+      case "menu_resume":
       case "menu_close":
       case "menu_keys":
       case "overlay_init":
@@ -393,6 +435,17 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token) };
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
+      case "menu_unlock_biometric":
+        // `gesture`: only ever true (a tap on the button); the automatic try sends none.
+        if (o.gesture !== undefined && o.gesture !== true) throw new Invalid();
+        return o.gesture === true ? { type: o.type, token: token(o.token), gesture: true } : { type: o.type, token: token(o.token) };
+      case "menu_unlock_password":
+        // The master password from the iOS unlock sheet: text, 1 to 1024 UTF-8 bytes.
+        return { type: o.type, token: token(o.token), password: masterPassword(o.password) };
+      case "popup_unlock_password":
+        return { type: o.type, password: masterPassword(o.password) };
+      case "menu_signup":
+        return { type: o.type, token: token(o.token), mode: member<SignupMode>(o.mode, SIGNUP_MODES) };
       case "menu_signin": {
         const s: UiToBg = {
           type: o.type,
@@ -420,16 +473,22 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         const d: UiToBg = {
           type: "save_decide",
           token: token(o.token),
-          decision: member(o.decision, new Set(["save", "update", "never", "dismiss"])),
+          decision: member(o.decision, new Set(["save", "update", "never", "dismiss", "later"])),
         };
         if (o.edits !== undefined) d.edits = edits(o.edits);
         if (o.itemId !== undefined) d.itemId = itemId(o.itemId);
         return d;
       }
+      case "popup_pending_decide":
+        return { type: o.type, id: token(o.id), decision: member(o.decision, new Set(["save", "update", "never", "dismiss"])) };
       case "popup_status":
+      case "popup_pending":
       case "popup_unlock":
+      case "popup_vault":
+      case "popup_unlock_biometric":
       case "popup_suggestions":
       case "popup_history":
+      case "popup_pair_auto":
       case "popup_pair_start":
       case "popup_pair_approve":
       case "popup_pair_cancel":

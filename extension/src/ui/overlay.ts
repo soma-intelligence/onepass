@@ -1,22 +1,30 @@
 // "Connexion en un clic" overlay (spec 8.6, Inline mockup). Three faces of
 // one compact card, sized to its content:
 //
-// - the offer: every way to sign in on this site, each a single row that
-//   says how it signs in (password, or "Avec Google · <compte>") and starts
-//   the chain on a click; other accounts of a provider unfold inline;
+// - the offer: a pill with the first login (the site's icon, with the
+//   provider's official mark for a "Sign in with" login, its title and the
+//   account in full, never cut), a text "Se connecter" and x; "Autres
+//   identifiants" hangs under it when the site has others and opens a
+//   searchable list of every login (arrows, Enter, pointer). When the logins
+//   live in several vaults, each names its vault on a coloured chip;
 // - the progress, in place of the card the user clicked (or under the field
 //   when started from the menu): the account at the top, one line that says
 //   what happens now ("Ouverture de Google…"), "Annuler" at any time;
 // - the result: "Connecté" (the card then leaves by itself), or a precise
 //   stop with what to do next, and "Réessayer" when trying again can help.
 //
-// The service worker reports the chain (polled every 500 ms while it runs);
-// the overlay computes no progress of its own.
+// The progress and result cards keep the close button detached at their
+// right; everything follows the system appearance. The service
+// worker reports the chain (polled every 500 ms while it runs); the overlay
+// computes no progress of its own, it only lists the steps a password login
+// still has ahead. While it runs the card shows one line (what happens now);
+// "Détails" unfolds the steps, and the choice is kept for this browser.
 import { ext } from "../shared/browser";
 import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
 import type { ChainPhase, ChainView, OverlayAccount, OverlayInit, StepState, StopReason } from "../shared/ui";
 import {
+  markTouch,
   ClickGuard,
   type FrameDeps,
   autosize,
@@ -27,16 +35,15 @@ import {
   icon,
   mark,
   messageBlock,
-  siteIcon,
   mount,
   observeVisibility,
-  otherAccounts,
-  providerGlyph,
+  brandTile,
   providerLabel,
   realTimers,
+  siteTile,
   srOnly,
   tokenFromHash,
-  wayArt,
+  vaultChip,
 } from "./components";
 import { parseEmpty, parseOverlayInit, parseOverlayState } from "./parse";
 
@@ -45,6 +52,8 @@ export const POLL_MS = 500;
 export const DONE_CLOSE_MS = 4000;
 
 export const HELP_TEXT = t("overlay.oneClickRunsEvery");
+/** `storage.local` key: the steps of a running sign-in shown (true) or folded (default). */
+export const STEPS_PREF = "ui.overlay.stepsExpanded";
 
 /** Spec 8.6 stop reasons, word for word. */
 export function stopText(reason: StopReason, host?: string, email?: string, provider?: ProviderId): string {
@@ -154,6 +163,13 @@ const STATE_TEXT: Readonly<Record<StepState, string>> = {
   stopped: t("overlay.stopped"),
 };
 
+/** One login the card can start: a way to sign in, and the provider account it uses. */
+interface Entry {
+  way: OverlayAccount;
+  accountId?: string;
+  email?: string;
+}
+
 export interface OverlayHandle {
   ready: Promise<void>;
   /** One poll of the chain state (tests drive it). */
@@ -179,12 +195,21 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let init: OverlayInit | null = null;
   let timer: unknown = null;
   let closer: unknown = null;
-  let chainUi: { mode: "running" | "ended"; status: HTMLElement; last: string } | null = null;
+  let chainUi: {
+    mode: "running" | "ended";
+    status: HTMLElement;
+    steps: HTMLElement | null;
+    now: HTMLElement | null;
+    details: HTMLButtonElement | null;
+    last: string;
+  } | null = null;
+  /** The steps of a running sign-in: folded by default, the user's choice kept per browser. */
+  let stepsOpen = false;
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
-  const unfolded = new Set<string>();
-  /** The other logins for this site, shown under the first one from the pill's dropdown. */
-  let showAll = false;
+  /** The picker of every login for this site ("Other logins"), open or not, and its search. */
+  let pickerOpen = false;
+  let query = "";
 
   const stopPolling = () => {
     if (timer !== null) timers.clearInterval(timer);
@@ -209,21 +234,29 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     remeasure();
   };
 
-  const closeButton = () =>
+  const closeButton = (run: () => void = closeOverlay) =>
     h(
       "button",
-      { class: "btn-icon", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(closeOverlay) } },
+      { class: "btn-icon ov-close", attrs: { type: "button", "aria-label": t("common.close") }, on: { click: guard.wrap(run) } },
       icon("close", 10),
     );
 
+  /** The card, with the close button detached at its right. */
+  const shell = (card: HTMLElement, close: HTMLElement = closeButton()) => h("div", { class: "ov-shell" }, card, close);
+
   const head = (origin: string | null) =>
-    h(
-      "div",
-      { class: "ov-head" },
-      mark("s"),
-      h("h1", { class: "ov-title" }, origin ? t("overlay.signInToHost", { host: hostOf(origin) }) : t("overlay.oneClickSignIn")),
-      closeButton(),
+    shell(
+      h(
+        "div",
+        { class: "ov-card ov-head" },
+        mark("s"),
+        h("h1", { class: "ov-title" }, origin ? t("overlay.signInToHost", { host: hostOf(origin) }) : t("overlay.oneClickSignIn")),
+      ),
     );
+
+  /** The site's icon on a round tile, with the provider's mark at its corner. */
+  const artOf = (letter: string, provider: ProviderId | undefined) =>
+    provider ? brandTile(init?.origin ?? null, letter, provider, 34, true) : siteTile(init?.origin ?? null, letter, 34, true);
 
   const renderMessage = (code: string) => {
     stopPolling();
@@ -234,7 +267,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         : code === "locked"
           ? t("ui.onepassLocked")
           : errorText(code);
-    show(head(init?.origin ?? null), messageBlock(title));
+    show(shell(h("div", { class: "ov-card" }, h("div", { class: "ov-head" }, mark("s"), h("h1", { class: "ov-title" }, init ? t("overlay.signInToHost", { host: hostOf(init.origin) }) : t("overlay.oneClickSignIn"))), messageBlock(title))));
   };
 
   const start = (a: OverlayAccount, accountId?: string, email?: string) => async () => {
@@ -257,70 +290,157 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     startPolling();
   };
 
-  /** One way to sign in: a single button for the whole row. */
-  const wayRow = (a: OverlayAccount, primary: boolean) => {
-    const name = a.provider ? providerLabel(a.provider) : null;
-    const line2 = name
-      ? h("span", { class: "line2" }, h("span", { class: "meta" }, t("menu.withName", { name })), h("span", { class: "t2" }, a.email ?? a.subtitle))
-      : h(
-          "span",
-          { class: "line2" },
-          h("span", { class: "t2" }, a.subtitle),
-          h("span", { class: "meta" }, a.totp ? t("overlay.passwordAndCode") : t("overlay.password")),
-        );
-    const tileArt = wayArt({ kind: "login", has_password: !a.provider, methods: [], icon_letter: a.iconLetter }, a.provider, "m");
-    const art = a.provider ? tileArt : siteIcon(init?.origin ?? null, tileArt);
-    const row = h(
+  /**
+   * Every login the card can start: each way to sign in with its default
+   * account, then the provider's other accounts for that way.
+   */
+  const entries = (): Entry[] => {
+    const out: Entry[] = [];
+    for (const a of init?.accounts ?? []) {
+      out.push({ way: a, ...(a.accountId !== undefined ? { accountId: a.accountId } : {}), ...(a.email !== undefined ? { email: a.email } : {}) });
+      if (!a.provider) continue;
+      for (const x of a.accounts ?? []) if (x.itemId !== a.accountId) out.push({ way: a, accountId: x.itemId, email: x.email });
+    }
+    return out;
+  };
+
+  /** The vaults are named only when the logins of this site live in more than one. */
+  const showVaults = (list: Entry[]) => new Set(list.map((e) => e.way.vault?.id ?? "")).size > 1;
+
+  /**
+   * Line 2: the account, in full. A "Sign in with" login says its provider
+   * first ("Google · <email>") when the whole line fits; otherwise the email
+   * alone, the mark on the icon saying the rest.
+   */
+  const accountLine = (e: Entry, vaults: boolean) => {
+    const name = e.way.provider ? providerLabel(e.way.provider) : null;
+    const who = (e.way.provider ? e.email : null) ?? e.way.subtitle;
+    return h(
+      "span",
+      { class: "ov-line2" },
+      name ? h("span", { class: "ov-via" }, `${name} · `) : null,
+      h("span", { class: "ov-email" }, who),
+      vaults && e.way.vault ? vaultChip(e.way.vault) : null,
+    );
+  };
+  /** Drops the "Google · " prefix of the lines it would push past their width; wraps what still does not fit. */
+  const fitLines = (el: HTMLElement) => {
+    for (const line of el.querySelectorAll<HTMLElement>(".ov-line2")) {
+      const via = line.querySelector(".ov-via");
+      if (via && line.scrollWidth > line.clientWidth) via.remove();
+      // Still too long: the line wraps rather than cut the account.
+      if (line.scrollWidth > line.clientWidth) line.classList.add("ov-wrap");
+    }
+  };
+
+  const startEntry = (e: Entry) => void start(e.way, e.accountId, e.email)();
+
+  /** The pill: the site, the login (title, then the account in full), "Sign in" and ×; "Other logins" hangs under it. */
+  const renderPill = (list: Entry[]) => {
+    const e = list[0];
+    const heading = h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host: hostOf(init!.origin) }));
+    if (!e) {
+      show(h("div", { class: "ov-pill-wrap" }, h("div", { class: "ov-pill" }, heading, messageBlock(t("menu.noLoginForHost", { host: hostOf(init!.origin) })), closeButton())));
+      return;
+    }
+    const pill = h(
       "div",
-      { class: "ov-account", attrs: a.provider ? { "data-provider": a.provider } : {} },
-      h(
-        "button",
-        { class: "row ov-row", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(a, a.accountId, a.email)()) } },
-        art,
-        h("span", { class: "stack" }, h("span", { class: "t1" }, a.title), line2),
-        h("span", { class: primary ? "pill pill-primary" : "pill" }, t("popup.signIn")),
-      ),
+      { class: "ov-pill", attrs: e.way.provider ? { "data-provider": e.way.provider } : {} },
+      heading,
+      brandTile(init!.origin, e.way.iconLetter, e.way.provider, 36, true),
+      h("span", { class: "stack" }, h("span", { class: "t1" }, e.way.title), accountLine(e, showVaults(list))),
+      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => startEntry(e)) } }, t("popup.signIn")),
+      closeButton(),
     );
-    const out: HTMLElement[] = [row];
-    const others = (a.accounts ?? []).filter((x) => x.itemId !== a.accountId);
-    if (!a.provider || others.length === 0 || !name) return out;
-    const key = `${a.itemId}|${a.provider}`;
-    const open = unfolded.has(key);
-    out.push(
-      h(
-        "button",
-        {
-          class: `row row-fold${open ? " open" : ""}`,
-          attrs: { type: "button", "aria-expanded": String(open) },
-          on: {
-            click: guard.wrap(() => {
-              if (open) unfolded.delete(key);
-              else unfolded.add(key);
-              renderIdle();
-            }),
-          },
-        },
-        h("span", { class: "way-fold", attrs: { "aria-hidden": "true" } }, icon("chevron", 10)),
-        h("span", { class: "stack" }, h("span", { class: "t1" }, otherAccounts(name, others.length))),
-      ),
-    );
-    if (!open) return out;
-    for (const x of others) {
-      out.push(
-        h(
-          "div",
-          { class: "ov-account ov-sub", attrs: { "data-provider": a.provider, "data-account": x.itemId } },
-          h(
+    const others =
+      list.length > 1
+        ? h(
             "button",
-            { class: "row ov-row row-sub", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(a, x.itemId, x.email)()) } },
-            h("span", { class: "way-glyph", attrs: { "aria-hidden": "true" } }, providerGlyph(a.provider, 14)),
-            h("span", { class: "stack" }, h("span", { class: "t1" }, x.email), h("span", { class: "line2" }, h("span", { class: "meta" }, `${name} · `), h("span", { class: "t2" }, x.title))),
-            h("span", { class: "pill" }, t("popup.signIn")),
+            {
+              class: "ov-others",
+              attrs: { type: "button", "aria-haspopup": "listbox", "aria-expanded": "false" },
+              on: {
+                click: guard.wrap(() => {
+                  pickerOpen = true;
+                  query = "";
+                  renderIdle();
+                }),
+              },
+            },
+            t("overlay.otherLogins"),
+            icon("chevron", 10),
+          )
+        : null;
+    const wrap = h("div", { class: "ov-pill-wrap" }, pill, others);
+    show(wrap);
+    fitLines(wrap);
+  };
+
+  /** "Other logins": a search field and every login, the selection moved by the keyboard or the pointer. */
+  const renderPicker = (all: Entry[]) => {
+    const vaults = showVaults(all);
+    const input = h("input", {
+      class: "ov-search",
+      attrs: { type: "search", placeholder: t("overlay.findLogin"), "aria-label": t("overlay.findLogin"), "aria-controls": "ov-list", autocomplete: "off", spellcheck: "false" },
+    }) as HTMLInputElement;
+    input.value = query;
+    const listEl = h("ul", { class: "ov-list", attrs: { id: "ov-list", role: "listbox", "aria-label": t("overlay.otherLogins") } });
+    let shown: Entry[] = [];
+    let sel = 0;
+    const select = (i: number) => {
+      sel = i;
+      [...listEl.children].forEach((li, j) => {
+        li.classList.toggle("selected", j === i);
+        li.setAttribute("aria-selected", String(j === i));
+      });
+      const cur = listEl.children[i] as HTMLElement | undefined;
+      if (cur) input.setAttribute("aria-activedescendant", cur.id);
+      cur?.scrollIntoView?.({ block: "nearest" });
+    };
+    const fillList = () => {
+      const q = query.trim().toLowerCase();
+      shown = q ? all.filter((e) => [e.way.title, e.email ?? "", e.way.subtitle, e.way.vault?.name ?? ""].some((x) => x.toLowerCase().includes(q))) : all;
+      listEl.replaceChildren(
+        ...shown.map((e, i) =>
+          h(
+            "li",
+            {
+              class: "ov-opt",
+              attrs: { id: `ov-opt-${i}`, role: "option", "aria-selected": "false", ...(e.way.provider ? { "data-provider": e.way.provider } : {}), ...(e.accountId ? { "data-account": e.accountId } : {}) },
+              on: { click: guard.wrap(() => startEntry(e)), mouseenter: () => select(i) },
+            },
+            brandTile(init!.origin, e.way.iconLetter, e.way.provider, 32),
+            h("span", { class: "stack" }, h("span", { class: "t1" }, e.way.title), accountLine(e, vaults)),
+            h("span", { class: "ov-key", attrs: { "aria-hidden": "true" } }, icon("key", 16)),
           ),
         ),
       );
-    }
-    return out;
+      if (shown.length === 0) listEl.append(h("li", { class: "ov-none", attrs: { role: "presentation" } }, t("overlay.noLoginMatches")));
+      select(0);
+      fitLines(listEl);
+      remeasure();
+    };
+    input.addEventListener("input", () => {
+      query = input.value;
+      fillList();
+    });
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (shown.length > 0) select((sel + (ev.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length);
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        const e = shown[sel];
+        if (e && guard.accepts(ev)) startEntry(e);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        pickerOpen = false;
+        renderIdle();
+      }
+    });
+    show(h("div", { class: "ov-picker" }, h("div", { class: "ov-find" }, mark("m"), input, closeButton()), h("div", { class: "ov-rule" }), listEl));
+    fillList();
+    input.focus();
   };
 
   function renderIdle(): void {
@@ -329,40 +449,13 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     chainUi = null;
     picked = null;
     if (!init) return;
-    const list = h("div", { class: "ov-accounts" });
-    init.accounts.forEach((a, i) => {
-      const rows = wayRow(a, i === 0);
-      // Only the first login shows in the pill; the others wait behind the dropdown.
-      if (i > 0 && !showAll) rows.forEach((r) => (r.hidden = true));
-      list.append(...rows);
-    });
-    if (init.accounts.length === 0) list.append(messageBlock(t("menu.noLoginForHost", { host: hostOf(init.origin) })));
-    const more = init.accounts.length - 1;
-    const label = showAll ? t("overlay.hideOtherAccounts") : tn("overlay.moreOtherAccounts", more, { more });
-    const dropdown =
-      more > 0
-        ? h(
-            "button",
-            {
-              class: `btn-icon ov-more${showAll ? " open" : ""}`,
-              attrs: { type: "button", "aria-expanded": String(showAll), "aria-label": label, title: label },
-              on: {
-                click: guard.wrap(() => {
-                  showAll = !showAll;
-                  renderIdle();
-                }),
-              },
-            },
-            icon("chevron", 10),
-          )
-        : null;
-    // A pill: the site, the account, one button; other accounts behind the dropdown; close on hover.
-    const heading = h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host: hostOf(init.origin) }));
-    show(h("div", { class: `ov-pill${showAll ? " ov-pill-open" : ""}` }, heading, list, dropdown, closeButton()));
+    const list = entries();
+    if (pickerOpen && list.length > 1) renderPicker(list);
+    else renderPill(list);
   }
 
   /** The way the chain runs with, as in the offer's row. */
-  const whoNode = (c: ChainView, action: Node) => {
+  const whoNode = (c: ChainView, action: Node, heading?: string) => {
     const provider = c.provider ?? picked?.provider;
     const title = c.title ?? picked?.title ?? "";
     const email = c.email ?? picked?.subtitle ?? "";
@@ -371,13 +464,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return h(
       "div",
       { class: "ov-who" },
-      provider
-        ? wayArt({ kind: "login", has_password: false, methods: [], icon_letter: letter }, provider, "m")
-        : siteIcon(init?.origin ?? null, wayArt({ kind: "login", has_password: true, methods: [], icon_letter: letter }, undefined, "m")),
+      artOf(letter, provider),
       h(
         "span",
         { class: "stack" },
-        h("span", { class: "t1" }, title),
+        h("span", { class: "t1" }, heading ?? title),
         h("span", { class: "line2" }, name ? h("span", { class: "meta" }, t("menu.withName", { name })) : null, h("span", { class: "t2" }, email)),
       ),
       action,
@@ -389,11 +480,30 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return h(
       "li",
       { class: `ov-step ${s.state}` },
-      s.state === "stopped" ? icon("alert", 12) : icon("check", 10),
+      h("span", { class: "ov-mark", attrs: { "aria-hidden": "true" } }, s.state === "stopped" ? icon("alert", 12) : icon("check", 10)),
       h("span", { class: "ov-step-label" }, t.label),
       t.detail ? h("span", { class: "ov-step-detail" }, t.detail) : null,
       srOnly(STATE_TEXT[s.state]),
     );
+  };
+
+  /**
+   * A password login's steps not reached yet, after the one under way: the
+   * username, the password, then the code when the item has one. A provider
+   * chain has no fixed path, so it lists none.
+   */
+  const ahead = (c: ChainView): string[] => {
+    if (c.provider ?? picked?.provider) return [];
+    const totp = picked?.totp ?? init?.accounts.find((a) => a.itemId === c.itemId && !a.provider)?.totp ?? false;
+    const gone = new Set<string>();
+    for (const st of c.steps) {
+      if (st.state !== "done") continue;
+      if (st.what === "both") gone.add("user").add("password");
+      else if (st.what) gone.add(st.what);
+    }
+    const left = ["user", "password", ...(totp ? ["otp"] : [])].filter((k) => !gone.has(k));
+    const label: Record<string, string> = { user: t("overlay.stepUser"), password: t("term.password"), otp: t("overlay.stepCode") };
+    return left.slice(1).map((k) => label[k] ?? k);
   };
 
   const cancel = () => {
@@ -411,53 +521,103 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
    * keeps its size and "Annuler" stays under the pointer). The card is
    * rebuilt when the chain ends, which re-arms the click delay.
    */
+  /** Shows or folds the steps around the line under way; "Détails" only when there are steps to show. */
+  function foldSteps(): void {
+    if (!chainUi?.steps || !chainUi.now || !chainUi.details) return;
+    const others = [...chainUi.steps.children].filter((li) => li !== chainUi?.now) as HTMLElement[];
+    for (const li of others) li.hidden = !stepsOpen;
+    chainUi.details.hidden = others.length === 0;
+    chainUi.details.setAttribute("aria-expanded", String(stepsOpen));
+    chainUi.details.classList.toggle("open", stepsOpen);
+    chainUi.steps.classList.toggle("ov-steps-open", stepsOpen);
+    remeasure();
+  }
+
   function renderChain(c: ChainView): void {
     const key = JSON.stringify(c);
     if (chainUi && chainUi.last === key) return;
     const mode = c.status === "running" ? "running" : "ended";
     if (mode === "running") {
       if (!chainUi || chainUi.mode !== "running") {
-        const status = h("span", { class: "ov-status", attrs: { role: "status" } });
+        // One line: what happens now (a live region), "Annuler", and "Détails" that unfolds the steps.
+        const status = h("span", { class: "ov-status", attrs: { role: "status", "aria-live": "polite" } });
         const cancelBtn = h("button", { class: "btn-link ov-cancel", attrs: { type: "button" }, on: { click: guard.wrap(cancel) } }, t("common.cancel"));
-        show(whoNode(c, cancelBtn), h("div", { class: "ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status));
-        chainUi = { mode, status, last: "" };
+        const steps = h("ul", { class: "ov-steps", attrs: { id: "ov-steps", "aria-label": t("overlay.stepsDone") } });
+        const details = h(
+          "button",
+          { class: "btn-link ov-details", attrs: { type: "button", "aria-controls": "ov-steps", "aria-expanded": "false" } },
+          t("overlay.stepsDetails"),
+          icon("chevron", 10),
+        ) as HTMLButtonElement;
+        details.addEventListener(
+          "click",
+          guard.wrap(() => {
+            stepsOpen = !stepsOpen;
+            foldSteps();
+            void deps.prefs?.set(STEPS_PREF, stepsOpen).catch(() => undefined);
+          }),
+        );
+        const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status, details);
+        steps.append(now);
+        // Closing while it runs stops the chain, as "Annuler" does.
+        show(shell(h("div", { class: "ov-card ov-run" }, whoNode(c, cancelBtn), steps), closeButton(cancel)));
+        chainUi = { mode, status, steps, now, details, last: "" };
       }
       chainUi.status.textContent = phaseText(c.phase, { ...c, provider: c.provider ?? picked?.provider, email: c.email ?? picked?.subtitle, title: c.title ?? picked?.title });
+      // The steps done above the line under way, the steps still ahead under it; the line itself keeps its node.
+      const { steps, now } = chainUi;
+      if (steps && now) {
+        for (const li of [...steps.children]) if (li !== now) li.remove();
+        const done = c.steps.filter((x) => x.state === "done" && x.what !== "end");
+        now.before(...done.map(stepNode(c)));
+        now.after(...ahead(c).map((label) => h("li", { class: "ov-step pending" }, h("span", { class: "ov-mark", attrs: { "aria-hidden": "true" } }), h("span", { class: "ov-step-label" }, label), srOnly(STATE_TEXT.pending))));
+        foldSteps();
+      }
       chainUi.last = key;
       return;
     }
     stopPolling();
     const status = h("span", { class: "ov-status", attrs: { role: "status" } });
     const done = c.status === "done";
-    // What was done; the end (done or stop) is the status line above.
-    const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
-    const parts: (Node | null)[] = [];
     if (done) {
-      // Success is the pill again, its button turned into a check: no text, no steps.
+      // Success is the capsule again: "Connecté", the account, a check in place of the button.
       status.classList.add("ok", "ov-status-done");
       status.append(h("span", { class: "dot dot-done dot-big", attrs: { "aria-hidden": "true" } }, icon("check", 14)), srOnly(t("chain.signedIn")));
-      parts.push(h("div", { class: "ov-pill ov-done" }, whoNode(c, status)));
+      show(shell(h("div", { class: "ov-pill ov-done" }, whoNode(c, status, t("chain.signedIn")))));
     } else {
-      parts.push(whoNode(c, closeButton()));
+      // What was done; the end (done or stop) is the title.
+      const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
       const reason = c.reason ?? "user";
       status.classList.add("warn");
-      status.append(icon("alert", 16), c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped"));
+      status.append(c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped"));
+      const email = c.email ?? picked?.subtitle ?? "";
       const hint = stopHint(reason, c.site, c.provider);
-      parts.push(h("div", { class: "ov-result" }, status, hint ? h("p", { class: "ov-hint" }, hint) : null));
-    }
-    if (!done && steps.length > 0) parts.push(h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, ...steps.map(stepNode(c))));
-    const again = !done && c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
-    if (again) {
-      parts.push(
-        h(
-          "div",
-          { class: "ov-foot" },
-          h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(again, again.accountId, again.email)()) } }, t("popup.tryAgain")),
+      const again = c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
+      show(
+        shell(
+          h(
+            "div",
+            { class: "ov-card ov-stop" },
+            h(
+              "div",
+              { class: "ov-who" },
+              h("span", { class: "ov-alert", attrs: { "aria-hidden": "true" } }, icon("alert", 16)),
+              h("span", { class: "stack" }, status, email ? h("span", { class: "t2" }, email) : null),
+            ),
+            hint ? h("p", { class: "ov-hint" }, hint) : null,
+            steps.length > 0 ? h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, ...steps.map(stepNode(c))) : null,
+            again
+              ? h(
+                  "div",
+                  { class: "ov-foot" },
+                  h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(() => void start(again, again.accountId, again.email)()) } }, t("popup.tryAgain")),
+                )
+              : null,
+          ),
         ),
       );
     }
-    show(...parts);
-    chainUi = { mode: "ended", status, last: key };
+    chainUi = { mode: "ended", status, steps: null, now: null, details: null, last: key };
     cancelClose();
     // Success needs nothing more from the user: the card leaves by itself.
     if (done) closer = timers.setTimeout(closeOverlay, DONE_CLOSE_MS);
@@ -479,7 +639,11 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       renderMessage("invalid");
       return;
     }
-    const r = await call(deps.send, { type: "overlay_init", token }, parseOverlayInit);
+    const [r, open] = await Promise.all([
+      call(deps.send, { type: "overlay_init", token }, parseOverlayInit),
+      deps.prefs ? deps.prefs.get(STEPS_PREF).catch(() => false) : Promise.resolve(false),
+    ]);
+    stepsOpen = open === true;
     if (!r.ok) {
       renderMessage(r.code);
       return;
@@ -499,6 +663,13 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 }
 
 if (typeof document !== "undefined" && ext?.runtime?.id) {
+  markTouch(document);
   const root = document.getElementById("root");
-  if (root) mountOverlay(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash });
+  if (root) {
+    const prefs = {
+      get: async (key: string) => ((await ext.storage.local.get(key)) as Record<string, unknown>)[key],
+      set: (key: string, value: unknown) => ext.storage.local.set({ [key]: value }),
+    };
+    mountOverlay(root, { send: (m) => ext.runtime.sendMessage(m), hash: location.hash, prefs });
+  }
 }

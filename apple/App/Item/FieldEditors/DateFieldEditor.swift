@@ -79,7 +79,7 @@ struct DateFieldEditor: View {
                     .environment(\.timeZone, FieldDates.calendar.timeZone)
                     .accessibilityIdentifier("editor.field.\(field.id)")
                 Spacer()
-                Button("Effacer", systemImage: "xmark.circle.fill") { value = .empty }
+                Button("app.erase", systemImage: "xmark.circle.fill") { value = .empty }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -88,7 +88,7 @@ struct DateFieldEditor: View {
             Button {
                 value = .date(value: FieldDates.ffiDate(Date()))
             } label: {
-                Label("Ajouter une date", systemImage: "calendar.badge.plus")
+                Label("item.addDate", systemImage: "calendar.badge.plus")
             }
             .buttonStyle(.borderless)
             .accessibilityIdentifier("editor.field.\(field.id)")
@@ -113,7 +113,7 @@ struct MonthYearEditor: View {
     var body: some View {
         if let current {
             HStack {
-                Picker("Mois", selection: Binding(
+                Picker("item.month", selection: Binding(
                     get: { current.month },
                     set: { value = .monthYear(year: current.year, month: $0) })
                 ) {
@@ -123,7 +123,7 @@ struct MonthYearEditor: View {
                 }
                 .labelsHidden()
                 .accessibilityIdentifier("editor.field.\(field.id)")
-                Picker("Année", selection: Binding(
+                Picker("item.year", selection: Binding(
                     get: { current.year },
                     set: { value = .monthYear(year: $0, month: current.month) })
                 ) {
@@ -133,13 +133,13 @@ struct MonthYearEditor: View {
                 }
                 .labelsHidden()
                 Spacer()
-                Button("Effacer", systemImage: "xmark.circle.fill") { value = .empty }
+                Button("app.erase", systemImage: "xmark.circle.fill") { value = .empty }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
             }
         } else {
-            Button("Choisir le mois et l'année") {
+            Button("item.chooseMonthAndYear") {
                 let c = FieldDates.calendar.dateComponents([.year, .month], from: Date())
                 value = .monthYear(year: UInt16(c.year ?? 2026), month: UInt8(c.month ?? 1))
             }

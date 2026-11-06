@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import OSLog
 import Synchronization
 
 /// The system credential identity store, behind a protocol for tests and the demo.
@@ -13,19 +14,37 @@ public protocol IdentityStoreClient: Sendable {
 
 /// `ASCredentialIdentityStore.shared`: identities converted by `AutoFillIdentityBuilder`.
 public struct SystemIdentityStore: IdentityStoreClient {
+    /// Counts and outcomes only: never a user name, a host or a record id.
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "identity-store")
+
     public init() {}
 
     public func isEnabled() async -> Bool {
-        await ASCredentialIdentityStore.shared.state().isEnabled
+        Self.log.info("identity store state asked")
+        let enabled = await ASCredentialIdentityStore.shared.state().isEnabled
+        Self.log.info("identity store enabled: \(enabled, privacy: .public)")
+        return enabled
     }
 
     public func replaceAll(_ identities: [FfiAutofillIdentity]) async throws {
-        try await ASCredentialIdentityStore.shared.replaceCredentialIdentities(
-            AutoFillIdentityBuilder.credentialIdentities(identities))
+        do {
+            try await ASCredentialIdentityStore.shared.replaceCredentialIdentities(
+                AutoFillIdentityBuilder.credentialIdentities(identities))
+            Self.log.info("identity store replaced: \(identities.count, privacy: .public) identities")
+        } catch let error where identities.contains(where: \.serviceIsApp) {
+            // App identities are new (26.2): a store that refuses them still gets the sites.
+            Self.log.error(
+                "identity store refused app identities (\(String(describing: error), privacy: .public)), sites only")
+            try await replaceAll(identities.filter { !$0.serviceIsApp })
+        } catch {
+            Self.log.error("identity store replace failed: \(String(describing: error), privacy: .public)")
+            throw error
+        }
     }
 
     public func removeAll() async throws {
         try await ASCredentialIdentityStore.shared.removeAllCredentialIdentities()
+        Self.log.info("identity store emptied")
     }
 }
 

@@ -16,6 +16,8 @@ struct Sidebar: View {
     @State private var accountRowBottom: CGFloat = 60
     /// The vault whose sheet is open from its row's context menu.
     @State private var editingVaultID: String?
+    /// Doublons possibles (spec 2026-11-03-duplicates): the groups behind the row's count.
+    @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
     #if os(macOS)
@@ -125,8 +127,18 @@ struct Sidebar: View {
                     filter: .all, id: "library.all")
                 row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,
                     filter: .favorites, id: "library.favorites")
+                row("Passkeys", symbol: "person.badge.key.fill", color: Self.passkeysColor, count: counts.passkeys,
+                    filter: .passkeys, id: "library.passkeys")
                 pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
+                // Under Watchtower while there is something to review (the open page keeps its row).
+                if !duplicates.groups.isEmpty || model.page == .duplicates {
+                    pageRow("duplicates.title", symbol: "square.on.square", color: .orange, page: .duplicates,
+                        id: "sidebar.duplicates")
+                        .badge(duplicates.groups.count)
+                }
+                pageRow("crypto.title", symbol: "bitcoinsign", color: CoinIcon.color("bitcoin"), page: .crypto,
+                    id: "sidebar.crypto")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
                     page: .developer, id: "sidebar.developer")
                 // No count: it depends on where the user is, asked only once the row is opened.
@@ -153,6 +165,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .task(id: session.summariesRevision) { await duplicates.load(session) }
         #if os(macOS)
         .scrollIndicators(.never)
         .scrollContentBackground(.hidden)
@@ -164,6 +177,17 @@ struct Sidebar: View {
                 #if !os(macOS)
                 Divider()
                 #endif
+                if model.travel.suggestion != .none {
+                    TravelSuggestionCard(compact: true)
+                        .padding(12)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
                 if model.showsAutoFillTip {
                     #if os(macOS)
                     // A thick material, not clear glass: rows scrolling under the card must not read
@@ -181,6 +205,26 @@ struct Sidebar: View {
                         .padding(.bottom, 4)
                     #else
                     AutoFillTipCard()
+                        .padding(12)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                    #endif
+                }
+                if model.showsSafariSetupCard {
+                    #if os(macOS)
+                    SafariSetupCard()
+                        .padding(12)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08))
+                        }
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 4)
+                    #else
+                    SafariSetupCard()
                         .padding(12)
                         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .padding(.horizontal, 10)
@@ -219,6 +263,7 @@ struct Sidebar: View {
     static let watchtowerColor = Color(red: 0xE1 / 255, green: 0x4D / 255, blue: 0x3C / 255)
     /// Graphite, like Terminal: the accent stays for "Tous les éléments".
     static let developerColor = Color(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255)
+    static let passkeysColor = Color.purple
     static let favoritesColor = Color(red: 0xF5 / 255, green: 0xA6 / 255, blue: 0x23 / 255)
     static let binColor = Color(red: 0x8E / 255, green: 0x8E / 255, blue: 0x93 / 255)
 
@@ -239,7 +284,7 @@ struct Sidebar: View {
                     .tag(Destination.filter(.vault(vault.id)))
                     // Name, symbol, color and travel safety: the same sheet as "Nouveau coffre".
                     .contextMenu {
-                        Button("Modifier le coffre…", systemImage: "paintpalette") { editingVaultID = vault.id }
+                        Button("browse.editVault", systemImage: "paintpalette") { editingVaultID = vault.id }
                             .accessibilityIdentifier("sidebar.vaults.edit.\(vault.id)")
                     }
                     .accessibilityIdentifier("sidebar.vaults.\(vault.id)")
@@ -353,7 +398,7 @@ struct AccountHeader: View {
     var menuOpen: Binding<Bool>?
 
     private var name: String {
-        model.settings.displayName.isEmpty ? String(localized: "Mon compte") : model.settings.displayName
+        model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
     }
 
     private var modeLabel: String {
@@ -373,7 +418,7 @@ struct AccountHeader: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
-            .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+            .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
             .accessibilityIdentifier("account.menu")
         } else {
             systemMenu
@@ -382,7 +427,9 @@ struct AccountHeader: View {
 
     private func label(open: Bool) -> some View {
         HStack(spacing: 12) {
-            AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+            AccountBadgeAvatar(
+                initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                badge: model.accountBadge, size: 34)
             Text(name)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
@@ -405,6 +452,7 @@ struct AccountHeader: View {
     /// iPad and visionOS: the system menu.
     private var systemMenu: some View {
         Menu {
+            AccountsMenuItems()
             Section {
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
@@ -431,7 +479,9 @@ struct AccountHeader: View {
         } label: {
             // Photo, name, chevron: one full-width row, the photo's corners echoed by the hover.
             HStack(spacing: 12) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 34)
+                AccountBadgeAvatar(
+                initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                badge: model.accountBadge, size: 34)
                 Text(name)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -454,7 +504,7 @@ struct AccountHeader: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .visionHoverEffect()
-        .accessibilityLabel(Text("Compte \(model.settings.displayName)"))
+        .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
         .accessibilityIdentifier("account.menu")
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
@@ -482,6 +532,27 @@ struct AccountMenuPanel: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
             divider
+            // The accounts of this Mac (multi-account spec 7): switch, add, search all when chosen.
+            ForEach(model.accounts.profiles) { profile in
+                MacAccountRow(profile: profile) {
+                    close()
+                    model.runAccountAction(.switchTo(profile.slot))
+                }
+                .accessibilityIdentifier("accounts.row.\(profile.isPrimary ? "primary" : profile.slot)")
+            }
+            AccountMenuRow(title: "accounts.add", symbol: "plus", shortcut: nil) {
+                close()
+                model.runAccountAction(.add)
+            }
+            .accessibilityIdentifier("accounts.add")
+            if model.accounts.unifiedSearch, model.accounts.hasSeveralAccounts {
+                AccountMenuRow(title: "accounts.searchAll", symbol: "magnifyingglass", shortcut: nil) {
+                    close()
+                    model.runAccountAction(.searchAll)
+                }
+                .accessibilityIdentifier("accounts.searchAll")
+            }
+            divider
             AccountMenuRow(title: "Nouveau coffre…", symbol: "plus.circle", shortcut: nil, action: newVault)
                 .accessibilityIdentifier("account.newVault")
             AccountMenuRow(title: "Importer…", symbol: "square.and.arrow.down", shortcut: "⇧⌘I") {
@@ -505,6 +576,13 @@ struct AccountMenuPanel: View {
                 model.perform(.lock)
             }
             .accessibilityIdentifier("account.lock")
+            if model.accounts.unlockedProfiles.count > 1 {
+                AccountMenuRow(title: "accounts.lockAll", symbol: "lock.fill", shortcut: nil, destructive: true) {
+                    close()
+                    model.runAccountAction(.lockAll)
+                }
+                .accessibilityIdentifier("accounts.lockAll")
+            }
         }
         .padding(5)
         // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
@@ -516,6 +594,41 @@ struct AccountMenuPanel: View {
 
     private var divider: some View {
         Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+    }
+}
+
+/// An account in the account panel: its avatar, name and a check on the account shown.
+private struct MacAccountRow: View {
+    @Environment(AppModel.self) private var model
+    let profile: AccountProfile
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let active = profile.slot == model.accounts.activeSlot
+        Button(action: action) {
+            HStack(spacing: 10) {
+                AccountBadgeAvatar(
+                    initials: model.initials(of: profile), photo: active ? model.profileImage : nil,
+                    color: AccountStyle.color(profile.color), badge: AccountStyle.badge(profile), size: 22)
+                Text(verbatim: model.displayName(of: profile)).font(.body).lineLimit(1)
+                Spacer(minLength: 12)
+                if active {
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+                } else if model.accounts.madeSession(profile.slot)?.state != .unlocked {
+                    Image(systemName: "lock.fill").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 10, style: .continuous))
+            .contentShape(.rect(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
@@ -560,6 +673,8 @@ struct AccountAvatar: View {
     let initials: String
     var photo: Image?
     var size: CGFloat = 28
+    /// The account's color (multi-account spec 7), the accent for the primary account.
+    var tint: Color = Theme.accent
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
@@ -571,7 +686,7 @@ struct AccountAvatar: View {
                     .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.accent.gradient)
+                    .background(tint.gradient)
             }
         }
         .frame(width: size, height: size)
@@ -705,6 +820,8 @@ struct SyncStatusChip: View {
         case .accountChanged: (status.label, "person.crop.circle.badge.exclamationmark", .orange)
         // Discreet: a sync state, not an error (spec 3.1).
         case .waitingForServer: (status.label, "icloud.and.arrow.up", .secondary)
+        case .waitingForMailbox: (status.label, "arrow.up.circle", .secondary)
+        case .homeMoved: (status.label, "arrow.triangle.branch", .orange)
         default: nil
         }
     }

@@ -96,7 +96,7 @@ Le nouveau modèle est livré (défaut de construction changé et modèle commit
 - G4 : modèle de moins de 2 Mo, inférence médiane de moins de 5 ms par formulaire ;
 - G5 : passage de laboratoire avec le modèle sans fuite et à un taux au moins égal à l'heuristique sur la même graine.
 
-G1 à G4 sont calculés par `ml` (`onepass_ml.bench_compare`) ; G5 n'est lancé que si G1 à G4 passent. Sinon, rien ne change dans l'extension et le rapport `docs/lab/2026-11-02-classifier-retrain.md` donne les chiffres avant et après et la porte qui a manqué.
+G1 à G4 sont calculés par `ml` (`onepass_ml.bench_compare`) ; G5 n'est lancé que si G1 à G4 passent. Sinon, rien ne change dans l'extension et le rapport `docs/lab/2026-11-02-real-site-bench-and-retrain.md` donne les chiffres avant et après et la porte qui a manqué.
 
 ## 7. Tests
 

@@ -1,0 +1,102 @@
+import Foundation
+import Testing
+
+@testable import VaultKit
+
+/// AutoFill opens one account per request: the one whose work domains claim the host, else the
+/// primary account (multi-account spec 8).
+@MainActor
+@Suite("AutoFill account routing", .serialized)
+struct AccountRoutingTests {
+    init() { VaultKitStrings.pinSourceLanguage() }
+
+    @Test func theHostComesFromTheServiceThePasskeyOrTheSave() {
+        let list = AutoFillRequest.credentialList(services: ["https://jira.acme.com/login", "acme.com"], passkey: nil)
+        #expect(list.routingHost == "jira.acme.com")
+        let bare = AutoFillRequest.oneTimeCodeList(services: ["", "mail.acme.com"])
+        #expect(bare.routingHost == "mail.acme.com")
+        let passkey = AutoFillRequest.credentialList(
+            services: ["https://example.com"],
+            passkey: PasskeyRequest(rpID: "acme.com", clientDataHash: Data(), allowedCredentialIDs: []))
+        #expect(passkey.routingHost == "acme.com")
+        // QuickType suggestions come from the primary account's identities only (ruling P6).
+        let quickType = AutoFillRequest.credential(recordID: "v:i", kind: .password, passkey: nil, service: "acme.com")
+        #expect(quickType.routingHost == nil)
+        #expect(AutoFillRequest.textToInsert.routingHost == nil)
+    }
+
+    @Test func aClaimedHostOpensItsAccountOnlyOnceItsStoreExists() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        let slot = try h.accounts.beginAdding(kind: .business, label: "Soma Labs", color: .orange)
+        try h.accounts.update(slot, label: "Soma Labs", color: .orange, workDomains: ["somalabs.me"])
+        let work = AutoFillRequest.credentialList(services: ["https://app.somalabs.me/"], passkey: nil)
+        let other = AutoFillRequest.credentialList(services: ["https://github.com/"], passkey: nil)
+        let lookalike = AutoFillRequest.credentialList(services: ["https://evilsomalabs.me/"], passkey: nil)
+
+        // No store yet (the sign up did not happen): the primary account answers.
+        let url = try h.store.databaseURL(slot: slot)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            #expect(h.store.slot(for: work) == AccountDirectoryStore.primarySlot)
+        }
+
+        try await h.createAccount(in: slot, name: "Quentin")
+        #expect(h.store.slot(for: work) == slot)
+        #expect(h.store.slot(for: other) == AccountDirectoryStore.primarySlot)
+        #expect(h.store.slot(for: lookalike) == AccountDirectoryStore.primarySlot)
+    }
+
+    /// An App ID is never a host: it never routes to a work account by a domain read from it (G2).
+    @Test func anAppServiceHasNoHost() {
+        let app = AutoFillRequest.credentialList(services: [.app("me.somalabs.chat")], passkey: nil)
+        #expect(app.routingHost == nil)
+        let mixed = AutoFillRequest.oneTimeCodeList(services: [.app("com.acme.app"), "mail.acme.com"])
+        #expect(mixed.routingHost == "mail.acme.com")
+    }
+
+    /// The switcher offers the primary account and the added accounts that can be opened, and only
+    /// with two of them or more (MACAPP-06).
+    @Test func theSwitcherListsOpenableAccountsOnly() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        #expect(h.store.autoFillAccounts().count <= 1)
+        let slot = try h.accounts.beginAdding(kind: .business, label: "Soma Labs", color: .orange)
+        let url = try h.store.databaseURL(slot: slot)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            #expect(!h.store.autoFillAccounts().contains { $0.slot == slot })
+        }
+        try await h.createAccount(in: slot, name: "Quentin")
+        let listed = h.store.autoFillAccounts().map(\.slot)
+        #expect(listed.contains(AccountDirectoryStore.primarySlot))
+        #expect(listed.contains(slot))
+    }
+}
+
+/// Signing in to an account on a new device picks the iCloud zone of that account (ruling P8).
+@Suite("Sign in zone")
+struct SignInZoneTests {
+    let a = String(repeating: "a", count: 32)
+    let b = String(repeating: "b", count: 32)
+    let mine = String(repeating: "c", count: 32)
+
+    @Test func twoAbsentAccountsAreToldApartByTheKit() {
+        let zones = [a, b, mine]
+        // The kit names the second absent account: its zone, never the first unknown one.
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: b) == .zone(b))
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: a) == .zone(a))
+        // Without the account id (a typed key, an older kit) two absent accounts are ambiguous.
+        #expect(SignInZone.choose(zones: zones, known: [mine], kitAccountID: nil) == .needsAccountID)
+    }
+
+    @Test func oneAbsentAccountNeedsNoID() {
+        #expect(SignInZone.choose(zones: [a, mine], known: [mine], kitAccountID: nil) == .zone(a))
+    }
+
+    @Test func anAccountOnThisDeviceOrNotInICloudIsRefused() {
+        #expect(SignInZone.choose(zones: [a, mine], known: [mine], kitAccountID: mine) == .alreadyOnDevice)
+        #expect(SignInZone.choose(zones: [a], known: [], kitAccountID: b) == .notFound)
+        #expect(SignInZone.choose(zones: [mine], known: [mine], kitAccountID: nil) == .notFound)
+        // The id typed from the printed kit is accepted with spaces and capitals.
+        #expect(SignInZone.choose(zones: [a, b], known: [], kitAccountID: " " + b.uppercased()) == .zone(b))
+    }
+}

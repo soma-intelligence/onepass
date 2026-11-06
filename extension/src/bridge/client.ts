@@ -8,7 +8,16 @@
 // reused, even after a timeout. Any protocol failure (bad frame, bad MAC,
 // replayed or skipped counter, host error frame, transport closed) fails
 // every pending request and closes the transport.
-import type { NoteFillRequest, NoteFillResponse, PlanFillRequest, PlanFillResponse, ProviderId, WirePasswordContext } from "../shared/messages";
+import type {
+  ClientInfoRequest,
+  NoteAutofillRequest,
+  NoteFillRequest,
+  NoteFillResponse,
+  PlanFillRequest,
+  PlanFillResponse,
+  ProviderId,
+  WirePasswordContext,
+} from "../shared/messages";
 import { BridgeError, utf8, wipe } from "./bytes";
 import type { Channel } from "./channel";
 import { ExtPairing, PAIRING_TIMEOUT_MS, type PairingOptions, type PairingRecord } from "./pairing";
@@ -27,6 +36,11 @@ export interface Transport {
 // ---- Application requests (mirror of onepass_bridge::api) ----
 
 /** `passkey`: the passkey choice window. */
+/** `auto`: pair only if the app vouches for this browser (spec 2026-11-02-browser-auto-pairing). */
+export interface PairOptions {
+  auto?: boolean;
+}
+
 export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
@@ -97,6 +111,16 @@ export interface Address {
   country: string;
 }
 
+/** What `check_identity` and `save_identity` take: values typed in a form, "" when absent. */
+export interface IdentityValues {
+  given_name: string;
+  family_name: string;
+  email: string;
+  tel: string;
+  organization: string;
+  address?: Address;
+}
+
 /** A passkey as `passkey_list` gives it: no key, no user handle. `credential_id` is base64url. */
 export interface PasskeySummary {
   item_id: string;
@@ -133,7 +157,8 @@ export interface PasskeyRegistration {
 interface Ops {
   status: { req: object; res: { locked: boolean; account: string; vaults: number } };
   unlock: { req: object; res: { locked: boolean } };
-  vaults: { req: object; res: { vaults: { id: string; name: string; color: string | null }[] } };
+  /** `account`: the OnePass account of the vault, when the host names one (several accounts). */
+  vaults: { req: object; res: { vaults: { id: string; name: string; color: string | null; account?: string }[] } };
   list_for_origin: { req: { ctx: Ctx; origin: string }; res: { items: Summary[] } };
   search: { req: { ctx: Ctx; query: string }; res: { items: Summary[] } };
   list_fillable: { req: { ctx: Ctx; origin: string; kind: "card" | "identity" }; res: { items: Summary[] } };
@@ -176,6 +201,38 @@ interface Ops {
       rule: MatchRule;
       tags: string[];
     };
+    res: { item_id: string };
+  };
+  /**
+   * A card typed by hand in a checkout (`save_prompt` only): `same` when a card with this number
+   * is there (expiry equal or unknown), `update` when only its expiry differs.
+   */
+  check_card: {
+    req: { ctx: Ctx; origin: string; number: string; exp_month: string; exp_year: string };
+    res: { status: "new" | "same" | "update"; item_id?: string; title?: string };
+  };
+  /** A new card, or with `item_id` the expiry of that card (same number). Never a security code. */
+  save_card: {
+    req: {
+      ctx: Ctx;
+      origin: string;
+      vault_id: string;
+      title: string;
+      cardholder: string;
+      number: string;
+      exp_month: string;
+      exp_year: string;
+      item_id?: string;
+    };
+    res: { item_id: string };
+  };
+  /** An identity or address typed by hand: `same` when one item already holds every value. */
+  check_identity: {
+    req: { ctx: Ctx; origin: string } & IdentityValues;
+    res: { status: "new" | "same"; item_id?: string; title?: string };
+  };
+  save_identity: {
+    req: { ctx: Ctx; origin: string; vault_id: string; title: string } & IdentityValues;
     res: { item_id: string };
   };
   update_password: {
@@ -228,6 +285,10 @@ interface Ops {
   note_fill: { req: NoteFillRequest; res: NoteFillResponse };
   /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
   forget_site: { req: { ctx: Ctx; site: string }; res: { items: number } };
+  /** This session's browser and opaque profile id, for the app's on-device autofill history. */
+  client_info: { req: ClientInfoRequest; res: Record<string, never> };
+  /** One autofill history event (a list shown, a pick, a dismissal, a fill); item ids only, never a value. */
+  note_autofill: { req: NoteAutofillRequest; res: Record<string, never> };
   /**
    * Passkeys of `rp_id` for the browser's `origin` (ctx `passkey` or `chain`). The host checks
    * `rp_id` against `origin` (host or registrable parent, never a public suffix).
@@ -450,6 +511,12 @@ export class BridgeClient {
 
   /** The next handshake envelope of type `t`, within `timeoutMs`. */
   private next<T extends EnvelopeType>(t: T, timeoutMs: number): Promise<Extract<Envelope, { t: T }>> {
+    return this.nextOf([t], timeoutMs);
+  }
+
+  /** The next handshake envelope, of one of `types`, within `timeoutMs`. */
+  private nextOf<T extends EnvelopeType>(types: readonly T[], timeoutMs: number): Promise<Extract<Envelope, { t: T }>> {
+    const t = types.join(" or ");
     if (this.failure) return Promise.reject(this.failure);
     const queued = this.inbox.shift();
     const got: Promise<Envelope> = queued
@@ -461,7 +528,8 @@ export class BridgeClient {
         });
     return got.then((env) => {
       try {
-        return expectType(env, t);
+        const want = types.find((x) => x === env.t) ?? (types[0] as T);
+        return expectType(env, want);
       } catch (e) {
         this.fail(e as Error);
         throw e;
@@ -516,6 +584,7 @@ export class BridgeClient {
     extName: string,
     browser: string,
     confirmCodes: (sas: string) => Promise<boolean>,
+    opts: PairOptions = {},
   ): Promise<PairingRecord> {
     this.beginHandshake();
     let state: ExtPairing | undefined;
@@ -534,26 +603,40 @@ export class BridgeClient {
       ]);
       state = started.state;
       const st = state;
-      this.send(started.hello);
+      this.send(opts.auto ? { ...started.hello, auto: true } : started.hello);
       const offer = await this.next("pair_offer", this.stepTimeoutMs);
       const { reveal, sas } = await st.onOffer(offer);
       this.send(reveal);
-      const hostVerified = (async () => {
-        await this.next("pair_sas", this.stepTimeoutMs);
-        // The host waits for its user before `pair_done`.
-        const done = await this.next("pair_done", PAIRING_TIMEOUT_MS);
-        await st.onDone(done);
-      })();
-      const userAgreed = Promise.resolve()
-        .then(() => confirmCodes(sas))
-        .then((ok) => {
-          if (!ok) throw new BridgeError("refused", "codes rejected");
-        });
-      quiet(hostVerified);
-      quiet(userAgreed);
-      // A user step that never settles still ends at the deadline or when
-      // the connection fails.
-      await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
+      if (opts.auto) {
+        // No person on either side: the app vouched for this browser by its
+        // code signature, or it refuses (an older app asking for the code
+        // is refused here: the code flow starts only from the user's click).
+        const autoVerified = (async () => {
+          const step = await this.nextOf(["pair_auto", "pair_sas"], this.stepTimeoutMs);
+          if (step.t !== "pair_auto") throw new BridgeError("refused", "the app asks for the code");
+          const done = await this.next("pair_done", this.stepTimeoutMs);
+          await st.onDone(done);
+        })();
+        quiet(autoVerified);
+        await Promise.race([autoVerified, failed.promise]);
+      } else {
+        const hostVerified = (async () => {
+          await this.next("pair_sas", this.stepTimeoutMs);
+          // The host waits for its user before `pair_done`.
+          const done = await this.next("pair_done", PAIRING_TIMEOUT_MS);
+          await st.onDone(done);
+        })();
+        const userAgreed = Promise.resolve()
+          .then(() => confirmCodes(sas))
+          .then((ok) => {
+            if (!ok) throw new BridgeError("refused", "codes rejected");
+          });
+        quiet(hostVerified);
+        quiet(userAgreed);
+        // A user step that never settles still ends at the deadline or when
+        // the connection fails.
+        await Promise.race([Promise.all([hostVerified, userAgreed]), failed.promise]);
+      }
       const out = await Promise.race([st.confirm(), failed.promise]);
       stored = out.record;
       this.send(out.confirm);

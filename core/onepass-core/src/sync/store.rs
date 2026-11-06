@@ -26,6 +26,8 @@
 //! - `meta`: device state, change token, sync health and other small
 //!   values.
 
+mod zones;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -51,13 +53,22 @@ use crate::lineage::resolve::PromptKind;
 use crate::lists::{VAULT_LIST_DOMAIN, verify};
 use crate::manifest::{SignedManifest, signed_by};
 use crate::repo::{DeviceState, split_item_record};
+use crate::share::ShareState;
 use crate::store::{
-    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, account_record_id,
+    Record, RecordKind, RecordStore, RotationPush, TrustGuard, VaultEvent, Zone, account_record_id,
     check_local_meta_key, check_local_meta_prefix,
 };
 use crate::trust::{DeviceLineageState, TrustState};
 use crate::vaultlist::VaultListEntry;
 use crate::{Error, Id, IntegrityError, Result};
+
+/// What a rotation writes besides the private zone (sharing plan 2 Task
+/// 13): the push it keeps, the zoned records and the share states.
+type RotationWrite<'a> = (
+    &'a RotationPush,
+    &'a [(Zone, Record, Option<u64>)],
+    &'a [ShareState],
+);
 
 const DEVICE_STATE_KEY: &str = "device_state";
 /// The restore epoch mark (`RecordStore::restore_epoch_mark`): epoch
@@ -84,6 +95,40 @@ const IGNORED_DELETIONS_KEY: &str = "ignored_deletions";
 const IGNORED_VERSIONS_KEY: &str = "ignored_versions";
 /// The vaults the Travel Mode keeps off this device (16-byte ids).
 const TRAVEL_HIDDEN_KEY: &str = "travel_hidden";
+/// The items (and their attachment chunks) the Travel Mode keeps off this
+/// device in vaults that stay (spec 2026-11-02), postcard.
+const TRAVEL_HIDDEN_ITEMS_KEY: &str = "travel_hidden_items";
+
+/// The records of items the Travel Mode keeps off this device while their
+/// vault stays: item records by the item id in their body, attachment
+/// chunks by record id. Device-local, never pushed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TravelHiddenItems {
+    pub items: BTreeSet<Id>,
+    pub chunks: BTreeSet<Id>,
+}
+
+impl TravelHiddenItems {
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty() && self.chunks.is_empty()
+    }
+
+    /// Whether a change from the server is one of these records. A
+    /// deletion (no data) of an item record cannot be told apart and is
+    /// let through: this device holds no row for a hidden item anyway.
+    fn covers(&self, c: &RemoteChange) -> bool {
+        match c.kind {
+            RecordKind::Attachment => self.chunks.contains(&c.id),
+            RecordKind::Item => c.data.as_deref().is_some_and(|d| {
+                split_item_record(d)
+                    .ok()
+                    .and_then(|(_, body)| crate::vault::ItemRecord::decode(body).ok())
+                    .is_some_and(|r| self.items.contains(&r.item_id))
+            }),
+            _ => false,
+        }
+    }
+}
 const IGNORED_LOG_VERSION: u8 = 1;
 const IGNORED_ENTRY_BYTES: usize = 1 + 16 + 8;
 /// Most entries kept in the log of ignored deletions (and in the log of
@@ -206,6 +251,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
     }
     migrate_retained(conn)?;
     conn.execute_batch(SCHEMA).map_err(store_err)?;
+    conn.execute_batch(zones::ZONE_SCHEMA).map_err(store_err)?;
+    conn.execute_batch(crate::store::autofill_sql::SCHEMA)
+        .map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
@@ -376,6 +424,7 @@ fn keeps_ancestor(kind: RecordKind) -> bool {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     )
 }
 
@@ -460,7 +509,7 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
             "SELECT p.kind, p.id FROM pending p
              JOIN base b ON b.kind = p.kind AND b.id = p.id
              LEFT JOIN ancestor a ON a.kind = p.kind AND a.id = p.id
-             WHERE p.kind IN (?1, ?2, ?3, ?4) AND p.data IS NOT NULL
+             WHERE p.kind IN (?1, ?2, ?3, ?4, ?5) AND p.data IS NOT NULL
                AND (a.id IS NULL OR a.version != b.version)",
         )
         .map_err(store_err)?;
@@ -470,7 +519,8 @@ fn held_lists(conn: &Connection) -> Result<BTreeSet<(RecordKind, Id)>> {
                 RecordKind::DeviceList.code(),
                 RecordKind::VaultList.code(),
                 RecordKind::ApproverList.code(),
-                RecordKind::ContactBook.code()
+                RecordKind::ContactBook.code(),
+                RecordKind::SyncHome.code()
             ],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
         )
@@ -715,7 +765,8 @@ fn overwritten_vaults(conn: &Connection) -> Result<BTreeSet<Id>> {
 /// Phase 1 of a rotation (spec 7.1): the deliveries, the account records
 /// and lists under the new identity id `rid`, the lineage record. All new
 /// ids. The rank orders them: deliveries, params, keyset, lists (the
-/// contact book last of them), then the lineage record last.
+/// contact book last of them), the sync home, then the lineage record
+/// last.
 fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
     match kind {
         RecordKind::KeyDelivery => Some(0),
@@ -724,7 +775,8 @@ fn phase_one_rank(kind: RecordKind, id: Id, rid: Id) -> Option<u8> {
         RecordKind::DeviceList if id == rid => Some(3),
         RecordKind::VaultList if id == rid => Some(4),
         RecordKind::ContactBook if id == rid => Some(5),
-        RecordKind::Lineage => Some(6),
+        RecordKind::SyncHome if id == rid => Some(6),
+        RecordKind::Lineage => Some(7),
         _ => None,
     }
 }
@@ -1074,7 +1126,7 @@ impl SyncStore {
         chain: Option<ChainState>,
         guard: TrustGuard<'_>,
         trust: &TrustState,
-        rotation: Option<&RotationPush>,
+        rotation: Option<RotationWrite<'_>>,
     ) -> Result<()> {
         for (r, _) in &writes {
             check_size(&r.data)?;
@@ -1102,8 +1154,14 @@ impl SyncStore {
             set_meta_in(&tx, CHAIN_STATE_KEY, &chain.encode())?;
         }
         set_meta_in(&tx, TRUST_STATE_KEY, &trust.encode())?;
-        if let Some(rotation) = rotation {
+        if let Some((rotation, zoned, shares)) = rotation {
             set_meta_in(&tx, ROTATION_PUSH_KEY, &rotation.encode())?;
+            for (zone, r, expected) in zoned {
+                zones::put_zoned_in(&tx, *zone, r, *expected)?;
+            }
+            for s in shares {
+                set_meta_in(&tx, &zones::share_state_key(s.vault_id), &s.encode())?;
+            }
         }
         tx.commit()
     }
@@ -1519,7 +1577,7 @@ impl SyncStore {
                 &format!(
                     "INSERT OR IGNORE INTO ancestor (kind, id, version, data)
                      SELECT b.kind, b.id, b.version, b.data FROM base b
-                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5, ?6) AND {missing}"
+                     WHERE b.kind IN (?1, ?2, ?3, ?4, ?5, ?6, ?7) AND {missing}"
                 ),
                 params![
                     RecordKind::Manifest.code(),
@@ -1527,7 +1585,8 @@ impl SyncStore {
                     RecordKind::DeviceList.code(),
                     RecordKind::VaultList.code(),
                     RecordKind::ApproverList.code(),
-                    RecordKind::ContactBook.code()
+                    RecordKind::ContactBook.code(),
+                    RecordKind::SyncHome.code()
                 ],
             )
             .map_err(store_err)?;
@@ -1564,6 +1623,9 @@ impl SyncStore {
     pub fn stage_remote(&mut self, c: RemoteChange) -> Result<()> {
         let hidden = self.travel_hidden()?;
         if !hidden.is_empty() && belongs_to_hidden(&hidden, &c) {
+            return Ok(());
+        }
+        if self.travel_hidden_items()?.covers(&c) {
             return Ok(());
         }
         // The lineage kinds decode with no cap of their own (a rotation
@@ -1772,6 +1834,23 @@ impl SyncStore {
     }
 
     /// Remove a local meta value; a missing key is not an error.
+    /// The notice the quarantine left when it erased this device
+    /// (`RecordStore::erase_device`), until the app showed it
+    /// (`clear_erased_notice`). An unknown code reads as none.
+    pub fn erased_notice(&self) -> Result<Option<crate::store::ErasedNotice>> {
+        Ok(self
+            .meta(crate::store::ERASED_NOTICE_KEY)?
+            .and_then(|v| match v.as_slice() {
+                [code] => crate::store::ErasedNotice::from_code(*code),
+                _ => None,
+            }))
+    }
+
+    /// Forget the erase notice once the app showed it.
+    pub fn clear_erased_notice(&mut self) -> Result<()> {
+        self.delete_meta(crate::store::ERASED_NOTICE_KEY)
+    }
+
     pub fn delete_meta(&mut self, key: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM meta WHERE key = ?1", params![key])
@@ -1794,6 +1873,29 @@ impl SyncStore {
         }
         let bytes: Vec<u8> = vaults.iter().flat_map(|v| v.0).collect();
         self.set_meta(TRAVEL_HIDDEN_KEY, &bytes)
+    }
+
+    /// The items the Travel Mode keeps off this device in vaults that stay:
+    /// `stage_remote` drops their records and chunks. Device-local, never
+    /// pushed. An empty set removes the entry.
+    pub fn set_travel_hidden_items(&mut self, hidden: &TravelHiddenItems) -> Result<()> {
+        if hidden.is_empty() {
+            return self.delete_meta(TRAVEL_HIDDEN_ITEMS_KEY);
+        }
+        let bytes = postcard::to_allocvec(hidden)
+            .map_err(|_| Error::InvalidFormat("travel hidden items"))?;
+        self.set_meta(TRAVEL_HIDDEN_ITEMS_KEY, &bytes)
+    }
+
+    /// The items of `set_travel_hidden_items`, empty when none.
+    pub fn travel_hidden_items(&self) -> Result<TravelHiddenItems> {
+        let Some(bytes) = self.meta(TRAVEL_HIDDEN_ITEMS_KEY)? else {
+            return Ok(TravelHiddenItems::default());
+        };
+        match postcard::take_from_bytes(&bytes) {
+            Ok((h, [])) => Ok(h),
+            _ => Err(Error::InvalidFormat("travel hidden items")),
+        }
     }
 
     /// The vaults of `set_travel_hidden`, empty when none.
@@ -1994,7 +2096,17 @@ impl SyncStore {
     pub fn reset(&mut self) -> Result<()> {
         let tx = self.write_tx()?;
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -2022,7 +2134,17 @@ impl SyncStore {
             return Err(Error::InvalidFormat("store holds an account"));
         }
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -2737,6 +2859,7 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::MembershipRollback => 23,
         IntegrityError::MembershipFork => 24,
         IntegrityError::FamilyRollback => 25,
+        IntegrityError::SyncHomeRollback => 26,
     }
 }
 
@@ -2768,6 +2891,7 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         23 => IntegrityError::MembershipRollback,
         24 => IntegrityError::MembershipFork,
         25 => IntegrityError::FamilyRollback,
+        26 => IntegrityError::SyncHomeRollback,
         _ => return None,
     })
 }
@@ -3085,6 +3209,7 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -3137,8 +3262,8 @@ fn delete_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
 }
 
 /// A remote deletion `commit_remote` ignores: account params, keysets, the
-/// restore epoch and the signed device and vault lists and contact book
-/// (never deleted by a client), and the vault key, meta or manifest of a vault the device has
+/// restore epoch, the signed device and vault lists, contact book and sync
+/// home (never deleted by a client), and the vault key, meta or manifest of a vault the device has
 /// seen, unless the verified vault list marks that vault deleted
 /// (`deleted`, spec 4.5). A store that hides the epoch from a device with a
 /// fresh copy is caught by the repository (`EpochRollback`).
@@ -3152,7 +3277,10 @@ fn protected_from_remote_deletion(
         return true;
     }
     match kind {
-        RecordKind::AccountParams
+        // The private zone's `ShareInvite` rows are zone accesses
+        // (`share::ZONE_ACCESS_KIND`): a mailbox and its credential.
+        RecordKind::ShareInvite
+        | RecordKind::AccountParams
         | RecordKind::Keyset
         | RecordKind::RestoreEpoch
         | RecordKind::DeviceList
@@ -3161,7 +3289,8 @@ fn protected_from_remote_deletion(
         | RecordKind::DeviceIntro
         | RecordKind::KeyDelivery
         | RecordKind::ApproverList
-        | RecordKind::ContactBook => true,
+        | RecordKind::ContactBook
+        | RecordKind::SyncHome => true,
         RecordKind::VaultKey | RecordKind::VaultMeta | RecordKind::Manifest => {
             decode_id(id.to_vec()).is_ok_and(|v| seen.contains(&v) && !deleted.contains(&v))
         }
@@ -3313,6 +3442,12 @@ pub(crate) fn merge_chain(
             force_lists,
             IntegrityError::ContactBookRollback,
         )?,
+        sync_home: seen(
+            mem.sync_home,
+            stored.sync_home,
+            force_lists,
+            IntegrityError::SyncHomeRollback,
+        )?,
     })
 }
 
@@ -3394,6 +3529,7 @@ fn evict_in(tx: &Connection, kind: RecordKind, id: Id) -> Result<()> {
             | RecordKind::VaultList
             | RecordKind::ApproverList
             | RecordKind::ContactBook
+            | RecordKind::SyncHome
     ) {
         return Err(Error::InvalidFormat("list record deletion"));
     }
@@ -3448,6 +3584,62 @@ fn delete_vault_rows(tx: &Connection, vault: Id) -> Result<()> {
 }
 
 impl RecordStore for SyncStore {
+    fn get_in(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        match zone {
+            Zone::Private => self.get(kind, id),
+            _ => self.read(|c| zones::zone_get(c, zone, kind, id)),
+        }
+    }
+
+    fn list_in(&self, zone: Zone, kind: RecordKind) -> Result<Vec<Record>> {
+        match zone {
+            Zone::Private => self.list(kind),
+            _ => self.read(|c| zones::zone_list(c, zone, kind)),
+        }
+    }
+
+    fn put_all_zoned(
+        &mut self,
+        writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+        trust: Option<&TrustState>,
+        shares: &[ShareState],
+    ) -> Result<()> {
+        self.put_all_zoned_tx(writes, deletes, trust, shares)
+    }
+
+    fn share_state(&self, vault: Id) -> Result<Option<ShareState>> {
+        self.read(|c| zones::share_state_in(c, vault))
+    }
+
+    fn share_states(&self) -> Result<Vec<ShareState>> {
+        self.read(zones::share_states_in)
+    }
+
+    fn zones(&self) -> Result<Vec<Zone>> {
+        self.read(zones::zones_in)
+    }
+
+    fn drop_zone(&mut self, zone: Zone) -> Result<()> {
+        let tx = self.write_tx()?;
+        zones::drop_zone_in(&tx, zone)?;
+        tx.commit()
+    }
+
+    fn zone_pending(&self, zone: Zone) -> Result<Vec<crate::store::ZonePendingRow>> {
+        self.read(|c| zones::zone_pending_rows(c, zone))
+    }
+
+    fn zone_base_version(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+        self.read(|c| zones::zone_base_version(c, zone, kind, id))
+    }
+
+    fn drop_zone_pending(&mut self, zone: Zone, rows: &[(RecordKind, Id)]) -> Result<()> {
+        let tx = self.write_tx()?;
+        zones::drop_pending_rows(&tx, zone, rows)?;
+        tx.commit()
+    }
+
     fn put(&mut self, r: Record) -> Result<()> {
         check_size(&r.data)?;
         let tx = self.write_tx()?;
@@ -3489,6 +3681,39 @@ impl RecordStore for SyncStore {
     fn local_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
         check_local_meta_key(key)?;
         self.read(|c| meta_in(c, key))
+    }
+
+    fn keeps_autofill_history(&self) -> bool {
+        true
+    }
+
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::autofill_sql::append(&tx, site_tag, data, keep_per_site, keep_total)?;
+        tx.commit()
+    }
+
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<crate::store::AutofillRow>> {
+        self.read(|c| crate::store::autofill_sql::rows(c, site_tag))
+    }
+
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::autofill_sql::delete(&tx, seqs)?;
+        tx.commit()
+    }
+
+    fn autofill_clear(&mut self) -> Result<usize> {
+        let tx = self.write_tx()?;
+        let n = crate::store::autofill_sql::clear(&tx)?;
+        tx.commit()?;
+        Ok(n)
     }
 
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
@@ -3673,16 +3898,33 @@ impl RecordStore for SyncStore {
     /// state, trust, chain and device state), the trust state compared with
     /// `expected` inside it; then the file is compacted (best effort), so
     /// the rows do not linger in free pages or in the WAL.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
+    fn erase_device(
+        &mut self,
+        expected: &TrustState,
+        notice: Option<crate::store::ErasedNotice>,
+    ) -> Result<()> {
         let tx = self.write_tx()?;
         if meta_in(&tx, TRUST_STATE_KEY)? != Some(expected.encode()) {
             return Err(Error::Conflict);
         }
         for table in [
-            "base", "pending", "staging", "ancestor", "kept", "retained", "meta",
+            "base",
+            "pending",
+            "staging",
+            "ancestor",
+            "kept",
+            "retained",
+            "meta",
+            "zone_base",
+            "zone_pending",
+            "zone_staging",
+            "zone_fetch",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
+        }
+        if let Some(notice) = notice {
+            set_meta_in(&tx, crate::store::ERASED_NOTICE_KEY, &[notice.code()])?;
         }
         tx.commit()?;
         let _ = self.compact();
@@ -3730,6 +3972,8 @@ impl RecordStore for SyncStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         self.put_with_trust(
             writes,
@@ -3737,7 +3981,7 @@ impl RecordStore for SyncStore {
             Some(chain),
             TrustGuard::Is(expected),
             trust,
-            Some(rotation),
+            Some((rotation, &zoned, shares)),
         )
     }
 
@@ -3789,6 +4033,7 @@ impl RecordStore for SyncStore {
 
     fn put_follow(
         &mut self,
+        writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
         expected: &TrustState,
         trust: &TrustState,
@@ -3798,7 +4043,7 @@ impl RecordStore for SyncStore {
         self.begin_batch()?;
         let done = (|| {
             self.put_with_trust(
-                Vec::new(),
+                writes,
                 Vec::new(),
                 Some(chain),
                 TrustGuard::Is(expected),
@@ -4213,6 +4458,7 @@ mod tests {
         let mut s = SyncStore::open_in_memory().unwrap();
         let me = Id::new();
         let stored = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: Some(Seen {
                 seq: 3,
@@ -4533,6 +4779,7 @@ mod tests {
         followed.head.generation = 0;
         let chain = s.chain_state().unwrap();
         s.put_follow(
+            vec![],
             chain,
             &left,
             &followed,
@@ -5963,6 +6210,7 @@ mod tests {
         MembershipRollback,
         MembershipFork,
         FamilyRollback,
+        SyncHomeRollback,
     );
 
     #[test]
@@ -6028,7 +6276,7 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 26);
+        assert_eq!(ALL_CAUSES.len(), 27);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);
@@ -6191,6 +6439,7 @@ mod tests {
     fn chain_merge_never_rewinds_a_pin() {
         let id = Id::new();
         let older = ChainState {
+            sync_home: None,
             params_epoch: 1,
             device_list: seen_at(2, 1),
             vault_list: seen_at(5, 1),
@@ -6199,6 +6448,7 @@ mod tests {
             contact_book: seen_at(7, 1),
         };
         let newer = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(4, 2),
@@ -6207,6 +6457,7 @@ mod tests {
             contact_book: seen_at(6, 2),
         };
         let merged = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 2),
             vault_list: seen_at(5, 1),
@@ -6288,6 +6539,7 @@ mod tests {
         let mut s = SyncStore::open_in_memory().unwrap();
         let id = Id::new();
         let stored = ChainState {
+            sync_home: None,
             params_epoch: 3,
             device_list: seen_at(4, 1),
             vault_list: seen_at(6, 1),
@@ -6298,6 +6550,7 @@ mod tests {
         s.set_chain_state(&stored).unwrap();
         // A process that unlocked before those pins persists its own.
         let stale = ChainState {
+            sync_home: None,
             params_epoch: 2,
             device_list: seen_at(3, 9),
             vault_list: seen_at(5, 9),

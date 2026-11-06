@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use crate::chain::ChainState;
-use crate::device_keys::DevicePublic;
+use crate::device_keys::{DeviceKeys, DevicePublic};
 use crate::lineage::{MAX_ROSTER, RosterEntry};
 use crate::store::{Record, RecordKind, RecordStore};
 use crate::sync::{MAX_RECORD_BYTES, RemoteChange, SyncStore};
@@ -165,7 +165,10 @@ pub fn trust_from_grant(
 /// (`trust_from_grant`). Refused on a store that holds a trust state
 /// already: a device that holds the account re-pairs as a follow
 /// (`crate::repo::pairing::repair_from_grant`, ruling A9). The caller then
-/// unlocks with the password and the granted Secret Key.
+/// unlocks with the password and the granted Secret Key. `device_keys` are
+/// this device's (their public half is `me`, `Validation("device")`
+/// otherwise): they sign its acknowledgment of the approver's head, written
+/// with the trust state (spec 6.8, O6).
 ///
 /// Three writes, not one (review m4): a cut after the snapshot commit leaves
 /// signed server rows and no trust state. A retry finds no trust state and
@@ -175,10 +178,18 @@ pub fn import_full_v2(
     store: &mut SyncStore,
     grant: &FullGrantV2,
     me: &DevicePublic,
+    device_keys: &DeviceKeys,
     info: &DeviceInfo,
 ) -> Result<TrustState> {
     if RecordStore::trust_state(store)?.is_some() {
         return Err(refused("store holds a trust state"));
+    }
+    if device_keys.public(me.device_id)? != *me {
+        return Err(crate::ValidationError {
+            field: "device".into(),
+            reason: "other device keys",
+        }
+        .into());
     }
     let trust = trust_from_grant(grant, me, info)?;
     for r in &grant.full.snapshot {
@@ -189,7 +200,8 @@ pub fn import_full_v2(
         device_id: Some(me.device_id),
         ..store.chain_state()?
     })?;
-    store.put_all_if_version_with_trust(Vec::new(), Vec::new(), None, &trust)?;
+    let ack = crate::lineage::ack::ack_record(&trust, device_keys, crate::devices::now())?;
+    store.put_all_if_version_with_trust(vec![(ack, None)], Vec::new(), None, &trust)?;
     Ok(trust)
 }
 

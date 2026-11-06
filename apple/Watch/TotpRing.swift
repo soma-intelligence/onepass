@@ -19,11 +19,11 @@ struct TotpRing: View {
                         style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: fraction)
-            Text("\(remaining)")
+            Text("totpRing.text \(remaining)")
                 .font(.system(size: 9, weight: .semibold))
                 .monospacedDigit()
         }
         .accessibilityElement()
-        .accessibilityLabel(Text("\(remaining) secondes restantes"))
+        .accessibilityLabel(Text("totpRing.secondsLeft \(remaining)"))
     }
 }

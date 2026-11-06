@@ -14,6 +14,7 @@ public protocol HostLauncher: Sendable {
     func launch() throws -> any HostProcess
 }
 
+#if os(macOS)
 /// Launches an executable with fixed arguments, stdio on pipes. stderr goes
 /// to /dev/null (the host keeps its own journal, like under Chrome).
 public struct ProcessHostLauncher: HostLauncher {
@@ -63,6 +64,56 @@ final class SpawnedHost: HostProcess, @unchecked Sendable {
         // End of stdin first: the host treats it as a clean close.
         try? input.close()
         if process.isRunning { process.terminate() }
+    }
+}
+#endif
+
+/// A bridge served in this process (iOS, spec 2026-11-03-ios-safari-autofill I1): `connect`
+/// returns this side's end of a socket pair whose other end the bridge already serves (the Rust
+/// `BridgeServer.connect_in_process`). The descriptor is owned from here on.
+public struct InProcessHostLauncher: HostLauncher {
+    public let connect: @Sendable () throws -> Int32
+
+    public init(connect: @escaping @Sendable () throws -> Int32) {
+        self.connect = connect
+    }
+
+    public func launch() throws -> any HostProcess {
+        let fd: Int32
+        do {
+            fd = try connect()
+        } catch {
+            throw RelayError.unavailable
+        }
+        guard fd >= 0 else { throw RelayError.unavailable }
+        var on: Int32 = 1
+        // A bridge that ended must make our write fail with EPIPE, not kill the process.
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        return SocketHost(handle: FileHandle(fileDescriptor: fd, closeOnDealloc: true))
+    }
+}
+
+/// The host at the other end of a socket: one descriptor both ways.
+final class SocketHost: HostProcess, @unchecked Sendable {
+    private let handle: FileHandle
+    private let lock = NSLock()
+    private var done = false
+
+    init(handle: FileHandle) {
+        self.handle = handle
+    }
+
+    var input: FileHandle { handle }
+    var output: FileHandle { handle }
+
+    func terminate() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !done else { return }
+        done = true
+        // Wakes the reader thread (end of stream) and tells the host the
+        // connection is over; the descriptor closes with the handle.
+        shutdown(handle.fileDescriptor, SHUT_RDWR)
     }
 }
 
@@ -153,14 +204,24 @@ public final class RelayHub: @unchecked Sendable {
     private let launcher: (any HostLauncher)?
     private let pollTimeout: TimeInterval
     private let maxConnections: Int
+    /// Brings the OnePass app forward on its lock screen (launching it if needed). Run from the
+    /// extension process that served the user's click, so macOS lets the app come forward.
+    private let openApp: (@Sendable () -> Bool)?
+    /// iOS: the vault of this process, for the unlock sheet. Nil on the Mac (the app unlocks).
+    private let vault: (any VaultGate)?
     private let lock = NSLock()
     private var conns: [String: Connection] = [:]
     private var clock: UInt64 = 0
 
     /// `launcher` nil: this build has no bridge host, every `open` answers
     /// `unavailable`.
-    public init(launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = 4) {
+    public init(
+        launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = 4,
+        openApp: (@Sendable () -> Bool)? = nil, vault: (any VaultGate)? = nil
+    ) {
         self.launcher = launcher
+        self.openApp = openApp
+        self.vault = vault
         self.pollTimeout = pollTimeout
         self.maxConnections = maxConnections
     }
@@ -182,6 +243,18 @@ public final class RelayHub: @unchecked Sendable {
         case .close:
             if let c = take(request.conn) { c.end() }
             return .ok(frames: [], closed: true)
+        case .openApp:
+            guard let openApp, openApp() else { return .failure(.unavailable) }
+            return .ok(frames: [], closed: true)
+        case .vaultState:
+            guard let vault else { return .failure(.unavailable) }
+            return .vault(vault.state())
+        case .unlockBiometric:
+            guard let vault else { return .failure(.unavailable) }
+            return .vault(vault.unlockBiometric())
+        case .unlockPassword(let password):
+            guard let vault else { return .failure(.unavailable) }
+            return .vault(vault.unlockPassword(password))
         }
     }
 

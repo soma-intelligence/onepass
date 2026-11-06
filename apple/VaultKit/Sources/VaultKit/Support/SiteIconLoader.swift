@@ -56,8 +56,16 @@ extension URLSession {
 ///
 /// When the item's own host yields nothing (`dashboard.stripe.com`, `notion.so`), its registrable
 /// domain (`stripe.com`, never a bare public suffix: `registrableDomain`) is tried, then `www.` plus
-/// that domain, each with every check above (public name, public addresses, HTTPS, caps). The icon
-/// found is cached under the item's host too. A redirect is followed only on the same host, or once
+/// that domain, then the app hosts of that same domain (`app.`, `account.`, `my.`: a brand whose
+/// home page refuses every client but a browser, such as `withings.com`, usually serves its icons
+/// from its web app), each with every check above (public name, public addresses, HTTPS, caps). The
+/// icon found is cached under the item's host too.
+///
+/// A source page whose icons are dead links (a stale manifest) does not use up the search: each kind
+/// of candidate gets `maxFailuresPerKind` failed fetches at most before the next kind is tried.
+///
+/// Logos change: an icon older than `refreshAge` is still shown at once, and fetched again in the
+/// background; the new one replaces it only when one was found. A redirect is followed only on the same host, or once
 /// to another host of the same registrable domain (`notion.so` to `www.notion.so`) whose addresses
 /// are public. The home page alone may instead make that one hop to the same name under another
 /// suffix (`www.notion.so` to `www.notion.com`, `exemple.fr` to `exemple.com`). The rest of that
@@ -73,14 +81,20 @@ public actor SiteIconLoader {
     static let failureLifetime: TimeInterval = 7 * 24 * 3600
     /// Side of the stored PNG.
     static let iconPixels = 256
-    /// A source this large ends the search.
-    static let goodPixels = 128
+    /// A source this large ends the search (a 180 px touch icon: sharp on a 3x screen at 60 pt).
+    static let goodPixels = 180
     /// Below this a source is a last resort.
     static let tinyPixels = 48
     /// Images fetched per host at most (on top of the home page and the manifest).
-    static let maxImageAttempts = 6
+    static let maxImageAttempts = 8
+    /// Failed fetches of one kind of candidate (manifest entries, page links...) before it is skipped.
+    static let maxFailuresPerKind = 3
+    /// Age after which a cached icon is fetched again in the background (still shown meanwhile).
+    static let refreshAge: TimeInterval = 30 * 24 * 3600
+    /// App hosts of a site's own domain, asked last (`app.withings.com` when `withings.com` refuses).
+    static let appHostLabels = ["app", "account", "my"]
     /// Version in the cache file names: bumping it refetches every icon once.
-    static let cacheVersion = "v3"
+    static let cacheVersion = "v4"
 
     private let cacheDirectory: URL
     private let session: URLSession
@@ -105,7 +119,10 @@ public actor SiteIconLoader {
     /// PNG bytes of the site's icon, or nil (disabled, not HTTPS, no icon, recently failed).
     public func icon(for url: String) async -> Data? {
         guard enabled(), let host = Self.fetchableHost(of: url) else { return nil }
-        if let cached = cachedIcon(host: host) { return cached }
+        if let cached = cachedIcon(host: host) {
+            refreshIfStale(host: host)
+            return cached
+        }
         if let age = markerAge(host: host), age < Self.failureLifetime { return nil }
 
         if let task = inFlight[host] { return await task.value }
@@ -143,6 +160,45 @@ public actor SiteIconLoader {
                 group.addTask { _ = await self.icon(for: "https://" + host) }
             }
         }
+    }
+
+    /// An icon cached more than `refreshAge` ago is fetched again, once, in the background. Found:
+    /// it replaces the old one. Not found (or offline): the old one stays, asked again after
+    /// another `refreshAge`.
+    private func refreshIfStale(host: String) {
+        guard inFlight[host] == nil, let age = iconAge(host: host), age > Self.refreshAge else { return }
+        let task = Task { await self.fetchAndStore(host: host, refreshing: true) }
+        inFlight[host] = task
+        Task {
+            let fresh = await task.value
+            self.finishRefresh(host: host, fresh: fresh)
+        }
+    }
+
+    private func finishRefresh(host: String, fresh: Data?) {
+        inFlight[host] = nil
+        if let fresh {
+            memory.withLock { $0[host] = fresh }
+        } else {
+            // Kept: dated now so the next try waits another `refreshAge`.
+            try? FileManager.default.setAttributes(
+                [.modificationDate: Date()], ofItemAtPath: cacheFile(host: host, ext: "png").path)
+        }
+    }
+
+    /// Waits for the background refreshes under way (tests).
+    func settle() async {
+        while let task = inFlight.values.first {
+            _ = await task.value
+            await Task.yield()
+        }
+    }
+
+    private func iconAge(host: String) -> TimeInterval? {
+        let path = cacheFile(host: host, ext: "png").path
+        guard let date = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        else { return nil }
+        return Date().timeIntervalSince(date)
     }
 
     /// Hosts fetched at once by `prefetch`.
@@ -195,14 +251,15 @@ public actor SiteIconLoader {
         case offline
     }
 
-    /// The hosts asked, in order: the item's own, its registrable domain, then `www.` plus that
-    /// domain (each once, never a bare public suffix).
+    /// The hosts asked, in order: the item's own, its registrable domain, `www.` plus that domain,
+    /// then its app hosts (`appHostLabels`), each once, never a bare public suffix.
     static func siteHosts(for host: String) -> [String] {
         var name = host.lowercased()
         if name.hasSuffix(".") { name.removeLast() }
         var hosts = [name]
         if let domain = registrableDomain(of: name) {
-            for candidate in [domain, "www." + domain] where !hosts.contains(candidate) {
+            let candidates = [domain, "www." + domain] + appHostLabels.map { $0 + "." + domain }
+            for candidate in candidates where !hosts.contains(candidate) {
                 hosts.append(candidate)
             }
         }
@@ -211,10 +268,10 @@ public actor SiteIconLoader {
 
     /// Searches the item's host, then its parent domain (`siteHosts`); the icon found is stored
     /// under the item's host. A failure is remembered only when every host was really asked.
-    private func fetchAndStore(host: String) async -> Data? {
+    private func fetchAndStore(host: String, refreshing: Bool = false) async -> Data? {
         let hosts = Self.siteHosts(for: host)
         for (index, site) in hosts.enumerated() {
-            switch await attempt(site, remember: index > 0) {
+            switch await attempt(site, remember: index > 0, refreshing: refreshing) {
             case .icon(let png):
                 if site != host { store(png, host: host) }
                 return png
@@ -226,12 +283,13 @@ public actor SiteIconLoader {
             case .refused:
                 // The item's own name points at a private address: no parent is asked.
                 if index == 0 {
-                    markFailure(host: host)
+                    if !refreshing { markFailure(host: host) }
                     return nil
                 }
             }
         }
-        markFailure(host: host)
+        // A refresh that found nothing keeps the icon in hand (no marker over it).
+        if !refreshing { markFailure(host: host) }
         return nil
     }
 
@@ -244,9 +302,10 @@ public actor SiteIconLoader {
     }
 
     /// One host searched. `remember`: its own cache and failure marker are used and written (a
-    /// parent domain other items share); the item's host is written by the caller.
-    private func attempt(_ host: String, remember: Bool) async -> Attempt {
-        if remember {
+    /// parent domain other items share); the item's host is written by the caller. `refreshing`: the
+    /// parent's cache is not taken as the answer (it is as old as the icon being refreshed).
+    private func attempt(_ host: String, remember: Bool, refreshing: Bool = false) async -> Attempt {
+        if remember, !refreshing {
             if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached) {
                 return .icon(cached)
             }
@@ -277,6 +336,8 @@ public actor SiteIconLoader {
 
         var best: DecodedIcon?
         var attempts = 0
+        /// Failed fetches per kind: a stale manifest's dead entries never use up the search.
+        var failures: [IconCandidate.Kind: Int] = [:]
         /// Other hosts the page names for its icons, and whether they resolve to public addresses only.
         var publicHosts: [String: Bool] = [:]
         for candidate in Self.ranked(candidates) {
@@ -286,6 +347,7 @@ public actor SiteIconLoader {
             if let best, !candidate.vector, let declared = candidate.declared, declared <= best.sourcePixels {
                 continue
             }
+            if failures[candidate.kind, default: 0] >= Self.maxFailuresPerKind { continue }
             // An icon the page names on another host (its CDN): that host passes the same checks.
             let iconHost = candidate.url.host?.lowercased() ?? site
             if iconHost != site {
@@ -302,7 +364,10 @@ public actor SiteIconLoader {
             attempts += 1
             guard let fetched = await get(candidate.url, host: iconHost, truncate: false, offline: &offline),
                 let decoded = Self.decodeIcon(fetched.data)
-            else { continue }
+            else {
+                failures[candidate.kind, default: 0] += 1
+                continue
+            }
             if decoded.sourcePixels > best?.sourcePixels ?? 0 { best = decoded }
         }
 

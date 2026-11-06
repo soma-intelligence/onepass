@@ -53,13 +53,18 @@ pub fn intent_of(form: &FormContext) -> Intent {
     // (e-mail, name, "Create account" or a passkey button). The detector's
     // signup kind, or a create or passkey button with signup words, and
     // something of the identity to fill. Never sent on its own either.
+    // When the detector read a sign-in step (kind login: an identifier with
+    // a sign-in "Next" in a sign-in context), a create control and signup
+    // wording are the page's side door ("No account? Create one!"), not
+    // this form: an identifier-first sign-in stays a login.
     let secret = current >= 1 || roles.contains(&FieldRole::Otp);
     let creates = form
         .buttons
         .iter()
         .any(|b| matches!(b.class, ButtonClass::Create | ButtonClass::Passkey));
+    let sign_in_step = form.intent_hints.kind == Some(FormKindHint::Login);
     let signup_hint = form.intent_hints.kind == Some(FormKindHint::Signup)
-        || (creates && form.intent_hints.signup_words);
+        || (!sign_in_step && creates && form.intent_hints.signup_words);
     let identity = roles
         .iter()
         .any(|r| r.is_identifier() || r.is_identity_or_address());
@@ -290,6 +295,29 @@ mod tests {
         );
         f.intent_hints.signup_words = true;
         assert_eq!(intent_of(&f), Intent::Login);
+    }
+
+    #[test]
+    fn identifier_first_sign_in_step_with_create_link_stays_login() {
+        // login.live.com, spiegel.de (real-site bench 2026-11-02): the identifier alone, "Next",
+        // and a "Create one!" or "Konto erstellen" control with signup wording on the page. The
+        // detector read a sign-in step (kind login): the create control is a side door.
+        let mut f = with_button(
+            with_button(form(&[FieldRole::Username]), ButtonClass::Next),
+            ButtonClass::Create,
+        );
+        f.intent_hints.kind = Some(super::super::context::FormKindHint::Login);
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Login);
+        // The create control alone, the detector's kind still login.
+        let mut f = with_button(form(&[FieldRole::Email]), ButtonClass::Create);
+        f.intent_hints.kind = Some(super::super::context::FormKindHint::Login);
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Login);
+        // Without the detector's kind, a create button and signup words still make a signup.
+        let mut f = with_button(form(&[FieldRole::Email]), ButtonClass::Create);
+        f.intent_hints.signup_words = true;
+        assert_eq!(intent_of(&f), Intent::Signup);
     }
 
     #[test]

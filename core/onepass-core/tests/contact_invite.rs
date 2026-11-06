@@ -15,7 +15,9 @@ use onepass_core::contact::{
     format_safety_number, invite_transcript, open_answer, open_reply, safety_number, seal_answer,
     seal_reply,
 };
+use onepass_core::contact::{CONTACT_LABEL, pair_id};
 use onepass_core::crypto::IdentityKey;
+use onepass_core::crypto::kem::wrap_key_labeled;
 use onepass_core::crypto::{Aad, BlobKind, SymmetricKey, seal};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
@@ -23,6 +25,8 @@ use onepass_core::lineage::{
     GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, RotationBody, RotationReason,
     sign_genesis, sign_rotation,
 };
+use onepass_core::share::{AccessTarget, ZoneHome};
+use onepass_core::store::Zone;
 use onepass_core::trust::{LineageHead, TrustLevel, TrustState};
 
 fn entry_of(p: &DevicePublic, name: &str) -> RosterEntry {
@@ -103,6 +107,42 @@ fn person(name: &str) -> Person {
 
 const NOW: i64 = T0 + 100;
 
+fn zone_home() -> ZoneHome {
+    ZoneHome {
+        url: "https://box.example.org".into(),
+        mailbox_id: [6; 16],
+        extra_ca_pem: None,
+    }
+}
+
+/// `accept_invite_reply` with the pair's mailbox made first, as the app
+/// does: Bob's card, `prepare_contact_zone`, the mailbox (here a fixed
+/// home), `seal_contact_zone_offer`.
+trait AcceptReply {
+    fn accept_reply(
+        &mut self,
+        invite_id: [u8; 16],
+        reply: &[u8],
+        name: &str,
+        now: i64,
+    ) -> Result<(ContactEntry, Vec<u8>)>;
+}
+
+impl<S: RecordStore> AcceptReply for Repository<S> {
+    fn accept_reply(
+        &mut self,
+        invite_id: [u8; 16],
+        reply: &[u8],
+        name: &str,
+        now: i64,
+    ) -> Result<(ContactEntry, Vec<u8>)> {
+        let card = self.invite_reply_card(invite_id, reply, now)?;
+        let plan = self.prepare_contact_zone(&card, now)?;
+        let offer = self.seal_contact_zone_offer(plan, zone_home())?;
+        self.accept_invite_reply(invite_id, reply, name, &offer, now)
+    }
+}
+
 fn is_validation<T: std::fmt::Debug>(r: &Result<T>) -> bool {
     matches!(r, Err(Error::Validation(_)))
 }
@@ -127,12 +167,12 @@ fn book(p: &mut Person) -> Vec<ContactEntry> {
 /// entry of Alice).
 fn link_pair(alice: &mut Person, bob: &mut Person) -> (ContactEntry, ContactEntry) {
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, secret) = seal_reply(&theirs, &bob.card).unwrap();
     let (on_alice, answer) = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 1)
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 1)
         .unwrap();
     let on_bob = bob
         .dev
@@ -151,7 +191,7 @@ fn remote_invite_pins_link_both_sides() {
     assert!(meta_of(&mut alice, &invite).is_some());
 
     // Bob only has the link.
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     assert_eq!(theirs.invite_id, invite.invite_id);
     assert_eq!(theirs.created_at, 0);
     assert_eq!(theirs.rdv_id(), invite.rdv_id());
@@ -165,7 +205,7 @@ fn remote_invite_pins_link_both_sides() {
     let (on_alice, answer) = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 1)
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 1)
         .unwrap();
     assert_eq!(on_alice.account_id, bob.card.card.account_id);
     assert_eq!(on_alice.level, ContactLevel::Link);
@@ -180,6 +220,7 @@ fn remote_invite_pins_link_both_sides() {
     assert_eq!(
         open_answer(&secret, &reply, theirs.rdv_id(), &answer)
             .unwrap()
+            .0
             .card
             .account_id,
         alice.card.card.account_id
@@ -206,12 +247,12 @@ fn invite_single_use() {
     let bob = person("Bob");
     let carol = person("Carol");
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, _) = seal_reply(&theirs, &bob.card).unwrap();
     alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 1)
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 1)
         .unwrap();
     let before = book(&mut alice);
 
@@ -220,13 +261,13 @@ fn invite_single_use() {
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &second, "Alice", NOW + 2);
+        .accept_reply(invite.invite_id, &second, "Alice", NOW + 2);
     assert!(is_validation(&r), "{r:?}");
     // And the first reply again.
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 2);
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 2);
     assert!(is_validation(&r), "{r:?}");
     assert_eq!(book(&mut alice), before);
 
@@ -234,7 +275,7 @@ fn invite_single_use() {
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply([7; 16], &second, "Alice", NOW + 2);
+        .accept_reply([7; 16], &second, "Alice", NOW + 2);
     assert!(is_validation(&r), "{r:?}");
 }
 
@@ -243,9 +284,9 @@ fn invite_expired() {
     let mut alice = person("Alice");
     let bob = person("Bob");
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, _) = seal_reply(&theirs, &bob.card).unwrap();
-    let r = alice.dev.repo().accept_invite_reply(
+    let r = alice.dev.repo().accept_reply(
         invite.invite_id,
         &reply,
         "Alice",
@@ -258,17 +299,17 @@ fn invite_expired() {
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 1);
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 1);
     assert!(is_validation(&r), "{r:?}");
 
     // The last second of the window still counts.
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, _) = seal_reply(&theirs, &bob.card).unwrap();
     alice
         .dev
         .repo()
-        .accept_invite_reply(
+        .accept_reply(
             invite.invite_id,
             &reply,
             "Alice",
@@ -329,12 +370,12 @@ fn server_cannot_forge_reply() {
         alice
             .dev
             .repo()
-            .accept_invite_reply(invite.invite_id, &forged, "Alice", NOW + 1)
+            .accept_reply(invite.invite_id, &forged, "Alice", NOW + 1)
             .unwrap_err(),
         Error::Integrity(IntegrityError::Aead)
     );
     // A real reply flipped by one bit: same.
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (mut real, _) = seal_reply(&theirs, &bob.card).unwrap();
     let last = real.len() - 1;
     real[last] ^= 1;
@@ -349,7 +390,7 @@ fn server_cannot_forge_reply() {
     alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &real, "Alice", NOW + 2)
+        .accept_reply(invite.invite_id, &real, "Alice", NOW + 2)
         .unwrap();
 }
 
@@ -358,14 +399,14 @@ fn answer_bound_to_reply() {
     let mut alice = person("Alice");
     let bob = person("Bob");
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let rdv = theirs.rdv_id();
     let (reply1, secret1) = seal_reply(&theirs, &bob.card).unwrap();
     let (reply2, secret2) = seal_reply(&theirs, &bob.card).unwrap();
     let (_, answer1) = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply1, "Alice", NOW + 1)
+        .accept_reply(invite.invite_id, &reply1, "Alice", NOW + 1)
         .unwrap();
     open_answer(&secret1, &reply1, rdv, &answer1).unwrap();
 
@@ -377,10 +418,20 @@ fn answer_bound_to_reply() {
 
     // The pure functions bind the same way.
     let opened2 = open_reply(&invite, &reply2).unwrap();
-    let answer2 = seal_answer(&reply2, &opened2, &alice.card, rdv).unwrap();
+    let plan = alice
+        .dev
+        .repo()
+        .prepare_contact_zone(&bob.card, NOW)
+        .unwrap();
+    let offer = alice
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    let answer2 = seal_answer(&reply2, &opened2, &alice.card, rdv, &offer).unwrap();
     assert_eq!(
         open_answer(&secret2, &reply2, rdv, &answer2).unwrap(),
-        alice.card
+        (alice.card.clone(), offer)
     );
     assert!(open_answer(&secret2, &reply1, rdv, &answer2).is_err());
     assert!(open_answer(&secret1, &reply1, rdv, &answer2).is_err());
@@ -420,7 +471,7 @@ fn link_round_trip() {
             .all(|c| c.is_ascii_uppercase() || (b'2'..=b'7').contains(&c))
     );
 
-    let parsed = ContactInvite::parse_link(&link).unwrap();
+    let parsed = ContactInvite::parse_link(&link).unwrap().0;
     assert_eq!(parsed.invite_id, invite.invite_id);
     assert_eq!(parsed.rdv_id(), invite.rdv_id());
     assert_eq!(parsed.link(), link);
@@ -547,12 +598,12 @@ fn safety_number_refuses_removed_contact() {
     // A new invitation does not bring a removed contact back either: a
     // re-add takes a face-to-face verification (spec 5.4).
     let invite = alice.dev.repo().create_contact_invite(NOW + 7).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, _) = seal_reply(&theirs, &bob.card).unwrap();
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 8);
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 8);
     assert!(is_validation(&r), "{r:?}");
     // The refusal left the invitation usable.
     assert!(meta_of(&mut alice, &invite).is_some());
@@ -562,12 +613,12 @@ fn safety_number_refuses_removed_contact() {
 fn own_card_refused() {
     let mut alice = person("Alice");
     let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
-    let theirs = ContactInvite::parse_link(&invite.link()).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
     let (reply, _) = seal_reply(&theirs, &alice.card).unwrap();
     let r = alice
         .dev
         .repo()
-        .accept_invite_reply(invite.invite_id, &reply, "Alice", NOW + 1);
+        .accept_reply(invite.invite_id, &reply, "Alice", NOW + 1);
     assert!(is_validation(&r), "{r:?}");
     assert!(book(&mut alice).is_empty());
 
@@ -575,7 +626,17 @@ fn own_card_refused() {
     let mut bob = person("Bob");
     let (reply, secret) = seal_reply(&theirs, &bob.card).unwrap();
     let opened = open_reply(&invite, &reply).unwrap();
-    let answer = seal_answer(&reply, &opened, &bob.card, theirs.rdv_id()).unwrap();
+    let plan = alice
+        .dev
+        .repo()
+        .prepare_contact_zone(&bob.card, NOW + 1)
+        .unwrap();
+    let offer = alice
+        .dev
+        .repo()
+        .seal_contact_zone_offer(plan, zone_home())
+        .unwrap();
+    let answer = seal_answer(&reply, &opened, &bob.card, theirs.rdv_id(), &offer).unwrap();
     let r = bob
         .dev
         .repo()
@@ -834,4 +895,130 @@ fn invites_pruned_and_prefix_checked() {
             Err(Error::Validation(_))
         ));
     }
+}
+
+// ------------------------------------------------- pair mailbox (plan 2, 7b)
+
+fn pair_zones(p: &mut Person) -> Vec<(Zone, Option<ZoneHome>)> {
+    p.dev
+        .repo()
+        .zone_accesses()
+        .unwrap()
+        .into_iter()
+        .filter_map(|a| match a.target {
+            AccessTarget::Zone(z @ Zone::Contact(_)) => Some((z, a.home)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn remote_invite_creates_zone_on_inviter() {
+    let mut alice = person("Alice");
+    let mut bob = person("Bob");
+    // No mailbox, no answer.
+    let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
+    let (reply, _) = seal_reply(&theirs, &bob.card).unwrap();
+    let r = alice
+        .dev
+        .repo()
+        .prepare_contact_zone(&bob.card, NOW)
+        .and_then(|_| {
+            let offer = vec![0u8; 8];
+            alice
+                .dev
+                .repo()
+                .accept_invite_reply(invite.invite_id, &reply, "Alice", &offer, NOW + 1)
+        });
+    assert!(is_validation(&r), "{r:?}");
+    assert!(book(&mut alice).is_empty());
+
+    let (on_alice, on_bob) = link_pair(&mut alice, &mut bob);
+    assert_eq!(on_alice.level, ContactLevel::Link);
+    assert_eq!(on_bob.level, ContactLevel::Link);
+    let pair = Zone::Contact(pair_id(
+        alice.card.card.account_id,
+        bob.card.card.account_id,
+    ));
+    assert_eq!(pair_zones(&mut alice), vec![(pair, Some(zone_home()))]);
+    assert_eq!(pair_zones(&mut bob), vec![(pair, Some(zone_home()))]);
+}
+
+#[test]
+fn answer_v1_refused() {
+    let mut alice = person("Alice");
+    let bob = person("Bob");
+    let invite = alice.dev.repo().create_contact_invite(NOW).unwrap();
+    let theirs = ContactInvite::parse_link(&invite.link()).unwrap().0;
+    let (reply, secret) = seal_reply(&theirs, &bob.card).unwrap();
+    let opened = open_reply(&invite, &reply).unwrap();
+    let rdv = theirs.rdv_id();
+    // The first version: the card alone under the fresh key.
+    let key = SymmetricKey::generate().unwrap();
+    let envelope = wrap_key_labeled(
+        &opened.ephemeral_public,
+        &key,
+        CONTACT_LABEL,
+        &invite_transcript(rdv, &reply),
+    )
+    .unwrap();
+    let sealed = seal(
+        &key,
+        BlobKind::ContactInvite,
+        &Aad {
+            blob_id: rdv,
+            vault_id: None,
+            schema: 2,
+        },
+        &alice.card.encode(),
+    )
+    .unwrap();
+    let v1 = InviteAnswer { envelope, sealed }.encode().unwrap();
+    assert!(matches!(
+        open_answer(&secret, &reply, rdv, &v1),
+        Err(Error::InvalidFormat(_))
+    ));
+}
+
+#[test]
+fn link_with_host_round_trip() {
+    let invite = ContactInvite::new(NOW).unwrap();
+    for host in ["vault.example.org", "box-2.example.org:8443", "localhost"] {
+        let link = invite.link_for(Some(host));
+        assert!(link.starts_with(&format!("onepass://contact/{host}#")));
+        let (back, h) = ContactInvite::parse_link(&link).unwrap();
+        assert_eq!(h.as_deref(), Some(host));
+        assert_eq!(back.invite_id, invite.invite_id);
+        assert_eq!(back.rdv_id(), invite.rdv_id());
+    }
+    // A host the rules refuse is left out of the link, and refused when
+    // parsed.
+    for bad in [
+        "",
+        "Vault.example.org",
+        "a..b",
+        ".a",
+        "a.",
+        "a:",
+        "a:123456",
+        "a/b",
+        "a b",
+    ] {
+        assert_eq!(invite.link_for(Some(bad)), invite.link());
+        let forged = invite
+            .link()
+            .replace("onepass://contact#", &format!("onepass://contact/{bad}#"));
+        assert!(ContactInvite::parse_link(&forged).is_err(), "{bad:?}");
+    }
+    assert!(ContactInvite::parse_link("onepass://contact/#AAAA").is_err());
+}
+
+#[test]
+fn link_without_host_is_hosted() {
+    let invite = ContactInvite::new(NOW).unwrap();
+    assert_eq!(invite.link_for(None), invite.link());
+    let (back, host) = ContactInvite::parse_link(&invite.link()).unwrap();
+    assert_eq!(host, None);
+    assert_eq!(back.invite_id, invite.invite_id);
 }

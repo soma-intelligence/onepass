@@ -21,7 +21,7 @@ struct MenuFieldEditor: View {
                 .accessibilityIdentifier("editor.field.\(field.id)")
         } else {
             Picker(field.displayLabel(itemType: itemType), selection: selection) {
-                Text("Aucun").tag("")
+                Text("app.none").tag("")
                 // Stored values stay the core's (French); only the shown text is localized.
                 ForEach(options, id: \.self) { Text(CoreLabels.menuOption($0)).tag($0) }
                 if !value.text.isEmpty, !options.contains(value.text) {

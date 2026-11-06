@@ -7,8 +7,8 @@ import GlanceKit
 /// return to the foreground if the request is newer than its last unlock. An app that is not
 /// running holds no key.
 struct LockControlIntent: AppIntent {
-    static let title: LocalizedStringResource = "Verrouiller OnePass"
-    static let description = IntentDescription("Verrouille OnePass sur cet appareil.")
+    static let title: LocalizedStringResource = "widgets.lockOnepass"
+    static let description = IntentDescription("widgets.locksOnepassOnDevice")
 
     func perform() async throws -> some IntentResult {
         if let defaults = UserDefaults(suiteName: AppGroup.identifier) {

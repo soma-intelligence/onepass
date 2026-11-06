@@ -24,17 +24,17 @@ struct AutoFillTipCard: View {
         HStack(spacing: 10) {
             SymbolTile(symbol: "key.viewfinder", color: Theme.accent, size: 26)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Remplissage auto")
+                Text("term.autofill")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text("Désactivé")
+                Text("app.off")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .layoutPriority(1)
             Spacer(minLength: 4)
-            Button("Activer") { activate() }
+            Button("app.turnOn") { activate() }
                 .buttonStyle(SmallAccentCapsuleStyle())
                 .fixedSize()
                 .disabled(requesting)
@@ -60,7 +60,7 @@ struct AutoFillTipCard: View {
         }
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
-        .help("Tes identifiants, codes et passkeys proposés dans les apps et Safari, sans copier-coller.")
+        .help("browse.loginsCodesAndPasskeys")
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("autofill.tip")
     }
@@ -71,7 +71,7 @@ struct AutoFillTipCard: View {
                 Image(systemName: "key.viewfinder")
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
-                Text("Remplis tes mots de passe avec OnePass")
+                Text("browse.fillPasswordsWithOnepass")
                     .font(.subheadline.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -86,14 +86,14 @@ struct AutoFillTipCard: View {
                 .accessibilityLabel(Text("Fermer"))
                 .accessibilityIdentifier("autofill.tip.dismiss")
             }
-            Text("Tes identifiants, codes et passkeys proposés dans les apps et Safari, sans copier-coller.")
+            Text("browse.loginsCodesAndPasskeys")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 activate()
             } label: {
-                Text("Activer OnePass")
+                Text("app.turnOnOnepass")
                     .font(.footnote.weight(.semibold))
             }
             .buttonStyle(.glassProminent)

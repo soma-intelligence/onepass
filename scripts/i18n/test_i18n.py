@@ -208,6 +208,20 @@ class Toy(unittest.TestCase):
         self.assertLess(text.index('"b"'), text.index('"a"'))
         self.assertEqual(list(i18n.insert_sorted({"a": 1, "c": 3}, "b", 2)), ["a", "b", "c"])
 
+    def test_literal_inside_an_interpolation(self):
+        src = 'Text("Carte de \\(t.isEmpty ? String(localized: "ce lieu") : t)")'
+        outer = i18n.literal_regex("Carte de %@").search(src)
+        inner = i18n.literal_regex("ce lieu").search(src)
+        both = [(outer.start(), outer.end(), "item.mapOf", (outer.span(1),)), (inner.start(), inner.end(), "item.thisPlace", ())]
+        self.assertEqual(
+            i18n.apply_literal_edits(src, sorted(both)),
+            'Text("item.mapOf \\(t.isEmpty ? String(localized: "item.thisPlace") : t)")',
+        )
+        self.assertEqual(
+            i18n.apply_literal_edits(src, both[:1]),
+            'Text("item.mapOf \\(t.isEmpty ? String(localized: "ce lieu") : t)")',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

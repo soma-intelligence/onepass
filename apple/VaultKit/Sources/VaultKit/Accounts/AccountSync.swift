@@ -24,6 +24,8 @@ public actor AccountSync: SyncTrigger {
 
     /// The coordinator, once made.
     public var current: SyncCoordinator? { coordinator }
+    /// The account whose zone the coordinator syncs, once made.
+    public private(set) var accountID: String?
 
     /// Makes the coordinator of `accountID` now (sign in on a new device: the zone is fetched before any
     /// unlock). A coordinator already made for the account is kept.
@@ -32,6 +34,7 @@ public actor AccountSync: SyncTrigger {
         if let coordinator { return coordinator }
         guard let made = make(accountID) else { return nil }
         coordinator = made
+        self.accountID = accountID
         self.made(made)
         return made
     }

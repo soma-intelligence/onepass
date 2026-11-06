@@ -1,22 +1,34 @@
 // Save flow (spec 8.5, 8.8): submitted credentials -> check -> prompt.
 import { describe, expect, it } from "vitest";
 import {
-  CHECK_DELAY_MS,
+  IDENTIFIER_TTL_MS,
+  NAV_SETTLE_MS,
+  SETTLE_MS,
   SUBMIT_TTL_MS,
   SaveFlow,
   type Timers,
   autoSubmitFor,
+  cardFromValues,
   setAutoSubmit,
+  splitExpiry,
 } from "../../../src/background/chain/save-flow";
 import type { FillTarget } from "../../../src/background/fill";
 import type { CsContext } from "../../../src/background/frames";
 import { Planner } from "../../../src/background/planner";
-import type { PlanOut } from "../../../src/shared/messages";
-import { PENDING_TAG, type SavePending, WEAK_BY_SITE_TAG } from "../../../src/background/save";
+import type { CsToBg, FormInfo, PageAnalysis, PlanOut } from "../../../src/shared/messages";
+import { PENDING_TAG, type SavePending, WEAK_BY_SITE_TAG, loginQuietKey } from "../../../src/background/save";
 import { BgError } from "../../../src/background/session";
 import { FakeArea } from "../fake-ext";
 
 const SITE = "https://atlas-cloud.test";
+
+/** A page as the content script reports it: with or without a sign-in form asking for a password. */
+function page(withPassword: boolean): PageAnalysis {
+  const forms: FormInfo[] = withPassword
+    ? [{ ref: "f1", kind: "login", fields: [{ ref: "u", role: "email" }, { ref: "p", role: "current_password" }] } as FormInfo]
+    : [];
+  return { url: `${SITE}/x`, forms, captcha: false, push: false, providerButtons: [], accountChooser: [] };
+}
 
 class FakeTimers implements Timers {
   t = 0;
@@ -89,14 +101,31 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = [], 
     setTopDoc: (d: string | null) => (topDoc = d),
     /** Runs while the host answers check_credentials. */
     duringCheck: (fn: () => void) => (onCheck = fn),
+    /** The submitting document drops its password form and stays so (a single-page app signed in). */
+    succeed: async () => {
+      flow.onAnalysis(page(false), cs);
+      await timers.advance(SETTLE_MS);
+    },
+    /** The analysis of the top document the browser reports now (after a navigation). */
+    landed: async (withPassword = false) => {
+      const now: CsContext = { tabId: 7, frameId: 0, origin: SITE };
+      if (topDoc !== null) now.documentId = topDoc;
+      flow.onAnalysis(page(withPassword), now);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    },
+    page,
+    cs,
   };
 }
 
 describe("save flow", () => {
-  it("new: checks after 1.5 s without navigation and opens the prompt on the submitting document", async () => {
+  it("new: no prompt on a mere delay; once the form is gone for 1 s, checks and opens the prompt on the submitting document", async () => {
     const t = setup("new");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS - 1);
+    await t.timers.advance(SUBMIT_TTL_MS / 2);
+    expect(t.requests).toEqual([]);
+    t.flow.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS - 1);
     expect(t.requests).toEqual([]);
     await t.timers.advance(1);
     expect(t.requests).toEqual([
@@ -121,11 +150,11 @@ describe("save flow", () => {
     const t = setup("update");
     await t.submit("alex@atlas.dev", "New-Pass-2");
     t.flow.onNavigation(7);
-    await t.timers.advance(CHECK_DELAY_MS * 2);
+    await t.timers.advance(SETTLE_MS * 2);
     expect(t.requests).toEqual([]);
     t.setTop(`${SITE}/home`);
     t.setTopDoc("doc-2");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
     // The old document is gone: pinned to the new, verified one.
@@ -139,7 +168,7 @@ describe("save flow", () => {
     t.setTop(`${SITE}/home`);
     t.setTopDoc("doc-2");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     // Not pinned to doc-1, which is gone: to the verified new document.
     expect(t.opened[0]?.documentId).toBe("doc-2");
@@ -149,7 +178,7 @@ describe("save flow", () => {
     const t = setup("new");
     t.setTopDoc(null);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened[0]?.documentId).toBeUndefined();
     expect(t.opened[0]?.topOrigin).toBe(SITE);
   });
@@ -161,7 +190,7 @@ describe("save flow", () => {
       t.setTop("https://evil.test/");
       t.setTopDoc("doc-evil");
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests.filter((r) => r.op === "check_credentials")).toHaveLength(1);
     expect(t.opened).toEqual([]);
   });
@@ -173,7 +202,7 @@ describe("save flow", () => {
       t.setTop(`${SITE}/home`);
       t.setTopDoc("doc-3");
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ documentId: "doc-3", topOrigin: SITE, status: "update" });
   });
@@ -184,7 +213,7 @@ describe("save flow", () => {
     t.flow.onNavigation(7);
     t.setTop("https://evil.test/");
     t.setTopDoc("doc-evil");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -192,7 +221,7 @@ describe("save flow", () => {
   it("same: nothing", async () => {
     const t = setup("same");
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toHaveLength(1);
     expect(t.opened).toEqual([]);
   });
@@ -200,7 +229,7 @@ describe("save flow", () => {
   it("never: a site in the list is not proposed, and the host is not asked", async () => {
     const t = setup("new", ["atlas-cloud.test"]);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -211,7 +240,7 @@ describe("save flow", () => {
     t.flow.onNavigation(7);
     await t.timers.advance(SUBMIT_TTL_MS);
     expect(t.flow.size).toBe(0);
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
     expect(t.opened).toEqual([]);
   });
@@ -221,19 +250,19 @@ describe("save flow", () => {
     await t.submit();
     t.flow.onNavigation(7);
     t.setTop("https://evil.test/");
-    await t.flow.onReady(7);
+    await t.landed();
     expect(t.requests).toEqual([]);
   });
 
   it("no identifier: not proposed, unless the password is the one just generated here", async () => {
     const t = setup("new");
     await t.submit("", "Some-Pass");
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
 
     t.flow.rememberGenerated(7, `${SITE}/signup`, "Gen-Pass-123");
     await t.submit("", "Gen-Pass-123", true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ username: "", password: "Gen-Pass-123", status: "new" });
   });
@@ -242,7 +271,7 @@ describe("save flow", () => {
     const t = setup("new");
     t.flow.rememberGenerated(7, "https://other.test", "Gen-Pass-123");
     await t.submit("", "Gen-Pass-123", true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.opened).toEqual([]);
   });
 
@@ -250,14 +279,14 @@ describe("save flow", () => {
     const t = setup("new");
     t.setChain(true);
     await t.submit();
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
   });
 
   it("plain HTTP submissions are ignored", async () => {
     const t = setup("new");
     await t.submit("alex@atlas.dev", "x", false, { tabId: 7, frameId: 0, origin: "http://atlas-cloud.test" });
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(t.requests).toEqual([]);
   });
 
@@ -276,8 +305,93 @@ describe("save flow", () => {
       frameId: 0,
       origin: SITE,
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    flow.onAnalysis(t.page(false), { tabId: 1, frameId: 0, origin: SITE });
+    await t.timers.advance(SETTLE_MS);
     expect(flow.size).toBe(0);
+  });
+
+  // ---- founder bug 2026-11-03: the prompt waits for success, follows identifier-first sign-ins ----
+
+  it("failed sign-in: the next page asks for the password again, nothing is proposed", async () => {
+    const t = setup("new");
+    await t.submit("alex@atlas.dev", "Wrong-Pass-1");
+    t.flow.onNavigation(7, `${SITE}/login`);
+    t.setTopDoc("doc-2");
+    await t.landed(true);
+    await t.timers.advance(NAV_SETTLE_MS * 2);
+    expect(t.requests).toEqual([]);
+    expect(t.opened).toEqual([]);
+    expect(t.flow.size).toBe(0);
+  });
+
+  it("single-page app: the form flickers away and back with an error, nothing is proposed", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.flow.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS / 2);
+    t.flow.onAnalysis(t.page(true), t.cs);
+    await t.timers.advance(SETTLE_MS * 4);
+    expect(t.requests).toEqual([]);
+    expect(t.flow.size).toBe(1);
+  });
+
+  it("identifier first, password on the next page: proposed with the identifier of the first step", async () => {
+    const t = setup("new");
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex.new@atlas.dev" }, t.cs);
+    t.flow.onNavigation(7, `${SITE}/multistep/password`);
+    t.setTopDoc("doc-2");
+    await t.submit("", "Nouv-Pass-0042", false, { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-2" });
+    t.flow.onNavigation(7, `${SITE}/multistep/otp`);
+    t.setTopDoc("doc-3");
+    await t.landed();
+    expect(t.requests).toEqual([
+      { op: "check_credentials", ctx: "save_prompt", origin: SITE, username: "alex.new@atlas.dev", password: "Nouv-Pass-0042" },
+    ]);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ username: "alex.new@atlas.dev", status: "new", documentId: "doc-3" });
+  });
+
+  it("an identifier of another site, or too old, is not used", async () => {
+    const t = setup("new");
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex@other.test" }, { tabId: 7, frameId: 0, origin: "https://other.test" });
+    await t.submit("", "Some-Pass");
+    await t.succeed();
+    expect(t.requests).toEqual([]);
+    t.flow.onIdentifier({ type: "submitted_identifier", formRef: "f0", username: "alex@atlas.dev" }, t.cs);
+    await t.timers.advance(IDENTIFIER_TTL_MS + 1);
+    await t.submit("", "Some-Pass");
+    await t.succeed();
+    expect(t.requests).toEqual([]);
+  });
+
+  it("vault locked in the app: the card opens anyway, marked locked", async () => {
+    const t = setup("new", [], (r) => (r.op === "check_credentials" ? new BgError("locked") : undefined));
+    await t.submit();
+    await t.succeed();
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ status: "new", locked: true, username: "alex@atlas.dev" });
+  });
+
+  it("Safari order (no documentId, commit before the submission): the new page's analysis decides", async () => {
+    const t = setup("new");
+    t.setTopDoc(null);
+    const safari: CsContext = { tabId: 7, frameId: 0, origin: SITE };
+    t.flow.onNavigation(7, `${SITE}/home`);
+    await t.submit("alex@atlas.dev", "Atlas-Pass-1", false, safari);
+    t.flow.onAnalysis(t.page(false), safari);
+    await t.timers.advance(SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.topOrigin).toBe(SITE);
+  });
+
+  it("a new page with no analysis at all counts once loaded", async () => {
+    const t = setup("new");
+    await t.submit();
+    t.flow.onNavigation(7, `${SITE}/home`);
+    t.setTopDoc("doc-2");
+    t.flow.onReady(7);
+    await t.timers.advance(NAV_SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
   });
 
   it("menu new login: edit view, site prefilled, nothing typed", async () => {
@@ -396,7 +510,7 @@ describe("pending save of a generated password (spec 7)", () => {
     await plannerFor(t).run(target, { ...signup(), intent: "reset" });
     expect(t.requests).toEqual([]);
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["check_credentials"]);
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01" } });
@@ -463,10 +577,12 @@ describe("pending save of a generated password (spec 7)", () => {
       frameId: 0,
       origin: SITE,
     });
-    await t.timers.advance(CHECK_DELAY_MS);
+    fresh.onAnalysis(t.page(false), t.cs);
+    await t.timers.advance(SETTLE_MS);
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials", "confirm_pending"]);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
-    expect(t.opened).toEqual([]);
+    // Nothing to answer: the card only says it is saved, without the password.
+    expect(t.opened).toEqual([expect.objectContaining({ view: "saved", username: "alex@atlas.dev", password: "" })]);
   });
 
   it("pending verdict without a username: stays pending, no prompt, no second save", async () => {
@@ -476,7 +592,7 @@ describe("pending save of a generated password (spec 7)", () => {
     t.flow.rememberGenerated(7, SITE, GEN);
     (t.flow as unknown as { saved: Map<number, unknown> }).saved.clear();
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
     expect(t.opened).toEqual([]);
   });
@@ -497,20 +613,36 @@ describe("pending save of a generated password (spec 7)", () => {
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", GEN, true);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
-    // Confirmed instead of a new save prompt; the pending entry is gone.
-    await t.timers.advance(CHECK_DELAY_MS);
-    expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
+    // Confirmed instead of a new save prompt; once signed up, the card shows it saved.
     expect(t.opened).toEqual([]);
+    await t.succeed();
+    expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
+    expect(t.opened).toEqual([
+      { tabId: 7, origin: SITE, kind: "login", status: "new", username: "alex@atlas.dev", password: "", view: "saved", topOrigin: SITE, documentId: "doc-1" },
+    ]);
     expect(t.flow.size).toBe(0);
     await t.flow.savePending(7, SITE, "again-Pass-5");
     expect(t.requests.at(-1)).toMatchObject({ op: "save_login" });
+  });
+
+  it("a confirmed signup the site refuses (its form again on a new page) shows no card", async () => {
+    const t = setup();
+    await plannerFor(t).run(target, signup());
+    await t.submit("alex@atlas.dev", GEN, true);
+    t.flow.onNavigation(7, `${SITE}/signup`);
+    t.setTopDoc("doc-2");
+    await t.landed(true);
+    await t.timers.advance(SETTLE_MS * 3);
+    expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
+    expect(t.opened).toEqual([]);
+    expect(t.flow.size).toBe(0);
   });
 
   it("a submitted password other than the generated one gets the usual prompt", async () => {
     const t = setup();
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", "Typed-Instead-9");
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials"]);
     expect(t.opened).toHaveLength(1);
   });
@@ -522,7 +654,7 @@ describe("pending save of a generated password (spec 7)", () => {
     expect(events).toEqual(["filled"]);
     expect(ops(t)).toEqual(["vaults"]);
     await t.submit("", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "check_credentials"]);
     expect(t.opened[0]).toMatchObject({ status: "new", username: "", password: GEN });
   });
@@ -531,7 +663,7 @@ describe("pending save of a generated password (spec 7)", () => {
     const t = setup("new", [], (r) => (r.op === "confirm_pending" ? new Error("invalid") : undefined));
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", GEN, true);
-    await t.timers.advance(CHECK_DELAY_MS);
+    await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending", "check_credentials"]);
     expect(t.opened).toHaveLength(1);
   });
@@ -562,5 +694,223 @@ describe("pending save of a generated password (spec 7)", () => {
     await t.flow.savePending(7, SITE, "first-Pass-1", { username: "alex@atlas.dev" });
     const held = (t.flow as unknown as { saved: Map<number, unknown> }).saved.get(7);
     expect(held).toEqual({ site: "atlas-cloud.test", itemId: "it_new", username: "alex@atlas.dev" });
+  });
+});
+
+// Founder, 2026-11-04: the card every time a credential OnePass does not hold is used.
+describe("save every time", () => {
+  interface Held {
+    site: string;
+    username: string;
+    password: string;
+    id: string;
+  }
+
+  /** A save flow over several sites, with a vault that answers check_credentials like the host. */
+  function everyTime(opts: { never?: string[]; cards?: { number: string; exp: string; id: string }[]; identities?: string[] } = {}) {
+    const timers = new FakeTimers();
+    const vault: Held[] = [];
+    const opened: SavePending[] = [];
+    const requests: Record<string, unknown>[] = [];
+    const dismissed = new Set<string>();
+    let top = `${SITE}/login`;
+    let doc = 0;
+    const flow = new SaveFlow({
+      session: {
+        request: (async (r: Record<string, unknown>) => {
+          requests.push(r);
+          const site = new URL(String(r.origin)).hostname;
+          if (r.op === "check_credentials") {
+            const mine = vault.filter((v) => v.site === site && v.username.toLowerCase() === String(r.username).toLowerCase());
+            if (mine.some((v) => v.password === r.password)) return { status: "same", item_id: mine[0]?.id };
+            if (mine[0]) return { status: "update", item_id: mine[0].id, title: site };
+            return { status: "new" };
+          }
+          if (r.op === "check_card") {
+            const c = (opts.cards ?? []).find((x) => x.number === r.number);
+            if (!c) return { status: "new" };
+            return c.exp === `${String(r.exp_month)}/${String(r.exp_year)}` ? { status: "same", item_id: c.id } : { status: "update", item_id: c.id, title: "Visa" };
+          }
+          if (r.op === "check_identity") return (opts.identities ?? []).includes(String(r.email)) ? { status: "same", item_id: "id_1" } : { status: "new" };
+          return {};
+        }) as never,
+      },
+      saves: {
+        open: async (p: SavePending) => (opened.push(structuredClone(p)), "tok"),
+        recentlyDismissed: async (origin: string, key: string) => dismissed.has(`${new URL(origin).hostname}|${key}`),
+      },
+      neverSave: { has: async (s: string) => (opts.never ?? []).includes(s) },
+      topFrame: async () => ({ url: top, documentId: `doc-${doc}` }),
+      now: () => timers.t,
+      timers,
+    });
+    /** The user signs in by hand on `origin`; the next page has no form. */
+    const signIn = async (origin: string, username: string, password: string) => {
+      doc++;
+      top = `${origin}/login`;
+      const cs: CsContext = { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` };
+      await flow.onSubmitted({ type: "submitted_credentials", formRef: "f1", username, password, isNew: false }, cs);
+      doc++;
+      top = `${origin}/home`;
+      flow.onNavigation(7, top);
+      flow.onAnalysis(page(false), { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    };
+    /** A card or address form sent by hand on `origin`; the next page has no form (or `still` one). */
+    const sendForm = async (origin: string, m: Extract<CsToBg, { type: "submitted_form" }>, still?: PageAnalysis) => {
+      doc++;
+      top = `${origin}/checkout`;
+      flow.onForm(m, { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` });
+      doc++;
+      flow.onNavigation(7, top);
+      flow.onAnalysis(still ?? page(false), { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    };
+    const save = (origin: string, username: string, password: string) =>
+      vault.push({ site: new URL(origin).hostname, username, password, id: `it_${vault.length + 1}` });
+    const dismiss = (origin: string, username: string, password: string) => dismissed.add(`${new URL(origin).hostname}|${loginQuietKey(username, password)}`);
+    return { flow, opened, requests, signIn, sendForm, save, dismiss, dismissed };
+  }
+
+  const ATLAS = "https://atlas.test";
+  const BOREALIS = "https://borealis.test";
+  const COBALT = "https://cobalt.test";
+  const DUNE = "https://dune.test";
+
+  it("three sites never seen: a card on each, every time", async () => {
+    const t = everyTime();
+    for (const [i, origin] of [ATLAS, BOREALIS, COBALT].entries()) {
+      await t.signIn(origin, `user${i}@exemple.fr`, `Pass-${i}-un`);
+      expect(t.opened).toHaveLength(i + 1);
+      expect(t.opened[i]).toMatchObject({ origin, kind: "login", status: "new", username: `user${i}@exemple.fr` });
+      t.save(origin, `user${i}@exemple.fr`, `Pass-${i}-un`);
+    }
+    // Signed in again with what OnePass now holds: nothing to ask.
+    await t.signIn(BOREALIS, "user1@exemple.fr", "Pass-1-un");
+    expect(t.opened).toHaveLength(3);
+  });
+
+  it("a second account on a known site is a new login; a known account with another password, an update", async () => {
+    const t = everyTime();
+    await t.signIn(BOREALIS, "borealis@exemple.fr", "Borealis-un");
+    t.save(BOREALIS, "borealis@exemple.fr", "Borealis-un");
+    await t.signIn(BOREALIS, "autre@exemple.fr", "Autre-un");
+    expect(t.opened[1]).toMatchObject({ status: "new", username: "autre@exemple.fr" });
+    expect(t.opened[1]?.update).toBeUndefined();
+    t.save(BOREALIS, "autre@exemple.fr", "Autre-un");
+    await t.signIn(BOREALIS, "borealis@exemple.fr", "Borealis-deux");
+    expect(t.opened[2]).toMatchObject({ status: "update", username: "borealis@exemple.fr", update: { itemId: "it_1" } });
+    // The second account with a new password: an update of that one, not the first.
+    await t.signIn(BOREALIS, "Autre@exemple.fr", "Autre-deux");
+    expect(t.opened[3]).toMatchObject({ status: "update", update: { itemId: "it_2" } });
+  });
+
+  it("'Pas maintenant' quiets that very credential only: another account, password or site still asks", async () => {
+    const t = everyTime();
+    await t.signIn(DUNE, "dune@exemple.fr", "Dune-un");
+    expect(t.opened).toHaveLength(1);
+    t.dismiss(DUNE, "dune@exemple.fr", "Dune-un");
+    await t.signIn(DUNE, "dune@exemple.fr", "Dune-un");
+    expect(t.opened).toHaveLength(1);
+    await t.signIn(DUNE, "dune2@exemple.fr", "Dune-deux");
+    expect(t.opened).toHaveLength(2);
+    await t.signIn(DUNE, "dune@exemple.fr", "Dune-deux");
+    expect(t.opened).toHaveLength(3);
+    await t.signIn(ATLAS, "dune@exemple.fr", "Dune-un");
+    expect(t.opened).toHaveLength(4);
+  });
+
+  it("'Ne jamais proposer' still silences the whole site, and only it", async () => {
+    const t = everyTime({ never: ["dune.test"] });
+    await t.signIn(DUNE, "a@exemple.fr", "A-un");
+    await t.signIn(DUNE, "b@exemple.fr", "B-un");
+    expect(t.opened).toEqual([]);
+    await t.signIn(ATLAS, "a@exemple.fr", "A-un");
+    expect(t.opened).toHaveLength(1);
+  });
+
+  describe("cards and addresses typed by hand (MS-04)", () => {
+    const cardForm = (values: Record<string, string>): Extract<CsToBg, { type: "submitted_form" }> => ({ type: "submitted_form", formRef: "f9", kind: "card", values });
+    const addressForm = (values: Record<string, string>): Extract<CsToBg, { type: "submitted_form" }> => ({ type: "submitted_form", formRef: "f8", kind: "identity", values });
+
+    it("a new card: check_card, then the card with its values (one expiry field read too)", async () => {
+      const t = everyTime();
+      await t.sendForm(ATLAS, cardForm({ cc_name: "Alex Martin", cc_number: "4111 1111 1111 1111", cc_exp: "04/29" }));
+      expect(t.requests).toEqual([{ op: "check_card", ctx: "save_prompt", origin: ATLAS, number: "4111111111111111", exp_month: "04", exp_year: "29" }]);
+      expect(t.opened).toEqual([
+        expect.objectContaining({ kind: "card", status: "new", card: { cardholder: "Alex Martin", number: "4111111111111111", exp_month: "04", exp_year: "29" } }),
+      ]);
+    });
+
+    it("the card OnePass filled here: nothing; one it holds but did not fill: shown as known (no oracle); new expiry: an update", async () => {
+      const t = everyTime({ cards: [{ number: "4111111111111111", exp: "04/2029", id: "card_1" }] });
+      await t.sendForm(ATLAS, cardForm({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "2029" }));
+      expect(t.opened).toEqual([expect.objectContaining({ kind: "card", known: true })]);
+      t.opened.length = 0;
+      t.flow.noteFilled(7, ATLAS, "card", "card_1");
+      await t.sendForm(ATLAS, cardForm({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "2029" }));
+      expect(t.opened).toEqual([]);
+      // Filled on another site, or another card filled here: no pass.
+      await t.sendForm(BOREALIS, cardForm({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "2029" }));
+      expect(t.opened).toEqual([expect.objectContaining({ kind: "card", known: true })]);
+      t.opened.length = 0;
+      await t.sendForm(ATLAS, cardForm({ cc_number: "4111111111111111", cc_exp_month: "05", cc_exp_year: "2031" }));
+      expect(t.opened).toEqual([expect.objectContaining({ kind: "card", status: "update", update: { itemId: "card_1", title: "Visa" } })]);
+    });
+
+    it("the payment refused (its card form again on the next page): nothing; never-save sites: nothing", async () => {
+      const t = everyTime({ never: ["dune.test"] });
+      const still: PageAnalysis = { ...page(false), forms: [{ ref: "f9", kind: "card", fields: [{ ref: "n", role: "cc_number" }] } as FormInfo] };
+      await t.sendForm(ATLAS, cardForm({ cc_number: "4111111111111111" }), still);
+      await t.sendForm(DUNE, cardForm({ cc_number: "4111111111111111" }));
+      expect(t.opened).toEqual([]);
+      expect(t.requests).toEqual([]);
+    });
+
+    it("an address: check_identity with the name split; one OnePass filled here gets nothing; a contact form is no identity", async () => {
+      const t = everyTime();
+      await t.sendForm(ATLAS, addressForm({ full_name: "Camille Durand", email: "camille@exemple.fr", address_line1: "1 rue de la Paix", postal_code: "75002", city: "Paris" }));
+      expect(t.requests.at(-1)).toEqual({
+        op: "check_identity",
+        ctx: "save_prompt",
+        origin: ATLAS,
+        given_name: "Camille",
+        family_name: "Durand",
+        email: "camille@exemple.fr",
+        tel: "",
+        organization: "",
+        address: { line1: "1 rue de la Paix", line2: "", city: "Paris", postal_code: "75002", region: "", country: "" },
+      });
+      expect(t.opened).toEqual([expect.objectContaining({ kind: "identity", status: "new" })]);
+      // Filled from OnePass, then reformatted by the page: never a duplicate offered.
+      t.flow.noteFilled(7, ATLAS, "identity", "id_1");
+      await t.sendForm(ATLAS, addressForm({ given_name: "Alex", family_name: "Martin", tel: "06 00 00 00 00", address_line1: "1 rue X", city: "Paris" }));
+      expect(t.opened).toHaveLength(1);
+      const n = t.requests.length;
+      await t.sendForm(BOREALIS, addressForm({ full_name: "Sam Leroy", email: "news@exemple.fr", tel: "0600000000" }));
+      await t.sendForm(BOREALIS, addressForm({ city: "Lyon", country: "FR" }));
+      expect(t.requests).toHaveLength(n);
+    });
+
+    it("a sign-in waiting for its check keeps its place over a form", async () => {
+      const t = everyTime();
+      await t.flow.onSubmitted(
+        { type: "submitted_credentials", formRef: "f1", username: "a@exemple.fr", password: "A-un", isNew: false },
+        { tabId: 7, frameId: 0, origin: ATLAS, documentId: "doc-x" },
+      );
+      t.flow.onForm(cardForm({ cc_number: "4111111111111111" }), { tabId: 7, frameId: 0, origin: ATLAS, documentId: "doc-x" });
+      expect(t.flow.size).toBe(1);
+    });
+  });
+
+  it("cardFromValues and splitExpiry", () => {
+    expect(splitExpiry("4 / 2031")).toEqual({ month: "04", year: "2031" });
+    expect(splitExpiry("0429")).toEqual({ month: "04", year: "29" });
+    expect(splitExpiry("avril")).toEqual({ month: "", year: "" });
+    expect(splitExpiry("122")).toEqual({ month: "", year: "" });
+    // A security code read as a year: no expiry.
+    expect(cardFromValues({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "1234" })).toMatchObject({ exp_month: "", exp_year: "" });
+    expect(cardFromValues({ cc_number: "4111-1111-1111-1111", cc_exp_month: "13x" })).toEqual({ cardholder: "", number: "4111111111111111", exp_month: "", exp_year: "" });
+    expect(cardFromValues({ cc_number: "1234" })).toBeNull();
   });
 });

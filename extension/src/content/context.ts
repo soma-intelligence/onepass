@@ -37,6 +37,7 @@ import {
   NEWSLETTER_WORDS,
   NEXT_WORDS,
   normalizeText,
+  PASSKEY_WORDS,
   PAY_WORDS,
   RESET_WORDS,
   SCORE_CEILING,
@@ -80,8 +81,11 @@ export function confidenceOf(score: number, typeWeight = 0): number {
 /** What a button does, read from its label and type. */
 export function buttonClass(el: HTMLElement): ButtonClass {
   const label = normalizeText(buttonLabel(el));
+  // A passkey made here (signup), never a sign-in with one.
+  if (PASSKEY_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "passkey";
   if (PAY_WORDS.test(label)) return "pay";
-  if (CREATE_WORDS.test(label)) return "create";
+  // "Sign in or create account" (one identifier-first door for both): a sign-in.
+  if (CREATE_WORDS.test(label)) return SIGN_IN_WORDS.test(label) ? "submit" : "create";
   if (NEXT_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "next";
   if (isSubmitType(el) || SIGN_IN_WORDS.test(label)) return "submit";
   return "other";
@@ -207,8 +211,8 @@ function hintsFor(
 
 /**
  * Buttons of one group (form, or the container of fields outside any form),
- * at most `PAGE_CONTEXT_MAX_BUTTONS`: the submit first, then the pay and
- * create buttons, then the rest, each in document order, so the cap never
+ * at most `PAGE_CONTEXT_MAX_BUTTONS`: the submit first, then the pay,
+ * create and passkey buttons, then the rest, each in document order, so the cap never
  * drops the button a plan sends or one that must hold its submit.
  */
 function groupButtons(doc: Document, container: Element, submit: Element | null, geometry: Geometry): HTMLElement[] {
@@ -238,7 +242,7 @@ function groupButtons(doc: Document, container: Element, submit: Element | null,
   const rank = (b: HTMLElement): number => {
     if (b === submit) return 0;
     const c = buttonClass(b);
-    return c === "pay" || c === "create" ? 1 : 2;
+    return c === "pay" || c === "create" || c === "passkey" ? 1 : 2;
   };
   // Stable sort: document order within each rank.
   return kept.sort((a, b) => rank(a) - rank(b)).slice(0, PAGE_CONTEXT_MAX_BUTTONS);

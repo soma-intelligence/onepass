@@ -1,16 +1,61 @@
 //! Record storage. A store keeps opaque records and is not trusted: the
 //! `Repository` verifies everything it reads back.
 
+pub(crate) mod autofill_sql;
 mod memory;
 mod sqlite;
+mod zone;
 
 pub use memory::MemoryStore;
 pub use sqlite::SqliteStore;
+pub use zone::Zone;
 
 use crate::chain::ChainState;
 use crate::crypto::IdentityVerifyingKey;
+use crate::share::ShareState;
 use crate::trust::TrustState;
 use crate::{Error, Id, IntegrityError, Result};
+
+/// Store meta key of the notice an erase by the quarantine leaves behind
+/// (`ErasedNotice`, one byte). The only row left after `erase_device`.
+pub const ERASED_NOTICE_KEY: &str = "erased";
+
+/// Why the quarantine of key rotation v2 erased this device (founder
+/// decision 2026-11-03, recover-wipe): written by `RecordStore::erase_device`
+/// in the erase transaction, so the app can tell the user once, even when
+/// the erase ran inside a sync commit or the app was killed right after.
+/// It names no account and holds no secret. The user's own "Effacer cet
+/// appareil" leaves none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErasedNotice {
+    /// 7 days after the account was recovered on another device (a
+    /// `Recover` rotation removed every old device).
+    Recovered,
+    /// 7 days after another device of the account removed this one.
+    Removed,
+    /// Another device of the account marked this one stolen (wipe order).
+    Stolen,
+}
+
+impl ErasedNotice {
+    pub fn code(self) -> u8 {
+        match self {
+            ErasedNotice::Recovered => 1,
+            ErasedNotice::Removed => 2,
+            ErasedNotice::Stolen => 3,
+        }
+    }
+
+    /// `None` for an unknown code (a newer build's notice).
+    pub fn from_code(code: u8) -> Option<ErasedNotice> {
+        match code {
+            1 => Some(ErasedNotice::Recovered),
+            2 => Some(ErasedNotice::Removed),
+            3 => Some(ErasedNotice::Stolen),
+            _ => None,
+        }
+    }
+}
 
 /// What a record holds. The numeric codes are the on-disk encoding: append
 /// only, never renumber.
@@ -65,7 +110,20 @@ pub enum RecordKind {
     /// `attachment::chunk_id`, data = `vault_id (16 bytes) ||
     /// postcard(AttachmentChunk)`, like an item record.
     Attachment,
+    /// A signed follow acknowledgment (spec 6.8, O6), id = `ack_id(head,
+    /// device_id)`, version = the head's generation. Immutable, display
+    /// only.
+    DeviceAck,
+    /// Where the account syncs (`crate::synchome`), signed and chained like
+    /// the lists: id = `account_record_id`, version = its seq. A deletion
+    /// from the server is ignored, like a list's.
+    SyncHome,
 }
+
+/// Code of the mailbox enroll request (`crate::enroll_request`), a side
+/// record the apps write in the frozen iCloud zone. Never a `RecordKind`:
+/// `RecordKind::from_code` refuses it, and no store holds it.
+pub const SIDE_KIND_MAILBOX_ENROLL_REQUEST: u8 = 28;
 
 impl RecordKind {
     pub fn code(self) -> u8 {
@@ -95,6 +153,8 @@ impl RecordKind {
             Self::ItemSend => 23,
             Self::ShareInvite => 24,
             Self::Attachment => 25,
+            Self::DeviceAck => 26,
+            Self::SyncHome => 27,
         }
     }
 
@@ -125,6 +185,8 @@ impl RecordKind {
             23 => Self::ItemSend,
             24 => Self::ShareInvite,
             25 => Self::Attachment,
+            26 => Self::DeviceAck,
+            27 => Self::SyncHome,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -148,6 +210,7 @@ impl RecordKind {
                 | Self::KeyDelivery
                 | Self::MemberKey
                 | Self::MemberLineage
+                | Self::DeviceAck
         )
     }
 
@@ -163,6 +226,7 @@ impl RecordKind {
                 | Self::Membership
                 | Self::Family
                 | Self::MemberLineage
+                | Self::DeviceAck
         )
     }
 }
@@ -210,7 +274,7 @@ impl TrustGuard<'_> {
 /// Prefixes of the device-local metadata keys the repository may read and
 /// write through `RecordStore::local_meta` and its siblings: never synced,
 /// never a key the store uses itself (chain, trust, sync state).
-pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite."];
+pub const LOCAL_META_PREFIXES: &[&str] = &["contact_invite.", "family.", "autofill."];
 
 /// `key` under one of `LOCAL_META_PREFIXES`, else `Validation`.
 pub fn check_local_meta_key(key: &str) -> Result<()> {
@@ -240,6 +304,22 @@ pub fn check_local_meta_prefix(prefix: &str) -> Result<()> {
     }
 }
 
+/// A pending row of a shared zone: kind, id, version, data (none for a
+/// deletion).
+pub type ZonePendingRow = (RecordKind, Id, u64, Option<Vec<u8>>);
+
+fn zones_unsupported() -> Error {
+    Error::Store("zones unsupported".into())
+}
+
+/// A row of the autofill history: `(seq, site_tag, sealed event)`.
+pub type AutofillRow = (i64, [u8; 32], Vec<u8>);
+
+/// A store without an autofill history (`RecordStore::autofill_append`).
+pub fn autofill_unsupported() -> Error {
+    Error::Store("no autofill history in this store".into())
+}
+
 fn local_meta_unsupported() -> Error {
     Error::Store("local meta unsupported".into())
 }
@@ -247,6 +327,97 @@ fn local_meta_unsupported() -> Error {
 /// A key-value store of records, keyed by `(kind, id)`. `put` replaces the
 /// record with the same key; `delete` of a missing record is not an error.
 pub trait RecordStore {
+    /// `get` in `zone` (sharing spec 13.2). The default holds the private
+    /// zone only: any other zone is `Store("zones unsupported")`.
+    fn get_in(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<Record>> {
+        match zone {
+            Zone::Private => self.get(kind, id),
+            _ => Err(zones_unsupported()),
+        }
+    }
+
+    /// `list` in `zone`. Same default as `get_in`.
+    fn list_in(&self, zone: Zone, kind: RecordKind) -> Result<Vec<Record>> {
+        match zone {
+            Zone::Private => self.list(kind),
+            _ => Err(zones_unsupported()),
+        }
+    }
+
+    /// Writes (each conditional on the version the caller read, as
+    /// `put_all_if_version`) and deletions in any zones, the trust state
+    /// when given, and the local state of shared vaults, all or nothing
+    /// (`Conflict` on a version mismatch, nothing written in any zone).
+    /// The default holds the private zone only.
+    fn put_all_zoned(
+        &mut self,
+        writes: Vec<(Zone, Record, Option<u64>)>,
+        deletes: Vec<(Zone, RecordKind, Id)>,
+        trust: Option<&TrustState>,
+        shares: &[ShareState],
+    ) -> Result<()> {
+        if writes.iter().any(|(z, _, _)| z.is_shared())
+            || deletes.iter().any(|(z, _, _)| z.is_shared())
+            || !shares.is_empty()
+        {
+            return Err(zones_unsupported());
+        }
+        let writes = writes.into_iter().map(|(_, r, v)| (r, v)).collect();
+        let deletes = deletes.into_iter().map(|(_, k, id)| (k, id)).collect();
+        match trust {
+            Some(t) => self.put_all_if_version_with_trust(writes, deletes, None, t),
+            None => self.put_all_if_version_and_delete(writes, deletes),
+        }
+    }
+
+    /// The local pinned state of shared vault `vault`, never synced. The
+    /// default holds none.
+    fn share_state(&self, vault: Id) -> Result<Option<ShareState>> {
+        let _ = vault;
+        Ok(None)
+    }
+
+    /// Every shared vault's local state, by vault id.
+    fn share_states(&self) -> Result<Vec<ShareState>> {
+        Ok(Vec::new())
+    }
+
+    /// The shared zones this store holds records of (the private zone is
+    /// not listed). The default holds none.
+    fn zones(&self) -> Result<Vec<Zone>> {
+        Ok(Vec::new())
+    }
+
+    /// Forget everything of shared `zone` on this device (pending writes
+    /// included, and the local state of the vault of a `Vault` zone),
+    /// pushing nothing. The default holds no shared zone.
+    fn drop_zone(&mut self, zone: Zone) -> Result<()> {
+        let _ = zone;
+        Err(zones_unsupported())
+    }
+
+    /// The local rows of shared `zone` not pushed yet, every kind, in no
+    /// phase order: `(kind, id, version, data)`, a deletion without data.
+    /// The default holds none.
+    fn zone_pending(&self, zone: Zone) -> Result<Vec<ZonePendingRow>> {
+        let _ = zone;
+        Ok(Vec::new())
+    }
+
+    /// The version of the confirmed (server) row of a record of shared
+    /// `zone`, pending writes aside. The default holds none.
+    fn zone_base_version(&self, zone: Zone, kind: RecordKind, id: Id) -> Result<Option<u64>> {
+        let _ = (zone, kind, id);
+        Ok(None)
+    }
+
+    /// Forget the pending rows `rows` of shared `zone`, pushing nothing
+    /// (a shared rebase rewrites them). The default holds no shared zone.
+    fn drop_zone_pending(&mut self, zone: Zone, rows: &[(RecordKind, Id)]) -> Result<()> {
+        let _ = (zone, rows);
+        Err(zones_unsupported())
+    }
+
     fn put(&mut self, r: Record) -> Result<()>;
     /// Write `r` only if the stored record with its key has version
     /// `expected` (`None`: only if there is no such record), atomically.
@@ -392,6 +563,45 @@ pub trait RecordStore {
         Err(local_meta_unsupported())
     }
 
+    /// Whether this store keeps an autofill history (the methods below).
+    fn keeps_autofill_history(&self) -> bool {
+        false
+    }
+
+    /// Append one sealed autofill history row under its keyed site tag
+    /// (`crate::autofill_history`), then keep the newest `keep_per_site`
+    /// rows of that tag and the newest `keep_total` rows in all, in one
+    /// transaction. Device-local: never synced, never a record. A store
+    /// that keeps no history refuses.
+    fn autofill_append(
+        &mut self,
+        site_tag: &[u8; 32],
+        data: &[u8],
+        keep_per_site: usize,
+        keep_total: usize,
+    ) -> Result<()> {
+        let _ = (site_tag, data, keep_per_site, keep_total);
+        Err(autofill_unsupported())
+    }
+
+    /// The autofill history rows `(seq, site_tag, data)`, oldest first:
+    /// those of `site_tag`, or all of them.
+    fn autofill_rows(&self, site_tag: Option<&[u8; 32]>) -> Result<Vec<AutofillRow>> {
+        let _ = site_tag;
+        Err(autofill_unsupported())
+    }
+
+    /// Remove the autofill history rows of these `seq`s.
+    fn autofill_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let _ = seqs;
+        Err(autofill_unsupported())
+    }
+
+    /// Remove every autofill history row: how many there were.
+    fn autofill_clear(&mut self) -> Result<usize> {
+        Err(autofill_unsupported())
+    }
+
     /// `put_all_if_version`, and remove the local metadata under `key`,
     /// which must hold exactly `expected`, all or nothing: a version
     /// mismatch, or `key` missing or holding anything else, writes and
@@ -510,9 +720,12 @@ pub trait RecordStore {
     /// rotation v2 (`crate::repo::follow::quarantine_tick` 7 days after a
     /// valid lineage record revoked this device, or the user's "Effacer cet
     /// appareil", spec 8.4, R8, O1). A store that keeps no trust state
-    /// refuses and erases nothing.
-    fn erase_device(&mut self, expected: &TrustState) -> Result<()> {
-        let _ = expected;
+    /// refuses and erases nothing. `notice`: the erase by the quarantine
+    /// clock or a wipe order keeps it under `ERASED_NOTICE_KEY` in the same
+    /// transaction (the CLI's `SqliteStore` and the memory store drop it);
+    /// `None` for the user's own erase.
+    fn erase_device(&mut self, expected: &TrustState, notice: Option<ErasedNotice>) -> Result<()> {
+        let _ = (expected, notice);
         Err(Error::Store("trust state unsupported".into()))
     }
 
@@ -520,9 +733,12 @@ pub trait RecordStore {
     /// the chain state of the new identity (it replaces the stored one) and
     /// the trust state in state `Rotating { phase: 1 }`, conditional on the
     /// stored trust state being `expected` (`put_with_trust_cas`), plus
-    /// what the push phases need (`rotation`), all or nothing. The default
-    /// is `put_with_trust_cas` (a store that pushes nothing has no phases
-    /// to drive).
+    /// what the push phases need (`rotation`), the shared and contact zone
+    /// records (`zoned`) and the share states (`shares`) of sharing plan 2
+    /// Task 13, all or nothing. The default is `put_with_trust_cas` (a
+    /// store that pushes nothing has no phases to drive) and holds the
+    /// private zone only.
+    #[allow(clippy::too_many_arguments)]
     fn put_rotation(
         &mut self,
         writes: Vec<(Record, Option<u64>)>,
@@ -530,8 +746,13 @@ pub trait RecordStore {
         expected: &TrustState,
         trust: &TrustState,
         rotation: &RotationPush,
+        zoned: Vec<(Zone, Record, Option<u64>)>,
+        shares: &[ShareState],
     ) -> Result<()> {
         let _ = rotation;
+        if !zoned.is_empty() || !shares.is_empty() {
+            return Err(zones_unsupported());
+        }
         self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)
     }
 
@@ -573,6 +794,8 @@ pub trait RecordStore {
     }
 
     /// The local transaction of a follow (spec 7.2 step 3, Task 11): the
+    /// `writes` (each conditional on its version: the device's
+    /// acknowledgment of the new head, spec 6.8), the
     /// chain state and trust state of the new head, conditional on the
     /// stored trust state being `expected` (`put_with_trust_cas`), the
     /// retained rows of the own copies a switch keeps (`put_retained`), the
@@ -588,6 +811,7 @@ pub trait RecordStore {
     /// state (`put_with_trust_cas`), then the retained rows.
     fn put_follow(
         &mut self,
+        writes: Vec<(Record, Option<u64>)>,
         chain: ChainState,
         expected: &TrustState,
         trust: &TrustState,
@@ -599,7 +823,7 @@ pub trait RecordStore {
                 return Err(Error::Store("pending rows to drop unsupported".into()));
             }
         }
-        self.put_with_trust_cas(Vec::new(), Vec::new(), Some(chain), expected, trust)?;
+        self.put_with_trust_cas(writes, Vec::new(), Some(chain), expected, trust)?;
         if retained.is_empty() {
             return Ok(());
         }
@@ -794,6 +1018,7 @@ mod tests {
             RecordKind::Lineage,
             RecordKind::DeviceIntro,
             RecordKind::KeyDelivery,
+            RecordKind::DeviceAck,
         ] {
             assert!(kind.is_immutable());
             let mut s = MemoryStore::default();
@@ -849,6 +1074,9 @@ mod tests {
             RecordKind::RecoveryMessage,
             RecordKind::ItemSend,
             RecordKind::ShareInvite,
+            RecordKind::Attachment,
+            RecordKind::DeviceAck,
+            RecordKind::SyncHome,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -879,9 +1107,15 @@ mod tests {
         assert_eq!(RecordKind::VaultList.code(), 9);
         assert_eq!(RecordKind::ApproverList.code(), 13);
         assert_eq!(RecordKind::Attachment.code(), 25);
+        assert_eq!(RecordKind::SyncHome.code(), 27);
+        assert_eq!(RecordKind::from_code(27).unwrap(), RecordKind::SyncHome);
+        assert!(!RecordKind::SyncHome.is_immutable());
         assert!(RecordKind::Attachment.is_vault_prefixed());
+        // Spec 6.8 (O6): code 13 went to the approver lists, the ack takes 26.
+        assert_eq!(RecordKind::DeviceAck.code(), 26);
+        assert!(RecordKind::DeviceAck.server_deletion_refused());
         assert_eq!(
-            RecordKind::from_code(26).unwrap_err(),
+            RecordKind::from_code(u8::MAX).unwrap_err(),
             Error::InvalidFormat("record kind")
         );
         assert_eq!(

@@ -29,7 +29,7 @@ use onepass_core::repo::kit::{KitRestore, KitRestored};
 use onepass_core::repo::migrate::Migration;
 use onepass_core::repo::replay::ReplayReport;
 use onepass_core::repo::{LineageLock, Repository, RotateRequest, RotationOutcome, RotationPrompt};
-use onepass_core::store::RecordStore;
+use onepass_core::store::{ErasedNotice, RecordStore};
 use onepass_core::sync::SyncStore;
 use onepass_core::trust::{DeviceLineageState, TrustLevel, TrustState};
 use onepass_core::{Error, Id};
@@ -350,6 +350,19 @@ pub struct FfiRosterDevice {
     pub is_this_device: bool,
 }
 
+/// A roster device and its acknowledgment of this device's current head
+/// (spec 6.8, 9, O6): "à jour" when `acknowledged`, else "en attente".
+/// Display only, never a trust decision.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiDeviceAck {
+    /// The device id, as in the device list and the roster.
+    pub id: String,
+    pub acknowledged: bool,
+    /// When it acknowledged (Unix seconds, informative), `None` while
+    /// waiting.
+    pub acked_at: Option<i64>,
+}
+
 /// The own-write alert (spec 10.4, G4): writes of this device that a
 /// rotation could not carry over, named.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -643,6 +656,27 @@ impl Session {
         })
     }
 
+    /// Each roster device, "à jour" or "en attente" for this device's
+    /// current head (spec 6.8, 9, O6), in roster order. Empty before the
+    /// first rotation (generation 0) and on a legacy device: nothing to
+    /// acknowledge.
+    pub fn rotation_acks(&self) -> Result<Vec<FfiDeviceAck>, OnePassError> {
+        self.with(|repo| {
+            let Some(t) = repo.store().trust_state()? else {
+                return Ok(Vec::new());
+            };
+            Ok(onepass_core::lineage::ack_statuses(repo.store(), &t)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| FfiDeviceAck {
+                    id: id_hex(a.device_id),
+                    acknowledged: a.acknowledged,
+                    acked_at: a.acked_at,
+                })
+                .collect())
+        })
+    }
+
     /// The rotation prompt this session waits on, looked for again first
     /// (after a sync in another connection): while there is one every
     /// write is `ReadOnly`.
@@ -822,6 +856,26 @@ impl Session {
     pub fn claim_only_device(&self) -> Result<(), OnePassError> {
         self.with(|repo| Ok(repo.claim_only_device()?))
     }
+
+    /// "Marquer comme volé" (founder decision 2026-11-03): a wipe order for
+    /// `id` (32 hex characters), a device the lineage removed already (by
+    /// a rotation that revoked it, or a `Recover`), signed by this
+    /// device's current identity. Once synced, that device erases its local
+    /// copy at its next tick, with no 7-day wait. The app confirms with the
+    /// user and asks for presence first, as for a removal. `now`: Unix
+    /// seconds, informative. Refused: a device still in the roster
+    /// (`Validation("device", "not removed")`: remove it first), this
+    /// device, a legacy account or a device not `Current`.
+    pub fn mark_stolen(&self, id: String, now: i64) -> Result<(), OnePassError> {
+        let id = parse_id(&id)?;
+        self.with(|repo| Ok(repo.mark_stolen(id, now)?))
+    }
+
+    /// The devices this account marked stolen (32 hex characters each),
+    /// for the device list.
+    pub fn stolen_devices(&self) -> Result<Vec<String>, OnePassError> {
+        self.with(|repo| Ok(repo.stolen_devices()?.into_iter().map(id_hex).collect()))
+    }
 }
 
 // ---- prompt -------------------------------------------------------------------
@@ -980,10 +1034,13 @@ pub enum FfiQuarantineTick {
     },
     /// Locked with no erase clock: the removal, or a record on its path,
     /// was not signed by a device this one verified (final review I1). The quarantine screen offers
-    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date.
+    /// "Ce n'était pas moi" and "Effacer cet appareil", with no date. A
+    /// `Recover` removal runs the clock (founder decision 2026-11-03).
     Locked,
-    /// The store was erased: the app deletes what it keeps for the account
-    /// in the Keychain (Secret Key, Account Unlock Key, device keys).
+    /// The store was erased (the 7 days ran out, or a valid "Marquer comme
+    /// volé" order named this device): the app deletes what it keeps for
+    /// the account in the Keychain (Secret Key, Account Unlock Key, device
+    /// keys).
     Erased,
 }
 
@@ -997,14 +1054,47 @@ fn tick_to_ffi(t: QuarantineTick) -> FfiQuarantineTick {
 }
 
 /// The quarantine clock (spec 8.4, R8, O1) with the app's clock `now`
-/// (Unix seconds): at launch and on the quarantine screen. Erases only
-/// 7 days after a valid lineage record revoking this device was first
-/// read, and only when every signer on its path is verified here
-/// (`Locked` otherwise); a clock moved back only delays it.
+/// (Unix seconds): at launch and on the quarantine screen. Erases 7 days
+/// of forward clock time after a valid lineage record revoking this device
+/// was first read (a clock set back counts nothing but never stops the
+/// count), or at once on a valid wipe order for this device, and only when
+/// every signer on its path is verified here or the removal is a
+/// `Recover` (`Locked` otherwise).
 #[uniffi::export]
 pub fn quarantine_tick(db_path: String, now: u64) -> Result<FfiQuarantineTick, OnePassError> {
     let mut store = open(&db_path)?;
     Ok(tick_to_ffi(follow::quarantine_tick(&mut store, now)?))
+}
+
+/// Why the quarantine erased this device (`FfiQuarantineTick::Erased`):
+/// what the "This device was erased" screen says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiErasedNotice {
+    /// 7 days after the account was recovered on another device.
+    Recovered,
+    /// 7 days after another device of the account removed this one.
+    Removed,
+    /// Another device of the account marked this one stolen.
+    Stolen,
+}
+
+/// The notice the quarantine left when it erased this device, also when
+/// the erase ran inside a sync commit (`commit_remote_checked`) or the app
+/// was killed right after: the app forgets the account's Keychain items,
+/// shows the erased screen, then `clear_erased_notice`. `None` otherwise.
+#[uniffi::export]
+pub fn erased_notice(db_path: String) -> Result<Option<FfiErasedNotice>, OnePassError> {
+    Ok(open(&db_path)?.erased_notice()?.map(|n| match n {
+        ErasedNotice::Recovered => FfiErasedNotice::Recovered,
+        ErasedNotice::Removed => FfiErasedNotice::Removed,
+        ErasedNotice::Stolen => FfiErasedNotice::Stolen,
+    }))
+}
+
+/// Forget the erase notice once the erased screen was shown.
+#[uniffi::export]
+pub fn clear_erased_notice(db_path: String) -> Result<(), OnePassError> {
+    Ok(open(&db_path)?.clear_erased_notice()?)
 }
 
 /// The user's answer on the quarantine or orphaned screen.
@@ -1172,4 +1262,38 @@ pub fn restore_from_kit(
     )?;
     repo.persist_device_state()?;
     Session::new(repo)
+}
+
+/// Tests only: a software PQ half (ML-DSA-87 and ML-KEM-1024 in memory),
+/// for the Swift tests of the flows that need device keys. Built into the
+/// fast-KDF test framework only, never into a shipped one.
+#[cfg(feature = "dev-fast-kdf")]
+struct TestSoftwareHalf(onepass_core::device_keys::SoftwarePqHalf);
+
+#[cfg(feature = "dev-fast-kdf")]
+impl FfiPqDeviceHalf for TestSoftwareHalf {
+    fn mldsa_public(&self) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mldsa_public()?)
+    }
+
+    fn mlkem_public(&self) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mlkem_public()?)
+    }
+
+    fn mldsa_sign(&self, message: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mldsa_sign(&message)?)
+    }
+
+    fn mlkem_decapsulate(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
+        Ok(self.0.mlkem_decapsulate(&ciphertext)?.to_vec())
+    }
+}
+
+/// Tests only (fast-KDF test framework): a fresh software PQ half.
+#[cfg(feature = "dev-fast-kdf")]
+#[uniffi::export]
+pub fn test_software_pq_half() -> Result<Arc<dyn FfiPqDeviceHalf>, OnePassError> {
+    Ok(Arc::new(TestSoftwareHalf(
+        onepass_core::device_keys::SoftwarePqHalf::generate()?,
+    )))
 }

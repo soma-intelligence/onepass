@@ -8,7 +8,8 @@ options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "26.0"
-    watchOS: "26.0"
+    # watchOS 27: arm64 only. Below 27 the store wants an arm64_32 slice the core cannot build.
+    watchOS: "27.0"
     visionOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
@@ -30,6 +31,8 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEAD_CODE_STRIPPING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    # Typed symbols for manual String Catalog keys: Text(.settingsTitle) (docs/i18n.md).
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
     # Signing identity, as build settings only (a personal team overrides them, see
     # scripts/install-iphone.sh; never edit an entitlements file or a bundle id below for it).
@@ -52,6 +55,19 @@ settings:
     # `OnePassBrowserExtensions`, space separated; Safari is always served). Add the Chrome id
     # (Web Store, or the unpacked one while testing) here.
     ONEPASS_BROWSER_EXTENSIONS: onepass@somalabs.me
+    # Mac app updates (Sparkle, spec 2026-11-02-mac-updater-design.md): the signed appcast of the
+    # release GitHub marks Latest, and the base64 Ed25519 public key it must be signed with. Empty
+    # key = no updater (development builds); a Developer ID build without a valid key fails
+    # (scripts/check-update-key.sh). The release workflow passes the key on the command line.
+    ONEPASS_UPDATE_FEED_URL: https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml
+    ONEPASS_SPARKLE_PUBLIC_KEY: ""
+    # Base URL of the hosted OnePass server (Info.plist key `OnePassMailboxURL`, founder decision
+    # F2). Release builds accept https only; Debug builds also take the local Supabase stack.
+    ONEPASS_MAILBOX_URL: https://mailbox.somalabs.me/functions/v1/mailbox
+    # New accounts on the mailbox (X1b Task 6): NO until the hosted server is live (custom domain
+    # and DNS deferred by the founder). YES shows "Où est rangé mon coffre ?" and makes the OnePass
+    # server the default of a new account.
+    ONEPASS_MAILBOX_SIGNUP: "NO"
 
 packages:
   VaultKit:
@@ -62,6 +78,8 @@ packages:
     path: CompanionKit
   SafariRelay:
     path: SafariExtension/SafariRelay
+  UpdateKit:
+    path: UpdateKit
 
 targets:
   OnePass:
@@ -72,6 +90,10 @@ targets:
         excludes:
           - "Support/Info.plist"
           - "Support/*.entitlements"
+      # Site icon pack (docs/icon-pack.md), shipped once in the app: the AutoFill extension reads it
+      # from the containing app, or from the copy the app puts in the App Group.
+      - path: IconPack/onepass-icons.bin
+        buildPhase: resources
     dependencies:
       - package: VaultKit
         product: VaultKit
@@ -93,8 +115,15 @@ targets:
       # AutoFill credential provider: iPhone, iPad and Mac (no visionOS slice).
       - target: OnePassAutoFill
         destinationFilters: [iOS, macOS]
-      # Safari Web Extension: Mac only for now (the iOS one needs the bridge in the app, R-17).
+      # Safari Web Extension: the Mac one relays to the app's bridge (R-17); the iPhone and iPad
+      # one serves the bridge in its own process (spec 2026-11-03-ios-safari-autofill).
       - target: OnePassSafari
+        destinationFilters: [macOS]
+      - target: OnePassSafariMobile
+        destinationFilters: [iOS]
+      # Updates from GitHub Releases (Sparkle): the Developer ID Mac app only.
+      - package: UpdateKit
+        product: UpdateKit
         destinationFilters: [macOS]
     # Entitlements and code share ONEPASS_KEYCHAIN_GROUP and ONEPASS_APP_GROUP: a hardcoded group
     # fails the build.
@@ -102,6 +131,10 @@ targets:
       - name: Check signing groups
         basedOnDependencyAnalysis: false
         script: '"${PROJECT_DIR}/scripts/check-signing-groups.sh"'
+      # A Developer ID Mac build must carry the update key and an https feed.
+      - name: Check update key
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/scripts/check-update-key.sh"'
     # Chrome and Firefox native messaging host (Contents/Helpers/onepass-relay): signed Mac builds.
     postBuildScripts:
       - name: Embed browser relay
@@ -115,25 +148,44 @@ targets:
       path: App/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
+        OnePassMailboxSignup: $(ONEPASS_MAILBOX_SIGNUP)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         OnePassCloudKitContainer: $(ONEPASS_CLOUDKIT_CONTAINER)
         OnePassBrowserExtensions: $(ONEPASS_BROWSER_EXTENSIONS)
+        # Credential Exchange import: the system hands the export to the app through this activity.
+        NSUserActivityTypes: [ASCredentialExchangeActivity]
+        # Sparkle (Mac, Developer ID): signed feed and archive, verified before extraction, no
+        # system profile, a check every 24 hours, installs only after the user's yes, installer
+        # through Sparkle's XPC service (sandbox). Read by UpdateKit's UpdateConfiguration; the
+        # other platforms ignore them.
+        SUFeedURL: $(ONEPASS_UPDATE_FEED_URL)
+        SUPublicEDKey: $(ONEPASS_SPARKLE_PUBLIC_KEY)
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAllowsAutomaticUpdates: false
+        SUEnableSystemProfiling: false
+        SUEnableInstallerLauncherService: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # The app ships its own cryptography; export compliance is settled before submission (README).
-        ITSAppUsesNonExemptEncryption: true
+        # The app ships its own cryptography. No ITSAppUsesNonExemptEncryption key: without an
+        # export compliance code the store refuses the upload, so each build answers it in App Store
+        # Connect until the classification is settled.
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
         NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
-        NSBonjourServices: [_onepass-pair._tcp]
+        NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
         # Asked only on "Utiliser ma position" or when "À proximité" opens (macOS reads NSLocationUsageDescription).
-        NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
-        NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        # Mac: also the first time Wi-Fi automatique runs (macOS gives the network name only with it).
+        NSLocationWhenInUseUsageDescription: $(ONEPASS_LOCATION_PURPOSE)
+        NSLocationUsageDescription: $(ONEPASS_LOCATION_PURPOSE)
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -159,12 +211,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX)
         PRODUCT_NAME: OnePass
+        ONEPASS_LOCATION_PURPOSE: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        "ONEPASS_LOCATION_PURPOSE[sdk=macosx*]": "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
         TARGETED_DEVICE_FAMILY: "1,2,7"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         "ARCHS[sdk=macosx*]": arm64
+        # A multiplatform app gets the iOS runpath; the Mac bundle keeps Sparkle in
+        # Contents/Frameworks, next to Contents/MacOS.
+        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iPhone and iPad: every AppIcon-<slug> set is an alternate icon (docs/assets/brand/family.py).
+        "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphoneos*]": YES
+        "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]": YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         ENABLE_HARDENED_RUNTIME: YES
@@ -218,11 +278,12 @@ targets:
       path: AutoFill/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
         NSExtension:
@@ -239,6 +300,9 @@ targets:
               ShowsConfigurationUI: true
               SupportsSavePasswordCredentials: true
               SupportsGeneratePasswordCredentials: true
+              # Credential Exchange (CXP 1.0): Passwords exports to OnePass, and the reverse.
+              SupportsCredentialExchange: true
+              SupportedCredentialExchangeVersions: ["1.0"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).autofill
@@ -287,7 +351,9 @@ targets:
         excludes:
           - "SafariRelay/**"
           - "scripts/**"
+          - "iOS/**"
           - "Support/Info.plist"
+          - "Support/Info-iOS.plist"
           - "Support/*.entitlements"
     dependencies:
       - package: SafariRelay
@@ -296,7 +362,7 @@ targets:
       path: SafariExtension/Support/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -342,6 +408,68 @@ targets:
           DEVELOPMENT_TEAM: ""
           CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-macOS-Signed.entitlements
 
+  # Safari Web Extension on iPhone and iPad (spec 2026-11-03-ios-safari-autofill), embedded in
+  # OnePass.app/PlugIns. Same web extension as the Mac (extension/dist/safari), its own handler:
+  # iOS has no app listening on a socket, so the handler opens the vault on the shared store (App
+  # Group, shared keychain group) and serves the bridge in process (ruling I1). Face ID for the
+  # unlock sheet (NSFaceIDUsageDescription). Same bundle id suffix as the Mac one: one App ID per
+  # platform (founder action, spec section 9).
+  OnePassSafariMobile:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SafariExtension/iOS
+    dependencies:
+      - package: SafariRelay
+        product: SafariRelay
+      - package: VaultKit
+        product: VaultKit
+    info:
+      path: SafariExtension/Support/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: OnePass
+        CFBundleDevelopmentRegion: en
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    postBuildScripts:
+      - name: Copy web extension
+        basedOnDependencyAnalysis: false
+        script: '"${PROJECT_DIR}/SafariExtension/scripts/copy-web-extension.sh"'
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).safari
+        PRODUCT_NAME: OnePassSafariMobile
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: SafariExtension/Support/OnePassSafari-iOS.entitlements
+      configs:
+        Release-CloudKit:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ONEPASS_CLOUDKIT"
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.
   AutoFillHost:
@@ -372,6 +500,7 @@ targets:
       - path: AppUITests
         excludes:
           - "AutoFillUITests.swift"
+          - "SafariAutofillUITests.swift"
     dependencies:
       - target: OnePass
     settings:
@@ -403,10 +532,9 @@ targets:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        ITSAppUsesNonExemptEncryption: true
         WKApplication: true
         WKCompanionAppBundleIdentifier: $(ONEPASS_BUNDLE_ID_PREFIX)
     settings:
@@ -445,7 +573,7 @@ targets:
       path: WatchWidgets/Info.plist
       properties:
         CFBundleDisplayName: OnePass
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -490,7 +618,7 @@ targets:
       properties:
         CFBundleDisplayName: OnePass
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -532,7 +660,7 @@ targets:
       properties:
         CFBundleDisplayName: OnePass
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        CFBundleDevelopmentRegion: fr
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -561,6 +689,26 @@ targets:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
+
+  # Safari autofill on iPhone end to end (spec 2026-11-03-ios-safari-autofill): OnePass account and
+  # Login, the Safari extension turned on, then a local test sign-in page (identifier, password,
+  # code) filled from the page. Needs the local HTTPS page scripts/safari-test-site.py; test data only.
+  OnePassSafariUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests/SafariAutofillUITests.swift
+    dependencies:
+      - target: AutoFillHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.safariuitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: AutoFillHost
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
 
   # XCUITest of the AutoFill extension on `OnePass M3 iPhone` (`make -C apple uitest-autofill`):
   # drives AutoFillHost; OnePass (with its extension) is installed beside it by the Makefile.
@@ -622,6 +770,19 @@ schemes:
         "-OnePassWatchDemo YES": false
     archive:
       config: Release
+
+  # Builds OnePass (with its Safari extension) and runs the Safari autofill UI test.
+  OnePassSafariUI:
+    build:
+      targets:
+        OnePass: all
+        AutoFillHost: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OnePassSafariUITests
 
   # Builds OnePass (with its AutoFill extension) and AutoFillHost, tests the AutoFill UI.
   OnePassAutoFill:

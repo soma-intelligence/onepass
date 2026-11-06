@@ -70,7 +70,7 @@ export function overlayAccounts(items: Summary[], choices: readonly SignInChoice
   const out: OverlayAccount[] = [];
   for (const it of items) {
     if (it.kind !== "login") continue;
-    const base = { itemId: it.item_id, title: it.title, iconLetter: it.icon_letter, iconColor: it.icon_color };
+    const base = { itemId: it.item_id, title: it.title, iconLetter: it.icon_letter, iconColor: it.icon_color, vault: { id: it.vault_id, name: it.vault_name } };
     if (it.has_password) out.push({ ...base, subtitle: it.subtitle, ...(it.has_totp ? { totp: true } : {}) });
     for (const m of it.methods) {
       const c = choices.find((x) => x.itemId === it.item_id && x.provider === m.provider);

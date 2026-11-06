@@ -130,7 +130,7 @@ public actor InMemoryRemote: RemoteRecordStore {
 
     private func save(_ changes: [RemoteRecord]) throws -> [SendResult] {
         guard changes.count <= maxBatchRecords, changes.reduce(0, { $0 + $1.batchBytes }) <= maxBatchBytes else {
-            throw RemoteStoreError.other(String(localized: "Lot trop volumineux pour le serveur.", bundle: VaultKitStrings.bundle))
+            throw RemoteStoreError.other(String(localized: "sync.batchTooLargeFor2", bundle: VaultKitStrings.bundle))
         }
         sentBatches.append(changes.map(\.name))
         let refused = Set(changes.filter { change in

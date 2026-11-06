@@ -25,8 +25,8 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(answer.encode().unwrap(), data);
     }
     if let Ok(s) = std::str::from_utf8(data)
-        && let Ok(invite) = ContactInvite::parse_link(s)
+        && let Ok((invite, host)) = ContactInvite::parse_link(s)
     {
-        assert_eq!(invite.link(), s);
+        assert_eq!(invite.link_for(host.as_deref()), s);
     }
 });

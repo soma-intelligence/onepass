@@ -241,6 +241,7 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -254,6 +255,7 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -262,7 +264,9 @@ fn pair_v2(server: &mut Server, a: &Device, name: &str) -> Device {
     ));
     let dir = TempDir::new().unwrap();
     let path = db_path(dir.path());
-    let unlocked = n.import_snapshot_v2(path.clone(), PASSWORD.into()).unwrap();
+    let unlocked = n
+        .import_snapshot_v2(path.clone(), PASSWORD.into(), keys.c(), keys.half())
+        .unwrap();
     let ack = n.seal_key_ack(keys.c(), keys.half()).unwrap();
     assert_eq!(ap.on_frame(ack).unwrap(), FfiPairingMessage::Ack);
     ap.introduce(a.session.clone(), a.keys.c(), a.keys.half())
@@ -399,6 +403,7 @@ fn two_devices_rotate_and_follow() {
         FfiDeviceKind::Other,
         FfiDeviceMode::Public,
         now(),
+        None,
     )
     .unwrap();
     let pa = PairingApprover::begin(pn.qr_text(), pn.hello(), now()).unwrap();
@@ -593,28 +598,82 @@ fn quarantine_erases_only_after_seven_days() {
         OnePassError::Quarantined
     );
 
-    // Not before the 7 days, whatever the clock says before them.
+    // Not before the 7 days.
     assert_eq!(
         quarantine_tick(b.path.clone(), since + WEEK - 1).unwrap(),
         FfiQuarantineTick::Waiting { erase_at }
     );
-    assert_eq!(
-        quarantine_tick(b.path.clone(), since - 3600).unwrap(),
-        FfiQuarantineTick::Waiting { erase_at }
-    );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
-    // A later fetch is taken and keeps `since`.
+    // A later fetch is taken and keeps the count.
     let h = open_sync_store(b.path.clone()).unwrap();
     h.stage_remote(server.rows[0].clone()).unwrap();
     assert_eq!(
-        h.commit_remote_checked(since + 60).unwrap().quarantine,
+        h.commit_remote_checked(since + WEEK - 1)
+            .unwrap()
+            .quarantine,
         FfiQuarantineTick::Waiting { erase_at }
     );
+    // A clock set back an hour counts nothing, and never stops the count:
+    // the second left runs from the new reading.
     assert_eq!(
-        quarantine_tick(b.path.clone(), since + WEEK).unwrap(),
+        quarantine_tick(b.path.clone(), since - 3600).unwrap(),
+        FfiQuarantineTick::Waiting {
+            erase_at: since - 3599
+        }
+    );
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Account);
+    assert_eq!(
+        quarantine_tick(b.path.clone(), since - 3599).unwrap(),
         FfiQuarantineTick::Erased
     );
     assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+    // The erase leaves its reason for the erased screen, until cleared.
+    assert_eq!(
+        erased_notice(b.path.clone()).unwrap(),
+        Some(FfiErasedNotice::Removed)
+    );
+    clear_erased_notice(b.path.clone()).unwrap();
+    assert_eq!(erased_notice(b.path.clone()).unwrap(), None);
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+}
+
+/// "Marquer comme volé" (founder decision 2026-11-03): A removes B by
+/// rotation, then marks it stolen; B's next fetch erases it at once, with
+/// no 7-day wait. A device still in the roster cannot be marked.
+#[test]
+fn stolen_device_erases_at_its_next_fetch() {
+    let mut server = Server::default();
+    let a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    let c = pair_v2(&mut server, &a, "Mac de Camille");
+    let b_id = this_id(&b);
+    assert!(a.session.mark_stolen(b_id.clone(), now()).is_err());
+    rotate(&a, vec![b_id.clone()], vec![]);
+    push(&mut server, &a.path);
+    assert_eq!(
+        pull(&server, &b).quarantine,
+        FfiQuarantineTick::Waiting {
+            erase_at: match lineage_status(b.path.clone()).unwrap().state {
+                FfiLineageState::Quarantined {
+                    erase_at: Some(at), ..
+                } => at,
+                other => panic!("quarantined, got {other:?}"),
+            }
+        }
+    );
+
+    a.session.mark_stolen(b_id.clone(), now()).unwrap();
+    assert_eq!(a.session.stolen_devices().unwrap(), vec![b_id.clone()]);
+    push(&mut server, &a.path);
+    assert_eq!(pull(&server, &b).quarantine, FfiQuarantineTick::Erased);
+    assert_eq!(store_state(b.path.clone()).unwrap(), FfiStoreState::Empty);
+    assert_eq!(
+        erased_notice(b.path.clone()).unwrap(),
+        Some(FfiErasedNotice::Stolen)
+    );
+    // Another device of the account only reads the order: nothing erased.
+    let _ = pull(&server, &c);
+    assert_eq!(store_state(c.path.clone()).unwrap(), FfiStoreState::Account);
 }
 
 /// "Ce n'était pas moi" on the prompt: the record rejected, the device
@@ -793,6 +852,7 @@ fn migration_tofu_orphaned_and_outdated_kit() {
             new_sk.clone(),
             FfiDeviceMode::Personal,
             true,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -937,6 +997,7 @@ fn legacy_pair(server: &mut Server) -> (Device, Device) {
         FfiDeviceKind::Tablet,
         FfiDeviceMode::Personal,
         now(),
+        None,
     )
     .unwrap();
     let ap = PairingApprover::begin(n.qr_text(), n.hello(), now()).unwrap();
@@ -951,6 +1012,7 @@ fn legacy_pair(server: &mut Server) -> (Device, Device) {
             a.secret_key.clone(),
             FfiDeviceMode::Personal,
             false,
+            None,
         )
         .unwrap();
     n.open(frame).unwrap();
@@ -1260,4 +1322,44 @@ fn kit_claim_and_reject_through_the_ffi() {
     assert!(a.session.reject_kit_restored("00".repeat(16)).is_err());
     a.session.reject_kit_restored(asking[0].id.clone()).unwrap();
     assert!(a.session.kit_restored_devices().unwrap().is_empty());
+}
+
+/// Spec 6.8 (O6) through the FFI: nothing shown before a rotation; after
+/// it the rotator is "à jour" and the other device "en attente" until it
+/// follows and its signed acknowledgment syncs back.
+#[test]
+fn rotation_acks_show_who_followed() {
+    let mut server = Server::default();
+    let mut a = first_device(&mut server);
+    let b = pair_v2(&mut server, &a, "iPad de Camille");
+    assert!(a.session.rotation_acks().unwrap().is_empty());
+    let (a_id, b_id) = (this_id(&a), this_id(&b));
+
+    let (out, new_sk) = rotate(&a, vec![], vec![]);
+    a.secret_key = new_sk;
+    push(&mut server, &a.path);
+    let acks = a.session.rotation_acks().unwrap();
+    assert_eq!(acks.len(), 2);
+    let of = |acks: &[FfiDeviceAck], id: &str| acks.iter().find(|x| x.id == id).cloned().unwrap();
+    assert!(of(&acks, &a_id).acknowledged);
+    assert!(of(&acks, &a_id).acked_at.is_some());
+    assert!(!of(&acks, &b_id).acknowledged);
+    assert_eq!(of(&acks, &b_id).acked_at, None);
+
+    pull(&server, &b);
+    let followed = follow_rotation(
+        b.path.clone(),
+        out.head.clone(),
+        PASSWORD.into(),
+        b.keys.c(),
+        b.keys.half(),
+    )
+    .unwrap();
+    let s = followed.session.as_ref().unwrap();
+    assert!(of(&s.rotation_acks().unwrap(), &b_id).acknowledged);
+    push(&mut server, &b.path);
+    pull(&server, &a);
+    let acks = a.session.rotation_acks().unwrap();
+    assert!(of(&acks, &a_id).acknowledged);
+    assert!(of(&acks, &b_id).acknowledged);
 }

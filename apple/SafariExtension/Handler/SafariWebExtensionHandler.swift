@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SafariRelay
 import SafariServices
@@ -10,7 +11,23 @@ import SafariServices
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// One hub for the life of the extension process: host processes (and the
     /// bridge sessions they hold) survive between requests.
-    private static let hub = RelayHub(launcher: BridgeHost.launcher())
+    private static let hub = RelayHub(launcher: BridgeHost.launcher(), openApp: openApp)
+
+    /// "Déverrouiller dans OnePass": since macOS 14 an app in the background cannot bring itself
+    /// forward while Safari is in front, so this extension process, which serves the user's click,
+    /// asks LaunchServices to open `onepass://unlock` in the app that contains it. That also
+    /// launches the app when it is not running. Only this bundle's own app, never a URL handler
+    /// chosen by the system.
+    private static let openApp: @Sendable () -> Bool = {
+        // OnePass.app/Contents/PlugIns/OnePassSafari.appex
+        let app = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        guard app.pathExtension == "app", let url = URL(string: "onepass://unlock") else { return false }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration)
+        return true
+    }
     private static let queue = DispatchQueue(
         label: "me.somalabs.onepass.safari.relay", qos: .userInitiated, attributes: .concurrent)
 

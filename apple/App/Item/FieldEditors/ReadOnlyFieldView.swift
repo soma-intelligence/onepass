@@ -20,13 +20,13 @@ struct ReadOnlyFieldView: View {
         switch value {
         case .passkey(let p):
             let who = [p.userName, p.rpId].filter { !$0.isEmpty }.joined(separator: " · ")
-            return String(localized: "\(who) · créée le \(FieldDates.day(p.createdAt))")
+            return String(localized: "item.created \(who) \(FieldDates.day(p.createdAt))")
         case .file(let f):
             return "\(f.name) · \(ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file))"
         default:
             return kind == .passkey
-                ? String(localized: "Aucune passkey : elle s'ajoute quand un site t'en fait créer une")
-                : String(localized: "Pièces jointes au jalon 5")
+                ? String(localized: "item.noPasskeyYetOne")
+                : String(localized: "item.attachmentsInMilestone5")
         }
     }
 }

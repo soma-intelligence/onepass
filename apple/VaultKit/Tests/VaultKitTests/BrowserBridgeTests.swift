@@ -8,10 +8,69 @@ import Testing
 @MainActor
 @Suite("Browser bridge")
 struct BrowserBridgeTests {
-    func pairing(_ id: String, key: UInt8 = 1, at: UInt64 = 100) -> FfiBridgePairing {
+    func pairing(
+        _ id: String, key: UInt8 = 1, at: UInt64 = 100, extensionId: String = "abc", verified: String = ""
+    ) -> FfiBridgePairing {
         FfiBridgePairing(
             pairingId: id, key: Data(repeating: key, count: 32), extName: "OnePass", browser: "Chrome",
-            extensionId: "abc", createdAt: at, lastUsed: at)
+            extensionId: extensionId, verifiedBrowser: verified, createdAt: at, lastUsed: at)
+    }
+
+    @Test func automaticPairingsKeepTheVerifiedBrowser() {
+        let store = BridgePairingStore(keychain: InMemoryKeychain())
+        store.add(pairing("aa", verified: "Google Chrome"))
+        store.add(pairing("bb"))
+        let loaded = store.load()
+        #expect(loaded.first { $0.pairingId == "aa" }?.verifiedBrowser == "Google Chrome")
+        #expect(loaded.first { $0.pairingId == "bb" }?.verifiedBrowser == "")
+    }
+
+    @Test func itemsWrittenBeforeAutomaticPairingStillLoad() throws {
+        let keychain = InMemoryKeychain()
+        let key = Data(repeating: 1, count: 32).base64EncodedString()
+        let old = #"[{"pairingId":"aa","key":"\#(key)","extName":"x","browser":"y","extensionId":"z","createdAt":1,"lastUsed":1}]"#
+        try keychain.write(BridgePairingStore.key, Data(old.utf8))
+        let loaded = BridgePairingStore(keychain: keychain).load()
+        #expect(loaded.map(\.verifiedBrowser) == [""])
+    }
+
+    @Test func forgettingBlocksTheExtensionUntilACodePairing() {
+        let store = BridgePairingStore(keychain: InMemoryKeychain())
+        store.add(pairing("aa", extensionId: "ext1", verified: "Google Chrome"))
+        #expect(store.forget("aa") == "ext1")
+        #expect(store.load().isEmpty)
+        #expect(store.blockedAuto() == ["ext1"])
+        // Forgetting twice, or an unknown id, blocks nothing more.
+        #expect(store.forget("aa") == nil)
+        #expect(store.blockedAuto() == ["ext1"])
+        // An automatic pairing never lifts a block (the app refuses it anyway).
+        store.add(pairing("bb", extensionId: "ext1", verified: "Google Chrome"))
+        #expect(store.blockedAuto() == ["ext1"])
+        // A code pairing approved with Touch ID does.
+        store.add(pairing("cc", extensionId: "ext1"))
+        #expect(store.blockedAuto().isEmpty)
+    }
+
+    @Test func allowAgainLiftsTheBlock() {
+        let store = BridgePairingStore(keychain: InMemoryKeychain())
+        store.add(pairing("aa", extensionId: "ext1"))
+        store.add(pairing("bb", extensionId: "safari"))
+        _ = store.forget("aa")
+        _ = store.forget("bb")
+        #expect(store.blockedAuto() == ["ext1", "safari"])
+        store.allowAuto("ext1")
+        #expect(store.blockedAuto() == ["safari"])
+    }
+
+    @Test func unlockLinkIsExactlyOnepassUnlock() {
+        #expect(BrowserBridge.unlockURL.absoluteString == "onepass://unlock")
+        #expect(BrowserBridge.isUnlockLink(URL(string: "onepass://unlock")!))
+        for s in [
+            "onepass://unlock?x=1", "onepass://unlock/", "onepass://unlock#a", "onepass://generator",
+            "other://unlock", "onepass://user@unlock",
+        ] {
+            #expect(!BrowserBridge.isUnlockLink(URL(string: s)!), "\(s)")
+        }
     }
 
     @Test func pairingsLiveInOneKeychainItem() throws {

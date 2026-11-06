@@ -254,6 +254,13 @@ pub struct LockedApprovers {
 /// against the chain state this device last accepted (`chain`), so an
 /// older list replayed is a rollback here too. Nothing is written. No pin
 /// or no params is `NotFound`; no approver list is no approver.
+///
+/// The records are read under the pinned identity's record id (key
+/// rotation v2, spec 6.6): the account id at generation 0, the identity id
+/// once this device's trust state is past a rotation and pins that
+/// identity. A pin of another identity than the trust state's (a device
+/// state saved before a rotation or follow committed) is `NotFound`, fail
+/// closed: the next unlock moves the pin (ruling 2026-11-02).
 pub fn approvers_without_unlock<S: RecordStore>(
     store: &S,
     device: &crate::repo::DeviceState,
@@ -262,13 +269,22 @@ pub fn approvers_without_unlock<S: RecordStore>(
     use crate::lists::{APPROVER_LIST_DOMAIN, DEVICE_LIST_DOMAIN, verify};
     let pin = device.pinned.as_ref().ok_or(Error::NotFound)?;
     let account = pin.account_id;
+    let rid = match crate::repo::trust_of(store)? {
+        Some(t) if t.account_id == account && t.head.generation > 0 => {
+            if t.identity_pub != pin.identity_pub {
+                return Err(Error::NotFound);
+            }
+            crate::store::account_record_id(account, Some(&t.identity_pub))
+        }
+        _ => account,
+    };
     let params = store
-        .get(RecordKind::AccountParams, account)?
+        .get(RecordKind::AccountParams, rid)?
         .ok_or(Error::NotFound)?;
     let signing = crate::account::signed_params(&params.data, Some(pin))?.signing_pub;
     let wrong = || Error::Integrity(crate::IntegrityError::WrongContext);
 
-    let devices = match store.get(RecordKind::DeviceList, account)? {
+    let devices = match store.get(RecordKind::DeviceList, rid)? {
         Some(rec) => {
             let body = verify::<DeviceEntry>(
                 &signing,
@@ -276,7 +292,7 @@ pub fn approvers_without_unlock<S: RecordStore>(
                 &rec.data,
                 chain.device_list.as_ref(),
             )?;
-            if rec.id != account || body.account_id != account {
+            if rec.id != rid || body.account_id != account {
                 return Err(wrong());
             }
             Some(body)
@@ -286,7 +302,7 @@ pub fn approvers_without_unlock<S: RecordStore>(
         }
         None => None,
     };
-    let list = match store.get(RecordKind::ApproverList, account)? {
+    let list = match store.get(RecordKind::ApproverList, rid)? {
         Some(rec) => {
             let body = verify::<ApproverEntry>(
                 &signing,
@@ -294,7 +310,7 @@ pub fn approvers_without_unlock<S: RecordStore>(
                 &rec.data,
                 chain.approver_list.as_ref(),
             )?;
-            if rec.id != account || body.account_id != account {
+            if rec.id != rid || body.account_id != account {
                 return Err(wrong());
             }
             Some(body)

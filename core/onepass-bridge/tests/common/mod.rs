@@ -5,6 +5,7 @@
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError, Result};
 use onepass_core::Id;
+use onepass_core::autofill_history::{AutofillEvent, ClientContext};
 use onepass_core::model::usage::SiteUsage;
 use onepass_core::model::{
     Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasskeyCredential,
@@ -65,6 +66,8 @@ pub struct FakeVault {
     pub approve_reprompt: bool,
     pub vaults: Vec<VaultInfo>,
     pub items: Vec<Item>,
+    /// The autofill history, as `Repository::record_autofill_event` keeps it.
+    pub history: Vec<AutofillEvent>,
 }
 
 fn set(item: &mut Item, field: &str, value: FieldValue) {
@@ -292,6 +295,7 @@ impl FakeVault {
         let vault = FakeVault {
             locked: false,
             approve_reprompt: false,
+            history: Vec::new(),
             vaults: vec![perso, pro],
             items: vec![
                 atlas,
@@ -467,6 +471,8 @@ impl VaultAccess for FakeVault {
     }
 
     fn forget_site_usage(&mut self, site: &str) -> Result<usize> {
+        // As `Repository::forget_site_usage`: the site's history goes too.
+        self.history.retain(|e| e.site != site);
         let now = OffsetDateTime::now_utc();
         let mut rewritten = 0;
         for item in &mut self.items {
@@ -475,5 +481,29 @@ impl VaultAccess for FakeVault {
             }
         }
         Ok(rewritten)
+    }
+    fn record_autofill_event(&mut self, ev: AutofillEvent) -> Result<bool> {
+        let ev = ev
+            .validated()
+            .map_err(|_| BridgeError::App(AppErrorCode::Invalid))?;
+        self.history.push(ev);
+        Ok(true)
+    }
+
+    fn autofill_affinity(
+        &mut self,
+        site: &str,
+        client: &ClientContext,
+        now: OffsetDateTime,
+    ) -> Result<std::collections::BTreeMap<Id, i64>> {
+        let evs: Vec<AutofillEvent> = self
+            .history
+            .iter()
+            .filter(|e| e.site == site)
+            .cloned()
+            .collect();
+        Ok(onepass_core::fill_plan::learned::affinity(
+            &evs, client, now,
+        ))
     }
 }
