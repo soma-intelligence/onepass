@@ -10,7 +10,7 @@ même pas y penser ».
 
 ## Ce qui se passe
 
-Un seul réglage, **Wi-Fi automatique**, activé par défaut. Rien d'autre à l'écran.
+Un seul réglage, **Wi-Fi automatique**, désactivé par défaut (depuis le 2026-11-06). Rien d'autre à l'écran.
 
 ### Du coffre vers le téléphone
 

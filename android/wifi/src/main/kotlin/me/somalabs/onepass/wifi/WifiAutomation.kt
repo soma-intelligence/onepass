@@ -35,9 +35,9 @@ class WifiAutomation private constructor(context: Context) {
     var lastReport: SyncReport? = null
         private set
 
-    /** "Wi-Fi automatique", on by default. */
+    /** "Wi-Fi automatique", off by default. */
     var enabled: Boolean
-        get() = prefs.getBoolean(KEY_ENABLED, true)
+        get() = prefs.getBoolean(KEY_ENABLED, false)
         set(value) {
             prefs.edit().putBoolean(KEY_ENABLED, value).apply()
             if (value) networkSource?.let { source -> submit { engine.sync(source(), true) } } else submit { engine.disable() }

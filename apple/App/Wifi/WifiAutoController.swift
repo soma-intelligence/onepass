@@ -3,7 +3,7 @@ import Observation
 import VaultKit
 import os
 
-/// "Wi-Fi automatique" (spec docs/specs/2026-11-04-wifi-auto.md). On by default, one switch in
+/// "Wi-Fi automatique" (spec docs/specs/2026-11-04-wifi-auto.md). Off by default, one switch in
 /// Réglages > Général, no other screen. While the primary account is unlocked and the app is on
 /// screen, every WPA router item of its vaults is installed on the device (iOS: NEHotspotConfiguration,
 /// macOS: CoreWLAN), once per version of its Wi-Fi fields. On the Mac, a network the Mac joins that
@@ -15,7 +15,7 @@ final class WifiAutoController {
     static let enabledKey = "onepass.wifi.auto"
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "wifi")
 
-    /// The Réglages switch. On by default (unset reads as on).
+    /// The Réglages switch. Off by default (unset reads as off): installing every network at launch made iOS try to join networks far out of range on each start.
     var enabled: Bool {
         didSet {
             defaults.set(enabled, forKey: Self.enabledKey)
@@ -38,7 +38,7 @@ final class WifiAutoController {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? false
         #if os(iOS)
         installer = HotspotInstaller()
         #elseif os(macOS)
