@@ -281,7 +281,7 @@ struct ItemEditorView: View {
                 // The login's passkeys sit in its card, like the username: the last row adds one.
                 if isLoginCard(section) {
                     if !rows.isEmpty { CardDivider() }
-                    AddPasskeyRow(item: item) { editor.addURL() }
+                    AddPasskeyRow(item: item, editing: true) { editor.addURL() }
                 }
             }
         }

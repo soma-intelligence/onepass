@@ -55551,35 +55551,6 @@
         }
       }
     },
-    "item.addPasskeyOn %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens %@ to create it"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre %@ para crearla"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvre %@ pour la créer"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apre %@ per crearla"
-          }
-        }
-      }
-    },
     "item.addWebsiteFirst" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55667,31 +55638,31 @@
         }
       }
     },
-    "item.signInWithShort" : {
+    "item.addPasskeyRow" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "With…"
+            "value" : "add a passkey"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Con…"
+            "value" : "añadir una passkey"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avec…"
+            "value" : "ajouter une passkey"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Con…"
+            "value" : "aggiungi una passkey"
           }
         }
       }

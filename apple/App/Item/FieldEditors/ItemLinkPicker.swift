@@ -257,19 +257,34 @@ struct LoginUsernameRow<Field: View>: View {
     var body: some View {
         Group {
             if let current = item.signInProvider {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        EditorLabel(label)
-                        SignInAccountLine(provider: current.provider, accountItemID: current.accountItemID)
+                // The chosen account stands in for the username; a tap offers to change it or to go
+                // back to a typed username.
+                Menu {
+                    Button("item.changeAccount", systemImage: "arrow.triangle.2.circlepath") {
+                        choosing = LoginProvider(rawValue: current.provider)
                     }
-                    Spacer(minLength: 8)
-                    Button("item.changeAccount") { choosing = LoginProvider(rawValue: current.provider) }
-                        .buttonStyle(.borderless)
-                        .accessibilityIdentifier("editor.signIn.account")
-                    RemoveRowButton { item.setSignInProvider(nil, accountItemID: nil) }
-                        .accessibilityLabel(Text("item.useUsernameInstead"))
-                        .accessibilityIdentifier("editor.signIn.none")
+                    .accessibilityIdentifier("editor.signIn.account")
+                    Button("item.useUsernameInstead", systemImage: "person.text.rectangle", role: .destructive) {
+                        item.setSignInProvider(nil, accountItemID: nil)
+                    }
+                    .accessibilityIdentifier("editor.signIn.none")
+                } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            EditorLabel(label)
+                            SignInAccountLine(provider: current.provider, accountItemID: current.accountItemID)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
                 }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .accessibilityIdentifier("editor.signIn.current")
             } else {
                 HStack(alignment: .center, spacing: 10) {
                     EditorRow(label: label, message: message) { field }
@@ -306,12 +321,10 @@ struct LoginUsernameRow<Field: View>: View {
                 }
             }
         } label: {
-            Label("item.signInWithShort", systemImage: "person.crop.circle.badge.checkmark")
+            Label("item.signInWith", systemImage: "person.crop.circle.badge.checkmark")
                 .font(.footnote.weight(.medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.fill.tertiary, in: Capsule())
-                .contentShape(Capsule())
+                .foregroundStyle(Theme.accent)
+                .contentShape(.rect)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -331,12 +344,16 @@ struct SignInAccountLine: View {
     var body: some View {
         let account = model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
         HStack(spacing: 10) {
-            ProviderMark(provider: LoginProvider(rawValue: provider), size: 28)
+            if let account {
+                ItemIcon(type: account.itemType, title: account.title, siteIcon: model.iconLoader.cachedIcon(for: account.primaryUrl, title: account.title), size: 30)
+            } else {
+                ProviderMark(provider: LoginProvider(rawValue: provider), size: 30)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: LoginProvider.displayName(provider))
-                    .font(.body.weight(.medium))
-                if let account {
-                    Text(account.listSubtitle.isEmpty ? account.title : account.listSubtitle)
+                Text(verbatim: account?.title ?? LoginProvider.displayName(provider))
+                    .foregroundStyle(.primary)
+                if let account, !account.listSubtitle.isEmpty {
+                    Text(account.listSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

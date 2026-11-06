@@ -10,6 +10,8 @@ import VaultKit
 struct AddPasskeyRow: View {
     @Environment(\.openURL) private var openURL
     let item: FfiItem
+    /// In the editor the row reads like its other add rows ("ajouter une passkey").
+    var editing = false
     /// No website on the login: what the row does instead (the editor adds a website row).
     let onNoWebsite: () -> Void
     @State private var opening = false
@@ -26,26 +28,25 @@ struct AddPasskeyRow: View {
                 openURL(url)
             }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "plus")
+            // Same "+" row as the editor's other add rows; the site it opens sits at the end.
+            HStack(spacing: 8) {
+                Label(editing ? "item.addPasskeyRow" : "item.addPasskey", systemImage: "plus")
                     .font(.body.weight(.medium))
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("item.addPasskey").font(.body.weight(.medium))
-                    Text(host.map { String(localized: "item.addPasskeyOn \($0)") } ?? String(localized: "item.addWebsiteFirst"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
+                    .foregroundStyle(Theme.accent)
+                Spacer(minLength: 8)
                 if opening {
                     ProgressView().controlSize(.small)
-                } else if host != nil {
-                    Image(systemName: "arrow.up.forward")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                } else {
+                    HStack(spacing: 3) {
+                        Text(host ?? String(localized: "item.addWebsiteFirst"))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if host != nil { Image(systemName: "arrow.up.right") }
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
             }
-            .foregroundStyle(Theme.accent)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
