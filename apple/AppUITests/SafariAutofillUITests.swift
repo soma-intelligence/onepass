@@ -45,7 +45,7 @@ final class SafariAutofillUITests: XCTestCase {
             createAccount()
             addLogin()
         }
-        let offer = onePass.buttons["biometricOffer.enable"]
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
         if offer.waitForExistence(timeout: 3) { offer.tap() }
         lockOnePass()
         onePass.terminate()
@@ -302,7 +302,7 @@ final class SafariAutofillUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         // Face ID offered after a password unlock: turned on (the runner posts the match).
-        let offer = onePass.buttons["biometricOffer.enable"]
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
         if offer.waitForExistence(timeout: 5) { offer.tap() }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
         Thread.sleep(forTimeInterval: 4)
@@ -505,6 +505,12 @@ final class SafariAutofillUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
+        // The app's own offer after a password unlock turns Face ID on in one tap.
+        let offer = onePass.buttons["biometricOffer.enable"].firstMatch
+        if offer.waitForExistence(timeout: 5) {
+            offer.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
         tap(onePass.descendants(matching: .any)["account.menu"].firstMatch, in: onePass)
         tap(onePass.descendants(matching: .any)["account.settings"].firstMatch, in: onePass)
         let toggle = onePass.switches["settings.biometrics"]
@@ -594,7 +600,12 @@ final class SafariAutofillUITests: XCTestCase {
             .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
         if !row.waitForExistence(timeout: 3) {
             XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "no OnePass icon in the field")
-            icon.tap()
+            // The page has one icon per field: the one on screen (the password field's) is tapped.
+            let icons = safari.descendants(matching: .any)
+                .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"]))
+            let visible = (0..<icons.count).map { icons.element(boundBy: $0) }.last { $0.isHittable }
+            XCTAssertNotNil(visible, "no OnePass icon on screen")
+            visible?.tap()
         }
         let deadline = Date().addingTimeInterval(Self.kdfTimeout)
         var typed = false
@@ -647,23 +658,21 @@ final class SafariAutofillUITests: XCTestCase {
         let values = ["Camille", "Durand \(run)", "\(run % 90 + 1) rue de la Paix", "", "75002", "Paris"]
         for (i, v) in values.enumerated() where !v.isEmpty {
             let field = safari.webViews.textFields.element(boundBy: i)
-            field.tap()
-            closeOnePassMenuIfShown()
+            focus(field)
             field.typeText(v)
         }
         submitPage(["Continuer vers le paiement"])
         decideOnCard(["Save", "Enregistrer"], expect: ["Save this address", "Enregistrer cette adresse"])
 
         // A test card number (Luhn valid, never a real card), typed by hand.
-        let typeCard = {
+        let typeCard = { [self] in
             safari.open(URL(string: Self.host("cobalt") + "/card")!)
             let holder = safari.webViews.textFields.firstMatch
             XCTAssertTrue(holder.waitForExistence(timeout: 30), "card page not loaded")
             Thread.sleep(forTimeInterval: 1)
             for (i, v) in ["Camille Durand", "4111 1111 1111 1111", "04/\(29 + run % 5)", "123"].enumerated() {
                 let field = safari.webViews.textFields.element(boundBy: i)
-                field.tap()
-                closeOnePassMenuIfShown()
+                focus(field)
                 field.typeText(v)
             }
             submitPage(["Payer 12,00 €"])
@@ -815,12 +824,10 @@ final class SafariAutofillUITests: XCTestCase {
         XCTAssertTrue(email.waitForExistence(timeout: 30), "\(site): login page not loaded")
         Thread.sleep(forTimeInterval: 1)
         allowExtensionIfAsked()
-        email.tap()
-        closeOnePassMenuIfShown()
+        focus(email)
         email.typeText(username)
         let field = safari.webViews.secureTextFields.firstMatch
-        field.tap()
-        closeOnePassMenuIfShown()
+        focus(field)
         field.typeText(password)
         dismissStrongPasswordOffer()
         submitPage(["Se connecter"])
@@ -1062,6 +1069,17 @@ final class SafariAutofillUITests: XCTestCase {
     }
 
     /// Our in-page sheet can open on focus: put away, typing goes on in the page.
+    /// A page field tapped until it has the keyboard (a card or sheet left from the previous page
+    /// can take the first tap while it goes away).
+    private func focus(_ field: XCUIElement) {
+        for _ in 0..<3 {
+            field.tap()
+            closeOnePassMenuIfShown()
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
+            Thread.sleep(forTimeInterval: 1)
+        }
+    }
+
     private func closeOnePassMenuIfShown() {
         let cancel = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", ["Annuler", "Cancel", "Fermer", "Close"])).firstMatch
         if cancel.waitForExistence(timeout: 1.5), cancel.isHittable { cancel.tap() }
@@ -1069,14 +1087,22 @@ final class SafariAutofillUITests: XCTestCase {
 
     private func dismissStrongPasswordOffer() {
         let other = safari.buttons.matching(NSPredicate(format: "label IN %@", ["Other Options…", "Choose My Own Password", "Choisir mon mot de passe"])).firstMatch
-        if other.waitForExistence(timeout: 1), other.isHittable { other.tap() }
+        if other.waitForExistence(timeout: 1), other.isHittable { other.tap(); return }
+        // iOS 27 "Use Strong Password?" sheet: closed with its X (the OnePass menu is what is proved).
+        let sheet = safari.staticTexts.matching(NSPredicate(format: "label IN %@", ["Use Strong Password?", "Utiliser un mot de passe fort ?"])).firstMatch
+        if sheet.exists {
+            let close = safari.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@", ["Close", "Fermer"], ["Close", "xmark"])).firstMatch
+            if close.waitForExistence(timeout: 2), close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
     }
 
     private func submitPage(_ labels: [String]) {
         let button = safari.webViews.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 20), "no \(labels) button")
-        // The keyboard can cover it: Return submits the form as well.
-        if button.isHittable { button.tap() } else { safari.typeText("\n") }
+        // With the keyboard up, XCTest may call a covered button hittable: Return (Go) submits the
+        // form from its focused field instead.
+        if safari.keyboards.count > 0 || !button.isHittable { safari.typeText("\n") } else { button.tap() }
         Thread.sleep(forTimeInterval: 1)
     }
 
