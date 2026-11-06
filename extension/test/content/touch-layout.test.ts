@@ -181,3 +181,81 @@ describe("IOSSAF-02: the worker replays the tap after an unlock", () => {
     expect(s.ext.ofType("fill_salt")).toHaveLength(0);
   });
 });
+
+// iOS 27 Safari, keyboard up and page scrolled: client coordinates (getBoundingClientRect) follow
+// the visual viewport, while position: fixed follows the layout viewport, which then starts above
+// the screen (seen in the simulator: field at client top 167, fixed layer at client top -330 with
+// visualViewport.offsetTop 330). A fixed icon placed at the field's client top drew 330 px too high.
+describe("icons on iOS with the keyboard up and the page scrolled", () => {
+  /** The fixed layer's own box as the browser reports it (jsdom reports zeros). */
+  function layerAt(st: Started, left: number, top: number): void {
+    const layer = st.cs.internals.root.querySelector<HTMLElement>(".layer")!;
+    layer.getBoundingClientRect = () => ({ left, top, right: left, bottom: top, width: 0, height: 0, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+  }
+  /** Where the icon sits on the page's client coordinates, as the user sees it. */
+  const onScreen = (icon: HTMLElement, origin: { left: number; top: number }) => ({
+    left: parseFloat(icon.style.left) + origin.left,
+    top: parseFloat(icon.style.top) + origin.top,
+  });
+
+  it("every icon sits on its own field, and follows when the layout viewport moves", async () => {
+    setPage(`
+<form id="signup">
+  <input id="n" name="name" autocomplete="name" data-test-rect="16,100,360,44">
+  <input id="e" type="email" autocomplete="email" data-test-rect="16,160,360,44">
+  <input id="p" type="password" autocomplete="new-password" data-test-rect="16,220,360,44">
+  <button type="submit">Create account</button>
+</form>`);
+    s = start(undefined, { layout: () => ({ touch: true, sheet: true }) });
+    await settle();
+    // The keyboard comes up and iOS scrolls the page: the visual viewport resizes.
+    let origin = { left: 0, top: -330 };
+    layerAt(s, origin.left, origin.top);
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    const fields = ["n", "e", "p"].map((id) => document.getElementById(id)!);
+    const placed = icons(s).filter((i) => !i.hidden);
+    expect(placed.length).toBeGreaterThanOrEqual(2);
+    const check = () => {
+      for (const icon of icons(s!).filter((i) => !i.hidden)) {
+        const at = onScreen(icon, origin);
+        const centre = at.top + 28 / 2;
+        // On one field, vertically centred on it, inside its right edge.
+        const on = fields.filter((f) => {
+          const [, y, , h] = f.getAttribute("data-test-rect")!.split(",").map(Number);
+          return Math.abs(centre - (y! + h! / 2)) <= 1;
+        });
+        expect(on).toHaveLength(1);
+        expect(at.left).toBeGreaterThan(16);
+        expect(at.left + 28).toBeLessThanOrEqual(16 + 360);
+      }
+    };
+    check();
+    // iOS pans the layout viewport (keyboard animation): the next layout pass follows.
+    origin = { left: 0, top: -120 };
+    layerAt(s, origin.left, origin.top);
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    check();
+  });
+
+  it("the label beside the focused field's icon follows the icon", async () => {
+    setPage(`
+<form id="login">
+  <input id="u" name="username" autocomplete="username" data-test-rect="16,100,360,44">
+  <input id="p" type="password" autocomplete="current-password" data-test-rect="16,160,360,44">
+</form>`);
+    s = start(undefined, { layout: () => ({ touch: true, sheet: true }) });
+    await settle();
+    const origin = { left: 0, top: -330 };
+    layerAt(s, origin.left, origin.top);
+    window.dispatchEvent(new Event("resize"));
+    await settle();
+    input("u").dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await settle();
+    const tip = s.cs.internals.root.querySelector<HTMLElement>(".tip")!;
+    expect(tip.hidden).toBe(false);
+    // 30 px above the icon, which is centred on the 44 px field at client top 100.
+    expect(parseFloat(tip.style.top) + origin.top).toBe(Math.round(100 + (44 - 28) / 2) - 30);
+  });
+});

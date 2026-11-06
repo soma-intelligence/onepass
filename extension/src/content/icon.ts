@@ -201,8 +201,10 @@ export function createIcons(opts: IconsOptions): Icons {
         left = Math.min(...hit.map((o) => o.left)) - size - 4;
       }
     }
-    icon.style.setProperty("left", `${Math.round(left)}px`);
-    icon.style.setProperty("top", `${Math.round(top)}px`);
+    // Client coordinates to the fixed layer's (iOS with the keyboard up: not the same).
+    const o = shell.origin();
+    icon.style.setProperty("left", `${Math.round(left - o.left)}px`);
+    icon.style.setProperty("top", `${Math.round(top - o.top)}px`);
   };
 
   return {
