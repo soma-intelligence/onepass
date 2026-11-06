@@ -38,8 +38,8 @@ describe("needs", () => {
 
 describe("expectations of the forms flows", () => {
   it("every forms scenario expects xfail with its first pending capability, a cross-site frame keeps nofill", () => {
-    // Removed by the forms tasks so far: Tasks 8 to 11 (person and company roles, dates, civility, sex, countries, radios).
-    expect(new Set(PENDING)).toEqual(new Set(["persons", "intent_contact", "roles_document", "document_source", "loyalty", "work_tel"]));
+    // Every capability is in the extension since Task 12: PENDING is empty, the scenarios expect a pass.
+    expect(new Set(PENDING)).toEqual(new Set());
     const scenarios = world.scenarios.filter((sc) => isFormsFlow(world.sites[sc.site]!.flow));
     expect(scenarios.length).toBeGreaterThan(0);
     for (const sc of scenarios) {

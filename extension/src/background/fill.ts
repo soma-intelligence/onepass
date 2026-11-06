@@ -2,7 +2,7 @@
 // (which redoes the origin match), verify again, then hand the values to the
 // content script of that exact frame. Values are not kept anywhere.
 import type { Ctx, FillField, LoginFill } from "../bridge/client";
-import type { BgToCs, FieldRole, FillHints, ProviderId, UsernameCheckReply } from "../shared/messages";
+import type { BgToCs, Extra, FieldRole, FillHints, FormInfo, ProviderId, UsernameCheckReply } from "../shared/messages";
 import type { BgExt } from "./ext";
 import type { Frames } from "./frames";
 import { BgError, type Session } from "./session";
@@ -16,6 +16,25 @@ export interface FillTarget {
   formRef: string;
   /** A child frame must have exactly the top frame's origin (the chain, spec C1). */
   sameOriginAsTop?: boolean;
+  /**
+   * Roles of the target form's owner fields (passengers 2 and later left out), from the page's
+   * analysis: an identity fill without a plan asks the documents and loyalty of these roles only.
+   */
+  formRoles?: readonly FieldRole[];
+}
+
+/** The roles of `form` that are the owner's (person 0): what a fill may write there. */
+export function ownerRoles(form: FormInfo): FieldRole[] {
+  return [...new Set(form.fields.filter((f) => (f.person ?? 0) === 0).map((f) => f.role))];
+}
+
+/** The documents and loyalty a form with `roles` asks of `fill_identity` (spec 10.2). */
+export function extrasFor(roles: readonly FieldRole[]): Extra[] {
+  const out: Extra[] = [];
+  if (roles.some((r) => r.startsWith("passport_"))) out.push("passport");
+  if (roles.some((r) => r.startsWith("license_"))) out.push("driver_license");
+  if (roles.includes("loyalty_number")) out.push("loyalty");
+  return out;
 }
 
 export type FillValues = Partial<Record<FieldRole, string>>;
@@ -237,11 +256,17 @@ export class Filler {
     onIdentifier?: (email: string) => void,
   ): Promise<number> {
     await this.verify(t);
-    const r = await this.session.request({ op: "fill_identity", ctx, item_id: itemId, origin: t.origin });
+    // Documents and loyalty only for the roles the form has (a plan's group, else the analysis).
+    const extras = extrasFor(roles ?? t.formRoles ?? []);
+    const r = await this.session.request({ op: "fill_identity", ctx, item_id: itemId, origin: t.origin, ...(extras.length > 0 ? { extras } : {}) });
     const values: FillValues = {};
-    put(values, "given_name", r.given_name);
-    put(values, "family_name", r.family_name);
-    put(values, "full_name", [r.given_name, r.family_name].filter((x) => x).join(" "));
+    const p = r.passport;
+    // The ticket's name is the passport's (spec section 4), when the form asks the passport.
+    const given = p?.first_names || r.given_name;
+    const family = p?.last_name || r.family_name;
+    put(values, "given_name", given);
+    put(values, "family_name", family);
+    put(values, "full_name", [given, family].filter((x) => x).join(" "));
     put(values, "email", r.email);
     // A signup's identifier field (`username` role), only when a plan put it in the identity
     // group: the e-mail if the field takes it and the form has no e-mail field of its own, else
@@ -249,23 +274,40 @@ export class Filler {
     if (roles?.includes("username")) put(values, "username", await this.signupUsername(t, r, roles.includes("email")));
     put(values, "tel", r.tel);
     put(values, "organization", r.organization);
-    put(values, "bday", r.birthday);
+    put(values, "bday", r.birthday || p?.birth_date);
     // Person and company values written as they are (forms coverage, ruling R39); civility, sex
     // and nationality are chosen in the page by their tables (spec sections 7 and 8).
     put(values, "additional_name", r.middle_name);
     put(values, "birth_name", r.birth_name);
-    put(values, "birth_place", r.birth_place);
+    put(values, "birth_place", r.birth_place || p?.birth_place);
     put(values, "job_title", r.job_title);
     put(values, "department", r.department);
     put(values, "website", r.website);
     put(values, "vat_number", r.vat_number);
     put(values, "company_id", r.company_registration);
+    const sex = r.sex || p?.sex;
     put(values, "honorific_prefix", r.honorific);
-    put(values, "sex", r.sex);
-    put(values, "nationality", r.nationality);
+    put(values, "sex", sex);
+    put(values, "nationality", r.nationality || p?.nationality);
+    // The associated documents and the site's loyalty (bridge, rulings R2 and R11); birth country never.
+    if (p) {
+      put(values, "passport_number", p.number);
+      put(values, "passport_issuing_country", p.issuing_country);
+      put(values, "passport_issue_date", p.issued_on);
+      put(values, "passport_expiry", p.expiry);
+    }
+    const dl = r.driver_license;
+    if (dl) {
+      put(values, "license_number", dl.number);
+      put(values, "license_issuing_country", dl.country);
+      put(values, "license_issue_date", dl.issued_on);
+      put(values, "license_expiry", dl.expiry);
+    }
+    put(values, "loyalty_number", r.loyalty?.number);
     const hints: FillHints = {};
-    if (r.sex) hints.sex = r.sex;
-    if (r.sex && !r.honorific) hints.civility_from_sex = true;
+    if (sex) hints.sex = sex;
+    if (sex && !r.honorific) hints.civility_from_sex = true;
+    if (r.work_tel) hints.work_tel = r.work_tel;
     const a = r.address;
     if (a) {
       put(values, "address_line1", a.line1);

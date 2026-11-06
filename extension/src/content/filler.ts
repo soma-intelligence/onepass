@@ -533,8 +533,9 @@ export function createFiller(opts: FillerOptions): Filler {
       for (const f of form.fields) {
         const nth = seen.get(f.role) ?? 0;
         seen.set(f.role, nth + 1);
-        // Passengers 2 and later are other people: never written (ruling R3).
-        if ((f.person ?? 0) > 0) continue;
+        // Passengers 2 and later are other people: never written (ruling R3). The birth country
+        // is never written either (ruling R5).
+        if ((f.person ?? 0) > 0 || f.role === "birth_country") continue;
         slots.push({ slot: { role: f.role, nth }, field: f });
       }
       let n = 0;
@@ -546,7 +547,9 @@ export function createFiller(opts: FillerOptions): Filler {
         if (slot.role === "region") continue;
         // A civility the vault does not hold comes from the sex, when the civility was asked.
         const fromSex = slot.role === "honorific_prefix" && civilityFromSex && sex !== undefined;
-        const v = values[slot.role] ?? (fromSex ? "" : undefined);
+        // A work phone field gets the work phone, else today's phone (ruling R7).
+        const own = slot.role === "tel" && field.work === true ? (hints.work_tel ?? values.tel) : values[slot.role];
+        const v = own ?? (fromSex ? "" : undefined);
         if (typeof v !== "string" || (v === "" && !fromSex)) continue;
         if (slot.role === "country") {
           const el = target(slot, undefined);

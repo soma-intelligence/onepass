@@ -19,7 +19,7 @@ import { ProviderFlows } from "./chain/provider-flow";
 import { SaveFlow } from "./chain/save-flow";
 import type { ChainDriver, StartOptions } from "./chain/types";
 import type { BgExt } from "./ext";
-import { type FillTarget, Filler } from "./fill";
+import { type FillTarget, Filler, ownerRoles } from "./fill";
 import { FormGenerator } from "./generate";
 import { AutofillHistory, type BrowserKind, browserKind } from "./history";
 import { type CsContext, Frames } from "./frames";
@@ -403,6 +403,17 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     unlockAsked.set(token, now());
   };
 
+  /** The owner's roles of the menu's form in the frame's last analysis (same origin), if known. */
+  const formRolesOf = async (rec: MenuRecord): Promise<FieldRole[] | undefined> => {
+    const a =
+      rec.frameId === 0
+        ? await analyses.top(rec.tabId)
+        : (await analyses.children(rec.tabId)).find((x) => x.frameId === rec.frameId);
+    if (!a || a.origin !== rec.origin) return undefined;
+    const form = a.analysis.forms.find((f) => f.ref === rec.formRef);
+    return form ? ownerRoles(form) : undefined;
+  };
+
   const handlers: Handlers = {
     cs: {
       page_analysis: async (m, from) => {
@@ -574,7 +585,12 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         let written: number;
         if (kind === "login") written = await filler.fillLogin(t, m.itemId, loginFields(rec.formKind));
         else if (kind === "card") written = await filler.fillCard(t, m.itemId);
-        else if (kind === "identity") written = await filler.fillIdentity(t, m.itemId);
+        else if (kind === "identity") {
+          // The documents and loyalty the menu's form asks (its owner's roles in the last analysis).
+          const roles = await formRolesOf(rec);
+          if (roles) t.formRoles = roles;
+          written = await filler.fillIdentity(t, m.itemId);
+        }
         else throw new BgError("invalid");
         // A pick in a menu a plan opened: the site memory learns it once the page moves on.
         if (rec.planned && written > 0) {

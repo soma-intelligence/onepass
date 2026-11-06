@@ -15,7 +15,7 @@ import type { FormInfo, FormKind, PlanOut } from "../shared/messages";
 import type { GeneratorEntry, PopupItem, PopupPlanLine, PopupStatus, PopupSuggestions } from "../shared/ui";
 import type { PageAnalyses } from "./analyses";
 import type { BgExt, StorageArea } from "./ext";
-import type { FillTarget, Filler } from "./fill";
+import { type FillTarget, type Filler, ownerRoles } from "./fill";
 import type { FormGenerator, Generated } from "./generate";
 import type { AutofillHistory } from "./history";
 import type { PairingFlow } from "./pairing";
@@ -197,7 +197,7 @@ export class PopupBackend {
     if (!top || top.origin !== tab.origin) throw new BgError("no_form");
     const form = pickForm(top.analysis.forms, kinds);
     if (!form) throw new BgError("no_form");
-    const t: FillTarget = { tabId: tab.tabId, frameId: 0, origin: tab.origin, formRef: form.ref };
+    const t: FillTarget = { tabId: tab.tabId, frameId: 0, origin: tab.origin, formRef: form.ref, formRoles: ownerRoles(form) };
     if (top.documentId !== undefined) t.documentId = top.documentId;
     return { t, host: tab.host, kind: form.kind };
   }

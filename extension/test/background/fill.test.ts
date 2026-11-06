@@ -168,6 +168,66 @@ describe("fill pipeline", () => {
     expect(sent(b.ext)?.hints).toEqual({ sex: "f" });
   });
 
+  const PASSPORT = { first_names: "Léa Marie", last_name: "Martin-Durand", number: "18AB12345", issuing_country: "FR", issued_on: "2020-01-02", expiry: "2030-01-01", sex: "f", birth_date: "1990-04-12", birth_place: "Lyon", nationality: "FR" };
+  const LICENSE = { number: "123456789012", country: "FR", issued_on: "2015-06-01", expiry: "2030-06-01" };
+  const requested = (client: { requests: Record<string, unknown>[] }) => client.requests.filter((r) => r.op === "fill_identity").map((r) => r.extras);
+
+  it("Task 12: documents and loyalty are asked only for the roles the form has", async () => {
+    const { client, filler } = await identityWith({ given_name: "Léa" });
+    await filler.fillIdentity(target(), "it_03");
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "passport_number", "passport_expiry"]);
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "license_issue_date", "loyalty_number"]);
+    await filler.fillIdentity(target({ formRoles: ["given_name", "passport_issuing_country"] }), "it_03");
+    expect(requested(client)).toEqual([undefined, ["passport"], ["driver_license", "loyalty"], ["passport"]]);
+  });
+
+  it("Task 12: the passport's names and values, its birth data when the identity has none", async () => {
+    const { ext, filler } = await identityWith({ given_name: "Léa", family_name: "Martin", email: "lea@atlas.dev", passport: PASSPORT, loyalty: { number: "AF 1234 5678", program: "Flying Blue" } });
+    await filler.fillIdentity(target({ formRoles: ["given_name", "family_name", "passport_number", "loyalty_number", "bday"] }), "it_03");
+    expect(sent(ext)?.values).toMatchObject({
+      given_name: "Léa Marie",
+      family_name: "Martin-Durand",
+      full_name: "Léa Marie Martin-Durand",
+      passport_number: "18AB12345",
+      passport_issuing_country: "FR",
+      passport_issue_date: "2020-01-02",
+      passport_expiry: "2030-01-01",
+      bday: "1990-04-12",
+      birth_place: "Lyon",
+      nationality: "FR",
+      sex: "f",
+      loyalty_number: "AF 1234 5678",
+      email: "lea@atlas.dev",
+    });
+    expect(sent(ext)?.values).not.toHaveProperty("birth_country");
+  });
+
+  it("Task 12: the identity's own birth data win over the passport's", async () => {
+    const { ext, filler } = await identityWith({ given_name: "Léa", birthday: "1991-01-01", sex: "m", nationality: "BE", birth_place: "Gand", passport: PASSPORT });
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "bday", "sex", "nationality", "birth_place", "passport_number"]);
+    expect(sent(ext)?.values).toMatchObject({ bday: "1991-01-01", sex: "m", nationality: "BE", birth_place: "Gand", given_name: "Léa Marie" });
+  });
+
+  it("Task 12: a license; a missing document leaves its roles empty and fills the rest", async () => {
+    const a = await identityWith({ given_name: "Léa", family_name: "Martin", driver_license: LICENSE });
+    await a.filler.fillIdentity(target(), "it_03", "menu", ["given_name", "family_name", "license_number", "license_issue_date", "license_expiry", "license_issuing_country"]);
+    expect(sent(a.ext)?.values).toEqual({
+      given_name: "Léa", family_name: "Martin", license_number: "123456789012", license_issuing_country: "FR", license_issue_date: "2015-06-01", license_expiry: "2030-06-01",
+    });
+    const b = await identityWith({ given_name: "Léa", family_name: "Martin" });
+    await b.filler.fillIdentity(target(), "it_03", "menu", ["given_name", "family_name", "passport_number"]);
+    expect(sent(b.ext)?.values).toEqual({ given_name: "Léa", family_name: "Martin" });
+  });
+
+  it("Task 12: the work phone travels as a hint with the phone role", async () => {
+    const { ext, filler } = await identityWith({ given_name: "Léa", tel: "+33 6 12 34 56 78", work_tel: "+33 1 23 45 67 89" });
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "tel"]);
+    expect(sent(ext)?.values).toMatchObject({ tel: "+33 6 12 34 56 78" });
+    expect(sent(ext)?.hints).toEqual({ work_tel: "+33 1 23 45 67 89" });
+    await filler.fillIdentity(target(), "it_03", "menu", ["given_name"]);
+    expect(sent(ext, 1)?.hints).toBeUndefined();
+  });
+
   it("Task 11: a planned group gets the hints of its own roles only", async () => {
     const { ext, filler } = await identityWith({ given_name: "Léa", family_name: "Martin", sex: "f", nationality: "FR" });
     await filler.fillIdentity(target(), "it_03", "menu", ["given_name", "family_name"]);

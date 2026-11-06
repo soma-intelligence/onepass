@@ -459,6 +459,45 @@ describe("site memory (note_fill)", () => {
   });
 });
 
+describe("forms coverage, Task 12: a menu pick of an identity asks the documents of the menu's form", () => {
+  const analysis = (roles: FieldRole[], person2: FieldRole[] = []) => ({
+    url: `${SITE}/login`,
+    forms: [{
+      ref: "f1",
+      kind: "identity" as const,
+      fields: [...roles.map((role, i) => ({ ref: `f1e${i}`, role })), ...person2.map((role, i) => ({ ref: `f1p${i}`, role, person: 1 }))],
+    }],
+    captcha: false,
+    push: false,
+    providerButtons: [],
+    accountChooser: [],
+  });
+  const identityBg = () =>
+    bg(
+      () => plan({ action: "nothing", confidence: "low" }),
+      (r) => (r.op === "list_fillable" ? { items: [{ ...summary(IDENTITY, "Léa Martin"), kind: "identity", has_password: false }] } : undefined),
+    );
+  const pick = async (t: Awaited<ReturnType<typeof bg>>) => {
+    const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "identity" }, t.top)) as { ok: { url: string } };
+    const token = open.ok.url.split("#")[1] as string;
+    const ui = uiSender(`menu.html#${token}`, 7);
+    await t.ext.send({ type: "menu_init", token }, ui);
+    expect(await t.ext.send({ type: "menu_pick", token, itemId: IDENTITY }, ui)).toEqual({ ok: {} });
+    return t.client.requests.filter((r) => r.op === "fill_identity").map((r) => r.extras);
+  };
+
+  it("a passport and a loyalty number of the owner: asked; another passenger's license: not", async () => {
+    const t = await identityBg();
+    await t.ext.send({ type: "page_analysis", analysis: analysis(["given_name", "passport_number", "loyalty_number"], ["license_number"]) }, t.top);
+    expect(await pick(t)).toEqual([["passport", "loyalty"]]);
+  });
+
+  it("no analysis of the form: no extras", async () => {
+    const t = await identityBg();
+    expect(await pick(t)).toEqual([undefined]);
+  });
+});
+
 describe("popup and command", () => {
   const replyContext = (t: Awaited<ReturnType<typeof bg>>, forms: FormContext[]) => {
     t.ext.tabReply = (_tab, m) => ((m as { type: string }).type === "plan_request" ? { ok: true, context: body(forms) } : undefined);

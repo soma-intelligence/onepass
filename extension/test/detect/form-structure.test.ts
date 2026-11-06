@@ -150,6 +150,19 @@ describe("person blocks", () => {
   });
 });
 
+describe("person blocks: names per person (Task 12, seed forms-2026-11-06-b site 39)", () => {
+  it("passenger 2's Name before Family name is its given name, as for passenger 1", () => {
+    const { forms, refs } = analyze('<form id="f">'
+      + block("Passenger 1", row("a1", "First name") + row("a2", "Family name"))
+      + block("Passenger 2", row("b1", "Name") + row("b2", "Family name"))
+      + '<button type="submit">Book</button></form>');
+    const f = fields(refs, forms[0]!);
+    expect(f.a1).toMatchObject({ role: "given_name" });
+    expect(f.b1).toMatchObject({ role: "given_name", person: 1 });
+    expect(f.b2).toMatchObject({ role: "family_name", person: 1 });
+  });
+});
+
 describe("work phones", () => {
   it("autocomplete work tel and Téléphone professionnel are tel with the work flag", () => {
     const { forms, refs } = analyze(`<form id="f">${row("g", "Prénom")}${row("t", "Téléphone")}`

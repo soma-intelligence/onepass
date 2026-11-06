@@ -273,7 +273,9 @@ async function userTypesPersons(page: Page, scope: Frame, site: Site, o: Observa
     } else if (f.type === "select" || f.render?.date?.kind === "part" && f.render.date.select) {
       await scope.locator(byId(f.id)).first().selectOption({ index: 1 }, { timeout: 5_000 }).catch(() => undefined);
     } else {
-      const v = f.type === "email" ? "voyageur@lab.test" : f.render?.date ? "01/01/1990" : "Lab";
+      // A date input takes ISO only (a browser drops anything else), a part a number, a text date its written form.
+      const d = f.render?.date;
+      const v = f.type === "email" ? "voyageur@lab.test" : d?.kind === "input" || f.type === "date" ? "1990-01-01" : d?.kind === "part" ? (d.part === "year" ? "1990" : "1") : d ? "01/01/1990" : "Lab";
       await typeField(page, scope, f.id, v, 5_000).catch(() => undefined);
     }
   }

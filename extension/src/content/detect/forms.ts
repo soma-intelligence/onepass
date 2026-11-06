@@ -827,6 +827,9 @@ export function detectForms(
     group.fields = group.fields.filter((f) => f.role !== "unknown");
     if (group.fields.length === 0) continue;
     assignPersons(group.fields, group.container);
+    // Names again per person: passenger 2's "Name" before "Family name" is its given name, as the
+    // owner's would be (resolveNames reads the group, where passenger 1's given name hid it).
+    for (const p of new Set(group.fields.map((f) => f.person ?? 0))) resolveNames(group.fields.filter((f) => (f.person ?? 0) === p));
     markWork(group.fields);
     const submit =
       findSubmit(group, buttons, isForm) ??
