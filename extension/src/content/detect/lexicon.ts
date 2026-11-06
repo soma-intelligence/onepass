@@ -213,6 +213,11 @@ export const TERMS: readonly Term[] = [
     re: /\b(expir\w*|exp|expiry|expires|valid thru|valid until|validite|date d expiration|date de validite)\b/,
     w: { cc_exp: 3, cc_exp_month: 1.5, cc_exp_year: 1.5 },
   },
+  // Expiry phrasings of documents, scored as an expiry and given to the document by forms.ts.
+  {
+    re: /\b(valable jusqu a|valable jusqu au|date of expiry|valido fino al|valida fino al|valido ate|valida ate)\b/,
+    w: { cc_exp: 3, cc_exp_month: 1.5, cc_exp_year: 1.5 },
+  },
   { re: /\b(month|mois|mm)\b/, w: { cc_exp_month: 3, cc_exp: -1 } },
   { re: /\b(year|annee|yy|yyyy|aa|aaaa)\b/, w: { cc_exp_year: 3, cc_exp: -1 } },
   { re: /\b(mm ?(yy|aa|yyyy|aaaa))\b/, w: { cc_exp: 5, cc_exp_month: -4, cc_exp_year: -4 } },

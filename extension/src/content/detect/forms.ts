@@ -1,11 +1,20 @@
 // Form grouping and classification (spec 8.2), and the page analysis entry point.
 
-import { FORMS_ROLES, type FieldInfo, type FieldRole, type FormInfo, type FormKind, type PageAnalysis } from "../../shared/messages";
+import {
+  FORMS_ROLES,
+  type FieldInfo,
+  type FieldRole,
+  type FormInfo,
+  type FormKind,
+  MAX_PERSON,
+  type PageAnalysis,
+} from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
 import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
 import { extractFeatures, type FieldFeatures } from "./features";
-import { autocompleteRole, classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate } from "./fields";
+import { birthdayPart } from "../date";
+import { autocompleteRole, classifyField, FIELD_SELECTOR, type FieldElement, isFieldCandidate, textRole } from "./fields";
 import { AUTOCOMPLETE_SCORE, CREATE_WORDS, normalizeText, SIGN_IN_WORDS } from "./lexicon";
 import { buttonLabel, detectAccountChooser, detectProviderButtons, providerOfButton } from "./provider";
 import type { RefRegistry } from "./refs";
@@ -104,6 +113,212 @@ interface Classified {
   direct: boolean;
   /** One cell of a split OTP (a run of 4 to 8 one-character inputs). */
   cell: boolean;
+  /** The controls of a date or radio group, in page order; `el` is the first. */
+  parts?: FieldElement[];
+  /** A date group: its controls classified one by one, used when the group is not a date after all. */
+  fallback?: Classified[];
+  /** A radio group (its parts are radio buttons). */
+  radio?: boolean;
+  /** Person of the field (0: the owner), set by `assignPersons`. */
+  person?: number;
+  /** A work phone. */
+  work?: boolean;
+}
+
+/** Most buttons of one radio group, and most controls of a date group. */
+const MAX_GROUP_PARTS = 8;
+const DATE_PART_TYPES: ReadonlySet<string> = new Set(["text", "number", "tel"]);
+/** Roles a date group's legend may name; `cc_exp` is an expiry until the form shows a document. */
+const DATE_GROUP_ROLES: ReadonlySet<FieldRole> = new Set(["bday", "cc_exp", "passport_issue_date"]);
+const RADIO_GROUP_ROLES: ReadonlySet<FieldRole> = new Set(["honorific_prefix", "sex"]);
+
+/** The question of a group: its own legend, ARIA label, or a heading that is one of its children. */
+function groupLabel(a: Element): string {
+  const parts: string[] = [];
+  const legend = a.querySelector(":scope > legend");
+  if (legend) parts.push(ownText(legend, 100));
+  const aria = a.getAttribute("aria-label");
+  if (aria) parts.push(aria.slice(0, 100));
+  const ids = (a.getAttribute("aria-labelledby") ?? "").split(/\s+/).filter((x) => x !== "").slice(0, 3);
+  const root = a.getRootNode() as Document | ShadowRoot;
+  for (const id of ids) {
+    const ref = typeof root.getElementById === "function" ? root.getElementById(id) : null;
+    if (ref) parts.push(ownText(ref, 100));
+  }
+  if (parts.length === 0) {
+    const h = a.querySelector(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6");
+    if (h) parts.push(ownText(h, 100));
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Two or three controls under one date legend (spec section 6, ruling R9): a fieldset or group
+ * whose question names a birth date, an expiry or an issue date, holding only lists or short text
+ * boxes, two or more of them a day, a month or a year. Keyed by the group's first control.
+ */
+function findDateGroups(visible: readonly FieldElement[]): Map<FieldElement, { role: FieldRole; parts: FieldElement[] }> {
+  const out = new Map<FieldElement, { role: FieldRole; parts: FieldElement[] }>();
+  const seen = new Set<Element>();
+  for (const el of visible) {
+    const box = el.closest("fieldset, [role=group]");
+    if (box === null || seen.has(box)) continue;
+    seen.add(box);
+    const role = textRole(groupLabel(box));
+    if (!DATE_GROUP_ROLES.has(role)) continue;
+    const parts = visible.filter((x) => box.contains(x));
+    if (parts.length < 2 || parts.length > 3) continue;
+    if (!parts.every((x) => x instanceof HTMLSelectElement || (x instanceof HTMLInputElement && DATE_PART_TYPES.has(x.type)))) continue;
+    const kinds = parts.map((x) => birthdayPart(x)).filter((p) => p !== null);
+    if (kinds.length < 2 || new Set(kinds).size !== kinds.length) continue;
+    out.set(parts[0] as FieldElement, { role, parts });
+  }
+  return out;
+}
+
+/**
+ * Radio groups that ask a civility or a sex (spec section 7): the visible radios of one name in one
+ * form, whose question (the fieldset legend or group label around them all) names the role.
+ */
+function findRadioGroups(doc: Document, roots: readonly ShadowRoot[], geometry: Geometry): Classified[] {
+  const byName = new Map<string, HTMLInputElement[]>();
+  const forms = new Map<HTMLFormElement | null, number>();
+  for (const el of queryAll(doc, roots, 'input[type="radio" i]', MAX_FIELDS)) {
+    if (!(el instanceof HTMLInputElement) || el.name === "" || !isVisible(el, geometry)) continue;
+    const f = forms.get(el.form) ?? forms.size;
+    forms.set(el.form, f);
+    const key = `${f}\u0000${el.name}`;
+    byName.set(key, [...(byName.get(key) ?? []), el]);
+  }
+  const out: Classified[] = [];
+  for (const radios of byName.values()) {
+    if (radios.length < 2 || radios.length > MAX_GROUP_PARTS) continue;
+    const first = radios[0] as HTMLInputElement;
+    let box: Element | null = first.closest("fieldset, [role=radiogroup], [role=group]");
+    if (box !== null && !radios.every((r) => box?.contains(r))) box = null;
+    const role = box ? textRole(groupLabel(box)) : "unknown";
+    if (!RADIO_GROUP_ROLES.has(role)) continue;
+    out.push({ el: first, role, direct: false, cell: false, parts: radios, radio: true });
+  }
+  return out;
+}
+
+/**
+ * A date group stays one field when it is a birth date, or a document's expiry or issue date in a
+ * group that has the document number (an expiry next to card fields only when its words name the
+ * document); otherwise its controls are classified one by one, as before.
+ */
+function settleDateGroups(fields: Classified[]): Classified[] {
+  const doc = fields.some((f) => f.role === "passport_number" || f.role === "license_number");
+  const card = fields.some((f) => CARD_OWN.has(f.role));
+  const out: Classified[] = [];
+  for (const f of fields) {
+    if (f.fallback === undefined) {
+      out.push(f);
+      continue;
+    }
+    const words = fieldWords(f.el);
+    const named = PASSPORT_WORDS.test(words) || LICENSE_WORDS.test(words);
+    const keep = f.role === "bday" || (doc && (f.role === "passport_issue_date" || (f.role === "cc_exp" && (!card || named))));
+    if (keep) out.push(f);
+    else out.push(...f.fallback);
+  }
+  return out;
+}
+
+/** Words naming a traveller of a booking, singular and plural, in the seven languages. */
+const TRAVELLER =
+  "(passagers?|passengers?|passagiers?|pasajeros?|passeggeri|passeggero|passageiros?|voyageurs?|travell?ers?|reisender?|reisende|mitreisender?|fluggast|fluggaste|viajeros?|viaggiatori|viaggiatore|viajantes?|reizigers?|adultes?|adults?|erwachsener?|erwachsene|adultos?|adulti|volwassenen?|enfants?|child|children|kinder|ninos?|bambini|bambino|criancas?|kinderen|occupants?|guests?|huespedes|huesped|ospiti|ospite|hospedes?|personnes?|persons?|personas?|persone|pessoas?|personen|persoon)";
+const RANK_AFTER = new RegExp(`\\b${TRAVELLER}\\s+(?:n|no|nr|num|numero)?\\s*(\\d{1,2})\\b`);
+const RANK_BEFORE = new RegExp(`\\b(\\d{1,2})\\s*(?:e|er|eme|nd|rd|th|st|o|a|de|ste|te)?\\s+${TRAVELLER}\\b`);
+const TRAVELLER_WORD = new RegExp(`\\b${TRAVELLER}\\b`);
+const ORDINALS: readonly [RegExp, number][] = [
+  [/\b(second|seconde|deuxieme|zweite[rn]?|segund[oa]|second[oa]|tweede)\b/, 2],
+  [/\b(third|troisieme|dritte[rn]?|tercer[oa]?|terz[oa]|terceir[oa]|derde)\b/, 3],
+  [/\b(fourth|quatrieme|vierte[rn]?|cuart[oa]|quart[oa]|vierde)\b/, 4],
+];
+/** A traveller index in a field name: `passengers[1]` counts from 0, `pax_2_`, `traveller2`, `adult-2` from 1. */
+const NAME_TRAVELLER = "(?:passengers?|pax|travell?ers?|adults?|guests?|persons?|occupants?|passagers?|voyageurs?|reisende[rn]?|pasajeros?|passeggeri|passageiros?|passagiers?)";
+const NAME_INDEX_0 = new RegExp(`${NAME_TRAVELLER}\\[(\\d{1,2})\\]`, "i");
+const NAME_INDEX_1 = new RegExp(`${NAME_TRAVELLER}[-_.]?(\\d{1,2})(?![0-9])`, "i");
+
+/** Rank (1 for the first) of a traveller that `text` (normalized) names, or null. */
+function rankOfText(text: string): number | null {
+  const after = RANK_AFTER.exec(text);
+  if (after) return Number(after[2]);
+  const before = RANK_BEFORE.exec(text);
+  if (before) return Number(before[1]);
+  if (TRAVELLER_WORD.test(text)) for (const [re, n] of ORDINALS) if (re.test(text)) return n;
+  return null;
+}
+
+/**
+ * Rank of the traveller a field belongs to, by its name, else by the label of a block around it
+ * (inside the group, and holding one person only: "2 adultes" over the whole form is a count);
+ * null when nothing says.
+ */
+function travellerRank(el: Element, container: Element, several: (a: Element) => boolean): number | null {
+  for (const attr of ["name", "id"]) {
+    const v = (el.getAttribute(attr) ?? "").slice(0, MAX_SOURCE_NAME);
+    const zero = NAME_INDEX_0.exec(v);
+    if (zero) return Number(zero[1]) + 1;
+    const one = NAME_INDEX_1.exec(v);
+    if (one) return Math.max(1, Number(one[1]));
+  }
+  for (let a = el.parentElement; a && a !== container; a = a.parentElement) {
+    if (several(a)) break;
+    const rank = rankOfText(normalizeText(groupLabel(a)));
+    if (rank !== null) return rank;
+  }
+  return null;
+}
+const MAX_SOURCE_NAME = 200;
+
+/** Roles whose repetition across blocks with no traveller sign means another person (spec section 4). */
+const PERSON_ANCHORS: readonly FieldRole[] = ["given_name", "family_name", "full_name", "passport_number", "license_number"];
+
+/**
+ * Persons of a group (ruling R3): a block or field name naming traveller 2 or later gives
+ * `person` = rank - 1 to its fields. Without any sign, name, date or document roles repeated in
+ * other blocks are other people: each later block (the highest ancestor holding the repeat and
+ * not the first one) is person 1, 2... Address roles stay the owner's (billing, shipping).
+ */
+function assignPersons(fields: Classified[], container: Element): void {
+  const signed = new Set<Classified>();
+  const several = (a: Element) =>
+    PERSON_ANCHORS.some((r) => fields.filter((f) => f.role === r && a.contains(f.el)).length >= 2);
+  for (const f of fields) {
+    const rank = travellerRank(f.el, container, several);
+    if (rank === null) continue;
+    signed.add(f);
+    if (rank >= 2) f.person = rank - 1;
+  }
+  for (const role of PERSON_ANCHORS) {
+    const repeats = fields.filter((f) => f.role === role && !signed.has(f) && f.person === undefined);
+    const [first, ...later] = repeats;
+    if (first === undefined || later.length === 0) continue;
+    later.forEach((o, k) => {
+      let block: Element = o.el;
+      for (let a = o.el.parentElement; a && a !== container && !a.contains(first.el); a = a.parentElement) block = a;
+      // A block is a person's only when it holds more than the repeated field (a wrapper per field is not one).
+      if (fields.filter((f) => block.contains(f.el)).length < 2) return;
+      for (const f of fields) {
+        if (signed.has(f) || f.person !== undefined || ADDRESS.has(f.role) || !block.contains(f.el)) continue;
+        f.person = k + 1;
+      }
+    });
+  }
+}
+
+/** A phone of the work kind: the `work` autocomplete qualifier, or work words in its own label or names. */
+const WORK_TEL =
+  /\b(professionnel\w*|pro|work|business|office|bureau|geschaftlich\w*|dienst\w*|buro|trabajo|oficina|lavoro|ufficio|trabalho|escritorio|zakelijk\w*|werk\w*|kantoor)\b/;
+function markWork(fields: Classified[]): void {
+  for (const f of fields) {
+    if (f.role !== "tel") continue;
+    const ac = (f.el.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
+    if (ac.includes("work") || WORK_TEL.test(ownWords(f.el))) f.work = true;
+  }
 }
 
 interface Group {
@@ -284,6 +499,15 @@ function splitOtpCells(fields: FieldElement[]): Set<FieldElement> {
   return out;
 }
 
+/** The field of `f` as the analysis gives it: groups with their parts, person and work flags. */
+function infoOf(f: Classified, refs: RefRegistry): FieldInfo {
+  const info: FieldInfo = { ref: refs.refFor(f.el), role: f.role };
+  if (f.parts) info.parts = f.parts.slice(0, MAX_GROUP_PARTS).map((el) => refs.refFor(el));
+  if (f.person !== undefined && f.person > 0) info.person = Math.min(f.person, MAX_PERSON);
+  if (f.work) info.work = true;
+  return info;
+}
+
 /** Merges runs of 4 to 8 consecutive one-character OTP cells into one logical field. */
 function mergeSplitOtp(fields: Classified[], refs: RefRegistry): FieldInfo[] {
   const out: FieldInfo[] = [];
@@ -298,8 +522,7 @@ function mergeSplitOtp(fields: Classified[], refs: RefRegistry): FieldInfo[] {
       i = j;
       continue;
     }
-    const f = fields[i] as Classified;
-    out.push({ ref: refs.refFor(f.el), role: f.role });
+    out.push(infoOf(fields[i] as Classified, refs));
     i++;
   }
   return out;
@@ -366,13 +589,17 @@ const LICENSE_WORDS =
 type Doc = "passport" | "license";
 
 /** The words of a field that name it (names, label, placeholder), normalized; never its value. */
-function fieldWords(el: FieldElement): string {
+function ownWords(el: FieldElement): string {
   const parts = ["name", "id", "placeholder", "aria-label", "title"].map((a) => el.getAttribute(a) ?? "");
   for (const l of Array.from(el.labels ?? []).slice(0, 3)) parts.push(ownText(l));
+  return normalizeText(parts.join(" ").slice(0, 400));
+}
+
+/** `ownWords` and the legend of the field's fieldset. */
+function fieldWords(el: FieldElement): string {
   const fs = el.closest("fieldset");
   const legend = fs?.querySelector(":scope > legend");
-  if (legend) parts.push(ownText(legend, 100));
-  return normalizeText(parts.join(" ").slice(0, 400));
+  return legend ? `${ownWords(el)} ${normalizeText(ownText(legend, 100))}` : ownWords(el);
 }
 
 /**
@@ -545,19 +772,31 @@ export function detectForms(
   const cells = splitOtpCells(visible);
   // Order (Task 15): features, classifier, safety rules, then the existing logic below.
   const fromModel = model ? modelRoles(doc, roots, geometry, model) : null;
-  const classified: Classified[] = [];
-  for (const el of visible) {
-    if (cells.has(el)) {
-      classified.push({ el, role: "otp", direct: false, cell: true });
-      continue;
-    }
+  const single = (el: FieldElement): Classified | null => {
+    if (cells.has(el)) return { el, role: "otp", direct: false, cell: true };
     const heuristic = classifyField(el);
     const direct = heuristic.score === AUTOCOMPLETE_SCORE;
     // R21: an autocomplete-decided role is never replaced by the model, nor a role no model has (R13).
     const keep = direct || HEURISTIC_ONLY.has(heuristic.role);
     const { role } = (keep ? undefined : fromModel?.get(el)) ?? heuristic;
-    if (role !== "unknown") classified.push({ el, role, direct, cell: false });
+    return role === "unknown" ? null : { el, role, direct, cell: false };
+  };
+  // Date groups (one field with its parts), kept with their one-by-one reading (settleDateGroups).
+  const dates = findDateGroups(visible.filter((el) => !cells.has(el)));
+  const inDate = new Set<FieldElement>([...dates.values()].flatMap((g) => g.parts));
+  const classified: Classified[] = [];
+  for (const el of visible) {
+    const date = dates.get(el);
+    if (date) {
+      const fallback = date.parts.map(single).filter((c): c is Classified => c !== null);
+      classified.push({ el, role: date.role, direct: false, cell: false, parts: date.parts, fallback });
+      continue;
+    }
+    if (inDate.has(el)) continue;
+    const c = single(el);
+    if (c) classified.push(c);
   }
+  classified.push(...findRadioGroups(doc, roots, geometry));
 
   const byForm = new Map<HTMLFormElement, Classified[]>();
   const orphans: Classified[] = [];
@@ -579,6 +818,7 @@ export function detectForms(
   const out: FormInfo[] = [];
   for (const { group, isForm } of groups) {
     group.fields.sort((a, b) => documentOrder(a.el, b.el));
+    group.fields = settleDateGroups(group.fields);
     resolveSecurityCodes(group.fields);
     resolvePasswords(group.fields);
     resolveNames(group.fields);
@@ -586,6 +826,8 @@ export function detectForms(
     resolveDepartments(group.fields, group.container);
     group.fields = group.fields.filter((f) => f.role !== "unknown");
     if (group.fields.length === 0) continue;
+    assignPersons(group.fields, group.container);
+    markWork(group.fields);
     const submit =
       findSubmit(group, buttons, isForm) ??
       (isForm ? trailingNext(group.container, buttons, groups.map((g) => g.group)) : undefined);

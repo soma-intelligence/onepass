@@ -148,6 +148,9 @@ function typedRegion(wanted: readonly string[], raw: string): string[] {
   return [...(r?.names ?? []), ...(p?.names.slice(0, 1) ?? []), raw];
 }
 
+/** Roles whose value is a date `YYYY-MM-DD` (spec section 6). */
+const DATE_ROLES: ReadonlySet<FieldRole> = new Set(["bday"]);
+
 const autocompleteTokens = (el: Element) => (el.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
 
 /** A country or region value as a person writes it in a free text field. */
@@ -455,6 +458,8 @@ export function createFiller(opts: FillerOptions): Filler {
       for (const f of form.fields) {
         const nth = seen.get(f.role) ?? 0;
         seen.set(f.role, nth + 1);
+        // Passengers 2 and later are other people: never written (ruling R3).
+        if ((f.person ?? 0) > 0) continue;
         slots.push({ slot: { role: f.role, nth }, field: f });
       }
       let n = 0;
@@ -482,7 +487,12 @@ export function createFiller(opts: FillerOptions): Filler {
           }
           continue;
         }
-        if (field.parts && field.parts.length > 0) {
+        if (field.parts && field.parts.length > 0 && DATE_ROLES.has(slot.role)) {
+          // A date in parts: each control takes its own part of the date (date.ts).
+          for (let i = 0; i < field.parts.length; i++) if (put(slot, i, v)) n++;
+        } else if (field.parts && field.parts.length > 0) {
+          // A radio group is chosen by its own rules (Task 11), never one character per button.
+          if (slot.role === "honorific_prefix" || slot.role === "sex") continue;
           // Split code: one character per cell, in order.
           const chars = Array.from(v);
           for (let i = 0; i < field.parts.length; i++) {

@@ -142,6 +142,8 @@ function selectMoved(el: HTMLSelectElement): boolean {
 
 function holdsValue(el: Element): boolean {
   if (el instanceof HTMLSelectElement) return selectMoved(el);
+  // A radio button holds its value attribute whether or not it is chosen: only its check counts.
+  if (el instanceof HTMLInputElement && el.type === "radio") return el.checked;
   return isChecked(el) || nativeValue(el) !== "";
 }
 
@@ -259,7 +261,8 @@ function fieldContexts(form: PageAnalysis["forms"][number], refs: RefRegistry, g
     if (out.length >= PAGE_CONTEXT_MAX_FIELDS) break;
     const cells = cellsOf(refs, f.ref, f.parts);
     const first = refs.get(f.ref);
-    if (first === null || !isFieldCandidate(first)) continue;
+    const radio = first instanceof HTMLInputElement && first.type === "radio" && f.parts !== undefined;
+    if (first === null || !(isFieldCandidate(first) || radio)) continue;
     const split = f.parts !== undefined && f.parts.length > 0;
     const el = first as FieldElement;
     const typeWeight = (f.role === "unknown" ? undefined : TYPE_WEIGHTS[controlType(el)]?.[f.role]) ?? 0;
@@ -267,7 +270,8 @@ function fieldContexts(form: PageAnalysis["forms"][number], refs: RefRegistry, g
     const confidence = split ? SPLIT_OTP_CONFIDENCE : confidenceOf(evidenceScore(scoreField(el, cardForm), f.role), typeWeight);
     out.push({
       field_ref: f.ref,
-      role: f.role,
+      // Another person's field (passenger 2 and later) is not the planner's to fill (ruling R3).
+      role: (f.person ?? 0) > 0 ? null : f.role,
       confidence,
       visible: isVisible(first, geometry),
       prefilled: prefilledOf(cells),

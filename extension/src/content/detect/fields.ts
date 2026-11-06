@@ -197,6 +197,27 @@ export function scoreField(el: FieldElement, cardForm = true): Record<FieldRole,
   return scores;
 }
 
+/**
+ * The role a group's question (a legend, a group label) names, read like a field label: the best
+ * role above SCORE_THRESHOLD, else `unknown`. Used for date and radio groups (forms.ts).
+ */
+export function textRole(text: string): FieldRole {
+  const scores = zeroScores();
+  const t = normalizeText(text);
+  if (t === "") return "unknown";
+  for (const term of TERMS) if (term.re.test(t)) add(scores, term.w, SOURCE_WEIGHTS.label);
+  scores.remember_me = 0;
+  let best: FieldRole = "unknown";
+  let bestScore = SCORE_THRESHOLD - Number.EPSILON;
+  for (const r of SCORED_ROLES) {
+    if (scores[r] > bestScore) {
+      best = r;
+      bestScore = scores[r];
+    }
+  }
+  return best;
+}
+
 /** Highest-scoring role above SCORE_THRESHOLD, else `unknown` with score 0 (`cardForm`: see scoreField). */
 export function classifyField(el: FieldElement, cardForm = true): { role: FieldRole; score: number } {
   const scores = scoreField(el, cardForm);

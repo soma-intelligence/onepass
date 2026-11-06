@@ -402,3 +402,25 @@ describe("buildPageContext: forms roles (forms coverage, Task 8)", () => {
     for (const id of ["pn", "pe", "dp"]) expect(byId[id]?.confidence, id).toBeGreaterThanOrEqual(0.6);
   });
 });
+
+describe("buildPageContext: persons (forms coverage, Task 9)", () => {
+  it("a travel page sends passengers 2 and later with role null and keeps passenger 1", () => {
+    const { ctx, refs } = page(`<form id="f">
+      <fieldset><legend>Passager 1</legend><label for="ag">Prénom</label><input id="ag" name="ag">
+        <label for="af">Nom</label><input id="af" name="af"></fieldset>
+      <fieldset><legend>Passager 2</legend><label for="bg">Prénom</label><input id="bg" name="bg">
+        <label for="bf">Nom</label><input id="bf" name="bf"></fieldset>
+      <button type="submit">Réserver</button></form>`);
+    const byId = Object.fromEntries(ctx.forms[0]!.fields.map((f) => [(refs.get(f.field_ref) as HTMLElement).id, f.role]));
+    expect(byId).toEqual({ ag: "given_name", af: "family_name", bg: null, bf: null });
+  });
+
+  it("a radio group reads as empty until a button is checked", () => {
+    const { ctx } = page(`<form id="f"><fieldset><legend>Civilité</legend>
+      <label><input type="radio" id="m" name="civ" value="m"> M.</label><label><input type="radio" id="w" name="civ" value="mme"> Mme</label></fieldset>
+      <label for="g">Prénom</label><input id="g" name="g"><label for="fa">Nom</label><input id="fa" name="fa">
+      <button type="submit">OK</button></form>`);
+    const civ = ctx.forms[0]!.fields.find((f) => f.role === "honorific_prefix");
+    expect(civ?.prefilled).toBe("empty");
+  });
+});

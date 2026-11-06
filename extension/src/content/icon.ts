@@ -215,7 +215,7 @@ export function createIcons(opts: IconsOptions): Icons {
       for (const form of analysis.forms) {
         let any = false;
         for (const f of form.fields) {
-          if (!ICON_ROLES.has(f.role)) continue;
+          if (!ICON_ROLES.has(f.role) || (f.person ?? 0) > 0) continue;
           const el = refs.get(f.ref);
           if (!el) continue;
           any = true;

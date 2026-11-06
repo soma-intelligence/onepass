@@ -223,7 +223,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     const roles: readonly string[] = kind === "card" ? CARD_SUBMIT_ROLES : IDENTITY_SUBMIT_ROLES;
     const values: Record<string, string> = {};
     for (const fi of f.fields) {
-      if (!roles.includes(fi.role) || values[fi.role] !== undefined) continue;
+      if (!roles.includes(fi.role) || values[fi.role] !== undefined || (fi.person ?? 0) > 0) continue;
       const cells = (fi.parts ?? [fi.ref]).map((r) => refs.get(r)).filter((el): el is Element => el !== null && el !== undefined);
       const v = cells.map((el) => nativeValue(el)).join("").trim();
       if (v !== "") values[fi.role] = v.slice(0, 256);

@@ -176,7 +176,17 @@ export interface FieldInfo {
    * OTP inputs form one logical field). `ref` is then the first cell.
    */
   parts?: string[];
+  /**
+   * The person of the field (forms coverage, ruling R3): absent or 0 is the owner (the identity
+   * filled), 1 and more are passengers 2 and later, never filled by OnePass.
+   */
+  person?: number;
+  /** A phone of the work kind (`autocomplete="work tel"`, "Téléphone professionnel"), ruling R7. */
+  work?: true;
 }
+
+/** Highest `FieldInfo.person` the router accepts. */
+export const MAX_PERSON = 16;
 
 export interface FormInfo {
   ref: string;

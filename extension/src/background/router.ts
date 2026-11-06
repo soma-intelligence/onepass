@@ -17,6 +17,7 @@ import {
   CARD_SUBMIT_ROLES,
   FORMS_ROLES,
   IDENTITY_SUBMIT_ROLES,
+  MAX_PERSON,
   type SavedFormKind,
   type SubmittedValues,
   type CsToBg,
@@ -196,6 +197,14 @@ function field(v: unknown): FieldInfo {
   const o = obj(v);
   const f: FieldInfo = { ref: ref(o.ref), role: member<FieldRole>(o.role, FIELD_ROLES) };
   if (o.parts !== undefined) f.parts = list(o.parts, MAX_PARTS, ref);
+  if (o.person !== undefined) {
+    if (typeof o.person !== "number" || !Number.isInteger(o.person) || o.person < 0 || o.person > MAX_PERSON) throw new Invalid();
+    f.person = o.person;
+  }
+  if (o.work !== undefined) {
+    if (o.work !== true) throw new Invalid();
+    f.work = true;
+  }
   return f;
 }
 

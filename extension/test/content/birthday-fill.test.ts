@@ -86,3 +86,26 @@ describe("birth date fill", () => {
     expect(inp("b").value).toBe("");
   });
 });
+
+describe("forms coverage, Task 9: groups and persons in the filler", () => {
+  it("three lists under one date legend fill as one birth date", () => {
+    const fill = setup(`<form><label for="gn">Prénom</label><input id="gn" autocomplete="given-name">
+      <label for="fa">Nom</label><input id="fa">
+      <fieldset><legend>Date de naissance</legend>
+      <label for="d">Jour</label><select id="d"><option value="">--</option>${days}</select>
+      <label for="m">Mois</label><select id="m"><option value="">--</option>${months}</select>
+      <label for="y">Année</label><select id="y"><option value="">--</option>${years}</select></fieldset>
+      <button type="submit">OK</button></form>`);
+    fill(BDAY);
+    expect([sel("d").value, sel("m").value, sel("y").value]).toEqual(["12", "4", "1990"]);
+  });
+
+  it("the fields of passenger 2 are never written", () => {
+    const fill = setup(`<form>
+      <fieldset><legend>Passager 1</legend><label for="ag">Prénom</label><input id="ag"><label for="af">Nom</label><input id="af"></fieldset>
+      <fieldset><legend>Passager 2</legend><label for="bg">Prénom</label><input id="bg"><label for="bf">Nom</label><input id="bf"></fieldset>
+      <button type="submit">OK</button></form>`);
+    fill(BDAY);
+    expect([inp("ag").value, inp("bg").value]).toEqual(["Alex", ""]);
+  });
+});

@@ -301,6 +301,17 @@ describe("message validation", () => {
     expect(parseCsToBg({ type: "page_analysis", analysis: bad })).toBeNull();
   });
 
+  it("keeps a field's person and work flag (Task 9), rejects bad ones", () => {
+    const fields = [{ ref: "e1", role: "given_name", person: 1 }, { ref: "e2", role: "tel", work: true }];
+    const a = { ...analysis, forms: [{ ref: "f1", kind: "identity", fields }] };
+    expect(parseCsToBg({ type: "page_analysis", analysis: a })).toEqual({ type: "page_analysis", analysis: a });
+    for (const f of [{ ref: "e1", role: "given_name", person: -1 }, { ref: "e1", role: "given_name", person: 1.5 },
+      { ref: "e1", role: "given_name", person: 99 }, { ref: "e1", role: "tel", work: "yes" }]) {
+      const b = { ...analysis, forms: [{ ref: "f1", kind: "identity", fields: [f] }] };
+      expect(parseCsToBg({ type: "page_analysis", analysis: b }), JSON.stringify(f)).toBeNull();
+    }
+  });
+
   it("rejects bad roles, kinds, booleans, providers and oversize lists", () => {
     const bad = [
       { ...analysis, forms: [{ ref: "f1", kind: "login", fields: [{ ref: "e1", role: "pin" }] }] },
