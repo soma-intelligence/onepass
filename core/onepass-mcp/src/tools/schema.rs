@@ -191,6 +191,29 @@ pub(crate) fn all() -> Vec<ToolSpec> {
                 &["reference"],
             ),
         },
+        ToolSpec {
+            name: "fill_in_browser",
+            description: "Fill a login or a credit card into the web page you are on (url, HTTPS only), after the user's approval, and never return a value: only the names of the fields filled and whether the form was submitted. Give item_id, or query to pick the only item of that kind for the page's site in the vaults with the fill scope. A login approval may cover the same item and site for a few minutes; a card is approved every time and never submitted. The page receives the values: an agent that can run script in the page can read them.",
+            input_schema: object(
+                json!({
+                    "item_id": name_arg("Item id."),
+                    "query": {"type": "string", "minLength": 1, "maxLength": MAX_QUERY, "description": "Text to find the item (title or URL, case-insensitive) when item_id is not known."},
+                    "url": {"type": "string", "minLength": 1, "maxLength": MAX_PATH, "description": "HTTPS URL of the page you are on."},
+                    "kind": {"type": "string", "enum": ["login", "card"], "description": "What to fill."},
+                    "submit": {"type": "boolean", "description": "Press the sign-in button after filling (login only, default false)."},
+                    "target": {
+                        "type": "object",
+                        "description": "The browser: {\"browser\": \"chrome\"} or {\"cdp\": \"ws://127.0.0.1:<port>/devtools/page/<id>\"}.",
+                        "properties": {
+                            "browser": {"type": "string", "enum": ["chrome"]},
+                            "cdp": {"type": "string", "minLength": 1, "maxLength": MAX_PATH},
+                        },
+                        "additionalProperties": false,
+                    },
+                }),
+                &["url", "kind", "target"],
+            ),
+        },
     ]
 }
 
@@ -235,6 +258,28 @@ fn check_rules(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
                 if !std::path::Path::new(path).is_absolute() {
                     return Err(format!("argument '{key}' must be an absolute path"));
                 }
+            }
+            Ok(())
+        }
+        "fill_in_browser" => {
+            if args.contains_key("item_id") == args.contains_key("query") {
+                return Err("give exactly one of 'item_id' and 'query'".into());
+            }
+            let target = args
+                .get("target")
+                .and_then(Value::as_object)
+                .ok_or("missing argument 'target'")?;
+            if target.len() != 1 {
+                return Err(
+                    "argument 'target' must have exactly one of 'browser' and 'cdp'".into(),
+                );
+            }
+            if let Some(cdp) = target.get("cdp").and_then(Value::as_str)
+                && !cdp
+                    .get(..5)
+                    .is_some_and(|h| h.eq_ignore_ascii_case("ws://"))
+            {
+                return Err("argument 'target.cdp' must be a ws:// address".into());
             }
             Ok(())
         }
@@ -457,6 +502,41 @@ mod tests {
         assert!(generate(json!({"length": 20, "symbols": false})).is_ok());
         assert!(generate(json!({"words": 4, "symbols": true})).is_err());
         assert!(generate(json!({"pin_digits": 6, "symbols": false})).is_err());
+    }
+
+    #[test]
+    fn fill_in_browser_rules() {
+        let fill = |v: Value| validate_args("fill_in_browser", &args(v));
+        let chrome = json!({"browser": "chrome"});
+        let url = "https://example.com/login";
+        assert!(
+            fill(json!({"item_id": "x", "url": url, "kind": "login", "target": chrome})).is_ok()
+        );
+        assert!(fill(json!({"query": "x", "url": url, "kind": "card", "submit": false, "target": {"cdp": "ws://127.0.0.1:9222/devtools/page/A"}})).is_ok());
+        // Exactly one of item_id and query.
+        assert!(fill(json!({"url": url, "kind": "login", "target": chrome})).is_err());
+        assert!(
+            fill(
+                json!({"item_id": "x", "query": "x", "url": url, "kind": "login", "target": chrome})
+            )
+            .is_err()
+        );
+        // Target shape.
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {}})).is_err());
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"browser": "safari"}})).is_err());
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"browser": "chrome", "cdp": "ws://a"}})).is_err());
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": "http://127.0.0.1:9222"}})).is_err());
+        assert!(
+            fill(
+                json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": "wss://h/x"}})
+            )
+            .is_err()
+        );
+        assert!(
+            fill(json!({"item_id": "x", "url": url, "kind": "password", "target": chrome}))
+                .is_err()
+        );
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login"})).is_err());
     }
 
     #[test]

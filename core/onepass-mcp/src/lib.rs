@@ -5,6 +5,7 @@
 //! [`template`] serve the secret tools, whose side effects go through a
 //! [`Workspace`].
 
+pub mod browser;
 pub mod guards;
 pub mod mask;
 pub mod policy;
@@ -15,6 +16,7 @@ pub mod template;
 pub mod tools;
 pub mod workspace;
 
+pub use browser::{BrowserError, BrowserFill, BrowserTarget, FillKind, FillOutcome, PageProbe};
 pub use guards::{
     ClientContext, DEFAULT_PROMPT_WAIT, LivenessFn, McpGuards, RegistryFn, file_registry,
     mcp_client_record,

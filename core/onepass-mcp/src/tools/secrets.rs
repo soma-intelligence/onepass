@@ -94,8 +94,11 @@ impl Located {
 }
 
 /// Tools whose prompt is followed by strong authentication.
-fn needs_strong(action: &str) -> bool {
-    matches!(action, "reveal_secret" | "totp_code")
+pub(super) fn needs_strong(action: &str) -> bool {
+    matches!(
+        action,
+        "reveal_secret" | "totp_code" | "fill_login" | "fill_card"
+    )
 }
 
 /// Longest device id a `phone:` origin may name (as the app's audit check).
@@ -198,7 +201,7 @@ fn field_of<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field, Refusal> {
 
 /// Adds `(label, value)` to `details`, split into lines the prompt shows
 /// in full.
-fn push_detail(details: &mut Vec<(String, String)>, label: &str, value: &str) {
+pub(super) fn push_detail(details: &mut Vec<(String, String)>, label: &str, value: &str) {
     let chars: Vec<char> = sanitize_chars(value);
     if chars.is_empty() {
         details.push((label.to_owned(), String::new()));
@@ -225,7 +228,7 @@ fn sanitize_chars(value: &str) -> Vec<char> {
         .collect()
 }
 
-fn str_arg<'a>(args: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
+pub(super) fn str_arg<'a>(args: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     args.get(key).and_then(Value::as_str)
 }
 
@@ -339,7 +342,7 @@ impl<P: VaultPort> McpTools<P> {
     /// `AllowFor` records a grant in the signed grants file. Sets the
     /// decision label.
     #[allow(clippy::too_many_arguments)]
-    fn approve(
+    pub(super) fn approve(
         &mut self,
         client: &ClientInfo,
         action: &str,
@@ -477,16 +480,22 @@ impl<P: VaultPort> McpTools<P> {
         l: &Located,
         approved_on: Option<&str>,
     ) -> Result<(), Refusal> {
+        self.strong_auth_for(action, &l.shown(), approved_on)
+    }
+
+    /// [`Self::strong_auth`] for a target described by `shown`.
+    pub(super) fn strong_auth_for(
+        &mut self,
+        action: &str,
+        shown: &str,
+        approved_on: Option<&str>,
+    ) -> Result<(), Refusal> {
         if needs_strong(action) && approved_on_phone(approved_on) {
             self.throttle
                 .record_decision(&*self.clock, &self.client.client_id, false);
             return Ok(());
         }
-        let reason = sanitize_for_display(&format!(
-            "{action} for {}: {}",
-            self.client.label,
-            l.shown()
-        ));
+        let reason = sanitize_for_display(&format!("{action} for {}: {shown}", self.client.label));
         let outcome = self.strong.verify(&reason);
         let (clock, id) = (&*self.clock, &self.client.client_id);
         match outcome {

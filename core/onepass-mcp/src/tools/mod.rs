@@ -13,10 +13,12 @@
 //! existence. Every call, refused or not, writes one audit entry per target
 //! with ids only and the client's identity.
 
+mod fill;
 mod meta;
 pub(crate) mod schema;
 mod secrets;
 
+use crate::browser::BrowserFill;
 use crate::guards::{ClientContext, LivenessFn, McpGuards, RegistryFn};
 use crate::policy::{ClientScopes, Narrowing, Policy, Scope, effective_for_client};
 use crate::port::{PortError, VaultInfo, VaultPort};
@@ -98,6 +100,9 @@ pub(crate) enum Refusal {
     StrongAuthFailed,
     /// The control channel no longer reaches this server.
     ControlLost,
+    /// A refusal with a machine-readable name (`fill_in_browser`): the
+    /// message starts with the name, then `: ` and a text free of values.
+    Named { code: &'static str, text: String },
 }
 
 impl Refusal {
@@ -122,6 +127,7 @@ impl Refusal {
             }
             Refusal::StrongAuthFailed => "strong authentication failed".into(),
             Refusal::ControlLost => "server control channel lost; restart the server".into(),
+            Refusal::Named { code, text } => format!("{code}: {text}"),
         }
     }
 
@@ -133,6 +139,7 @@ impl Refusal {
             Refusal::RateLimited => OUTCOME_RATE_LIMITED,
             Refusal::CoolingDown => OUTCOME_CLIENT_COOLING_DOWN,
             Refusal::StrongAuthFailed => OUTCOME_STRONG_AUTH_FAILED,
+            Refusal::Named { code, .. } => code,
             _ => "refused",
         }
     }
@@ -250,6 +257,12 @@ pub(crate) struct Call<'n> {
     pub(crate) decision: &'static str,
     /// Where the approval was given, as the approver said.
     pub(crate) approved_on: Option<String>,
+    /// The page origin of a browser fill (`https://host[:port]`), never a
+    /// full URL.
+    pub(crate) destination: Option<String>,
+    /// The audit action when it is not the tool's name (`fill_in_browser`
+    /// logs `fill_login` or `fill_card`).
+    pub(crate) action: Option<&'static str>,
     /// Where to announce a pending approval, if the client can be told.
     pub(crate) notice: Option<Notice<'n>>,
 }
@@ -263,6 +276,8 @@ impl Default for Call<'_> {
             more: Vec::new(),
             decision: "policy",
             approved_on: None,
+            destination: None,
+            action: None,
             notice: None,
         }
     }
@@ -355,6 +370,9 @@ pub struct McpTools<P: VaultPort> {
     /// whose settings change while a session is open); `None` keeps the
     /// ones given at construction.
     policy_source: Option<PolicySource>,
+    /// The browser `fill_in_browser` fills into; `None` answers
+    /// `no_browser`.
+    browser: Option<Box<dyn BrowserFill>>,
 }
 
 /// Reads the policy in force and its narrowing, verified. An error (a
@@ -398,6 +416,7 @@ impl<P: VaultPort> McpTools<P> {
             quarantined: BTreeSet::new(),
             unpaired_audited: VecDeque::new(),
             policy_source: None,
+            browser: None,
         }
     }
 
@@ -425,6 +444,12 @@ impl<P: VaultPort> McpTools<P> {
     /// instead of [`LocalWorkspace`].
     pub fn with_workspace(mut self, workspace: Box<dyn Workspace + Send>) -> Self {
         self.workspace = workspace;
+        self
+    }
+
+    /// The same host filling pages for `fill_in_browser` through `browser`.
+    pub fn with_browser(mut self, browser: Box<dyn BrowserFill>) -> Self {
+        self.browser = Some(browser);
         self
     }
 
@@ -633,6 +658,7 @@ impl<P: VaultPort> McpTools<P> {
             "generate_password" => self.generate_password(args),
             "totp_code" => self.totp_code(client, args, call),
             "reveal_secret" => self.reveal_secret(client, args, call),
+            "fill_in_browser" => self.fill_in_browser(client, args, call),
             _ => Err(Failure::Params("unknown tool".into())),
         }
     }
@@ -657,7 +683,7 @@ impl<P: VaultPort> McpTools<P> {
                 decision: call.decision.to_owned(),
                 outcome: outcome.to_owned(),
                 approved_on: call.approved_on.clone(),
-                destination: None,
+                destination: call.destination.clone(),
                 namespace: None,
             });
             if let Err(err) = written {
@@ -723,7 +749,11 @@ impl<P: VaultPort> ToolHost for McpTools<P> {
             Err(Failure::Params(m)) => (ToolOutcome::InvalidParams(m), "invalid"),
         };
         // An unknown name comes from the agent: it is not logged verbatim.
-        let action = if known { name } else { "unknown" };
+        let action = match call.action {
+            Some(a) => a,
+            None if known => name,
+            None => "unknown",
+        };
         if !before_pairing || self.unpaired_audit_allowed() {
             self.record(client, action, &call, label);
         }
