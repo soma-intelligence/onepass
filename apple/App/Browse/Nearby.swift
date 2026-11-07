@@ -32,6 +32,8 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
     /// The best fix of the updates under way, kept in case none reaches `wantedAccuracy` in time.
     private var bestFix: CLLocation?
     private var fixDeadline: Task<Void, Never>?
+    /// Accuracy that ends the updates under way: the strictest asked by their waiters.
+    private var wanted: CLLocationAccuracy = LocationAccess.wantedAccuracy
 
     /// A fix this recent and this precise is used as it is: "À proximité" opens with no wait.
     static let reuseAge: TimeInterval = 5 * 60
@@ -68,8 +70,9 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// One fix. Asks for "when in use" permission first if the user was never asked.
-    func currentLocation() async throws -> CLLocation {
+    /// One fix. Asks for "when in use" permission first if the user was never asked. `accuracy`
+    /// ends the wait early (Wi-Fi by proximity asks for a fix that can tell 200 m apart).
+    func currentLocation(accuracy: CLLocationAccuracy = LocationAccess.wantedAccuracy) async throws -> CLLocation {
         let manager = makeManager()
         if manager.authorizationStatus == .notDetermined {
             await withCheckedContinuation { continuation in
@@ -81,8 +84,9 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted, .notDetermined: throw Failure.denied
         default: break
         }
-        if let last = manager.location, Self.isReusable(last) { return last }
+        if let last = manager.location, Self.isReusable(last), last.horizontalAccuracy <= accuracy { return last }
         return try await withCheckedThrowingContinuation { continuation in
+            wanted = locationWaiters.isEmpty ? accuracy : min(wanted, accuracy)
             locationWaiters.append(continuation)
             guard locationWaiters.count == 1 else { return }
             bestFix = nil
@@ -119,7 +123,7 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
             for fix in fixes where fix.horizontalAccuracy < bestFix?.horizontalAccuracy ?? .infinity {
                 bestFix = fix
             }
-            if let best = bestFix, best.horizontalAccuracy <= Self.wantedAccuracy { finish(.success(best)) }
+            if let best = bestFix, best.horizontalAccuracy <= wanted { finish(.success(best)) }
         }
     }
 
@@ -137,6 +141,7 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
         fixDeadline?.cancel()
         fixDeadline = nil
         bestFix = nil
+        wanted = Self.wantedAccuracy
         let waiters = locationWaiters
         locationWaiters = []
         waiters.forEach { $0.resume(with: result) }

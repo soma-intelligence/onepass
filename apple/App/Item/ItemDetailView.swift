@@ -267,6 +267,9 @@ struct ItemDetailView: View {
         if item.itemType == .router, let payload = WifiQR.payload(for: item) {
             WifiQRCard(item: item, ssid: WifiQR.ssid(of: item), payload: payload)
                 .frame(maxWidth: .infinity)
+            if WifiAutoController.canJoinByHand, !standalone {
+                WifiJoinButton(itemID: item.id).frame(maxWidth: .infinity)
+            }
         }
         // Watch-only balances: what the Crypto screen watches of this wallet, and the derivation.
         if item.itemType == .cryptoWallet, !standalone {
@@ -844,6 +847,52 @@ enum WifiQR {
         colors.color1 = CIColor(red: 1, green: 1, blue: 1)
         guard let tinted = colors.outputImage else { return nil }
         return CIContext().createCGImage(tinted, from: output.extent)
+    }
+}
+
+/// "Rejoindre ce réseau" (iPhone, iPad): installs this one network in iOS now, switch or not,
+/// near or not (the user asked), and says what iOS answered. Never a loop: one tap, one try.
+private struct WifiJoinButton: View {
+    @Environment(AppModel.self) private var model
+    let itemID: String
+    @State private var working = false
+    @State private var outcome: WifiInstallOutcome?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button {
+                Task { await join() }
+            } label: {
+                Label("item.wifi.join", systemImage: "wifi")
+            }
+            .buttonStyle(.bordered)
+            .disabled(working)
+            .accessibilityIdentifier("item.wifi.join")
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("item.wifi.joinResult")
+            }
+        }
+        .onChange(of: itemID) { outcome = nil }
+    }
+
+    private var message: LocalizedStringKey? {
+        switch outcome {
+        case .installed: "item.wifi.joined"
+        case .declined: "item.wifi.declined"
+        case .rejected: "item.wifi.rejected"
+        case .failed: "item.wifi.failed"
+        case nil: nil
+        }
+    }
+
+    private func join() async {
+        working = true
+        defer { working = false }
+        outcome = await model.wifi.join(itemID: itemID, session: model.session) ?? .rejected
     }
 }
 

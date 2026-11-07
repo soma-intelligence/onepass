@@ -20,10 +20,14 @@ public struct WifiRouterInput: Sendable, Equatable {
     public var password: String
     public var security: String
     public var hidden: String
+    /// Where the router is: the item's placed locations (location fields and the item's own
+    /// places). An iPhone installs a network on its own only near one of them.
+    public var places: [GeoPoint]
 
     public init(
         itemID: String, vaultID: String, updatedAt: Int64 = 0, archived: Bool = false, trashed: Bool = false,
-        travelHidden: Bool = false, ssid: String, password: String, security: String = "", hidden: String = ""
+        travelHidden: Bool = false, ssid: String, password: String, security: String = "", hidden: String = "",
+        places: [GeoPoint] = []
     ) {
         self.itemID = itemID
         self.vaultID = vaultID
@@ -35,6 +39,7 @@ public struct WifiRouterInput: Sendable, Equatable {
         self.password = password
         self.security = security
         self.hidden = hidden
+        self.places = places
     }
 
     /// Nil for any item that is not a router.
@@ -46,7 +51,8 @@ public struct WifiRouterInput: Sendable, Equatable {
         self.init(
             itemID: item.id, vaultID: item.vaultId, updatedAt: item.updatedAt, archived: item.archived,
             trashed: item.trashedAt != nil, travelHidden: item.travelHidden, ssid: value("ssid"),
-            password: value("wifi_password"), security: value("security"), hidden: value("hidden"))
+            password: value("wifi_password"), security: value("security"), hidden: value("hidden"),
+            places: LocationIndex.points(of: item))
     }
 }
 
@@ -76,10 +82,12 @@ public struct WifiNetwork: Sendable, Equatable, CustomStringConvertible, CustomD
     public let security: WifiSecurity
     public let hidden: Bool
     public let updatedAt: Int64
+    /// The router item's places (never part of the fingerprint).
+    public let places: [GeoPoint]
 
     public init(
         itemID: String, vaultID: String, ssid: String, password: String, security: WifiSecurity, hidden: Bool,
-        updatedAt: Int64 = 0
+        updatedAt: Int64 = 0, places: [GeoPoint] = []
     ) {
         self.itemID = itemID
         self.vaultID = vaultID
@@ -88,6 +96,7 @@ public struct WifiNetwork: Sendable, Equatable, CustomStringConvertible, CustomD
         self.security = security
         self.hidden = hidden
         self.updatedAt = updatedAt
+        self.places = places
     }
 
     /// Version of this network, the formula of `onepass_core::wifi::Network::fingerprint`: SHA-256
@@ -147,7 +156,7 @@ public enum WifiSelection {
         guard isValidPassphrase(input.password) else { return .failure(.init(.badPassword)) }
         return .success(WifiNetwork(
             itemID: input.itemID, vaultID: input.vaultID, ssid: ssid, password: input.password,
-            security: resolved, hidden: isYes(input.hidden), updatedAt: input.updatedAt))
+            security: resolved, hidden: isYes(input.hidden), updatedAt: input.updatedAt, places: input.places))
     }
 
     /// Every network to install, one per SSID: the most recently edited item wins a duplicate SSID,
@@ -226,28 +235,41 @@ public struct WifiLedger: Codable, Sendable, Equatable {
     public struct Entry: Codable, Sendable, Equatable {
         public var fingerprint: String
         public var outcome: String
+        /// Unix second of a transient failure ("failed" only).
+        public var failedAt: Int64?
     }
+
+    /// A transient failure is tried again after this many seconds, not at each launch: iOS
+    /// answers "unable to join" for a network out of range, and a retry per launch was a loop.
+    public static let retryDelay: Int64 = 6 * 3600
 
     public var applied: [String: Entry] = [:]
     public var capturedSSIDs: Set<String> = []
 
     public init() {}
 
-    /// Networks new or changed since the last outcome recorded for their item.
-    public func pending(_ networks: [WifiNetwork]) -> [WifiNetwork] {
-        networks.filter { applied[$0.itemID]?.fingerprint != $0.fingerprint }
+    /// Networks new or changed since the last outcome recorded for their item, and transient
+    /// failures of this same version once `retryDelay` has passed.
+    public func pending(_ networks: [WifiNetwork], now: Int64 = Int64(Date().timeIntervalSince1970)) -> [WifiNetwork] {
+        networks.filter { network in
+            guard let entry = applied[network.itemID], entry.fingerprint == network.fingerprint else { return true }
+            guard entry.outcome == "failed" else { return false }
+            return now - (entry.failedAt ?? 0) >= Self.retryDelay
+        }
     }
 
-    /// Records an outcome; a transient failure records nothing (retried next time).
-    public mutating func record(_ network: WifiNetwork, _ outcome: WifiInstallOutcome) {
-        let name: String
+    /// Records an outcome. A transient failure is kept with its time, so it waits `retryDelay`.
+    public mutating func record(
+        _ network: WifiNetwork, _ outcome: WifiInstallOutcome, now: Int64 = Int64(Date().timeIntervalSince1970)
+    ) {
+        let entry: Entry
         switch outcome {
-        case .installed: name = "installed"
-        case .declined: name = "declined"
-        case .rejected: name = "rejected"
-        case .failed: return
+        case .installed: entry = Entry(fingerprint: network.fingerprint, outcome: "installed")
+        case .declined: entry = Entry(fingerprint: network.fingerprint, outcome: "declined")
+        case .rejected: entry = Entry(fingerprint: network.fingerprint, outcome: "rejected")
+        case .failed: entry = Entry(fingerprint: network.fingerprint, outcome: "failed", failedAt: now)
         }
-        applied[network.itemID] = Entry(fingerprint: network.fingerprint, outcome: name)
+        applied[network.itemID] = entry
     }
 
     public func outcome(of itemID: String) -> String? { applied[itemID]?.outcome }
@@ -306,27 +328,95 @@ public struct WifiSyncReport: Sendable, Equatable {
     public init() {}
 }
 
+/// The device's position for one pass: a point and its horizontal accuracy in meters (negative
+/// means invalid, as in CoreLocation).
+public struct WifiPosition: Sendable, Equatable {
+    public var point: GeoPoint
+    public var accuracy: Double
+
+    public init(point: GeoPoint, accuracy: Double) {
+        self.point = point
+        self.accuracy = accuracy
+    }
+}
+
+/// iPhone and iPad: installing a network makes iOS try to join it at once, so a network is handed
+/// to the system only when the device is near the router. The position is compared here, on the
+/// device, and never sent anywhere.
+public enum WifiProximity {
+    /// A router counts as near within this many meters of one of its places.
+    public static let radius: Double = 200
+    /// A fix vaguer than this cannot tell 150 m from 2 km: nothing counts as near.
+    public static let maxAccuracy: Double = 200
+
+    public static func isNear(_ places: [GeoPoint], _ position: WifiPosition?) -> Bool {
+        guard let position, position.accuracy >= 0, position.accuracy <= maxAccuracy else { return false }
+        return places.contains { LocationIndex.distance(position.point, $0) <= radius }
+    }
+}
+
+/// Which networks a pass may hand to the system.
+public enum WifiProximityRule: Sendable, Equatable {
+    /// Every pending network (Mac: a saved profile joins nothing by itself).
+    case everywhere
+    /// Only pending networks with a place near this position (iPhone, iPad). Nil: none.
+    case near(WifiPosition?)
+}
+
 public enum WifiAutoSync {
     /// Installs what is new or changed and records each outcome. Unchanged items are never handed
-    /// to the system again (idempotent), whatever their last outcome.
+    /// to the system again (idempotent), whatever their last outcome; a transient failure waits
+    /// `WifiLedger.retryDelay`. Under `.near`, a network not near stays pending with no outcome.
     public static func run(
-        inputs: [WifiRouterInput], hiddenVaults: Set<String>, store: any WifiLedgerStore, installer: any WifiInstaller
+        inputs: [WifiRouterInput], hiddenVaults: Set<String>, store: any WifiLedgerStore, installer: any WifiInstaller,
+        proximity: WifiProximityRule = .everywhere, now: Int64 = Int64(Date().timeIntervalSince1970)
     ) async -> WifiSyncReport {
         var report = WifiSyncReport()
         guard let before = store.load() else { return report }
-        let pending = before.pending(WifiSelection.networks(inputs, hiddenVaults: hiddenVaults))
+        var pending = before.pending(WifiSelection.networks(inputs, hiddenVaults: hiddenVaults), now: now)
+        if case .near(let position) = proximity {
+            pending = pending.filter { WifiProximity.isNear($0.places, position) }
+        }
         guard !pending.isEmpty else { return report }
         report.attempted = pending.count
         let results = await installer.install(pending)
         // Read again: the install may have waited on a system question for a while.
         var ledger = store.load() ?? before
         for (network, outcome) in results {
-            ledger.record(network, outcome)
+            ledger.record(network, outcome, now: now)
             if outcome == .installed { report.installed += 1 }
             if outcome == .declined { report.declined += 1 }
         }
         store.save(ledger)
         return report
+    }
+
+    /// Whether a `.near` pass has anything to compare: a pending network with a place. False
+    /// means the position is not asked for (no permission prompt, no fix).
+    public static func needsPosition(
+        inputs: [WifiRouterInput], hiddenVaults: Set<String>, store: any WifiLedgerStore,
+        now: Int64 = Int64(Date().timeIntervalSince1970)
+    ) -> Bool {
+        guard let ledger = store.load() else { return false }
+        return ledger.pending(WifiSelection.networks(inputs, hiddenVaults: hiddenVaults), now: now)
+            .contains { !$0.places.isEmpty }
+    }
+
+    /// "Rejoindre" in a router item: hands that one network to the system now, whatever the switch
+    /// and the distance (the user asked), and records the outcome. Nil when the item is not a
+    /// network the device may join (no SSID, open, WEP, enterprise...) or the ledger is locked.
+    public static func join(
+        itemID: String, inputs: [WifiRouterInput], store: any WifiLedgerStore, installer: any WifiInstaller,
+        now: Int64 = Int64(Date().timeIntervalSince1970)
+    ) async -> WifiInstallOutcome? {
+        guard let input = inputs.first(where: { $0.itemID == itemID }),
+            case .success(let network) = WifiSelection.network(input), store.load() != nil
+        else { return nil }
+        guard let outcome = await installer.install([network]).first?.1 else { return nil }
+        guard var ledger = store.load() else { return outcome }
+        ledger.record(network, outcome, now: now)
+        store.save(ledger)
+        return outcome
     }
 }
 

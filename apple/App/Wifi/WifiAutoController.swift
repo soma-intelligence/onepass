@@ -5,8 +5,11 @@ import os
 
 /// "Wi-Fi automatique" (spec docs/specs/2026-11-04-wifi-auto.md). Off by default, one switch in
 /// Réglages > Général, no other screen. While the primary account is unlocked and the app is on
-/// screen, every WPA router item of its vaults is installed on the device (iOS: NEHotspotConfiguration,
-/// macOS: CoreWLAN), once per version of its Wi-Fi fields. On the Mac, a network the Mac joins that
+/// screen, WPA router items of its vaults are installed on the device, once per version of their
+/// Wi-Fi fields. iPhone and iPad (NEHotspotConfiguration joins at once): only a router with a place
+/// within 200 m of the device, the position asked "when in use" and only when such a router is
+/// pending. Mac (CoreWLAN saves a profile, joins nothing): every router. "Rejoindre" in a router
+/// item installs that one network by hand. On the Mac, a network the Mac joins that
 /// the vault lacks is saved to it, with a quiet notification and "Annuler".
 /// Logs carry counts only, never an SSID.
 @MainActor
@@ -97,8 +100,24 @@ final class WifiAutoController {
         guard session.state == .unlocked else { return }
         guard let inputs = try? await session.wifiRouterInputs() else { return }
         if let installer {
+            let ledger = store(for: session)
+            let hidden = session.hiddenVaultIDs
+            #if os(iOS)
+            var position: WifiPosition?
+            if WifiAutoSync.needsPosition(inputs: inputs, hiddenVaults: hidden, store: ledger),
+                let fix = try? await LocationAccess.shared.currentLocation(accuracy: WifiProximity.maxAccuracy)
+            {
+                position = WifiPosition(
+                    point: GeoPoint(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude),
+                    accuracy: fix.horizontalAccuracy)
+            }
+            let proximity = WifiProximityRule.near(position)
+            #else
+            let proximity = WifiProximityRule.everywhere
+            #endif
+            guard isRunnable else { return }
             let report = await WifiAutoSync.run(
-                inputs: inputs, hiddenVaults: session.hiddenVaultIDs, store: store(for: session), installer: installer)
+                inputs: inputs, hiddenVaults: hidden, store: ledger, installer: installer, proximity: proximity)
             if report.attempted > 0 {
                 Self.log.info(
                     "wifi pass: \(report.attempted) pending, \(report.installed) installed, \(report.declined) declined")
@@ -108,6 +127,24 @@ final class WifiAutoController {
         guard isRunnable else { return }
         mac.start()
         await mac.captureCurrentNetwork(vaultSSIDs: WifiCapture.vaultSSIDs(inputs))
+        #endif
+    }
+
+    /// "Rejoindre" in a router item: installs that one network now, whatever the switch and the
+    /// distance. Nil when there is no installer here or the item cannot be joined.
+    func join(itemID: String, session: VaultSession) async -> WifiInstallOutcome? {
+        guard let installer, session.state == .unlocked,
+            let inputs = try? await session.wifiRouterInputs()
+        else { return nil }
+        return await WifiAutoSync.join(itemID: itemID, inputs: inputs, store: store(for: session), installer: installer)
+    }
+
+    /// Whether this device has a "Rejoindre" button (iPhone, iPad).
+    static var canJoinByHand: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
         #endif
     }
 

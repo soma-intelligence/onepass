@@ -53,11 +53,12 @@ private struct ThrowingKeychain: KeychainStore {
 
 private func router(
     _ id: String, ssid: String, password: String = "Prairie-Soleil-90", security: String = "WPA2",
-    hidden: String = "non", vault: String = "v1", updatedAt: Int64 = 1, archived: Bool = false, trashed: Bool = false
+    hidden: String = "non", vault: String = "v1", updatedAt: Int64 = 1, archived: Bool = false, trashed: Bool = false,
+    places: [GeoPoint] = []
 ) -> WifiRouterInput {
     WifiRouterInput(
         itemID: id, vaultID: vault, updatedAt: updatedAt, archived: archived, trashed: trashed, ssid: ssid,
-        password: password, security: security, hidden: hidden)
+        password: password, security: security, hidden: hidden, places: places)
 }
 
 @Suite("Wi-Fi automatique: selection")
@@ -244,15 +245,34 @@ struct WifiAutoSyncTests {
         #expect(next.handed == [["Maison"]])
     }
 
-    @Test func transientFailuresAreRetriedRejectionsAreNot() async {
+    @Test func transientFailuresWaitSixHoursRejectionsAreNotRetried() async {
         let store = MemoryLedgerStore()
         let inputs = [router("a", ssid: "Busy"), router("b", ssid: "Refused")]
+        let t0: Int64 = 1_800_000_000
         _ = await WifiAutoSync.run(
             inputs: inputs, hiddenVaults: [], store: store,
-            installer: FakeInstaller(["Busy": .failed, "Refused": .rejected]))
-        let again = FakeInstaller()
-        _ = await WifiAutoSync.run(inputs: inputs, hiddenVaults: [], store: store, installer: again)
-        #expect(again.handed == [["Busy"]])
+            installer: FakeInstaller(["Busy": .failed, "Refused": .rejected]), now: t0)
+        // Opening the app again right away hands nothing to the system: no loop on each launch.
+        let soon = FakeInstaller()
+        _ = await WifiAutoSync.run(inputs: inputs, hiddenVaults: [], store: store, installer: soon, now: t0 + 5 * 3600)
+        #expect(soon.handed.isEmpty)
+        let later = FakeInstaller()
+        _ = await WifiAutoSync.run(
+            inputs: inputs, hiddenVaults: [], store: store, installer: later, now: t0 + WifiLedger.retryDelay)
+        #expect(later.handed == [["Busy"]])
+    }
+
+    @Test func aFailureOfAnOlderVersionDoesNotDelayAnEdit() async {
+        let store = MemoryLedgerStore()
+        let t0: Int64 = 1_800_000_000
+        _ = await WifiAutoSync.run(
+            inputs: [router("a", ssid: "Busy")], hiddenVaults: [], store: store,
+            installer: FakeInstaller(["Busy": .failed]), now: t0)
+        let next = FakeInstaller()
+        _ = await WifiAutoSync.run(
+            inputs: [router("a", ssid: "Busy", password: "nouveau-mot-de-passe", updatedAt: 2)], hiddenVaults: [],
+            store: store, installer: next, now: t0 + 60)
+        #expect(next.handed == [["Busy"]])
     }
 
     @Test func openEnterpriseAndWepNeverReachTheSystem() async {
@@ -282,6 +302,83 @@ struct WifiAutoSyncTests {
         #expect(!raw.contains("Maison"))
         #expect(!raw.contains("Atelier"))
         #expect(!raw.contains("Prairie"))
+    }
+}
+
+/// Points about 150 m and 250 m north of `home` (1 degree of latitude is about 111.2 km).
+private let home = GeoPoint(latitude: 48.8566, longitude: 2.3522)
+private let at150m = GeoPoint(latitude: 48.8566 + 150 / 111_195, longitude: 2.3522)
+private let at250m = GeoPoint(latitude: 48.8566 + 250 / 111_195, longitude: 2.3522)
+private let far = GeoPoint(latitude: 45.7640, longitude: 4.8357)
+
+@Suite("Wi-Fi automatique: only near the router (iPhone, iPad)")
+struct WifiProximityTests {
+    @Test func aNetworkWithinTwoHundredMetersIsNearOneFartherIsNot() {
+        let fix = WifiPosition(point: home, accuracy: 30)
+        #expect(WifiProximity.isNear([at150m], fix))
+        #expect(!WifiProximity.isNear([at250m], fix))
+        #expect(WifiProximity.isNear([far, at150m], fix))
+    }
+
+    @Test func noPlaceNoPositionOrAVagueFixIsNeverNear() {
+        #expect(!WifiProximity.isNear([], WifiPosition(point: home, accuracy: 10)))
+        #expect(!WifiProximity.isNear([home], nil))
+        #expect(!WifiProximity.isNear([home], WifiPosition(point: home, accuracy: 1_000)))
+        #expect(!WifiProximity.isNear([home], WifiPosition(point: home, accuracy: -1)))
+    }
+
+    @Test func onlyNearNetworksReachTheSystem() async {
+        let store = MemoryLedgerStore()
+        let installer = FakeInstaller()
+        let inputs = [
+            router("a", ssid: "Maison", places: [at150m]), router("b", ssid: "Bureau", places: [far]),
+            router("c", ssid: "SansLieu"),
+        ]
+        let report = await WifiAutoSync.run(
+            inputs: inputs, hiddenVaults: [], store: store, installer: installer,
+            proximity: .near(WifiPosition(point: home, accuracy: 30)))
+        #expect(installer.handed == [["Maison"]])
+        #expect(report.attempted == 1)
+        // Far and placeless networks stay pending, without any outcome recorded.
+        #expect(store.load()?.outcome(of: "b") == nil)
+        #expect(store.load()?.outcome(of: "c") == nil)
+    }
+
+    @Test func withoutAPositionNothingReachesTheSystem() async {
+        let installer = FakeInstaller()
+        let report = await WifiAutoSync.run(
+            inputs: [router("a", ssid: "Maison", places: [home])], hiddenVaults: [], store: MemoryLedgerStore(),
+            installer: installer, proximity: .near(nil))
+        #expect(report.attempted == 0)
+        #expect(installer.handed.isEmpty)
+    }
+
+    @Test func aPositionIsNeededOnlyForAPendingPlacedNetwork() async {
+        let store = MemoryLedgerStore()
+        #expect(!WifiAutoSync.needsPosition(inputs: [router("c", ssid: "SansLieu")], hiddenVaults: [], store: store))
+        let placed = [router("a", ssid: "Maison", places: [home])]
+        #expect(WifiAutoSync.needsPosition(inputs: placed, hiddenVaults: [], store: store))
+        _ = await WifiAutoSync.run(
+            inputs: placed, hiddenVaults: [], store: store, installer: FakeInstaller(),
+            proximity: .near(WifiPosition(point: home, accuracy: 30)))
+        #expect(!WifiAutoSync.needsPosition(inputs: placed, hiddenVaults: [], store: store))
+        #expect(!WifiAutoSync.needsPosition(inputs: placed, hiddenVaults: [], store: LockedLedgerStore()))
+    }
+
+    @Test func joiningByHandInstallsOneNetworkAndRecordsIt() async {
+        let store = MemoryLedgerStore()
+        let installer = FakeInstaller()
+        let inputs = [router("a", ssid: "Maison"), router("b", ssid: "Atelier")]
+        let outcome = await WifiAutoSync.join(itemID: "a", inputs: inputs, store: store, installer: installer)
+        #expect(outcome == .installed)
+        #expect(installer.handed == [["Maison"]])
+        #expect(store.load()?.outcome(of: "a") == "installed")
+        let none = await WifiAutoSync.join(
+            itemID: "x", inputs: inputs, store: store, installer: installer)
+        #expect(none == nil)
+        let open = await WifiAutoSync.join(
+            itemID: "o", inputs: [router("o", ssid: "Gare", security: "Ouvert")], store: store, installer: installer)
+        #expect(open == nil)
     }
 }
 
