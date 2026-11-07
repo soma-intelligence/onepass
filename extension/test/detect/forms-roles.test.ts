@@ -222,6 +222,13 @@ describe("forms roles: short forms", () => {
     ["Last name at birth", [["g", "First name"], ["fa", "Last name"], ["x", "Last name at birth"]], "birth_name"],
     ["Pays naiss.", [["g", "Prénom"], ["fa", "Nom"], ["x", "Pays naiss."]], "birth_country"],
     ["Civ.", [["x", "Civ."], ["g", "Prénom"], ["fa", "Nom"]], "honorific_prefix"],
+    // Task 14 witnesses (seeds forms-2026-11-06-a sites 161, 164, 178, 196 and -b site 40).
+    ["Nat.", [["g", "Prénom"], ["fa", "Nom de famille"], ["x", "Nat."], ["pn", "Passeport (numéro)"]], "nationality"],
+    ["DL country", [["g", "First name"], ["ln", "DL #"], ["x", "DL country"]], "license_issuing_country"],
+    ["DL exp.", [["g", "First name"], ["ln", "DL #"], ["x", "DL exp."]], "license_expiry"],
+    ["Paese nasc.", [["g", "Nome"], ["fa", "Cognome"], ["x", "Paese nasc."]], "birth_country"],
+    ["Geb.-Name", [["g", "Vorname"], ["fa", "Nachname"], ["x", "Geb.-Name"]], "birth_name"],
+    ["Geb.-Ort", [["g", "Vorname"], ["fa", "Nachname"], ["x", "Geb.-Ort"]], "birth_place"],
   ] as [string, Row[], FieldRole][])("%s", (_name, rs, role) => {
     expect(form(rs).roles.x).toBe(role);
   });

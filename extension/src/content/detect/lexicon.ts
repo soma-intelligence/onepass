@@ -409,22 +409,23 @@ export const TERMS: readonly Term[] = [
     w: { additional_name: 9, given_name: -6, full_name: -3 },
   },
   {
-    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|birth ?surname|birth (?:last|family) ?name|surname at birth|geburtsname|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
+    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|birth ?surname|birth (?:last|family) ?name|surname at birth|geburtsname|geb name|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
     w: { birth_name: 10, family_name: -6, given_name: -4, full_name: -4, bday: -7 },
   },
   { re: /\b(sexe|genre|sex|gender|geschlecht|sexo|genero|sesso|genere|geslacht)\b/, w: { sex: 6 } },
   {
-    re: /\b(lieu de naissance|ville de naissance|commune de naissance|place of birth|birth ?place|city of birth|town of birth|geburtsort|lugar de nacimiento|ciudad de nacimiento|luogo di nascita|comune di nascita|local de nascimento|naturalidade|geboorteplaats)\b/,
+    re: /\b(lieu de naissance|ville de naissance|commune de naissance|place of birth|birth ?place|city of birth|town of birth|geburtsort|geb ort|lugar de nacimiento|ciudad de nacimiento|luogo di nascita|comune di nascita|local de nascimento|naturalidade|geboorteplaats)\b/,
     w: { birth_place: 10, bday: -7, city: -6 },
   },
   {
-    re: /\b(pays de naissance|pays naiss|pays de naiss|country of birth|birth ?country|geburtsland|pais de nacimiento|paese di nascita|stato di nascita|pais de nascimento|geboorteland)\b/,
+    re: /\b(pays de naissance|pays naiss|pays de naiss|country of birth|birth ?country|geburtsland|pais de nacimiento|paese di nascita|paese nasc|paese di nasc|stato di nascita|pais de nascimento|geboorteland)\b/,
     w: { birth_country: 11, country: -8, bday: -7 },
   },
   {
     re: /\b(nationalite|citoyennete|nationality|citizenship|staatsangehorigkeit|staatsburgerschaft|nationalitat|nacionalidad|nazionalita|cittadinanza|nacionalidade|nationaliteit)\b/,
     w: { nationality: 7, country: -5 },
   },
+  { re: /^(nat|nation)$/, w: { nationality: 7, country: -5 } },
   {
     re: /\b(numero de passeport|n ?passeport|no passeport|passeport|passport ?(number|no|num|nr)?|reisepass ?(nummer|nr)?|reisepassnummer|passnummer|pass ?nr|numero de pasaporte|pasaporte|numero di passaporto|passaporto|numero do passaporte|passaporte|paspoort ?nummer|paspoortnummer|paspoort)\b/,
     w: { passport_number: 7 },
@@ -435,7 +436,7 @@ export const TERMS: readonly Term[] = [
   },
   // Date and issue words: a document's date or country is never its number.
   {
-    re: /\b(date|datum|fecha|data|expir\w*|valable|valid|validite|validade|valido|gultig|ablauf\w*|scadenza|caducidad|vencimiento|vervaldatum|geldig|delivr\w*|ausgestellt|ausstellung\w*|rilascio|emissao|emision|emissione|expedicion|afgifte\w*|issue|issued|issuing|emissor|emisor|emetteur)\b/,
+    re: /\b(date|datum|fecha|data|exp|expir\w*|valable|valid|validite|validade|valido|gultig|ablauf\w*|scadenza|caducidad|vencimiento|vervaldatum|geldig|delivr\w*|ausgestellt|ausstellung\w*|rilascio|emissao|emision|emissione|expedicion|afgifte\w*|issue|issued|issuing|emissor|emisor|emetteur)\b/,
     w: { passport_number: -9, license_number: -9, loyalty_number: -9 },
   },
   {
@@ -443,7 +444,7 @@ export const TERMS: readonly Term[] = [
     w: { passport_issue_date: 9, bday: -5, cc_exp: -6 },
   },
   {
-    re: /\b(pays de delivrance|pays d emission|pays emetteur|issuing country|country of issue|issuing state|ausstellungsland|ausstellender staat|pais de expedicion|pais emisor|pais de emision|paese di rilascio|stato di rilascio|pais emissor|pais de emissao|land van afgifte)\b/,
+    re: /\b(pays de delivrance|pays d emission|pays emetteur|issuing country|country of issue|issuing state|ausstellungsland|ausstellender staat|pais de expedicion|pais emisor|pais de emision|paese di rilascio|stato di rilascio|pais emissor|pais de emissao|land van afgifte|dl country|dl land|dl pais|dl pays)\b/,
     w: { passport_issuing_country: 10, country: -8, passport_issue_date: -9 },
   },
   {
