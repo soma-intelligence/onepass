@@ -226,6 +226,14 @@ describe("forms roles: short forms", () => {
     expect(form(rs).roles.x).toBe(role);
   });
 
+  // Task 14 witness (seed forms-2026-11-06-a site 114): a list is never a document number, whatever its name says.
+  it("a list named dl_country under Rijbewijs afgegeven in is the license's issuing country", () => {
+    const r = analyze(`<form id="f">${rowHtml(["g", "Voornaam"])}${rowHtml(["ln", "Nummer van het rijbewijs"])}`
+      + '<div><label for="dl_country">Rijbewijs afgegeven in</label><select id="dl_country" name="dl_country"><option value="">--</option>'
+      + '<option value="FR">Frankrijk</option><option value="NL">Nederland</option></select></div><button type="submit">OK</button></form>');
+    expect(r.roles.dl_country).toBe("license_issuing_country");
+  });
+
   it("a radio group under the legend Civ. is the civility", () => {
     const r = analyze('<form id="f"><fieldset><legend>Civ.</legend><label><input type="radio" id="c1" name="civ" value="1"> M.</label>'
       + '<label><input type="radio" id="c2" name="civ" value="2"> Mme</label></fieldset>'

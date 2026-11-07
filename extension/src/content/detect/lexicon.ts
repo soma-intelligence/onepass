@@ -500,6 +500,8 @@ export const TYPE_WEIGHTS: Readonly<Record<string, Weights>> = {
   number: { otp: 0.5, cc_number: 0.5, postal_code: 0.5 },
   date: { bday: 3 },
   url: { website: 3 },
+  // A list of choices never holds a document or member number ("dl_country" names a license's country).
+  select: { passport_number: -10, license_number: -10, loyalty_number: -10 },
 };
 
 /** Added to the three password roles when the control is not type=password. */
