@@ -234,6 +234,12 @@ describe("forms roles: short forms", () => {
     expect(r.roles.dl_country).toBe("license_issuing_country");
   });
 
+  // Task 14 witness (seed forms-2026-11-06-a site 155): the short Italian tax code of a company form.
+  it("Cod. fisc. next to a company and its VAT number is the company registration, never on a person's form", () => {
+    expect(form([["g", "Nome"], ["o", "Società"], ["vat", "Numero di partita IVA"], ["x", "Cod. fisc."]]).roles.x).toBe("company_id");
+    expect(form([["g", "Nome"], ["fa", "Cognome"], ["x", "Codice fiscale"], ["e", "Email", "email"]]).roles.x).toBeUndefined();
+  });
+
   it("a radio group under the legend Civ. is the civility", () => {
     const r = analyze('<form id="f"><fieldset><legend>Civ.</legend><label><input type="radio" id="c1" name="civ" value="1"> M.</label>'
       + '<label><input type="radio" id="c2" name="civ" value="2"> Mme</label></fieldset>'

@@ -666,6 +666,20 @@ function resolveDepartments(fields: Classified[], container: Element): void {
 }
 
 /**
+ * An Italian tax code read as a company registration ("Codice fiscale", "Cod. fisc.") is a
+ * person's own code unless the group holds a company name or a VAT number: there it is dropped.
+ */
+function resolveTaxCodes(fields: Classified[]): void {
+  const company = fields.some((x) => x.role === "organization" || x.role === "vat_number");
+  if (company) return;
+  for (const f of fields) {
+    if (f.role !== "company_id" || f.direct) continue;
+    const words = fieldWords(f.el);
+    if (/\b(codice fiscale|cod fisc|cod fiscale)\b/.test(words) && !/\b(azienda|societa|impresa|ditta)\b/.test(words)) f.role = "unknown";
+  }
+}
+
+/**
  * A guessed full name followed by a family name, with no given name in the
  * group, is the given name ("Name" then "Family name").
  */
@@ -824,6 +838,7 @@ export function detectForms(
     resolveNames(group.fields);
     resolveDocuments(group.fields);
     resolveDepartments(group.fields, group.container);
+    resolveTaxCodes(group.fields);
     group.fields = group.fields.filter((f) => f.role !== "unknown");
     if (group.fields.length === 0) continue;
     assignPersons(group.fields, group.container);

@@ -463,6 +463,8 @@ export const TERMS: readonly Term[] = [
     re: /\b(site web|site internet|website|web ?site|homepage|home page|webseite|internetseite|sitio web|pagina web|sito web|sito internet)\b/,
     w: { website: 7 },
   },
+  // The Italian tax code ("Codice fiscale", "Cod. fisc.") is a company's only next to a company (forms.ts resolveTaxCodes).
+  { re: /\b(codice fiscale|cod fisc|cod fiscale)\b/, w: { company_id: 6 } },
   { re: /^site$/, w: { website: 5 } },
   { re: /^web$/, w: { website: 5 } },
   // Short forms seen on real travel and rental pages: "Né(e) à", "Né(e) le", "Trat.", "Nº socio",
