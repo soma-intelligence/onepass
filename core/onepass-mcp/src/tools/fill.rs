@@ -132,12 +132,42 @@ fn https_page(url: &str) -> Result<Host, Refusal> {
     parse_url(url, false).ok_or_else(|| Refusal::Invalid("invalid url".into()))
 }
 
-/// Whether one of the item's URLs (rule other than `Never`) has `site` as
-/// registrable domain.
-fn item_on_site(item: &Item, site: &str) -> bool {
-    item.urls.iter().any(|u| {
-        u.rule != MatchRule::Never && parse_url(&u.url, true).is_some_and(|h| h.site() == site)
-    })
+/// What one of the item's URLs matched on `page`, under its own rule:
+/// `Domain` the registrable domain (`site:<etld1>`), `ExactHost` the exact
+/// host (`host:<host>`), `ExactUrl` the exact origin (`origin:<origin>`;
+/// the path cannot be checked against an origin), `Never` nothing. A port
+/// written in the item URL must equal the page's. When several URLs match,
+/// the narrowest wins, so a grant keyed on it never widens the item's rule.
+fn item_match(item: &Item, page: &Host) -> Option<String> {
+    item.urls
+        .iter()
+        .filter_map(|u| {
+            let h = parse_url(&u.url, true)?;
+            if h.port.is_some() && h.port != page.port {
+                return None;
+            }
+            match u.rule {
+                MatchRule::Never => None,
+                MatchRule::Domain => {
+                    (h.site() == page.site()).then(|| (1, format!("site:{}", page.site())))
+                }
+                MatchRule::ExactHost => {
+                    (h.host == page.host).then(|| (2, format!("host:{}", page.host)))
+                }
+                MatchRule::ExactUrl => {
+                    (h.scheme == "https" && h.host == page.host && h.port == page.port)
+                        .then(|| (3, format!("origin:{}", page.origin())))
+                }
+            }
+        })
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, m)| m)
+}
+
+/// Whether an item may be filled at all: not archived, not hidden from
+/// autofill (trashed items are never listed).
+fn fill_eligible(item: &Item, wanted: ItemType) -> bool {
+    item.item_type == wanted && !item.archived && !item.hide_from_autofill
 }
 
 fn brand_name(b: CardBrand) -> Option<&'static str> {
@@ -175,12 +205,7 @@ fn card_shown(item: &Item) -> String {
     }
     let brand = number
         .and_then(|n| brand_name(card_brand(n)))
-        .map(str::to_owned)
-        .or_else(|| match item.field("card_type").map(|f| &f.value) {
-            Some(FieldValue::Menu(t)) if !t.trim().is_empty() => Some(t.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| "Card".to_owned());
+        .unwrap_or("Card");
     format!(
         "{brand} \u{b7}\u{b7}\u{b7}\u{b7} {}",
         &digits[digits.len() - 4..]
@@ -202,7 +227,8 @@ fn candidate(v: &VaultInfo, item: &Item) -> Value {
 
 impl<P: VaultPort> McpTools<P> {
     /// The live item `id` of type `wanted` in a visible vault, else
-    /// `no_item` (a missing item and one out of reach answer the same).
+    /// `no_item` (a missing item, one out of reach, archived or hidden
+    /// from autofill answer the same).
     fn fill_item_by_id(
         &mut self,
         id: &str,
@@ -216,7 +242,7 @@ impl<P: VaultPort> McpTools<P> {
                 .into_iter()
                 .find(|i| i.id.to_string().eq_ignore_ascii_case(id))
             {
-                if i.item_type != wanted {
+                if !fill_eligible(&i, wanted) {
                     break;
                 }
                 return Ok((v, i));
@@ -227,13 +253,13 @@ impl<P: VaultPort> McpTools<P> {
 
     /// The only item of type `wanted` in the vaults with the `fill` scope
     /// whose title (or, for a login, a URL) contains `query` ignoring case,
-    /// and, for a login, with a URL on `site`. Several give
+    /// and, for a login, with a URL matching `page` under its rule. Several give
     /// `ambiguous_item` with their metadata, none `no_item`.
     fn fill_item_by_query(
         &mut self,
         query: &str,
         wanted: ItemType,
-        site: &str,
+        page: &Host,
     ) -> Result<(VaultInfo, Item), Refusal> {
         let q = query.to_lowercase();
         let mut found = Vec::new();
@@ -245,14 +271,14 @@ impl<P: VaultPort> McpTools<P> {
                 continue;
             };
             for i in items {
-                if i.item_type != wanted || i.archived || i.hide_from_autofill {
+                if !fill_eligible(&i, wanted) {
                     continue;
                 }
                 let hit = match wanted {
                     ItemType::Login => {
                         (i.title.to_lowercase().contains(&q)
                             || i.urls.iter().any(|u| u.url.to_lowercase().contains(&q)))
-                            && item_on_site(&i, site)
+                            && item_match(&i, page).is_some()
                     }
                     _ => i.title.to_lowercase().contains(&q),
                 };
@@ -316,14 +342,14 @@ impl<P: VaultPort> McpTools<P> {
         let (vault, item) = match str_arg(args, "item_id") {
             Some(id) => self.fill_item_by_id(id, wanted)?,
             None => {
-                self.fill_item_by_query(str_arg(args, "query").unwrap_or_default(), wanted, &site)?
+                self.fill_item_by_query(str_arg(args, "query").unwrap_or_default(), wanted, &page)?
             }
         };
         call.target(vault.id, item.id, None);
         if self.require(&vault, Scope::Fill).is_err() {
             return Err(named("scope_denied", "scope 'fill' not granted for this vault").into());
         }
-        if kind == FillKind::Login && !item_on_site(&item, &site) {
+        if kind == FillKind::Login && item_match(&item, &page).is_none() {
             return Err(named("origin_mismatch", "the item is not for this site").into());
         }
 
@@ -368,6 +394,14 @@ impl<P: VaultPort> McpTools<P> {
         let tab = parse_url(&probe.origin, false)
             .filter(|h| h.scheme == "https" && h.site() == site)
             .ok_or_else(|| browser_refusal(BrowserError::TabMismatch))?;
+        // A login's tab must satisfy the item's own rule too; the grant is
+        // keyed on what it matched, never wider than that rule.
+        let matched = match kind {
+            FillKind::Login => Some(
+                item_match(item, &tab).ok_or_else(|| browser_refusal(BrowserError::TabMismatch))?,
+            ),
+            FillKind::Card => None,
+        };
         call.destination = Some(tab.origin());
         let action = kind.action();
         let mut details = Vec::new();
@@ -385,7 +419,7 @@ impl<P: VaultPort> McpTools<P> {
             field: None,
         }];
         let remember = kind == FillKind::Login && !item.reprompt;
-        let key = json!([item.id.to_string(), site]).to_string();
+        let key = json!([item.id.to_string(), matched]).to_string();
         self.approve(
             client,
             action,
@@ -403,7 +437,13 @@ impl<P: VaultPort> McpTools<P> {
         if call.decision != "remembered" {
             let shown = format!("{} / {} on {site}", vault.name, item.title);
             let on = call.approved_on.clone();
-            self.strong_auth_for(action, &shown, on.as_deref())?;
+            // Spec 3: a result or a named error. A failed or cancelled
+            // strong gesture is the user not approving.
+            self.strong_auth_for(action, &shown, on.as_deref())
+                .map_err(|r| match r {
+                    Refusal::StrongAuthFailed => named("denied", "strong authentication failed"),
+                    other => other,
+                })?;
         }
         Ok(())
     }
@@ -1044,12 +1084,120 @@ mod tests {
         );
     }
 
+    /// A login for `https://app.example.com` only (rule `ExactHost`), and
+    /// one with two exact hosts.
+    fn exact_host_fx(answers: Vec<Decision>) -> (Fx, Item) {
+        let mut f = fx(answers);
+        let mut item = login(f.agents.id, "Example app", "https://app.example.com");
+        item.urls[0].rule = MatchRule::ExactHost;
+        item.urls.push(ItemUrl {
+            label: "sso".into(),
+            url: "https://sso.example.com".into(),
+            rule: MatchRule::ExactHost,
+            primary: false,
+        });
+        f.tools
+            .port
+            .items
+            .get_mut(&f.agents.id)
+            .unwrap()
+            .push(item.clone());
+        (f, item)
+    }
+
+    fn exact_args(item: &Item, url: &str) -> Value {
+        json!({"item_id": item.id.to_string(), "url": url, "kind": "login", "target": chrome()})
+    }
+
+    #[test]
+    fn exact_host_item_refuses_sibling_subdomain() {
+        let (mut f, item) = exact_host_fx(vec![Decision::AllowOnce, Decision::AllowOnce]);
+        // The agent names a sibling host: refused before any probe.
+        f.set_browser("https://www.example.com", None);
+        assert_eq!(
+            code(f.call(exact_args(&item, "https://www.example.com/login"))),
+            "origin_mismatch"
+        );
+        assert!(f.log.lock().unwrap().probes.is_empty());
+        // The agent names the right host but the tab is on a sibling.
+        assert_eq!(
+            code(f.call(exact_args(&item, "https://app.example.com/login"))),
+            "tab_mismatch"
+        );
+        assert!(f.approver.calls().is_empty());
+        assert_eq!(f.log.lock().unwrap().cancels, vec![REQUEST_ID]);
+        // The exact host fills.
+        f.set_browser("https://app.example.com", None);
+        ok(f.call(exact_args(&item, "https://app.example.com/login")));
+        // An ExactUrl item is held to its origin, port included.
+        let mut f = fx(vec![Decision::AllowOnce]);
+        let mut pinned = login(f.agents.id, "Pinned", "https://app.example.com:8443/login");
+        pinned.urls[0].rule = MatchRule::ExactUrl;
+        f.tools
+            .port
+            .items
+            .get_mut(&f.agents.id)
+            .unwrap()
+            .push(pinned.clone());
+        assert_eq!(
+            code(f.call(exact_args(&pinned, "https://app.example.com/login"))),
+            "origin_mismatch"
+        );
+    }
+
+    #[test]
+    fn exact_host_grant_does_not_cover_sibling() {
+        let (mut f, item) = exact_host_fx(vec![
+            Decision::AllowFor(Duration::from_secs(300)),
+            Decision::AllowOnce,
+        ]);
+        f.set_browser("https://app.example.com", None);
+        ok(f.call(exact_args(&item, "https://app.example.com/login")));
+        ok(f.call(exact_args(&item, "https://app.example.com/login")));
+        assert_eq!(f.approver.calls().len(), 1);
+        // Same item and registrable domain, other exact host: asked again.
+        f.set_browser("https://sso.example.com", None);
+        ok(f.call(exact_args(&item, "https://sso.example.com/")));
+        assert_eq!(f.approver.calls().len(), 2);
+    }
+
+    #[test]
+    fn hidden_item_by_id_is_no_item() {
+        let mut f = fx(vec![Decision::AllowOnce, Decision::AllowOnce]);
+        let mut hidden = login(f.agents.id, "Hidden", "https://github.com");
+        hidden.hide_from_autofill = true;
+        let mut archived = login(f.agents.id, "Archived", "https://github.com");
+        archived.archived = true;
+        let mut trashed = login(f.agents.id, "Trashed", "https://github.com");
+        trashed.trashed_at = Some(trashed.created_at);
+        let items = f.tools.port.items.get_mut(&f.agents.id).unwrap();
+        items.extend([hidden.clone(), archived.clone(), trashed.clone()]);
+        for i in [&hidden, &archived, &trashed] {
+            assert_eq!(code(f.call(login_args(i))), "no_item", "{}", i.title);
+        }
+        assert!(f.approver.calls().is_empty());
+        assert!(f.log.lock().unwrap().probes.is_empty());
+    }
+
+    #[test]
+    fn unknown_brand_shows_card() {
+        let mut card = new_item(ItemType::CreditCard, Id::new(), "Prepaid");
+        card.field_mut("number").unwrap().value =
+            FieldValue::Concealed(Zeroizing::new("9999000011112222".into()));
+        card.field_mut("card_type").unwrap().value = FieldValue::Menu("Débit".into());
+        assert_eq!(
+            super::card_shown(&card),
+            "Card \u{b7}\u{b7}\u{b7}\u{b7} 2222"
+        );
+        card.field_mut("number").unwrap().value = FieldValue::Empty;
+        assert_eq!(super::card_shown(&card), "Prepaid");
+    }
+
     #[test]
     fn failed_strong_auth_cancels_the_probe() {
         let mut f = fx(vec![Decision::AllowOnce]);
         f.tools.strong = Arc::new(dev_strong(false));
-        let m = refused(f.call(login_args(&f.github.clone())));
-        assert_eq!(m, "strong authentication failed");
+        assert_eq!(code(f.call(login_args(&f.github.clone()))), "denied");
         let log = f.log.lock().unwrap();
         assert!(log.fills.is_empty());
         assert_eq!(log.cancels, vec![REQUEST_ID]);
