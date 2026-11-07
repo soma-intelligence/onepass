@@ -247,6 +247,24 @@ describe("forms roles: short forms", () => {
     expect(form([["g", "Nome"], ["fa", "Cognome"], ["x", "Codice fiscale"], ["e", "Email", "email"]]).roles.x).toBeUndefined();
   });
 
+  // Task 14 witness (seed forms-2026-11-06-a site 105, -b site 164): the shipping block's first street
+  // field, named address_2 because the billing block already took "address", is its first line.
+  it("the first street field of a shipping block is its first line, whatever its name", () => {
+    const block = (legend: string, id: string) => `<fieldset><legend>${legend}</legend>`
+      + `<div><label for="${id}">Street address</label><input id="${id}" name="${id}"></div>`
+      + `<div><label for="${id}z">Postcode</label><input id="${id}z" name="${id}_zip"></div>`
+      + `<div><label for="${id}c">Town</label><input id="${id}c" name="${id}_town"></div></fieldset>`;
+    const r = analyze(`<form id="f">${rowHtml(["o", "Company name"])}${block("Billing address", "adresse")}`
+      + `${block("Shipping address", "adresse_2")}<button type="submit">OK</button></form>`);
+    expect(r.roles.adresse).toBe("address_line1");
+    expect(r.roles.adresse_2).toBe("address_line1");
+    // A real second line after the first one stays the second line.
+    const two = analyze('<form id="f"><fieldset><legend>Address</legend>'
+      + `${rowHtml(["l1", "Address"])}<div><label for="l2">Address 2</label><input id="l2" name="address_2"></div>`
+      + `${rowHtml(["z", "Postcode"])}${rowHtml(["c", "Town"])}</fieldset><button type="submit">OK</button></form>`);
+    expect(two.roles.l2).toBe("address_line2");
+  });
+
   it("a radio group under the legend Civ. is the civility", () => {
     const r = analyze('<form id="f"><fieldset><legend>Civ.</legend><label><input type="radio" id="c1" name="civ" value="1"> M.</label>'
       + '<label><input type="radio" id="c2" name="civ" value="2"> Mme</label></fieldset>'

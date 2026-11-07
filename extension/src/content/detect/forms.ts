@@ -666,6 +666,21 @@ function resolveDepartments(fields: Classified[], container: Element): void {
 }
 
 /**
+ * A second address line is never the first address field of its block: a block (fieldset) whose
+ * first address field reads as line 2 and that holds no line 1 ("address_2" naming the shipping
+ * block's street, the billing block having taken "address") has it as its line 1.
+ */
+function resolveAddressLines(fields: Classified[], container: Element): void {
+  for (const f of fields) {
+    if (f.role !== "address_line2" || f.direct) continue;
+    const block = blockOf(f.el, container);
+    if (block === container) continue;
+    const mates = fields.filter((x) => block.contains(x.el) && ADDRESS.has(x.role));
+    if (mates[0] === f && !mates.some((x) => x.role === "address_line1")) f.role = "address_line1";
+  }
+}
+
+/**
  * An Italian tax code read as a company registration ("Codice fiscale", "Cod. fisc.") is a
  * person's own code unless the group holds a company name or a VAT number: there it is dropped.
  */
@@ -839,6 +854,7 @@ export function detectForms(
     resolveDocuments(group.fields);
     resolveDepartments(group.fields, group.container);
     resolveTaxCodes(group.fields);
+    resolveAddressLines(group.fields, group.container);
     group.fields = group.fields.filter((f) => f.role !== "unknown");
     if (group.fields.length === 0) continue;
     assignPersons(group.fields, group.container);
