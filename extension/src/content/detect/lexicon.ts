@@ -584,6 +584,12 @@ export const NEXT_WORDS =
 export const SIGN_IN_WORDS =
   /\b(sign ?in|log ?in|login|se connecter|connexion|anmelden|einloggen|iniciar sesion|acceder|accedi|entrar|iniciar sessao|inloggen|aanmelden)\b/;
 
+/**
+ * A sign-in phrase that ends a label glued to the text before it: a button's text read with the
+ * toolbar next to it ("Create image" then "Log in" gives "create imagelog in").
+ */
+export const SIGN_IN_TAIL = /(sign ?in|log ?in|login|se connecter|anmelden|einloggen|inloggen)$/;
+
 /** Sign-up wording of a form, its headings or its page. */
 export const SIGNUP_WORDS =
   /\b(sign ?up|register|registration|create (an |your |my )?(free )?(account|profile)|already have an account|new (customer|user|here)|creer (un |mon |votre )?compte|s inscrire|inscription|deja un compte|registrieren|konto erstellen|registrarse|crear (una |mi )?cuenta|registrati|crea (un )?account|criar (uma )?conta|registreren|account aanmaken)\b/;

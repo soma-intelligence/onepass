@@ -246,6 +246,14 @@ describe("buttonClass", () => {
     for (const label of ["Create account", "Créer un compte"]) expect(buttonClass(button(label))).toBe("create");
   });
 
+  // Task 14 witness (seed forms-2026-11-06-a site 10, multi_step): a toolbar's text glued to the
+  // sign-in button's ("Create image" + "Log in", as on real pages) read as a create button, so the
+  // chain never sent the password step.
+  it("a sign-in word glued at the end of the label is still a sign-in", () => {
+    for (const label of ["create imagelog in", "Create imageLog in", "add filesSign in"]) expect(buttonClass(button(label))).toBe("submit");
+    expect(buttonClass(button("Create account"))).toBe("create");
+  });
+
   it("next, submit and other", () => {
     expect(buttonClass(button("Continue"))).toBe("next");
     expect(buttonClass(button("Sign in"))).toBe("submit");

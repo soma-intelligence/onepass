@@ -43,6 +43,7 @@ import {
   RESET_WORDS,
   SCORE_CEILING,
   SEARCH_WORDS,
+  SIGN_IN_TAIL,
   SIGN_IN_WORDS,
   SIGNUP_WORDS,
   TYPE_ONLY_CONFIDENCE,
@@ -86,7 +87,7 @@ export function buttonClass(el: HTMLElement): ButtonClass {
   if (PASSKEY_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "passkey";
   if (PAY_WORDS.test(label)) return "pay";
   // "Sign in or create account" (one identifier-first door for both): a sign-in.
-  if (CREATE_WORDS.test(label)) return SIGN_IN_WORDS.test(label) ? "submit" : "create";
+  if (CREATE_WORDS.test(label)) return SIGN_IN_WORDS.test(label) || SIGN_IN_TAIL.test(label) ? "submit" : "create";
   if (NEXT_WORDS.test(label) && !SIGN_IN_WORDS.test(label)) return "next";
   if (isSubmitType(el) || SIGN_IN_WORDS.test(label)) return "submit";
   return "other";
