@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use onepass_core::Id;
 use onepass_core::autofill_history::{
@@ -30,10 +31,11 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
+use crate::agent::{AgentHub, AgentKind, WAIT_TIMEOUT};
 use crate::api::{
-    AddressIn, CredentialStatus, Ctx, ErrorBody, Extra, FillField, FillKind, PasskeySummary,
-    Recipe, RecipeKind, RecipeProfile, Reply, Request, Response, SecretString, Step, Summary,
-    SummaryKind, VaultEntry,
+    AddressIn, AgentJobWire, CredentialStatus, Ctx, ErrorBody, Extra, FillField, FillKind,
+    PasskeySummary, Recipe, RecipeKind, RecipeProfile, Reply, Request, Response, SecretString,
+    Step, Summary, SummaryKind, VaultEntry, agent_error,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
@@ -325,6 +327,9 @@ pub struct Service<V: VaultAccess> {
     /// The browser and profile of the session (`client_info`); unknown
     /// until the extension says.
     client: ClientContext,
+    /// The agent hub of the app, shared by every session (spec
+    /// 2026-11-07-agent-browser-fill 5). None: no agent fill here.
+    agent: Option<Arc<AgentHub>>,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -336,7 +341,15 @@ impl<V: VaultAccess> Service<V> {
             secret_times: VecDeque::new(),
             salt: None,
             client: ClientContext::unknown(),
+            agent: None,
         }
+    }
+
+    /// Serves agent fills through `hub`: `agent_wait`, the result requests
+    /// and the `agent` context.
+    pub fn with_agent_hub(mut self, hub: Arc<AgentHub>) -> Self {
+        self.agent = Some(hub);
+        self
     }
 
     pub fn vault(&self) -> &V {
@@ -454,6 +467,18 @@ impl<V: VaultAccess> Service<V> {
     }
 
     fn dispatch(&mut self, req: &Request, now: u64) -> OpResult<Response> {
+        // The agent context opens fills and plans only, each for a named
+        // agent request; `agent_request` means nothing elsewhere.
+        match (req.ctx(), req.agent_request()) {
+            (Some(Ctx::Agent), Some(_))
+                if matches!(
+                    req,
+                    Request::FillLogin { .. } | Request::FillCard { .. } | Request::PlanFill { .. }
+                ) => {}
+            (Some(Ctx::Agent), _) => return Err(AppErrorCode::NotAllowed),
+            (_, Some(_)) => return Err(AppErrorCode::Invalid),
+            _ => {}
+        }
         match req {
             Request::Status { .. } => {
                 let s = self.vault.status();
@@ -478,6 +503,37 @@ impl<V: VaultAccess> Service<V> {
         if self.vault.status().locked {
             return Err(AppErrorCode::Locked);
         }
+        // The hub's own lock only: the vault is not held while the long
+        // poll waits (each session has its own service).
+        match req {
+            Request::AgentWait { .. } => {
+                let job = self.hub()?.wait_job(WAIT_TIMEOUT);
+                return Ok(Response::AgentJob {
+                    job: job.map(AgentJobWire::from),
+                });
+            }
+            Request::AgentProbeResult {
+                request_id, result, ..
+            } => {
+                let result = result
+                    .clone()
+                    .map(Into::into)
+                    .map_err(|code| agent_error(&code));
+                self.hub()?.probe_done(*request_id, result);
+                return Ok(Response::Ack {});
+            }
+            Request::AgentFillResult {
+                request_id, result, ..
+            } => {
+                let result = result
+                    .clone()
+                    .map(Into::into)
+                    .map_err(|code| agent_error(&code));
+                self.hub()?.fill_done(*request_id, result);
+                return Ok(Response::Ack {});
+            }
+            _ => {}
+        }
         if matches!(
             req,
             Request::FillLogin { .. }
@@ -499,9 +555,12 @@ impl<V: VaultAccess> Service<V> {
             self.take_secret_slot(now)?;
         }
         match req {
-            Request::Status { .. } | Request::Unlock { .. } | Request::FillSalt { .. } => {
-                Err(AppErrorCode::Internal)
-            }
+            Request::Status { .. }
+            | Request::Unlock { .. }
+            | Request::FillSalt { .. }
+            | Request::AgentWait { .. }
+            | Request::AgentProbeResult { .. }
+            | Request::AgentFillResult { .. } => Err(AppErrorCode::Internal),
             Request::Vaults { .. } => self.vaults(),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
@@ -510,17 +569,19 @@ impl<V: VaultAccess> Service<V> {
             } => self.list_fillable(o, *kind),
             Request::FillLogin {
                 ctx,
+                agent_request,
                 item_id,
                 origin: o,
                 fields,
                 ..
-            } => self.fill_login(*ctx, item_id, o, fields, now),
+            } => self.fill_login(*ctx, *agent_request, item_id, o, fields, now),
             Request::FillCard {
                 ctx,
+                agent_request,
                 item_id,
                 origin: o,
                 ..
-            } => self.fill_other(*ctx, item_id, o, ItemType::CreditCard, now),
+            } => self.fill_other(*ctx, *agent_request, item_id, o, ItemType::CreditCard, now),
             Request::FillIdentity {
                 ctx,
                 item_id,
@@ -708,10 +769,20 @@ impl<V: VaultAccess> Service<V> {
             } => self.link_provider(*ctx, site_origin, *provider, account_item_id, now),
             Request::PlanFill {
                 ctx,
+                agent_request,
                 origin: o,
                 context,
                 ..
-            } => self.plan_fill(*ctx, o, context, now),
+            } => {
+                if *ctx == Ctx::Agent {
+                    let live =
+                        agent_request.is_some_and(|r| self.hub().is_ok_and(|h| h.ticket_live(r)));
+                    if !live {
+                        return Err(AppErrorCode::NotAllowed);
+                    }
+                }
+                self.plan_fill(*ctx, o, context, now)
+            }
             Request::NoteFill {
                 ctx,
                 item_id,
@@ -882,9 +953,36 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Items { items })
     }
 
+    /// The hub, or `not_allowed` when this service has none.
+    fn hub(&self) -> OpResult<&AgentHub> {
+        self.agent.as_deref().ok_or(AppErrorCode::NotAllowed)
+    }
+
+    /// For the agent context: spends the ticket of `request` for this
+    /// item, origin and kind, or `not_allowed`. Called once the origin
+    /// checks of the request passed. Other contexts pass.
+    fn agent_ticket(
+        &self,
+        ctx: Ctx,
+        request: Option<u64>,
+        item_id: &str,
+        o: &str,
+        kind: AgentKind,
+    ) -> OpResult<()> {
+        if ctx != Ctx::Agent {
+            return Ok(());
+        }
+        let request = request.ok_or(AppErrorCode::NotAllowed)?;
+        if !self.hub()?.redeem(request, item_id, o, kind) {
+            return Err(AppErrorCode::NotAllowed);
+        }
+        Ok(())
+    }
+
     fn fill_login(
         &mut self,
         ctx: Ctx,
+        agent_request: Option<u64>,
         item_id: &str,
         o: &str,
         fields: &[FillField],
@@ -898,6 +996,7 @@ impl<V: VaultAccess> Service<V> {
         if item_match(&item, &page).is_none() {
             return Err(AppErrorCode::OriginMismatch);
         }
+        self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Login)?;
         self.reprompt(&item)?;
         let out = login_secrets(&item, fields, now);
         self.record("fill_login", item.id, Some(o), ctx, now);
@@ -907,6 +1006,7 @@ impl<V: VaultAccess> Service<V> {
     fn fill_other(
         &mut self,
         ctx: Ctx,
+        agent_request: Option<u64>,
         item_id: &str,
         o: &str,
         kind: ItemType,
@@ -917,6 +1017,7 @@ impl<V: VaultAccess> Service<V> {
         if item.item_type != kind {
             return Err(AppErrorCode::NotFound);
         }
+        self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Card)?;
         self.reprompt(&item)?;
         self.record("fill_card", item.id, Some(o), ctx, now);
         Ok(card_values(&item))

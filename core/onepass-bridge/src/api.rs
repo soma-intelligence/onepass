@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::AppErrorCode;
+use crate::agent::{AgentError, AgentJob, AgentKind, FillResult, ProbeResult};
 use crate::origin::MatchQuality;
 use crate::provider::ProviderId;
 
@@ -62,6 +63,10 @@ pub enum Ctx {
     Chain,
     /// The extension's passkey choice window.
     Passkey,
+    /// A fill an MCP agent asked for and the holder approved (spec
+    /// 2026-11-07-agent-browser-fill 5). Accepted for `plan_fill`,
+    /// `fill_login` and `fill_card` only, each with `agent_request`.
+    Agent,
 }
 
 impl Ctx {
@@ -73,6 +78,7 @@ impl Ctx {
             Self::SavePrompt => "save_prompt",
             Self::Chain => "chain",
             Self::Passkey => "passkey",
+            Self::Agent => "agent",
         }
     }
 }
@@ -233,9 +239,13 @@ pub enum Request {
         origin: String,
         kind: FillKind,
     },
+    /// `agent_request`: with `ctx` `agent` only, the agent request whose
+    /// ticket this fill spends.
     FillLogin {
         id: u64,
         ctx: Ctx,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_request: Option<u64>,
         item_id: String,
         origin: String,
         fields: Vec<FillField>,
@@ -243,6 +253,8 @@ pub enum Request {
     FillCard {
         id: u64,
         ctx: Ctx,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_request: Option<u64>,
         item_id: String,
         origin: String,
     },
@@ -416,10 +428,13 @@ pub enum Request {
         ctx: Ctx,
     },
     /// `origin` is the browser's origin of the frame; `context.origin` must
-    /// be the same.
+    /// be the same. `agent_request`: with `ctx` `agent` only, a request
+    /// holding a live ticket (not spent by the plan).
     PlanFill {
         id: u64,
         ctx: Ctx,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_request: Option<u64>,
         origin: String,
         context: PageContext,
     },
@@ -506,6 +521,25 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vault_id: Option<String>,
     },
+    /// Long poll of the extension's agent session: the next agent job, or
+    /// none after `agent::WAIT_TIMEOUT`.
+    AgentWait {
+        id: u64,
+    },
+    /// The extension's answer to a probe job.
+    AgentProbeResult {
+        id: u64,
+        request_id: u64,
+        #[serde(with = "agent_result")]
+        result: std::result::Result<ProbeWire, String>,
+    },
+    /// The extension's answer to a fill job.
+    AgentFillResult {
+        id: u64,
+        request_id: u64,
+        #[serde(with = "agent_result")]
+        result: std::result::Result<FillWire, String>,
+    },
 }
 
 impl Request {
@@ -543,7 +577,10 @@ impl Request {
             | Self::NoteAutofill { id, .. }
             | Self::PasskeyList { id, .. }
             | Self::PasskeyGet { id, .. }
-            | Self::PasskeyCreate { id, .. } => *id,
+            | Self::PasskeyCreate { id, .. }
+            | Self::AgentWait { id }
+            | Self::AgentProbeResult { id, .. }
+            | Self::AgentFillResult { id, .. } => *id,
         }
     }
 
@@ -582,6 +619,197 @@ impl Request {
             Self::PasskeyList { .. } => "passkey_list",
             Self::PasskeyGet { .. } => "passkey_get",
             Self::PasskeyCreate { .. } => "passkey_create",
+            Self::AgentWait { .. } => "agent_wait",
+            Self::AgentProbeResult { .. } => "agent_probe_result",
+            Self::AgentFillResult { .. } => "agent_fill_result",
+        }
+    }
+
+    /// The context of the request, for those that carry one.
+    pub fn ctx(&self) -> Option<Ctx> {
+        match self {
+            Self::ListForOrigin { ctx, .. }
+            | Self::Search { ctx, .. }
+            | Self::ListFillable { ctx, .. }
+            | Self::FillLogin { ctx, .. }
+            | Self::FillCard { ctx, .. }
+            | Self::FillIdentity { ctx, .. }
+            | Self::Totp { ctx, .. }
+            | Self::Reveal { ctx, .. }
+            | Self::CheckCredentials { ctx, .. }
+            | Self::SaveLogin { ctx, .. }
+            | Self::CheckCard { ctx, .. }
+            | Self::SaveCard { ctx, .. }
+            | Self::CheckIdentity { ctx, .. }
+            | Self::SaveIdentity { ctx, .. }
+            | Self::UpdatePassword { ctx, .. }
+            | Self::ConfirmPending { ctx, .. }
+            | Self::Generate { ctx, .. }
+            | Self::ProviderAccounts { ctx, .. }
+            | Self::FillProvider { ctx, .. }
+            | Self::LinkProvider { ctx, .. }
+            | Self::FillSalt { ctx, .. }
+            | Self::PlanFill { ctx, .. }
+            | Self::NoteFill { ctx, .. }
+            | Self::ForgetSite { ctx, .. }
+            | Self::NoteAutofill { ctx, .. }
+            | Self::PasskeyList { ctx, .. }
+            | Self::PasskeyGet { ctx, .. }
+            | Self::PasskeyCreate { ctx, .. } => Some(*ctx),
+            Self::Status { .. }
+            | Self::Unlock { .. }
+            | Self::Vaults { .. }
+            | Self::ClientInfo { .. }
+            | Self::AgentWait { .. }
+            | Self::AgentProbeResult { .. }
+            | Self::AgentFillResult { .. } => None,
+        }
+    }
+
+    /// `agent_request` of the requests that carry one.
+    pub fn agent_request(&self) -> Option<u64> {
+        match self {
+            Self::FillLogin { agent_request, .. }
+            | Self::FillCard { agent_request, .. }
+            | Self::PlanFill { agent_request, .. } => *agent_request,
+            _ => None,
+        }
+    }
+}
+
+/// The tab an extension found for a probe job.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProbeWire {
+    pub tab_title: String,
+    pub origin: String,
+    pub document_id: String,
+}
+
+impl From<ProbeWire> for ProbeResult {
+    fn from(p: ProbeWire) -> ProbeResult {
+        ProbeResult {
+            tab_title: p.tab_title,
+            origin: p.origin,
+            document_id: p.document_id,
+        }
+    }
+}
+
+/// What a fill job wrote: field names, never values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FillWire {
+    pub filled: Vec<String>,
+    pub submitted: bool,
+}
+
+impl From<FillWire> for FillResult {
+    fn from(f: FillWire) -> FillResult {
+        FillResult {
+            filled: f.filled,
+            submitted: f.submitted,
+        }
+    }
+}
+
+/// The error code of a probe or fill job, as the extension names it. An
+/// unknown code is a refusal.
+pub fn agent_error(code: &str) -> AgentError {
+    match code {
+        "tab_mismatch" => AgentError::TabMismatch,
+        "origin_mismatch" => AgentError::OriginMismatch,
+        "cross_site_frame" => AgentError::CrossSiteFrame,
+        "no_fields" => AgentError::NoFields,
+        _ => AgentError::Denied,
+    }
+}
+
+/// A job result on the wire: `{"ok": {...}}` or `{"err": "<code>"}`.
+mod agent_result {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Out<'a, T> {
+        Ok(&'a T),
+        Err(&'a str),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum In<T> {
+        Ok(T),
+        Err(String),
+    }
+
+    pub fn serialize<S: Serializer, T: Serialize>(
+        r: &Result<T, String>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        match r {
+            Ok(v) => Out::Ok(v),
+            Err(e) => Out::Err(e.as_str()),
+        }
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+        d: D,
+    ) -> Result<Result<T, String>, D::Error> {
+        Ok(match In::deserialize(d)? {
+            In::Ok(v) => Ok(v),
+            In::Err(e) => Err(e),
+        })
+    }
+}
+
+/// What an agent fill writes, on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentKindWire {
+    Login,
+    Card,
+}
+
+/// A job for the extension: `{"job":"probe","request_id","url"}` or
+/// `{"job":"fill","request_id","item_id","kind","submit","document_id"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "job", rename_all = "snake_case")]
+pub enum AgentJobWire {
+    Probe {
+        request_id: u64,
+        url: String,
+    },
+    Fill {
+        request_id: u64,
+        item_id: String,
+        kind: AgentKindWire,
+        submit: bool,
+        document_id: String,
+    },
+}
+
+impl From<AgentJob> for AgentJobWire {
+    fn from(job: AgentJob) -> AgentJobWire {
+        match job {
+            AgentJob::Probe { request_id, url } => AgentJobWire::Probe { request_id, url },
+            AgentJob::Fill {
+                request_id,
+                item_id,
+                kind,
+                submit,
+                document_id,
+            } => AgentJobWire::Fill {
+                request_id,
+                item_id,
+                kind: match kind {
+                    AgentKind::Login => AgentKindWire::Login,
+                    AgentKind::Card => AgentKindWire::Card,
+                },
+                submit,
+                document_id,
+            },
         }
     }
 }
@@ -930,6 +1158,12 @@ pub enum Response {
         public_key: String,
         public_key_algorithm: i64,
     },
+    /// `agent_wait`: the next job, `null` when none came in time.
+    AgentJob {
+        job: Option<AgentJobWire>,
+    },
+    /// `agent_probe_result` and `agent_fill_result`: `{}`.
+    Ack {},
     /// `{}`.
     Empty {},
 }
@@ -1548,6 +1782,162 @@ mod tests {
                     {"form_ref":"f","kind":"generated_password","item_id":null,
                      "fields":[{"field_ref":"p","role":"new_password"}]}]}})
         );
+    }
+
+    #[test]
+    fn old_requests_without_agent_request_still_decode() {
+        for (wire, op) in [
+            (
+                r#"{"id":7,"op":"fill_login","ctx":"overlay","item_id":"x","origin":"https://atlas-cloud.test","fields":["password"]}"#,
+                "fill_login",
+            ),
+            (
+                r#"{"id":7,"op":"fill_card","ctx":"menu","item_id":"x","origin":"https://atlas-cloud.test"}"#,
+                "fill_card",
+            ),
+        ] {
+            let r = round_trip(wire, 7, op);
+            let (Request::FillLogin { agent_request, .. }
+            | Request::FillCard { agent_request, .. }) = r
+            else {
+                panic!()
+            };
+            assert_eq!(agent_request, None);
+        }
+        let r = round_trip(
+            r#"{"id":9,"op":"fill_login","ctx":"agent","agent_request":7,"item_id":"x","origin":"https://atlas-cloud.test","fields":["username","password"]}"#,
+            9,
+            "fill_login",
+        );
+        assert!(matches!(
+            r,
+            Request::FillLogin {
+                ctx: Ctx::Agent,
+                agent_request: Some(7),
+                ..
+            }
+        ));
+        let r = round_trip(
+            r#"{"id":10,"op":"plan_fill","ctx":"agent","agent_request":7,"origin":"https://atlas-cloud.test","context":{"origin":"https://atlas-cloud.test","top_origin":"https://atlas-cloud.test","frame_kind":"top","forms":[],"typed_username_hash":null}}"#,
+            10,
+            "plan_fill",
+        );
+        assert!(matches!(
+            r,
+            Request::PlanFill {
+                agent_request: Some(7),
+                ..
+            }
+        ));
+        assert_eq!(Ctx::Agent.as_str(), "agent");
+    }
+
+    #[test]
+    fn agent_requests_round_trip() {
+        round_trip(r#"{"id":1,"op":"agent_wait"}"#, 1, "agent_wait");
+        let r = round_trip(
+            r#"{"id":2,"op":"agent_probe_result","request_id":7,"result":{"ok":{"tab_title":"Atlas","origin":"https://atlas-cloud.test","document_id":"d1"}}}"#,
+            2,
+            "agent_probe_result",
+        );
+        let Request::AgentProbeResult {
+            request_id, result, ..
+        } = r
+        else {
+            panic!()
+        };
+        assert_eq!(request_id, 7);
+        assert_eq!(result.unwrap().document_id, "d1");
+        let r = round_trip(
+            r#"{"id":3,"op":"agent_probe_result","request_id":7,"result":{"err":"tab_mismatch"}}"#,
+            3,
+            "agent_probe_result",
+        );
+        let Request::AgentProbeResult { result, .. } = r else {
+            panic!()
+        };
+        assert_eq!(result.unwrap_err(), "tab_mismatch");
+        let r = round_trip(
+            r#"{"id":4,"op":"agent_fill_result","request_id":7,"result":{"ok":{"filled":["username","password"],"submitted":true}}}"#,
+            4,
+            "agent_fill_result",
+        );
+        let Request::AgentFillResult { result, .. } = r else {
+            panic!()
+        };
+        let out = result.unwrap();
+        assert_eq!(out.filled, vec!["username", "password"]);
+        assert!(out.submitted);
+        round_trip(
+            r#"{"id":5,"op":"agent_fill_result","request_id":7,"result":{"err":"no_fields"}}"#,
+            5,
+            "agent_fill_result",
+        );
+        for wire in [
+            r#"{"id":1,"op":"agent_wait","x":1}"#,
+            r#"{"id":1,"op":"agent_probe_result","request_id":7,"result":{"Ok":{"tab_title":"a","origin":"b","document_id":"c"}}}"#,
+            r#"{"id":1,"op":"agent_probe_result","request_id":7,"result":{"ok":{"tab_title":"a","origin":"b","document_id":"c","x":1}}}"#,
+            r#"{"id":1,"op":"agent_fill_result","request_id":7,"result":{"ok":{"filled":[],"submitted":false,"value":"s"}}}"#,
+            r#"{"id":1,"op":"agent_fill_result","request_id":7}"#,
+        ] {
+            assert!(serde_json::from_str::<Request>(wire).is_err(), "{wire}");
+        }
+    }
+
+    #[test]
+    fn agent_jobs_have_the_wire_shape() {
+        let probe = Response::AgentJob {
+            job: Some(AgentJobWire::from(AgentJob::Probe {
+                request_id: 7,
+                url: "https://github.com/login".into(),
+            })),
+        };
+        assert_eq!(
+            serde_json::to_value(&probe).unwrap(),
+            json!({"job":{"job":"probe","request_id":7,"url":"https://github.com/login"}})
+        );
+        let fill = Response::AgentJob {
+            job: Some(AgentJobWire::from(AgentJob::Fill {
+                request_id: 7,
+                item_id: "i".into(),
+                kind: AgentKind::Login,
+                submit: true,
+                document_id: "d".into(),
+            })),
+        };
+        assert_eq!(
+            serde_json::to_value(&fill).unwrap(),
+            json!({"job":{"job":"fill","request_id":7,"item_id":"i","kind":"login","submit":true,"document_id":"d"}})
+        );
+        let card = AgentJobWire::from(AgentJob::Fill {
+            request_id: 8,
+            item_id: "c".into(),
+            kind: AgentKind::Card,
+            submit: false,
+            document_id: "d".into(),
+        });
+        assert_eq!(serde_json::to_value(&card).unwrap()["kind"], "card");
+        assert_eq!(
+            serde_json::to_value(Response::AgentJob { job: None }).unwrap(),
+            json!({"job": null})
+        );
+        assert_eq!(serde_json::to_value(Response::Ack {}).unwrap(), json!({}));
+    }
+
+    #[test]
+    fn agent_error_codes_map_to_the_hub() {
+        for (code, want) in [
+            ("tab_mismatch", AgentError::TabMismatch),
+            ("origin_mismatch", AgentError::OriginMismatch),
+            ("cross_site_frame", AgentError::CrossSiteFrame),
+            ("no_fields", AgentError::NoFields),
+            ("denied", AgentError::Denied),
+            ("timeout", AgentError::Denied),
+            ("no_browser", AgentError::Denied),
+            ("anything", AgentError::Denied),
+        ] {
+            assert_eq!(agent_error(code), want, "{code}");
+        }
     }
 
     #[test]

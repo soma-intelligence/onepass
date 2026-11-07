@@ -2727,3 +2727,304 @@ fn card_and_identity_ops_locked() {
     assert_eq!(h.vault().items.len(), before);
     assert!(h.audit.events().is_empty());
 }
+
+// ---- Agent fill (spec 2026-11-07-agent-browser-fill 5): ctx `agent`,
+// `agent_wait` and the result requests.
+
+mod agent {
+    use super::*;
+    use onepass_bridge::agent::{
+        AgentError, AgentHub, AgentKind, FillResult, ProbeResult, WAIT_TIMEOUT,
+    };
+    use onepass_bridge::api::Ctx;
+    use std::sync::Arc;
+    use std::thread::{self, JoinHandle};
+    use std::time::{Duration, Instant};
+
+    const LONG: Duration = Duration::from_secs(5);
+
+    type Filler = JoinHandle<Result<FillResult, AgentError>>;
+
+    fn with_hub() -> (H, Arc<AgentHub>) {
+        let (vault, ids) = FakeVault::new();
+        let audit = MemoryAudit::new();
+        let hub = AgentHub::new(Arc::new(|| NOW));
+        let h = H {
+            svc: Service::new(vault, Box::new(audit.clone())).with_agent_hub(Arc::clone(&hub)),
+            ids,
+            audit,
+            next: 0,
+        };
+        (h, hub)
+    }
+
+    fn wait() -> Value {
+        json!({"op":"agent_wait"})
+    }
+
+    fn agent_fill(item: Id, origin: &str, request: Option<u64>) -> Value {
+        let mut v = json!({"op":"fill_login","ctx":"agent","item_id":id(item),"origin":origin,
+                           "fields":["username","password"]});
+        if let Some(r) = request {
+            v["agent_request"] = json!(r);
+        }
+        v
+    }
+
+    fn agent_card(item: Id, origin: &str, request: u64) -> Value {
+        json!({"op":"fill_card","ctx":"agent","agent_request":request,"item_id":id(item),
+               "origin":origin})
+    }
+
+    /// The tool probes `origin` and fills `item`, the service plays the
+    /// extension (`agent_wait`, `agent_probe_result`): the ticket is issued
+    /// once the fill job is in the extension's hands.
+    fn ticket(
+        h: &mut H,
+        hub: &Arc<AgentHub>,
+        item: Id,
+        origin: &str,
+        kind: AgentKind,
+    ) -> (u64, Filler) {
+        // The extension listens.
+        assert!(hub.wait_job(Duration::ZERO).is_none());
+        let tool = Arc::clone(hub);
+        let url = format!("{origin}/login");
+        let prober = thread::spawn(move || tool.probe("claude", &url, LONG));
+        let v = h.call(wait());
+        let job = &ok(&v)["job"];
+        assert_eq!(job["job"], "probe", "{v}");
+        assert_eq!(job["url"], format!("{origin}/login"));
+        let request_id = job["request_id"].as_u64().unwrap();
+        let v = h.call(json!({"op":"agent_probe_result","request_id":request_id,
+            "result":{"ok":{"tab_title":"Atlas Cloud","origin":origin,"document_id":"doc-1"}}}));
+        assert_eq!(ok(&v), &json!({}));
+        let (id_back, page) = prober.join().unwrap().unwrap();
+        assert_eq!(id_back, request_id);
+        assert_eq!(
+            page,
+            ProbeResult {
+                tab_title: "Atlas Cloud".into(),
+                origin: origin.into(),
+                document_id: "doc-1".into(),
+            }
+        );
+        let tool = Arc::clone(hub);
+        let item_id = id(item);
+        let o = origin.to_owned();
+        let filler =
+            thread::spawn(move || tool.fill(request_id, &item_id, &o, kind, true, "doc-1", LONG));
+        let v = h.call(wait());
+        let want_kind = match kind {
+            AgentKind::Login => "login",
+            AgentKind::Card => "card",
+        };
+        assert_eq!(
+            ok(&v)["job"],
+            json!({"job":"fill","request_id":request_id,"item_id":id(item),"kind":want_kind,
+                   "submit":true,"document_id":"doc-1"})
+        );
+        (request_id, filler)
+    }
+
+    fn finish(h: &mut H, request_id: u64, filler: Filler) -> Result<FillResult, AgentError> {
+        let v = h.call(json!({"op":"agent_fill_result","request_id":request_id,
+            "result":{"ok":{"filled":["username","password"],"submitted":true}}}));
+        assert_eq!(ok(&v), &json!({}));
+        filler.join().unwrap()
+    }
+
+    #[test]
+    fn agent_ctx_fill_without_ticket_is_not_allowed() {
+        let (mut h, _hub) = with_hub();
+        let atlas = h.ids.atlas;
+        assert_eq!(err(&h.call(agent_fill(atlas, ATLAS, None))), "not_allowed");
+        assert_eq!(
+            err(&h.call(agent_fill(atlas, ATLAS, Some(1)))),
+            "not_allowed"
+        );
+        let card = h.ids.card;
+        assert_eq!(err(&h.call(agent_card(card, ATLAS, 1))), "not_allowed");
+        assert!(h.audit.events().is_empty());
+        // Without a hub, never.
+        let mut plain = H::new();
+        let atlas = plain.ids.atlas;
+        assert_eq!(
+            err(&plain.call(agent_fill(atlas, ATLAS, Some(1)))),
+            "not_allowed"
+        );
+    }
+
+    #[test]
+    fn agent_ctx_fill_with_ticket_returns_values_once() {
+        let (mut h, hub) = with_hub();
+        let atlas = h.ids.atlas;
+        let (rid, filler) = ticket(&mut h, &hub, atlas, ATLAS, AgentKind::Login);
+        let v = h.call(agent_fill(atlas, ATLAS, Some(rid)));
+        assert_eq!(ok(&v)["username"], "alex@atlas.dev", "{v}");
+        assert!(ok(&v)["password"].is_string());
+        assert_eq!(
+            err(&h.call(agent_fill(atlas, ATLAS, Some(rid)))),
+            "not_allowed"
+        );
+        let events = h.audit.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].op, "fill_login");
+        assert_eq!(events[0].ctx, Ctx::Agent);
+        assert_eq!(events[0].item_id, Some(id(atlas)));
+        let out = finish(&mut h, rid, filler).unwrap();
+        assert_eq!(out.filled, vec!["username", "password"]);
+        assert!(out.submitted);
+    }
+
+    #[test]
+    fn agent_ctx_card_ticket_is_for_a_card_only() {
+        let (mut h, hub) = with_hub();
+        let (atlas, card) = (h.ids.atlas, h.ids.card);
+        let (rid, filler) = ticket(&mut h, &hub, card, ATLAS, AgentKind::Card);
+        // Another item, or the login path for the card's ticket: refused,
+        // and the ticket holds.
+        assert_eq!(
+            err(&h.call(agent_fill(atlas, ATLAS, Some(rid)))),
+            "not_allowed"
+        );
+        assert_eq!(
+            err(&h.call(agent_card(card, "https://evil.test", rid))),
+            "not_allowed"
+        );
+        let v = h.call(agent_card(card, ATLAS, rid));
+        assert_eq!(ok(&v)["cardholder"], "Alex Martin", "{v}");
+        assert_eq!(err(&h.call(agent_card(card, ATLAS, rid))), "not_allowed");
+        finish(&mut h, rid, filler).unwrap();
+    }
+
+    #[test]
+    fn agent_ctx_fill_for_other_origin_is_origin_mismatch() {
+        let (mut h, hub) = with_hub();
+        let atlas = h.ids.atlas;
+        let (rid, filler) = ticket(&mut h, &hub, atlas, ATLAS, AgentKind::Login);
+        assert_eq!(
+            err(&h.call(agent_fill(atlas, "https://evil.test", Some(rid)))),
+            "origin_mismatch"
+        );
+        assert_eq!(
+            err(&h.call(agent_fill(atlas, "http://atlas-cloud.test", Some(rid)))),
+            "insecure_origin"
+        );
+        // The checks ran before the ticket: it still serves its own origin.
+        ok(&h.call(agent_fill(atlas, ATLAS, Some(rid))));
+        finish(&mut h, rid, filler).unwrap();
+    }
+
+    #[test]
+    fn agent_ctx_is_refused_outside_fills_and_plans() {
+        let (mut h, _hub) = with_hub();
+        let atlas = h.ids.atlas;
+        for req in [
+            json!({"op":"list_for_origin","ctx":"agent","origin":ATLAS}),
+            json!({"op":"totp","ctx":"agent","item_id":id(atlas),"origin":ATLAS}),
+            json!({"op":"reveal","ctx":"agent","item_id":id(atlas),"field":"password"}),
+            json!({"op":"search","ctx":"agent","query":""}),
+            json!({"op":"fill_salt","ctx":"agent"}),
+            json!({"op":"fill_identity","ctx":"agent","item_id":id(h.ids.identity),"origin":ATLAS}),
+        ] {
+            assert_eq!(err(&h.call(req.clone())), "not_allowed", "{req}");
+        }
+        // `agent_request` belongs to the agent context only.
+        let mut v = fill(atlas, ATLAS);
+        v["agent_request"] = json!(1);
+        assert_eq!(err(&h.call(v)), "invalid");
+        assert!(h.audit.events().is_empty());
+    }
+
+    #[test]
+    fn agent_plan_needs_a_live_ticket_and_leaves_it() {
+        let (mut h, hub) = with_hub();
+        let atlas = h.ids.atlas;
+        let plan = |r: Option<u64>| {
+            let mut v = plan_req(ATLAS, page(ATLAS, None));
+            v["ctx"] = json!("agent");
+            if let Some(r) = r {
+                v["agent_request"] = json!(r);
+            }
+            v
+        };
+        assert_eq!(err(&h.call(plan(None))), "not_allowed");
+        assert_eq!(err(&h.call(plan(Some(1)))), "not_allowed");
+        let (rid, filler) = ticket(&mut h, &hub, atlas, ATLAS, AgentKind::Login);
+        let v = h.call(plan(Some(rid)));
+        assert_eq!(ok(&v)["plan"]["intent"], "login", "{v}");
+        // Planning did not spend the ticket.
+        ok(&h.call(agent_fill(atlas, ATLAS, Some(rid))));
+        assert_eq!(err(&h.call(plan(Some(rid)))), "not_allowed");
+        finish(&mut h, rid, filler).unwrap();
+    }
+
+    #[test]
+    fn agent_wait_on_agent_only_session_is_refused() {
+        // The app bridge reads an agents-only session as locked
+        // (onepass-ffi `Shared::session`): the service answers `locked` at
+        // once, and the extension does not count as listening.
+        let (mut h, hub) = with_hub();
+        h.svc.vault_mut().locked = true;
+        let start = Instant::now();
+        assert_eq!(err(&h.call(wait())), "locked");
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!hub.has_listener());
+        let r = json!({"op":"agent_probe_result","request_id":1,"result":{"err":"denied"}});
+        assert_eq!(err(&h.call(r)), "locked");
+        let r = json!({"op":"agent_fill_result","request_id":1,"result":{"err":"denied"}});
+        assert_eq!(err(&h.call(r)), "locked");
+    }
+
+    #[test]
+    fn agent_ops_without_hub_are_not_allowed() {
+        let mut h = H::new();
+        assert_eq!(err(&h.call(wait())), "not_allowed");
+        let r = json!({"op":"agent_probe_result","request_id":1,"result":{"err":"denied"}});
+        assert_eq!(err(&h.call(r)), "not_allowed");
+        let r = json!({"op":"agent_fill_result","request_id":1,
+                       "result":{"ok":{"filled":[],"submitted":false}}});
+        assert_eq!(err(&h.call(r)), "not_allowed");
+    }
+
+    #[test]
+    fn agent_wait_returns_none_after_25s() {
+        let (mut h, hub) = with_hub();
+        let start = Instant::now();
+        let v = h.call(wait());
+        let waited = start.elapsed();
+        assert_eq!(ok(&v), &json!({"job": null}));
+        assert!(waited >= WAIT_TIMEOUT, "{waited:?}");
+        assert!(waited < WAIT_TIMEOUT + Duration::from_secs(3), "{waited:?}");
+        assert!(hub.has_listener());
+    }
+
+    #[test]
+    fn extension_errors_reach_the_tool_as_codes() {
+        let (mut h, hub) = with_hub();
+        assert!(hub.wait_job(Duration::ZERO).is_none());
+        let tool = Arc::clone(&hub);
+        let prober = thread::spawn(move || tool.probe("claude", "https://atlas-cloud.test/", LONG));
+        let v = h.call(wait());
+        let rid = ok(&v)["job"]["request_id"].as_u64().unwrap();
+        let v = h.call(json!({"op":"agent_probe_result","request_id":rid,
+                              "result":{"err":"cross_site_frame"}}));
+        ok(&v);
+        assert_eq!(
+            prober.join().unwrap().unwrap_err(),
+            AgentError::CrossSiteFrame
+        );
+
+        let atlas = h.ids.atlas;
+        let (rid, filler) = ticket(&mut h, &hub, atlas, ATLAS, AgentKind::Login);
+        let v = h.call(json!({"op":"agent_fill_result","request_id":rid,
+                              "result":{"err":"made_up_code"}}));
+        ok(&v);
+        assert_eq!(filler.join().unwrap().unwrap_err(), AgentError::Denied);
+        // A late or unknown answer is dropped, still acknowledged.
+        let v = h.call(json!({"op":"agent_fill_result","request_id":rid,
+                              "result":{"ok":{"filled":["password"],"submitted":false}}}));
+        ok(&v);
+    }
+}

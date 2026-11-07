@@ -417,6 +417,14 @@ impl AgentHub {
         self.lock().listening((self.clock)())
     }
 
+    /// Host side: true while `request_id` holds an unexpired ticket. Does
+    /// not spend it (`plan_fill` asks before the values are asked for).
+    pub fn ticket_live(&self, request_id: u64) -> bool {
+        let mut state = self.lock();
+        state.expire((self.clock)());
+        state.tickets.contains_key(&request_id)
+    }
+
     /// Host side: spends the ticket of `request_id` if item, origin (exact
     /// string) and kind match and it has not expired. True once at most.
     /// A mismatch leaves the ticket in place.
@@ -669,6 +677,68 @@ mod tests {
             }),
         );
         assert_eq!(filler.join().unwrap().unwrap().filled, vec!["password"]);
+    }
+
+    #[test]
+    fn ticket_live_does_not_spend_the_ticket() {
+        let (hub, now) = hub();
+        listen(&hub);
+        let ext = extension(Arc::clone(&hub), 1);
+        let (id, _) = hub
+            .probe("claude", "https://github.com/login", LONG)
+            .unwrap();
+        ext.join().unwrap();
+        // Probed, no fill yet: no ticket.
+        assert!(!hub.ticket_live(id));
+        let h = Arc::clone(&hub);
+        let filler = thread::spawn(move || {
+            h.fill(
+                id,
+                "item-1",
+                "https://github.com",
+                AgentKind::Login,
+                false,
+                "doc",
+                LONG,
+            )
+        });
+        let Some(AgentJob::Fill { .. }) = hub.wait_job(LONG) else {
+            panic!("expected a fill job");
+        };
+        assert!(hub.ticket_live(id));
+        assert!(hub.ticket_live(id));
+        assert!(!hub.ticket_live(id + 1));
+        assert!(hub.redeem(id, "item-1", "https://github.com", AgentKind::Login));
+        assert!(!hub.ticket_live(id));
+        hub.fill_done(id, Err(AgentError::Denied));
+        assert_eq!(filler.join().unwrap().unwrap_err(), AgentError::Denied);
+
+        // An unspent ticket dies with its TTL.
+        let ext = extension(Arc::clone(&hub), 1);
+        let (id, _) = hub
+            .probe("claude", "https://github.com/login", LONG)
+            .unwrap();
+        ext.join().unwrap();
+        let h = Arc::clone(&hub);
+        let filler = thread::spawn(move || {
+            h.fill(
+                id,
+                "item-1",
+                "https://github.com",
+                AgentKind::Login,
+                false,
+                "doc",
+                LONG,
+            )
+        });
+        let Some(AgentJob::Fill { .. }) = hub.wait_job(LONG) else {
+            panic!("expected a fill job");
+        };
+        assert!(hub.ticket_live(id));
+        now.fetch_add(31, Ordering::SeqCst);
+        assert!(!hub.ticket_live(id));
+        hub.fill_done(id, Err(AgentError::Denied));
+        filler.join().unwrap().unwrap_err();
     }
 
     #[test]
