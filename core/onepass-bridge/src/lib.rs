@@ -3,6 +3,7 @@
 //! handshake and encrypted channel, origin matching, provider domains and
 //! application messages.
 
+pub mod agent;
 pub mod api;
 pub mod audit;
 pub mod channel;
