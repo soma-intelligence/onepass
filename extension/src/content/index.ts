@@ -143,6 +143,12 @@ function replyUrl(r: unknown): string | null {
 /** Longest wait of a fill reply for later writes (region list reload, combobox pick). */
 export const REPLY_MAX_MS = SETTLE_MS + 500;
 
+/**
+ * attachShadow makes no mutation record: a page with custom elements is looked at again this
+ * long after start for a shadow root (a closed one included) no analysis has seen yet.
+ */
+export const LATE_ROOT_CHECKS_MS: readonly number[] = [500, 1_500, 3_000, 6_000, 10_000];
+
 export function createContentScript(o: ContentOptions): ContentScript {
   const { doc, ext } = o;
   const geometry = o.geometry ?? domGeometry;
@@ -676,6 +682,18 @@ export function createContentScript(o: ContentOptions): ContentScript {
         },
         { capture: true },
       );
+      // A root attached late with no focus into it (delayed components): a few checks after start,
+      // only while the page has custom elements (the hosts such roots hang from).
+      const lateRoots = () => {
+        if (stopped || !parts) return;
+        const hosts = Array.from(doc.getElementsByTagName("*")).some((el) => el.localName.includes("-") && !isOwnHost(el));
+        if (!hosts) return;
+        if (collectShadowRoots(doc, { shadowRootOf, skip: isOwnHost }).some((r) => !watched.has(r))) observer.refresh();
+      };
+      for (const ms of LATE_ROOT_CHECKS_MS) {
+        const id = setTimeout(lateRoots, ms);
+        cleanups.push(() => clearTimeout(id));
+      }
       submit.start();
       observer.start();
       // After start: the observer observes the roots the first analysis found.

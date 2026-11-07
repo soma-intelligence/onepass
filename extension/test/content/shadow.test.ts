@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LATE_ROOT_CHECKS_MS } from "../../src/content/index";
 import { GESTURE_MS } from "../../src/content/submit";
 import type { PageAnalysis } from "../../src/shared/messages";
 import { asUser, EXT_BASE, flush, setPage, start, type Started, TOKEN, userClick, userKey, useTimers } from "./harness";
@@ -166,6 +167,33 @@ describe("content script in shadow roots (D1, D2)", () => {
     expect(last(r).forms).toEqual([]);
     asUser(field(root, "u"), new FocusEvent("focusin", { bubbles: true, composed: true }));
     expect(last(r).forms.map((f) => f.kind)).toEqual(["login"]);
+  });
+
+  // Task 14 witness (seed forms-2026-11-06-a sites 57, 87, 105 and -b 12, 73: shadow roots with
+  // delayed_fields): a root attached a second after load, with no focus, was never analysed.
+  it("a root attached after start without a focus is found by the late-root checks", async () => {
+    useTimers();
+    setPage(`<lab-shell></lab-shell>`);
+    const r = begin();
+    vi.advanceTimersByTime(1_200);
+    attach(document.querySelector("lab-shell")!, "closed", LOGIN);
+    await flush();
+    expect(last(r).forms).toEqual([]);
+    vi.advanceTimersByTime(LATE_ROOT_CHECKS_MS.at(-1)!);
+    await flush();
+    expect(last(r).forms.map((f) => f.kind)).toEqual(["login"]);
+  });
+
+  it("a page with no custom element is not walked again by the late-root checks", async () => {
+    useTimers();
+    setPage(LOGIN);
+    let asked = 0;
+    run = start(undefined, { shadowRootOf: (el: Element) => (asked++, fakeOpenOrClosed(el)) });
+    await flush();
+    const before = asked;
+    vi.advanceTimersByTime(LATE_ROOT_CHECKS_MS.at(-1)!);
+    await flush();
+    expect(asked).toBe(before);
   });
 
   it("opens the menu on a trusted ArrowDown in a field of a closed root", async () => {
