@@ -40,6 +40,11 @@ export const UNKNOWN_MS = 4_000;
 export const DONE_SETTLE_MS = 1_500;
 /** A submitted form still there, same document, after this long: refused. */
 export const REPEAT_MS = 8_000;
+/**
+ * After a step that sent the identifier alone, how long the next page may take to build its
+ * password form (counted from its load) before the chain calls the sign-in done.
+ */
+export const PASSWORD_WAIT_MS = 10_000;
 
 export type ChainStatus = ChainView["status"];
 
@@ -60,6 +65,8 @@ export interface ChainStep {
   submittedAt?: number;
   /** The submit did not reach the form (re-rendered): retried once on its copy. */
   missed?: boolean;
+  /** A fill of the site's identifier without its password (the password step is still to come). */
+  identifier?: true;
   /** The retry on the copy was sent: a second miss is not retried. */
   retried?: boolean;
   label: string;
@@ -399,6 +406,7 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
     case "fill":
       st.label = fillLabel(d.fields, pname);
       if (d.fields.includes("username")) st.detail = onProvider ? (n.account?.email ?? "") : n.username;
+      if (!onProvider && d.fields.includes("username") && !d.fields.includes("password")) st.identifier = true;
       if (st.detail === "") delete st.detail;
       actions.push({ type: onProvider ? "fill_provider" : "fill", formRef: d.form.ref, fields: d.fields });
       break;
@@ -467,6 +475,7 @@ export function planStep(s: ChainState, p: PlannedStep, url: string, pageOrigin:
   else {
     st.label = fillLabel(fields, null);
     if (fields.includes("username") && n.username !== "") st.detail = n.username;
+    if (!w.onProvider && fields.includes("username") && !fields.includes("password")) st.identifier = true;
   }
   const actions: ChainAction[] = [{ type: "fill", formRef: p.formRef, fields, roles: [...p.roles] }];
   if (p.submit && n.autoSubmit) {
@@ -545,6 +554,8 @@ function unknownDue(s: ChainState): number | null {
 
 function doneDue(s: ChainState): number | null {
   if (s.page.doneAt === undefined) return null;
+  // The identifier went alone: the password form may be built late (delayed or client-rendered steps).
+  if (s.steps.at(-1)?.identifier) return (s.page.settledAt ?? s.page.doneAt) + PASSWORD_WAIT_MS;
   const loaded = s.page.settledAt === undefined ? 0 : s.page.settledAt + UNKNOWN_MS;
   return Math.max(s.page.doneAt + DONE_SETTLE_MS, loaded);
 }
@@ -712,6 +723,7 @@ function parseStep(v: unknown): ChainStep {
   if (sub !== undefined) st.submittedAt = sub;
   if (o.missed !== undefined) st.missed = bool(o.missed);
   if (o.retried !== undefined) st.retried = bool(o.retried);
+  if (o.identifier === true) st.identifier = true;
   const frameId = optInt(o.frameId);
   if (frameId !== undefined && frameId > 0) st.frameId = frameId;
   if (o.origin !== undefined) st.origin = str(o.origin, 2048);

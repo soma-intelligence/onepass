@@ -7,6 +7,7 @@ import {
   type ChainState,
   DEADLINE_MS,
   DONE_SETTLE_MS,
+  PASSWORD_WAIT_MS,
   REPEAT_MS,
   UNKNOWN_MS,
   chainView,
@@ -100,6 +101,34 @@ describe("single page", () => {
     const r = step(s, page([otpForm()], {}, `${SITE}/next`), SITE, T0 + 600);
     expect(types(r.actions)).toEqual(["stop"]);
     expect(r.state.reason).toBe("otp");
+  });
+});
+
+// Task 14 witness (seed forms-2026-11-06-a sites 38, 170, 197 login_username_first and 134, 194 multi_step,
+// delayed_fields): the password step's form was built 4 to 6 s after its page loaded, after the done verdict.
+describe("a sign-in sent with its identifier only", () => {
+  it("waits PASSWORD_WAIT_MS for the password form before it is done", () => {
+    let r = step(start(), page([userOnly()]), SITE, T0 + 100);
+    let s = navigated(r.state, `${SITE}/password`, T0 + 400);
+    s = settled(s, T0 + 500);
+    s = step(s, page([], {}, `${SITE}/password`), SITE, T0 + 600).state;
+    // Past the 4 s of an unknown page and the done settle: still waiting for the late password form.
+    expect(tick(s, T0 + 500 + UNKNOWN_MS + DONE_SETTLE_MS + 100).state.status).toBe("running");
+    r = step(s, page([passOnly()], {}, `${SITE}/password`), SITE, T0 + 500 + 5_900);
+    expect(r.actions).toEqual([
+      { type: "fill", formRef: "f2", fields: ["password"] },
+      { type: "submit", formRef: "f2" },
+    ]);
+    // No password form at all: done once PASSWORD_WAIT_MS has passed since the load.
+    expect(nextDue(s)).toBe(T0 + 500 + PASSWORD_WAIT_MS);
+    expect(tick(s, T0 + 500 + PASSWORD_WAIT_MS).state.status).toBe("done");
+  });
+
+  it("a sign-in that sent its password is done as before", () => {
+    const r = step(start(), page([loginForm()]), SITE, T0 + 100);
+    let s = settled(navigated(r.state, `${SITE}/home`, T0 + 400), T0 + 500);
+    s = step(s, page([], {}, `${SITE}/home`), SITE, T0 + 600).state;
+    expect(tick(s, T0 + 500 + UNKNOWN_MS).state.status).toBe("done");
   });
 });
 
