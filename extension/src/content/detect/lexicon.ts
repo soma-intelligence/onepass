@@ -40,11 +40,13 @@ export const SCORED_ROLES: readonly ScoredRole[] = [
 ];
 
 /**
- * Scores a resolved role also reads (forms.ts, ruling R6): a document expiry is scored as a card
+ * Scores a resolved role also reads (forms.ts, ruling R6; classifyField for e-mail): a document expiry is scored as a card
  * expiry until the form shows a document number, a license date or country as the passport's
  * terms, a department as a region. The confidence of the resolved role is the best of them.
  */
 export const ROLE_EVIDENCE: Readonly<Partial<Record<FieldRole, readonly ScoredRole[]>>> = {
+  // An e-mail control named as an account identifier ("e-mail or phone"): classifyField makes it email.
+  email: ["username"],
   passport_expiry: ["cc_exp", "cc_exp_month", "cc_exp_year"],
   license_expiry: ["cc_exp", "cc_exp_month", "cc_exp_year", "passport_expiry"],
   license_issue_date: ["passport_issue_date"],

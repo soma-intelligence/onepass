@@ -267,6 +267,19 @@ describe("buttonClass", () => {
   });
 });
 
+// Task 14 witness (seed forms-2026-11-06-a site 156, multi_step): an e-mail control labelled "e-mail o
+// teléfono" got the confidence of its type alone (0.5, below the plan's 0.6), so smart fill filled the
+// identifier step without opening the chain.
+describe("identifier confidence", () => {
+  it("an e-mail control named as an account identifier is as sure as its label", () => {
+    const { ctx } = page('<form id="f"><label for="m">e-mail o teléfono</label><input type="email" id="m" name="mvrcquohtlotoz6nw7d">'
+      + '<button type="submit">Siguiente</button></form>');
+    const f = ctx.forms[0]!.fields[0]!;
+    expect(f.role).toBe("email");
+    expect(f.confidence).toBeGreaterThanOrEqual(0.6);
+  });
+});
+
 describe("confidenceOf", () => {
   it("confidence_in_unit_range", () => {
     for (const s of [-5, 0, 0.1, 2.5, 6, 100, 1e9, Number.NaN, Number.POSITIVE_INFINITY]) {
