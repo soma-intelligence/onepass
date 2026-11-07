@@ -168,14 +168,32 @@ export class Overlays {
     return rec;
   }
 
+  /** The sign-ins the overlay shows in tab `tabId` at `origin`, and whether the page is provider-only. */
+  private async accountsFor(tabId: number, origin: string, documentId: string | undefined): Promise<{ accounts: OverlayAccount[]; only: boolean }> {
+    const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin });
+    const choices = this.deps.local ? await signInChoices(this.deps.session, this.deps.local, "overlay", origin, items) : [];
+    // A provider-only page (spec E1): only the sign-ins through the providers it shows.
+    const only = await this.deps.chain.providerOnly?.(tabId, documentId);
+    const all = overlayAccounts(items, choices);
+    return { accounts: only ? all.filter((x) => x.provider !== undefined && only.includes(x.provider)) : all, only: !!only };
+  }
+
+  /**
+   * Smart fill on a provider-only page (the toolbar's Fill, no field): the one sign-in the overlay
+   * would offer there, through its provider; false when the page has forms or offers zero or several.
+   */
+  async providerSignIn(cs: CsContext): Promise<boolean> {
+    if (cs.frameId !== 0) return false;
+    const { accounts, only } = await this.accountsFor(cs.tabId, cs.origin, cs.documentId);
+    const a = accounts[0];
+    if (!only || accounts.length !== 1 || a?.provider === undefined) return false;
+    await this.deps.chain.start(cs.tabId, a.itemId, a.provider, a.accountId !== undefined ? { accountId: a.accountId } : {});
+    return true;
+  }
+
   async init(token: string, ui: UiContext): Promise<OverlayInit> {
     const rec = await this.record(token, ui);
-    const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "overlay", origin: rec.origin });
-    const choices = this.deps.local ? await signInChoices(this.deps.session, this.deps.local, "overlay", rec.origin, items) : [];
-    // A provider-only page (spec E1): only the sign-ins through the providers it shows.
-    const only = await this.deps.chain.providerOnly?.(rec.tabId, rec.documentId);
-    const all = overlayAccounts(items, choices);
-    const accounts = only ? all.filter((x) => x.provider !== undefined && only.includes(x.provider)) : all;
+    const { accounts } = await this.accountsFor(rec.tabId, rec.origin, rec.documentId);
     const offered: Record<string, OverlayOffer> = {};
     const shown: Record<string, string[]> = {};
     for (const a of accounts) {

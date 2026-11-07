@@ -10,7 +10,7 @@ import { BridgeAppError } from "../src/bridge/client";
 import { NOTE_NAV_MS } from "../src/background/notes";
 import { penaltyKey } from "../src/background/penalty";
 import { MemoryPairingStore, Store } from "../src/background/store";
-import type { FieldRole, FormContext, PlanOut } from "../src/shared/messages";
+import type { FieldRole, FormContext, PlanOut, ProviderId } from "../src/shared/messages";
 import { FakeClient, record } from "./background/fake-client";
 import { FakeExt, NO_REPLY, csSender, uiSender } from "./background/fake-ext";
 
@@ -67,6 +67,7 @@ async function bg(
   next: () => PlanOut,
   extra: (r: Record<string, unknown>) => unknown = () => undefined,
   nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>,
+  providerOnly?: () => Promise<ProviderId[] | null>,
 ) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
@@ -77,6 +78,7 @@ async function bg(
     start: async (...a: unknown[]) => void chainCalls.push(a),
     stop: async () => undefined,
     state: async () => null,
+    ...(providerOnly ? { providerOnly } : {}),
   };
   const client = new FakeClient((r) => {
     const x = extra(r);
@@ -495,6 +497,34 @@ describe("forms coverage, Task 12: a menu pick of an identity asks the documents
   it("no analysis of the form: no extras", async () => {
     const t = await identityBg();
     expect(await pick(t)).toEqual([undefined]);
+  });
+});
+
+// Task 14 witness (seeds forms-2026-11-06-a sites 5, 51, 58, 158 and -b 5, 20, 28, 37, 147, 150, 181, 199):
+// a page whose only way in is a provider button gave the toolbar's Fill nothing to do.
+describe("smart fill on a provider-only page", () => {
+  const via = (id: string, provider: string) => ({
+    ...summary(id, "dorian@example.org"), has_password: false, methods: [{ provider, account_email: "dorian@example.org" }],
+  });
+  const nothing = () => plan({ intent: "unknown" as PlanOut["intent"], action: "nothing", confidence: "low" });
+
+  it("the toolbar's Fill signs in through the provider of the only item that has it", async () => {
+    const t = await bg(nothing, (r) => (r.op === "list_for_origin" ? { items: [via(A, "apple"), summary(B, "bo@atlas.dev")] } : undefined),
+      undefined, async () => ["apple"]);
+    const r = await t.ext.send({ type: "plan_context", context: body([]) }, t.top);
+    expect(r).toEqual({ ok: { outcome: "chain" } });
+    expect(t.chainCalls).toEqual([[7, A, "apple", {}]]);
+  });
+
+  it("two items through the page's providers, a page with forms, or an icon click: no sign-in", async () => {
+    const two = await bg(nothing, (r) => (r.op === "list_for_origin" ? { items: [via(A, "apple"), via(B, "google")] } : undefined),
+      undefined, async () => ["apple", "google"]);
+    expect(await two.ext.send({ type: "plan_context", context: body([]) }, two.top)).toEqual({ ok: { outcome: "nothing" } });
+    expect(two.chainCalls).toEqual([]);
+    const forms = await bg(nothing, (r) => (r.op === "list_for_origin" ? { items: [via(A, "apple")] } : undefined),
+      undefined, async () => null);
+    expect(await forms.ext.send({ type: "plan_context", context: body([]) }, forms.top)).toEqual({ ok: { outcome: "nothing" } });
+    expect(forms.chainCalls).toEqual([]);
   });
 });
 

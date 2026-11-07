@@ -483,7 +483,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (m.fieldRef !== undefined) run.anchorRef = m.fieldRef;
         const key = `${from.tabId}:${from.frameId}`;
         refusedRuns.delete(key);
-        const outcome = await planner.run(t, plan, run);
+        let outcome = await planner.run(t, plan, run);
+        // The toolbar's Fill on a provider-only page: the overlay's one sign-in, through its provider.
+        if (outcome === "nothing" && m.formRef === undefined && (await overlays.providerSignIn(from))) outcome = "chain";
         const refused = refusedRuns.delete(key);
         if (outcome === "menu") {
           const ctx = planner.contextOf(plan);
