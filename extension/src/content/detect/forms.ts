@@ -563,9 +563,17 @@ function resolvePasswords(fields: Classified[]): void {
     for (const f of news.slice(1)) f.role = "confirm_password";
     return;
   }
+  const [first, second] = pw;
+  // A confirmation confirms a password before it: of two guessed fields, a first one read as a
+  // confirmation ("password_confirm" under "New password") is the new password, the second its confirmation.
+  if (pw.length === 2 && first?.role === "confirm_password" && !first.direct && !second?.direct
+    && (second?.role === "confirm_password" || second?.role === "new_password")) {
+    first.role = "new_password";
+    second.role = "confirm_password";
+    return;
+  }
   // A confirmation confirms a new password: a guessed "password" before it,
   // with no new one in the group, is that new password (a signup).
-  const [first, second] = pw;
   if (pw.length === 2 && first?.role === "current_password" && !first.direct && second?.role === "confirm_password") {
     first.role = "new_password";
     return;

@@ -67,6 +67,22 @@ describe("analyzeDocument: form kinds", () => {
     expect(roles(a.forms[0]!, refs)).toEqual({ e: "email", a: "new_password", b: "confirm_password" });
   });
 
+  // Task 14 witness (seeds forms-2026-11-06-a sites 60, 71, 136, 182 and -b 32): names that say "confirm"
+  // on the first of two password fields left the signup with no new password, so no menu.
+  it("a signup's first password field is the new one, whatever its name, when the second confirms it", () => {
+    const pw = (name: string, label: string) => `<label for="${name}">${label}</label><input id="${name}" name="${name}" type="password">`;
+    const run = (html: string) => {
+      document.body.innerHTML = `<form id="f"><label for="e">Adresse email</label><input id="e" type="email">${html}<button type="submit">Créer</button></form>`;
+      const refs = new RefRegistry();
+      const a = analyzeDocument(document, refs, { url: SITE, geometry: testGeometry });
+      return { kind: a.forms[0]!.kind, roles: roles(a.forms[0]!, refs) };
+    };
+    expect(run(pw("password_confirm", "Nouveau mot de passe") + pw("password_confirmation", "Choisissez un mot de passe")))
+      .toEqual({ kind: "signup", roles: { e: "email", password_confirm: "new_password", password_confirmation: "confirm_password" } });
+    expect(run(pw("password_confirmation", "Crea una password") + pw("join-password", "Conferma password")))
+      .toEqual({ kind: "signup", roles: { e: "email", password_confirmation: "new_password", "join-password": "confirm_password" } });
+  });
+
   it("change password", () => {
     const { a, refs } = analyze("change-password.html");
     expect(a.forms.map((f) => f.kind)).toEqual(["change_password"]);
