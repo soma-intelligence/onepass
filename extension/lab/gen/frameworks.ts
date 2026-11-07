@@ -47,6 +47,8 @@ const FRAMEWORK_JS = `(function () {
   }
   function rerender(form) {
     Array.prototype.forEach.call(controls(form), function (el) {
+      // A controlled radio or checkbox holds its checked state, never its option value.
+      if (el.type === "radio" || el.type === "checkbox") return;
       var v = state[el.name] === undefined ? "" : state[el.name];
       if (el.value !== v) el.value = v;
     });

@@ -346,6 +346,30 @@ describe("renderSitePage", () => {
     expect(run("static").doc.querySelectorAll("script").length).toBe(0);
   });
 
+  it("framework rerender keeps the values of radio buttons and checkboxes", async () => {
+    // A controlled radio group keeps its option values: a rerender after another field's input never blanks them.
+    const radio = big.sites.find((s) => s.fields.some((f) => f.render?.choice?.kind === "radio") && !s.traits.some((t) => t.startsWith("iframe_") || t.startsWith("shadow_") || t === "delayed_fields" || t === "spa_rerender"));
+    expect(radio).toBeDefined();
+    for (const fw of ["react", "vue"] as const) {
+      const site = { ...radio!, framework: fw };
+      const dom = new JSDOM(renderSitePage(site, "entry", {}), { runScripts: "dangerously" });
+      const doc = dom.window.document;
+      const text = site.fields.find((f) => f.type !== "radio" && f.type !== "select")!;
+      const group = site.fields.find((f) => f.render?.choice?.kind === "radio")!;
+      const before = [...doc.querySelectorAll<HTMLInputElement>(`input[name="${group.name}"]`)].map((r) => r.value);
+      const t = doc.querySelector<HTMLInputElement>(`[id="${text.id}"]`)!;
+      t.value = "x";
+      t.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      await Promise.resolve();
+      const first = doc.querySelector<HTMLInputElement>(`[id="${group.id}-1"]`)!;
+      first.checked = true;
+      first.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      await Promise.resolve();
+      expect([...doc.querySelectorAll<HTMLInputElement>(`input[name="${group.name}"]`)].map((r) => r.value), fw).toEqual(before);
+      expect(before.every((v) => v !== ""), fw).toBe(true);
+    }
+  });
+
   it("delayed_fields_insert_form_later", async () => {
     const site = withTraits(plainLogin, { traits: ["delayed_fields"], delayMs: 20 });
     const dom = new JSDOM(renderSitePage(site, "entry", {}), { runScripts: "dangerously" });
