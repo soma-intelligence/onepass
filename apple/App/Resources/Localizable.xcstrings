@@ -38330,6 +38330,186 @@
         }
       }
     },
+    "settings.deleteAccount" : {
+      "comment" : "Réglages > Sécurité: delete account button and password prompt title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete My Account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar mi cuenta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer mon compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina il mio account"
+          }
+        }
+      }
+    },
+    "settings.deleteAccount.confirmButton" : {
+      "comment" : "Réglages > Sécurité: delete account destructive confirm button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Permanently"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar definitivamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer définitivement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina definitivamente"
+          }
+        }
+      }
+    },
+    "settings.deleteAccount.confirmMessage" : {
+      "comment" : "Réglages > Sécurité: delete account confirmation message",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your vaults, items and Secret Key will be erased from this device and from iCloud. This can't be undone: without another linked device, nothing can be restored, even with your Emergency Kit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus bóvedas, tus elementos y tu Secret Key se borrarán de este dispositivo y de iCloud. No se puede deshacer: sin otro dispositivo vinculado, no se podrá restaurar nada, ni siquiera con tu Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tes coffres, tes éléments et ta Secret Key seront effacés de cet appareil et d'iCloud. C'est définitif : sans autre appareil lié, rien ne pourra être restauré, même avec ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le tue casseforti, i tuoi elementi e la tua Secret Key verranno cancellati da questo dispositivo e da iCloud. Non si può annullare: senza un altro dispositivo collegato non si potrà ripristinare nulla, nemmeno con il tuo Emergency Kit."
+          }
+        }
+      }
+    },
+    "settings.deleteAccount.confirmTitle" : {
+      "comment" : "Réglages > Sécurité: delete account confirmation title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Your Account?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar tu cuenta?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer ton compte ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminare il tuo account?"
+          }
+        }
+      }
+    },
+    "settings.deleteAccount.footer" : {
+      "comment" : "Réglages > Sécurité: delete account footer",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erases your account from this device and from iCloud. Another device still linked would put it back in iCloud: erase that one too."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borra tu cuenta de este dispositivo y de iCloud. Otro dispositivo aún vinculado la volvería a subir a iCloud: bórralo también."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Efface ton compte de cet appareil et d'iCloud. Un autre appareil encore lié le remettrait dans iCloud : efface-le aussi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella il tuo account da questo dispositivo e da iCloud. Un altro dispositivo ancora collegato lo rimetterebbe su iCloud: cancella anche quello."
+          }
+        }
+      }
+    },
+    "settings.deleteAccount.promptFooter" : {
+      "comment" : "Réglages > Sécurité: delete account password prompt footer",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password confirms the deletion."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra confirma la eliminación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton mot de passe maître confirme la suppression."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua password principale conferma l'eliminazione."
+          }
+        }
+      }
+    },
     "settings.importDryRun %lld %lld %lld %lld %lld" : {
       "extractionState" : "manual",
       "localizations" : {

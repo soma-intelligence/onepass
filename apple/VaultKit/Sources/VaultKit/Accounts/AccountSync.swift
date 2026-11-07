@@ -60,6 +60,18 @@ public actor AccountSync: SyncTrigger {
         }
     }
 
+    /// No coordinator yet on a build that syncs: the server copy cannot be reached, so nothing is
+    /// erased (an unlocked session always has one).
+    public func eraseAccount(with reset: @escaping @Sendable () throws -> Void) async throws {
+        if let coordinator {
+            try await coordinator.eraseAccount(with: reset)
+        } else if syncsWithServer {
+            throw VaultError.other(SyncTriggerMessages.offline)
+        } else {
+            try await CoreThread.run(reset)
+        }
+    }
+
     public func safeExitIssued(_ exit: SafeExit) async {
         await coordinator?.safeExitIssued(exit)
     }

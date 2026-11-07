@@ -271,6 +271,15 @@ public actor InMemoryRemote: RemoteRecordStore {
         resetPending = true
     }
 
+    /// "Supprimer mon compte": every record goes, like `simulateReset`; another device's next fetch or
+    /// send meets the lost zone.
+    public func deleteZone() async throws {
+        try checkOffline()
+        records.removeAll()
+        withheld.removeAll()
+        resetPending = true
+    }
+
     public func setAccountAvailable(_ available: Bool) {
         self.available = available
     }

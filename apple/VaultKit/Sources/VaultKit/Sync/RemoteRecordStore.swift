@@ -104,10 +104,17 @@ public protocol RemoteRecordStore: Sendable {
     func accountIdentity() async throws -> String?
     func accountChangeCount() async -> UInt64
     func accountRecordIDs() async throws -> Set<String>
+    /// Deletes the account's zone and everything in it ("Supprimer mon compte"). A zone already gone
+    /// is not an error. Default: refused, so a remote that cannot delete never looks deleted.
+    func deleteZone() async throws
 }
 
 extension RemoteRecordStore {
     public func accountChangeCount() async -> UInt64 { 0 }
+
+    public func deleteZone() async throws {
+        throw RemoteStoreError.other(SyncTriggerMessages.serverEraseUnsupported)
+    }
 
     public func accountRecordIDs() async throws -> Set<String> {
         var ids: Set<String> = []

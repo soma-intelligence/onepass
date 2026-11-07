@@ -1041,6 +1041,16 @@ final class AppModel {
         onboardingInProgress = true
     }
 
+    /// "Supprimer mon compte" (Réglages > Sécurité, App Review 5.1.1(v)): the account's iCloud zone,
+    /// then this device (`VaultSession.deleteAccount`). Done, the settings close and the onboarding
+    /// starts. Nothing is erased when it throws.
+    func deleteAccount(password: SecretBytes) async throws {
+        try await session.deleteAccount(password: password)
+        showSettings = false
+        onboardingStart = nil
+        onboardingInProgress = true
+    }
+
     // MARK: - iCloud account change
 
     /// What the zone of the signed-in iCloud account holds (thrown errors: network, no account).

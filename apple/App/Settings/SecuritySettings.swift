@@ -2,7 +2,8 @@ import SwiftUI
 import VaultKit
 
 /// Sécurité: biometric unlock (asks the master password to turn on), Apple Watch (Mac), the
-/// 14 day password reminder, device mode, visible vaults (shared mode), lock now.
+/// 14 day password reminder, device mode, visible vaults (shared mode), lock now, delete the account
+/// (App Review 5.1.1(v): this device and iCloud).
 struct SecuritySettings: View {
     @Environment(AppModel.self) private var model
 
@@ -24,6 +25,8 @@ struct SecuritySettings: View {
     @State private var pendingMode: DeviceMode?
     @State private var errorMessage: String?
     @State private var changingPassword = false
+    @State private var confirmingDelete = false
+    @State private var deletingAccount = false
 
     private var session: VaultSession { model.session }
     private var settings: VaultSettings { model.settings }
@@ -51,6 +54,12 @@ struct SecuritySettings: View {
                 }
                     .accessibilityIdentifier("settings.lockNow")
             }
+            Section {
+                Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                    .accessibilityIdentifier("settings.deleteAccount")
+            } footer: {
+                Text("settings.deleteAccount.footer")
+            }
             if let errorMessage {
                 Section {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -61,6 +70,18 @@ struct SecuritySettings: View {
         }
         .settingsPage("Sécurité")
         .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
+        .sheet(isPresented: $deletingAccount) {
+            PasswordPromptSheet(title: "settings.deleteAccount", footer: "settings.deleteAccount.promptFooter") { password in
+                try await model.deleteAccount(password: password)
+            }
+        }
+        .confirmationDialog("settings.deleteAccount.confirmTitle", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("settings.deleteAccount.confirmButton", role: .destructive) { deletingAccount = true }
+                .accessibilityIdentifier("settings.deleteAccount.confirm")
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("settings.deleteAccount.confirmMessage")
+        }
         .sheet(item: $prompt) { current in
             PasswordPromptSheet(title: promptTitle(current), footer: promptFooter(current)) { password in
                 try await confirm(current, password: password)

@@ -229,6 +229,19 @@ public actor CloudKitRemote: RemoteRecordStore {
         }
     }
 
+    // MARK: - Delete
+
+    /// Deletes this account's zone and its records. A zone already gone counts as deleted. The next
+    /// fetch or send creates the zone again, empty.
+    public func deleteZone() async throws {
+        do {
+            _ = try await database.modifyRecordZones(saving: [], deleting: [zoneID])
+        } catch {
+            guard CloudKitMapping.zoneLoss(in: error) != nil else { throw CloudKitMapping.storeError(for: error) }
+        }
+        zoneReady = false
+    }
+
     // MARK: - Setup
 
     private func ensureZone() async throws {

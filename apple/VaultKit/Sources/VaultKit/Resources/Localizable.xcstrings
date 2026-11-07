@@ -4291,6 +4291,36 @@
         }
       }
     },
+    "session.deleteAccountPrompt" : {
+      "comment" : "Face ID / Touch ID prompt before deleting the account",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete your OnePass account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar tu cuenta de OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer ton compte OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina il tuo account OnePass"
+          }
+        }
+      }
+    },
     "session.deviceCannotRemoveItself" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6955,6 +6985,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossibile leggere questo account iCloud. Controlla la connessione, poi riprova."
+          }
+        }
+      }
+    },
+    "sync.deleteAccount.noIcloud" : {
+      "comment" : "Delete account: no iCloud account signed in, nothing erased",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to iCloud so the iCloud copy is deleted too. Nothing was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión en iCloud para borrar también la copia de iCloud. No se ha borrado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecte-toi à iCloud pour supprimer aussi la copie iCloud. Rien n'a été effacé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accedi a iCloud per eliminare anche la copia su iCloud. Non è stato cancellato nulla."
+          }
+        }
+      }
+    },
+    "sync.deleteAccount.offline" : {
+      "comment" : "Delete account: iCloud unreachable, nothing erased",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud can't be reached. Nothing was erased: try again once you're online."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder a iCloud. No se ha borrado nada: vuelve a intentarlo cuando tengas conexión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud est injoignable. Rien n'a été effacé : réessaie une fois connecté."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud non è raggiungibile. Non è stato cancellato nulla: riprova quando sei online."
+          }
+        }
+      }
+    },
+    "sync.deleteAccount.otherAppleID" : {
+      "comment" : "Delete account: another Apple Account is signed in, nothing erased",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Apple Account signed in isn't the one this account syncs with. Nothing was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cuenta de Apple con la sesión iniciada no es la de esta cuenta. No se ha borrado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'identifiant Apple connecté n'est pas celui de ce compte. Rien n'a été effacé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'Account Apple connesso non è quello di questo account. Non è stato cancellato nulla."
+          }
+        }
+      }
+    },
+    "sync.deleteAccount.unsupported" : {
+      "comment" : "Delete account: this sync mode can't delete the server copy, nothing erased",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This sync mode can't delete the server copy yet. Nothing was erased."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este modo de sincronización aún no puede borrar la copia del servidor. No se ha borrado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce mode de synchronisation ne permet pas encore de supprimer la copie du serveur. Rien n'a été effacé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa modalità di sincronizzazione non può ancora eliminare la copia sul server. Non è stato cancellato nulla."
           }
         }
       }

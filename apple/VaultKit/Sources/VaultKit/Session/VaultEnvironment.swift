@@ -9,6 +9,12 @@ public protocol SyncTrigger: Sendable {
     /// Runs `reset` (which empties the local store) with exclusive access to the store, then forgets
     /// whatever the sync layer kept about it. Default: runs it on the core thread.
     func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws
+    /// "Supprimer mon compte": deletes what the server holds for this account, then runs `reset` (which
+    /// empties the local store) with exclusive access to the store, so no sync puts anything back in
+    /// between. Throws before `reset` when the server copy cannot be deleted: nothing is erased.
+    /// Default: no server, the local reset only; a sync layer that syncs with a server and cannot
+    /// delete its copy refuses.
+    func eraseAccount(with reset: @escaping @Sendable () throws -> Void) async throws
     /// A safe exit issued its restore epoch on the session handed over by `sessionUnlocked`: the sync
     /// layer pushes it and follows it until the server serves this device's state. Default: nothing.
     func safeExitIssued(_ exit: SafeExit) async
@@ -28,6 +34,27 @@ extension SyncTrigger {
 
     public func resetStore(with reset: @escaping @Sendable () throws -> Void) async throws {
         try await CoreThread.run(reset)
+    }
+
+    public func eraseAccount(with reset: @escaping @Sendable () throws -> Void) async throws {
+        guard !syncsWithServer else { throw VaultError.other(SyncTriggerMessages.serverEraseUnsupported) }
+        try await resetStore(with: reset)
+    }
+}
+
+/// Messages of `SyncTrigger.eraseAccount`.
+enum SyncTriggerMessages {
+    static var serverEraseUnsupported: String {
+        String(localized: "sync.deleteAccount.unsupported", bundle: VaultKitStrings.bundle)
+    }
+    static var offline: String {
+        String(localized: "sync.deleteAccount.offline", bundle: VaultKitStrings.bundle)
+    }
+    static var noICloud: String {
+        String(localized: "sync.deleteAccount.noIcloud", bundle: VaultKitStrings.bundle)
+    }
+    static var otherAppleID: String {
+        String(localized: "sync.deleteAccount.otherAppleID", bundle: VaultKitStrings.bundle)
     }
 }
 

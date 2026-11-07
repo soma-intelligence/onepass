@@ -490,6 +490,46 @@ public final class VaultSession {
         if !settings.revokedErasePending { evaluateStoredAccount() }
     }
 
+    /// "Supprimer mon compte" (App Review 5.1.1(v)), from an unlocked session, after a fresh presence
+    /// (Face ID or Touch ID, else `password`). The session is locked, then the sync layer deletes the
+    /// account's iCloud zone and empties the store in one exclusive step (`SyncTrigger.eraseAccount`);
+    /// the Secret Key, the biometric enrollment, the account settings and the system identity store go
+    /// after. Ends in `.noAccount`. When iCloud cannot be reached, is signed out or holds another Apple
+    /// ID, it throws with nothing erased, and the session stays locked. Other accounts on the device
+    /// are untouched.
+    public func deleteAccount(password: SecretBytes? = nil) async throws {
+        guard state == .unlocked else { throw fail(.passwordRequired) }
+        try await confirmPresence(password: password, prompt: Self.deleteAccountPrompt)
+        guard state == .unlocked else { throw fail(.passwordRequired) }
+        lock(publishPending: false)
+        // Every session on the store is closed before the tables are emptied.
+        await releaseChain?.value
+        let path = dbPath
+        do {
+            try await environment.sync.eraseAccount { try resetStore(dbPath: path) }
+        } catch {
+            Self.log.error("account not deleted")
+            evaluateStoredAccount()
+            throw fail(VaultError(error))
+        }
+        forgetErasedAccount()
+        settings.revokedLocked = false
+        settings.revokedErasePending = false
+        evaluateStoredAccount()
+        if state == .noAccount { lastError = nil }
+    }
+
+    /// `deleteAccount(password:)` with a typed `String` (tests).
+    public func deleteAccount(password: String) async throws {
+        let bytes = SecretBytes(utf8: password)
+        defer { bytes.wipe() }
+        try await deleteAccount(password: bytes)
+    }
+
+    nonisolated static var deleteAccountPrompt: String {
+        String(localized: "session.deleteAccountPrompt", bundle: VaultKitStrings.bundle)
+    }
+
     /// The erase of a revoked device (`eraseRevokedDevice`), again after a failure (L6).
     private func retryRevokedErase() async {
         // Every session on the store is closed before the tables are emptied.

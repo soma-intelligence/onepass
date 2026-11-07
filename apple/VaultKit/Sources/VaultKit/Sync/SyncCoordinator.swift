@@ -309,6 +309,45 @@ public actor SyncCoordinator: SyncTrigger {
         await acquire()
         defer { release() }
         try await CoreThread.run(reset)
+        forgetStoreState()
+    }
+
+    /// "Supprimer mon compte" (App Review 5.1.1(v)): with the store held, the account's zone is deleted,
+    /// then `reset` empties the store, so no round sends the records back in between. The zone is
+    /// deleted only when the signed-in Apple ID is the one this store synced with; a store that never
+    /// synced holds nothing in the zone and only the local reset runs. iCloud unreachable, signed out
+    /// or another Apple ID: throws before `reset`, nothing is erased. Another device still linked
+    /// uploads its copy again at its next round (as after "Supprimer les données" in iCloud settings).
+    public func eraseAccount(with reset: @escaping @Sendable () throws -> Void) async throws {
+        await acquire()
+        defer { release() }
+        if let remote { try await deleteZone(of: remote) }
+        try await CoreThread.run(reset)
+        forgetStoreState()
+    }
+
+    private func deleteZone(of remote: any RemoteRecordStore) async throws {
+        let store = store
+        let bound = try await CoreThread.run { try store.meta(key: Self.accountKey) }
+        guard let bound, !bound.isEmpty else { return }
+        guard await remote.accountAvailable() else { throw VaultError.other(SyncTriggerMessages.noICloud) }
+        do {
+            guard let identity = try await remote.accountIdentity(), Data(identity.utf8) == bound else {
+                throw VaultError.other(SyncTriggerMessages.otherAppleID)
+            }
+            try await remote.deleteZone()
+        } catch let error as VaultError {
+            throw error
+        } catch RemoteStoreError.other(let message) {
+            throw VaultError.other(message)
+        } catch {
+            Self.log.error("account zone not deleted")
+            throw VaultError.other(SyncTriggerMessages.offline)
+        }
+    }
+
+    /// What the coordinator kept about a store that was just emptied.
+    private func forgetStoreState() {
         refusal = nil
         health = []
         safeExit = nil

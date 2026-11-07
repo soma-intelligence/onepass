@@ -87,6 +87,10 @@ public actor SyncRouter: SyncTrigger {
         try await current.resetStore(with: reset)
     }
 
+    public func eraseAccount(with reset: @escaping @Sendable () throws -> Void) async throws {
+        try await current.eraseAccount(with: reset)
+    }
+
     public func safeExitIssued(_ exit: SafeExit) async { await current.safeExitIssued(exit) }
 
     public func syncNow() async { await current.syncNow() }
