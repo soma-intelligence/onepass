@@ -26,6 +26,8 @@ pub enum Scope {
     Metadata,
     /// Use secrets without seeing them (`run_with_secrets`, `fill_template`).
     Use,
+    /// Fill a login or a card into a web page (`fill_in_browser`), never returning values.
+    Fill,
     /// Create items (`create_login`).
     Write,
     /// Read current one-time codes.
@@ -36,9 +38,10 @@ pub enum Scope {
 
 impl Scope {
     /// Every scope, in order.
-    pub const ALL: [Scope; 5] = [
+    pub const ALL: [Scope; 6] = [
         Scope::Metadata,
         Scope::Use,
+        Scope::Fill,
         Scope::Write,
         Scope::Totp,
         Scope::Reveal,
@@ -49,6 +52,7 @@ impl Scope {
         match self {
             Scope::Metadata => "metadata",
             Scope::Use => "use",
+            Scope::Fill => "fill",
             Scope::Write => "write",
             Scope::Totp => "totp",
             Scope::Reveal => "reveal",
@@ -497,6 +501,16 @@ mod tests {
             Policy::default_for(ACCOUNT)
         );
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn fill_scope_round_trips_and_is_off_by_default() {
+        assert_eq!(Scope::Fill.as_str(), "fill");
+        assert_eq!(serde_json::to_string(&Scope::Fill).unwrap(), "\"fill\"");
+        assert!(Scope::ALL.contains(&Scope::Fill));
+        let p = Policy::default_for(ACCOUNT);
+        assert!(!p.scopes_for("any").contains(&Scope::Fill));
+        assert!(!default_client_scopes(["a".to_owned()])["a"].contains(&Scope::Fill));
     }
 
     #[test]
