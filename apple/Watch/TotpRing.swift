@@ -17,7 +17,7 @@ struct TotpRing: View {
             Circle().stroke(.quaternary, lineWidth: 3)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(Theme.Wash.countdownColor(Color.accentColor, secondsLeft: Double(remaining)),
+                .stroke(Theme.Wash.countdownColor(Theme.accent, secondsLeft: Double(remaining)),
                         style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: fraction)
