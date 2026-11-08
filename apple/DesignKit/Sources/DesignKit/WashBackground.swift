@@ -28,7 +28,7 @@ private struct WashBackground<S: Shape, Style: ShapeStyle>: ViewModifier {
                 shape.fill(flat)
             } else {
                 shape.fill(style)
-                    .opacity(appeared ? Self.fullOpacity : 0)
+                    .opacity(appeared || reduceMotion ? Self.fullOpacity : 0)
                     .onAppear {
                         if reduceMotion {
                             appeared = true
