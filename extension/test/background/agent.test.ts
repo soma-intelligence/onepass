@@ -2,7 +2,7 @@
 // fill of the probed document only, field names out, and the loop's own
 // session that reconnects.
 import { describe, expect, it, vi } from "vitest";
-import { type FillJob, fillForAgent, probeActiveTab, startAgentLoop } from "../../src/background/agent";
+import { type FillJob, fillForAgent, probeActiveTab, startAgentLoop, startAgentLoopIfChromium } from "../../src/background/agent";
 import type { BgExt, WindowTab } from "../../src/background/ext";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { BridgeError } from "../../src/bridge/bytes";
@@ -188,7 +188,7 @@ describe("agent fill", () => {
     page(ext, [loginForm]);
     const client = await openClient(plans);
     const r = await fillForAgent({ ext, client }, loginJob({ submit: true }));
-    expect(r).toEqual({ filled: ["username", "current_password"], submitted: true });
+    expect(r).toEqual({ filled: ["username", "password"], submitted: true });
     expect(JSON.stringify(r)).not.toContain(PASSWORD);
     expect(JSON.stringify(r)).not.toContain("alex@atlas.dev");
     // Planned without a typed-username hash, filled with the job's item, ctx agent and the request id.
@@ -214,10 +214,95 @@ describe("agent fill", () => {
     page(ext, [cardForm]);
     const client = await openClient(plans);
     const r = await fillForAgent({ ext, client }, loginJob({ kind: "card", submit: true }));
-    expect(r).toEqual({ filled: ["cc_number", "cc_exp"], submitted: false });
+    expect(r).toEqual({ filled: ["number", "expiry"], submitted: false });
     expect(JSON.stringify(r)).not.toContain(CARD_NUMBER);
     expect(client.requests.find((q) => q.op === "fill_card")).toMatchObject({ ctx: "agent", agent_request: 7, item_id: "job-item" });
     expect(ext.sentToTabs.some((s) => (s.message as { type: string }).type === "submit")).toBe(false);
+  });
+});
+
+describe("agent submit guard and reply", () => {
+  /** `plans`, with the login plan's intent and reasons replaced. */
+  const planWith =
+    (intent: string, reasons: string[]): Answer =>
+    (r) => {
+      const out = plans(r) as { plan?: { intent: string; reasons: string[] } };
+      if (r.op === "plan_fill" && out.plan) {
+        out.plan.intent = intent;
+        out.plan.reasons = reasons;
+      }
+      return out;
+    };
+
+  for (const [intent, reasons] of [
+    ["login", ["pay_button"]],
+    ["login", ["create_button"]],
+    ["signup", []],
+    ["checkout", []],
+  ] as const) {
+    it(`never submits a ${intent} plan with [${reasons.join(",")}]`, async () => {
+      const ext = withWindow([{ id: 7, active: true, title: "Atlas" }]);
+      ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+      page(ext, [loginForm]);
+      const client = await openClient(planWith(intent, [...reasons]));
+      const r = await fillForAgent({ ext, client }, loginJob({ submit: true }));
+      expect(r).toEqual({ filled: ["username", "password"], submitted: false });
+      expect(ext.sentToTabs.some((s) => (s.message as { type: string }).type === "submit")).toBe(false);
+    });
+  }
+
+  it("submits an otp plan without pay or create button", async () => {
+    const ext = withWindow([{ id: 7, active: true, title: "Atlas" }]);
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    page(ext, [loginForm]);
+    const client = await openClient(planWith("otp", ["single_candidate"]));
+    expect(await fillForAgent({ ext, client }, loginJob({ submit: true }))).toEqual({ filled: ["username", "password"], submitted: true });
+  });
+
+  it("answers no_fields when the content script reply lists nothing", async () => {
+    const ext = withWindow([{ id: 7, active: true, title: "Atlas" }]);
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    page(ext, [loginForm]);
+    const base = ext.tabReply;
+    ext.tabReply = (t, m, o) => ((m as { type: string }).type === "fill" ? { ok: true } : base?.(t, m, o));
+    const client = await openClient(plans);
+    expect(await fillForAgent({ ext, client }, loginJob({ submit: true }))).toBe("no_fields");
+    expect(ext.sentToTabs.some((s) => (s.message as { type: string }).type === "submit")).toBe(false);
+  });
+});
+
+describe("agent loop gate", () => {
+  for (const [name, base] of [
+    ["Firefox", "moz-extension://abc/"],
+    ["Safari", "safari-web-extension://abc/"],
+  ] as const) {
+    it(`starts nothing on ${name}`, async () => {
+      const ext = withWindow([]);
+      const store = new Store(ext, new MemoryPairingStore());
+      await store.setPairing(record());
+      let made = 0;
+      const handle = startAgentLoopIfChromium({ getURL: (p) => base + p }, {
+        ext,
+        store,
+        newClient: () => {
+          made++;
+          return new FakeClient(() => new Promise(() => undefined));
+        },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(handle).toBeNull();
+      expect(made).toBe(0);
+    });
+  }
+
+  it("starts on Chromium", async () => {
+    const ext = withWindow([]);
+    const store = new Store(ext, new MemoryPairingStore());
+    await store.setPairing(record());
+    const c = new FakeClient((r) => (r.op === "agent_wait" ? new Promise(() => undefined) : {}));
+    const handle = startAgentLoopIfChromium(ext.runtime, { ext, store, newClient: () => c });
+    await vi.waitFor(() => expect(c.requests.some((r) => r.op === "agent_wait")).toBe(true));
+    handle?.stop();
   });
 });
 

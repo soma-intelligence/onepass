@@ -22,7 +22,7 @@ import { wipe } from "../bridge/bytes";
 import type { AgentErrorCode, AgentFilled, AgentJob, AgentProbe, Op, RequestFor, ResponseFor } from "../bridge/client";
 import type { PairingRecord } from "../bridge/pairing";
 import { parseOrigin } from "../shared/domain";
-import type { FieldRole, PageContext, PlanGroupOut } from "../shared/messages";
+import type { FieldRole, PageContext, PlanGroupOut, PlanOut } from "../shared/messages";
 import type { BgExt } from "./ext";
 import { type FillTarget, Filler } from "./fill";
 import { Frames } from "./frames";
@@ -69,6 +69,29 @@ export interface Probed {
   tabId: number;
   origin: string;
   documentId: string;
+}
+
+/**
+ * The item field a written role came from: what the agent is told (the
+ * item's field names, `templates.rs`), never a page role.
+ */
+const ITEM_FIELD: Partial<Record<FieldRole, string>> = {
+  username: "username",
+  email: "username",
+  current_password: "password",
+  otp: "totp",
+  cc_name: "cardholder",
+  cc_number: "number",
+  cc_exp: "expiry",
+  cc_exp_month: "expiry",
+  cc_exp_year: "expiry",
+  cc_csc: "cvv",
+};
+
+/** A login plan whose submit an agent may ask for: a sign-in page with no pay or create button. */
+function submittable(plan: PlanOut): boolean {
+  if (plan.intent !== "login" && plan.intent !== "otp") return false;
+  return !plan.reasons.includes("pay_button") && !plan.reasons.includes("create_button");
 }
 
 /** The roles a fill of `kind` writes. */
@@ -195,8 +218,9 @@ export async function fillForAgent(deps: FillDeps, job: FillJob): Promise<FillRe
   // The plan only says which form and which fields; the item is the job's, never the plan's pick.
   const context: PageContext = { origin: origin.origin, top_origin: origin.origin, frame_kind: "top", forms, typed_username_hash: null };
   let group: PlanGroupOut | undefined;
+  let plan: PlanOut;
   try {
-    const { plan } = await client.request({ op: "plan_fill", ctx: "agent", agent_request: job.request_id, origin: origin.origin, context });
+    ({ plan } = await client.request({ op: "plan_fill", ctx: "agent", agent_request: job.request_id, origin: origin.origin, context }));
     group = plan.groups.find((g) => g.kind === job.kind && g.fields.length > 0);
   } catch (e) {
     return agentCode(e);
@@ -242,12 +266,14 @@ export async function fillForAgent(deps: FillDeps, job: FillJob): Promise<FillRe
     return agentCode(e);
   }
   const replied = (fillReply as { filled?: unknown } | null | undefined)?.filled;
-  const filled = Array.isArray(replied) ? replied.filter((r): r is string => typeof r === "string" && sentRoles.includes(r)) : sentRoles;
+  // No list in the reply: nothing is known to be written.
+  const written = Array.isArray(replied) ? replied.filter((r): r is string => typeof r === "string" && sentRoles.includes(r)) : [];
+  const filled = [...new Set(written.flatMap((r) => ITEM_FIELD[r as FieldRole] ?? []))];
   if (filled.length === 0) return "no_fields";
 
   let submitted = false;
-  // A card is never submitted.
-  if (job.kind === "login" && job.submit) {
+  // A card is never submitted, nor a page that pays or creates an account.
+  if (job.kind === "login" && job.submit && submittable(plan)) {
     try {
       await filler.submit(t);
       submitted = (submitReply as { ok?: unknown } | null | undefined)?.ok === true;
@@ -255,7 +281,7 @@ export async function fillForAgent(deps: FillDeps, job: FillJob): Promise<FillRe
       // The page moved after the fill: the fields stay written, nothing is clicked.
     }
   }
-  return { filled: [...new Set(filled)], submitted };
+  return { filled, submitted };
 }
 
 function wire<T>(r: T | AgentError): { ok: T } | { err: AgentError } {
@@ -277,6 +303,17 @@ function unpaired(e: unknown): boolean {
  * past that, or without a pairing, the loop rests until the next wake (the
  * worker's start, or `AGENT_ALARM`). `stop` ends it for good.
  */
+/**
+ * The agent channel runs in Chromium only (v1). Firefox reports no
+ * `documentId`, so every probe there would fail, and the host hands a job to
+ * whichever browser polls first: a Firefox loop would take Chrome's jobs and
+ * refuse them. Safari has no native port. Null where it does not run.
+ */
+export function startAgentLoopIfChromium(runtime: Pick<BgExt["runtime"], "getURL">, deps: AgentDeps): { stop(): void } | null {
+  if (!runtime.getURL("").startsWith("chrome-extension:")) return null;
+  return startAgentLoop(deps);
+}
+
 export function startAgentLoop(deps: AgentDeps): { stop(): void } {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const probes = new Map<number, Probed>();
