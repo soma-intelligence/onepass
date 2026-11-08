@@ -30,6 +30,21 @@ extension VaultSession {
         try await read { try $0.setMcpPolicy(dataDirPath: dataDirectory, vaults: vaults, allowGenerate: allowGenerate) }
     }
 
+    /// Turns agent web fill (`fill_in_browser`, scope `fill`) on or off for one exposed vault, and
+    /// signs the policy again (spec 4: off by default, vault by vault). The other vaults and
+    /// `allowGenerate` keep their values. A vault not exposed gets nothing: turn exposure on first.
+    /// A paired client still needs `fill` in its own scopes, as for any other scope.
+    public func setAgentFill(dataDirectory: String, vaultID: String, on: Bool) async throws {
+        let policy = try await mcpPolicy(dataDirectory: dataDirectory)
+        let entries = policy.vaults.compactMap { vault -> FfiClientScopes? in
+            guard vault.mcpAccess, !vault.scopes.isEmpty else { return nil }
+            var scopes = vault.scopes.filter { $0 != "fill" }
+            if on, vault.vaultId == vaultID { scopes.append("fill") }
+            return FfiClientScopes(vaultId: vault.vaultId, scopes: scopes)
+        }
+        try await setMcpPolicy(dataDirectory: dataDirectory, vaults: entries, allowGenerate: policy.allowGenerate)
+    }
+
     public func pairedClients(dataDirectory: String) async throws -> [FfiPairedClient] {
         try await read { try $0.pairedClients(dataDirPath: dataDirectory) }
     }

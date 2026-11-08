@@ -22,6 +22,9 @@ enum AgentRequestText {
         case "title": String(localized: "app.title")
         case "username": String(localized: "developer.username")
         case "url": String(localized: "developer.website")
+        case "site": String(localized: "developer.siteLabel")
+        case "tab": String(localized: "developer.tabLabel")
+        case "card": String(localized: "developer.cardLabel")
         default: label
         }
     }
@@ -44,6 +47,8 @@ enum AgentRequestText {
         case "reveal_secret": String(localized: "developer.revealSecret")
         case "remote_unlock": String(localized: "developer.unlockForAgents")
         case "remote_unlock_pair": String(localized: "developer.turnOnRemoteUnlock")
+        case "fill_login": String(localized: "developer.fillLoginInPage")
+        case "fill_card": String(localized: "developer.fillCardInPage")
         default: action
         }
     }

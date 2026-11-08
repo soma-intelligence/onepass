@@ -18521,6 +18521,93 @@
         }
       }
     },
+    "developer.agentWebFill" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent web fill"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relleno web por agentes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplissage web par les agents"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compilazione web da parte degli agenti"
+          }
+        }
+      }
+    },
+    "developer.agentWebFillFooter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An agent can fill items from this vault into a web page once you approve. The page receives the values, so an agent that can run script in the page can read them."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un agente podrá rellenar elementos de esta bóveda en una página web tras tu aprobación. La página recibe los valores: un agente que puede ejecutar scripts en la página puede leerlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un agent pourra remplir ce coffre dans une page web après ton accord. La page reçoit les valeurs : un agent qui peut lancer du script dans la page peut les lire."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un agente potrà compilare elementi di questa cassaforte in una pagina web dopo la tua approvazione. La pagina riceve i valori: un agente che può eseguire script nella pagina può leggerli."
+          }
+        }
+      }
+    },
+    "developer.agentWebFillTip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tip: create a dedicated \"Agents\" vault and keep in it only what an agent may fill."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consejo: crea una bóveda «Agentes» dedicada y guarda en ella solo lo que un agente puede rellenar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conseil : crée un coffre « Agents » dédié et n'y mets que ce qu'un agent peut remplir."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggerimento: crea una cassaforte «Agenti» dedicata e mettici solo ciò che un agente può compilare."
+          }
+        }
+      }
+    },
     "developer.agentWindowLength" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18981,6 +19068,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questa versione di OnePass non usa iCloud: le richieste si approvano solo su questo Mac."
+          }
+        }
+      }
+    },
+    "developer.cardAskedEveryTime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A card asks for your approval every time."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta pide tu aprobación cada vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte demande ton accord à chaque fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una carta chiede la tua approvazione ogni volta."
+          }
+        }
+      }
+    },
+    "developer.cardLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Card"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tarjeta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carta"
           }
         }
       }
@@ -19565,6 +19710,35 @@
         }
       }
     },
+    "developer.fillCardInPage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill a card in a web page"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar una tarjeta en una página web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir une carte dans une page web"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compilare una carta in una pagina web"
+          }
+        }
+      }
+    },
     "developer.fillFileWithSecrets" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19590,6 +19764,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compila un file con segreti"
+          }
+        }
+      }
+    },
+    "developer.fillLoginInPage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill a login in a web page"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar un inicio de sesión en una página web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir un identifiant dans une page web"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compilare un login in una pagina web"
           }
         }
       }
@@ -21450,6 +21653,35 @@
         }
       }
     },
+    "developer.siteLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Site"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Site"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sito"
+          }
+        }
+      }
+    },
     "developer.source" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21591,6 +21823,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Interrotto"
+          }
+        }
+      }
+    },
+    "developer.tabLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pestaña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onglet"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheda"
           }
         }
       }
@@ -22026,6 +22287,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attenzione"
+          }
+        }
+      }
+    },
+    "developer.webFillScope" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web fill"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relleno web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplissage web"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compilazione web"
           }
         }
       }

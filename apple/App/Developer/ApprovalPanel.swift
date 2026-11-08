@@ -159,6 +159,16 @@ struct ApprovalView: View {
             }
         }
         Text(Self.actionTitle(r.action)).font(.title3.weight(.semibold))
+        // A web fill: the site the values go to, in large type (spec 4).
+        let isFill = r.action == "fill_login" || r.action == "fill_card"
+        if isFill, let site = r.details.first(where: { $0.label == "site" })?.value {
+            Text(site)
+                .font(.largeTitle.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("approval.site")
+        }
         if !r.targets.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(r.targets.enumerated()), id: \.offset) { _, t in
@@ -167,9 +177,10 @@ struct ApprovalView: View {
                 }
             }
         }
-        if !r.details.isEmpty {
+        let details = isFill ? r.details.filter { $0.label != "site" } : r.details
+        if !details.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(r.details.enumerated()), id: \.offset) { _, d in
+                ForEach(Array(details.enumerated()), id: \.offset) { _, d in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(Self.detailLabel(d.label)).font(.caption).foregroundStyle(.secondary)
                         Text(Self.detailValue(d.value)).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
@@ -180,6 +191,11 @@ struct ApprovalView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        }
+        if r.action == "fill_card" {
+            Text("developer.cardAskedEveryTime")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         if let phoneNotice {
             Label(phoneNotice, systemImage: "iphone")

@@ -32,6 +32,7 @@ struct DeveloperSettingsPage: View {
             mcpSection
             if hosts.settings.mcpEnabled {
                 exposedSection
+                agentFillSection
                 clientsSection
                 grantsSection
             }
@@ -194,6 +195,28 @@ struct DeveloperSettingsPage: View {
         }
     }
 
+    /// Agent web fill (`fill_in_browser`), vault by vault, off by default (spec 4 of the agent browser
+    /// fill design). Only exposed vaults can be turned on.
+    @ViewBuilder private var agentFillSection: some View {
+        if let policy, policy.vaults.contains(where: exposed) {
+            Section {
+                ForEach(policy.vaults.filter(exposed), id: \.vaultId) { vault in
+                    Toggle(vault.name, isOn: Binding(
+                        get: { vault.scopes.contains("fill") },
+                        set: { on in Task { await setAgentFill(vault, on: on) } }))
+                        .accessibilityIdentifier("settings.developer.fill.\(vault.vaultId)")
+                }
+            } header: {
+                Text("developer.agentWebFill")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("developer.agentWebFillFooter")
+                    Text("developer.agentWebFillTip")
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var clientsSection: some View {
         Section {
             if clients.isEmpty {
@@ -206,7 +229,10 @@ struct DeveloperSettingsPage: View {
                         HStack {
                             Text(vault.name)
                             Spacer()
-                            ScopeMenu(selected: client.scopes.first { $0.vaultId == vault.vaultId }?.scopes ?? []) { scopes in
+                            ScopeMenu(
+                                selected: client.scopes.first { $0.vaultId == vault.vaultId }?.scopes ?? [],
+                                offersFill: vault.scopes.contains("fill")
+                            ) { scopes in
                                 Task { await setClientScopes(client, vault: vault, scopes: scopes) }
                             }
                         }
@@ -482,6 +508,17 @@ struct DeveloperSettingsPage: View {
         await reload()
     }
 
+    private func setAgentFill(_ vault: FfiMcpVault, on: Bool) async {
+        if on, !(await confirmed(String(localized: "developer.exposeToAiAgents \(vault.name)"))) { return }
+        do {
+            try await model.session.setAgentFill(dataDirectory: dir, vaultID: vault.vaultId, on: on)
+            errorMessage = nil
+        } catch {
+            errorMessage = VaultError(error).localizedMessage
+        }
+        await reload()
+    }
+
     private func savePolicy(allowGenerate: Bool) async {
         let entries = (policy?.vaults ?? []).filter(exposed).map { FfiClientScopes(vaultId: $0.vaultId, scopes: $0.scopes) }
         do {
@@ -579,19 +616,26 @@ private struct CardHeading: View {
     }
 }
 
-/// The scopes of one vault, as a menu of checkmarks. Empty: not exposed.
+/// The scopes of one vault, as a menu of checkmarks. Empty: not exposed. `fill` is offered only when
+/// asked (a client, on a vault whose policy has it); a `fill` already selected is kept either way,
+/// the vault's own one being set by its toggle in the agent web fill section.
 private struct ScopeMenu: View {
     let selected: [String]
+    var offersFill = false
     let onChange: ([String]) -> Void
 
     static let all: [(String, LocalizedStringKey)] = [
         ("metadata", "Métadonnées"), ("use", "Utiliser"), ("write", "Créer"),
-        ("totp", "Codes à usage unique"), ("reveal", "Révéler"),
+        ("totp", "Codes à usage unique"), ("reveal", "Révéler"), ("fill", "developer.webFillScope"),
     ]
+
+    private var offered: [(String, LocalizedStringKey)] {
+        offersFill ? Self.all : Self.all.filter { $0.0 != "fill" }
+    }
 
     var body: some View {
         Menu {
-            ForEach(Self.all, id: \.0) { scope, title in
+            ForEach(offered, id: \.0) { scope, title in
                 Toggle(isOn: Binding(
                     get: { selected.contains(scope) },
                     set: { on in
