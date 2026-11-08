@@ -45,15 +45,15 @@ struct EntryDetailView: View {
         .navigationTitle(entry.title)
     }
 
-    /// A thin wash in the entry's category color under the title. The watch has no site icons, so
-    /// the category decides. Flat fallback is no band at all.
+    /// A thin band in the entry's category color under the title, flat at 60%: the identity wash
+    /// fades out too fast to show at this height. The watch has no site icons, so the category
+    /// decides.
     private var identityBand: some View {
         let color = IdentityTint.color(
             brand: nil, siteIcon: nil, category: ItemCategory.of(entry.itemType).color)
-        return Color.clear
+        return color.opacity(0.6)
             .frame(height: 6)
             .frame(maxWidth: .infinity)
-            .washBackground(Theme.Wash.identity(color, dark: true), flat: .clear, in: Rectangle())
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
