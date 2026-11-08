@@ -508,6 +508,13 @@ end
 $$;
 grant execute on function onepass_test.timed(text, text) to public;
 
+-- A slow statement inside the timed batches prints its plan (CI only ever
+-- shows this test's output).
+load 'auto_explain';
+set local auto_explain.log_min_duration = 500;
+set local auto_explain.log_nested_statements = on;
+set local auto_explain.log_analyze = on;
+set local auto_explain.log_level = notice;
 set local role onepass_mailbox_api;
 select onepass_test.ok(
     onepass_test.timed('announce', $$select * from onepass_test.announce('p', 'P',
