@@ -2042,6 +2042,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "onepass-cdp"
+version = "0.2.0"
+dependencies = [
+ "onepass-cdp",
+ "onepass-core",
+ "serde_json",
+ "tungstenite",
+ "unicode-normalization",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "onepass-cli"
 version = "0.2.0"
 dependencies = [

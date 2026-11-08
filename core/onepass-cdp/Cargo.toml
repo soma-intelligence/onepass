@@ -1,0 +1,30 @@
+[package]
+name = "onepass-cdp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# Fills a login or card form in a local Chrome over the DevTools protocol, for
+# browsers an agent drives (spec 2026-11-07-agent-browser-fill-design section 6).
+# Loopback only (127.0.0.1 or ::1), top frame only, values typed with
+# DOM.focus and Input.insertText, never through Runtime.*.
+
+[dependencies]
+onepass-core = { path = "../onepass-core" }
+# Blocking WebSocket client, plain ws:// to loopback: no TLS feature.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+serde_json.workspace = true
+zeroize.workspace = true
+# Origin of the page URL Chrome reports (WHATWG rules, IDNA to ASCII).
+url.workspace = true
+# Accents stripped from labels before matching (as the extension's normalizeText).
+unicode-normalization = "0.1.26"
+
+[features]
+# The fake DevTools server (onepass_cdp::fake) for tests here and in onepass-ffi.
+testing = []
+
+[dev-dependencies]
+onepass-cdp = { path = ".", features = ["testing"] }
