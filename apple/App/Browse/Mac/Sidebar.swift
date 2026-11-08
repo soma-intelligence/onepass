@@ -179,10 +179,10 @@ struct Sidebar: View {
                 #endif
                 if model.travel.suggestion != .none {
                     TravelSuggestionCard(compact: true)
-                        .padding(12)
-                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(Theme.Space.m)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                                 .strokeBorder(Color.primary.opacity(0.08))
                         }
                         .padding(.horizontal, 10)
@@ -193,20 +193,20 @@ struct Sidebar: View {
                     // A thick material, not clear glass: rows scrolling under the card must not read
                     // through it.
                     AutoFillTipCard(compact: true)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, Theme.Space.m)
+                        .padding(.vertical, Theme.Space.s)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                                 .strokeBorder(Color.primary.opacity(0.08))
                         }
                         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                         .padding(.horizontal, 10)
-                        .padding(.bottom, 4)
+                        .padding(.bottom, Theme.Space.xs)
                     #else
                     AutoFillTipCard()
-                        .padding(12)
-                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(Theme.Space.m)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
                         .padding(.horizontal, 10)
                         .padding(.top, 10)
                     #endif
@@ -214,19 +214,19 @@ struct Sidebar: View {
                 if model.showsSafariSetupCard {
                     #if os(macOS)
                     SafariSetupCard()
-                        .padding(12)
-                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(Theme.Space.m)
+                        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                                 .strokeBorder(Color.primary.opacity(0.08))
                         }
                         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                         .padding(.horizontal, 10)
-                        .padding(.bottom, 4)
+                        .padding(.bottom, Theme.Space.xs)
                     #else
                     SafariSetupCard()
-                        .padding(12)
-                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(Theme.Space.m)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
                         .padding(.horizontal, 10)
                         .padding(.top, 10)
                     #endif
@@ -426,7 +426,7 @@ struct AccountHeader: View {
     }
 
     private func label(open: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             AccountBadgeAvatar(
                 initials: model.initials, photo: model.profileImage, color: model.accountTint,
                 badge: model.accountBadge, size: 34)
@@ -445,8 +445,8 @@ struct AccountHeader: View {
         .padding(.trailing, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(hovering || open ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
-            in: .rect(cornerRadius: 14, style: .continuous))
-        .contentShape(.rect(cornerRadius: 14, style: .continuous))
+            in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+        .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
     }
 
     /// iPad and visionOS: the system menu.
@@ -478,7 +478,7 @@ struct AccountHeader: View {
             }
         } label: {
             // Photo, name, chevron: one full-width row, the photo's corners echoed by the hover.
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 AccountBadgeAvatar(
                 initials: model.initials, photo: model.profileImage, color: model.accountTint,
                 badge: model.accountBadge, size: 34)
@@ -495,8 +495,8 @@ struct AccountHeader: View {
             .padding(.trailing, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 14, style: .continuous))
-            .contentShape(.rect(cornerRadius: 14, style: .continuous))
+                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -530,7 +530,7 @@ struct AccountMenuPanel: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
-                .padding(.bottom, 2)
+                .padding(.bottom, Theme.Space.xxs)
             divider
             // The accounts of this Mac (multi-account spec 7): switch, add, search all when chosen.
             ForEach(model.accounts.profiles) { profile in
@@ -623,8 +623,8 @@ private struct MacAccountRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 10, style: .continuous))
-            .contentShape(.rect(cornerRadius: 10, style: .continuous))
+                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -659,8 +659,8 @@ private struct AccountMenuRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(hovering ? AnyShapeStyle((destructive ? Color.red : Theme.accent).opacity(0.9)) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 10, style: .continuous))
-            .contentShape(.rect(cornerRadius: 10, style: .continuous))
+                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -852,7 +852,7 @@ struct SyncStatusChip: View {
                 Image(systemName: appearance.symbol).foregroundStyle(appearance.color)
             }
             .font(.footnote)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, 7)
             #if os(visionOS)
             .glassBackgroundEffect(in: Capsule())
@@ -910,7 +910,7 @@ struct SettingsRow: View {
                 .visionHoverEffect()
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, 10)
     }
 }

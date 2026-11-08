@@ -56,6 +56,8 @@ struct PageTile: View {
 struct PageLinkButton: View {
     let title: String
     let action: () -> Void
+    /// On a colored wash: white text and outline.
+    var onWash = false
 
     var body: some View {
         Button(action: action) {
@@ -67,7 +69,8 @@ struct PageLinkButton: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .contentShape(Capsule())
-            .overlay { Capsule().strokeBorder(.secondary.opacity(0.45)) }
+            .overlay { Capsule().strokeBorder(onWash ? Color.white.opacity(0.6) : Color.secondary.opacity(0.45)) }
+            .foregroundStyle(onWash ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
     }

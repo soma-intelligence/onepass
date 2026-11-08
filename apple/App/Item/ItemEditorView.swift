@@ -229,7 +229,7 @@ struct ItemEditorView: View {
                     #if os(iOS)
                     .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.control))
                     #else
-                    .background(.fill.quaternary, in: .rect(cornerRadius: 12))
+                    .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                     #endif
                     .overlay {
                         RoundedRectangle(cornerRadius: Theme.Radius.control)
@@ -891,7 +891,7 @@ struct AccentCapsuleButtonStyle: ButtonStyle {
             configuration.label
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Theme.Space.l)
                 .padding(.vertical, 6)
                 .background(Theme.accent.mix(with: .white, by: hovering ? 0.1 : 0), in: .capsule)
                 .overlay { Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.5) }
@@ -943,7 +943,7 @@ struct QuietToolbarButtonStyle: ButtonStyle {
             configuration.label
                 .font(.body.weight(.medium))
                 .foregroundStyle(hovering ? .primary : .secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.Space.m)
                 .padding(.vertical, 6)
                 .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: .capsule)
                 .contentShape(.capsule)

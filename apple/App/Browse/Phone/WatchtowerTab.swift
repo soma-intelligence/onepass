@@ -274,17 +274,17 @@ private struct PhoneWatchtowerCard: View {
         }
     }
 
-    static let alertIDs: Set<String> = ["compromised", "expiring", "breached_site", "provider_exposed"]
+    static let alertIDs = WatchtowerCard.alertIDs
 
     static func isAlert(_ card: WatchtowerCard) -> Bool {
-        alertIDs.contains(card.id)
+        card.isAlert
     }
 
     /// Issues in red or orange, chances to do better (passkeys, codes) in the accent or blue, each a
     /// shade deep enough for white text (4.5:1).
     static func fill(_ card: WatchtowerCard) -> Color {
         switch card.id {
-        case _ where alertIDs.contains(card.id): Color(red: 0.78, green: 0.16, blue: 0.16)
+        case _ where alertIDs.contains(card.id): WatchtowerCard.alertFill
         case "duplicate": Color(red: 0.38, green: 0.38, blue: 0.42)
         case "passkey": Theme.accent
         case "2fa": Color(red: 0.04, green: 0.39, blue: 0.78)

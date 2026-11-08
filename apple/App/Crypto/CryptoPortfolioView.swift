@@ -43,7 +43,7 @@ struct CryptoPortfolioView: View {
                     ProgressView().padding(.top, 120)
                 }
             }
-            .padding(.bottom, 32)
+            .padding(.bottom, Theme.Space.xxl)
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
         }
@@ -125,7 +125,7 @@ struct CryptoPortfolioView: View {
             PeriodPicker(period: Binding(
                 get: { watch.settings.period },
                 set: { p in watch.update { $0.period = p } }))
-                .padding(.horizontal, 24)
+                .padding(.horizontal, Theme.Space.xl)
                 .padding(.top, 6)
         }
         .padding(.top, 28)
@@ -161,8 +161,8 @@ struct CryptoPortfolioView: View {
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("crypto.more")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.top, Theme.Space.s)
     }
 
     // MARK: Sections
@@ -196,7 +196,7 @@ struct CryptoPortfolioView: View {
                         .foregroundStyle(Theme.readableAccent)
                         .frame(width: 42, height: 42)
                         .background(Theme.accent.opacity(0.14), in: .circle)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(verbatim: w.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
                         HStack(spacing: 6) {
                             Text(verbatim: CryptoFormat.money(w.value, currency: currency))
@@ -224,7 +224,7 @@ struct CryptoPortfolioView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 18)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, Theme.Space.l)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(w.holdings) { h in
@@ -238,7 +238,7 @@ struct CryptoPortfolioView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Space.l)
     }
 
     @ViewBuilder private func coinLink<L: View>(_ coin: String, @ViewBuilder label: () -> L) -> some View {
@@ -255,12 +255,12 @@ struct CryptoPortfolioView: View {
     private func tiles(_ p: CryptoPortfolio) -> some View {
         let held = p.holdings.filter { watch.snapshot?.charts[$0.coin]?[watch.settings.period] != nil }.map(\.coin)
         let coins = Array((held + ["bitcoin", "ethereum"]).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.prefix(2))
-        return HStack(spacing: 12) {
+        return HStack(spacing: Theme.Space.m) {
             ForEach(coins, id: \.self) { coin in
                 coinLink(coin) { PriceTile(coin: coin, currency: p.currency) }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Space.l)
     }
 
     private func movers(_ p: CryptoPortfolio) -> some View {
@@ -278,7 +278,7 @@ struct CryptoPortfolioView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 18)
-            .padding(.vertical, 8)
+            .padding(.vertical, Theme.Space.s)
             if ranked.isEmpty {
                 Text(moversUp ? "crypto.movers.noneUp" : "crypto.movers.noneDown")
                     .font(.subheadline)
@@ -301,7 +301,7 @@ struct CryptoPortfolioView: View {
                 .padding(.vertical, 14)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Space.l)
     }
 
     private func marketCard(_ market: [CryptoMarketCoin], currency: String) -> some View {
@@ -311,12 +311,12 @@ struct CryptoPortfolioView: View {
             ForEach(shown) { c in
                 HStack(spacing: 14) {
                     CoinIcon(coin: c.id, symbol: c.symbol, size: 42)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(verbatim: c.name).font(.body.weight(.medium)).lineLimit(1)
                         Text(verbatim: c.symbol).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: Theme.Space.xxs) {
                         Text(verbatim: CryptoFormat.money(c.price, currency: currency))
                             .font(.body.weight(.medium))
                             .monospacedDigit()
@@ -341,7 +341,7 @@ struct CryptoPortfolioView: View {
                 .padding(.horizontal, 18)
                 .padding(.bottom, 14)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Space.l)
     }
 
     private var customizeButton: some View {
@@ -357,7 +357,7 @@ struct CryptoPortfolioView: View {
     }
 
     private var footer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Space.s) {
             if let snap = watch.snapshot {
                 if watch.phase == .offline {
                     Label {
@@ -385,7 +385,7 @@ struct CryptoPortfolioView: View {
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 28)
-        .padding(.top, 4)
+        .padding(.top, Theme.Space.xs)
     }
 }
 
@@ -443,7 +443,7 @@ struct CryptoActionLabel: View {
     let systemImage: String
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Space.s) {
             Image(systemName: systemImage)
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(.primary)
@@ -475,7 +475,7 @@ struct PriceTile: View {
             if let f = points.first?.value, let l = points.last?.value, f > 0 { return (l - f) / f * 100 }
             return watch.settings.period == .day ? price?.change24h : nil
         }()
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
             HStack {
                 Text(verbatim: asset?.symbol ?? coin.uppercased())
                     .font(.subheadline.weight(.semibold))
@@ -498,7 +498,7 @@ struct PriceTile: View {
                     .padding(.top, 6)
             }
         }
-        .padding(16)
+        .padding(Theme.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: .rect(cornerRadius: 26, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Color.primary.opacity(0.06)) }
@@ -528,7 +528,7 @@ struct CryptoOffCard: View {
             .buttonStyle(.glassProminent)
             .accessibilityIdentifier("crypto.turnOn")
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, Theme.Space.xxl)
     }
 }
 
@@ -553,7 +553,7 @@ struct CryptoEmptyCard: View {
             .buttonStyle(.glassProminent)
             #endif
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, Theme.Space.xxl)
     }
 }
 

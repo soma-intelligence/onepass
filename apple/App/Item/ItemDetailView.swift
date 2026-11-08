@@ -132,7 +132,7 @@ struct ItemDetailView: View {
 
     // MARK: - Detail
 
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     /// The brand color of a card network, else the icon's average, else the category color.
     private func identityColor(_ item: FfiItem, icon: Data?) -> Color {
         IdentityTint.color(
@@ -166,7 +166,7 @@ struct ItemDetailView: View {
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
-                #if os(iOS)
+                #if os(iOS) || os(macOS)
                 ItemHeader(item: item) { identity = (item.id, identityColor(item, icon: $0)) }
                     .id(item.id)
                     .padding(.horizontal, Theme.Space.xs)
@@ -225,7 +225,7 @@ struct ItemDetailView: View {
         #if os(macOS)
         .scrollIndicators(.never)
         #endif
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
         // under the content and the navigation bar, and never takes a touch.
         .background(alignment: .top) { identityWash(item) }

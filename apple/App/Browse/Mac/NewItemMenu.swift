@@ -154,12 +154,9 @@ struct NewItemSheet: View {
                     .font(.body.weight(.medium))
             }
             .buttonStyle(.borderless)
-            .padding(.vertical, 16)
+            .padding(.vertical, Theme.Space.l)
             .accessibilityIdentifier("newItem.import")
         }
-        // A violet and indigo glow behind the title, fading out a third of the way down. It lies
-        // over the header and the tiles alike, so whatever scrolls up under the title takes it.
-        .overlay(alignment: .top) { SheetGlow() }
         #if os(macOS)
         .frame(width: 600, height: 620)
         #endif
@@ -193,7 +190,7 @@ struct NewItemSheet: View {
 
             Text("browse.whatDoWantTo")
                 .font(.title.weight(.bold))
-                .padding(.bottom, 16)
+                .padding(.bottom, Theme.Space.l)
 
             searchField
                 .padding(.horizontal, Self.searchInset)
@@ -204,9 +201,9 @@ struct NewItemSheet: View {
     /// The tiles, the categories, or what the search found.
     private var scrollContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
                 if trimmed.isEmpty {
-                    LazyVGrid(columns: Self.columns, spacing: 12) {
+                    LazyVGrid(columns: Self.columns, spacing: Theme.Space.m) {
                         ForEach(Self.featured, id: \.self) { type in
                             BigTypeTile(type: type) { pick(type) }
                         }
@@ -229,7 +226,7 @@ struct NewItemSheet: View {
                 }
             }
             .padding(.horizontal, Self.sideInset)
-            .padding(.bottom, 16)
+            .padding(.bottom, Theme.Space.l)
         }
         #if !os(visionOS)
         .scrollDismissesKeyboard(.immediately)
@@ -240,10 +237,10 @@ struct NewItemSheet: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    private static let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
+    private static let columns = Array(repeating: GridItem(.flexible(), spacing: Theme.Space.m), count: 3)
 
     private var searchField: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Space.s) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("browse.searchForSiteOr", text: $query)
                 .textFieldStyle(.plain)
@@ -254,9 +251,9 @@ struct NewItemSheet: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 12))
+        .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control))
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
                 .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.08)),
                     lineWidth: searchFocused ? 2 : 1)
         }
@@ -301,9 +298,9 @@ struct NewItemSheet: View {
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
             .background(hoveringMore ? AnyShapeStyle(.fill.quaternary) : AnyShapeStyle(.fill.quinary),
-                in: .rect(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hoveringMore ? 0.16 : 0.1)) }
-            .contentShape(.rect(cornerRadius: 14))
+                in: .rect(cornerRadius: Theme.Radius.card))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(.white.opacity(hoveringMore ? 0.16 : 0.1)) }
+            .contentShape(.rect(cornerRadius: Theme.Radius.card))
         }
         .tileButtonStyle()
         .onHover { hovering in hoveringMore = hovering }
@@ -342,12 +339,12 @@ struct NewItemSheet: View {
     private var allCategories: some View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text(group.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 4)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
+                        .padding(.leading, Theme.Space.xs)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: Theme.Space.s)], spacing: Theme.Space.s) {
                         ForEach(group.types, id: \.self) { type in
                             // A common type already has its big tile above: another identifier.
                             let duplicate = trimmed.isEmpty && Self.featured.contains(type)
@@ -360,7 +357,7 @@ struct NewItemSheet: View {
                 .modifier(StaggeredReveal(index: index, reduceMotion: reduceMotion))
             }
         }
-        .padding(.top, 8)
+        .padding(.top, Theme.Space.s)
     }
 
     private func submit() {
@@ -376,7 +373,7 @@ struct NewItemSheet: View {
 
     /// "Se connecte avec Google / Apple / GitHub / Microsoft" under the website tile.
     private func signInChips(_ site: (title: String, url: String)) -> some View {
-        ChipFlow(spacing: 8) {
+        ChipFlow(spacing: Theme.Space.s) {
             ForEach(LoginProvider.primary) { provider in
                 Button {
                     pickWebsite(site, provider: provider)
@@ -396,7 +393,7 @@ struct NewItemSheet: View {
                 .accessibilityIdentifier("newItem.website.\(provider.rawValue)")
             }
         }
-        .padding(.leading, 4)
+        .padding(.leading, Theme.Space.xs)
     }
 
     /// A login named after the site, its address filled in, and its sign-in provider when one was
@@ -423,41 +420,6 @@ struct NewItemSheet: View {
 }
 
 /// A large tile of the common types: the type's glyph, its name, a "+" on hover.
-/// The "+" sheet's top glow: an indigo light from the top left and a violet one from the top right,
-/// both gone a third of the way down. Screen blend in dark mode (it lights what lies under it, cards
-/// included), a light tint in light mode. Never takes a touch.
-private struct SheetGlow: View {
-    @Environment(\.colorScheme) private var scheme
-
-    private static let indigo = Color(red: 0.36, green: 0.40, blue: 0.86)
-    private static let violet = Color(red: 0.58, green: 0.42, blue: 0.86)
-
-    var body: some View {
-        let dark = scheme == .dark
-        GeometryReader { proxy in
-            let height = max(proxy.size.height * 0.42, 260)
-            ZStack {
-                EllipticalGradient(
-                    colors: [Self.indigo.opacity(dark ? 0.70 : 0.22), .clear],
-                    center: UnitPoint(x: 0.18, y: 0.0), startRadiusFraction: 0, endRadiusFraction: 0.75)
-                EllipticalGradient(
-                    colors: [Self.violet.opacity(dark ? 0.65 : 0.20), .clear],
-                    center: UnitPoint(x: 0.80, y: 0.05), startRadiusFraction: 0, endRadiusFraction: 0.70)
-            }
-            .frame(height: height)
-            // Eased out at the bottom so no edge shows where the glow ends.
-            .mask(LinearGradient(stops: [
-                .init(color: .black, location: 0), .init(color: .black, location: 0.45),
-                .init(color: .black.opacity(0.4), location: 0.75), .init(color: .clear, location: 1),
-            ], startPoint: .top, endPoint: .bottom))
-            .blendMode(dark ? .screen : .normal)
-        }
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 private struct BigTypeTile: View {
     let type: FfiItemType
     let action: () -> Void
@@ -504,12 +466,12 @@ private struct BigTypeTile: View {
             .padding(Self.padding)
             .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .topLeading)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.16)) : AnyShapeStyle(.fill.quinary),
-                in: .rect(cornerRadius: 14))
+                in: .rect(cornerRadius: Theme.Radius.card))
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .strokeBorder(hovering ? AnyShapeStyle(Theme.accent.opacity(0.6)) : AnyShapeStyle(.white.opacity(0.1)))
             }
-            .contentShape(.rect(cornerRadius: 14))
+            .contentShape(.rect(cornerRadius: Theme.Radius.card))
         }
         .tileButtonStyle()
         .onHover { hovering = $0 }
@@ -526,9 +488,9 @@ private struct WebsiteTile: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 CategoryTile(category: ItemCategory.of(.login), size: 34)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text("browse.newLoginFor \(title)").font(.body.weight(.medium))
                     if !host.isEmpty {
                         Text(host).font(.callout).foregroundStyle(.secondary)
@@ -538,8 +500,8 @@ private struct WebsiteTile: View {
                 Image(systemName: "return").foregroundStyle(.tertiary)
             }
             .padding(14)
-            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: 12))
-            .contentShape(.rect(cornerRadius: 12))
+            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: Theme.Radius.control))
+            .contentShape(.rect(cornerRadius: Theme.Radius.control))
         }
         .tileButtonStyle()
         .accessibilityIdentifier("newItem.website")
@@ -568,7 +530,7 @@ private struct NewItemTile: View {
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Theme.Space.s)
             .padding(.vertical, 7)
             .contentShape(.rect(cornerRadius: 9))
             .background(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 9))

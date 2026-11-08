@@ -272,6 +272,13 @@ struct WatchtowerCard: Identifiable {
         case breachCatalog
     }
 
+    /// The four red issue cards, on the Mac page and the iPhone tab alike.
+    static let alertIDs: Set<String> = ["compromised", "expiring", "breached_site", "provider_exposed"]
+    /// The red of those cards, deep enough for white text (4.5:1).
+    static let alertFill = Color(red: 0.78, green: 0.16, blue: 0.16)
+
+    var isAlert: Bool { Self.alertIDs.contains(id) }
+
     let id: String
     let checks: [String]
     let title: String
@@ -420,31 +427,48 @@ struct WatchtowerCardView: View {
 
     var body: some View {
         let ids = itemIDs ?? card.itemIDs(in: report)
-        EditorCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(unavailable == nil ? "\(ids.count)" : "–")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(unavailable == nil && !ids.isEmpty ? card.color : .secondary)
-                    Spacer()
-                    PageTile(symbol: card.symbol, color: card.color, size: 28)
-                }
-                Text(card.title).font(.headline)
-                Text(unavailable ?? card.message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                PageLinkButton(title: String(localized: "browse.showItems"), action: onShow)
-                    .disabled(ids.isEmpty)
-                    .opacity(ids.isEmpty ? 0.45 : 1)
+        // A red issue card that flagged something is the alert wash with white text, like on
+        // iPhone; with nothing to report it stays a plain card.
+        let alert = card.isAlert && unavailable == nil && !ids.isEmpty
+        Group {
+            if alert {
+                cardBody(ids: ids, alert: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .washBackground(
+                        Theme.Wash.alert(WatchtowerCard.alertFill), flat: WatchtowerCard.alertFill,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            } else {
+                EditorCard { cardBody(ids: ids, alert: false) }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: Self.minHeight, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("watchtower.card.\(card.id)")
+    }
+
+    private func cardBody(ids: Set<String>, alert: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(unavailable == nil ? "\(ids.count)" : "–")
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(
+                        alert ? AnyShapeStyle(.white)
+                            : unavailable == nil && !ids.isEmpty ? AnyShapeStyle(card.color) : AnyShapeStyle(.secondary))
+                Spacer()
+                PageTile(symbol: card.symbol, color: alert ? .white.opacity(0.22) : card.color, size: 28)
+            }
+            Text(card.title).font(.headline).foregroundStyle(alert ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            Text(unavailable ?? card.message)
+                .font(.callout)
+                .foregroundStyle(alert ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            PageLinkButton(title: String(localized: "browse.showItems"), action: onShow, onWash: alert)
+                .disabled(ids.isEmpty)
+                .opacity(ids.isEmpty ? 0.45 : 1)
+        }
+        .padding(Theme.Space.l)
+        .frame(maxWidth: .infinity, minHeight: Self.minHeight, alignment: .topLeading)
     }
 }
 

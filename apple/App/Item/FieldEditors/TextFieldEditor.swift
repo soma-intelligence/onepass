@@ -63,9 +63,9 @@ struct EditorCard<Content: View>: View {
             // Dark: see-through over the window, a hairline to hold the edge. Light: white cards
             // lifted off a soft gray page (`groupedScreen`) by a hairline and a faint shadow.
             .background(scheme == .dark ? AnyShapeStyle(.fill.quaternary) : AnyShapeStyle(Color.white),
-                in: .rect(cornerRadius: 14))
+                in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                     .strokeBorder(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.07))
             }
             .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 3, y: 1)
