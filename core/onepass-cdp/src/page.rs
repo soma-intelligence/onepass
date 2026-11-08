@@ -932,16 +932,17 @@ impl CdpPage {
 
     /// Types `value` into a field of the last page context, replacing what
     /// it holds: the top frame's origin is read again first, then
-    /// `DOM.focus`, a select-all (`Input.dispatchKeyEvent` Meta+A then
-    /// Control+A, each with the `selectAll` editing command), the origin
-    /// once more (a focus or key handler can navigate), then
-    /// `Input.insertText`, which replaces the selection.
+    /// `DOM.focus`, the origin once more (a focus handler can navigate),
+    /// a select-all (`Input.dispatchKeyEvent` Meta+A then Control+A, each
+    /// with the `selectAll` editing command), then `Input.insertText`,
+    /// which replaces the selection.
     /// See [`CdpPage::check_typable`] for the fields it refuses.
     pub fn type_into(&mut self, backend_node_id: i64, value: &str) -> Result<(), CdpError> {
         self.check_typable(backend_node_id)?;
         self.checked_frame()?;
         self.sock
             .call("DOM.focus", json!({"backendNodeId": backend_node_id}))?;
+        self.checked_frame()?;
         // Meta is 4, Control is 2 (`Input.dispatchKeyEvent` modifiers).
         for modifiers in [4, 2] {
             for kind in ["keyDown", "keyUp"] {
@@ -953,7 +954,6 @@ impl CdpPage {
                 self.sock.call("Input.dispatchKeyEvent", p)?;
             }
         }
-        self.checked_frame()?;
         self.sock.insert_text(value)
     }
 

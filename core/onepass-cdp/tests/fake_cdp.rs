@@ -380,5 +380,7 @@ fn navigation_on_focus_sends_no_text() {
     f.navigate_on_focus("https://evil.example/");
     assert_eq!(page.type_into(11, "alice"), Err(CdpError::OriginChanged));
     assert!(f.methods().contains(&"DOM.focus".to_owned()));
+    // The origin is read right after the focus: no key event either.
+    assert!(!f.methods().contains(&"Input.dispatchKeyEvent".to_owned()));
     assert!(f.inserted().is_empty());
 }
