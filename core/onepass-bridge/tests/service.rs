@@ -2786,8 +2786,8 @@ mod agent {
         origin: &str,
         kind: AgentKind,
     ) -> (u64, Filler) {
-        // The extension listens.
-        assert!(hub.wait_job(Duration::ZERO).is_none());
+        // Another browser listens too, idle: the service polls first.
+        assert!(hub.wait_job(hub.register(), Duration::ZERO).is_none());
         let tool = Arc::clone(hub);
         let url = format!("{origin}/login");
         let prober = thread::spawn(move || tool.probe("claude", &url, LONG));
@@ -2812,8 +2812,11 @@ mod agent {
         let tool = Arc::clone(hub);
         let item_id = id(item);
         let o = origin.to_owned();
-        let filler =
-            thread::spawn(move || tool.fill(request_id, &item_id, &o, kind, true, "doc-1", LONG));
+        let filler = thread::spawn(move || {
+            tool.fill(
+                "claude", request_id, &item_id, &o, kind, true, "doc-1", LONG,
+            )
+        });
         let v = h.call(wait());
         let want_kind = match kind {
             AgentKind::Login => "login",
@@ -3003,7 +3006,7 @@ mod agent {
     #[test]
     fn extension_errors_reach_the_tool_as_codes() {
         let (mut h, hub) = with_hub();
-        assert!(hub.wait_job(Duration::ZERO).is_none());
+        assert!(hub.wait_job(hub.register(), Duration::ZERO).is_none());
         let tool = Arc::clone(&hub);
         let prober = thread::spawn(move || tool.probe("claude", "https://atlas-cloud.test/", LONG));
         let v = h.call(wait());
@@ -3026,5 +3029,98 @@ mod agent {
         let v = h.call(json!({"op":"agent_fill_result","request_id":rid,
                               "result":{"ok":{"filled":["password"],"submitted":false}}}));
         ok(&v);
+    }
+
+    /// A second bridge session (another browser profile) on the same hub.
+    fn second_session(hub: &Arc<AgentHub>) -> H {
+        let (vault, ids) = FakeVault::new();
+        let audit = MemoryAudit::new();
+        H {
+            svc: Service::new(vault, Box::new(audit.clone())).with_agent_hub(Arc::clone(hub)),
+            ids,
+            audit,
+            next: 1_000,
+        }
+    }
+
+    #[test]
+    fn only_the_session_that_probed_gets_the_fill_and_its_ticket() {
+        let (mut h, hub) = with_hub();
+        let mut other = second_session(&hub);
+        let atlas = h.ids.atlas;
+        let (rid, filler) = ticket(&mut h, &hub, atlas, ATLAS, AgentKind::Login);
+        // The other profile cannot plan, open the values, nor answer.
+        let mut plan = plan_req(ATLAS, page(ATLAS, None));
+        plan["ctx"] = json!("agent");
+        plan["agent_request"] = json!(rid);
+        assert_eq!(err(&other.call(plan.clone())), "not_allowed");
+        let other_atlas = other.ids.atlas;
+        assert_eq!(
+            err(&other.call(agent_fill(other_atlas, ATLAS, Some(rid)))),
+            "not_allowed"
+        );
+        let v = other.call(json!({"op":"agent_fill_result","request_id":rid,
+            "result":{"ok":{"filled":["password"],"submitted":false}}}));
+        ok(&v);
+        assert!(other.audit.events().is_empty());
+        // The owner still holds a live ticket and a waiting fill.
+        ok(&h.call(plan));
+        ok(&h.call(agent_fill(atlas, ATLAS, Some(rid))));
+        let out = finish(&mut h, rid, filler).unwrap();
+        assert_eq!(out.filled, vec!["username", "password"]);
+    }
+
+    #[test]
+    fn a_session_that_declines_passes_the_probe_on() {
+        let (mut h, hub) = with_hub();
+        let mut other = second_session(&hub);
+        // An idle listener makes the hub count as listening before the
+        // sessions poll (a session that never polled is not waited for).
+        let ghost = hub.listener();
+        assert!(ghost.wait_job(Duration::ZERO).is_none());
+        let tool = Arc::clone(&hub);
+        let prober = thread::spawn(move || tool.probe("claude", "https://atlas-cloud.test/", LONG));
+        // The first profile is not on the page: it declines.
+        let v = h.call(wait());
+        let rid = ok(&v)["job"]["request_id"].as_u64().unwrap();
+        ok(&h.call(json!({"op":"agent_probe_result","request_id":rid,
+                          "result":{"err":"tab_mismatch"}})));
+        // The second profile gets the same probe and finds the page.
+        let v = other.call(wait());
+        assert_eq!(ok(&v)["job"]["request_id"].as_u64(), Some(rid), "{v}");
+        drop(ghost);
+        ok(
+            &other.call(json!({"op":"agent_probe_result","request_id":rid,
+            "result":{"ok":{"tab_title":"Atlas Cloud","origin":ATLAS,"document_id":"doc-2"}}})),
+        );
+        let (got, page) = prober.join().unwrap().unwrap();
+        assert_eq!((got, page.document_id.as_str()), (rid, "doc-2"));
+        // The fill goes to the second profile only, with its ticket.
+        let tool = Arc::clone(&hub);
+        let item = id(other.ids.atlas);
+        let filler = thread::spawn(move || {
+            tool.fill(
+                "claude",
+                rid,
+                &item,
+                ATLAS,
+                AgentKind::Login,
+                false,
+                "doc-2",
+                LONG,
+            )
+        });
+        let v = other.call(wait());
+        assert_eq!(ok(&v)["job"]["job"], "fill", "{v}");
+        let atlas = other.ids.atlas;
+        assert_eq!(
+            err(&h.call(agent_fill(h.ids.atlas, ATLAS, Some(rid)))),
+            "not_allowed"
+        );
+        ok(&other.call(agent_fill(atlas, ATLAS, Some(rid))));
+        let v = other.call(json!({"op":"agent_fill_result","request_id":rid,
+            "result":{"ok":{"filled":["username","password"],"submitted":false}}}));
+        ok(&v);
+        assert!(filler.join().unwrap().is_ok());
     }
 }

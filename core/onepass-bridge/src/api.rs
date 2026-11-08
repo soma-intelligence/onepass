@@ -714,10 +714,12 @@ impl From<FillWire> for FillResult {
 }
 
 /// The error code of a probe or fill job, as the extension names it. An
-/// unknown code is a refusal.
+/// unknown code is a refusal. `timeout`: the host refused the values
+/// because the ticket expired or was spent (`not_allowed`).
 pub fn agent_error(code: &str) -> AgentError {
     match code {
         "tab_mismatch" => AgentError::TabMismatch,
+        "timeout" => AgentError::Timeout,
         "origin_mismatch" => AgentError::OriginMismatch,
         "cross_site_frame" => AgentError::CrossSiteFrame,
         "no_fields" => AgentError::NoFields,
@@ -1932,7 +1934,7 @@ mod tests {
             ("cross_site_frame", AgentError::CrossSiteFrame),
             ("no_fields", AgentError::NoFields),
             ("denied", AgentError::Denied),
-            ("timeout", AgentError::Denied),
+            ("timeout", AgentError::Timeout),
             ("no_browser", AgentError::Denied),
             ("anything", AgentError::Denied),
         ] {

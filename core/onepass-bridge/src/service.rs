@@ -31,7 +31,7 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use crate::agent::{AgentHub, AgentKind, WAIT_TIMEOUT};
+use crate::agent::{AgentHub, AgentKind, AgentListener, WAIT_TIMEOUT};
 use crate::api::{
     AddressIn, AgentJobWire, CredentialStatus, Ctx, ErrorBody, Extra, FillField, FillKind,
     PasskeySummary, Recipe, RecipeKind, RecipeProfile, Reply, Request, Response, SecretString,
@@ -327,9 +327,10 @@ pub struct Service<V: VaultAccess> {
     /// The browser and profile of the session (`client_info`); unknown
     /// until the extension says.
     client: ClientContext,
-    /// The agent hub of the app, shared by every session (spec
-    /// 2026-11-07-agent-browser-fill 5). None: no agent fill here.
-    agent: Option<Arc<AgentHub>>,
+    /// This session as a listener of the app's agent hub, shared by every
+    /// session (spec 2026-11-07-agent-browser-fill 5): the jobs, answers
+    /// and tickets it sees are its own. None: no agent fill here.
+    agent: Option<AgentListener>,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -348,7 +349,7 @@ impl<V: VaultAccess> Service<V> {
     /// Serves agent fills through `hub`: `agent_wait`, the result requests
     /// and the `agent` context.
     pub fn with_agent_hub(mut self, hub: Arc<AgentHub>) -> Self {
-        self.agent = Some(hub);
+        self.agent = Some(hub.listener());
         self
     }
 
@@ -953,9 +954,10 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Items { items })
     }
 
-    /// The hub, or `not_allowed` when this service has none.
-    fn hub(&self) -> OpResult<&AgentHub> {
-        self.agent.as_deref().ok_or(AppErrorCode::NotAllowed)
+    /// This session's listener of the hub, or `not_allowed` when this
+    /// service has none.
+    fn hub(&self) -> OpResult<&AgentListener> {
+        self.agent.as_ref().ok_or(AppErrorCode::NotAllowed)
     }
 
     /// For the agent context: spends the ticket of `request` for this
