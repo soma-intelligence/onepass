@@ -77,11 +77,15 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(EXIT_USAGE);
     };
+    // Identify the client before connecting: on Linux this hashes the
+    // client's executable, which can take seconds for a large binary on a
+    // busy machine, and the app waits only a few seconds for the hello.
+    let hello = hello();
     let Ok(stream) = UnixStream::connect(&socket) else {
         eprintln!("onepass-mcp: OnePass is not running or the MCP server is off in its settings");
         return ExitCode::from(EXIT_UNAVAILABLE);
     };
-    match relay(stream) {
+    match relay(stream, &hello) {
         Ok(()) => ExitCode::SUCCESS,
         Err(m) => {
             eprintln!("onepass-mcp: {m}");
@@ -115,11 +119,9 @@ impl Writer {
     }
 }
 
-/// Relays until the app closes the socket.
-fn relay(stream: UnixStream) -> Result<(), String> {
-    let lost = |_| "connection to OnePass lost".to_owned();
-    let writer = Arc::new(Writer(Mutex::new(stream.try_clone().map_err(lost)?)));
-    let hello = match onepass_peer::identify_mcp_parent() {
+/// The first message: who the MCP client is, or why it is unknown.
+fn hello() -> RelayToApp {
+    match onepass_peer::identify_mcp_parent() {
         Ok(id) => RelayToApp::Hello {
             v: VERSION,
             client: Some(ClientHello::from_identity(&id)),
@@ -130,8 +132,14 @@ fn relay(stream: UnixStream) -> Result<(), String> {
             client: None,
             error: Some(e.to_string()),
         },
-    };
-    writer.send(&hello).map_err(lost)?;
+    }
+}
+
+/// Relays until the app closes the socket.
+fn relay(stream: UnixStream, hello: &RelayToApp) -> Result<(), String> {
+    let lost = |_| "connection to OnePass lost".to_owned();
+    let writer = Arc::new(Writer(Mutex::new(stream.try_clone().map_err(lost)?)));
+    writer.send(hello).map_err(lost)?;
     {
         let writer = writer.clone();
         thread::spawn(move || pump_stdin(&writer));
