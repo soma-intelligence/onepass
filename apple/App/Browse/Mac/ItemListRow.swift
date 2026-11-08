@@ -32,10 +32,19 @@ struct ItemListRow: View {
         model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
     }
 
+    /// The site icon tile: 36 pt on iPhone and iPad, 40 pt on the Mac.
+    #if os(iOS)
+    static let iconSize: CGFloat = 36
+    #else
+    static let iconSize: CGFloat = 40
+    #endif
+    /// Gap between the icon and the title.
+    static let iconSpacing: CGFloat = 12
+
     var body: some View {
-        HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: 40, brand: summary.cardBrand)
-                .favoriteBadge(summary.favorite, iconSize: 40)
+        HStack(spacing: Self.iconSpacing) {
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: Self.iconSize, brand: summary.cardBrand)
+                .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
                     .font(.body.weight(.semibold))

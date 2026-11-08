@@ -421,8 +421,8 @@ struct ItemDetailView: View {
             }
         }
         .font(.footnote)
-        // Dates: metadata.
-        .foregroundStyle(.tertiary)
+        // Secondary, not tertiary: the "Modifié le" line is a button.
+        .foregroundStyle(.secondary)
         .padding(.horizontal, Theme.Space.l)
         .padding(.top, Theme.Space.xs)
         .task(id: TimelineKey(item: item, open: showDates)) {
@@ -1038,6 +1038,7 @@ private struct WifiQRCard: View {
                 Image(systemName: "eye.slash").font(.title).foregroundStyle(Color(red: 0.07, green: 0.12, blue: 0.27))
             }
         }
+        // QRSquare's plate radius (side * 0.085 at 260 pt): geometry, not the radius scale.
         .clipShape(.rect(cornerRadius: 22))
         .contentShape(.rect)
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown.toggle() } }

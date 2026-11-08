@@ -347,9 +347,11 @@ struct LocationSearchSheet: View {
     @State private var status: LocationEditor.Status = .idle
     @FocusState private var focused: Bool
 
-    /// Where a result row's title starts (the 30 pt glyph and the spacing): the hairlines and the
-    /// settings button start there too.
-    static let textInset: CGFloat = 30 + Theme.Space.m
+    /// The round glyph of a result row.
+    static let glyphSize: CGFloat = 30
+    /// Where a result row's title starts (the glyph and the spacing): the hairlines and the settings
+    /// button start there too.
+    static let textInset: CGFloat = glyphSize + Theme.Space.m
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -423,7 +425,7 @@ struct LocationSearchSheet: View {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
+                    .frame(width: Self.glyphSize, height: Self.glyphSize)
                     .background(tint, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {

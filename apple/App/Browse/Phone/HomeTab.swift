@@ -272,7 +272,7 @@ private struct HomeListCard: View {
         VStack(spacing: 0) {
             HomeCardHeader(
                 title: title, subtitle: items.isEmpty ? nil : ItemListColumn.countLabel(items.count),
-                tile: AnyView(SymbolTile(symbol: symbol, color: color, size: 30)), isOpen: $isOpen, id: id
+                tile: AnyView(SymbolTile(symbol: symbol, color: color, size: PhoneCard.headerTileSize)), isOpen: $isOpen, id: id
             ) {
                 if let list, !items.isEmpty {
                     Menu {
@@ -365,7 +365,7 @@ private struct HomeNearbyCard: View {
         VStack(spacing: 0) {
             HomeCardHeader(
                 title: "À proximité", subtitle: subtitle,
-                tile: AnyView(NearbyTile(size: 30)), isOpen: $isOpen, id: "home.nearby"
+                tile: AnyView(NearbyTile(size: PhoneCard.headerTileSize)), isOpen: $isOpen, id: "home.nearby"
             ) {
                 if isOpen {
                     Menu {
@@ -512,6 +512,9 @@ struct PhoneItemRows: View {
     /// A short figure in a pill before the chevron (À proximité: the distance).
     var pill: (FfiItemSummary) -> String? = { _ in nil }
 
+    /// Where a row's title starts: the side padding, the row's icon, the spacing.
+    static let textInset: CGFloat = Theme.Space.l + ItemListRow.iconSize + ItemListRow.iconSpacing
+
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, summary in
@@ -540,8 +543,8 @@ struct PhoneItemRows: View {
                 .buttonStyle(RowHighlightButtonStyle())
                 // The hairline belongs to the row below it, so a row leaving takes its own line along.
                 .overlay(alignment: .top) {
-                    // Starts at the row title: padding, the 40 pt icon, spacing.
-                    if index > 0 { Divider().padding(.leading, Theme.Space.l + 40 + Theme.Space.m) }
+                    // Starts at the row title: padding, the row's icon, spacing.
+                    if index > 0 { Divider().padding(.leading, PhoneItemRows.textInset) }
                 }
                 .transition(.opacity)
             }
@@ -555,9 +558,11 @@ struct PhoneItemRows: View {
 /// cards.
 enum PhoneCard {
     static let radius: CGFloat = Theme.Radius.card
-    /// Where a home card header's title starts (padding, the 30 pt tile, spacing): the hairline
-    /// under the header starts there too.
-    static let headerTextInset: CGFloat = Theme.Space.l + 30 + Theme.Space.m
+    /// The colored tile of a home card header.
+    static let headerTileSize: CGFloat = 30
+    /// Where a home card header's title starts (padding, the tile, spacing): the hairline under the
+    /// header starts there too.
+    static let headerTextInset: CGFloat = Theme.Space.l + headerTileSize + Theme.Space.m
 }
 
 extension View {
@@ -566,23 +571,40 @@ extension View {
     }
 }
 
-/// The card's surface: the cell color, clipped to the card radius, a hairline. Light: the card sits
-/// on one soft shadow. Dark: no shadow, the hairline holds the edge.
+/// The card's surface: the cell color, clipped to the card radius, a hairline, and the light-only
+/// card shadow.
 private struct PhoneCardSurface: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
-        let shadow = Theme.cardShadow
         return content
             .background(Theme.card, in: shape)
             .clipShape(shape)
             .overlay { shape.strokeBorder(Theme.cardHairline) }
-            // The shadow sits on a shape of its own behind the card, so the clip never cuts it.
-            .background {
-                shape.fill(Theme.card)
-                    .shadow(color: colorScheme == .dark ? .clear : shadow.color, radius: shadow.radius, y: shadow.y)
-            }
+            .lightCardShadow(radius: PhoneCard.radius, fill: Theme.card)
+    }
+}
+
+extension View {
+    /// `Theme.cardShadow` under a card in light; none in dark, where the hairline holds the edge.
+    /// The shadow is cast by a rounded shape of its own behind the card, so neither a clip nor the
+    /// card's content (an animated TOTP ring, say) ever recomputes it.
+    func lightCardShadow(radius: CGFloat, fill: Color) -> some View {
+        modifier(LightCardShadow(radius: radius, fill: fill))
+    }
+}
+
+private struct LightCardShadow: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let radius: CGFloat
+    let fill: Color
+
+    func body(content: Content) -> some View {
+        let shadow = Theme.cardShadow
+        content.background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(fill)
+                .shadow(color: colorScheme == .dark ? .clear : shadow.color, radius: shadow.radius, y: shadow.y)
+        }
     }
 }
 

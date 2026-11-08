@@ -51,12 +51,14 @@ struct EditorCard<Content: View>: View {
             #if os(iOS)
             // iPhone and iPad: the grouped cell color over the grouped background (`groupedScreen`),
             // so a card reads the same in the lists, the detail and the editor.
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.card))
-            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.primary.opacity(0.06)) }
+            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06))
+            }
             // Light: the same soft shadow as the home cards. Dark: none.
-            .shadow(
-                color: scheme == .dark ? .clear : Theme.cardShadow.color,
-                radius: Theme.cardShadow.radius, y: Theme.cardShadow.y)
+            .lightCardShadow(radius: Theme.Radius.card, fill: Color(uiColor: .secondarySystemGroupedBackground))
             #else
             // Dark: see-through over the window, a hairline to hold the edge. Light: white cards
             // lifted off a soft gray page (`groupedScreen`) by a hairline and a faint shadow.

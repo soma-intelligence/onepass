@@ -103,7 +103,7 @@ struct BarcodeLargeView: View {
                     .interpolation(.none)
                     .aspectRatio(contentMode: .fit)
                     .padding(Theme.Space.l)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                    .background(.white, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
                     .frame(maxWidth: 360, maxHeight: format == .qr || format == .aztec ? 360 : 180)
                     .accessibilityLabel(Text("app.text \(BarcodeRenderer.name(format)) \(value)"))
             }

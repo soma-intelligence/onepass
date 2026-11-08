@@ -202,8 +202,8 @@ private struct AccountPanelGroup<Content: View>: View {
             Group(subviews: content) { rows in
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     if index > 0 {
-                        // Starts at the row title: padding, the 30 pt tile, spacing.
-                        Divider().padding(.leading, Theme.Space.m + 30 + Theme.Space.m)
+                        // Starts at the row title: padding, the tile, spacing.
+                        Divider().padding(.leading, Theme.Space.m + AccountPanelRow.tileSize + Theme.Space.m)
                     }
                     row
                 }
@@ -215,6 +215,7 @@ private struct AccountPanelGroup<Content: View>: View {
 
 /// One action of the panel: its tile, its short name.
 private struct AccountPanelRow: View {
+    static let tileSize: CGFloat = 30
     let title: LocalizedStringKey
     let symbol: String
     let color: Color
@@ -224,7 +225,7 @@ private struct AccountPanelRow: View {
     var body: some View {
         Button(role: role, action: action) {
             HStack(spacing: Theme.Space.m) {
-                SymbolTile(symbol: symbol, color: color, size: 30)
+                SymbolTile(symbol: symbol, color: color, size: Self.tileSize)
                 Text(title)
                     .font(.body)
                     .foregroundStyle(role == .destructive ? Color.red : Color.primary)
