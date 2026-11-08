@@ -125,7 +125,8 @@
   :root {
     --wash-accent: var(--accent);
     --wash-alert-danger: var(--danger);
-    --wash-scale: var(--ok);
+    /* No flat scale colour: a consumer colours a flat bar by its own value, never "good" by default. */
+    --wash-scale: none;
     --wash-identity: transparent;
   }
 }

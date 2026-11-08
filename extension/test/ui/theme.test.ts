@@ -51,14 +51,19 @@ describe("theme tokens mirroring DesignKit", () => {
     for (const name of declared) expect(contrast, name).toContain(`${name}:`);
     expect(contrast).toContain("--wash-accent: var(--accent);");
     expect(contrast).toContain("--wash-alert-danger: var(--danger);");
-    expect(contrast).toContain("--wash-scale: var(--ok);");
+    expect(contrast).toContain("--wash-scale: none;");
     expect(contrast).toContain("--wash-identity: transparent;");
     expect(contrast).not.toContain("gradient(");
+    // The light block also sets --wash-identity: the flat fallback must come after it to win.
+    expect(css.indexOf("@media (prefers-contrast: more)")).toBeGreaterThan(css.indexOf("@media (prefers-color-scheme: light)"));
   });
 
   it("keeps meaningless gradients out of the sheet", () => {
     const stray = css.split("\n").filter((l) => /linear-gradient\(/.test(l) && !/--wash-/.test(l));
     expect(stray).toEqual([]);
-    expect(css).not.toMatch(/radial-gradient\(\d+px \d+px at/);
+    // Any radial or conic gradient, whatever its form. The only ones allowed are the hard-stop
+    // concave corners of the overflow tab, a shape and not a wash.
+    const shaped = css.split("\n").filter((l) => /(radial|conic)-gradient\(/.test(l) && !/^\.ov-others::(before|after) /.test(l));
+    expect(shaped).toEqual([]);
   });
 });
