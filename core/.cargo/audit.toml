@@ -17,6 +17,13 @@ ignore = [
     # compile time, not shipped code; not a vulnerability. Review by
     # 2027-01-31.
     "RUSTSEC-2026-0374",
+    # zvariant, zvariant_derive and zbus_names are unmaintained. Reached through
+    # zbus, the D-Bus client onepass-wifi uses to talk to NetworkManager on
+    # Linux. Shipped code, but no known vulnerability. Replace or update zbus
+    # by 2027-01-31.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
 ]
 informational_warnings = ["unmaintained", "unsound", "notice"]
 

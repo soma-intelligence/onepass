@@ -506,6 +506,9 @@ fn audit_holds_no_document_number() {
     for n in ["18AB12345", "120375201234", "AM123"] {
         assert!(!seen.contains(n), "{n} in the audit: {seen}");
     }
-    let v = h.fill(&["passport", "loyalty"], "https://atlas-cloud.test.evil.test");
+    let v = h.fill(
+        &["passport", "loyalty"],
+        "https://atlas-cloud.test.evil.test",
+    );
     assert!(ok(&v).get("loyalty").is_none());
 }

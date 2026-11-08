@@ -14,6 +14,13 @@ ignore = [
     # see it (feature off in its graph), cargo audit reads the whole lockfile.
     # Review by 2027-01-31.
     { id = "RUSTSEC-2026-0374", reason = "unmaintained, uniffi bindgen proc macro only; review by 2027-01-31" },
+    # zvariant, zvariant_derive and zbus_names are unmaintained. Reached through
+    # zbus, the D-Bus client onepass-wifi uses to talk to NetworkManager on
+    # Linux (onepass-cli wifi). Shipped code, but no known vulnerability.
+    # Replace or update zbus by 2027-01-31.
+    { id = "RUSTSEC-2026-0370", reason = "unmaintained, zbus D-Bus client of onepass-wifi on Linux; review by 2027-01-31" },
+    { id = "RUSTSEC-2026-0371", reason = "unmaintained, zbus D-Bus client of onepass-wifi on Linux; review by 2027-01-31" },
+    { id = "RUSTSEC-2026-0372", reason = "unmaintained, zbus D-Bus client of onepass-wifi on Linux; review by 2027-01-31" },
 ]
 
 [licenses]

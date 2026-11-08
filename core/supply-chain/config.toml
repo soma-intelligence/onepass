@@ -55,6 +55,42 @@ criteria = "safe-to-deploy"
 version = "0.16.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.async-broadcast]]
+version = "0.7.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-channel]]
+version = "2.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-executor]]
+version = "1.14.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-io]]
+version = "1.13.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-lock]]
+version = "3.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-process]]
+version = "2.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-recursion]]
+version = "1.2.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-signal]]
+version = "0.2.14"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-trait]]
+version = "0.1.92"
+criteria = "safe-to-deploy"
+
 [[exemptions.aws-lc-rs]]
 version = "1.18.2"
 criteria = "safe-to-deploy"
@@ -92,6 +128,10 @@ criteria = "safe-to-deploy"
 version = "0.12.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.blocking]]
+version = "1.7.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.blowfish]]
 version = "0.10.0"
 criteria = "safe-to-deploy"
@@ -124,6 +164,10 @@ criteria = "safe-to-deploy"
 version = "0.5.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.concurrent-queue]]
+version = "2.5.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.const-oid]]
 version = "0.10.2"
 criteria = "safe-to-deploy"
@@ -151,6 +195,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.crc32fast]]
 version = "1.5.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.crossbeam-utils]]
+version = "0.8.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
@@ -183,10 +231,6 @@ version = "0.8.3"
 criteria = "safe-to-deploy"
 notes = "DER codec under sec1 0.8, under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). The core only uses compressed SEC1 points with it. Not audited here: exemption until an audit is imported or recorded."
 
-[[exemptions.der]]
-version = "0.8.3"
-criteria = "safe-to-run"
-
 [[exemptions.deranged]]
 version = "0.5.9"
 criteria = "safe-to-deploy"
@@ -207,6 +251,26 @@ criteria = "safe-to-deploy"
 version = "0.14.3"
 criteria = "safe-to-deploy"
 notes = "RustCrypto curve traits under k256 0.14 (secp256k1 for BIP32 public derivation and the explicit phrase-to-public derivation, spec 2026-11-02-crypto-watch). 0.14 drops crypto-bigint 0.5 (RUSTSEC-2026-0387, timing on secret integers). Not audited here: exemption until an audit is imported or recorded."
+
+[[exemptions.endi]]
+version = "1.1.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.enumflags2]]
+version = "0.7.12"
+criteria = "safe-to-deploy"
+
+[[exemptions.enumflags2_derive]]
+version = "0.7.12"
+criteria = "safe-to-deploy"
+
+[[exemptions.event-listener]]
+version = "5.4.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.event-listener-strategy]]
+version = "0.5.4"
+criteria = "safe-to-deploy"
 
 [[exemptions.fancy-regex]]
 version = "0.18.0"
@@ -288,6 +352,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.hax-lib-macros-types]]
 version = "0.4.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.hermit-abi]]
+version = "0.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.hmac]]
@@ -417,6 +485,10 @@ version = "0.21.6"
 criteria = "safe-to-deploy"
 notes = "DNS-SD announce and browse of the T-LAN pairing transport (onepass-pairnet, spec 5.3): pure Rust, no async runtime, no default features. Its daemon only speaks on the interface chosen by the caller. Not audited here: exemption until an audit is imported or recorded."
 
+[[exemptions.memoffset]]
+version = "0.9.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.minimal-lexical]]
 version = "0.2.1"
 criteria = "safe-to-deploy"
@@ -438,6 +510,10 @@ criteria = "safe-to-deploy"
 version = "1.21.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.ordered-stream]]
+version = "0.2.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.password-hash]]
 version = "0.6.1"
 criteria = "safe-to-deploy"
@@ -454,12 +530,20 @@ criteria = "safe-to-deploy"
 version = "0.2.17"
 criteria = "safe-to-deploy"
 
+[[exemptions.piper]]
+version = "0.2.5"
+criteria = "safe-to-deploy"
+
 [[exemptions.pkcs8]]
 version = "0.11.0"
 criteria = "safe-to-run"
 
 [[exemptions.plain]]
 version = "0.2.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.polling]]
+version = "3.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.potential_utf]]
@@ -482,7 +566,7 @@ notes = "Prime order curve formulas under k256 0.14 (watch-only crypto balances,
 
 [[exemptions.proc-macro-crate]]
 version = "3.5.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.proptest]]
 version = "1.12.0"
@@ -596,6 +680,10 @@ version = "0.6.5"
 criteria = "safe-to-deploy"
 notes = "serde adapter of the WebAssembly build of onepass-mailbox-proto (feature wasm), run only inside the mailbox edge function (spec 2026-10-30-cross-platform-clients-design 4.6, 4.14). Not in any client binary. Not audited here: exemption until an audit is imported or recorded."
 
+[[exemptions.serde_repr]]
+version = "0.1.21"
+criteria = "safe-to-deploy"
+
 [[exemptions.serdect]]
 version = "0.4.3"
 criteria = "safe-to-deploy"
@@ -616,6 +704,10 @@ criteria = "safe-to-deploy"
 [[exemptions.sha3]]
 version = "0.11.0"
 criteria = "safe-to-run"
+
+[[exemptions.signal-hook-registry]]
+version = "1.4.8"
+criteria = "safe-to-deploy"
 
 [[exemptions.signature]]
 version = "2.3.0-pre.4"
@@ -704,24 +796,12 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.toml]]
-version = "1.1.8+spec-1.1.0"
+[[exemptions.tracing]]
+version = "0.1.44"
 criteria = "safe-to-deploy"
 
-[[exemptions.toml_datetime]]
-version = "1.1.2+spec-1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.toml_edit]]
-version = "0.25.17+spec-1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.toml_parser]]
-version = "1.1.5+spec-1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.toml_writer]]
-version = "1.1.3+spec-1.1.0"
+[[exemptions.tracing-attributes]]
+version = "0.1.31"
 criteria = "safe-to-deploy"
 
 [[exemptions.tungstenite]]
@@ -735,6 +815,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.typenum]]
 version = "1.20.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.uds_windows]]
+version = "1.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ureq]]
@@ -785,6 +869,22 @@ notes = "Windowed NAF scalar multiplication under k256 0.14 (watch-only crypto b
 version = "0.6.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.zbus]]
+version = "5.19.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.zbus_macros]]
+version = "5.19.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.zbus_names]]
+version = "4.3.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.zcheapstr]]
+version = "1.2.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.zerocopy]]
 version = "0.7.35"
 criteria = "safe-to-deploy"
@@ -827,6 +927,18 @@ criteria = "safe-to-deploy"
 
 [[exemptions.zopfli]]
 version = "0.8.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.zvariant]]
+version = "5.15.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.zvariant_derive]]
+version = "5.15.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.zvariant_utils]]
+version = "4.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.zxcvbn]]
