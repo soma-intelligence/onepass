@@ -51,6 +51,10 @@ export class BrowserGone extends Error {}
 export async function guardContext(ctx: any, allowed: (u: URL) => Promise<boolean>): Promise<{ readonly blocked: boolean }> {
   const state = { blocked: false };
   let first = true;
+  // No script-opened popups at all. Closing a popup races with its paused
+  // requests: Chromium lets a paused request go when the page's session
+  // detaches, so a popup's POST could reach the site before its abort.
+  await ctx.addInitScript("window.open = () => null;");
   await ctx.route("**/*", async (route: any) => {
     const req = route.request();
     let nav = false;
