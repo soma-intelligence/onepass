@@ -99,6 +99,8 @@ targets:
         product: VaultKit
       - package: DesignKit
         product: DesignKit
+      # App Intents and Shortcuts: linked explicitly, autolinking misses it in the Mac App Store archive.
+      - sdk: AppIntents.framework
       # The iOS app carries the watch app; the Mac build has no watch content.
       - target: OnePassWatch
         destinationFilters: [iOS]
