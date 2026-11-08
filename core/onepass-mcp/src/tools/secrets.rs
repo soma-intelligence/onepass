@@ -353,10 +353,45 @@ impl<P: VaultPort> McpTools<P> {
         vault_id: Option<Id>,
         call: &mut Call<'_>,
     ) -> Result<(), Refusal> {
+        self.admit_secret()?;
+        self.approve_admitted(
+            client,
+            action,
+            details,
+            targets,
+            remember_allowed,
+            key,
+            vault_id,
+            call,
+        )
+    }
+
+    /// The first two checks of [`Self::approve`]: the audit log is
+    /// appendable, and the secret rate limit admits one more request.
+    pub(super) fn admit_secret(&mut self) -> Result<(), Refusal> {
         if self.audit.ready().is_err() {
             return Err(Refusal::AuditUnusable);
         }
-        self.admit(Kind::Secret)?;
+        self.admit(Kind::Secret)
+    }
+
+    /// [`Self::approve`] for a request [`Self::admit_secret`] already
+    /// counted (a browser fill counts itself before its probe).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn approve_admitted(
+        &mut self,
+        client: &ClientInfo,
+        action: &str,
+        details: Vec<(String, String)>,
+        targets: Vec<Target>,
+        remember_allowed: bool,
+        key: Option<String>,
+        vault_id: Option<Id>,
+        call: &mut Call<'_>,
+    ) -> Result<(), Refusal> {
+        if self.audit.ready().is_err() {
+            return Err(Refusal::AuditUnusable);
+        }
         let key = key.filter(|_| remember_allowed).map(|k| self.grant_key(&k));
         if let Some(k) = &key {
             let check = self.grants.lock().unwrap_or_else(|e| e.into_inner()).check(

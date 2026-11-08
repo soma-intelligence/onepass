@@ -17,6 +17,18 @@ use zeroize::Zeroizing;
 /// Longest tab title shown for approval, in characters.
 const MAX_TAB_TITLE: usize = 150;
 
+/// The field names `filled` may report to the agent; any other name a
+/// browser gives is dropped.
+const FILLED_NAMES: [&str; 7] = [
+    "username",
+    "password",
+    "totp",
+    "cardholder",
+    "number",
+    "expiry",
+    "cvv",
+];
+
 fn named(code: &'static str, text: &str) -> Refusal {
     Refusal::Named {
         code,
@@ -314,9 +326,10 @@ impl<P: VaultPort> McpTools<P> {
     /// `fill_in_browser {item_id | query, url, kind, submit?, target}`.
     ///
     /// Order: arguments, HTTPS, `submit` for a card, a `cdp` address that is
-    /// not `ws://` (`cdp_not_local`), the item, the `fill`
-    /// scope, the item's site (login), the probe, the tab's site, then the
-    /// approval (audit log usable, rate limits, grant, prompt), strong
+    /// not `ws://` (`cdp_not_local`), a locked Mac (`no_browser`), the item,
+    /// the `fill` scope, the item's site (login), the audit log and the
+    /// secret rate limit, the probe, the tab's site, then the approval
+    /// (prompt rate limit, grant, prompt), strong
     /// authentication unless a grant covered it, the fill, the log. Every
     /// exit after a probe that does not reach the fill cancels the probe.
     pub(super) fn fill_in_browser(
@@ -351,6 +364,11 @@ impl<P: VaultPort> McpTools<P> {
         {
             return Err(browser_refusal(BrowserError::CdpNotLocal).into());
         }
+        // A locked Mac (agents-only session) fills nothing, in Chrome or
+        // over CDP: refused before the item is looked up or anyone asked.
+        if let Some(b) = self.browser.as_ref() {
+            b.ready().map_err(browser_refusal)?;
+        }
         let wanted = match kind {
             FillKind::Login => ItemType::Login,
             FillKind::Card => ItemType::CreditCard,
@@ -370,6 +388,12 @@ impl<P: VaultPort> McpTools<P> {
         }
 
         let client_id = self.client.client_id.clone();
+        if self.browser.is_none() {
+            return Err(browser_refusal(BrowserError::NoBrowser).into());
+        }
+        // Audit log usable and the secret rate limit, before the browser is
+        // asked anything: a throttled agent cannot drive probes.
+        self.admit_secret()?;
         let browser = self
             .browser
             .as_ref()
@@ -392,7 +416,16 @@ impl<P: VaultPort> McpTools<P> {
             .fill(&client_id, &target, &probe, &item, vault.id, kind, submit)
             .map_err(browser_refusal)?;
         call.field = Some(if out.submitted { "submitted" } else { "filled" }.to_owned());
-        Ok(json!({"filled": out.filled, "submitted": out.submitted}))
+        // Only the item field names of spec 3 reach the agent, once each.
+        let mut filled: Vec<&str> = Vec::new();
+        for name in &out.filled {
+            if let Some(n) = FILLED_NAMES.iter().find(|n| **n == name.as_str())
+                && !filled.contains(n)
+            {
+                filled.push(n);
+            }
+        }
+        Ok(json!({"filled": filled, "submitted": out.submitted}))
     }
 
     /// Everything between the probe and the fill: the tab's site, the
@@ -445,7 +478,7 @@ impl<P: VaultPort> McpTools<P> {
         // extension never covers a page driven over CDP, nor the reverse.
         let browser = if cdp { "cdp" } else { "chrome" };
         let key = json!([item.id.to_string(), matched, browser]).to_string();
-        self.approve(
+        self.approve_admitted(
             client,
             action,
             details,
@@ -557,9 +590,19 @@ mod tests {
         probe_error: Option<BrowserError>,
         fill_error: Option<BrowserError>,
         log: Arc<Mutex<BrowserLog>>,
+        /// What the fill reports instead of the kind's default names.
+        filled: Option<Vec<String>>,
+        locked: bool,
     }
 
     impl BrowserFill for FakeBrowser {
+        fn ready(&self) -> Result<(), BrowserError> {
+            if self.locked {
+                return Err(BrowserError::MacLocked);
+            }
+            Ok(())
+        }
+
         fn probe(
             &self,
             _client_id: &str,
@@ -596,10 +639,10 @@ mod tests {
             if let Some(e) = self.fill_error {
                 return Err(e);
             }
-            let filled = match kind {
+            let filled = self.filled.clone().unwrap_or_else(|| match kind {
                 FillKind::Login => vec!["username".into(), "password".into()],
                 FillKind::Card => vec!["number".into(), "expiry".into(), "cvv".into()],
-            };
+            });
             Ok(FillOutcome {
                 filled,
                 submitted: submit,
@@ -739,6 +782,8 @@ mod tests {
             probe_error: None,
             fill_error: None,
             log: log.clone(),
+            filled: None,
+            locked: false,
         }));
         Fx {
             tools,
@@ -776,6 +821,8 @@ mod tests {
                 probe_error,
                 fill_error,
                 log: self.log.clone(),
+                filled: None,
+                locked: false,
             }));
         }
 
@@ -1303,5 +1350,77 @@ mod tests {
         let log = f.log.lock().unwrap();
         assert!(log.fills.is_empty());
         assert_eq!(log.cancels, vec![REQUEST_ID]);
+    }
+
+    #[test]
+    fn filled_reports_only_the_known_field_names() {
+        let mut f = fx(vec![Decision::AllowOnce]);
+        f.tools.browser = Some(Box::new(FakeBrowser {
+            origin: "https://github.com".into(),
+            title: "Sign in to GitHub".into(),
+            probe_error: None,
+            fill_error: None,
+            log: f.log.clone(),
+            filled: Some(vec![
+                "password".into(),
+                "hunter2".into(),
+                "username".into(),
+                "password".into(),
+                "current_password".into(),
+                "cvv".into(),
+            ]),
+            locked: false,
+        }));
+        let out = ok(f.call(login_args(&f.github.clone())));
+        assert_eq!(
+            out,
+            json!({"filled": ["password", "username", "cvv"], "submitted": false})
+        );
+    }
+
+    #[test]
+    fn locked_mac_is_no_browser_before_item_lookup_and_prompt() {
+        for target in [
+            chrome(),
+            json!({"cdp": "ws://127.0.0.1:9222/devtools/page/x"}),
+        ] {
+            let mut f = fx(vec![Decision::AllowOnce]);
+            f.tools.browser = Some(Box::new(FakeBrowser {
+                origin: "https://github.com".into(),
+                title: "Sign in to GitHub".into(),
+                probe_error: None,
+                fill_error: None,
+                log: f.log.clone(),
+                filled: None,
+                locked: true,
+            }));
+            // An unknown item: the refusal comes first all the same.
+            let out = f.call(
+                json!({"query": "nothing", "url": "https://github.com/login",
+                "kind": "login", "target": target}),
+            );
+            let m = refused(out);
+            assert!(m.starts_with("no_browser"), "{m}");
+            assert!(m.contains("unlock the Mac"), "{m}");
+            assert!(f.approver.calls().is_empty());
+            assert!(f.log.lock().unwrap().probes.is_empty());
+        }
+    }
+
+    #[test]
+    fn secret_rate_limit_runs_before_the_probe() {
+        let mut f = fx(vec![Decision::AllowOnce, Decision::AllowOnce]);
+        f.tools.throttle = Throttle::new(Limits {
+            prompts_per_min: 1000,
+            secret_per_min: 1,
+            denials_before_cooldown: 1000,
+            cooldown: Duration::from_secs(1),
+        });
+        ok(f.call(login_args(&f.github.clone())));
+        let m = refused(f.call(login_args(&f.github.clone())));
+        assert!(m.contains("rate"), "{m}");
+        // The second call never reached the browser.
+        assert_eq!(f.log.lock().unwrap().probes.len(), 1);
+        assert_eq!(f.approver.calls().len(), 1);
     }
 }

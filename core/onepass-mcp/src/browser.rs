@@ -80,6 +80,9 @@ pub enum BrowserError {
     NoFields,
     /// The CDP address is not on this machine.
     CdpNotLocal,
+    /// The Mac is locked (a session the phone opened for agents only): no
+    /// browser fill until the user unlocks it. Named `no_browser`.
+    MacLocked,
 }
 
 impl BrowserError {
@@ -93,6 +96,7 @@ impl BrowserError {
             BrowserError::CrossSiteFrame => "cross_site_frame",
             BrowserError::NoFields => "no_fields",
             BrowserError::CdpNotLocal => "cdp_not_local",
+            BrowserError::MacLocked => "no_browser",
         }
     }
 
@@ -106,12 +110,21 @@ impl BrowserError {
             BrowserError::CrossSiteFrame => "the fields are in a frame of another site",
             BrowserError::NoFields => "no field to fill on the page",
             BrowserError::CdpNotLocal => "the CDP address is not on this machine",
+            BrowserError::MacLocked => {
+                "the Mac is locked: ask the user to unlock the Mac, then try again"
+            }
         }
     }
 }
 
 /// A browser OnePass can fill into for an agent.
 pub trait BrowserFill: Send {
+    /// Whether a fill may start at all, before the item is looked up or
+    /// anyone is asked: `MacLocked` while the session serves agents only.
+    fn ready(&self) -> Result<(), BrowserError> {
+        Ok(())
+    }
+
     /// Looks at the page `client_id` says it is on (`url`), in `target`.
     fn probe(
         &self,
