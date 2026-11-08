@@ -1028,6 +1028,112 @@ fn agent_only_session_serves_mcp() {
     host.stop();
 }
 
+/// Counts the panels shown; approves everything.
+#[derive(Default)]
+struct CountingUi {
+    asked: Mutex<usize>,
+}
+
+impl FfiDeveloperUi for CountingUi {
+    fn approve(&self, _request: FfiApprovalRequest) -> FfiAnswer {
+        *self.asked.lock().unwrap() += 1;
+        FfiAnswer {
+            decision: FfiDecision::AllowOnce,
+            approved_on: Some("mac".into()),
+        }
+    }
+    fn verify_presence(&self, _reason: String) -> bool {
+        true
+    }
+    fn pair_request(&self, _client: FfiMcpClient) -> bool {
+        true
+    }
+}
+
+#[test]
+fn agent_only_session_refuses_browser_fill_for_both_targets() {
+    let (mac, phone) = mac_and_phone();
+    let data = mac.dir.path().join("dev").display().to_string();
+    let socket = mac.dir.path().join("dev").join("mcp.sock");
+    let vault = mac.session.vaults().unwrap().remove(0);
+    let mut meta = vault.meta.clone();
+    meta.mcp_access = true;
+    mac.session.update_vault(vault.id.clone(), meta).unwrap();
+    mac.session
+        .clone()
+        .set_mcp_policy(
+            data.clone(),
+            vec![FfiClientScopes {
+                vault_id: vault.id.clone(),
+                scopes: vec!["metadata".into(), "fill".into()],
+            }],
+            true,
+        )
+        .unwrap();
+    let (c, k_r) = enroll(&mac, &phone);
+    mac.session.lock();
+    let s = remote_unlock(&mac, &phone, &c, &k_r, 60).unwrap();
+    assert!(s.is_agent_only());
+
+    let ui = Arc::new(CountingUi::default());
+    let host = McpHost::start_any_relay_for_tests(
+        s.clone(),
+        FfiMcpHostConfig {
+            data_dir: data.clone(),
+            socket_path: socket.display().to_string(),
+            relay_path: "/unused".into(),
+            protected_dirs: vec![mac.dir.path().display().to_string()],
+        },
+        ui.clone(),
+    )
+    .unwrap();
+    let mut r = Relay::connect(
+        &socket.display().to_string(),
+        json!({
+            "id": "team:TEAMID0001:com.exemple.agent", "label": "Agent Exemple",
+            "signed": true, "hardened": null,
+            "code": {"kind": "team", "team_id": "TEAMID0001", "identifier": "com.exemple.agent"},
+            "chain": ["team:TEAMID0001:com.exemple.agent"],
+        }),
+    );
+    r.call(
+        1,
+        "initialize",
+        json!({"protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"}}),
+    );
+    let mut paired = false;
+    for _ in 0..200 {
+        if !s.clone().paired_clients(data.clone()).unwrap().is_empty() {
+            paired = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(paired);
+    // No item matches: the refusal comes before the lookup (`no_browser`,
+    // not `no_item`), for Chrome and for a local CDP page alike.
+    for (id, target) in [
+        (2, json!({"browser": "chrome"})),
+        (3, json!({"cdp": "ws://127.0.0.1:9/devtools/page/x"})),
+    ] {
+        let reply = r.call(
+            id,
+            "tools/call",
+            json!({"name": "fill_in_browser", "arguments": {
+                "query": "nothing here", "url": "https://atlas-cloud.test/login",
+                "kind": "login", "target": target}}),
+        );
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let text = reply["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("no_browser"), "{text}");
+        assert!(text.contains("unlock the Mac"), "{text}");
+    }
+    assert_eq!(*ui.asked.lock().unwrap(), 0);
+    drop(r);
+    host.stop();
+}
+
 /// The Mac panel during an agents-only window: the Mac may be unattended
 /// (the owner left it locked), so a click on "Allow" counts only after
 /// Touch ID (the presence check). A phone answer is not concerned.

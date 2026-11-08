@@ -464,7 +464,7 @@ fn mcp_fill_reaches_the_extension_through_the_bridge() {
     drop(asked);
     // The ticket was good once: the hub holds nothing more.
     let request = seen.fill_job["request_id"].as_u64().unwrap();
-    assert!(!rig.server.agent_hub().ticket_live(request));
+    assert!(!rig.server.agent_hub().ticket_held(request));
     rig.host.stop();
 }
 
@@ -636,20 +636,29 @@ fn cdp_target_fills_a_local_fake_page() {
     assert!(refusal(&reply).starts_with("origin_mismatch"), "{reply}");
     assert_eq!(rig.ui.asked.lock().unwrap().len(), 2);
     assert_eq!(cdp.inserted().len(), before);
-    // And a page already elsewhere is refused before anyone is asked.
+    // And a page already elsewhere is refused before anyone is asked, as a
+    // tab on another site (the Chrome name), or a page not over HTTPS.
     let reply = fill_call(
         &mut r,
         4,
         json!({"query": "Atlas Cloud", "url": url, "kind": "login",
             "target": {"cdp": cdp.ws_url()}}),
     );
-    assert!(refusal(&reply).starts_with("origin_mismatch"), "{reply}");
+    assert!(refusal(&reply).starts_with("tab_mismatch"), "{reply}");
+    cdp.navigate("http://atlas-cloud.test/login");
+    let reply = fill_call(
+        &mut r,
+        5,
+        json!({"query": "Atlas Cloud", "url": url, "kind": "login",
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert!(refusal(&reply).starts_with("tab_mismatch"), "{reply}");
     assert_eq!(rig.ui.asked.lock().unwrap().len(), 2);
 
     // One entry per call: the fill (origin, submitted), the fill that
-    // failed after approval, the refusal at the probe. No value in any.
+    // failed after approval, the refusals at the probe. No value in any.
     let audit = fill_audit(&rig);
-    assert_eq!(audit.len(), 3, "{audit:?}");
+    assert_eq!(audit.len(), 4, "{audit:?}");
     for e in &audit {
         assert_eq!(e["action"], "fill_login");
         assert_eq!(e["destination"], ATLAS);
@@ -664,7 +673,8 @@ fn cdp_target_fills_a_local_fake_page() {
     assert_eq!(audit[1]["outcome"], "origin_mismatch");
     assert_eq!(audit[1]["decision"], "once");
     assert!(audit[1]["field"].is_null(), "{:?}", audit[1]);
-    assert_eq!(audit[2]["outcome"], "origin_mismatch");
+    assert_eq!(audit[2]["outcome"], "tab_mismatch");
+    assert_eq!(audit[3]["outcome"], "tab_mismatch");
     rig.host.stop();
 }
 

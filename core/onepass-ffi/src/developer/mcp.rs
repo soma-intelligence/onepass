@@ -745,8 +745,15 @@ fn serve_session(
     )
     .with_workspace(Box::new(workspace))
     .with_policy_source(policy_source)
-    // The bridge serves the same hub to the extension (`agent_wait`).
-    .with_browser(Box::new(HubBrowser { hub: agent_hub() }));
+    // The bridge serves the same hub to the extension (`agent_wait`). A
+    // session the phone opened for agents only fills no browser.
+    .with_browser(Box::new(HubBrowser {
+        hub: agent_hub(),
+        agent_only: {
+            let session = ctx.session.clone();
+            Box::new(move || session.agent_window().is_some())
+        },
+    }));
     let input = ChannelReader {
         rx: mcp_rx,
         buf: held.replay,

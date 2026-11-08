@@ -193,16 +193,14 @@ fn role_values(
     out
 }
 
-/// Probe over CDP: the real URL of the top frame, which must be `https`
-/// and at the exact origin of the URL the agent gave, and the page title.
-fn cdp_probe(ws_url: &str, url: &str) -> Result<PageProbe, BrowserError> {
-    let want = https_origin(url).ok_or(BrowserError::OriginMismatch)?;
+/// Probe over CDP: the real origin of the top frame, which must be
+/// `https` (else `tab_mismatch`), and the page title. The URL the agent gave
+/// is not compared here: the tool checks the page's site and the item's rule
+/// on this origin (`tab_mismatch`), as for Chrome.
+fn cdp_probe(ws_url: &str) -> Result<PageProbe, BrowserError> {
     let mut page = CdpFiller::connect(ws_url).map_err(cdp_error)?;
     let origin = https_origin(&page.main_frame_url().map_err(cdp_error)?)
-        .ok_or(BrowserError::OriginMismatch)?;
-    if origin != want {
-        return Err(BrowserError::OriginMismatch);
-    }
+        .ok_or(BrowserError::TabMismatch)?;
     let tab_title = page.title().map_err(cdp_error)?;
     Ok(PageProbe {
         tab_title,
@@ -213,7 +211,8 @@ fn cdp_probe(ws_url: &str, url: &str) -> Result<PageProbe, BrowserError> {
 }
 
 /// Fill over CDP, on a new connection: the top frame must still be at the
-/// approved origin (pinned for every later step), then the page context
+/// approved origin (`origin_mismatch` if the page moved after approval;
+/// pinned for every later step), then the page context
 /// is planned for this item alone, each planned field typed, and for a
 /// login with `submit` on a sign-in page the form's submit button clicked.
 fn cdp_fill(
@@ -307,13 +306,26 @@ fn click(page: &mut CdpPage, button: i64) -> bool {
     page.click(button).is_ok()
 }
 
+/// Whether the session serves agents only (the Mac is locked).
+pub(crate) type AgentOnly = Box<dyn Fn() -> bool + Send>;
+
 /// [`BrowserFill`] over the agent hub (`Chrome`, to the extension) or over
 /// a local DevTools socket (`Cdp`).
 pub(crate) struct HubBrowser {
     pub(crate) hub: Arc<AgentHub>,
+    /// True while the session was opened from the phone for agents only:
+    /// no browser fill then, whatever the target (spec 4 and 9).
+    pub(crate) agent_only: AgentOnly,
 }
 
 impl BrowserFill for HubBrowser {
+    fn ready(&self) -> Result<(), BrowserError> {
+        if (self.agent_only)() {
+            return Err(BrowserError::MacLocked);
+        }
+        Ok(())
+    }
+
     fn probe(
         &self,
         client_id: &str,
@@ -340,13 +352,13 @@ impl BrowserFill for HubBrowser {
                     request_id,
                 })
             }
-            BrowserTarget::Cdp(ws_url) => cdp_probe(ws_url, url),
+            BrowserTarget::Cdp(ws_url) => cdp_probe(ws_url),
         }
     }
 
     fn fill(
         &self,
-        _client_id: &str,
+        client_id: &str,
         target: &BrowserTarget,
         probe: &PageProbe,
         item: &Item,
@@ -361,6 +373,7 @@ impl BrowserFill for HubBrowser {
                 let done = self
                     .hub
                     .fill(
+                        client_id,
                         probe.request_id,
                         &item.id.to_string(),
                         &probe.origin,
@@ -429,11 +442,30 @@ mod tests {
 
     #[test]
     fn cdp_probe_refuses_a_remote_address_before_any_socket() {
-        let b = HubBrowser { hub: agent_hub() };
+        let b = HubBrowser {
+            hub: agent_hub(),
+            agent_only: Box::new(|| false),
+        };
         let cdp = BrowserTarget::Cdp("ws://192.0.2.1:9222/devtools/page/x".into());
         assert_eq!(
             b.probe("c", &cdp, "https://example.com").unwrap_err(),
             BrowserError::CdpNotLocal
         );
+    }
+
+    #[test]
+    fn agent_only_session_is_not_ready() {
+        let b = HubBrowser {
+            hub: agent_hub(),
+            agent_only: Box::new(|| true),
+        };
+        let e = b.ready().unwrap_err();
+        assert_eq!(e.code(), "no_browser");
+        assert!(e.text().contains("unlock the Mac"), "{}", e.text());
+        let b = HubBrowser {
+            hub: agent_hub(),
+            agent_only: Box::new(|| false),
+        };
+        assert!(b.ready().is_ok());
     }
 }
