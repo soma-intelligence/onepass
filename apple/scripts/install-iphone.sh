@@ -17,7 +17,12 @@
 set -euo pipefail
 
 # ---- Personal identity (one block, never edited between installs) ------------------------------
-TEAM_ID="${ONEPASS_TEAM_ID:?set ONEPASS_TEAM_ID to your Apple team ID}"
+# The team ID stays out of the repository: put ONEPASS_TEAM_ID=<team ID> in apple/scripts/personal.env
+# (git-ignored), or export it before running the script.
+PERSONAL_ENV="$(cd "$(dirname "$0")" && pwd)/personal.env"
+# shellcheck source=/dev/null
+[[ -f "$PERSONAL_ENV" ]] && source "$PERSONAL_ENV"
+TEAM_ID="${ONEPASS_TEAM_ID:?set ONEPASS_TEAM_ID in apple/scripts/personal.env or the environment}"
 BUNDLE_ID_PREFIX="me.quentincaron.onepass"
 APP_GROUP="group.me.quentincaron.onepass"
 CLOUDKIT_CONTAINER="iCloud.me.quentincaron.onepass"

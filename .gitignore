@@ -11,6 +11,10 @@ apple/VaultKit/Sources/OnePassCore/
 apple/**/.build/
 apple/DerivedData/
 apple/DerivedData-*/
+**/xcuserdata/
+*.xcuserstate
+# Personal signing identity for apple/scripts/install-iphone.sh
+apple/scripts/personal.env
 
 # Autofill lab run output
 extension/lab/out/
@@ -36,3 +40,9 @@ android/**/build/
 android/local.properties
 # Hosted mailbox secrets
 mailbox/supabase/.env.hosted
+
+# Internal working notes: plans, reviews and research stay out of the public repository
+docs/superpowers/plans/
+docs/superpowers/reviews/
+docs/superpowers/research/
+.mcp.json
