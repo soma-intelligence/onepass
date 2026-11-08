@@ -24,8 +24,6 @@ public struct StrengthMeter: View {
 
     public nonisolated static func label(forBits bits: Double) -> String { labels[level(forBits: bits)] }
 
-    private var tint: Color { Self.tint(forBits: bits) }
-
     /// Red up to "faible", orange for "moyen", green from "bon".
     public nonisolated static func tint(forBits bits: Double) -> Color {
         switch level(forBits: bits) {
@@ -35,13 +33,21 @@ public struct StrengthMeter: View {
         }
     }
 
+    /// Per segment fill: the wash scale color for a lit segment, nil for an unlit one.
+    nonisolated static func segmentColors(forBits bits: Double) -> [Color?] {
+        let level = level(forBits: bits)
+        return (0..<thresholds.count).map { i in
+            i < level ? Theme.Wash.segmentColor(index: i, of: thresholds.count) : nil
+        }
+    }
+
     public var body: some View {
-        let level = Self.level(forBits: bits)
+        let colors = Self.segmentColors(forBits: bits)
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(0..<4, id: \.self) { i in
                     Capsule()
-                        .fill(i < level ? tint : Color.secondary.opacity(0.25))
+                        .fill(colors[i] ?? Color.secondary.opacity(0.25))
                         .frame(height: 4)
                 }
             }
@@ -73,7 +79,10 @@ public struct StrengthBadge: View {
                 Circle()
                     // An empty ring for "trop court" would read as a missing value: show a sliver.
                     .trim(from: 0, to: max(Double(level), 0.4) / 4)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .stroke(
+                        Theme.Wash.scaleColor(at: Double(level) / 4),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
                     .rotationEffect(.degrees(-90))
             }
             .frame(width: 16, height: 16)

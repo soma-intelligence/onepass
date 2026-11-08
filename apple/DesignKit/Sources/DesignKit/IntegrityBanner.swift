@@ -27,6 +27,8 @@ public struct IntegrityBanner: View {
         }
     }
 
+    private static let fill = Color.red.opacity(0.12)
+
     public var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.shield.fill")
@@ -39,7 +41,9 @@ public struct IntegrityBanner: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .washBackground(
+            Theme.Wash.alert(Self.fill), flat: Self.fill,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("integrityBanner.integrityAlert", bundle: DesignKitStrings.bundle))
     }

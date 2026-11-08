@@ -42,4 +42,21 @@ struct WashTests {
         #expect(Theme.Wash.isFlat(increaseContrast: false, reduceTransparency: true))
         #expect(!Theme.Wash.isFlat(increaseContrast: false, reduceTransparency: false))
     }
+
+    @Test func emptyScoreShowsTrackOnly() {
+        #expect(!Theme.Wash.scaleShowsFill(score: nil))
+        #expect(!Theme.Wash.scaleShowsFill(score: 0))
+        #expect(Theme.Wash.scaleShowsFill(score: 1))
+    }
+
+    @Test func strengthMeterSegmentsFollowTheScale() {
+        let colors = StrengthMeter.segmentColors(forBits: 120)
+        #expect(colors.count == 4)
+        for i in 0..<4 {
+            let c = try! #require(colors[i])
+            #expect(close(c, Theme.Wash.segmentColor(index: i, of: 4)))
+        }
+        #expect(close(colors[3]!, .green))
+        #expect(StrengthMeter.segmentColors(forBits: 45).map { $0 != nil } == [true, false, false, false])
+    }
 }

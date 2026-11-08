@@ -19,14 +19,7 @@ public struct TotpRing: View {
         return min(max((exact ?? Double(remaining)) / Double(period), 0), 1)
     }
 
-    /// Accent, blending to red over the last five seconds rather than switching at once.
-    private func blended(_ calm: Color) -> Color {
-        let left = exact ?? Double(remaining)
-        let warning = min(max((6 - left) / 2, 0), 1)
-        return calm.mix(with: .red, by: warning)
-    }
-
-    private var tint: Color { blended(Theme.accent) }
+    private var tint: Color { Theme.Wash.countdownColor(Theme.accent, secondsLeft: exact ?? Double(remaining)) }
 
     public var body: some View {
         ZStack {
@@ -67,14 +60,9 @@ public struct TotpCountdown: View {
         return min(max((exact ?? Double(remaining)) / Double(period), 0), 1)
     }
 
-    /// Accent, blending to red over the last five seconds rather than switching at once.
-    private func blended(_ calm: Color) -> Color {
-        let left = exact ?? Double(remaining)
-        let warning = min(max((6 - left) / 2, 0), 1)
-        return calm.mix(with: .red, by: warning)
+    private var tint: Color {
+        Theme.Wash.countdownColor(Theme.accent.mix(with: .white, by: 0.35), secondsLeft: exact ?? Double(remaining))
     }
-
-    private var tint: Color { blended(Theme.accent.mix(with: .white, by: 0.35)) }
 
     public var body: some View {
         HStack(spacing: 5) {

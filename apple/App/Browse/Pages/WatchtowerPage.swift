@@ -129,18 +129,20 @@ struct ScoreGauge: View {
         }
     }
 
+    private let arcStyle = StrokeStyle(lineWidth: 16, lineCap: .round)
+
     var body: some View {
         let fraction = Double(score ?? 0) / 100
         ZStack(alignment: .bottom) {
             Arc(fraction: 1)
-                .stroke(.secondary.opacity(0.2), style: StrokeStyle(lineWidth: 16, lineCap: .round))
-            Arc(fraction: fraction)
-                .stroke(
-                    AngularGradient(
-                        colors: [.red, .orange, .yellow, .green], center: .bottom,
-                        startAngle: .degrees(180), endAngle: .degrees(360)),
-                    style: StrokeStyle(lineWidth: 16, lineCap: .round))
-                .animation(.smooth, value: fraction)
+                .stroke(.secondary.opacity(0.2), style: arcStyle)
+            if Theme.Wash.scaleShowsFill(score: score) {
+                // The full scale gradient, masked to the filled part so a low score shows only red.
+                Arc(fraction: 1)
+                    .stroke(Theme.Wash.scale(fraction: fraction), style: arcStyle)
+                    .mask(Arc(fraction: fraction).stroke(style: arcStyle))
+                    .animation(.smooth, value: fraction)
+            }
             VStack(spacing: 0) {
                 Text(score.map(String.init) ?? "–")
                     .font(.system(size: 46, weight: .bold, design: .rounded))

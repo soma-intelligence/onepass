@@ -60,6 +60,11 @@ extension Theme {
             return calm.mix(with: .red, by: warning)
         }
 
+        /// Whether the scale gauge draws a filled arc: an empty (nil) or zero score shows the track only.
+        public static func scaleShowsFill(score: Int?) -> Bool {
+            (score ?? 0) > 0
+        }
+
         /// Washes give way to flat fills when either accessibility setting is on.
         public static func isFlat(increaseContrast: Bool, reduceTransparency: Bool) -> Bool {
             increaseContrast || reduceTransparency
