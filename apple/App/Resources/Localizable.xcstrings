@@ -38440,6 +38440,36 @@
         }
       }
     },
+    "settings.appIcon.glass" : {
+      "comment" : "Réglages > Général: app icon picker tile name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cristal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vetro"
+          }
+        }
+      }
+    },
     "settings.appIcon.grey" : {
       "comment" : "Réglages > Général: app icon picker tile name",
       "extractionState" : "manual",

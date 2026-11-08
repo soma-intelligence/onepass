@@ -24,7 +24,7 @@ struct AppIconChoice: Identifiable, Hashable {
 
     /// The picker's order: the primary, Auto, then the light grounds and the dark ones.
     static let all: [AppIconChoice] = [
-        "violet", "auto", "white", "paper", "grey", "lavender", "charcoal", "black", "navy", "dusk", "blueprint",
+        "violet", "auto", "white", "paper", "grey", "lavender", "charcoal", "black", "navy", "dusk", "blueprint", "glass",
     ].map(AppIconChoice.init(slug:))
 
     /// The choice for the alternate icon name the system reports; the primary for nil or an unknown name.
@@ -33,7 +33,7 @@ struct AppIconChoice: Identifiable, Hashable {
     }
 }
 
-/// Réglages > Général: the home screen icon, as a grid of the eleven icons. The system shows its own
+/// Réglages > Général: the home screen icon, as a grid of the twelve icons. The system shows its own
 /// alert once the icon changes; a refused change puts the previous selection back.
 struct AppIconSection: View {
     @State private var current = AppIconChoice.choice(for: UIApplication.shared.alternateIconName)
