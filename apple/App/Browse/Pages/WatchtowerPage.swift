@@ -109,6 +109,8 @@ struct WatchtowerPage: View {
 /// Semicircle gauge of the core's score (0 to 100) with its label.
 struct ScoreGauge: View {
     let score: Int?
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     static func label(_ score: Int) -> String {
         switch score {
@@ -133,16 +135,22 @@ struct ScoreGauge: View {
 
     var body: some View {
         let fraction = Double(score ?? 0) / 100
+        let isFlat = Theme.Wash.isFlat(
+            increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
         ZStack(alignment: .bottom) {
             Arc(fraction: 1)
                 .stroke(.secondary.opacity(0.2), style: arcStyle)
-            if Theme.Wash.scaleShowsFill(score: score) {
-                // The full scale gradient, masked to the filled part so a low score shows only red.
-                Arc(fraction: 1)
-                    .stroke(Theme.Wash.scale(fraction: fraction), style: arcStyle)
-                    .mask(Arc(fraction: fraction).stroke(style: arcStyle))
-                    .animation(.smooth, value: fraction)
-            }
+            // The full scale gradient, masked to the filled part so a low score shows only red. It
+            // is always drawn and only faded, so the first score grows the arc instead of popping
+            // it in. Under Increase Contrast or Reduce Transparency it is one flat score color.
+            Arc(fraction: 1)
+                .stroke(
+                    isFlat ? AnyShapeStyle(Self.color(score ?? 0)) : Theme.Wash.scale(fraction: fraction),
+                    style: arcStyle
+                )
+                .mask(Arc(fraction: fraction).stroke(style: arcStyle))
+                .opacity(Theme.Wash.scaleShowsFill(score: score) ? 1 : 0)
+                .animation(.smooth, value: fraction)
             VStack(spacing: 0) {
                 Text(score.map(String.init) ?? "–")
                     .font(.system(size: 46, weight: .bold, design: .rounded))
