@@ -31,7 +31,7 @@ public struct ItemIcon: View {
     }
 
     /// The networks with a mark in the app's assets (`card-<brand>`), and the color of their tile.
-    static func brandColor(_ brand: String) -> Color? {
+    nonisolated static func brandColor(_ brand: String) -> Color? {
         switch brand {
         case "visa": Color(red: 0x1A / 255, green: 0x1F / 255, blue: 0x71 / 255)
         case "mastercard": Color(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255)
