@@ -92,3 +92,24 @@ public enum WatchtowerExclusions {
         report.checks.filter { $0.itemIds.contains(itemID) }.map(\.check).sorted()
     }
 }
+
+/// Whether a login's site is known to accept passkeys, for the "Ajouter une passkey" row of the
+/// item detail.
+public enum PasskeySupport {
+    /// The Watchtower check of a login whose site is in the passkeys directory and that holds no
+    /// passkey yet.
+    public static let check = "passkey_available"
+
+    /// True when the login already holds a passkey, or when the last Watchtower report flagged it
+    /// `passkey_available`. The flag stands whether or not "Ignorer" hid the banner (exclusions
+    /// only hide). No report yet: not known, so false; the editor still offers the row.
+    public static func siteAccepts(_ item: FfiItem, report: FfiWatchtowerReport?) -> Bool {
+        guard item.itemType == .login else { return false }
+        let holdsOne = item.sections.contains { section in
+            section.fields.contains { if case .passkey = $0.value { true } else { false } }
+        }
+        if holdsOne || item.loginMethods.contains(.passkey) { return true }
+        guard let report else { return false }
+        return WatchtowerExclusions.checks(of: item.id, in: report).contains(check)
+    }
+}

@@ -268,7 +268,8 @@ struct ItemDetailView: View {
     }
 
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
-        // A login's first card always shows: its sign-in account and "Ajouter une passkey" live there.
+        // A login's first card always shows: its sign-in account (and "Ajouter une passkey" when the
+        // site accepts passkeys) live there.
         let loginCardID = item.itemType == .login ? item.sections.first?.id : nil
         let signIn = item.signInProvider
         let sections = item.sections.filter {
@@ -301,7 +302,11 @@ struct ItemDetailView: View {
                         if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
                         FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
                     }
-                    if isLoginCard, item.trashedAt == nil, !item.archived {
+                    // Only for a site known to accept passkeys: elsewhere the row would open a site
+                    // with nothing to enroll. The editor keeps the row for every login.
+                    if isLoginCard, item.trashedAt == nil, !item.archived,
+                        PasskeySupport.siteAccepts(item, report: model.watchtower.report)
+                    {
                         if signIn != nil || !fields.isEmpty { CardDivider() }
                         AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
                     }
@@ -1352,7 +1357,7 @@ enum ItemJSON {
 /// (`passkey_available`, from the passkeys directory Watchtower downloads). Without a report, or
 /// when the check did not run, there is no banner (never faked).
 struct PasskeyOffer: Equatable {
-    static let checkID = "passkey_available"
+    static let checkID = PasskeySupport.check
     let host: String
     /// The site of the item's main address, where its passkey settings live.
     let url: URL

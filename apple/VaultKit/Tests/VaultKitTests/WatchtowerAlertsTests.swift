@@ -59,3 +59,45 @@ struct WatchtowerAlertsTests {
         #expect(WatchtowerExclusions.checks(of: "z", in: r).isEmpty)
     }
 }
+
+@Suite("Passkey support")
+struct PasskeySupportTests {
+    private func report(_ checks: [String: [String]]) -> FfiWatchtowerReport {
+        FfiWatchtowerReport(
+            score: 80, itemsAnalyzed: 1,
+            checks: checks.map { FfiWatchtowerCheck(check: $0.key, findings: UInt32($0.value.count), itemIds: $0.value) },
+            strength: [0, 0, 0, 0, 0], pwned: .checked, missingPrefixes: [], sitesChecked: true)
+    }
+
+    @Test func siteInThePasskeysDirectoryAccepts() {
+        let login = draftItem(.login)
+        #expect(PasskeySupport.siteAccepts(login, report: report([PasskeySupport.check: [login.id]])))
+    }
+
+    @Test func siteOutsideTheDirectoryDoesNot() {
+        let login = draftItem(.login)
+        #expect(!PasskeySupport.siteAccepts(login, report: report(["missing_2fa": [login.id]])))
+        #expect(!PasskeySupport.siteAccepts(login, report: report([PasskeySupport.check: ["other"]])))
+    }
+
+    @Test func noReportYetIsNotKnown() {
+        #expect(!PasskeySupport.siteAccepts(draftItem(.login), report: nil))
+    }
+
+    @Test func ignoredBannerStillCounts() {
+        var login = draftItem(.login)
+        login.watchtowerExclusions = [PasskeySupport.check]
+        #expect(PasskeySupport.siteAccepts(login, report: report([PasskeySupport.check: [login.id]])))
+    }
+
+    @Test func loginThatSignsInWithAPasskeyAccepts() {
+        var login = draftItem(.login)
+        login.loginMethods = [.passkey]
+        #expect(PasskeySupport.siteAccepts(login, report: nil))
+    }
+
+    @Test func otherItemTypesNever() {
+        let card = draftItem(.creditCard)
+        #expect(!PasskeySupport.siteAccepts(card, report: report([PasskeySupport.check: [card.id]])))
+    }
+}
