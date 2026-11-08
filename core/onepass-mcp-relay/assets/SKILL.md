@@ -25,7 +25,7 @@ Use `fill_in_browser`. Never use `reveal_secret` to type a secret into a page.
 - The result is `{"filled":[...],"submitted":bool}`: the names of the item fields filled (`username`, `password`, `totp`, `cardholder`, `number`, `expiry`, `cvv`), never values.
 - `submit: true` presses the sign-in button on a login or one-time-code form only. A card is never submitted: you click pay yourself, OnePass never does.
 - The user approves in the OnePass panel. A login approval may cover the same item and site for a few minutes. A card is approved every time.
-- Errors: `not_https`, `no_item`, `ambiguous_item` (pick one with `item_id`), `scope_denied` (the vault has no web fill, tell the user), `denied`, `timeout`, `no_browser`, `tab_mismatch` (the page is not the one in front), `origin_mismatch` (the item is not for this site), `cross_site_frame`, `no_fields`, `submit_not_allowed`, `cdp_not_local`. Do not retry in a loop.
+- Errors: `not_https`, `no_item`, `ambiguous_item` (pick one with `item_id`), `scope_denied` (the vault has no web fill, tell the user), `denied`, `timeout` (the browser or the approval took too long, try again once), `no_browser` (no browser connected, or the Mac is locked: ask the user to unlock the Mac), `tab_mismatch` (the page in front is not on this site, in no connected browser, or is not HTTPS), `origin_mismatch` (the item is not for this site, or the page moved after approval), `cross_site_frame`, `no_fields`, `submit_not_allowed`, `cdp_not_local`. Do not retry in a loop.
 
 ## Never write a value to disk
 

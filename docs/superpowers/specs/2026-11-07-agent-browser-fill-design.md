@@ -167,10 +167,13 @@ Où la version construite diffère de ce spec.
    - Le cliché de page garde brièvement en mémoire les valeurs vivantes des champs.
    - Un script qui déplace le focus entre le `focus` et la saisie peut rediriger la valeur vers un autre champ de la même origine. Cela reste dans la limite de la section 7.
 7. **Limites connues laissées pour plus tard.**
-   - Avec deux navigateurs Chromium ouverts, une demande peut atteindre le mauvais et échouer sans rien remplir.
    - La sonde et le remplissage ouvrent deux sockets CDP séparés.
    - Sur une page dont le seul bouton est « Suivant », le formulaire est rempli mais pas soumis.
-8. **Résultats de la tâche 1** (détail dans `docs/superpowers/reviews/2026-11-07-agent-fill-spike.md`).
+8. **Plusieurs navigateurs.** Chaque session du pont est un écouteur du hub. La sonde est proposée à un écouteur vivant à la fois. Le premier qui trouve la page devient propriétaire de la demande ; un `tab_mismatch` vaut refus de cet écouteur et la sonde passe au suivant. `tab_mismatch` n'est rendu à l'agent qu'une fois que tous les écouteurs vivants ont refusé. Le remplissage, sa réponse et le ticket sont liés au propriétaire : un autre navigateur ne peut ni prendre le travail, ni y répondre, ni ouvrir les valeurs.
+9. **Mac verrouillé, les deux cibles.** Une session ouverte par l'iPhone pour les agents seulement (`AgentOnly`) refuse `fill_in_browser` pour Chrome comme pour CDP, avant la recherche de l'item et avant tout panneau : `no_browser`, avec un texte qui demande de faire déverrouiller le Mac.
+10. **Sonde CDP alignée sur Chrome.** La sonde CDP rend l'origine réelle du cadre principal (`tab_mismatch` si elle n'est pas en HTTPS) ; le contrôle du site et de la règle de l'item se fait ensuite comme pour Chrome (`tab_mismatch`). Au remplissage, la page doit être encore à l'origine approuvée, sinon `origin_mismatch`.
+11. **Erreurs rendues.** Un ticket expiré ou déjà dépensé (l'hôte répond `not_allowed`) arrive à l'agent comme `timeout`. `filled` ne contient que les noms `username`, `password`, `totp`, `cardholder`, `number`, `expiry`, `cvv`. La limite de débit des secrets passe avant la sonde. Une demande sondée vit 5 min, ce qui couvre le panneau (60 s) et Touch ID.
+12. **Résultats de la tâche 1** (détail dans `docs/superpowers/reviews/2026-11-07-agent-fill-spike.md`).
    - Durée de vie du port du service worker : observé sur Chrome for Testing 151, port natif resté ouvert 6 min 39 et 9 min 33 dans deux essais sur trois ; un essai a vu l'hôte fermé à 30 s, sans cause établie. Déduit : le port est une optimisation, la reconnexion sur réveil est obligatoire (d'où l'alarme du point 1).
    - WebSocket du bac à sable : observé, `network.client` suffit pour une connexion vers `127.0.0.1` ; sans lui, refus. La connexion CDP est faite par le processus de l'app. Non rejoué sur la build Debug signée.
 
