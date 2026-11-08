@@ -33,19 +33,19 @@ public struct StrengthMeter: View {
         }
     }
 
-    /// Per segment fill: the wash scale color for a lit segment, nil for an unlit one.
+    /// Per segment fill: every lit segment takes the wash scale color of the meter's level (so a
+    /// full meter reads green, never a rainbow), nil for an unlit one.
     nonisolated static func segmentColors(forBits bits: Double) -> [Color?] {
         let level = level(forBits: bits)
-        return (0..<thresholds.count).map { i in
-            i < level ? Theme.Wash.segmentColor(index: i, of: thresholds.count) : nil
-        }
+        let color = Theme.Wash.scaleColor(at: Double(level) / Double(thresholds.count))
+        return (0..<thresholds.count).map { i in i < level ? color : nil }
     }
 
     public var body: some View {
         let colors = Self.segmentColors(forBits: bits)
         HStack(spacing: 8) {
             HStack(spacing: 4) {
-                ForEach(0..<4, id: \.self) { i in
+                ForEach(colors.indices, id: \.self) { i in
                     Capsule()
                         .fill(colors[i] ?? Color.secondary.opacity(0.25))
                         .frame(height: 4)

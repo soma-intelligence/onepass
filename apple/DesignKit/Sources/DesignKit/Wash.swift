@@ -34,12 +34,6 @@ extension Theme {
                     center: .bottom, startAngle: .degrees(180), endAngle: .degrees(360)))
         }
 
-        /// The scale color of segment `index` out of `count` (the last lit segment of a full meter
-        /// lands on green).
-        public static func segmentColor(index: Int, of count: Int) -> Color {
-            scaleColor(at: Double(index + 1) / Double(count))
-        }
-
         /// A soft vertical wash of `base`: a touch lighter on top, a touch darker below.
         public static func alert(_ base: Color) -> LinearGradient {
             LinearGradient(

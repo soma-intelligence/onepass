@@ -20,10 +20,13 @@ struct WashTests {
         #expect(close(Theme.Wash.scaleColor(at: 2), .green))
     }
 
-    @Test func fullStrengthIsAllGreen() {
-        // 4 of 4 segments lit: green from the third one, never a rainbow end to end.
-        #expect(close(Theme.Wash.segmentColor(index: 3, of: 4), .green))
-        #expect(close(Theme.Wash.segmentColor(index: 2, of: 4), Theme.Wash.scaleColor(at: 0.75)))
+    @Test func fullStrengthIsAllGreen() throws {
+        // 4 of 4 segments lit: every lit segment is green, never a rainbow end to end.
+        let colors = StrengthMeter.segmentColors(forBits: 120)
+        #expect(colors.count == 4)
+        for color in colors {
+            #expect(close(try #require(color), .green))
+        }
     }
 
     @Test("Thresholds agree with StrengthMeter", arguments: [40.0, 60, 80, 100])
@@ -49,14 +52,14 @@ struct WashTests {
         #expect(Theme.Wash.scaleShowsFill(score: 1))
     }
 
-    @Test func strengthMeterSegmentsFollowTheScale() {
-        let colors = StrengthMeter.segmentColors(forBits: 120)
+    @Test func strengthMeterSegmentsTakeTheLevelColor() throws {
+        // 65 bits is level 2: two lit segments, both the scale color at 2/4, the rest unlit.
+        let colors = StrengthMeter.segmentColors(forBits: 65)
         #expect(colors.count == 4)
-        for i in 0..<4 {
-            let c = try! #require(colors[i])
-            #expect(close(c, Theme.Wash.segmentColor(index: i, of: 4)))
+        for color in colors.prefix(2) {
+            #expect(close(try #require(color), Theme.Wash.scaleColor(at: 0.5)))
         }
-        #expect(close(colors[3]!, .green))
+        #expect(colors.suffix(2).allSatisfy { $0 == nil })
         #expect(StrengthMeter.segmentColors(forBits: 45).map { $0 != nil } == [true, false, false, false])
     }
 }
