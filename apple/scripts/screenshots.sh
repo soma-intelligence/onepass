@@ -57,6 +57,20 @@ for repo in "$ROOT_REAL" "$MAIN_REAL"; do
 done
 mkdir -p "$OUT"
 
+# The two dedicated simulators (and their appearance, which the dark pass flips) are shared by every
+# checkout and session: one capture at a time, otherwise one run's dark pass turns the other's light.
+LOCK="${TMPDIR:-/tmp}/onepass-screenshots.lock"
+until mkdir "$LOCK" 2>/dev/null; do
+  holder="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    rm -rf "$LOCK"
+    continue
+  fi
+  echo "screenshots: waiting for another capture run (pid ${holder:-?}) to finish" >&2
+  sleep 20
+done
+echo $$ > "$LOCK/pid"
+
 IPHONE="OnePass M2 iPhone"
 IPAD="OnePass M2 iPad"
 DERIVED="$APPLE_DIR/DerivedData"
@@ -70,7 +84,7 @@ cleanup() {
     udid="$(udid_of "$IPAD")"
     [ -n "$udid" ] && xcrun simctl shutdown "$udid" || true
   fi
-  rm -rf "$STAGING"
+  rm -rf "$STAGING" "$LOCK"
 }
 trap cleanup EXIT
 

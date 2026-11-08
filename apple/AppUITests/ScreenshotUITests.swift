@@ -46,6 +46,19 @@ final class ScreenshotUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Mean brightness of a PNG, 0 (black) to 1 (white): the image drawn into one gray pixel.
+    private static func meanBrightness(_ png: Data) -> Double {
+        guard let image = UIImage(data: png)?.cgImage else { return 0.5 }
+        var pixel: UInt8 = 0
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 1,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return 0.5 }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return Double(pixel) / 255
+    }
+
     func testCaptureScreens() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let folder = environment["ONEPASS_SCREENSHOT_DIR"], !folder.isEmpty else {
@@ -55,6 +68,8 @@ final class ScreenshotUITests: XCTestCase {
         let directory = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        // Optional: `ONEPASS_SCREENSHOT_ONLY=watchtower,list` captures just those screens.
+        let only = environment["ONEPASS_SCREENSHOT_ONLY"].map { Set($0.split(separator: ",").map(String.init)) }
         let landscape = environment["ONEPASS_SCREENSHOT_LANDSCAPE"] == "1"
         XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
         let orientation = landscape ? "-landscape" : ""
@@ -70,7 +85,8 @@ final class ScreenshotUITests: XCTestCase {
 
         for (suffix, appearance) in [("light", XCUIDevice.Appearance.light), ("dark", .dark)] {
             XCUIDevice.shared.appearance = appearance
-            for screen in Self.screens where device == "iphone" || !screen.phoneOnly {
+            for screen in Self.screens
+            where (device == "iphone" || !screen.phoneOnly) && (only?.contains(screen.name) ?? true) {
                 let app = XCUIApplication()
                 app.launchArguments += screen.arguments
                 app.launch()
@@ -81,6 +97,12 @@ final class ScreenshotUITests: XCTestCase {
                 // Let transitions and the keyboard settle.
                 Thread.sleep(forTimeInterval: 1.5)
                 let png = XCUIScreen.main.screenshot().pngRepresentation
+                // XCUIDevice.appearance is the simulator's own setting: another run (or a person) using the
+                // same simulator flips it, and the capture would silently be the wrong appearance.
+                let brightness = Self.meanBrightness(png)
+                XCTAssertTrue(
+                    suffix == "dark" ? brightness < 0.5 : brightness > 0.5,
+                    "\(screen.name) \(suffix): mean brightness \(brightness), the simulator's appearance changed during the run")
                 let name = "\(device)\(orientation)-\(screen.name)-\(suffix).png"
                 try png.write(to: directory.appendingPathComponent(name))
                 app.terminate()
