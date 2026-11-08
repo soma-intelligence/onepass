@@ -36,7 +36,7 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     expect(m.name).toBe("OnePass");
     expect(m.version).toBe("0.2.0");
     expect([...m.permissions].sort()).toEqual(
-      ["activeTab", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),
+      ["activeTab", "alarms", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),
     );
     expect(m.host_permissions).toEqual(["https://*/*"]);
     const all = [

@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
-  "permissions": ["storage", "nativeMessaging", "webNavigation", "scripting", "activeTab"],
+  "permissions": ["storage", "nativeMessaging", "webNavigation", "scripting", "activeTab", "alarms"],
   "host_permissions": ["https://*/*"],
   "content_scripts": [
     {

@@ -43,7 +43,12 @@ export interface PairOptions {
   auto?: boolean;
 }
 
-export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey";
+/**
+ * `agent`: a fill an MCP agent asked for and the holder approved in the app
+ * (spec 2026-11-07-agent-browser-fill 5); `plan_fill`, `fill_login` and
+ * `fill_card` only, each with `agent_request`.
+ */
+export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey" | "agent";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
 
@@ -156,6 +161,38 @@ export interface PasskeyRegistration {
   public_key_algorithm: number;
 }
 
+/** `plan_fill` for an agent job: needs a live ticket of `agent_request`, which it does not spend. */
+export interface AgentPlanFillRequest {
+  ctx: "agent";
+  agent_request: number;
+  origin: string;
+  context: PlanFillRequest["context"];
+}
+
+/** Error codes of an agent job, as the host reads them (`onepass_bridge::api::agent_error`). */
+export type AgentErrorCode = "tab_mismatch" | "origin_mismatch" | "cross_site_frame" | "no_fields" | "denied";
+
+/** A job of the agent session (`AgentJobWire`). */
+export type AgentJob =
+  | { job: "probe"; request_id: number; url: string }
+  | { job: "fill"; request_id: number; item_id: string; kind: "login" | "card"; submit: boolean; document_id: string };
+
+/** The active tab a probe found. */
+export interface AgentProbe {
+  tab_title: string;
+  origin: string;
+  document_id: string;
+}
+
+/** What a fill wrote: field names, never values. */
+export interface AgentFilled {
+  filled: string[];
+  submitted: boolean;
+}
+
+/** A job result on the wire: `{"ok": {...}}` or `{"err": "<code>"}`. */
+export type AgentResult<T> = { ok: T } | { err: AgentErrorCode };
+
 interface Ops {
   status: { req: object; res: { locked: boolean; account: string; vaults: number } };
   unlock: { req: object; res: { locked: boolean } };
@@ -164,12 +201,13 @@ interface Ops {
   list_for_origin: { req: { ctx: Ctx; origin: string }; res: { items: Summary[] } };
   search: { req: { ctx: Ctx; query: string }; res: { items: Summary[] } };
   list_fillable: { req: { ctx: Ctx; origin: string; kind: "card" | "identity" }; res: { items: Summary[] } };
+  /** `agent_request`: with ctx `agent` only, the approved agent request whose ticket this fill spends. */
   fill_login: {
-    req: { ctx: Ctx; item_id: string; origin: string; fields: FillField[] };
+    req: { ctx: Ctx; agent_request?: number; item_id: string; origin: string; fields: FillField[] };
     res: LoginFill;
   };
   fill_card: {
-    req: { ctx: Ctx; item_id: string; origin: string };
+    req: { ctx: Ctx; agent_request?: number; item_id: string; origin: string };
     /** `exp_month` "04", `exp_year` "2029": zero-padded strings, empty when unknown. */
     res: { cardholder: string; number: string; exp_month: string; exp_year: string; cvv?: string };
   };
@@ -275,7 +313,7 @@ interface Ops {
   /** The bridge session's username salt: 32 bytes as lower-case hex, the same until the session ends. */
   fill_salt: { req: { ctx: Ctx }; res: { salt: string } };
   /** A plan of item ids, roles and refs for a page context; never a value. */
-  plan_fill: { req: PlanFillRequest; res: PlanFillResponse };
+  plan_fill: { req: PlanFillRequest | AgentPlanFillRequest; res: PlanFillResponse };
   /** What was filled where, for the site memory. */
   note_fill: { req: NoteFillRequest; res: NoteFillResponse };
   /** Forget a site in every item's memory (popup only); `site` is a host or an https origin, reduced by the host. */
@@ -311,6 +349,12 @@ interface Ops {
    * Error `excluded` when a stored credential is in `exclude`. `vault_id`: vault of a new Login
    * (first vault when left out).
    */
+  /** Long poll of the agent session: the next agent job, `null` after the host's wait (25 s). */
+  agent_wait: { req: object; res: { job: AgentJob | null } };
+  /** The answer to a probe job. */
+  agent_probe_result: { req: { request_id: number; result: AgentResult<AgentProbe> }; res: Record<string, never> };
+  /** The answer to a fill job: field names, never values. */
+  agent_fill_result: { req: { request_id: number; result: AgentResult<AgentFilled> }; res: Record<string, never> };
   passkey_create: {
     req: {
       ctx: Ctx;

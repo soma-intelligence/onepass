@@ -51,6 +51,14 @@ export interface FrameNode extends FrameDetails {
   parentFrameId: number;
 }
 
+/** A tab as `windows.getLastFocused({populate: true})` lists it (url and title through host permissions). */
+export interface WindowTab {
+  id?: number;
+  active: boolean;
+  title?: string;
+  url?: string;
+}
+
 export interface BgExt {
   runtime: {
     id: string;
@@ -86,6 +94,16 @@ export interface BgExt {
   storage: {
     local: StorageArea;
     session: StorageArea;
+  };
+  /** The front window and its tabs (the agent channel's probe, agent.ts). */
+  windows?: {
+    getLastFocused(q: { populate: true; windowTypes?: ("normal" | "popup")[] }): Promise<{ id?: number; tabs?: WindowTab[] }>;
+  };
+  /** Wakes of the service worker (the agent channel reopens its port). Chromium returns a promise, Firefox nothing. */
+  alarms?: {
+    create(name: string, info: { periodInMinutes: number }): Promise<void> | void;
+    clear?(name: string): Promise<boolean> | void;
+    onAlarm: Event<(alarm: { name: string }) => void>;
   };
   /** Keyboard shortcuts of the manifest's `commands` (absent where the browser has none). */
   commands?: {
