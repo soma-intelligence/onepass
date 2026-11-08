@@ -18556,25 +18556,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An agent can fill items from this vault into a web page once you approve. The page receives the values, so an agent that can run script in the page can read them."
+            "value" : "An agent can fill items from this vault into a web page once you approve. The page receives the values, so an agent that can run script in the page can read them. Then also tick \"Web fill\" in the paired client's menu."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agente podrá rellenar elementos de esta bóveda en una página web tras tu aprobación. La página recibe los valores: un agente que puede ejecutar scripts en la página puede leerlos."
+            "value" : "Un agente podrá rellenar elementos de esta bóveda en una página web tras tu aprobación. La página recibe los valores: un agente que puede ejecutar scripts en la página puede leerlos. Después marca también \"Relleno web\" en el menú del cliente emparejado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agent pourra remplir ce coffre dans une page web après ton accord. La page reçoit les valeurs : un agent qui peut lancer du script dans la page peut les lire."
+            "value" : "Un agent pourra remplir ce coffre dans une page web après ton accord. La page reçoit les valeurs : un agent qui peut lancer du script dans la page peut les lire. Coche aussi « Remplissage web » dans le menu du client appairé."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agente potrà compilare elementi di questa cassaforte in una pagina web dopo la tua approvazione. La pagina riceve i valori: un agente che può eseguire script nella pagina può leggerli."
+            "value" : "Un agente potrà compilare elementi di questa cassaforte in una pagina web dopo la tua approvazione. La pagina riceve i valori: un agente che può eseguire script nella pagina può leggerli. Poi spunta anche \"Compilazione web\" nel menu del client abbinato."
           }
         }
       }

@@ -48,4 +48,39 @@ struct AgentFillPolicyTests {
         #expect(try await Set(scopes(agents.id)) == ["metadata", "use"])
         #expect(try await !scopes(personal.id).contains("fill"))
     }
+
+    @Test func testTurningFillOffStripsClientGrantsForGood() async throws {
+        let harness = try SessionHarness()
+        defer { harness.cleanUp() }
+        let session = harness.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        try await session.createVault(FfiVaultMeta(
+            name: "Agents", icon: "sparkles", color: "purple", travelSafe: false, mcpAccess: true))
+        let dir = FileManager.default.temporaryDirectory.appending(path: "op-fill-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let agents = try #require(session.allVaults.first { $0.meta.name == "Agents" })
+        try await session.setMcpPolicy(dataDirectory: dir.path, vaults: [
+            FfiClientScopes(vaultId: agents.id, scopes: ["metadata", "use"]),
+        ], allowGenerate: false)
+        let clientID = try await session.pairProgram(dataDirectory: dir.path, path: "/usr/bin/true")
+
+        func clientScopes() async throws -> Set<String> {
+            let client = try #require(
+                try await session.pairedClients(dataDirectory: dir.path).first { $0.id == clientID })
+            return Set(client.scopes.first { $0.vaultId == agents.id }?.scopes ?? [])
+        }
+
+        try await session.setAgentFill(dataDirectory: dir.path, vaultID: agents.id, on: true)
+        try await session.setClientScopes(
+            dataDirectory: dir.path, clientID: clientID, vaultID: agents.id, scopes: ["metadata", "use", "fill"])
+        #expect(try await clientScopes().contains("fill"))
+
+        try await session.setAgentFill(dataDirectory: dir.path, vaultID: agents.id, on: false)
+        #expect(try await clientScopes() == ["metadata", "use"])
+
+        try await session.setAgentFill(dataDirectory: dir.path, vaultID: agents.id, on: true)
+        #expect(try await !clientScopes().contains("fill"))
+        #expect(try await clientScopes() == ["metadata", "use"])
+    }
 }

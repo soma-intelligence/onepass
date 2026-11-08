@@ -33,7 +33,8 @@ extension VaultSession {
     /// Turns agent web fill (`fill_in_browser`, scope `fill`) on or off for one exposed vault, and
     /// signs the policy again (spec 4: off by default, vault by vault). The other vaults and
     /// `allowGenerate` keep their values. A vault not exposed gets nothing: turn exposure on first.
-    /// A paired client still needs `fill` in its own scopes, as for any other scope.
+    /// A paired client still needs `fill` in its own scopes, as for any other scope. Turning off removes
+    /// that client `fill` too.
     public func setAgentFill(dataDirectory: String, vaultID: String, on: Bool) async throws {
         let policy = try await mcpPolicy(dataDirectory: dataDirectory)
         let entries = policy.vaults.compactMap { vault -> FfiClientScopes? in
@@ -43,6 +44,17 @@ extension VaultSession {
             return FfiClientScopes(vaultId: vault.vaultId, scopes: scopes)
         }
         try await setMcpPolicy(dataDirectory: dataDirectory, vaults: entries, allowGenerate: policy.allowGenerate)
+        // Turning off also strips `fill` from every paired client on this vault (client scopes are stored
+        // per vault), so turning it on again never silently re-grants an old client.
+        if !on {
+            for client in try await pairedClients(dataDirectory: dataDirectory) {
+                for entry in client.scopes where entry.vaultId == vaultID && entry.scopes.contains("fill") {
+                    try await setClientScopes(
+                        dataDirectory: dataDirectory, clientID: client.id, vaultID: vaultID,
+                        scopes: entry.scopes.filter { $0 != "fill" })
+                }
+            }
+        }
     }
 
     public func pairedClients(dataDirectory: String) async throws -> [FfiPairedClient] {
