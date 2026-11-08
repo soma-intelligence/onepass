@@ -155,13 +155,8 @@ struct ItemDetailView: View {
     }
     #endif
 
-    /// Gap between the header, the cards and the footer: the scale's section gap on iPhone and iPad,
-    /// the Mac keeps its own until its sweep.
-    #if os(iOS)
+    /// Gap between the header, the cards and the footer: the scale's section gap everywhere.
     private static let sectionSpacing: CGFloat = Theme.Space.betweenSections
-    #else
-    private static let sectionSpacing: CGFloat = 20
-    #endif
 
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
@@ -173,8 +168,8 @@ struct ItemDetailView: View {
                     .padding(.bottom, Theme.Space.xs)
                 #else
                 ItemHeader(item: item)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 4)
+                    .padding(.horizontal, Theme.Space.xs)
+                    .padding(.bottom, Theme.Space.xs)
                 #endif
                 if let actionError {
                     EditorCard {

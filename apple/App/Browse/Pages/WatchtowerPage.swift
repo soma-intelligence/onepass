@@ -460,7 +460,7 @@ struct WatchtowerCardView: View {
             Text(card.title).font(.headline).foregroundStyle(alert ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             Text(unavailable ?? card.message)
                 .font(.callout)
-                .foregroundStyle(alert ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                .foregroundStyle(alert ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             PageLinkButton(title: String(localized: "browse.showItems"), action: onShow, onWash: alert)

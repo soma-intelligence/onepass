@@ -251,9 +251,9 @@ struct NewItemSheet: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control))
+        .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.control)
+            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                 .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.08)),
                     lineWidth: searchFocused ? 2 : 1)
         }
@@ -298,9 +298,9 @@ struct NewItemSheet: View {
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
             .background(hoveringMore ? AnyShapeStyle(.fill.quaternary) : AnyShapeStyle(.fill.quinary),
-                in: .rect(cornerRadius: Theme.Radius.card))
-            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(.white.opacity(hoveringMore ? 0.16 : 0.1)) }
-            .contentShape(.rect(cornerRadius: Theme.Radius.card))
+                in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(.white.opacity(hoveringMore ? 0.16 : 0.1)) }
+            .contentShape(.rect(cornerRadius: Theme.Radius.card, style: .continuous))
         }
         .tileButtonStyle()
         .onHover { hovering in hoveringMore = hovering }
@@ -466,12 +466,12 @@ private struct BigTypeTile: View {
             .padding(Self.padding)
             .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .topLeading)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.16)) : AnyShapeStyle(.fill.quinary),
-                in: .rect(cornerRadius: Theme.Radius.card))
+                in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.card)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                     .strokeBorder(hovering ? AnyShapeStyle(Theme.accent.opacity(0.6)) : AnyShapeStyle(.white.opacity(0.1)))
             }
-            .contentShape(.rect(cornerRadius: Theme.Radius.card))
+            .contentShape(.rect(cornerRadius: Theme.Radius.card, style: .continuous))
         }
         .tileButtonStyle()
         .onHover { hovering = $0 }
@@ -500,8 +500,8 @@ private struct WebsiteTile: View {
                 Image(systemName: "return").foregroundStyle(.tertiary)
             }
             .padding(14)
-            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: Theme.Radius.control))
-            .contentShape(.rect(cornerRadius: Theme.Radius.control))
+            .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
         .tileButtonStyle()
         .accessibilityIdentifier("newItem.website")

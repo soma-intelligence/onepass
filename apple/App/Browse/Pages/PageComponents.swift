@@ -61,18 +61,23 @@ struct PageLinkButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                Image(systemName: "arrow.right").font(.caption.weight(.semibold))
-            }
-            .font(.callout.weight(.medium))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .contentShape(Capsule())
-            .overlay { Capsule().strokeBorder(onWash ? Color.white.opacity(0.6) : Color.secondary.opacity(0.45)) }
-            .foregroundStyle(onWash ? Color.white : Color.primary)
+            label
+                .font(.callout.weight(.medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .contentShape(Capsule())
+                .overlay { Capsule().strokeBorder(onWash ? Color.white.opacity(0.6) : Color.secondary.opacity(0.45)) }
         }
         .buttonStyle(.plain)
+    }
+
+    /// White only on a wash; otherwise the label keeps the inherited style.
+    @ViewBuilder private var label: some View {
+        let content = HStack(spacing: 6) {
+            Text(title)
+            Image(systemName: "arrow.right").font(.caption.weight(.semibold))
+        }
+        if onWash { content.foregroundStyle(.white) } else { content }
     }
 }
 

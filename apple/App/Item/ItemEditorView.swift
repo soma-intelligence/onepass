@@ -227,12 +227,12 @@ struct ItemEditorView: View {
                     .padding(.horizontal, Theme.Space.l)
                     .padding(.vertical, Theme.Space.m)
                     #if os(iOS)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.control))
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                     #else
                     .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                     #endif
                     .overlay {
-                        RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                             .strokeBorder(titleFocused ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(Self.titleHairline),
                                 lineWidth: titleFocused ? 1.5 : 1)
                     }
@@ -753,8 +753,8 @@ private struct AddFieldPopover: View {
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Space.s)
-            .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control))
-            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(.white.opacity(0.07)) }
+            .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(.white.opacity(0.07)) }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -825,7 +825,7 @@ private struct AddFieldRow: View {
                     .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.accent))
                     .frame(width: 24, height: 24)
                     .background(hovering ? AnyShapeStyle(.white.opacity(0.15)) : AnyShapeStyle(Theme.accent.opacity(0.14)),
-                        in: .rect(cornerRadius: Theme.Radius.chip))
+                        in: .rect(cornerRadius: Theme.Radius.chip, style: .continuous))
                 Text(label).foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                 Spacer(minLength: 0)
                 Image(systemName: "plus")
@@ -835,8 +835,8 @@ private struct AddFieldRow: View {
             }
             .padding(.horizontal, Theme.Space.s)
             .padding(.vertical, Theme.Space.xs)
-            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: Theme.Radius.chip))
-            .contentShape(.rect(cornerRadius: Theme.Radius.chip))
+            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: Theme.Radius.chip, style: .continuous))
+            .contentShape(.rect(cornerRadius: Theme.Radius.chip, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -865,9 +865,9 @@ private struct AddFieldTile: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, Theme.Space.s)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.fill.quaternary),
-                in: .rect(cornerRadius: Theme.Radius.control))
-            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(.white.opacity(0.07)) }
-            .contentShape(.rect(cornerRadius: Theme.Radius.control))
+                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(.white.opacity(0.07)) }
+            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
