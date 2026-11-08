@@ -14,13 +14,16 @@
 <br>
 ![Platforms](https://img.shields.io/badge/iOS%20·%20iPadOS%20·%20macOS%20·%20watchOS%20·%20visionOS-26%2B-1D1D2B?logo=apple&logoColor=white)
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
+<br>
+[![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](https://testflight.apple.com/join/MhmPEd7b)
+[![Website](https://img.shields.io/badge/web-somalabs.me%2Fonepass-5856D6)](https://somalabs.me/onepass)
 
 **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Screenshots](#a-look-around)** · **[Install](#install)** · **[Build from source](#build-from-source)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
 
 </div>
 
 > [!WARNING]
-> OnePass is **pre-release software (v0.2.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the Mac app is the way to use OnePass day to day. Do not store real secrets in OnePass until the first audited release.
+> OnePass is **pre-release software (v0.3.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the Mac app is the way to use OnePass day to day. Do not store real secrets in OnePass until the first audited release.
 
 ## Why OnePass
 
@@ -378,13 +381,21 @@ Crypto balances are off by default. Once you turn them on, the iPhone and iPad a
 
 ## Install
 
-Pre-release builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (OnePass > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
+| Platform | Where |
+|---|---|
+| iPhone, iPad, Apple Watch, Vision Pro, Mac | [TestFlight public beta](https://testflight.apple.com/join/MhmPEd7b). App Store 1.0 is in review |
+| Mac (direct download, self-updating) | [Releases](https://github.com/soma-intelligence/onepass/releases) |
+| Chrome, Firefox | From a clone, see below. Chrome Web Store listing pending |
+
+Website: [somalabs.me/onepass](https://somalabs.me/onepass) · [Privacy policy](https://somalabs.me/onepass/privacy)
+
+Pre-release Mac builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (OnePass > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
 
 For Chrome or Firefox, point the browser at the app's relay from a clone of this repository:
 ```bash
 node extension/scripts/install-app-host.mjs --app /Applications/OnePass.app --browser firefox
 ```
-Chrome pairing needs the extension's ID in the app's allow list (`ONEPASS_BROWSER_EXTENSIONS` in `apple/project.yml`) until the Web Store listing is live. iPhone and iPad builds will come through TestFlight.
+Chrome pairing needs the extension's ID in the app's allow list (`ONEPASS_BROWSER_EXTENSIONS` in `apple/project.yml`) until the Web Store listing is live.
 
 ## Build from source
 
@@ -517,6 +528,11 @@ Before your first pull request is merged, you sign the [contributor license agre
 ## Reporting a vulnerability
 
 Please report security issues privately through [GitHub Security Advisories](https://github.com/soma-intelligence/onepass/security/advisories/new) or to security@somalabs.me, never in a public issue. We acknowledge reports within 72 hours. The full policy, including safe harbor for good faith research, is in [SECURITY.md](SECURITY.md).
+
+## More from Soma Labs
+
+- [Soma Flight](https://github.com/soma-intelligence/Soma_Flight): flight tracker with a log of every trip.
+- [Prism](https://github.com/soma-intelligence/prism): open source health app built on Apple Health.
 
 ## License
 
