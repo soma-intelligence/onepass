@@ -100,6 +100,8 @@ q setup -o /dev/null -f "$supa/seed.sql"
 
 # One open-signup mailbox, committed, its ids kept in race.fixture.
 q setup -o /dev/null <<'SQL'
+-- Open signup needs the database's word too (as in sql-test.sh).
+insert into onepass_mailbox.settings (name, value) values ('open_signup', 'on');
 create schema race;
 create table race.fixture (mailbox bytea, credential bytea);
 create table race.applied (session integer, seq bigint);

@@ -12,7 +12,10 @@ export default defineConfig({
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },
-  retries: 0,
+  // The macOS CI runner sometimes takes over 15 s to show an extension frame
+  // (a different test each run, never locally). A retry is reported as
+  // flaky, not hidden.
+  retries: process.env.CI ? 2 : 0,
   reporter: [["list"]],
   use: { trace: "off", screenshot: "off", video: "off" },
 });
