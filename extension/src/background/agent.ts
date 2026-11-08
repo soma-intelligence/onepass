@@ -146,11 +146,16 @@ async function probe(ext: AgentExt, url: string): Promise<{ result: ProbeResult;
   return { result: { tab_title: top.title, origin: got.origin, document_id: top.documentId }, tabId: top.tabId };
 }
 
-/** A host or bridge failure as an agent error code. */
+/**
+ * A host or bridge failure as an agent error code. The host refuses the
+ * values (`not_allowed`) once the request's ticket expired or was spent: the
+ * agent reads that as a timeout, not as a missing browser.
+ */
 function agentCode(e: unknown): AgentError {
   const code = toBgError(e).code;
   if (code === "origin_mismatch" || code === "cross_site_frame") return code;
   if (code === "insecure_origin") return "tab_mismatch";
+  if (code === "not_allowed") return "timeout";
   return "denied";
 }
 
@@ -298,22 +303,28 @@ function unpaired(e: unknown): boolean {
 }
 
 /**
- * Run the agent session: open a client with the stored pairing, long-poll
- * `agent_wait`, answer each job. A failure reconnects after 1, 2 then 4 s;
- * past that, or without a pairing, the loop rests until the next wake (the
- * worker's start, or `AGENT_ALARM`). `stop` ends it for good.
- */
-/**
  * The agent channel runs in Chromium only (v1). Firefox reports no
- * `documentId`, so every probe there would fail, and the host hands a job to
- * whichever browser polls first: a Firefox loop would take Chrome's jobs and
- * refuse them. Safari has no native port. Null where it does not run.
+ * `documentId`, so it could never pin the document a fill must land on.
+ * Safari has no native port. Null where it does not run.
  */
 export function startAgentLoopIfChromium(runtime: Pick<BgExt["runtime"], "getURL">, deps: AgentDeps): { stop(): void } | null {
   if (!runtime.getURL("").startsWith("chrome-extension:")) return null;
   return startAgentLoop(deps);
 }
 
+/**
+ * Run the agent session: open a client with the stored pairing, long-poll
+ * `agent_wait`, answer each job. A failure reconnects after 1, 2 then 4 s;
+ * past that, or without a pairing, the loop rests until the next wake (the
+ * worker's start, or `AGENT_ALARM`). `stop` ends it for good.
+ *
+ * Each browser profile runs its own loop on its own session. The host offers
+ * a probe to one session at a time: a probe this profile cannot answer (its
+ * front window's active tab is not on the job's site, not HTTPS, or has no
+ * document id) is answered `tab_mismatch`, which the host reads as a decline
+ * and offers the probe to the next browser. The fill goes to the session that
+ * found the page, and to it only.
+ */
 export function startAgentLoop(deps: AgentDeps): { stop(): void } {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const probes = new Map<number, Probed>();

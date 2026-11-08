@@ -6,6 +6,7 @@ import { type FillJob, fillForAgent, probeActiveTab, startAgentLoop, startAgentL
 import type { BgExt, WindowTab } from "../../src/background/ext";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { BridgeError } from "../../src/bridge/bytes";
+import { BridgeAppError } from "../../src/bridge/client";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
 
@@ -208,6 +209,18 @@ describe("agent fill", () => {
     expect(fill?.options).toEqual({ documentId: "doc-1" });
   });
 
+  it("reports a spent or expired ticket (host not_allowed) as timeout", async () => {
+    const ext = withWindow([{ id: 7, active: true, title: "Atlas Cloud" }]);
+    ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+    page(ext, [loginForm]);
+    const client = await openClient((r) => (r.op === "fill_login" ? new BridgeAppError("not_allowed", "") : plans(r)));
+    expect(await fillForAgent({ ext, client }, loginJob())).toBe("timeout");
+    // The plan itself refused (ticket gone before planning): the same.
+    const late = await openClient((r) => (r.op === "plan_fill" ? new BridgeAppError("not_allowed", "") : plans(r)));
+    expect(await fillForAgent({ ext, client: late }, loginJob())).toBe("timeout");
+    expect(ext.sentToTabs.some((s) => (s.message as { type: string }).type === "fill")).toBe(false);
+  });
+
   it("card job never clicks submit", async () => {
     const ext = withWindow([{ id: 7, active: true, title: "Shop" }]);
     ext.setFrame(7, 0, `${SITE}/checkout`, "doc-1");
@@ -354,6 +367,36 @@ describe("agent loop", () => {
       request_id: 5,
       result: { ok: { tab_title: "Atlas Cloud", origin: SITE, document_id: "doc-1" } },
     });
+    loop.stop();
+  });
+
+  it("declines with tab_mismatch a probe its front tab cannot answer", async () => {
+    // This profile's focused tab is on another site; a matching tab sits in the background.
+    const ext = withWindow([
+      { id: 7, active: true, title: "Elsewhere" },
+      { id: 8, active: false, title: "Atlas Cloud" },
+    ]);
+    ext.setFrame(7, 0, "https://elsewhere.test/", "doc-7");
+    ext.setFrame(8, 0, `${SITE}/login`, "doc-8");
+    const store = new Store(ext, new MemoryPairingStore());
+    await store.setPairing(record());
+    let polls = 0;
+    const c = new FakeClient((r) => {
+      if (r.op !== "agent_wait") return {};
+      polls++;
+      if (polls === 1) return { job: { job: "probe", request_id: 5, url: `${SITE}/login` } };
+      if (polls === 2) return { job: { job: "probe", request_id: 6, url: "http://elsewhere.test/" } };
+      return new Promise(() => undefined);
+    });
+    const loop = startAgentLoop({ ext, store, newClient: () => c });
+    await vi.waitFor(() => expect(c.requests.filter((r) => r.op === "agent_probe_result")).toHaveLength(2));
+    // The host reads `tab_mismatch` as this browser declining, and asks the next one.
+    expect(c.requests.filter((r) => r.op === "agent_probe_result")).toEqual([
+      { op: "agent_probe_result", request_id: 5, result: { err: "tab_mismatch" } },
+      { op: "agent_probe_result", request_id: 6, result: { err: "tab_mismatch" } },
+    ]);
+    // The loop goes on polling for its next job.
+    await vi.waitFor(() => expect(polls).toBe(3));
     loop.stop();
   });
 

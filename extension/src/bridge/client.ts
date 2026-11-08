@@ -170,7 +170,7 @@ export interface AgentPlanFillRequest {
 }
 
 /** Error codes of an agent job, as the host reads them (`onepass_bridge::api::agent_error`). */
-export type AgentErrorCode = "tab_mismatch" | "origin_mismatch" | "cross_site_frame" | "no_fields" | "denied";
+export type AgentErrorCode = "tab_mismatch" | "origin_mismatch" | "cross_site_frame" | "no_fields" | "timeout" | "denied";
 
 /** A job of the agent session (`AgentJobWire`). */
 export type AgentJob =
