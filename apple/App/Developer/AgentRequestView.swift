@@ -25,6 +25,7 @@ enum AgentRequestText {
         case "site": String(localized: "developer.siteLabel")
         case "tab": String(localized: "developer.tabLabel")
         case "card": String(localized: "developer.cardLabel")
+        case "browser": String(localized: "developer.browserLabel")
         default: label
         }
     }
@@ -33,6 +34,7 @@ enum AgentRequestText {
         switch value {
         case "yes": String(localized: "oui")
         case "no": String(localized: "developer.no")
+        case "cdp": String(localized: "developer.cdpBrowser")
         default: value
         }
     }

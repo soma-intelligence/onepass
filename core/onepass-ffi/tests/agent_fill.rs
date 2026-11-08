@@ -55,14 +55,21 @@ impl BridgeDelegate for Quiet {
     fn note(&self, _message: String) {}
 }
 
+/// Runs while the user is being asked (a test moves the page there).
+type OnApprove = Box<dyn Fn() + Send + Sync>;
+
 /// Approves everything and records what it was shown.
 struct Accepting {
     asked: Mutex<Vec<FfiApprovalRequest>>,
+    during: Mutex<Option<OnApprove>>,
 }
 
 impl FfiDeveloperUi for Accepting {
     fn approve(&self, request: FfiApprovalRequest) -> FfiAnswer {
         self.asked.lock().unwrap().push(request);
+        if let Some(f) = self.during.lock().unwrap().take() {
+            f();
+        }
         FfiAnswer {
             decision: FfiDecision::AllowOnce,
             approved_on: Some("mac".into()),
@@ -181,6 +188,7 @@ fn rig() -> Rig {
 
     let ui = Arc::new(Accepting {
         asked: Mutex::new(Vec::new()),
+        during: Mutex::new(None),
     });
     let host = McpHost::start_any_relay_for_tests(
         session.clone(),
@@ -477,5 +485,264 @@ fn tab_switched_during_approval_is_tab_mismatch() {
     assert_eq!(seen.fill_job["kind"], "login");
     assert!(!seen.got_password);
     assert_eq!(rig.ui.asked.lock().unwrap().len(), 1);
+    rig.host.stop();
+}
+
+// ---- phase 2: a local Chrome driven over CDP (the fake DevTools server)
+
+use onepass_cdp::fake::{FakeCdp, card_page, login_page};
+
+const CARD_NUMBER: &str = "4111111111111111";
+const CVV: &str = "737";
+
+/// `fill_in_browser` with these arguments, as call `id`.
+fn fill_call(r: &mut Relay, id: u64, args: Value) -> Value {
+    r.call(
+        id,
+        "tools/call",
+        json!({"name": "fill_in_browser", "arguments": args}),
+    )
+}
+
+fn refusal(reply: &Value) -> String {
+    assert_eq!(reply["result"]["isError"], true, "{reply}");
+    reply["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// A test card in the rig's vault, with every field the fill writes.
+fn add_card(rig: &Rig) {
+    let mut card = rig
+        .session
+        .new_item(
+            rig.vault_id.clone(),
+            FfiItemType::CreditCard,
+            "Visa test".into(),
+        )
+        .unwrap();
+    for f in card.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        f.value = match f.id.as_str() {
+            "cardholder" => FfiFieldValue::Text {
+                value: "Alex Test".into(),
+            },
+            "number" => FfiFieldValue::Concealed {
+                value: CARD_NUMBER.into(),
+            },
+            "expiry" => FfiFieldValue::MonthYear {
+                year: 2031,
+                month: 8,
+            },
+            "cvv" => FfiFieldValue::Concealed { value: CVV.into() },
+            _ => continue,
+        };
+    }
+    rig.session.save_item(card).unwrap();
+}
+
+/// No `Runtime.*` command ever reached the browser.
+fn no_runtime(cdp: &FakeCdp) {
+    assert!(
+        cdp.methods().iter().all(|m| !m.starts_with("Runtime.")),
+        "{:?}",
+        cdp.methods()
+    );
+}
+
+#[test]
+fn cdp_target_fills_a_local_fake_page() {
+    let _turn = one_at_a_time();
+    let rig = rig();
+    let mut r = agent(&rig);
+    let url = format!("{ATLAS}/login");
+    let cdp = FakeCdp::start(&url, "Atlas Cloud - Sign in", login_page(&url));
+
+    let reply = fill_call(
+        &mut r,
+        2,
+        json!({"query": "Atlas Cloud", "url": url, "kind": "login", "submit": true,
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert_eq!(reply["result"]["isError"], false, "{reply}");
+    assert_eq!(
+        reply["result"]["structuredContent"],
+        json!({"filled": ["username", "password"], "submitted": true})
+    );
+    assert!(!reply.to_string().contains(PASSWORD));
+
+    // The values went into the two top-frame fields, by insertText only,
+    // never into the child frame's password field (21); then a click.
+    assert_eq!(cdp.inserted(), vec!["alex@atlas.dev", PASSWORD]);
+    assert_eq!(cdp.field_text(11).as_deref(), Some("alex@atlas.dev"));
+    assert_eq!(cdp.field_text(12).as_deref(), Some(PASSWORD));
+    assert_eq!(cdp.field_text(21).as_deref(), Some(""));
+    no_runtime(&cdp);
+    let methods = cdp.methods();
+    let last_insert = methods
+        .iter()
+        .rposition(|m| m == "Input.insertText")
+        .unwrap();
+    let press = methods
+        .iter()
+        .position(|m| m == "Input.dispatchMouseEvent")
+        .expect("the sign-in button was clicked");
+    assert!(last_insert < press, "{methods:?}");
+
+    // The user was asked once: the panel says CDP, then the page title.
+    let asked = rig.ui.asked.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].action, "fill_login");
+    let labels: Vec<(&str, &str)> = asked[0]
+        .details
+        .iter()
+        .map(|d| (d.label.as_str(), d.value.as_str()))
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            ("site", "atlas-cloud.test"),
+            ("browser", "cdp"),
+            ("tab", "Atlas Cloud - Sign in")
+        ]
+    );
+    drop(asked);
+
+    // The page moves to another origin while the user approves: the fill
+    // is refused and nothing more is typed.
+    let before = cdp.inserted().len();
+    let cdp = Arc::new(cdp);
+    let moved = cdp.clone();
+    *rig.ui.during.lock().unwrap() =
+        Some(Box::new(move || moved.navigate("https://evil.test/login")));
+    let reply = fill_call(
+        &mut r,
+        3,
+        json!({"query": "Atlas Cloud", "url": url, "kind": "login",
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert!(refusal(&reply).starts_with("origin_mismatch"), "{reply}");
+    assert_eq!(rig.ui.asked.lock().unwrap().len(), 2);
+    assert_eq!(cdp.inserted().len(), before);
+    // And a page already elsewhere is refused before anyone is asked.
+    let reply = fill_call(
+        &mut r,
+        4,
+        json!({"query": "Atlas Cloud", "url": url, "kind": "login",
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert!(refusal(&reply).starts_with("origin_mismatch"), "{reply}");
+    assert_eq!(rig.ui.asked.lock().unwrap().len(), 2);
+    rig.host.stop();
+}
+
+#[test]
+fn cdp_target_with_remote_host_is_cdp_not_local() {
+    let _turn = one_at_a_time();
+    let rig = rig();
+    let mut r = agent(&rig);
+    let url = format!("{ATLAS}/login");
+    for (id, addr) in [
+        (2, "ws://198.51.100.7:9222/devtools/page/x".to_owned()),
+        (3, "ws://localhost:9222/devtools/page/x".to_owned()),
+    ] {
+        let reply = fill_call(
+            &mut r,
+            id,
+            json!({"query": "Atlas Cloud", "url": url, "kind": "login",
+                "target": {"cdp": addr}}),
+        );
+        assert!(refusal(&reply).starts_with("cdp_not_local"), "{reply}");
+    }
+    assert!(rig.ui.asked.lock().unwrap().is_empty());
+    rig.host.stop();
+}
+
+#[test]
+fn cdp_target_without_ws_scheme_is_cdp_not_local() {
+    let _turn = one_at_a_time();
+    let rig = rig();
+    let mut r = agent(&rig);
+    let url = format!("{ATLAS}/login");
+    let cdp = FakeCdp::start(&url, "Atlas Cloud - Sign in", login_page(&url));
+    let port = cdp.port();
+    for (id, addr) in [
+        (2, format!("http://127.0.0.1:{port}/devtools/page/FAKE")),
+        (3, format!("wss://127.0.0.1:{port}/devtools/page/FAKE")),
+        (4, format!("127.0.0.1:{port}")),
+    ] {
+        let reply = fill_call(
+            &mut r,
+            id,
+            json!({"query": "Atlas Cloud", "url": url, "kind": "login",
+                "target": {"cdp": addr}}),
+        );
+        assert!(refusal(&reply).starts_with("cdp_not_local"), "{reply}");
+    }
+    // Refused before any connection: the browser saw nothing.
+    assert!(cdp.commands().is_empty());
+    assert!(rig.ui.asked.lock().unwrap().is_empty());
+    rig.host.stop();
+}
+
+#[test]
+fn cdp_card_never_clicks() {
+    let _turn = one_at_a_time();
+    let rig = rig();
+    add_card(&rig);
+    let mut r = agent(&rig);
+    let url = format!("{ATLAS}/checkout");
+    let cdp = FakeCdp::start(&url, "Checkout", card_page(&url));
+
+    // Submit is refused for a card before any prompt or connection.
+    let reply = fill_call(
+        &mut r,
+        2,
+        json!({"query": "Visa test", "url": url, "kind": "card", "submit": true,
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert!(refusal(&reply).starts_with("submit_not_allowed"), "{reply}");
+    assert!(cdp.commands().is_empty());
+    assert!(rig.ui.asked.lock().unwrap().is_empty());
+
+    let reply = fill_call(
+        &mut r,
+        3,
+        json!({"query": "Visa test", "url": url, "kind": "card",
+            "target": {"cdp": cdp.ws_url()}}),
+    );
+    assert_eq!(reply["result"]["isError"], false, "{reply}");
+    assert_eq!(
+        reply["result"]["structuredContent"],
+        json!({"filled": ["number", "cardholder", "expiry", "cvv"], "submitted": false})
+    );
+    let text = reply.to_string();
+    assert!(
+        !text.contains(CARD_NUMBER) && !text.contains("1111"),
+        "{text}"
+    );
+    assert_eq!(cdp.field_text(31).as_deref(), Some(CARD_NUMBER));
+    assert_eq!(cdp.field_text(32).as_deref(), Some("Alex Test"));
+    assert_eq!(cdp.field_text(33).as_deref(), Some("08/31"));
+    assert_eq!(cdp.field_text(34).as_deref(), Some(CVV));
+    // The Pay now button (35) is never touched.
+    let methods = cdp.methods();
+    assert!(
+        !methods
+            .iter()
+            .any(|m| m == "Input.dispatchMouseEvent" || m == "DOM.getBoxModel"),
+        "{methods:?}"
+    );
+    no_runtime(&cdp);
+    let asked = rig.ui.asked.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].action, "fill_card");
+    assert!(
+        asked[0]
+            .details
+            .iter()
+            .any(|d| d.label == "browser" && d.value == "cdp")
+    );
+    drop(asked);
     rig.host.stop();
 }

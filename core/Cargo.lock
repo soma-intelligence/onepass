@@ -2124,6 +2124,7 @@ dependencies = [
  "aws-lc-rs",
  "data-encoding",
  "onepass-bridge",
+ "onepass-cdp",
  "onepass-core",
  "onepass-guard",
  "onepass-mailbox",

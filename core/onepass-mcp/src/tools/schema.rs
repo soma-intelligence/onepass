@@ -274,13 +274,8 @@ fn check_rules(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
                     "argument 'target' must have exactly one of 'browser' and 'cdp'".into(),
                 );
             }
-            if let Some(cdp) = target.get("cdp").and_then(Value::as_str)
-                && !cdp
-                    .get(..5)
-                    .is_some_and(|h| h.eq_ignore_ascii_case("ws://"))
-            {
-                return Err("argument 'target.cdp' must be a ws:// address".into());
-            }
+            // A `cdp` address that is not `ws://` is the tool's named
+            // `cdp_not_local`, not a malformed call.
             Ok(())
         }
         "generate_password" => {
@@ -525,12 +520,17 @@ mod tests {
         assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {}})).is_err());
         assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"browser": "safari"}})).is_err());
         assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"browser": "chrome", "cdp": "ws://a"}})).is_err());
-        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": "http://127.0.0.1:9222"}})).is_err());
+        // Any other scheme passes here: the tool refuses it as cdp_not_local.
+        assert!(fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": "http://127.0.0.1:9222"}})).is_ok());
         assert!(
             fill(
                 json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": "wss://h/x"}})
             )
-            .is_err()
+            .is_ok()
+        );
+        assert!(
+            fill(json!({"item_id": "x", "url": url, "kind": "login", "target": {"cdp": ""}}))
+                .is_err()
         );
         assert!(
             fill(json!({"item_id": "x", "url": url, "kind": "password", "target": chrome}))

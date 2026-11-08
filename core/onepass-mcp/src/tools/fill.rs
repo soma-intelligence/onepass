@@ -132,6 +132,14 @@ fn https_page(url: &str) -> Result<Host, Refusal> {
     parse_url(url, false).ok_or_else(|| Refusal::Invalid("invalid url".into()))
 }
 
+/// Whether a CDP address is a plain `ws://` one (any case): the only kind
+/// a local DevTools socket has. Whether its host is local is the browser's
+/// check.
+fn is_ws(addr: &str) -> bool {
+    addr.get(..5)
+        .is_some_and(|h| h.eq_ignore_ascii_case("ws://"))
+}
+
 /// What one of the item's URLs matched on `page`, under its own rule:
 /// `Domain` the registrable domain (`site:<etld1>`), `ExactHost` the exact
 /// host (`host:<host>`), `ExactUrl` the exact origin (`origin:<origin>`;
@@ -305,7 +313,8 @@ impl<P: VaultPort> McpTools<P> {
 
     /// `fill_in_browser {item_id | query, url, kind, submit?, target}`.
     ///
-    /// Order: arguments, HTTPS, `submit` for a card, the item, the `fill`
+    /// Order: arguments, HTTPS, `submit` for a card, a `cdp` address that is
+    /// not `ws://` (`cdp_not_local`), the item, the `fill`
     /// scope, the item's site (login), the probe, the tab's site, then the
     /// approval (audit log usable, rate limits, grant, prompt), strong
     /// authentication unless a grant covered it, the fill, the log. Every
@@ -335,6 +344,13 @@ impl<P: VaultPort> McpTools<P> {
             }
             _ => BrowserTarget::Chrome,
         };
+        // Only a DevTools socket can be local: any other scheme (http, a
+        // bare host, nothing) is refused before the item is even looked up.
+        if let BrowserTarget::Cdp(addr) = &target
+            && !is_ws(addr)
+        {
+            return Err(browser_refusal(BrowserError::CdpNotLocal).into());
+        }
         let wanted = match kind {
             FillKind::Login => ItemType::Login,
             FillKind::Card => ItemType::CreditCard,
@@ -361,7 +377,8 @@ impl<P: VaultPort> McpTools<P> {
         let probe = browser
             .probe(&client_id, &target, url)
             .map_err(browser_refusal)?;
-        if let Err(r) = self.fill_gate(client, kind, &site, &vault, &item, &probe, call) {
+        let cdp = matches!(target, BrowserTarget::Cdp(_));
+        if let Err(r) = self.fill_gate(client, kind, cdp, &site, &vault, &item, &probe, call) {
             if let Some(b) = self.browser.as_ref() {
                 b.cancel(&probe);
             }
@@ -385,6 +402,7 @@ impl<P: VaultPort> McpTools<P> {
         &mut self,
         client: &ClientInfo,
         kind: FillKind,
+        cdp: bool,
         site: &str,
         vault: &VaultInfo,
         item: &Item,
@@ -406,6 +424,10 @@ impl<P: VaultPort> McpTools<P> {
         let action = kind.action();
         let mut details = Vec::new();
         push_detail(&mut details, "site", site);
+        // Spec 6.4: a page reached over CDP says so first, its title second.
+        if cdp {
+            push_detail(&mut details, "browser", "cdp");
+        }
         match kind {
             FillKind::Login => {
                 let title: String = probe.tab_title.chars().take(MAX_TAB_TITLE).collect();
@@ -1191,6 +1213,62 @@ mod tests {
         );
         card.field_mut("number").unwrap().value = FieldValue::Empty;
         assert_eq!(super::card_shown(&card), "Prepaid");
+    }
+
+    #[test]
+    fn cdp_address_without_ws_scheme_is_cdp_not_local() {
+        for addr in [
+            "http://127.0.0.1:9222/devtools/page/x",
+            "https://127.0.0.1:9222/json",
+            "wss://127.0.0.1:9222/devtools/page/x",
+            "127.0.0.1:9222",
+            " ws://127.0.0.1:9222/devtools/page/x",
+        ] {
+            let mut f = fx(vec![Decision::AllowOnce]);
+            let mut args = login_args(&f.github.clone());
+            args["target"] = json!({"cdp": addr});
+            assert_eq!(code(f.call(args)), "cdp_not_local", "{addr}");
+            assert!(f.approver.calls().is_empty());
+            assert!(f.log.lock().unwrap().probes.is_empty());
+            assert_eq!(f.entries()[0].outcome, "cdp_not_local");
+        }
+        assert!(super::is_ws("WS://127.0.0.1:1/x") && super::is_ws("ws://[::1]:1/x"));
+    }
+
+    #[test]
+    fn cdp_target_says_so_in_the_panel() {
+        let mut f = fx(vec![Decision::AllowOnce, Decision::AllowOnce]);
+        let cdp = json!({"cdp": "ws://127.0.0.1:9222/devtools/page/x"});
+        let mut args = login_args(&f.github.clone());
+        args["target"] = cdp.clone();
+        ok(f.call(args));
+        f.set_browser("https://shop.test", None);
+        let mut args = card_args(&f.card.clone(), "https://shop.test/pay");
+        args["target"] = cdp;
+        ok(f.call(args));
+        let calls = f.approver.calls();
+        assert_eq!(
+            calls[0].details,
+            vec![
+                ("site".to_owned(), "github.com".to_owned()),
+                ("browser".to_owned(), "cdp".to_owned()),
+                ("tab".to_owned(), "Sign in to GitHub".to_owned()),
+            ]
+        );
+        assert_eq!(
+            calls[1].details[1],
+            ("browser".to_owned(), "cdp".to_owned())
+        );
+        assert_eq!(calls[1].details[2].0, "card");
+        // The Chrome target never shows it.
+        let mut f = fx(vec![Decision::AllowOnce]);
+        ok(f.call(login_args(&f.github.clone())));
+        assert!(
+            f.approver.calls()[0]
+                .details
+                .iter()
+                .all(|(l, _)| l != "browser")
+        );
     }
 
     #[test]

@@ -42,6 +42,9 @@ onepass-bridge = { path = "../onepass-bridge" }
 onepass-mailbox = { path = "../onepass-mailbox" }
 onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 onepass-sync = { path = "../onepass-sync" }
+# `fill_in_browser` with a `cdp` target (spec 2026-11-07 section 6): a local
+# Chrome an agent drives, reached over its DevTools socket on loopback only.
+onepass-cdp = { path = "../onepass-cdp" }
 # The test mailbox server of the Swift tests (`dev-fast-kdf` only).
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"], optional = true }
 aws-lc-rs = { workspace = true, optional = true }
@@ -71,6 +74,8 @@ aws-lc-rs.workspace = true
 # The integration tests make fast-KDF accounts: they need the dev floor of the
 # core (debug builds only) whichever way the tests are invoked.
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+# The CDP fill tests drive the fake DevTools server of onepass-cdp.
+onepass-cdp = { path = "../onepass-cdp", features = ["testing"] }
 # The mailbox tests serve FakeMailbox over loopback TLS (test CA).
 onepass-mailbox = { path = "../onepass-mailbox", features = ["testing"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
