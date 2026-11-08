@@ -131,6 +131,12 @@ Copy, layout, navigation and the tab bar do not change. The Lattice mark and #58
    (`--wash-scale`, `--wash-alert`, `--wash-identity`, `--wash-accent`). The `--r-*` radii and the
    spacing map to the same numbers as `Theme.Radius` and `Theme.Space`. The same banned list applies.
 
+Adjustments from planning:
+
+- The red "Exposed" cards live in the Watchtower tab (`WatchtowerTab.fill`), not on Home. `Wash.alert` goes there. Home gets `alert` on `HomeCryptoCard` only when it shows a phrase alert.
+- "`scale` on the Home counts row" is dropped: the Home tiles show counts, not scores, so a scale would carry no meaning.
+- The identity color comes from, in order: `ItemIcon.brandColor(_:)`, the average opaque color of the site icon, the category color. Then the low-saturation fallback to the accent applies.
+
 ## Build order
 
 1. DesignKit tokens (`Theme.Wash`, `Theme.Space`, `Theme.Radius`) and their tests.
