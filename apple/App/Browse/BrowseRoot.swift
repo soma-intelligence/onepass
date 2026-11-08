@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -176,13 +177,14 @@ struct BrowseRoot: View {
     }
 
     #if os(iOS)
-    /// An iPhone unfolded wide enough for two panes (about 700 pt), or `-OnePassFoldLayout YES`
-    /// (Debug captures on a wide simulator, there is no foldable one).
+    /// An unfolded iPhone: the iPhone Duo's inner screen is 669 pt wide in portrait, its cover
+    /// screen 466 pt, and no other iPhone passes 440 pt in portrait (iPhone is portrait only).
+    /// `-OnePassFoldLayout YES` forces it in Debug on any window at least as wide.
     private var isFold: Bool {
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "OnePassFoldLayout") { return width >= 600 }
+        if UserDefaults.standard.bool(forKey: "OnePassFoldLayout") { return width >= FoldLayout.minWidth }
         #endif
-        return UIDevice.current.userInterfaceIdiom == .phone && width >= 700
+        return UIDevice.current.userInterfaceIdiom == .phone && FoldLayout.isUnfolded(width: width)
     }
 
     private var usesTabs: Bool {
