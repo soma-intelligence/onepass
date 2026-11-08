@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 
 use super::Repository;
 use crate::attachment::{self, MAX_PER_ITEM};
-use crate::duplicates::{self, Candidate, Group, Merge};
+use crate::duplicates::{self, Candidate, Choice, Confidence, Group, Merge};
 use crate::error::{Error, Result, ValidationError};
 use crate::id::Id;
 use crate::model::{EventKind, Item, events::record_edit};
@@ -144,10 +144,23 @@ impl<S: RecordStore> Repository<S> {
         others: &[ItemKey],
         note: &str,
     ) -> Result<Item> {
+        self.merge_duplicates_with(primary, others, &[], note)
+    }
+
+    /// `merge_duplicates` with the answers of the review
+    /// (`duplicates::merge_with`).
+    pub fn merge_duplicates_with(
+        &mut self,
+        primary: ItemKey,
+        others: &[ItemKey],
+        choices: &[Choice],
+        note: &str,
+    ) -> Result<Item> {
         let vaults = self.vaults()?;
         let pv = vault_of(&vaults, primary.vault_id)?;
         let now = OffsetDateTime::now_utc();
-        let (before, folded, plan) = self.plan_merge(&vaults, primary, others, note, now)?;
+        let (before, folded, plan) =
+            self.plan_merge(&vaults, primary, others, choices, note, now)?;
         let Merge {
             mut merged,
             archived,
@@ -200,12 +213,59 @@ impl<S: RecordStore> Repository<S> {
         &mut self,
         primary: ItemKey,
         others: &[ItemKey],
+        choices: &[Choice],
         note: &str,
     ) -> Result<MergePlan> {
         let vaults = self.vaults()?;
-        let (_, _, plan) =
-            self.plan_merge(&vaults, primary, others, note, OffsetDateTime::now_utc())?;
+        let (_, _, plan) = self.plan_merge(
+            &vaults,
+            primary,
+            others,
+            choices,
+            note,
+            OffsetDateTime::now_utc(),
+        )?;
         Ok(plan)
+    }
+
+    /// Merge, in one go, every group of `group_ids` that a fresh scan still
+    /// finds `Sure` (`duplicates::review`), with the default answers. A
+    /// group gone or turned into a conflict since the page was drawn is
+    /// left alone. `note` gives the note of the archived copies from the
+    /// primary's title. Returns the ids of the groups merged.
+    pub fn merge_sure_duplicates(
+        &mut self,
+        group_ids: &[String],
+        excluded: &[Id],
+        note: impl Fn(&str) -> String,
+    ) -> Result<Vec<String>> {
+        let scan = self.duplicate_scan(excluded)?;
+        let mut done = Vec::new();
+        for g in scan.groups.iter().filter(|g| group_ids.contains(&g.id)) {
+            let members: Vec<&ScannedItem> =
+                g.members.iter().filter_map(|&i| scan.items.get(i)).collect();
+            let copies: Vec<&Item> = members.iter().map(|m| &m.item).collect();
+            let review = duplicates::review(&copies);
+            let Some(primary) = members.first() else {
+                continue;
+            };
+            if review.confidence != Confidence::Sure || !primary.writable {
+                continue;
+            }
+            let key = |m: &ScannedItem| ItemKey {
+                vault_id: m.vault_id,
+                item_id: m.item.id,
+            };
+            let others: Vec<ItemKey> = members.iter().skip(1).map(|m| key(m)).collect();
+            self.merge_duplicates_with(
+                key(primary),
+                &others,
+                &review.choices(&copies),
+                &note(&primary.item.title),
+            )?;
+            done.push(g.id.clone());
+        }
+        Ok(done)
     }
 
     /// Load the primary and the others, check the rights, fold them.
@@ -216,6 +276,7 @@ impl<S: RecordStore> Repository<S> {
         vaults: &[Vault],
         primary: ItemKey,
         others: &[ItemKey],
+        choices: &[Choice],
         note: &str,
         now: OffsetDateTime,
     ) -> Result<Planned> {
@@ -239,7 +300,7 @@ impl<S: RecordStore> Repository<S> {
             }
         }
         let refs: Vec<&Item> = folded.iter().map(|(_, i)| i).collect();
-        let mut merge = duplicates::merge(&before, &refs, note, now);
+        let mut merge = duplicates::merge_with(&before, &refs, choices, note, now);
         duplicates::mark_distinct(&mut merge.merged, read_only.iter().copied());
         if merge.merged.attachments.len() + merge.attachments.len() > MAX_PER_ITEM {
             return Err(Error::InvalidFormat("too many attachments"));

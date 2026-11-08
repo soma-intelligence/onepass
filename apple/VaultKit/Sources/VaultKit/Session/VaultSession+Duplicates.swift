@@ -25,6 +25,39 @@ extension VaultSession {
         return try await write { try $0.mergeDuplicates(primary: primary, others: others, note: note) }
     }
 
+    /// `duplicateMergePreview` with the answers of the review (spec 2026-11-08-duplicates-review).
+    public func duplicateMergePreview(
+        primary: FfiItemKey, others: [FfiItemKey], answers: [FfiDuplicateChoice]
+    ) async throws -> FfiMergePreview {
+        try await read {
+            try $0.mergeDuplicatesPreviewWith(primary: primary, others: others, answers: answers)
+        }
+    }
+
+    /// `mergeDuplicates` with the answers of the review: each names the copy whose value wins.
+    @discardableResult
+    public func mergeDuplicates(
+        primary: FfiItemKey, others: [FfiItemKey], answers: [FfiDuplicateChoice], primaryTitle: String
+    ) async throws -> FfiItem {
+        let note = String(
+            localized: "duplicates.mergedInto \(primaryTitle)", bundle: VaultKitStrings.bundle)
+        return try await write {
+            try $0.mergeDuplicatesWith(primary: primary, others: others, answers: answers, note: note)
+        }
+    }
+
+    /// Merges every group of `groupIDs` that the core still finds sure, with the default answers.
+    /// Returns the ids of the groups merged (a group turned into a conflict meanwhile is left).
+    @discardableResult
+    public func mergeSureDuplicates(_ groupIDs: [String]) async throws -> [String] {
+        let hidden = hiddenVaultIDs.sorted()
+        // The core puts each kept copy's title in place of `{title}`.
+        let template = String(localized: "duplicates.mergedInto \("{title}")", bundle: VaultKitStrings.bundle)
+        return try await write {
+            try $0.mergeSureDuplicates(groupIds: groupIDs, excludedVaultIds: hidden, noteTemplate: template)
+        }
+    }
+
     /// Archives the extra copies.
     public func archiveDuplicates(_ items: [FfiItemKey]) async throws {
         try await write { try $0.archiveDuplicates(items: items) }

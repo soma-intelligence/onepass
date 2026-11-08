@@ -137,3 +137,52 @@ fn archive_and_trash_extra_copies() {
     assert!(s.item(vault.clone(), c.id).unwrap().trashed_at.is_some());
     assert!(s.duplicate_groups(vec![]).unwrap().is_empty());
 }
+
+#[test]
+fn review_lines_choices_and_sure_batch() {
+    let (_dir, s) = session();
+    let vault = s.vaults().unwrap()[0].id.clone();
+    let a = login(&s, &vault, "GitHub", "camille", "Pw-one-11");
+    let b = login(&s, &vault, "GitHub perso", "camille", "Pw-two-22");
+    let g = s.duplicate_groups(vec![]).unwrap().remove(0);
+    assert_eq!(g.confidence, FfiDuplicateConfidence::Review);
+    let pw = g
+        .rows
+        .iter()
+        .find(|r| r.aspect == FfiDuplicateAspect::Password)
+        .unwrap();
+    assert_eq!(pw.kind, FfiDuplicateRowKind::Conflict);
+    assert!(pw.concealed);
+    assert_eq!(pw.values.len(), 2);
+    assert_eq!(pw.subject, "password");
+    // The sure batch leaves a group with a conflict alone.
+    let done = s
+        .merge_sure_duplicates(vec![g.id.clone()], vec![], "Fusionné dans {title}".into())
+        .unwrap();
+    assert!(done.is_empty());
+    // Answer: the password of the copy that is not the primary.
+    let primary = &g.copies[0];
+    let other = &g.copies[1];
+    let other_item = if other.summary.id == a.id { &a } else { &b };
+    let primary_item = if primary.summary.id == a.id { &a } else { &b };
+    let wanted = if other.summary.id == a.id { "Pw-one-11" } else { "Pw-two-22" };
+    let answers = vec![FfiDuplicateChoice {
+        subject: "password".into(),
+        from_item_id: Some(other_item.id.clone()),
+    }];
+    let preview = s
+        .merge_duplicates_preview_with(key(primary_item), vec![key(other_item)], answers.clone())
+        .unwrap();
+    assert_eq!(preview.history_added, 1);
+    let merged = s
+        .merge_duplicates_with(key(primary_item), vec![key(other_item)], answers, "Fusionné".into())
+        .unwrap();
+    let got = merged
+        .sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .find(|f| f.id == "password")
+        .map(|f| f.value.clone());
+    assert_eq!(got, Some(FfiFieldValue::Password { value: wanted.into() }));
+    assert!(s.duplicate_groups(vec![]).unwrap().is_empty());
+}

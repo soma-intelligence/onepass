@@ -2,11 +2,11 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Possible duplicates (spec 2026-11-03-duplicates): the home banner (iPhone), the review screen with
-/// one card per group, and the merge sheet with its preview. The review and the merge sheet are
-/// shared: an iPhone tab pushes the review, the Mac, iPad and Vision Pro sidebar opens it as a full
-/// page (`DuplicatesReviewView.Layout.page`). The core finds the groups, plans the merge and refuses
-/// any write to a read-only shared copy; this file only shows and asks.
+/// Possible duplicates (specs 2026-11-03-duplicates and 2026-11-08-duplicates-review): the home
+/// banner (iPhone) and the review screen. The review is shared: an iPhone tab pushes it, the Mac, iPad
+/// and Vision Pro sidebar opens it as a full page (`DuplicatesReviewView.Layout.page`). The core
+/// finds the groups, says what differs and how sure a merge is, merges, and refuses any write to a
+/// read-only shared copy; this file only shows and asks.
 @MainActor
 @Observable
 final class DuplicatesLoader {
@@ -149,8 +149,13 @@ struct DuplicatesBanner: View {
 
 // MARK: - Review screen
 
-/// One card per group: each copy (icon, title, username, vault, last edit, what differs), then the
-/// actions Fusionner, Archiver les autres, Supprimer les autres, Pas des doublons.
+/// The review (spec 2026-11-08-duplicates-review), in two parts the core decides:
+///
+/// - Fusion sûre: groups whose copies only add to one another (a website, a tag, a code, a note one
+///   holds). Each says what the merge adds; one button merges the ticked ones, the core checking each
+///   again before it writes.
+/// - À vérifier: groups with a real conflict (two passwords, two usernames…), one at a time, with
+///   the question to answer and a table of the lines that differ, one column per copy.
 struct DuplicatesReviewView: View {
     /// Where the review sits: pushed in an iPhone tab, or a full page right of the sidebar.
     enum Layout {
@@ -159,111 +164,244 @@ struct DuplicatesReviewView: View {
 
     @Environment(AppModel.self) private var model
     @State private var loader = DuplicatesLoader()
-    @State private var merging: FfiDuplicateGroup?
+    /// Sure groups the user unticked: left out of the batch.
+    @State private var excluded: Set<String> = []
+    /// Answers per group id: subject to the item id of the copy whose value wins ("" keeps both notes).
+    @State private var answers: [String: [String: String]] = [:]
+    @State private var position = 0
     @State private var trashing: FfiDuplicateGroup?
-    @State private var busy: String?
+    @State private var busy: Set<String> = []
+    @State private var batchBusy = false
     var layout: Layout = .phone
+
+    private var sure: [FfiDuplicateGroup] { loader.groups.filter { $0.confidence == .sure } }
+    private var toReview: [FfiDuplicateGroup] { loader.groups.filter { $0.confidence == .review } }
+    private var ticked: [FfiDuplicateGroup] {
+        sure.filter { !excluded.contains($0.id) && $0.copies.first?.writable == true }
+    }
 
     var body: some View {
         content
             .navigationTitle("duplicates.title")
             .task(id: model.session.summariesRevision) {
-            await loader.load(model.session)
-            #if DEBUG
-            // Captures: `-OnePassDemoList duplicates-merge` opens the first group's merge preview.
-            if UserDefaults.standard.string(forKey: "OnePassDemoList") == "duplicates-merge", merging == nil {
-                merging = loader.groups.first
+                await loader.load(model.session)
             }
-            #endif
-        }
-        .sheet(item: $merging) { group in
-            DuplicateMergeSheet(group: group)
-        }
-        .confirmationDialog(
-            "duplicates.trash.title", isPresented: Binding(
-                get: { trashing != nil }, set: { if !$0 { trashing = nil } }),
-            titleVisibility: .visible, presenting: trashing
-        ) { group in
-            Button("duplicates.action.trashOthers", role: .destructive) {
-                run(group) { try await model.session.trashDuplicates(others(group)) }
+            .confirmationDialog(
+                "duplicates.trash.title", isPresented: Binding(
+                    get: { trashing != nil }, set: { if !$0 { trashing = nil } }),
+                titleVisibility: .visible, presenting: trashing
+            ) { group in
+                Button("duplicates.action.trashOthers", role: .destructive) {
+                    run(group) { try await model.session.trashDuplicates(others(group)) }
+                }
+                .accessibilityIdentifier("duplicates.trash.confirm")
+                Button("common.cancel", role: .cancel) {}
+            } message: { _ in
+                Text("duplicates.trash.body")
             }
-            .accessibilityIdentifier("duplicates.trash.confirm")
-            Button("common.cancel", role: .cancel) {}
-        } message: { _ in
-            Text("duplicates.trash.body")
-        }
     }
 
     @ViewBuilder private var content: some View {
         #if os(iOS)
         if layout == .phone {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if isEmpty {
-                        emptyState.padding(.top, 60)
-                    } else {
-                        ForEach(loader.groups, id: \.id) { card($0) }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .animation(.snappy, value: loader.groups.map(\.id))
+                sections
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
             .background(PhoneBackground())
             .navigationBarTitleDisplayMode(.inline)
         } else {
-            page
+            // The page header carries the title: no large navigation title above it.
+            page.navigationBarTitleDisplayMode(.inline)
         }
         #else
         page
         #endif
     }
 
-    /// Mac, iPad and Vision Pro: the page header of Watchtower, then the cards side by side.
+    /// Mac, iPad and Vision Pro: the page header of Watchtower, then the two parts.
     private var page: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 26) {
                 PageHeader(
                     title: String(localized: "duplicates.title"), symbol: "square.on.square", color: .orange,
-                    message: String(localized: "duplicates.banner.subtitle"))
-                if isEmpty {
-                    emptyState
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 40)
-                } else {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 380), spacing: 14, alignment: .top)],
-                        alignment: .leading, spacing: 14
-                    ) {
-                        ForEach(loader.groups, id: \.id) { card($0) }
-                    }
-                }
+                    message: headerMessage)
+                sections
             }
             .padding(28)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: 1000, alignment: .leading)
             .frame(maxWidth: .infinity)
-            .animation(.snappy, value: loader.groups.map(\.id))
         }
     }
 
-    private var isEmpty: Bool { loader.loaded && loader.groups.isEmpty }
+    private var headerMessage: String {
+        guard loader.loaded, !loader.groups.isEmpty else { return String(localized: "duplicates.banner.subtitle") }
+        return String(localized: "duplicates.header.counts \(sure.count) \(toReview.count)")
+    }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("duplicates.empty.title", systemImage: "checkmark.circle")
-        } description: {
-            Text("duplicates.empty.body")
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            if loader.loaded && loader.groups.isEmpty {
+                ContentUnavailableView {
+                    Label("duplicates.empty.title", systemImage: "checkmark.circle")
+                } description: {
+                    Text("duplicates.empty.body")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 40)
+            }
+            if !sure.isEmpty { sureSection }
+            if !toReview.isEmpty { reviewSection }
+        }
+        .animation(.snappy, value: loader.groups.map(\.id))
+    }
+
+    // MARK: Fusion sûre
+
+    private var sureSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DuplicatesHeading(
+                title: String(localized: "duplicates.sure.title"), symbol: "checkmark.seal.fill", color: .green,
+                message: String(localized: "duplicates.sure.body"), layout: layout
+            ) {
+                if layout == .page { mergeAllButton }
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(sure.enumerated()), id: \.element.id) { index, group in
+                    if index > 0 { Divider().padding(.leading, layout == .phone ? 52 : 92) }
+                    SureGroupRow(
+                        group: group, layout: layout, busy: busy.contains(group.id) || batchBusy,
+                        included: Binding(
+                            get: { !excluded.contains(group.id) },
+                            set: { if $0 { excluded.remove(group.id) } else { excluded.insert(group.id) } }),
+                        actions: actions(group))
+                }
+            }
+            .padding(.vertical, 4)
+            .modifier(DuplicateCardSurface(layout: layout))
+            if layout == .phone { mergeAllButton.frame(maxWidth: .infinity) }
+        }
+        .accessibilityIdentifier("duplicates.sure")
+    }
+
+    private var mergeAllButton: some View {
+        Button {
+            mergeSure()
+        } label: {
+            HStack(spacing: 6) {
+                if batchBusy { ProgressView().controlSize(.small) }
+                Text("duplicates.sure.mergeAll \(ticked.count)")
+            }
+            .frame(maxWidth: layout == .phone ? .infinity : nil)
+        }
+        .buttonStyle(.glassProminent)
+        .controlSize(layout == .phone ? .large : .regular)
+        .disabled(ticked.isEmpty || batchBusy)
+        .accessibilityIdentifier("duplicates.sure.mergeAll")
+    }
+
+    // MARK: À vérifier
+
+    private var reviewSection: some View {
+        let list = toReview
+        let index = min(position, list.count - 1)
+        let group = list[index]
+        return VStack(alignment: .leading, spacing: 12) {
+            DuplicatesHeading(
+                title: String(localized: "duplicates.review.title"), symbol: "questionmark.circle.fill",
+                color: .orange, message: String(localized: "duplicates.review.body"), layout: layout
+            ) {
+                if layout == .page, list.count > 1 { stepper(index: index, count: list.count) }
+            }
+            if layout == .phone, list.count > 1 {
+                stepper(index: index, count: list.count).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            ConflictCard(
+                group: group, layout: layout, busy: busy.contains(group.id),
+                answer: { answer(group, $0) },
+                choose: { row, id in answers[group.id, default: [:]][row.subject] = id },
+                merge: { mergeReviewed(group) },
+                skip: { position = (index + 1) % list.count },
+                actions: actions(group))
+            .id(group.id)
+            .transition(.opacity)
+        }
+        .accessibilityIdentifier("duplicates.review")
+    }
+
+    private func stepper(index: Int, count: Int) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                position = (index + count - 1) % count
+            } label: {
+                Image(systemName: "chevron.backward")
+            }
+            .accessibilityLabel(Text("duplicates.review.previous"))
+            Text("duplicates.review.position \(index + 1) \(count)")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+            Button {
+                position = (index + 1) % count
+            } label: {
+                Image(systemName: "chevron.forward")
+            }
+            .accessibilityLabel(Text("duplicates.review.next"))
+        }
+        .buttonStyle(.glass)
+        .controlSize(.small)
+    }
+
+    // MARK: Answers and actions
+
+    /// The id of the copy whose value `row` keeps: the user's answer, else the core's default ("" for
+    /// two notes kept together).
+    private func answer(_ group: FfiDuplicateGroup, _ row: FfiDuplicateRow) -> String {
+        if let chosen = answers[group.id]?[row.subject] { return chosen }
+        guard let w = row.winner, Int(w) < group.copies.count else { return "" }
+        return group.copies[Int(w)].summary.id
+    }
+
+    private func choices(_ group: FfiDuplicateGroup) -> [FfiDuplicateChoice] {
+        group.rows.filter { !$0.subject.isEmpty }.compactMap { row in
+            let id = answer(group, row)
+            if id.isEmpty { return row.subject == "notes" ? FfiDuplicateChoice(subject: row.subject, fromItemId: nil) : nil }
+            return FfiDuplicateChoice(subject: row.subject, fromItemId: id)
         }
     }
 
-    private func card(_ group: FfiDuplicateGroup) -> some View {
-        DuplicateGroupCard(
-            group: group, busy: busy == group.id, layout: layout,
-            merge: { merging = group },
+    private func actions(_ group: FfiDuplicateGroup) -> DuplicateGroupActions {
+        DuplicateGroupActions(
+            canChangeOthers: group.copies.dropFirst().contains(where: \.writable),
             archive: { run(group) { try await model.session.archiveDuplicates(others(group)) } },
             trash: { trashing = group },
             dismiss: { run(group) { try await model.session.dismissDuplicates(group.copies.map(\.key)) } })
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    private func mergeReviewed(_ group: FfiDuplicateGroup) {
+        guard let primary = group.copies.first else { return }
+        let picks = choices(group)
+        let titleFrom = picks.first { $0.subject == "title" }?.fromItemId
+        let title = group.copies.first { $0.summary.id == titleFrom }?.summary.title ?? primary.summary.title
+        run(group) {
+            try await model.session.mergeDuplicates(
+                primary: primary.key, others: group.copies.dropFirst().map(\.key), answers: picks,
+                primaryTitle: title)
+        }
+    }
+
+    private func mergeSure() {
+        let ids = ticked.map(\.id)
+        batchBusy = true
+        Task {
+            defer { batchBusy = false }
+            do {
+                let done = try await model.session.mergeSureDuplicates(ids)
+                model.showToast(String(localized: "duplicates.sure.merged \(done.count)"))
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
     }
 
     /// Every writable copy but the suggested primary (the first).
@@ -272,9 +410,9 @@ struct DuplicatesReviewView: View {
     }
 
     private func run(_ group: FfiDuplicateGroup, _ op: @escaping () async throws -> Void) {
-        busy = group.id
+        busy.insert(group.id)
         Task {
-            defer { busy = nil }
+            defer { busy.remove(group.id) }
             do {
                 try await op()
             } catch {
@@ -286,82 +424,41 @@ struct DuplicatesReviewView: View {
 
 extension FfiDuplicateGroup: @retroactive Identifiable {}
 
-private struct DuplicateGroupCard: View {
-    let group: FfiDuplicateGroup
-    let busy: Bool
-    let layout: DuplicatesReviewView.Layout
-    let merge: () -> Void
+/// The rarer actions of a group, in its "…" menu.
+struct DuplicateGroupActions {
+    let canChangeOthers: Bool
     let archive: () -> Void
     let trash: () -> Void
     let dismiss: () -> Void
+}
 
-    private var canChangeOthers: Bool { group.copies.dropFirst().contains(where: \.writable) }
+/// Title of a part of the review: a tinted symbol, a heading, one line of explanation.
+private struct DuplicatesHeading<Trailing: View>: View {
+    let title: String
+    let symbol: String
+    let color: Color
+    let message: String
+    let layout: DuplicatesReviewView.Layout
+    @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: DuplicatesText.symbol(group))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
-                Text(verbatim: DuplicatesText.reason(group))
-                    .font(.subheadline.weight(.semibold))
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: symbol).foregroundStyle(color)
+                }
+                .font(layout == .phone ? .headline : .title2.weight(.semibold))
+                Text(message)
+                    .font(layout == .phone ? .footnote : .callout)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-            ForEach(Array(group.copies.enumerated()), id: \.element.summary.id) { index, copy in
-                if index > 0 { Divider().padding(.leading, 66) }
-                DuplicateCopyRow(copy: copy, suggested: index == 0, layout: layout)
-            }
-            Divider()
-            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
-                GridRow {
-                    Button(action: merge) {
-                        Label("duplicates.action.merge", systemImage: "arrow.triangle.merge")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .disabled(!canChangeOthers)
-                    .accessibilityIdentifier("duplicates.merge")
-                    Button(action: archive) {
-                        Label("duplicates.action.archiveOthers", systemImage: "archivebox")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(!canChangeOthers)
-                    .accessibilityIdentifier("duplicates.archive")
-                }
-                GridRow {
-                    Button(role: .destructive, action: trash) {
-                        Label("duplicates.action.trashOthers", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(!canChangeOthers)
-                    .accessibilityIdentifier("duplicates.trash")
-                    Button(action: dismiss) {
-                        Label("duplicates.action.notDuplicates", systemImage: "hand.raised")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                    .accessibilityIdentifier("duplicates.dismiss")
-                }
-            }
-            .labelStyle(.titleOnly)
-            .font(.footnote.weight(.semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .controlSize(layout == .phone ? .small : .regular)
-            .disabled(busy)
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing
         }
-        .modifier(DuplicateCardSurface(layout: layout))
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("duplicates.group")
     }
 }
 
@@ -382,262 +479,532 @@ private struct DuplicateCardSurface: ViewModifier {
     }
 }
 
-private struct DuplicateCopyRow: View {
+/// What the group is: the kept copy's icon, title and username, then how many copies and where.
+private struct DuplicateGroupHeader: View {
     @Environment(AppModel.self) private var model
-    let copy: FfiDuplicateCopy
-    let suggested: Bool
-    let layout: DuplicatesReviewView.Layout
+    let group: FfiDuplicateGroup
+    var iconSize: CGFloat = 40
 
-    private var ref: ItemRef { ItemRef(vaultID: copy.summary.vaultId, itemID: copy.summary.id) }
+    private var primary: FfiDuplicateCopy? { group.copies.first }
 
     var body: some View {
-        #if os(iOS)
-        if layout == .phone {
-            NavigationLink(value: PhoneRoute.item(ref)) { label }
-                .buttonStyle(RowHighlightButtonStyle())
-                .accessibilityElement(children: .combine)
-        } else {
-            reveal
-        }
-        #else
-        reveal
-        #endif
-    }
-
-    /// A page has no stack of its own for the item: the item opens in the full list, selected, as
-    /// Watchtower's "Voir les éléments" does.
-    private var reveal: some View {
-        Button { model.perform(.reveal(ref)) } label: { label }
-            .buttonStyle(.plain)
-            .visionHoverEffect()
-            .accessibilityElement(children: .combine)
-    }
-
-    private var label: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ItemIcon(
-                type: copy.summary.itemType, title: copy.summary.title,
-                siteIcon: model.iconLoader.cachedIcon(for: copy.summary.primaryUrl, title: copy.summary.title),
-                size: 40, brand: copy.summary.cardBrand)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(copy.summary.title)
+        if let primary {
+            HStack(spacing: 12) {
+                ItemIcon(
+                    type: primary.summary.itemType, title: primary.summary.title,
+                    siteIcon: model.iconLoader.cachedIcon(
+                        for: primary.summary.primaryUrl, title: primary.summary.title),
+                    size: iconSize, brand: primary.summary.cardBrand)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(primary.summary.title)
                         .font(.body.weight(.semibold))
                         .lineLimit(1)
-                    if suggested {
-                        badge(Text("duplicates.copy.suggested"), color: Theme.readableAccent)
-                    } else if !copy.writable {
-                        badge(Text("duplicates.copy.readOnly"), color: .secondary)
-                    }
-                }
-                if !copy.summary.listSubtitle.isEmpty {
-                    Text(verbatim: copy.summary.listSubtitle)
+                    Text(verbatim: DuplicatesText.describe(group))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Text(verbatim: "\(copy.vaultName) · \(DuplicatesText.modified(copy))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if !suggested {
-                    Text(verbatim: DuplicatesText.differences(copy))
-                        .font(.caption)
-                        .foregroundStyle(copy.differences.isEmpty ? Color.secondary : Color.orange)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: 4)
-            Image(systemName: "chevron.forward")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 12)
-                .accessibilityHidden(true)
+            .accessibilityElement(children: .combine)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .contentShape(.rect)
-    }
-
-    private func badge(_ text: Text, color: Color) -> some View {
-        text
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.12), in: Capsule())
     }
 }
 
-// MARK: - Merge sheet
-
-/// Fusionner: which copy is kept (writable ones only), then what the result will hold, from the
-/// core's preview. Nothing is written before the confirm button.
-struct DuplicateMergeSheet: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
+/// One sure group: tick to merge it with the others, what it is, what the merge adds.
+private struct SureGroupRow: View {
     let group: FfiDuplicateGroup
-    @State private var primaryID: String
-    @State private var preview: FfiMergePreview?
-    @State private var merging = false
-
-    init(group: FfiDuplicateGroup) {
-        self.group = group
-        _primaryID = State(initialValue: group.copies.first?.summary.id ?? "")
-    }
-
-    private var primary: FfiDuplicateCopy? { group.copies.first { $0.summary.id == primaryID } }
-    private var others: [FfiItemKey] { group.copies.filter { $0.summary.id != primaryID }.map(\.key) }
+    let layout: DuplicatesReviewView.Layout
+    let busy: Bool
+    @Binding var included: Bool
+    let actions: DuplicateGroupActions
 
     var body: some View {
-        NavigationStack {
-            List {
-                keepSection
-                resultSection
-            }
-            .navigationTitle("duplicates.action.merge")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("duplicates.action.merge") { merge() }
-                        .disabled(preview == nil || merging)
-                        .accessibilityIdentifier("duplicates.merge.confirm")
-                }
-            }
-            .task(id: primaryID) { await loadPreview() }
-        }
-        #if os(iOS)
-        .presentationDetents([.large])
-        #elseif os(macOS)
-        // A Mac sheet sizes to its content: a list has none, so it gets the room of a short form.
-        .frame(minWidth: 460, idealWidth: 520, minHeight: 520, idealHeight: 620)
-        #endif
-    }
-
-    private var keepSection: some View {
-        Section("duplicates.merge.keep") {
-            ForEach(group.copies, id: \.summary.id) { copy in
-                keepRow(copy)
-            }
-        }
-    }
-
-    private func keepRow(_ copy: FfiDuplicateCopy) -> some View {
-        Button {
-            primaryID = copy.summary.id
-        } label: {
-            HStack(spacing: 12) {
-                ItemIcon(
-                    type: copy.summary.itemType, title: copy.summary.title, siteIcon: siteIcon(copy.summary),
-                    size: 34, brand: copy.summary.cardBrand)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(copy.summary.title).font(.body.weight(.medium)).foregroundStyle(.primary)
-                    Text(verbatim: "\(copy.vaultName) · \(DuplicatesText.modified(copy))")
-                        .font(.caption)
+        HStack(alignment: .center, spacing: 12) {
+            tick
+            VStack(alignment: .leading, spacing: 6) {
+                DuplicateGroupHeader(group: group, iconSize: layout == .phone ? 34 : 40)
+                Label {
+                    Text(verbatim: DuplicatesText.additions(group))
                         .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "plus.circle.fill").foregroundStyle(.green)
                 }
-                Spacer(minLength: 4)
-                if copy.summary.id == primaryID {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.readableAccent)
-                } else if !copy.writable {
-                    Text("duplicates.copy.readOnly").font(.caption).foregroundStyle(.secondary)
+                .font(.callout)
+                .lineLimit(layout == .phone ? 3 : 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            DuplicateActionsMenu(actions: actions)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .disabled(busy)
+        .opacity(included ? 1 : 0.55)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duplicates.sure.group")
+    }
+
+    private var tick: some View {
+        Button {
+            included.toggle()
+        } label: {
+            Image(systemName: included ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(included ? Theme.readableAccent : Color.secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(group.copies.first?.writable != true)
+        .accessibilityLabel(Text("duplicates.sure.include"))
+        .accessibilityValue(Text(included ? "duplicates.sure.included" : "duplicates.sure.excluded"))
+        .accessibilityIdentifier("duplicates.sure.tick")
+    }
+}
+
+private struct DuplicateActionsMenu: View {
+    let actions: DuplicateGroupActions
+
+    var body: some View {
+        Menu {
+            Button("duplicates.action.notDuplicates", systemImage: "hand.raised", action: actions.dismiss)
+            Button("duplicates.action.archiveOthers", systemImage: "archivebox", action: actions.archive)
+                .disabled(!actions.canChangeOthers)
+            Button("duplicates.action.trashOthers", systemImage: "trash", role: .destructive, action: actions.trash)
+                .disabled(!actions.canChangeOthers)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(.rect)
+        }
+        .menuIndicator(.hidden)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .fixedSize()
+        .accessibilityLabel(Text("duplicates.action.more"))
+        .accessibilityIdentifier("duplicates.more")
+    }
+}
+
+/// One group with a conflict: what it is, the question, the lines that differ, the answers.
+private struct ConflictCard: View {
+    let group: FfiDuplicateGroup
+    let layout: DuplicatesReviewView.Layout
+    let busy: Bool
+    let answer: (FfiDuplicateRow) -> String
+    let choose: (FfiDuplicateRow, String) -> Void
+    let merge: () -> Void
+    let skip: () -> Void
+    let actions: DuplicateGroupActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                DuplicateGroupHeader(group: group, iconSize: 44)
+                Spacer(minLength: 8)
+                DuplicateActionsMenu(actions: actions)
+            }
+            Text(verbatim: DuplicatesText.question(group))
+                .font(layout == .phone ? .headline : .title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("duplicates.question")
+            DuplicateDiffTable(group: group, layout: layout, answer: answer, choose: choose)
+            Text("duplicates.review.footer")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            buttons
+        }
+        .padding(layout == .phone ? 14 : 20)
+        .modifier(DuplicateCardSurface(layout: layout))
+        .disabled(busy)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duplicates.group")
+    }
+
+    @ViewBuilder private var buttons: some View {
+        let merge = Button(action: merge) {
+            Text("duplicates.action.mergeChoices").frame(maxWidth: layout == .phone ? .infinity : nil)
+        }
+        .buttonStyle(.glassProminent)
+        .disabled(!actions.canChangeOthers)
+        .accessibilityIdentifier("duplicates.merge")
+        let keep = Button(action: actions.dismiss) {
+            Text("duplicates.action.keepBoth").frame(maxWidth: layout == .phone ? .infinity : nil)
+        }
+        .buttonStyle(.glass)
+        .accessibilityIdentifier("duplicates.dismiss")
+        let skip = Button("duplicates.action.skip", action: skip)
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("duplicates.skip")
+        if layout == .phone {
+            VStack(spacing: 8) {
+                merge
+                HStack(spacing: 8) { keep; skip }
+            }
+            .controlSize(.large)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    merge.fixedSize()
+                    keep.fixedSize()
+                    Spacer(minLength: 0)
+                    skip.fixedSize()
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    merge
+                    HStack(spacing: 8) { keep; skip }
+                }
+            }
+            .lineLimit(1)
+            .controlSize(.large)
+        }
+    }
+}
+
+// MARK: - Diff table
+
+/// The lines that differ, one column per copy (Mac, iPad), or each line with its copies under it
+/// (iPhone). A conflict line lets the user pick; an addition says what joins the kept copy.
+private struct DuplicateDiffTable: View {
+    let group: FfiDuplicateGroup
+    let layout: DuplicatesReviewView.Layout
+    let answer: (FfiDuplicateRow) -> String
+    let choose: (FfiDuplicateRow, String) -> Void
+
+    /// Conflicts first, then what is kept or added.
+    private var rows: [FfiDuplicateRow] {
+        group.rows.filter { $0.kind == .conflict } + group.rows.filter { $0.kind != .conflict }
+    }
+
+    var body: some View {
+        if layout == .phone { stacked } else { grid }
+    }
+
+    private var grid: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 0) {
+            GridRow {
+                Color.clear.frame(width: 1, height: 1).gridCellUnsizedAxes([.horizontal, .vertical])
+                ForEach(group.copies, id: \.summary.id) { copy in
+                    CopyHeading(copy: copy, kept: copy.summary.id == group.copies.first?.summary.id)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.bottom, 10)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                Divider().gridCellUnsizedAxes(.horizontal)
+                GridRow(alignment: .firstTextBaseline) {
+                    RowLabel(row: row)
+                        .frame(width: 150, alignment: .leading)
+                    ForEach(Array(group.copies.enumerated()), id: \.element.summary.id) { index, copy in
+                        cell(row, index, copy)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.vertical, 10)
+                if row.kind == .conflict, row.subject == "notes" {
+                    GridRow {
+                        Color.clear.frame(width: 1, height: 1)
+                        bothNotes(row).gridCellColumns(group.copies.count)
+                    }
+                    .padding(.bottom, 10)
+                }
+            }
+        }
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                if index > 0 { Divider().padding(.vertical, 10) }
+                VStack(alignment: .leading, spacing: 8) {
+                    RowLabel(row: row)
+                    ForEach(Array(group.copies.enumerated()), id: \.element.summary.id) { i, copy in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: copy.summary.title + " · " + copy.vaultName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            cell(row, i, copy)
+                        }
+                    }
+                    if row.kind == .conflict, row.subject == "notes" { bothNotes(row) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(_ row: FfiDuplicateRow, _ index: Int, _ copy: FfiDuplicateCopy) -> some View {
+        let value = index < row.values.count ? row.values[index] : nil
+        let isWinner = answer(row) == copy.summary.id
+        if row.kind == .conflict, !row.subject.isEmpty {
+            Button {
+                choose(row, copy.summary.id)
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: isWinner ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(isWinner ? Theme.readableAccent : Color.secondary)
+                        .accessibilityHidden(true)
+                    DuplicateValueView(value: value, concealed: row.concealed, row: row, copy: copy, type: group.copies.first?.summary.itemType)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(value == nil)
+            .accessibilityAddTraits(isWinner ? .isSelected : [])
+            .accessibilityIdentifier("duplicates.choice.\(row.subject).\(index)")
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                DuplicateValueView(value: value, concealed: row.concealed, row: row, copy: copy, type: group.copies.first?.summary.itemType)
+                    .opacity(row.kind == .kept && !isWinner ? 0.5 : 1)
+                if let tag = tag(row, index, isWinner: isWinner, hasValue: value != nil) {
+                    Text(tag)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
+            }
+        }
+    }
+
+    /// "gardé" on the value a kept line keeps, "ancien" on an older password, "ajouté" on what a copy
+    /// brings to the kept one.
+    private func tag(_ row: FfiDuplicateRow, _ index: Int, isWinner: Bool, hasValue: Bool) -> LocalizedStringKey? {
+        guard hasValue else { return nil }
+        switch row.kind {
+        case .kept:
+            if isWinner { return "duplicates.row.kept" }
+            return row.aspect == .password ? "duplicates.row.older" : nil
+        case .added:
+            if row.subject.isEmpty { return index > 0 ? "duplicates.row.added" : nil }
+            return isWinner && index > 0 ? "duplicates.row.added" : nil
+        case .conflict:
+            return nil
+        }
+    }
+
+    private func bothNotes(_ row: FfiDuplicateRow) -> some View {
+        let both = answer(row).isEmpty
+        return Button {
+            choose(row, "")
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: both ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(both ? Theme.readableAccent : Color.secondary)
+                Text("duplicates.row.bothNotes")
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .disabled(!copy.writable)
-        .accessibilityAddTraits(copy.summary.id == primaryID ? .isSelected : [])
-        .accessibilityIdentifier("duplicates.merge.keep.\(copy.summary.title)")
+        .accessibilityAddTraits(both ? .isSelected : [])
+        .accessibilityIdentifier("duplicates.choice.notes.both")
     }
+}
 
-    @ViewBuilder
-    private var resultSection: some View {
-        if let preview {
-            Section {
-                resultHeader(preview.merged)
-                ForEach(hosts(preview.merged), id: \.self) { host in
-                    Label { Text(verbatim: host) } icon: { Image(systemName: "globe") }
-                        .font(.subheadline)
+/// Column title: the copy's title, its vault and last edit.
+private struct CopyHeading: View {
+    let copy: FfiDuplicateCopy
+    let kept: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(copy.summary.title).font(.callout.weight(.semibold)).lineLimit(1)
+                if !copy.writable {
+                    Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("duplicates.copy.readOnly"))
                 }
-                stat("duplicates.merge.archived \(Int(preview.archivedCount))", "archivebox", preview.archivedCount)
-                stat("duplicates.merge.history \(Int(preview.historyAdded))", "clock.arrow.circlepath", preview.historyAdded)
-                stat("duplicates.merge.websitesAdded \(Int(preview.websitesAdded))", "plus.circle", preview.websitesAdded)
-                stat("duplicates.merge.extraFields \(Int(preview.extraFields))", "square.stack", preview.extraFields)
-                stat("duplicates.merge.files \(Int(preview.copiedAttachments))", "paperclip", preview.copiedAttachments)
-                stat("duplicates.merge.readOnly \(Int(preview.readOnlyLeft))", "lock", preview.readOnlyLeft)
-            } header: {
-                Text("duplicates.merge.result")
-            } footer: {
-                Text("duplicates.merge.footer")
+            }
+            Text(verbatim: "\(copy.vaultName) · \(DuplicatesText.modified(copy))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The name of a line, and a dot of color for a conflict.
+private struct RowLabel: View {
+    let row: FfiDuplicateRow
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if row.kind == .conflict {
+                Circle().fill(.orange).frame(width: 7, height: 7).accessibilityHidden(true)
+            }
+            Text(verbatim: DuplicatesText.rowLabel(row).capitalizedFirst)
+                .font(.callout.weight(row.kind == .conflict ? .semibold : .regular))
+                .foregroundStyle(row.kind == .conflict ? Color.primary : Color.secondary)
+        }
+    }
+}
+
+/// One value of a line: text, or bullets for a secret with an eye to show it (never for an item that
+/// asks to confirm the user first). Masked again after 30 s, on lock and when the session masks all.
+private struct DuplicateValueView: View {
+    @Environment(AppModel.self) private var model
+    let value: FfiFieldValue?
+    let concealed: Bool
+    let row: FfiDuplicateRow
+    let copy: FfiDuplicateCopy
+    let type: FfiItemType?
+    @State private var shown = false
+
+    var body: some View {
+        if let value {
+            let text = DuplicatesText.value(value)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if concealed && !shown {
+                    Text(verbatim: hidden(text))
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .fixedSize()
+                } else {
+                    Text(verbatim: text)
+                        .font(concealed ? .callout.monospaced() : .callout)
+                        .lineLimit(row.aspect == .notes ? 4 : 3)
+                        .textSelection(.enabled)
+                }
+                if concealed && !copy.reprompt {
+                    Button {
+                        shown.toggle()
+                        if shown { model.session.noteActivity() }
+                    } label: {
+                        Image(systemName: shown ? "eye.slash" : "eye")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(Text(shown ? "duplicates.secret.hide" : "duplicates.secret.show"))
+                    .accessibilityLabel(Text(shown ? "duplicates.secret.hide" : "duplicates.secret.show"))
+                }
+            }
+            .privacySensitive(concealed)
+            .onChange(of: model.session.concealGeneration) { shown = false }
+            .task(id: shown) {
+                guard shown else { return }
+                try? await Task.sleep(for: .seconds(30))
+                shown = false
             }
         } else {
-            Section { ProgressView().frame(maxWidth: .infinity) }
+            Text(verbatim: "–")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+                .accessibilityLabel(Text("duplicates.value.none"))
         }
     }
 
-    /// The websites of the result, one line per host.
-    private func hosts(_ item: FfiItem) -> [String] {
-        var seen = Set<String>()
-        return item.urls.map { URL(string: $0.url)?.host() ?? $0.url }.filter { seen.insert($0).inserted }
+    private func hidden(_ text: String) -> String {
+        if type == .creditCard, row.subject == "number", let masked = CardMask.text(forNumber: text) { return masked }
+        return "••••••••"
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+// MARK: - Texts of the review
+
+extension DuplicatesText {
+    /// "camille@exemple.fr · 2 copies · Personnel, Famille".
+    static func describe(_ group: FfiDuplicateGroup) -> String {
+        var parts: [String] = []
+        if let user = group.copies.first?.summary.listSubtitle, !user.isEmpty { parts.append(user) }
+        parts.append(String(localized: "duplicates.copies \(group.copies.count)"))
+        var vaults: [String] = []
+        for c in group.copies where !vaults.contains(c.vaultName) { vaults.append(c.vaultName) }
+        parts.append(vaults.joined(separator: ", "))
+        return parts.joined(separator: " · ")
     }
 
-    private func siteIcon(_ summary: FfiItemSummary) -> Data? {
-        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
+    /// The name of a line: the aspect, or the field's own label.
+    static func rowLabel(_ row: FfiDuplicateRow) -> String {
+        if row.aspect == .fields, !row.label.isEmpty {
+            return CoreLabels.fieldLabel(FfiField(
+                id: row.subject, label: row.label, kind: .text, value: .empty, required: false,
+                repeatable: false, autofill: false))
+        }
+        return aspect(row.aspect)
     }
 
-    private func resultHeader(_ item: FfiItem) -> some View {
-        HStack(spacing: 12) {
-            ItemIcon(
-                type: item.itemType, title: item.title, siteIcon: primary.flatMap { siteIcon($0.summary) },
-                size: 40, brand: primary?.summary.cardBrand)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.title).font(.headline)
-                if let user = primary?.summary.listSubtitle, !user.isEmpty {
-                    Text(verbatim: user).font(.subheadline).foregroundStyle(.secondary)
+    /// The question of a group with conflicts.
+    static func question(_ group: FfiDuplicateGroup) -> String {
+        let conflicts = group.rows.filter { $0.kind == .conflict }
+        guard conflicts.count == 1, let row = conflicts.first else {
+            return String(localized: "duplicates.question.many \(conflicts.count)")
+        }
+        switch row.aspect {
+        case .password: return String(localized: "duplicates.question.password")
+        case .username: return String(localized: "duplicates.question.username")
+        case .totp: return String(localized: "duplicates.question.totp")
+        case .notes: return String(localized: "duplicates.question.notes")
+        default: return String(localized: "duplicates.question.field \(rowLabel(row))")
+        }
+    }
+
+    /// What merging a sure group adds to the kept copy: "Ajoute : site mail.google.com, étiquette
+    /// Famille". Never a secret.
+    static func additions(_ group: FfiDuplicateGroup) -> String {
+        var parts: [String] = []
+        for row in group.rows where row.kind != .conflict {
+            switch (row.aspect, row.kind) {
+            case (.websites, _), (.tags, _), (.attachments, _), (.passkeys, _):
+                let base = Set(lines(row.values.first ?? nil))
+                var extra: [String] = []
+                for v in row.values.dropFirst() {
+                    for line in lines(v) where !base.contains(line) && !extra.contains(line) { extra.append(line) }
                 }
+                for e in extra {
+                    switch row.aspect {
+                    case .websites: parts.append(String(localized: "duplicates.add.website \(e)"))
+                    case .tags: parts.append(String(localized: "duplicates.add.tag \(e)"))
+                    case .attachments: parts.append(String(localized: "duplicates.add.file \(e)"))
+                    default: parts.append(String(localized: "duplicates.add.passkey \(e)"))
+                    }
+                }
+            case (.title, _):
+                continue
+            case (.password, .kept):
+                parts.append(String(localized: row.winner == 0 ? "duplicates.add.olderPassword" : "duplicates.add.newerPassword"))
+            default:
+                // A field or a note one copy holds: named, its value never shown here.
+                if let w = row.winner, w > 0 { parts.append(rowLabel(row)) }
             }
         }
-        .padding(.vertical, 2)
+        guard !parts.isEmpty else { return String(localized: "duplicates.add.none") }
+        return String(localized: "duplicates.adds \(parts.formatted(.list(type: .and, width: .narrow)))")
     }
 
-    @ViewBuilder
-    private func stat(_ text: LocalizedStringKey, _ symbol: String, _ n: UInt32) -> some View {
-        if n > 0 {
-            Label { Text(text) } icon: { Image(systemName: symbol).foregroundStyle(.secondary) }
-                .font(.subheadline)
-        }
+    private static func lines(_ v: FfiFieldValue?) -> [String] {
+        guard case .text(let t)? = v else { return [] }
+        return t.split(separator: "\n").map(String.init)
     }
 
-    private func loadPreview() async {
-        guard let primary else { return }
-        preview = nil
-        do {
-            preview = try await model.session.duplicateMergePreview(primary: primary.key, others: others)
-        } catch {
-            model.showToast(VaultError(error).localizedMessage, kind: .error)
-        }
-    }
-
-    private func merge() {
-        guard let primary else { return }
-        merging = true
-        Task {
-            defer { merging = false }
-            do {
-                try await model.session.mergeDuplicates(
-                    primary: primary.key, others: others, primaryTitle: primary.summary.title)
-                dismiss()
-            } catch {
-                model.showToast(VaultError(error).localizedMessage, kind: .error)
-            }
+    /// A value as text, as the detail shows it.
+    @MainActor static func value(_ v: FfiFieldValue) -> String {
+        switch v {
+        case .text(let s), .url(let s), .email(let s), .phone(let s): s
+        case .password(let s), .concealed(let s), .otp(let s), .mnemonic(let s): s
+        case .menu(let s): CoreLabels.menuOption(s)
+        case .date(let d): FieldDates.long(d)
+        case .monthYear(let year, let month): FieldDates.monthYear(year: year, month: month)
+        case .number(let n): String(n)
+        case .money(let minor, let currency): Money.formatted(minorUnits: minor, currency: currency)
+        case .address(let a): AddressEditor.lines(a)
+        case .location(let l): l.address.flatMap { $0.isEmpty ? nil : $0 } ?? LocationEditor.coordinates(l)
+        case .sshKey(let k): k.fingerprintSha256
+        case .barcode(let value, _): value
+        case .passkey(let p): p.rpId
+        case .file(let f): f.name
+        case .itemLink, .empty: ""
         }
     }
 }

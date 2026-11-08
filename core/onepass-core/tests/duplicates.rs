@@ -262,3 +262,41 @@ fn hidden_vaults_are_left_out() {
     let s = a.repo().duplicate_scan(&[y.vault_id]).unwrap();
     assert!(s.groups.is_empty());
 }
+
+#[test]
+fn sure_batch_merges_only_the_groups_still_sure() {
+    // Group 1 (sure): the same Gmail login, the copy adds a website.
+    // Group 2 (to review): the GitHub copies of `two_copies`, two passwords.
+    let (mut a, x, y) = two_copies();
+    let perso = a.vault();
+    let mut g1 = with_password(login(perso.id, "c@gmail.com", T0), "Same-Pw");
+    g1.title = "Compte Google".into();
+    site(&mut g1, "https://accounts.google.com");
+    let mut g2 = with_password(login(perso.id, "c@gmail.com", T0 + 10), "Same-Pw");
+    g2.title = "Gmail".into();
+    site(&mut g2, "https://mail.google.com");
+    a.repo().save_item(&perso, g1.clone()).unwrap();
+    a.repo().save_item(&perso, g2.clone()).unwrap();
+    let s = scan(&mut a);
+    assert_eq!(s.groups.len(), 2);
+    let ids: Vec<String> = s.groups.iter().map(|g| g.id.clone()).collect();
+    let done = a
+        .repo()
+        .merge_sure_duplicates(&ids, &[], |t| format!("Fusionné dans {t}"))
+        .unwrap();
+    assert_eq!(done.len(), 1);
+    // The sure group is gone, the GitHub one is still there, untouched.
+    let s = scan(&mut a);
+    assert_eq!(s.groups.len(), 1);
+    assert!(!find(&mut a, x.id).archived && !find(&mut a, y.id).archived);
+    // The newest Google copy was kept, with both websites, the other archived with the note.
+    let kept = find(&mut a, g2.id);
+    assert!(!kept.archived);
+    assert_eq!(kept.urls.len(), 2);
+    assert_eq!(kept.title, "Gmail");
+    let gone = find(&mut a, g1.id);
+    assert!(gone.archived);
+    assert!(gone.notes.ends_with("Fusionné dans Gmail"));
+    // An id that is no longer a group does nothing.
+    assert!(a.repo().merge_sure_duplicates(&ids, &[], |t| t.into()).unwrap().is_empty());
+}

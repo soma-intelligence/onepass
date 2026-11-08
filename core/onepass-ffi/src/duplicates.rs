@@ -14,14 +14,16 @@
     )
 )]
 
-use onepass_core::duplicates::{Aspect, Signal, differences};
+use onepass_core::duplicates::{
+    Aspect, Choice, Confidence, Row, RowKind, Signal, differences, review,
+};
 use onepass_core::model::FieldValue;
 use onepass_core::repo::duplicates::ItemKey;
 
-use crate::convert::{item_to_ffi, parse_id, summary};
+use crate::convert::{item_to_ffi, parse_id, summary, value_to_ffi};
 use crate::error::OnePassError;
 use crate::session::Session;
-use crate::types::{FfiItem, FfiItemSummary};
+use crate::types::{FfiFieldValue, FfiItem, FfiItemSummary};
 // The vault and id of an item, shared with the crypto watch list.
 use crate::wallet_watch::FfiItemKey;
 
@@ -63,9 +65,60 @@ pub struct FfiDuplicateCopy {
     pub has_totp: bool,
     pub attachment_count: u32,
     pub field_count: u32,
+    /// The item asks for biometrics or the master password before anything
+    /// about it shows: the review never reveals its secrets.
+    pub reprompt: bool,
 }
 
+/// How sure the merge of a group can be (spec 2026-11-08-duplicates-review).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiDuplicateConfidence {
+    /// The copies only add to one another: merge in a batch.
+    Sure,
+    /// At least one conflict to answer.
+    Review,
+}
+
+/// What a line of the review is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiDuplicateRowKind {
+    /// One copy brings something: kept by the merge.
+    Added,
+    /// The copies differ, one wins without a question.
+    Kept,
+    /// The user picks.
+    Conflict,
+}
+
+/// One line where the copies differ.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiDuplicateRow {
+    pub aspect: FfiDuplicateAspect,
+    /// What a choice names (`title`, `notes`, `password` or a field id);
+    /// empty for a list, which is always the union.
+    pub subject: String,
+    /// The field's label, empty for the title, password, notes and lists.
+    pub label: String,
+    pub kind: FfiDuplicateRowKind,
+    /// One per copy, in the order of `copies`; `None` when that copy has
+    /// nothing here. A list is one text, one entry per line.
+    pub values: Vec<Option<FfiFieldValue>>,
+    /// A secret: shown masked.
+    pub concealed: bool,
+    /// Index into `copies` of the value kept by default; `None` for a list
+    /// and for two different notes (both kept by default).
+    pub winner: Option<u32>,
+}
+
+/// One answer: the value of `subject` comes from the copy `from_item_id`
+/// (hex). `None` on `notes` keeps every note.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiDuplicateChoice {
+    pub subject: String,
+    pub from_item_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct FfiDuplicateGroup {
     /// Stable for the same set of items.
     pub id: String,
@@ -74,6 +127,9 @@ pub struct FfiDuplicateGroup {
     pub domain: Option<String>,
     /// The suggested primary first.
     pub copies: Vec<FfiDuplicateCopy>,
+    pub confidence: FfiDuplicateConfidence,
+    /// Only the lines where the copies differ.
+    pub rows: Vec<FfiDuplicateRow>,
 }
 
 /// What a merge would save, nothing written.
@@ -119,6 +175,33 @@ pub(crate) fn aspect(a: Aspect) -> FfiDuplicateAspect {
         Aspect::Attachments => FfiDuplicateAspect::Attachments,
         Aspect::Tags => FfiDuplicateAspect::Tags,
     }
+}
+
+fn row_to_ffi(r: &Row) -> FfiDuplicateRow {
+    FfiDuplicateRow {
+        aspect: aspect(r.aspect),
+        subject: r.subject.clone(),
+        label: r.label.clone(),
+        kind: match r.kind {
+            RowKind::Added => FfiDuplicateRowKind::Added,
+            RowKind::Kept => FfiDuplicateRowKind::Kept,
+            RowKind::Conflict => FfiDuplicateRowKind::Conflict,
+        },
+        values: r.values.iter().map(|v| v.as_ref().map(value_to_ffi)).collect(),
+        concealed: r.concealed,
+        winner: r.winner.map(count),
+    }
+}
+
+fn choices(list: &[FfiDuplicateChoice]) -> Result<Vec<Choice>, OnePassError> {
+    list.iter()
+        .map(|c| {
+            Ok(Choice {
+                subject: c.subject.clone(),
+                from: c.from_item_id.as_deref().map(parse_id).transpose()?,
+            })
+        })
+        .collect()
 }
 
 fn count(n: usize) -> u32 {
@@ -180,14 +263,22 @@ impl Session {
                         has_totp: fields.iter().any(|f| matches!(f.value, FieldValue::Otp(_))),
                         attachment_count: count(m.item.attachments.len()),
                         field_count: count(fields.len()),
+                        reprompt: m.item.reprompt,
                     }
                 })
                 .collect();
+            let items: Vec<_> = members.iter().map(|m| &m.item).collect();
+            let r = review(&items);
             out.push(FfiDuplicateGroup {
                 id: g.id.clone(),
                 signals: g.signals.iter().copied().map(signal).collect(),
                 domain: g.domain.clone(),
                 copies,
+                confidence: match r.confidence {
+                    Confidence::Sure => FfiDuplicateConfidence::Sure,
+                    Confidence::Review => FfiDuplicateConfidence::Review,
+                },
+                rows: r.rows.iter().map(row_to_ffi).collect(),
             });
         }
         Ok(out)
@@ -199,7 +290,17 @@ impl Session {
         primary: FfiItemKey,
         others: Vec<FfiItemKey>,
     ) -> Result<FfiMergePreview, OnePassError> {
-        let (p, o) = (key(&primary)?, keys(&others)?);
+        self.merge_duplicates_preview_with(primary, others, Vec::new())
+    }
+
+    /// `merge_duplicates_preview` with the answers of the review.
+    pub fn merge_duplicates_preview_with(
+        &self,
+        primary: FfiItemKey,
+        others: Vec<FfiItemKey>,
+        answers: Vec<FfiDuplicateChoice>,
+    ) -> Result<FfiMergePreview, OnePassError> {
+        let (p, o, c) = (key(&primary)?, keys(&others)?, choices(&answers)?);
         self.with(|repo| {
             let before = repo
                 .vaults()?
@@ -207,7 +308,7 @@ impl Session {
                 .find(|v| v.id == p.vault_id)
                 .ok_or(OnePassError::NotFound)
                 .and_then(|v| crate::session::find_item(repo, &v, p.item_id))?;
-            let plan = repo.merge_preview(p, &o, "")?;
+            let plan = repo.merge_preview(p, &o, &c, "")?;
             let m = &plan.merge;
             Ok(FfiMergePreview {
                 merged: item_to_ffi(&m.merged),
@@ -244,6 +345,40 @@ impl Session {
     ) -> Result<FfiItem, OnePassError> {
         let (p, o) = (key(&primary)?, keys(&others)?);
         self.with(|repo| Ok(item_to_ffi(&repo.merge_duplicates(p, &o, &note)?)))
+    }
+
+    /// `merge_duplicates` with the answers of the review: each names the
+    /// copy whose value wins for its subject.
+    pub fn merge_duplicates_with(
+        &self,
+        primary: FfiItemKey,
+        others: Vec<FfiItemKey>,
+        answers: Vec<FfiDuplicateChoice>,
+        note: String,
+    ) -> Result<FfiItem, OnePassError> {
+        let (p, o, c) = (key(&primary)?, keys(&others)?, choices(&answers)?);
+        self.with(|repo| Ok(item_to_ffi(&repo.merge_duplicates_with(p, &o, &c, &note)?)))
+    }
+
+    /// Merge every group of `group_ids` that a fresh scan still finds sure,
+    /// with the default answers. `note_template` is the note of the
+    /// archived copies, `{title}` replaced by the kept copy's title.
+    /// Returns the ids of the groups merged.
+    pub fn merge_sure_duplicates(
+        &self,
+        group_ids: Vec<String>,
+        excluded_vault_ids: Vec<String>,
+        note_template: String,
+    ) -> Result<Vec<String>, OnePassError> {
+        let excluded = excluded_vault_ids
+            .iter()
+            .map(|s| parse_id(s))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.with(|repo| {
+            Ok(repo.merge_sure_duplicates(&group_ids, &excluded, |t| {
+                note_template.replace("{title}", t.trim())
+            })?)
+        })
     }
 
     /// Archive the extra copies.

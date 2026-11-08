@@ -34,6 +34,9 @@ use crate::model::{
 };
 use crate::watchtower::host::host_of;
 
+mod review;
+pub use review::{Choice, Confidence, NOTES, PASSWORD, Review, Row, RowKind, TITLE, review};
+
 /// Prefix of the hidden tag that says "not a duplicate of" another item.
 pub const DISTINCT_TAG_PREFIX: &str = "onepass:distinct:";
 
@@ -789,7 +792,98 @@ fn fold_notes(merged: &mut Item, other: &Item) {
 /// undoes the merge for it. `updated_at` is `now` everywhere; the events
 /// are the caller's (`record_edit`, `EventKind::Archived`).
 pub fn merge(primary: &Item, others: &[&Item], note: &str, now: OffsetDateTime) -> Merge {
+    merge_with(primary, others, &[], note, now)
+}
+
+/// Apply one answer of the review to `merged` before the fold: the value of
+/// `choice.subject` becomes the one of `src`. Nothing is lost: the
+/// primary's password goes to its history, another replaced value to an
+/// extra field of the `merged` section (labeled with the primary's title).
+fn apply_choice(merged: &mut Item, primary: &Item, src: &Item, subject: &str) {
+    match subject {
+        TITLE => merged.title.clone_from(&src.title),
+        NOTES => merged.notes.clone_from(&src.notes),
+        PASSWORD => {
+            let (Some(new), Some((si, fi))) = (password_of(src), locate(merged, PASSWORD)) else {
+                return;
+            };
+            let new = new.to_owned();
+            let old = password_of(merged).map(str::to_owned);
+            if let Some(f) = merged
+                .sections
+                .get_mut(si)
+                .and_then(|s| s.fields.get_mut(fi))
+            {
+                f.value = FieldValue::Password(zeroize::Zeroizing::new(new));
+            }
+            if let Some(old) = old {
+                push_history(merged, &old, primary.updated_at);
+            }
+        }
+        id => {
+            let Some(theirs) = src
+                .sections
+                .iter()
+                .flat_map(|s| s.fields.iter())
+                .find(|f| f.id == id && !is_blank(&f.value))
+            else {
+                return;
+            };
+            let Some((si, fi)) = locate(merged, id) else {
+                // The primary lacks it: the fold adds it.
+                return;
+            };
+            let Some(mine) = merged
+                .sections
+                .get(si)
+                .and_then(|s| s.fields.get(fi))
+                .cloned()
+            else {
+                return;
+            };
+            if same_value(&mine.value, &theirs.value) {
+                return;
+            }
+            if let Some(f) = merged
+                .sections
+                .get_mut(si)
+                .and_then(|s| s.fields.get_mut(fi))
+            {
+                f.value = theirs.value.clone();
+            }
+            if !is_blank(&mine.value) {
+                push_extra(merged, &mine, &primary.title);
+            }
+        }
+    }
+}
+
+/// `merge` with the answers of the review (`review`, `Review::choices`):
+/// each `Choice` names the copy whose value wins for its subject. A choice
+/// from the primary keeps the primary's value; on `notes` it keeps only
+/// the chosen copy's note (the others stay in their archived copies), and
+/// `from: None` keeps every note as `merge` does.
+pub fn merge_with(
+    primary: &Item,
+    others: &[&Item],
+    choices: &[Choice],
+    note: &str,
+    now: OffsetDateTime,
+) -> Merge {
     let mut merged = primary.clone();
+    let mut notes_chosen = false;
+    for c in choices {
+        let Some(from) = c.from else { continue };
+        if c.subject == NOTES {
+            notes_chosen = true;
+        }
+        if from == primary.id {
+            continue;
+        }
+        if let Some(src) = others.iter().find(|o| o.id == from) {
+            apply_choice(&mut merged, primary, src, &c.subject);
+        }
+    }
     let mut attachments = Vec::new();
     let mut archived = Vec::with_capacity(others.len());
     for other in others {
@@ -839,7 +933,9 @@ pub fn merge(primary: &Item, others: &[&Item], note: &str, now: OffsetDateTime) 
         if merged.color.is_none() {
             merged.color.clone_from(&other.color);
         }
-        fold_notes(&mut merged, other);
+        if !notes_chosen {
+            fold_notes(&mut merged, other);
+        }
         fold_fields(&mut merged, other);
         for h in &other.password_history {
             push_history(&mut merged, &h.value, h.replaced_at);
