@@ -74,3 +74,12 @@ opt-level = 3
 
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3
+
+# The Android emulator job (android/scripts/test-core-emulator.sh): the
+# unoptimized test binaries ran about 80 minutes inside the API 29 emulator
+# and hit the 90 minute job limit. Same checks as dev (debug assertions,
+# overflow checks, unwinding panics), optimized code.
+[profile.android-test]
+inherits = "dev"
+opt-level = 2
+debug = "line-tables-only"

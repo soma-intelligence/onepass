@@ -53,7 +53,7 @@ export CARGO_TARGET_DIR="$repo_root/core/target/android-tests"
 cd "$repo_root/core"
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
-cargo test --target "$triple" -p onepass-core -p onepass-ffi -p onepass-peer --no-run --message-format=json-render-diagnostics >"$build_log"
+cargo test --profile android-test --target "$triple" -p onepass-core -p onepass-ffi -p onepass-peer --no-run --message-format=json-render-diagnostics >"$build_log"
 binaries=()
 while IFS= read -r exe; do
   binaries+=("$exe")
@@ -149,7 +149,7 @@ for exe in "${binaries[@]}"; do
   status="${PIPESTATUS[0]}"
   set -e
   restore_enforcing
-  # Debug test binaries are large: keep the emulator disk free.
+  # Test binaries are large: keep the emulator disk free.
   "$adb" shell "rm -f $remote/bin/$name"
   summary="$(grep -E '^test result:' "$out" | tail -n 1 || true)"
   rm -f "$out"
