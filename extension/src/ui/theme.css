@@ -16,7 +16,6 @@
   --accent-soft: rgba(88, 86, 214, .26);
   --accent-ring: rgba(124, 122, 240, .55);
   --ground: #0E0E12;
-  --wash: rgba(88, 86, 214, .20);
   --pop: #18181D;
   --glass: rgba(255, 255, 255, .045);
   --glass-2: rgba(255, 255, 255, .075);
@@ -42,9 +41,29 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Helvetica Neue", sans-serif;
   /* Secrets and one-time codes only: a fixed-width face keeps 0/O and l/1 apart. */
   --mono: "SF Mono", ui-monospace, Menlo, monospace;
-  --r-s: 8px;
-  --r-m: 12px;
-  --r-l: 14px;
+  /* Spacing and radius scale, the same steps as the native DesignKit. */
+  --space-xxs: 2px;
+  --space-xs: 4px;
+  --space-s: 8px;
+  --space-m: 12px;
+  --space-l: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --r-chip: 8px;
+  --r-control: 12px;
+  --r-card: 18px;
+  --r-sheet: 26px;
+  /* Older names, kept as aliases until the surfaces move to the scale. */
+  --r-s: var(--r-chip);
+  --r-m: var(--r-control);
+  --r-l: var(--r-control);
+  /* Washes, one per meaning, as in DesignKit: accent = the primary action,
+     alert = a state asking for action, scale = a quality score, identity =
+     whose item it is (--identity is set inline per item). */
+  --wash-accent: linear-gradient(180deg, color-mix(in srgb, var(--accent), white 10%), var(--accent));
+  --wash-alert-danger: linear-gradient(180deg, color-mix(in srgb, var(--danger), white 8%), color-mix(in srgb, var(--danger), black 6%));
+  --wash-scale: linear-gradient(90deg, var(--danger) 0%, var(--warn) 40%, #FFD60A 60%, var(--ok) 80%);
+  --wash-identity: linear-gradient(180deg, color-mix(in srgb, var(--identity, transparent) 22%, transparent), transparent);
   /* The inline frames (menu, one-click card): an inset grouped list, iOS style. */
   --grouped: #1C1C1E;
   --cell: #2C2C2E;
@@ -65,7 +84,6 @@
     --accent-soft: rgba(88, 86, 214, .15);
     --accent-ring: rgba(88, 86, 214, .45);
     --ground: #EEEEF3;
-    --wash: rgba(88, 86, 214, .12);
     --pop: #FAFAFC;
     --glass: rgba(255, 255, 255, .62);
     --glass-2: rgba(255, 255, 255, .85);
@@ -98,6 +116,17 @@
     --accent-tint: rgba(110, 91, 214, .09);
     --accent-ink: #5B49C4;
     --card-shadow: 0 0 0 .5px rgba(0, 0, 0, .06), 0 8px 24px rgba(20, 20, 40, .14);
+    --wash-identity: linear-gradient(180deg, color-mix(in srgb, var(--identity, transparent) 14%, transparent), transparent);
+  }
+}
+
+/* Increased contrast or reduced transparency: every wash falls back to its flat base colour. */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  :root {
+    --wash-accent: var(--accent);
+    --wash-alert-danger: var(--danger);
+    --wash-scale: var(--ok);
+    --wash-identity: transparent;
   }
 }
 
@@ -162,7 +191,7 @@ button:disabled { opacity: .5; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(160deg, #6E6CF0 0%, var(--accent) 45%, #3F3DB8 100%);
+  background: var(--accent);
   color: #FFFFFF;
 }
 .mark-s { width: 18px; height: 18px; border-radius: 5px; }
@@ -209,7 +238,7 @@ button:disabled { opacity: .5; }
 }
 .btn:hover { background: var(--press); }
 .btn:active { transform: scale(.98); }
-.btn-primary { background: var(--accent); border-color: transparent; color: var(--accent-text); }
+.btn-primary { background: var(--wash-accent); border-color: transparent; color: var(--accent-text); }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-link {
   color: var(--accent-label);
@@ -627,10 +656,7 @@ body.popup {
   width: 780px;
   height: 600px;
   overflow: hidden;
-  background:
-    radial-gradient(520px 340px at 8% -6%, var(--wash), transparent 70%),
-    radial-gradient(420px 300px at 105% 110%, var(--wash), transparent 70%),
-    var(--ground);
+  background: var(--ground);
 }
 /* Message states (pairing, locked, missing app): a smaller popup. Fixed sizes only: Safari sizes
    its popover from the body box and does not follow an auto height. */
