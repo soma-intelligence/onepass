@@ -27,13 +27,13 @@ struct ItemHeader: View {
 
     @ViewBuilder private var vaultBadge: some View {
         if let vault {
-            HStack(spacing: 5) {
+            HStack(spacing: Theme.Space.xs) {
                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
                 Text(vault.meta.name).lineLimit(1)
             }
-            .padding(.leading, 3)
-            .padding(.trailing, 8)
-            .padding(.vertical, 2)
+            .padding(.leading, Theme.Space.xxs)
+            .padding(.trailing, Theme.Space.s)
+            .padding(.vertical, Theme.Space.xxs)
             .background(.fill.quaternary, in: Capsule())
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text("item.vault \(vault.meta.name)"))
@@ -41,11 +41,11 @@ struct ItemHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: Theme.Space.l) {
             ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: 64, brand: item.cardBrandName)
                 .favoriteBadge(item.favorite, iconSize: 64)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                     Text(item.title)
                         .font(.title.weight(.bold))
                         .lineLimit(2)
@@ -54,11 +54,11 @@ struct ItemHeader: View {
                 #if os(iOS)
                 // iPhone: the subtitle on its own line when the vault badge would cut it.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Theme.Space.s) {
                         Text(subtitle).lineLimit(1)
                         vaultBadge
                     }
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xs) {
                         Text(subtitle).lineLimit(2)
                         vaultBadge
                     }

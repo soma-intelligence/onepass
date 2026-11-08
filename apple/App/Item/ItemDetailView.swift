@@ -51,6 +51,9 @@ struct ItemDetailView: View {
     /// reports its icon and keyed to the item so a switch never shows the previous tint.
     @State private var identity: (id: String, color: Color)?
     @Environment(\.colorScheme) private var colorScheme
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     init(ref: ItemRef, standalone: Bool = false) {
         self.ref = ref
@@ -152,14 +155,22 @@ struct ItemDetailView: View {
     }
     #endif
 
+    /// Gap between the header, the cards and the footer: the scale's section gap on iPhone and iPad,
+    /// the Mac keeps its own until its sweep.
+    #if os(iOS)
+    private static let sectionSpacing: CGFloat = Theme.Space.betweenSections
+    #else
+    private static let sectionSpacing: CGFloat = 20
+    #endif
+
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 #if os(iOS)
                 ItemHeader(item: item) { identity = (item.id, identityColor(item, icon: $0)) }
                     .id(item.id)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 4)
+                    .padding(.horizontal, Theme.Space.xs)
+                    .padding(.bottom, Theme.Space.xs)
                 #else
                 ItemHeader(item: item)
                     .padding(.horizontal, 4)
@@ -204,9 +215,9 @@ struct ItemDetailView: View {
             #if os(macOS)
             .padding(.horizontal, 28)
             #else
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
             #endif
-            .padding(.vertical, 22)
+            .padding(.vertical, Theme.Space.xl)
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
@@ -258,7 +269,7 @@ struct ItemDetailView: View {
         Label(text, systemImage: systemImage)
             .font(.callout)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Theme.Space.l)
     }
 
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
@@ -270,14 +281,14 @@ struct ItemDetailView: View {
                 || $0.fields.contains { !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file) }
         }
         ForEach(sections, id: \.id) { section in
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 if !section.label.isEmpty {
                     // Small bold capitals above each card ("IDENTIFICATION", "ADRESSE").
                     Text(section.displayLabel(itemType: item.itemType).uppercased())
                         .font(.caption.weight(.bold))
                         .tracking(0.6)
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 16)
+                        .padding(.leading, Theme.Space.l)
                         .accessibilityAddTraits(.isHeader)
                 }
                 EditorCard {
@@ -320,21 +331,21 @@ struct ItemDetailView: View {
                 ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
                     if index > 0 { CardDivider() }
                     WebsiteRow(url: url, index: index) { showToast($0) }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, Theme.Space.s)
                 }
             }
         }
         if !item.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             EditorCard {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     EditorLabel(String(localized: "item.notes"))
                     Text(Self.markdown(item.notes))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("item.notes")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.vertical, Theme.Space.m)
             }
         }
         // A place already shown by a location field of the item is not drawn a second time.
@@ -349,22 +360,22 @@ struct ItemDetailView: View {
         }
         if !item.tags.isEmpty {
             EditorCard {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     EditorLabel(String(localized: "item.tags"))
-                    FlowLayout(spacing: 6) {
+                    FlowLayout(spacing: Theme.Space.s) {
                         ForEach(item.tags, id: \.self) { tag in
                             Text(tag)
                                 .font(.footnote.weight(.medium))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, Theme.Space.m)
+                                .padding(.vertical, Theme.Space.xs)
                                 .background(Theme.accent.opacity(0.18), in: Capsule())
                         }
                     }
                     .accessibilityElement(children: .combine)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.vertical, Theme.Space.m)
             }
         }
     }
@@ -372,11 +383,11 @@ struct ItemDetailView: View {
     /// "Modifié le ..." with a chevron; open, the item's timeline (newest first, on a vertical line
     /// with dots) and the link to the previous passwords.
     private func footer(_ item: FfiItem) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             Button {
                 withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { showDates.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: Theme.Space.s) {
                     Text("item.modified \(FieldDates.timestamp(item.updatedAt))")
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.bold))
@@ -394,7 +405,7 @@ struct ItemDetailView: View {
                     NavigationLink {
                         PasswordHistoryView(ref: ItemRef(vaultID: item.vaultId, itemID: item.id))
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: Theme.Space.xs) {
                             Image(systemName: "clock.arrow.circlepath")
                             Text("item.viewPreviousVersions")
                             Text(verbatim: "(\(item.passwordHistoryCount))")
@@ -404,15 +415,15 @@ struct ItemDetailView: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .padding(.leading, 22)
+                    .padding(.leading, Theme.Space.xl)
                     .accessibilityIdentifier("item.history")
                 }
             }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.top, Theme.Space.xs)
         .task(id: TimelineKey(item: item, open: showDates)) {
             guard showDates, !locked(item) else { return }
             timeline = (try? await session.itemTimeline(vaultID: item.vaultId, itemID: item.id)) ?? []
@@ -435,7 +446,7 @@ struct ItemDetailView: View {
 
     private func repromptSection(_ item: FfiItem) -> some View {
         EditorCard {
-            VStack(spacing: 14) {
+            VStack(spacing: Theme.Space.l) {
                 Image(systemName: "lock.shield")
                     .font(.system(size: 36))
                     .foregroundStyle(.tint)
@@ -466,7 +477,7 @@ struct ItemDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(20)
+            .padding(Theme.Space.xl)
         }
     }
 
@@ -898,7 +909,7 @@ private struct WifiJoinButton: View {
     @State private var outcome: WifiInstallOutcome?
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: Theme.Space.s) {
             Button {
                 Task { await join() }
             } label: {
@@ -953,8 +964,8 @@ private struct WifiQRCard: View {
     @State private var large = false
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 8) {
+        VStack(spacing: Theme.Space.m) {
+            HStack(alignment: .top, spacing: Theme.Space.s) {
                 // Same width on the left as the menu, so the square stays centered.
                 Color.clear.frame(width: 28, height: 28)
                 qrSquare
@@ -999,7 +1010,7 @@ private struct WifiQRCard: View {
         // Screen captured (iOS, visionOS): masked now, and still masked once the capture ends.
         .onChange(of: captured) { _, now in if now { conceal() } }
         .sheet(isPresented: Binding(get: { large && visible }, set: { large = $0 })) {
-            VStack(spacing: 18) {
+            VStack(spacing: Theme.Space.l) {
                 Text(ssid).font(.title2.weight(.semibold))
                 QRSquare(item: item, payload: payload, side: 420)
                 Button("Fermer") { large = false }.keyboardShortcut(.cancelAction)
@@ -1132,8 +1143,8 @@ private struct ItemPlacesCard: View {
                         .foregroundStyle(Theme.readableAccent)
                 }
                 .buttonStyle(.borderless)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.bottom, Theme.Space.m)
                 .accessibilityIdentifier("item.location.open.\(index)")
             }
         }
@@ -1184,7 +1195,7 @@ struct ItemTimelineView: View {
 
     private func row(_ event: FfiTimelineEvent, first: Bool, last: Bool) -> some View {
         let date = Date(timeIntervalSince1970: TimeInterval(event.at))
-        return HStack(alignment: .top, spacing: 10) {
+        return HStack(alignment: .top, spacing: Theme.Space.m) {
             VStack(spacing: 0) {
                 Rectangle().fill(first ? .clear : Color.secondary.opacity(0.35)).frame(width: 1, height: 7)
                 Circle()
@@ -1194,6 +1205,7 @@ struct ItemTimelineView: View {
                     .frame(maxHeight: .infinity)
             }
             .frame(width: 12)
+            // The 3 pt top offsets set the first line level with the dot (7 pt line, 7 pt dot).
             Image(systemName: Self.icon(event.kind))
                 .frame(width: 16)
                 .padding(.top, 3)
@@ -1207,7 +1219,7 @@ struct ItemTimelineView: View {
                 .padding(.top, 3)
                 .help(FieldDates.timestamp(event.at))
         }
-        .padding(.bottom, last ? 0 : 6)
+        .padding(.bottom, last ? 0 : Theme.Space.s)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
     }
@@ -1384,12 +1396,12 @@ struct ItemWatchtowerSection: View {
     var body: some View {
         let ignored = item.watchtowerExclusions.filter { WatchtowerCard.of(check: $0) != nil }
         if !flagged.isEmpty || !ignored.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text("item.watchtower")
                     .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 16)
+                    .padding(.leading, Theme.Space.l)
                     .accessibilityAddTraits(.isHeader)
                 EditorCard {
                     let rows = flagged.map { ($0, false) } + ignored.map { ($0, true) }
@@ -1405,9 +1417,9 @@ struct ItemWatchtowerSection: View {
 
     @ViewBuilder private func line(check: String, ignored: Bool) -> some View {
         if let card = WatchtowerCard.of(check: check) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 PageTile(symbol: card.symbol, color: ignored ? .gray : card.color, size: 26)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(card.title).font(.subheadline.weight(.medium))
                     Text(ignored ? String(localized: "item.ignoredForItem") : card.message)
                         .font(.caption)
@@ -1436,11 +1448,11 @@ struct PasskeyOfferBanner: View {
     private let purple = Color(red: 0.55, green: 0.36, blue: 0.96)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             Button {
                 withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Space.s) {
                     Image(systemName: "person.badge.key.fill")
                     Text("item.passkeyAvailable").font(.headline)
                     Spacer()
@@ -1456,7 +1468,7 @@ struct PasskeyOfferBanner: View {
                 Text("item.supportsPasskeysPasskeyReplaces \(offer.host)")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 10) {
+                HStack(spacing: Theme.Space.m) {
                     Button("item.usePasskey") { openURL(offer.url) }
                         .buttonStyle(.borderedProminent)
                         .tint(purple)
@@ -1467,9 +1479,9 @@ struct PasskeyOfferBanner: View {
                 }
             }
         }
-        .padding(16)
-        .background(purple.opacity(0.16), in: .rect(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(purple.opacity(0.35)))
+        .padding(Theme.Space.l)
+        .background(purple.opacity(0.16), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).stroke(purple.opacity(0.35)))
         .accessibilityIdentifier("item.passkeyOffer")
     }
 }
@@ -1512,14 +1524,14 @@ struct DocumentCard: View {
 
     var body: some View {
         EditorCard {
-            VStack(spacing: 8) {
+            VStack(spacing: Theme.Space.s) {
                 Image(systemName: "doc.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(Theme.readableAccent)
                 Text(attachment.name).font(.headline).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+            .padding(.vertical, Theme.Space.xl)
             CardDivider()
             Button {
                 withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { preview.toggle() }
@@ -1543,7 +1555,7 @@ struct DocumentCard: View {
                     .editorRowPadding()
             }
             CardDivider()
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(String(localized: "item.fileSize"))
                 Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: attachment.size), countStyle: .file))
             }
@@ -1600,7 +1612,7 @@ private struct SignInWithRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
                 EditorLabel(String(localized: "item.signInWith").detailLabelCase)
                 if let account {
                     Button {
@@ -1620,7 +1632,7 @@ private struct SignInWithRow: View {
                     .help("Ouvrir \(account.title)")
                     .accessibilityIdentifier("item.signInWith.account")
                 } else {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Theme.Space.m) {
                         ProviderMark(provider: LoginProvider(rawValue: provider), size: 34)
                         Text(verbatim: LoginProvider.displayName(provider))
                             .font(.body.weight(.semibold))

@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -35,8 +36,8 @@ struct UrlListEditor: View {
         let many = editor.urlKeys.count > 1
         ForEach(Array(editor.urlKeys.enumerated()), id: \.element) { position, key in
             if position > 0 { CardDivider() }
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     EditorLabel(many && (url(key)?.primary ?? false) ? String(localized: "item.primaryWebsite") : String(localized: "app.website"))
                     TextField("app.website", text: binding(key, \.url, default: ""), prompt: Text("https://"))
                         .labelsHidden()

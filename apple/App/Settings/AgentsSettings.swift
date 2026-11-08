@@ -1,4 +1,5 @@
 #if os(iOS)
+import DesignKit
 import SwiftUI
 import UserNotifications
 import VaultKit
@@ -116,7 +117,7 @@ struct AgentsSettings: View {
         if !agents.log.isEmpty {
             Section("app.log") {
                 ForEach(agents.log) { line in
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(verbatim: "\(line.client) · \(AgentRequestText.actionTitle(line.action))")
                             .font(.callout)
                         Text(verbatim: "\(line.decision) · \(line.mac) · \(line.date.formatted(date: .abbreviated, time: .shortened))")

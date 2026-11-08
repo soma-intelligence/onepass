@@ -10,7 +10,7 @@ struct EditorRow<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             EditorLabel(label)
             // The label is shown once, above: the control's own label is hidden and its text
             // starts on the left.
@@ -51,8 +51,8 @@ struct EditorCard<Content: View>: View {
             #if os(iOS)
             // iPhone and iPad: the grouped cell color over the grouped background (`groupedScreen`),
             // so a card reads the same in the lists, the detail and the editor.
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.06)) }
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.card))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.primary.opacity(0.06)) }
             #else
             // Dark: see-through over the window, a hairline to hold the edge. Light: white cards
             // lifted off a soft gray page (`groupedScreen`) by a hairline and a faint shadow.
@@ -93,7 +93,7 @@ private struct MacGroupedScreen: ViewModifier {
 #endif
 
 struct CardDivider: View {
-    var body: some View { Divider().padding(.leading, 16) }
+    var body: some View { Divider().padding(.leading, Theme.Space.l) }
 }
 
 /// "+ ajouter ..." inside a card.
@@ -129,7 +129,7 @@ struct RemoveRowButton: View {
 extension View {
     /// Inner padding of a card row.
     func editorRowPadding() -> some View {
-        padding(.horizontal, 16).padding(.vertical, 10)
+        padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.m)
     }
 }
 
@@ -149,7 +149,7 @@ struct TextFieldEditor: View {
     private var suggestsAccounts: Bool { field.kind == .email || field.id == "username" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             TextField(field.displayLabel, text: text, prompt: Text(placeholder))
                 .fieldInput(field.kind)
                 .focused($focused)
@@ -177,7 +177,7 @@ struct TextFieldEditor: View {
 
     private var suggestionChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 ForEach(suggestions, id: \.self) { suggestion in
                     Button {
                         text.wrappedValue = suggestion
@@ -186,8 +186,8 @@ struct TextFieldEditor: View {
                         Label(suggestion, systemImage: suggestion.contains("@") ? "envelope" : "person")
                             .font(.callout)
                             .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, Theme.Space.m)
+                            .padding(.vertical, Theme.Space.xs)
                             .background(Theme.accent.opacity(0.14), in: Capsule())
                             .foregroundStyle(Theme.readableAccent)
                             .contentShape(Capsule())

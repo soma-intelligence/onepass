@@ -109,7 +109,7 @@ struct SafariExtensionSection: View {
 /// The three steps of Réglages, numbered.
 struct SafariSetupSteps: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             step(1, "safari.setup.ios.step1")
             step(2, "safari.setup.ios.step2")
             step(3, "safari.setup.ios.step3")
@@ -118,7 +118,7 @@ struct SafariSetupSteps: View {
     }
 
     private func step(_ n: Int, _ text: LocalizedStringKey) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
             Text(verbatim: "\(n).").monospacedDigit().foregroundStyle(.secondary)
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
@@ -132,8 +132,8 @@ struct SafariSetupCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Image(systemName: "safari")
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)

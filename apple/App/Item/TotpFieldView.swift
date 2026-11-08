@@ -13,7 +13,7 @@ struct TotpCodeView: View {
         // Every frame while shown, so the ring drains smoothly; once a second with Reduce Motion.
         TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
-                HStack(spacing: 10) {
+                HStack(spacing: Theme.Space.m) {
                     Text(verbatim: Self.grouped(code.code))
                         .font(compact ? .callout.monospacedDigit() : .title3.monospacedDigit())
                         .contentTransition(.numericText())

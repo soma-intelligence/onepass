@@ -55,7 +55,7 @@ struct DevicesSettings: View {
             } header: {
                 Text("settings.onAccount")
             } footer: {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("settings.devices.list.footer")
                     if !session.rotationAcks.isEmpty {
                         Text("settings.devices.ack.footer")
@@ -315,7 +315,7 @@ private struct DeviceRow<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             Image(systemName: DeviceKindText.symbol(device.kind))
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
@@ -323,17 +323,17 @@ private struct DeviceRow<Actions: View>: View {
                 .washBackground(
                     revokedAt == nil ? AnyShapeStyle(Theme.Wash.accent) : AnyShapeStyle(Color.gray),
                     flat: revokedAt == nil ? Theme.accent : Color.gray,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                HStack(spacing: Theme.Space.s) {
                     Text(device.name).lineLimit(1)
                     if isThisDevice {
                         Text("settings.device")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.readableAccent)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, Theme.Space.s)
+                            .padding(.vertical, Theme.Space.xxs)
                             .background(Theme.accent.opacity(0.15), in: Capsule())
                     }
                 }
@@ -430,7 +430,7 @@ private struct BrowserExtensionsSection: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(Self.color(paired.browser).gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Self.color(paired.browser).gradient, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {

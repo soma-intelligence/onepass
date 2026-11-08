@@ -19,7 +19,7 @@ struct AccountMenu: View {
         Button {
             isOpen = true
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: Theme.Space.xs) {
                 AccountBadgeAvatar(
                     initials: model.initials, photo: model.profileImage, color: model.accountTint,
                     badge: model.accountBadge, size: 32)
@@ -96,9 +96,9 @@ struct AccountPanel: View {
         let _ = model.settingsRevision
         VStack(alignment: .leading, spacing: 0) {
             accounts
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.top, Theme.Space.l)
+                .padding(.bottom, Theme.Space.m)
             AccountPanelGroup {
                 AccountPanelRow(title: "accounts.add", symbol: "person.badge.plus", color: AccountPanelTint.accounts) {
                     perform(.account(.add))
@@ -135,10 +135,10 @@ struct AccountPanel: View {
                     .accessibilityIdentifier("accounts.lockAll")
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, Theme.Space.s)
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
+        .padding(.horizontal, Theme.Space.s)
+        .padding(.bottom, Theme.Space.s)
         .frame(width: 296)
     }
 
@@ -147,19 +147,20 @@ struct AccountPanel: View {
     @ViewBuilder private var accounts: some View {
         if model.accounts.hasSeveralAccounts {
             AccountsPanelSection(showsAdd: false, showsLockAll: false) { perform(.account($0)) }
-                .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: 14, style: .continuous))
-                .padding(.horizontal, -14)
+                .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+                // Cancels the accounts block's side padding: the card runs to the groups' edges.
+                .padding(.horizontal, -Theme.Space.l)
         } else {
             currentAccount
         }
     }
 
     private var currentAccount: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             AccountBadgeAvatar(
                 initials: model.initials, photo: model.profileImage, color: model.accountTint,
                 badge: model.accountBadge, size: 44)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text(name)
                     .font(.headline)
                     .lineLimit(1)
@@ -201,13 +202,14 @@ private struct AccountPanelGroup<Content: View>: View {
             Group(subviews: content) { rows in
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     if index > 0 {
-                        Divider().padding(.leading, 54)
+                        // Starts at the row title: padding, the 30 pt tile, spacing.
+                        Divider().padding(.leading, Theme.Space.m + 30 + Theme.Space.m)
                     }
                     row
                 }
             }
         }
-        .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: 14, style: .continuous))
+        .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }
 
@@ -221,14 +223,14 @@ private struct AccountPanelRow: View {
 
     var body: some View {
         Button(role: role, action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 SymbolTile(symbol: symbol, color: color, size: 30)
                 Text(title)
                     .font(.body)
                     .foregroundStyle(role == .destructive ? Color.red : Color.primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.Space.m)
             .frame(minHeight: 50)
             .contentShape(.rect)
         }
@@ -240,7 +242,7 @@ private struct AccountPanelRow: View {
 private struct AccountPanelRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(Color.primary.opacity(configuration.isPressed ? 0.08 : 0), in: .rect(cornerRadius: 14, style: .continuous))
+            .background(Color.primary.opacity(configuration.isPressed ? 0.08 : 0), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }
 

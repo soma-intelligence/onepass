@@ -29,7 +29,7 @@ struct AddPasskeyRow: View {
             }
         } label: {
             // Same "+" row as the editor's other add rows; the site it opens sits at the end.
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 Label(editing ? "item.addPasskeyRow" : "item.addPasskey", systemImage: "plus")
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.accent)
@@ -37,7 +37,7 @@ struct AddPasskeyRow: View {
                 if opening {
                     ProgressView().controlSize(.small)
                 } else {
-                    HStack(spacing: 3) {
+                    HStack(spacing: Theme.Space.xxs) {
                         Text(host ?? String(localized: "item.addWebsiteFirst"))
                             .lineLimit(1)
                             .truncationMode(.middle)

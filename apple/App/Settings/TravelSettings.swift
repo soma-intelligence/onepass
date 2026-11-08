@@ -42,9 +42,9 @@ struct TravelSettings: View {
                 Section {
                     ForEach(travelVaults, id: \.id) { vault in
                         Toggle(isOn: safeBinding(vault)) {
-                            HStack(spacing: 12) {
+                            HStack(spacing: Theme.Space.m) {
                                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 28)
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                                     Text(vault.meta.name)
                                     Text(vault.meta.travelSafe ? "Reste sur l'appareil" : "Quitte l'appareil")
                                         .font(.footnote)
@@ -139,7 +139,7 @@ struct TravelSettings: View {
     }
 
     private func itemLabel(_ entry: FfiTravelItemEntry) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             Text(entry.title)
             Text(entry.vaultName).font(.footnote).foregroundStyle(.secondary)
         }
@@ -166,7 +166,7 @@ struct TravelSettings: View {
     @ViewBuilder private var statusRow: some View {
         if let status, status.active {
             Label {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(status.exiting ? "Retour en cours" : "Travel Mode activé")
                     if let at = status.enteredAt {
                         Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)) \(Self.vaultCount(status.hiddenCount))")

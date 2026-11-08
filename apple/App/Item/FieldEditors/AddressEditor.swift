@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -23,7 +24,7 @@ struct AddressEditor: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Space.s) {
             TextField("item.line1", text: part(\.line1))
                 .addressContent(.line1)
                 .accessibilityIdentifier("editor.field.\(field.id)")

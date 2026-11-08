@@ -10,21 +10,22 @@ import VaultKit
 /// before it.
 struct WatchtowerTab: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var watchtower: WatchtowerModel { model.watchtower }
 
     var body: some View {
         let score = watchtower.report.map { Int($0.score) }
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: Theme.Space.l) {
+                VStack(spacing: Theme.Space.l) {
                     PhoneScoreGauge(score: score)
-                        .padding(.top, 4)
+                        .padding(.top, Theme.Space.xs)
                     if let score {
                         ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
                             Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
                                 .font(.subheadline.weight(.semibold))
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, Theme.Space.xs)
                                 .frame(minHeight: 30)
                         }
                         .buttonStyle(.glass)
@@ -32,14 +33,14 @@ struct WatchtowerTab: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("browse.watchtowerFindsPasswordsTo")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     statusLine
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Theme.Space.xs)
                 scanCard
                 if let report = watchtower.report {
                     StrengthCard(levels: report.strength.map(Int.init))
@@ -61,8 +62,8 @@ struct WatchtowerTab: View {
                 }
                 BreachSettingCard()
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 24)
+            .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+            .padding(.bottom, Theme.Space.xl)
             .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
         }
         .background(PhoneBackground())
@@ -101,8 +102,8 @@ struct WatchtowerTab: View {
                     ScanProgressBar(title: Text("browse.analyzingItems"))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.vertical, Theme.Space.l)
             .phoneCard()
             .transition(.opacity)
             .accessibilityIdentifier("watchtower.scan")
@@ -151,7 +152,7 @@ struct PhoneScoreGauge: View {
                 .stroke(color.opacity(0.6), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             Ticks(count: Self.ticks, sweep: Self.sweep, indices: (lit + 1)..<(Self.ticks + 1))
                 .stroke(Color.primary.opacity(0.12), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            VStack(spacing: 2) {
+            VStack(spacing: Theme.Space.xxs) {
                 Text(score.map(String.init) ?? "–")
                     .font(.system(size: 58, weight: .bold, design: .rounded))
                     .monospacedDigit()
@@ -219,7 +220,7 @@ private struct PhoneWatchtowerCard: View {
     var body: some View {
         NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids)) {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     HStack(alignment: .top) {
                         Text(count, format: .number)
                             .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -236,14 +237,14 @@ private struct PhoneWatchtowerCard: View {
                         .opacity(0.9)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(16)
+                .padding(Theme.Space.l)
                 Rectangle().fill(.white.opacity(0.25)).frame(height: 0.5)
                 HStack {
                     Text("browse.showItems").font(.body.weight(.medium))
                     Spacer()
                     Image(systemName: "chevron.forward").font(.footnote.weight(.bold))
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Theme.Space.l)
                 .frame(minHeight: 48)
             }
             .foregroundStyle(.white)
@@ -304,14 +305,15 @@ private struct ClearChecksCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("browse.nothingToReport")
                     .font(.headline)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.top, Theme.Space.l)
+                    .padding(.bottom, Theme.Space.s)
                 ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-                    if index > 0 { Divider().padding(.leading, 52) }
-                    HStack(spacing: 12) {
+                    // Starts at the row title: padding, the 26 pt tile, spacing.
+                    if index > 0 { Divider().padding(.leading, Theme.Space.l + 26 + Theme.Space.m) }
+                    HStack(spacing: Theme.Space.m) {
                         PageTile(symbol: card.symbol, color: card.color, size: 26)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text(card.title).font(.subheadline.weight(.medium))
                             if let note = note(card) {
                                 Text(note).font(.caption).foregroundStyle(.secondary)
@@ -324,13 +326,13 @@ private struct ClearChecksCard: View {
                                 .accessibilityLabel(Text("browse.nothingToReport"))
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.vertical, Theme.Space.s)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("watchtower.card.\(card.id)")
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, Theme.Space.s)
         }
     }
 

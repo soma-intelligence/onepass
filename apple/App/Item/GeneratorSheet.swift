@@ -129,7 +129,7 @@ struct GeneratorSheet: View {
     }
 
     private func stepperSlider(_ label: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
             HStack {
                 Text(label)
                 Spacer()

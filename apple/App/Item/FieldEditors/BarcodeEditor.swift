@@ -1,5 +1,6 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -25,7 +26,7 @@ struct BarcodeEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             TextField(field.displayLabel, text: text, prompt: Text("item.codeValue"))
                 .font(.body.monospaced())
                 .fieldInput(.text)
@@ -101,7 +102,7 @@ struct BarcodeLargeView: View {
                     .resizable()
                     .interpolation(.none)
                     .aspectRatio(contentMode: .fit)
-                    .padding(16)
+                    .padding(Theme.Space.l)
                     .background(.white, in: RoundedRectangle(cornerRadius: 12))
                     .frame(maxWidth: 360, maxHeight: format == .qr || format == .aztec ? 360 : 180)
                     .accessibilityLabel(Text("app.text \(BarcodeRenderer.name(format)) \(value)"))

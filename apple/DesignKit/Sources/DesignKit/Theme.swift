@@ -44,9 +44,6 @@ public enum Theme {
 
     /// The hairline around a card: visible on the light gray page, barely there in dark.
     public static let cardHairline = Color.primary.opacity(0.06)
-
-    /// Deprecated alias of `Radius.card`, kept until the UI sweep removes its uses.
-    public static let cardRadius: CGFloat = Radius.card
 }
 
 /// The appearance the person picked in Réglages > Général: follow the system, or keep OnePass

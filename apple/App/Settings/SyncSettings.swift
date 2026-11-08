@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -113,7 +114,7 @@ struct SyncSettings: View {
         case .offline:
             Label("settings.offline", systemImage: "wifi.slash").foregroundStyle(.orange)
         case .refused(let kind):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 Label("Données refusées", systemImage: "xmark.shield.fill").foregroundStyle(.red)
                 Text(VaultError.integrityLabel(kind)).font(.footnote).foregroundStyle(.secondary)
             }

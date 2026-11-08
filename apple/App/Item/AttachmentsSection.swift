@@ -33,12 +33,12 @@ struct ItemAttachmentsSection: View {
 
     var body: some View {
         if !item.attachments.isEmpty || editable {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text(String(localized: "item.attachments").uppercased())
                     .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 16)
+                    .padding(.leading, Theme.Space.l)
                     .accessibilityAddTraits(.isHeader)
                 EditorCard {
                     ForEach(Array(item.attachments.enumerated()), id: \.element.id) { index, attachment in
@@ -102,16 +102,16 @@ struct ItemAttachmentsSection: View {
     }
 
     private func row(_ attachment: FfiAttachment) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             Button {
                 Task { await open(attachment, then: .preview) }
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Space.m) {
                     Image(systemName: Self.symbol(of: attachment))
                         .font(.title3)
                         .foregroundStyle(Theme.readableAccent)
                         .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(attachment.name)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -306,8 +306,8 @@ struct AttachmentPreviewSheet: View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Self.backdrop)
-            .overlay(alignment: .topLeading) { closeButton.padding(14) }
-            .overlay(alignment: .bottom) { capsule.padding(.bottom, 16) }
+            .overlay(alignment: .topLeading) { closeButton.padding(Theme.Space.l) }
+            .overlay(alignment: .bottom) { capsule.padding(.bottom, Theme.Space.l) }
             // Paper is white: the reader stays light, like a page on a desk, whatever the app's look.
             .environment(\.colorScheme, .light)
             #if os(macOS)
@@ -322,14 +322,14 @@ struct AttachmentPreviewSheet: View {
             PDFDocumentView(document: document, page: $page)
                 .onAppear { pages = document.pageCount }
                 .padding(.top, 58)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.Space.m)
                 .ignoresSafeArea(edges: .bottom)
                 .accessibilityIdentifier("item.attachment.preview.pdf")
         } else if request.type.conforms(to: .image), let image = Self.image(request.data) {
             image
                 .resizable()
                 .scaledToFit()
-                .padding(24)
+                .padding(Theme.Space.xl)
         } else {
             ContentUnavailableView {
                 Label(request.attachment.name, systemImage: "doc")
@@ -357,7 +357,7 @@ struct AttachmentPreviewSheet: View {
     }
 
     private var capsule: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             Text(request.attachment.name)
                 .font(.callout.weight(.medium))
                 .lineLimit(1)
@@ -384,8 +384,8 @@ struct AttachmentPreviewSheet: View {
             .accessibilityLabel("item.export")
             .accessibilityIdentifier("item.attachment.preview.export")
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.m)
         .glassEffect(.regular, in: .capsule)
         .animation(.snappy, value: page)
     }

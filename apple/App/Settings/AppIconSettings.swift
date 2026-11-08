@@ -39,12 +39,12 @@ struct AppIconSection: View {
     @State private var current = AppIconChoice.choice(for: UIApplication.shared.alternateIconName)
     @State private var changing = false
 
-    private let columns = [GridItem(.adaptive(minimum: 64, maximum: 80), spacing: 14)]
+    private let columns = [GridItem(.adaptive(minimum: 64, maximum: 80), spacing: Theme.Space.l)]
 
     var body: some View {
         if UIApplication.shared.supportsAlternateIcons {
             Section {
-                LazyVGrid(columns: columns, spacing: 14) {
+                LazyVGrid(columns: columns, spacing: Theme.Space.l) {
                     ForEach(AppIconChoice.all) { choice in
                         Button {
                             select(choice)
@@ -56,7 +56,7 @@ struct AppIconSection: View {
                         .accessibilityAddTraits(choice == current ? .isSelected : [])
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, Theme.Space.s)
                 .sensoryFeedback(.selection, trigger: current)
             } header: {
                 Text("settings.appIcon")
@@ -89,10 +89,12 @@ private struct AppIconTile: View {
     let selected: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: Theme.Space.s) {
             Image(choice.previewName)
                 .resizable()
                 .aspectRatio(1, contentMode: .fit)
+                // The icon's own shape (about 22% of its side) and the ring 3 pt outside it: geometry, not
+                // the radius scale.
                 .clipShape(.rect(cornerRadius: 14, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)

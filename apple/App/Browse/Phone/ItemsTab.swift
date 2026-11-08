@@ -47,6 +47,7 @@ struct ItemsTab: View {
                     .foregroundStyle(.secondary)
                     .textCase(nil)
                     .lineLimit(1)
+                    // Pulls the name onto the rows' leading edge (the header inset is wider).
                     .padding(.leading, -4)
                     .accessibilityAddTraits(.isHeader)
             }
@@ -66,7 +67,7 @@ struct ItemsTab: View {
                     Button {
                         creatingVault = true
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: Theme.Space.m) {
                             Image(systemName: "plus")
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(width: 30, height: 30)
@@ -179,7 +180,7 @@ struct ItemsTab: View {
         @ViewBuilder count: () -> Text
     ) -> some View {
         NavigationLink(value: PhoneRoute.list(filter)) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 icon()
                 label()
                     .lineLimit(1)

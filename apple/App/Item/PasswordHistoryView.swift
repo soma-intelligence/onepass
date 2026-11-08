@@ -18,9 +18,9 @@ struct PasswordHistoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
                 if let error {
-                    Text(error).foregroundStyle(.red).padding(.horizontal, 16)
+                    Text(error).foregroundStyle(.red).padding(.horizontal, Theme.Space.l)
                 }
                 if !entries.isEmpty {
                     EditorCard {
@@ -43,10 +43,10 @@ struct PasswordHistoryView: View {
                 Text("item.oldPasswordsStayEncrypted")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Theme.Space.l)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+            .padding(.horizontal, Theme.Space.xl)
+            .padding(.vertical, Theme.Space.xl)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
         }
@@ -56,14 +56,14 @@ struct PasswordHistoryView: View {
             if let toast {
                 Text(toast)
                     .font(.footnote.weight(.medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.vertical, Theme.Space.s)
                     #if os(visionOS)
                     .glassBackgroundEffect(in: Capsule())
                     #else
                     .glassEffect(.regular, in: Capsule())
                     #endif
-                    .padding(.bottom, 18)
+                    .padding(.bottom, Theme.Space.l)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

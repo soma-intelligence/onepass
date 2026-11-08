@@ -51,7 +51,7 @@ struct ItemEditorView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Theme.Space.l) {
                     titleHeader
                     if let error = editor.generalError {
                         EditorCard {
@@ -71,14 +71,14 @@ struct ItemEditorView: View {
                     }
                     notesCard
                     locationsCard
-                    VStack(alignment: .leading, spacing: 8) {
-                        EditorLabel(String(localized: "item.tags")).padding(.leading, 16)
-                        TagEditor(draft: $editor.draft).padding(.horizontal, 16)
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        EditorLabel(String(localized: "item.tags")).padding(.leading, Theme.Space.l)
+                        TagEditor(draft: $editor.draft).padding(.horizontal, Theme.Space.l)
                     }
                     optionsCard
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 20)
+                .padding(.horizontal, Theme.Space.xl)
+                .padding(.vertical, Theme.Space.xl)
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
                 #if os(macOS)
@@ -199,7 +199,7 @@ struct ItemEditorView: View {
     #endif
 
     private var titleHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             #if !os(iOS)
             // iPhone: the navigation bar already says it.
             Text(editor.isNew ? "Nouvel élément" : "Modification")
@@ -208,7 +208,7 @@ struct ItemEditorView: View {
                 .textCase(.uppercase)
                 .tracking(0.6)
             #endif
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: Theme.Space.l) {
                 ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title), size: 64, brand: item.cardBrandName)
                     .favoriteBadge(item.favorite, iconSize: 64)
                     // Follows the website being typed: a new address loads its icon.
@@ -224,15 +224,15 @@ struct ItemEditorView: View {
                     .font(.system(size: 26, weight: .bold))
                     .focused($titleFocused)
                     .onChange(of: item.title) { editor.clearError(for: "title") }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.vertical, Theme.Space.m)
                     #if os(iOS)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.control))
                     #else
                     .background(.fill.quaternary, in: .rect(cornerRadius: 12))
                     #endif
                     .overlay {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: Theme.Radius.control)
                             .strokeBorder(titleFocused ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(Self.titleHairline),
                                 lineWidth: titleFocused ? 1.5 : 1)
                     }
@@ -243,20 +243,21 @@ struct ItemEditorView: View {
                 Label(message, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote)
                     .foregroundStyle(.red)
-                    .padding(.leading, 80)
+                    // Under the title field: the 64 pt icon and the spacing.
+                    .padding(.leading, 64 + Theme.Space.l)
                     .accessibilityIdentifier("editor.error")
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, Theme.Space.s)
         .id(ItemEditorModel.titleAnchor)
     }
 
     @ViewBuilder private func fieldSection(_ section: FfiSection) -> some View {
         let isCustom = section.id == ItemDraft.customSectionID
         let rows = visibleRows(section)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             if item.sections.count > 1 || isCustom {
-                EditorLabel(section.displayLabel(itemType: item.itemType)).padding(.leading, 16)
+                EditorLabel(section.displayLabel(itemType: item.itemType)).padding(.leading, Theme.Space.l)
             }
             EditorCard {
                 ForEach(Array(rows.enumerated()), id: \.element.key) { order, row in
@@ -295,9 +296,9 @@ struct ItemEditorView: View {
     @ViewBuilder private func fieldRow(sectionID: String, key: UUID, field: FfiField, isCustom: Bool) -> some View {
         let index = editor.index(of: key, sectionID: sectionID) ?? 0
         let removable = editor.draft.isRemovable(sectionID: sectionID, fieldIndex: index)
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
             if isCustom {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     TextField("item.label", text: labelBinding(sectionID, key), prompt: Text(ItemDraft.defaultLabel(field.kind)))
                         .font(.callout)
                         .foregroundStyle(Theme.accent)
@@ -459,7 +460,7 @@ struct ItemEditorView: View {
 
     private var notesCard: some View {
         EditorCard {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 EditorLabel(String(localized: "item.notes"))
                 // No inner box: the note reads as part of its card.
                 TextEditor(text: $editor.draft.item.notes)
@@ -471,7 +472,7 @@ struct ItemEditorView: View {
                         if item.notes.isEmpty {
                             Text("item.addNotesAboutItem")
                                 .foregroundStyle(.tertiary)
-                                .padding(.leading, 5)
+                                .padding(.leading, Theme.Space.xs)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -483,7 +484,7 @@ struct ItemEditorView: View {
 
     /// Where the item lives and how it behaves: vault, favorite, Watch, confirmation.
     private var optionsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             EditorCard {
                 HStack {
                     Text("term.vault")
@@ -519,7 +520,7 @@ struct ItemEditorView: View {
                 : "item.travel.footer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Theme.Space.l)
 
         }
     }
@@ -739,24 +740,24 @@ private struct AddFieldPopover: View {
         trimmed.isEmpty ? customKinds : customKinds.filter { $0.label.localizedStandardContains(trimmed) }
     }
 
-    private static let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
+    private static let columns = Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: 4)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(spacing: Theme.Space.s) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("item.searchFields", text: $query)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .accessibilityIdentifier("editor.addField.search")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.fill.quaternary, in: .rect(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.07)) }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(.white.opacity(0.07)) }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if !shownHidden.isEmpty {
                         HStack {
                             heading("Champs du modèle")
@@ -769,7 +770,7 @@ private struct AddFieldPopover: View {
                                     .accessibilityIdentifier("editor.moreFields")
                             }
                         }
-                        VStack(spacing: 1) {
+                        VStack(spacing: Theme.Space.xxs) {
                             ForEach(shownHidden) { row in
                                 AddFieldRow(label: row.label, symbol: row.symbol) { reveal(row.key) }
                             }
@@ -778,7 +779,7 @@ private struct AddFieldPopover: View {
                     if !shownKinds.isEmpty {
                         if !shownHidden.isEmpty { Divider() }
                         heading("Champ personnalisé")
-                        LazyVGrid(columns: Self.columns, spacing: 6) {
+                        LazyVGrid(columns: Self.columns, spacing: Theme.Space.s) {
                             ForEach(shownKinds) { kind in
                                 AddFieldTile(label: kind.label, symbol: kind.symbol) { addCustom(kind.kind) }
                                     .accessibilityIdentifier("editor.addField.custom.\(String(describing: kind.kind))")
@@ -790,14 +791,14 @@ private struct AddFieldPopover: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+                            .padding(.vertical, Theme.Space.m)
                     }
                 }
             }
             .frame(maxHeight: 420)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
+        .padding(Theme.Space.m)
         .frame(width: 340)
         .onAppear { searchFocused = true }
     }
@@ -818,13 +819,13 @@ private struct AddFieldRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: Theme.Space.m) {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.accent))
                     .frame(width: 24, height: 24)
                     .background(hovering ? AnyShapeStyle(.white.opacity(0.15)) : AnyShapeStyle(Theme.accent.opacity(0.14)),
-                        in: .rect(cornerRadius: 6))
+                        in: .rect(cornerRadius: Theme.Radius.chip))
                 Text(label).foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                 Spacer(minLength: 0)
                 Image(systemName: "plus")
@@ -832,10 +833,10 @@ private struct AddFieldRow: View {
                     .foregroundStyle(.white)
                     .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 7))
-            .contentShape(.rect(cornerRadius: 7))
+            .padding(.horizontal, Theme.Space.s)
+            .padding(.vertical, Theme.Space.xs)
+            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: Theme.Radius.chip))
+            .contentShape(.rect(cornerRadius: Theme.Radius.chip))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -850,7 +851,7 @@ private struct AddFieldTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
+            VStack(spacing: Theme.Space.xs) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.accent))
@@ -862,11 +863,11 @@ private struct AddFieldTile: View {
                     .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            .padding(.vertical, Theme.Space.s)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.85)) : AnyShapeStyle(.fill.quaternary),
-                in: .rect(cornerRadius: 9))
-            .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.07)) }
-            .contentShape(.rect(cornerRadius: 9))
+                in: .rect(cornerRadius: Theme.Radius.control))
+            .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(.white.opacity(0.07)) }
+            .contentShape(.rect(cornerRadius: Theme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

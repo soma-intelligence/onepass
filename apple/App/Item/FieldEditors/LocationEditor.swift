@@ -38,12 +38,12 @@ struct LocationEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             TextField("item.label2", text: Binding(get: { location.label }, set: { t in update { $0.label = t } }))
                 .accessibilityIdentifier("editor.field.\(field.id)")
             addressField
             if addressFocused, !completer.results.isEmpty { suggestions }
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 Button {
                     Task { await useCurrentLocation() }
                 } label: {
@@ -89,7 +89,7 @@ struct LocationEditor: View {
     // MARK: - Address
 
     private var addressField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Theme.Space.s) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
             TextField("item.address", text: $addressText, prompt: Text("item.searchForAddressOr"))
                 .focused($addressFocused)
@@ -113,14 +113,14 @@ struct LocationEditor: View {
                 Button {
                     Task { await choose(completion) }
                 } label: {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(completion.title).foregroundStyle(.primary)
                         if !completion.subtitle.isEmpty {
                             Text(completion.subtitle).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, Theme.Space.s)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -128,9 +128,9 @@ struct LocationEditor: View {
                 if index < completer.results.count - 1 { Divider() }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 2)
-        .background(.fill.tertiary, in: .rect(cornerRadius: 9))
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.xxs)
+        .background(.fill.tertiary, in: .rect(cornerRadius: Theme.Radius.control))
     }
 
     @ViewBuilder private var statusView: some View {
@@ -144,7 +144,7 @@ struct LocationEditor: View {
         case .unavailable:
             Text("app.locationNotFound").font(.footnote).foregroundStyle(.secondary)
         case .denied:
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 Text("app.locationNotAllowed").font(.footnote).foregroundStyle(.secondary)
                 Button("app.openSettings") { LocationAccess.openSettings() }
                     .font(.footnote)
@@ -286,8 +286,8 @@ struct LocationMap: View {
         .mapControlVisibility(.hidden)
         // A new place re-centers the map (the initial position is read once).
         .id(point)
-        .clipShape(.rect(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.08)) }
+        .clipShape(.rect(cornerRadius: Theme.Radius.control))
+        .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(.white.opacity(0.08)) }
         .accessibilityLabel(Text("item.mapOf \(title.isEmpty ? String(localized: "item.place2") : title)"))
     }
 }
@@ -312,12 +312,12 @@ struct PlaceBlock<Accessory: View>: View {
     private var point: GeoPoint { GeoPoint(latitude: location.lat, longitude: location.lon) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             if point.isPlaced {
                 LocationMap(point: point, title: location.label).frame(height: 160)
             }
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(location.label.isEmpty ? String(localized: "item.place") : location.label)
                         .font(.body.weight(.semibold))
                     if let address = location.address, !address.isEmpty {
@@ -347,8 +347,12 @@ struct LocationSearchSheet: View {
     @State private var status: LocationEditor.Status = .idle
     @FocusState private var focused: Bool
 
+    /// Where a result row's title starts (the 30 pt glyph and the spacing): the hairlines and the
+    /// settings button start there too.
+    static let textInset: CGFloat = 30 + Theme.Space.m
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             HStack {
                 Text("item.addPlace").font(.headline)
                 Spacer()
@@ -356,7 +360,7 @@ struct LocationSearchSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("location.search.cancel")
             }
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField("common.search", text: $query, prompt: Text("item.searchForPlaceOr"))
                     .textFieldStyle(.plain)
@@ -365,9 +369,9 @@ struct LocationSearchSheet: View {
                     .accessibilityIdentifier("location.search.field")
                 if status == .searching || status == .locating { ProgressView().controlSize(.small) }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.fill.quaternary, in: .rect(cornerRadius: 10))
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control))
             .onChange(of: query) { _, text in
                 completer.search(text)
                 if status == .notFound { status = .idle }
@@ -381,12 +385,12 @@ struct LocationSearchSheet: View {
                     if status == .denied {
                         Button("app.openSettings") { LocationAccess.openSettings() }
                             .buttonStyle(.borderless)
-                            .padding(.leading, 44)
-                            .padding(.bottom, 6)
+                            .padding(.leading, LocationSearchSheet.textInset)
+                            .padding(.bottom, Theme.Space.s)
                             .accessibilityIdentifier("location.search.openSettings")
                     }
                     ForEach(Array(completer.results.enumerated()), id: \.offset) { index, completion in
-                        Divider().padding(.leading, 44)
+                        Divider().padding(.leading, LocationSearchSheet.textInset)
                         resultRow(
                             icon: "mappin", tint: .red, title: completion.title, subtitle: completion.subtitle,
                             id: "location.search.result.\(index)"
@@ -395,7 +399,7 @@ struct LocationSearchSheet: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Theme.Space.l)
         #if os(macOS)
         .frame(width: 440, height: 460)
         #endif
@@ -415,14 +419,14 @@ struct LocationSearchSheet: View {
         icon: String, tint: Color, title: String, subtitle: String, id: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(tint, in: Circle())
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(title).foregroundStyle(.primary).lineLimit(1)
                     if !subtitle.isEmpty {
                         Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -430,7 +434,7 @@ struct LocationSearchSheet: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 7)
+            .padding(.vertical, Theme.Space.s)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

@@ -36,9 +36,9 @@ struct VaultsSettings: View {
                     Button {
                         editing = .existing(vault)
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: Theme.Space.m) {
                             VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 30)
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                                 Text(vault.meta.name).foregroundStyle(.primary)
                                 if shared, model.session.hiddenVaultIDs.contains(vault.id) {
                                     Text("settings.hiddenOnDevice").font(.footnote).foregroundStyle(.secondary)

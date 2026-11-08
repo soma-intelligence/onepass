@@ -63,8 +63,8 @@ struct AddOtpSheet: View {
                             added[account.id] = title
                         }
                     } label: {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: Theme.Space.m) {
+                            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                                 Text(account.title)
                                 if let name = account.account, name != account.title {
                                     Text(name).font(.footnote).foregroundStyle(.secondary)
@@ -83,7 +83,7 @@ struct AddOtpSheet: View {
                     .accessibilityIdentifier("addOtp.account.\(account.id)")
                 }
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     if request.source == .link { Text("item.linkComesFromAnother") }
                     Text("item.codesInExportEach \(request.accounts.count)")
                 }
@@ -132,7 +132,7 @@ private struct OtpAccountTarget: View {
                     TotpCodeView(secret: account.uri, compact: true)
                         .privacySensitive()
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(account.title)
                         if let name = account.account, name != account.title {
                             Text(name).font(.footnote).foregroundStyle(.secondary)
@@ -211,7 +211,7 @@ private struct OtpAccountTarget: View {
         Button {
             Task { await pick(login) }
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 ItemIcon(type: login.itemType, title: login.title, siteIcon: model.iconLoader.cachedIcon(for: login.primaryUrl, title: login.title), size: 30)
                 VStack(alignment: .leading) {
                     Text(login.title).foregroundStyle(.primary)

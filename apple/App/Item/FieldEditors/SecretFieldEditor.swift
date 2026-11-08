@@ -28,8 +28,8 @@ struct SecretFieldEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(spacing: Theme.Space.m) {
                 input
                     .font(.body.monospaced())
                     .fieldInput(field.kind)
@@ -194,8 +194,8 @@ struct SshKeyEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
                 Group {
                     if revealed && !captured {
                         TextEditor(text: privateKey)

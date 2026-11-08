@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -6,7 +7,7 @@ struct ReadOnlyFieldView: View {
     let field: FfiField
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Space.m) {
             Image(systemName: field.kind == .passkey ? "person.badge.key.fill" : "paperclip")
                 .foregroundStyle(.secondary)
             Text(Self.describe(field.value, kind: field.kind))

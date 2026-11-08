@@ -87,7 +87,7 @@ struct FieldValueView: View {
         case .passkey(let passkey):
             PasskeyRow(field: field, passkey: passkey)
         case .file:
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(label)
                 ReadOnlyFieldView(field: field)
             }
@@ -176,7 +176,7 @@ struct FieldValueView: View {
 
     @ViewBuilder private func itemLinkRow(_ id: String) -> some View {
         let linked = session.summaries.first { $0.id == id }
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             EditorLabel(label)
             if let linked {
                 Button {
@@ -236,8 +236,8 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(label)
                 value.frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -253,14 +253,14 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
             actions
             #endif
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.s)
         .frame(minHeight: 56)
         .background {
             #if os(iOS)
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
                 .fill(Theme.accent.opacity(showsCopied ? 0.12 : 0))
-                .padding(4)
+                .padding(Theme.Space.xs)
             #else
             RoundedRectangle(cornerRadius: 10)
                 .fill(Theme.accent.opacity(hovered ? 0.18 : 0))
@@ -531,7 +531,7 @@ struct ValueRow<Accessory: View>: View {
         // Captured: masked now, and still masked once the capture ends.
         .onChange(of: captured) { _, now in if now, revealed { setRevealed(false) } }
         .sheet(isPresented: Binding(get: { large && !hidden }, set: { large = $0 })) {
-            VStack(spacing: 16) {
+            VStack(spacing: Theme.Space.l) {
                 Text(label).font(.headline)
                 Text(value)
                     .font(.system(.largeTitle, design: .monospaced))
@@ -539,7 +539,7 @@ struct ValueRow<Accessory: View>: View {
                     .minimumScaleFactor(0.4)
                 Button("Fermer") { large = false }.keyboardShortcut(.cancelAction)
             }
-            .padding(32)
+            .padding(Theme.Space.xxl)
             .presentationDetents([.medium])
         }
     }
@@ -566,8 +566,8 @@ private struct PasskeyRow: View {
     let passkey: FfiPasskey
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(field.displayLabel.detailLabelCase)
                 Text(passkey.rpId.isEmpty ? String(localized: "item.unknownWebsite") : passkey.rpId)
                     .lineLimit(1)
@@ -610,7 +610,7 @@ private struct LocationRow: View {
                 label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)", onCopy: onCopy,
                 showsMenu: point.isPlaced
             ) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     if !location.label.isEmpty { Text(location.label) }
                     if let address = location.address, !address.isEmpty {
                         Text(address)
@@ -631,7 +631,7 @@ private struct LocationRow: View {
             if point.isPlaced {
                 LocationMap(point: point, title: location.label)
                     .frame(height: 140)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Theme.Space.l)
                     .accessibilityIdentifier("field.location.map.\(field.id)")
                 Button {
                     location.openInMaps()
@@ -641,9 +641,9 @@ private struct LocationRow: View {
                         .foregroundStyle(Theme.readableAccent)
                 }
                 .buttonStyle(.borderless)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.top, Theme.Space.s)
+                .padding(.bottom, Theme.Space.m)
                 .accessibilityIdentifier("field.location.open.\(field.id)")
             }
         }
@@ -663,7 +663,7 @@ private struct BarcodeRow: View {
             label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)", onCopy: onCopy,
             showsMenu: true
         ) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text(value).font(.body.monospaced())
                 Text(BarcodeRenderer.name(format)).font(.caption).foregroundStyle(.secondary)
             }
@@ -694,8 +694,8 @@ struct WebsiteRow: View {
     #endif
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(url.label.isEmpty ? String(localized: "app.website") : url.label.detailLabelCase)
                 if let target = FieldValueView.openable(url.url) {
                     Button {
@@ -747,8 +747,8 @@ struct WebsiteRow: View {
             .accessibilityLabel(Text("Copier"))
             .accessibilityIdentifier("item.url.copy.\(index)")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.s)
         .contentShape(.rect)
         #if os(macOS)
         .onHover { inside in
@@ -787,7 +787,7 @@ private struct FieldDragOut: ViewModifier {
                 return provider
             } preview: {
                 Label(label, systemImage: "text.alignleft")
-                    .padding(10)
+                    .padding(Theme.Space.m)
                     .background(.regularMaterial, in: Capsule())
             }
         } else {

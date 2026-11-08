@@ -158,7 +158,7 @@ private struct AppearanceSection: View {
                     .accessibilityAddTraits(appearance == current ? .isSelected : [])
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, Theme.Space.s)
             .sensoryFeedback(.selection, trigger: stored)
         } header: {
             Text("settings.general.appearance")
@@ -173,11 +173,11 @@ private struct AppearanceChoice: View {
     let selected: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Theme.Space.m) {
             preview
                 .frame(width: 58, height: 96)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                         .strokeBorder(selected ? Theme.accent : Color.primary.opacity(0.12), lineWidth: selected ? 2 : 1)
                 }
             Text(title)
@@ -202,7 +202,7 @@ private struct AppearanceChoice: View {
     }
 
     @ViewBuilder private var preview: some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
         switch appearance {
         case .system:
             ZStack {
@@ -228,7 +228,8 @@ private struct AppearanceChoice: View {
     }
 }
 
-/// The app in miniature: the page, a title bar, two cards and a row of tiles.
+/// The app in miniature: the page, a title bar, two cards and a row of tiles. Its sizes are a
+/// drawing at about a sixth of the screen, not the spacing scale.
 private struct MiniScreen: View {
     var body: some View {
         ZStack(alignment: .top) {
@@ -277,7 +278,7 @@ struct ProfileSection: View {
     var body: some View {
         let _ = model.settingsRevision
         Section {
-            HStack(spacing: 16) {
+            HStack(spacing: Theme.Space.l) {
                 AccountAvatar(initials: model.initials, photo: model.profileImage, size: 64)
                     #if os(macOS)
                     .dropDestination(for: Data.self) { items, _ in
@@ -285,7 +286,7 @@ struct ProfileSection: View {
                         return use(data)
                     }
                     #endif
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     TextField("settings.name", text: Binding(
                         get: { model.settings.displayName },
                         set: { name in model.setProfile(name: name, photo: model.settings.profilePhoto) }
@@ -295,16 +296,16 @@ struct ProfileSection: View {
                     .font(.title3.weight(.semibold))
                     .focused($nameFocused)
                     // A real field: a soft well, an accent ring while typing.
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.fill.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
+                    .padding(.horizontal, Theme.Space.m)
+                    .padding(.vertical, Theme.Space.s)
+                    .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                             .strokeBorder(nameFocused ? Theme.accent : Color.primary.opacity(0.08), lineWidth: nameFocused ? 1.5 : 1)
                     }
                     .frame(maxWidth: 280, alignment: .leading)
                     .accessibilityIdentifier("settings.profile.name")
-                    HStack(spacing: 12) {
+                    HStack(spacing: Theme.Space.m) {
                         #if os(iOS)
                         PhotosPicker(selection: $pick, matching: .images) {
                             Text(model.settings.profilePhoto == nil ? "Ajouter une photo…" : "Changer la photo…")
@@ -325,7 +326,7 @@ struct ProfileSection: View {
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, Theme.Space.xs)
         } header: {
             Text("Profil")
         } footer: {

@@ -82,7 +82,7 @@ struct SearchTab: View {
                         query = text
                         isSearching = true
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: Theme.Space.m) {
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
@@ -143,14 +143,14 @@ struct SearchTab: View {
     /// shows that category; typing then searches inside it.
     private func browseGrid(_ all: [FfiItemSummary]) -> some View {
         let present = scopes(in: all)
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Space.m), GridItem(.flexible(), spacing: Theme.Space.m)], spacing: Theme.Space.m) {
             ForEach(present, id: \.type) { scope in
                 Button {
                     withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = scope.type }
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Theme.Space.m) {
                         CategoryArtwork(type: scope.type, size: 30)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text(ItemCategory.of(scope.type).plural)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -163,7 +163,7 @@ struct SearchTab: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Theme.Space.m)
                     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                     .phoneCard()
                     .contentShape(.rect(cornerRadius: PhoneCard.radius))
@@ -203,7 +203,7 @@ struct SearchTab: View {
 
     private func chips(_ scopes: [Scope], total: Int) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 chip(String(localized: "browse.all"), type: nil, count: total, selected: category == nil, id: "search.category.all") {
                     category = nil
                 }
@@ -216,8 +216,9 @@ struct SearchTab: View {
                     }
                 }
             }
+            // The inset grouped list's row inset: the chips line up with the rows below.
             .padding(.horizontal, 20)
-            .padding(.vertical, 2)
+            .padding(.vertical, Theme.Space.xxs)
         }
         .scrollIndicators(.hidden)
         .sensoryFeedback(.selection, trigger: category)
@@ -228,7 +229,7 @@ struct SearchTab: View {
         _ label: String, type: FfiItemType?, count: Int, selected: Bool, id: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 if let type { CategoryArtwork(type: type, size: 20) }
                 Text(label).font(.subheadline.weight(.semibold))
                 Text(count, format: .number)
@@ -237,8 +238,8 @@ struct SearchTab: View {
                     .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
                     .contentTransition(.numericText())
             }
-            .padding(.leading, type == nil ? 14 : 7)
-            .padding(.trailing, 14)
+            .padding(.leading, type == nil ? Theme.Space.l : Theme.Space.s)
+            .padding(.trailing, Theme.Space.l)
             .frame(height: 34)
             .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .background(selected ? Theme.accent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
@@ -262,11 +263,11 @@ struct SearchTab: View {
     /// Nothing found: what was searched, what to try, and the way out of a category.
     private var noResults: some View {
         Section {
-            VStack(spacing: 10) {
+            VStack(spacing: Theme.Space.m) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 34, weight: .regular))
                     .foregroundStyle(.tertiary)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, Theme.Space.xxs)
                 Text(trimmed.isEmpty ? String(localized: "browse.nothingInCategory")
                     : String(localized: "browse.noResultsFor \(trimmed)"))
                     .font(.headline)
@@ -283,7 +284,7 @@ struct SearchTab: View {
                         withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = nil }
                     }
                     .buttonStyle(.glass)
-                    .padding(.top, 4)
+                    .padding(.top, Theme.Space.xs)
                     .accessibilityIdentifier("search.everywhere")
                 }
             }

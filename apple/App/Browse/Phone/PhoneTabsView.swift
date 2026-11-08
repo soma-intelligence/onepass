@@ -364,7 +364,7 @@ struct FoldSplitView: View {
             .overlay(alignment: .bottom) {
                 if let dragging {
                     FoldDropTray(ref: dragging) { self.dragging = nil }
-                        .padding(.bottom, 24)
+                        .padding(.bottom, Theme.Space.xl)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -412,7 +412,7 @@ private struct FoldDropTray: View {
     @State private var targeted: String?
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Theme.Space.l) {
             ForEach(model.session.vaults, id: \.id) { vault in
                 target(id: vault.id, label: vault.meta.name, current: vault.id == ref.vaultID) {
                     VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 44)
@@ -431,8 +431,8 @@ private struct FoldDropTray: View {
                 favorite()
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.m)
         .glassEffect(.regular, in: Capsule())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("fold.dropTray")
@@ -441,7 +441,7 @@ private struct FoldDropTray: View {
     private func target(
         id: String, label: String, current: Bool, @ViewBuilder mark: () -> some View, drop: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 5) {
+        VStack(spacing: Theme.Space.xs) {
             mark()
                 .scaleEffect(targeted == id ? 1.22 : 1)
                 .opacity(current ? 0.4 : 1)

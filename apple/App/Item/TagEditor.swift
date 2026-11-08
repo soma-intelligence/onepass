@@ -20,17 +20,17 @@ struct TagEditor: View {
     }
 
     var body: some View {
-        FlowLayout(spacing: 8) {
+        FlowLayout(spacing: Theme.Space.s) {
             ForEach(draft.item.tags, id: \.self) { tag in
                 Button {
                     draft.removeTag(tag)
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Theme.Space.s) {
                         Text(tag)
                         Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, Theme.Space.m)
+                    .padding(.vertical, Theme.Space.s)
                     .background(.fill.tertiary, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -38,7 +38,7 @@ struct TagEditor: View {
                 .help("item.removeTag")
                 .accessibilityLabel(Text("item.removeTag \(tag)"))
             }
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 Image(systemName: "plus").font(.callout.weight(.semibold))
                 TextField("item.tag", text: $newTag, prompt: Text("item.addTag").foregroundStyle(Theme.accent.mix(with: .white, by: 0.3)))
                     .labelsHidden()
@@ -49,14 +49,14 @@ struct TagEditor: View {
                     .accessibilityIdentifier("editor.tag")
             }
             .foregroundStyle(Theme.accent.mix(with: .white, by: 0.3))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
             .overlay { Capsule().strokeBorder(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
         }
         let suggestions = suggestions
         if !suggestions.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: Theme.Space.s) {
                     ForEach(suggestions, id: \.self) { tag in
                         Button(tag) {
                             draft.addTag(tag)

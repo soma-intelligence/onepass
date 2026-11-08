@@ -171,7 +171,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("settings.onepassOpenSourceAgpl")
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
+                        .padding(.top, Theme.Space.s)
                 }
             }
             .settingsPage("Réglages")
@@ -229,9 +229,9 @@ private struct SettingsAccountHeader: View {
 
     var body: some View {
         let _ = model.settingsRevision
-        HStack(spacing: 14) {
+        HStack(spacing: Theme.Space.l) {
             AccountAvatar(initials: model.initials, photo: model.profileImage, size: 56)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text(model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -242,7 +242,7 @@ private struct SettingsAccountHeader: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Theme.Space.s)
         .accessibilityElement(children: .combine)
     }
 }

@@ -64,7 +64,7 @@ struct ItemPickerList: View {
                 Button {
                     onPick(summary)
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Theme.Space.m) {
                         ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
                         VStack(alignment: .leading) {
                             Text(summary.title).foregroundStyle(.primary)
@@ -269,8 +269,8 @@ struct LoginUsernameRow<Field: View>: View {
                     }
                     .accessibilityIdentifier("editor.signIn.none")
                 } label: {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: Theme.Space.m) {
+                        VStack(alignment: .leading, spacing: Theme.Space.xs) {
                             EditorLabel(label)
                             SignInAccountLine(provider: current.provider, accountItemID: current.accountItemID)
                         }
@@ -286,7 +286,7 @@ struct LoginUsernameRow<Field: View>: View {
                 .menuIndicator(.hidden)
                 .accessibilityIdentifier("editor.signIn.current")
             } else {
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: Theme.Space.m) {
                     EditorRow(label: label, message: message) { field }
                     providerMenu
                 }
@@ -343,13 +343,13 @@ struct SignInAccountLine: View {
 
     var body: some View {
         let account = model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Space.m) {
             if let account {
                 ItemIcon(type: account.itemType, title: account.title, siteIcon: model.iconLoader.cachedIcon(for: account.primaryUrl, title: account.title), size: 30)
             } else {
                 ProviderMark(provider: LoginProvider(rawValue: provider), size: 30)
             }
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text(verbatim: account?.title ?? LoginProvider.displayName(provider))
                     .foregroundStyle(.primary)
                 if let account, !account.listSubtitle.isEmpty {
@@ -388,7 +388,7 @@ private struct SignInAccountChooser: View {
                         Button {
                             onPick(summary.id)
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: Theme.Space.m) {
                                 ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
                                 VStack(alignment: .leading) {
                                     Text(summary.title).foregroundStyle(.primary)

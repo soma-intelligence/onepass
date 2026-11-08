@@ -126,7 +126,7 @@ struct VaultToolbarMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 if let current {
                     VaultIconTile(icon: current.meta.icon, colorName: current.meta.color, size: 16)
                     Text(current.meta.name).lineLimit(1)

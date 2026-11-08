@@ -222,7 +222,7 @@ struct ImportSheet: View {
 
     private func header(_ subtitle: LocalizedStringKey, showsCancel: Bool) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 Text("Importer").font(.title2.weight(.semibold))
                 Text(subtitle)
                     .font(.subheadline)
@@ -232,8 +232,8 @@ struct ImportSheet: View {
             if showsCancel { cancelButton }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.top, Theme.Space.l)
+        .padding(.bottom, Theme.Space.l)
     }
 
     private var cancelButton: some View {
@@ -246,12 +246,12 @@ struct ImportSheet: View {
         Text(title)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
-            .padding(.leading, 4)
+            .padding(.leading, Theme.Space.xs)
     }
 
     /// Red callout: the file could not be read, recognized or imported.
     private func errorCallout(_ message: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
             Text(message)
                 .foregroundStyle(.primary)
@@ -259,16 +259,16 @@ struct ImportSheet: View {
             Spacer(minLength: 0)
         }
         .font(.callout)
-        .padding(12)
-        .background(Color.red.opacity(0.1), in: .rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.35)) }
+        .padding(Theme.Space.m)
+        .background(Color.red.opacity(0.1), in: .rect(cornerRadius: Theme.Radius.control))
+        .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(Color.red.opacity(0.35)) }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("import.error")
         .transition(.opacity)
     }
 
     private var busyOverlay: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Theme.Space.m) {
             ProgressView().controlSize(.large)
             if preview == nil {
                 Text("settings.readingFile")
@@ -279,8 +279,8 @@ struct ImportSheet: View {
         .font(.callout)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 28)
-        .padding(.vertical, 22)
-        .background(.regularMaterial, in: .rect(cornerRadius: 16))
+        .padding(.vertical, Theme.Space.xl)
+        .background(.regularMaterial, in: .rect(cornerRadius: Theme.Radius.card))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.08))
     }
@@ -293,7 +293,7 @@ struct ImportSheet: View {
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xl) {
                         if let errorMessage { errorCallout(errorMessage) }
                         dropZone
                         sourcePicker
@@ -328,13 +328,13 @@ struct ImportSheet: View {
         Button {
             pickFile(as: .automatic)
         } label: {
-            VStack(spacing: 12) {
+            VStack(spacing: Theme.Space.m) {
                 Image(systemName: dropTargeted ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
                     .font(.system(size: 24, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 54, height: 54)
                     .background(Theme.accent.opacity(dropTargeted ? 0.22 : 0.13), in: .circle)
-                VStack(spacing: 3) {
+                VStack(spacing: Theme.Space.xxs) {
                     Text("settings.dropExportHere")
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -350,14 +350,14 @@ struct ImportSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 26)
             .padding(.horizontal, 20)
-            .background(Theme.accent.opacity(dropTargeted ? 0.12 : 0.04), in: .rect(cornerRadius: 16))
+            .background(Theme.accent.opacity(dropTargeted ? 0.12 : 0.04), in: .rect(cornerRadius: Theme.Radius.card))
             .overlay {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .strokeBorder(
                         Theme.accent.opacity(dropTargeted ? 0.9 : 0.45),
                         style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
             }
-            .contentShape(.rect(cornerRadius: 16))
+            .contentShape(.rect(cornerRadius: Theme.Radius.card))
             .scaleEffect(dropTargeted ? 1.01 : 1)
         }
         .buttonStyle(.plain)
@@ -375,27 +375,27 @@ struct ImportSheet: View {
     }
 
     private var sourcePicker: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text("settings.orChooseSource").font(.headline)
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("settings.searchSources", text: $query)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("import.search")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: Theme.Radius.control))
 
             if groups.isEmpty {
-                ContentUnavailableView.search(text: query).padding(.vertical, 12)
+                ContentUnavailableView.search(text: query).padding(.vertical, Theme.Space.m)
             } else {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: Theme.Space.l) {
                     ForEach(groups) { group in
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Theme.Space.s) {
                             sectionTitle(group.title)
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: Theme.Space.s)], spacing: Theme.Space.s) {
                                 ForEach(group.sources) { s in
                                     ImportSourceTile(source: s, isSelected: selected == s) {
                                         selected = selected == s ? nil : s
@@ -420,20 +420,20 @@ struct ImportSheet: View {
     /// Where the chosen source keeps its export, one step per menu level, then the file picker.
     private func exportSteps(_ s: ImportSource) -> some View {
         let steps = Self.steps(of: s.hint)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        return VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(spacing: Theme.Space.m) {
                 ImportSourceGlyph(source: s, size: 24)
                 Text("settings.exportFrom \(s.name)").font(.subheadline.weight(.semibold))
                 Spacer(minLength: 0)
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 if steps.count == 1 {
                     Text(steps[0])
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                        HStack(alignment: .top, spacing: 10) {
+                        HStack(alignment: .top, spacing: Theme.Space.m) {
                             Text(index + 1, format: .number)
                                 .font(.caption2.weight(.bold))
                                 .monospacedDigit()
@@ -443,6 +443,7 @@ struct ImportSheet: View {
                             Text(step)
                                 .font(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
+                                // Centers the first line on the 18 pt step circle.
                                 .padding(.top, 1)
                         }
                     }
@@ -460,9 +461,9 @@ struct ImportSheet: View {
                 .accessibilityIdentifier("import.pick")
             }
         }
-        .padding(14)
-        .background(Theme.accent.opacity(0.07), in: .rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.accent.opacity(0.25)) }
+        .padding(Theme.Space.l)
+        .background(Theme.accent.opacity(0.07), in: .rect(cornerRadius: Theme.Radius.control))
+        .overlay { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(Theme.accent.opacity(0.25)) }
     }
 
     private var privacyNote: some View {
@@ -474,7 +475,7 @@ struct ImportSheet: View {
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.Space.xs)
     }
 
     // MARK: - Step 3: result
@@ -485,7 +486,7 @@ struct ImportSheet: View {
             header("Import terminé", showsCancel: false)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: Theme.Space.xl) {
                     EditorCard {
                         Label(Self.doneLine(d.items, vault: doneVaultName), systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -497,14 +498,14 @@ struct ImportSheet: View {
                         Label(Self.outcomeLine(d), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Theme.Space.xs)
                             .accessibilityIdentifier("import.outcome")
                     }
                     if d.merged + d.skippedDuplicates + d.separate > 0 {
                         Label(Self.duplicatesDoneLine(d), systemImage: "square.on.square")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Theme.Space.xs)
                             .accessibilityIdentifier("import.duplicates.done")
                     }
                     contentSection(d, done: true)
@@ -525,7 +526,7 @@ struct ImportSheet: View {
                 .accessibilityIdentifier("import.finish")
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .padding(.vertical, Theme.Space.l)
         }
     }
 
@@ -536,7 +537,7 @@ struct ImportSheet: View {
             header("Vérifie ce que contient le fichier avant de l'importer", showsCancel: false)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: Theme.Space.xl) {
                     fileCard(format: format)
                     contentSection(p)
                     destinationSection
@@ -544,7 +545,7 @@ struct ImportSheet: View {
                         Label(Self.outcomeLine(into), systemImage: "arrow.triangle.2.circlepath")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, Theme.Space.xs)
                             .accessibilityIdentifier("import.updates")
                     }
                     if !duplicateChoices.isEmpty {
@@ -558,7 +559,7 @@ struct ImportSheet: View {
             if let errorMessage {
                 errorCallout(errorMessage)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, Theme.Space.m)
             }
             Divider()
             footerBar(p)
@@ -571,14 +572,14 @@ struct ImportSheet: View {
     /// site and username, same TOTP, same card or document number), with what differs and a
     /// Merge / Skip / Import choice; bulk buttons set every row at once.
     private var duplicatesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             sectionTitle("duplicates.banner.title \(duplicateChoices.count)")
             Text("import.duplicates.subtitle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
-            HStack(spacing: 8) {
+                .padding(.horizontal, Theme.Space.xs)
+            HStack(spacing: Theme.Space.s) {
                 Button("import.duplicates.mergeAll", systemImage: "arrow.triangle.merge") {
                     duplicateChoices.setAll(.merge)
                 }
@@ -611,17 +612,17 @@ struct ImportSheet: View {
             Text(Self.duplicatesPlanLine(duplicateChoices))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Theme.Space.xs)
                 .accessibilityIdentifier("import.duplicates.plan")
         }
     }
 
     /// The file's item, the vault item it matches, what differs, and the choice.
     private func duplicateRow(_ row: FfiImportDuplicate) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
                 CategoryTile(category: .of(row.incoming.itemType), size: 30)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(row.incoming.title.isEmpty ? row.existing.title : row.incoming.title)
                         .font(.headline)
                         .lineLimit(1)
@@ -675,13 +676,13 @@ struct ImportSheet: View {
 
     private func fileCard(format: String) -> some View {
         EditorCard {
-            HStack(spacing: 14) {
+            HStack(spacing: Theme.Space.l) {
                 Image(systemName: "doc.text.fill")
                     .font(.system(size: 21))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 44, height: 44)
-                    .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 4) {
+                    .background(Theme.accent.opacity(0.14), in: .rect(cornerRadius: Theme.Radius.chip))
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     Text(fileName)
                         .font(.headline)
                         .lineLimit(1)
@@ -696,7 +697,7 @@ struct ImportSheet: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(14)
+            .padding(Theme.Space.l)
         }
         .accessibilityElement(children: .combine)
     }
@@ -705,7 +706,7 @@ struct ImportSheet: View {
         let notes: [(symbol: String, text: String)] =
             p.warnings.map { ("info.circle", Self.warningLine($0)) }
             + (p.skipped > 0 ? [("arrow.uturn.right", Self.skippedLine(p.skipped))] : [])
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             sectionTitle("Contenu")
             if p.byType.isEmpty {
                 EditorCard {
@@ -714,7 +715,7 @@ struct ImportSheet: View {
                         .editorRowPadding()
                 }
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: Theme.Space.s)], spacing: Theme.Space.s) {
                     ForEach(p.byType, id: \.itemType) { countTile($0) }
                 }
                 .accessibilityElement(children: .ignore)
@@ -741,7 +742,7 @@ struct ImportSheet: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, Theme.Space.xs)
             }
         }
     }
@@ -750,7 +751,7 @@ struct ImportSheet: View {
     private func countTile(_ c: FfiImportTypeCount) -> some View {
         let n = Int(c.count)
         return EditorCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
                 CategoryTile(category: .of(c.itemType), size: 26)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(n, format: .number)
@@ -762,15 +763,15 @@ struct ImportSheet: View {
                         .lineLimit(2)
                 }
             }
-            .padding(14)
+            .padding(Theme.Space.l)
         }
     }
 
     private var destinationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             sectionTitle("Destination")
             EditorCard {
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Space.m) {
                     Image(systemName: "lock.rectangle.stack.fill")
                         .foregroundStyle(Theme.accent)
                     Text("term.vault")
@@ -792,15 +793,15 @@ struct ImportSheet: View {
 
     private func footerBar(_ p: FfiImportSummary) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: Theme.Space.m) {
                 otherFileButton
                 Spacer(minLength: 12)
                 cancelButton
                 importButton(p)
             }
             // Narrow sheets (iPhone): the main pair on top, the way back under it.
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
+            VStack(spacing: Theme.Space.m) {
+                HStack(spacing: Theme.Space.m) {
                     cancelButton.frame(maxWidth: .infinity)
                     importButton(p).frame(maxWidth: .infinity)
                 }
@@ -808,7 +809,7 @@ struct ImportSheet: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, Theme.Space.l)
     }
 
     private var otherFileButton: some View {
@@ -1200,7 +1201,7 @@ private struct ImportSourceTile: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: Theme.Space.m) {
                 ImportSourceGlyph(source: source)
                 Text(source.name)
                     .lineLimit(2)
@@ -1208,12 +1209,12 @@ private struct ImportSourceTile: View {
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .contentShape(.rect(cornerRadius: 9))
-            .background(fill, in: .rect(cornerRadius: 9))
+            .padding(.horizontal, Theme.Space.s)
+            .padding(.vertical, Theme.Space.s)
+            .contentShape(.rect(cornerRadius: Theme.Radius.control))
+            .background(fill, in: .rect(cornerRadius: Theme.Radius.control))
             .overlay {
-                if isSelected { RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.accent.opacity(0.5)) }
+                if isSelected { RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(Theme.accent.opacity(0.5)) }
             }
         }
         .buttonStyle(.plain)

@@ -13,6 +13,7 @@ struct HomeTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneSearchActive) private var searchActive
     @Environment(\.openPhoneTab) private var openTab
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     // The À proximité tile leads to the same list: its card is off unless chosen.
@@ -37,7 +38,7 @@ struct HomeTab: View {
                 firstItemState
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: Theme.Space.l) {
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
@@ -47,17 +48,17 @@ struct HomeTab: View {
                         tiles(all: counts.all, favorites: counts.favorites)
                         if model.travel.suggestion != .none, !searchActive {
                             TravelSuggestionCard()
-                                .padding(16)
+                                .padding(Theme.Space.l)
                                 .phoneCard()
                         }
                         if model.showsAutoFillTip, !searchActive {
                             AutoFillTipCard()
-                                .padding(16)
+                                .padding(Theme.Space.l)
                                 .phoneCard()
                         }
                         if model.showsSafariSetupCard, !searchActive {
                             SafariSetupCard()
-                                .padding(16)
+                                .padding(Theme.Space.l)
                                 .phoneCard()
                         }
                         if showsNearby { HomeNearbyCard() }
@@ -76,8 +77,8 @@ struct HomeTab: View {
                                 emptyText: "browse.itemsOpenAppearHere", id: "home.recents")
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+                    .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+                    .padding(.bottom, Theme.Space.xl)
                 }
                 .background(PhoneBackground())
                 .task(id: session.summariesRevision) { await duplicates.load(session) }
@@ -161,7 +162,7 @@ struct HomeTab: View {
     }
 
     private var firstItemState: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: Theme.Space.l) {
             Spacer()
             HStack(spacing: -10) {
                 ForEach(Array([FfiItemType.login, .creditCard, .identity, .secureNote].enumerated()), id: \.offset) { i, type in
@@ -170,20 +171,20 @@ struct HomeTab: View {
                         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, Theme.Space.s)
             Text("browse.vaultEmpty2")
                 .font(.title2.weight(.bold))
             Text("browse.passwordsCardsIdentitiesNotes")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Theme.Space.xxl)
             Button {
                 model.showNewItemPicker = true
             } label: {
                 Text("browse.createFirstItem")
                     .font(.headline)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, Theme.Space.s)
                     .frame(height: 34)
             }
             .buttonStyle(.glassProminent)
@@ -208,11 +209,11 @@ private struct HomeCardHeader<Controls: View>: View {
     @ViewBuilder var controls: Controls
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.m) {
             Button(action: toggle) {
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Space.m) {
                     tile
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(title).font(.headline).foregroundStyle(.primary)
                         if let subtitle {
                             Text(verbatim: subtitle)
@@ -244,8 +245,8 @@ private struct HomeCardHeader<Controls: View>: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isOpen ? Text("browse.collapse") : Text("browse.expand"))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.xs)
     }
 
     private func toggle() {
@@ -295,11 +296,11 @@ private struct HomeListCard: View {
                         Text(emptyText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 14)
+                            .padding(.horizontal, Theme.Space.l)
+                            .padding(.bottom, Theme.Space.l)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        Divider().padding(.leading, 58)
+                        Divider().padding(.leading, PhoneCard.headerTextInset)
                         PhoneItemRows(items: items, vaultName: { _ in nil })
                     }
                 }
@@ -316,13 +317,13 @@ private struct HomeProfileCard: View {
 
     var body: some View {
         NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Space.m) {
                 Image(systemName: "person.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(Color.blue, in: Circle())
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text("Profil").font(.headline).foregroundStyle(.primary)
                     Text(verbatim: [summary.title, summary.subtitle].filter { !$0.isEmpty }.joined(separator: ", "))
                         .font(.caption)
@@ -334,8 +335,8 @@ private struct HomeProfileCard: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.vertical, Theme.Space.m)
             .contentShape(.rect)
         }
         .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
@@ -371,7 +372,7 @@ private struct HomeNearbyCard: View {
                             ForEach(Self.radii, id: \.self) { Text(verbatim: Self.label($0)).tag($0) }
                         }
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: Theme.Space.xxs) {
                             Text(verbatim: Self.label(radius))
                             Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
                         }
@@ -410,9 +411,9 @@ private struct HomeNearbyCard: View {
                         }
                         .id(radius)
                         .frame(height: 170)
-                        .clipShape(.rect(cornerRadius: 12, style: .continuous))
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 10)
+                        .clipShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
+                        .padding(.horizontal, Theme.Space.l)
+                        .padding(.bottom, Theme.Space.m)
                         .allowsHitTesting(false)
                         .transition(Motion.reveal(reduceMotion: reduceMotion))
                     }
@@ -450,7 +451,7 @@ private struct HomeNearbyCard: View {
         switch nearby.phase {
         case .ready:
             if !nearby.items.isEmpty {
-                Divider().padding(.leading, 58)
+                Divider().padding(.leading, PhoneCard.headerTextInset)
                 PhoneItemRows(
                     items: nearby.items.map(\.summary), vaultName: { _ in nil },
                     pill: { summary in
@@ -458,15 +459,15 @@ private struct HomeNearbyCard: View {
                     })
             }
         case .idle, .locating:
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 ProgressView().controlSize(.small)
                 Text("browse.findingLocation").font(.subheadline).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, Theme.Space.l)
         case .failed(.denied):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text("browse.allowOnepassToUse")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -475,8 +476,8 @@ private struct HomeNearbyCard: View {
                     .accessibilityIdentifier("home.nearby.openSettings")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, Theme.Space.l)
         case .failed(.unavailable):
             HStack {
                 Text("browse.cantTellWhereRight").font(.subheadline).foregroundStyle(.secondary)
@@ -484,8 +485,8 @@ private struct HomeNearbyCard: View {
                 Button("Réessayer") { Task { await nearby.load(model.session, within: radius) } }
                     .font(.subheadline.weight(.semibold))
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, Theme.Space.l)
         }
     }
 
@@ -514,15 +515,15 @@ struct PhoneItemRows: View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, summary in
                 NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Theme.Space.s) {
                         ItemListRow(summary: summary, vaultName: vaultName(summary.vaultId))
                         if let pill = pill(summary) {
                             Text(verbatim: pill)
                                 .font(.caption.weight(.medium))
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
+                                .padding(.horizontal, Theme.Space.s)
+                                .padding(.vertical, Theme.Space.xxs)
                                 .background(Color.primary.opacity(0.08), in: Capsule())
                         }
                         Image(systemName: "chevron.forward")
@@ -530,15 +531,16 @@ struct PhoneItemRows: View {
                             .foregroundStyle(.tertiary)
                             .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.vertical, Theme.Space.s)
                     .contentShape(Rectangle())
                 }
                 .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .buttonStyle(RowHighlightButtonStyle())
                 // The hairline belongs to the row below it, so a row leaving takes its own line along.
                 .overlay(alignment: .top) {
-                    if index > 0 { Divider().padding(.leading, 62) }
+                    // Starts at the row title: padding, the 40 pt icon, spacing.
+                    if index > 0 { Divider().padding(.leading, Theme.Space.l + 40 + Theme.Space.m) }
                 }
                 .transition(.opacity)
             }
@@ -551,13 +553,24 @@ struct PhoneItemRows: View {
 /// The surface of the iPhone cards: the grouped list's cell color, a hairline, rounded as the Mac
 /// cards.
 enum PhoneCard {
-    static let radius: CGFloat = Theme.cardRadius
+    static let radius: CGFloat = Theme.Radius.card
+    /// Where a home card header's title starts (padding, the 30 pt tile, spacing): the hairline
+    /// under the header starts there too.
+    static let headerTextInset: CGFloat = Theme.Space.l + 30 + Theme.Space.m
 }
 
 extension View {
     func phoneCard() -> some View {
+        modifier(PhoneCardSurface())
+    }
+}
+
+/// The card's surface: the cell color, clipped to the card radius, a hairline.
+private struct PhoneCardSurface: ViewModifier {
+    func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
-        return background(Theme.card, in: shape)
+        return content
+            .background(Theme.card, in: shape)
             .clipShape(shape)
             .overlay { shape.strokeBorder(Theme.cardHairline) }
     }
@@ -609,7 +622,7 @@ struct SyncRefusalSection: View {
     var body: some View {
         if case .refused(let kind) = model.syncStatus {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     IntegrityBanner(kind: kind)
                     Text("browse.dataReceivedFromIcloud")
                         .font(.footnote)
@@ -639,9 +652,9 @@ private struct HomeCryptoCard: View {
         Group {
             if watched {
                 NavigationLink(value: PhoneRoute.crypto) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Theme.Space.m) {
                         SymbolTile(symbol: "bitcoinsign", color: .orange, size: 34)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text("crypto.title").font(.headline)
                             if let p = watch.isEnabled ? watch.portfolio() : nil, !p.holdings.isEmpty {
                                 ChangeLabel(change: p.changePercent)
@@ -663,7 +676,7 @@ private struct HomeCryptoCard: View {
                             .font(.footnote.weight(.bold))
                             .foregroundStyle(.tertiary)
                     }
-                    .padding(14)
+                    .padding(Theme.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .phoneCard()
                     .contentShape(.rect(cornerRadius: PhoneCard.radius))
@@ -686,7 +699,7 @@ private struct HomeTile<Value: View>: View {
     @ViewBuilder var value: Value
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             HStack(alignment: .center) {
                 SymbolTile(symbol: symbol, color: color, size: 34)
                 Spacer(minLength: 4)
@@ -700,7 +713,7 @@ private struct HomeTile<Value: View>: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
-        .padding(14)
+        .padding(Theme.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .phoneCard()
         .contentShape(.rect(cornerRadius: PhoneCard.radius))
