@@ -28,6 +28,7 @@
 		0E0EEAC7A7E29FDA64422D57 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DE732F4D473E8768C899CD4A /* Localizable.xcstrings */; };
 		0E9D6B125A12F9AEA3FC361B /* AppModel+Accounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */; };
 		0FEE4F27F2083359D12163E0 /* IdentityChangeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A16278188C339AA5210876 /* IdentityChangeView.swift */; };
+		1477CD379703B78BDAF940D8 /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = A0A01364B1DB7E9E76CB8258 /* DesignKit */; };
 		15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C620AB29D8AD99FA48847C5 /* ReceivedItemsView.swift */; };
 		167746F3C029FF29F71A6152 /* CryptoWalletWatchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83445BEBCAE9923380128647 /* CryptoWalletWatchCard.swift */; };
 		1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 129B81D637BE1364C28F598B /* LocationEditor.swift */; };
@@ -616,6 +617,7 @@
 			files = (
 				B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */,
 				B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */,
+				1477CD379703B78BDAF940D8 /* DesignKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1356,6 +1358,7 @@
 			packageProductDependencies = (
 				958DAB1110F5AA509D48EAC7 /* CompanionLink */,
 				451A77F800231FE2450B58B4 /* OnePassCore */,
+				A0A01364B1DB7E9E76CB8258 /* DesignKit */,
 			);
 			productName = OnePassWatch;
 			productReference = B96B079FC65D9E279C86B5C8 /* OnePassWatch.app */;
@@ -2746,7 +2749,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
@@ -3060,7 +3063,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
@@ -3197,7 +3200,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
@@ -3458,7 +3461,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONEPASS_APP_GROUP = group.me.somalabs.onepass;
@@ -3783,6 +3786,10 @@
 		958DAB1110F5AA509D48EAC7 /* CompanionLink */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CompanionLink;
+		};
+		A0A01364B1DB7E9E76CB8258 /* DesignKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DesignKit;
 		};
 		AD1A61B5663FF933B99BD1FF /* SafariRelay */ = {
 			isa = XCSwiftPackageProductDependency;

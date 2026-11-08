@@ -527,6 +527,8 @@ targets:
         product: CompanionLink
       - package: VaultKit
         product: OnePassCore
+      - package: DesignKit
+        product: DesignKit
       - target: OnePassWatchWidgets
     info:
       path: Watch/Info.plist

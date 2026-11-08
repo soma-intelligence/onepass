@@ -51,7 +51,7 @@ struct ItemDetailView: View {
     /// reports its icon and keyed to the item so a switch never shows the previous tint.
     @State private var identity: (id: String, color: Color)?
     @Environment(\.colorScheme) private var colorScheme
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 

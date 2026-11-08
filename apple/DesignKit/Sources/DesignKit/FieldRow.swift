@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 
+#if !os(watchOS)
+
 /// Label, value and a menu (Copier, Révéler, Afficher en grand). A secret
 /// value is drawn as bullets and announced as "masqué" until revealed. A revealed secret is masked
 /// again after `autoHideAfter`, when the row leaves the screen, and whenever `concealToken` changes
@@ -161,3 +163,4 @@ struct FieldDisclosure: Equatable {
     .padding()
     .frame(width: 360)
 }
+#endif

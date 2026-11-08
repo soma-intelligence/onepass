@@ -12,6 +12,14 @@ private struct WashBackground<S: Shape, Style: ShapeStyle>: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
+    /// The wash's opacity once it has faded in. On visionOS it sits on the window glass, so it
+    /// draws at half strength.
+    #if os(visionOS)
+    private static var fullOpacity: Double { 0.5 }
+    #else
+    private static var fullOpacity: Double { 1 }
+    #endif
+
     func body(content: Content) -> some View {
         let isFlat = Theme.Wash.isFlat(
             increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
@@ -20,7 +28,7 @@ private struct WashBackground<S: Shape, Style: ShapeStyle>: ViewModifier {
                 shape.fill(flat)
             } else {
                 shape.fill(style)
-                    .opacity(appeared ? 1 : 0)
+                    .opacity(appeared ? Self.fullOpacity : 0)
                     .onAppear {
                         if reduceMotion {
                             appeared = true

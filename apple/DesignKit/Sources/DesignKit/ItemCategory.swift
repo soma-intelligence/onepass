@@ -1,5 +1,5 @@
 import SwiftUI
-import VaultKit
+import OnePassCore
 
 /// Tile data for one of the 26 item types: plural label for lists and the
 /// sidebar, singular label (the core's `itemTypes()` label in French, localized

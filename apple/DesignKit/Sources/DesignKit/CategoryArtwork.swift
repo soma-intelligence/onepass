@@ -1,5 +1,5 @@
 import SwiftUI
-import VaultKit
+import OnePassCore
 
 /// Illustrated icon of an item type: a small, soft, slightly raised object (ID badge, passport,
 /// legal pad, router...) lit from the top, drawn with shapes so it stays crisp from 16 to 128 pt.

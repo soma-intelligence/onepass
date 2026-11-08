@@ -1,4 +1,5 @@
 import CompanionLink
+import DesignKit
 import OnePassCore
 import SwiftUI
 
@@ -20,7 +21,8 @@ struct EntryDetailView: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.5)
                             if let code {
-                                TotpRing(remaining: code.remaining, period: code.period)
+                                // The watch's own ring (DesignKit has a larger one by the same name).
+                                OnePassWatch.TotpRing(remaining: code.remaining, period: code.period)
                                     .frame(width: 28, height: 28)
                             }
                         }
@@ -39,7 +41,21 @@ struct EntryDetailView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { identityBand }
         .navigationTitle(entry.title)
+    }
+
+    /// A thin wash in the entry's category color under the title. The watch has no site icons, so
+    /// the category decides. Flat fallback is no band at all.
+    private var identityBand: some View {
+        let color = IdentityTint.color(
+            brand: nil, siteIcon: nil, category: ItemCategory.of(entry.itemType).color)
+        return Color.clear
+            .frame(height: 6)
+            .frame(maxWidth: .infinity)
+            .washBackground(Theme.Wash.identity(color, dark: true), flat: .clear, in: Rectangle())
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

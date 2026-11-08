@@ -1,6 +1,6 @@
 import ImageIO
 import SwiftUI
-import VaultKit
+import OnePassCore
 
 /// Row icon: the brand icon `ItemIconResolver` found (the person's choice, the icon pack, else the
 /// site's own icon when sharp enough), otherwise the illustrated category artwork (for logins, the

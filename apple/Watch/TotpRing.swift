@@ -1,6 +1,8 @@
+import DesignKit
 import SwiftUI
 
-/// Countdown ring: full at the start of the period, empty when the code changes.
+/// Countdown ring: full at the start of the period, empty when the code changes. Its color is the
+/// countdown wash: the accent, blending to red over the last seconds.
 struct TotpRing: View {
     let remaining: UInt32
     let period: UInt32
@@ -15,7 +17,7 @@ struct TotpRing: View {
             Circle().stroke(.quaternary, lineWidth: 3)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(remaining <= 5 ? Color.orange : Color.accentColor,
+                .stroke(Theme.Wash.countdownColor(Color.accentColor, secondsLeft: Double(remaining)),
                         style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: fraction)
