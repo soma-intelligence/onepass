@@ -41,6 +41,7 @@ use onepass_ssh_agent::bind_socket;
 use zeroize::Zeroizing;
 
 use super::admin::{PairingState, app_policy, audit_admin, exposed_vaults, guard_state, pair};
+use super::browser::{HubBrowser, agent_hub};
 use super::{
     AUDIT_FILE, CLIENTS_FILE, FfiDeveloperUi, SERVER_STACK, SessionSigner, UiApprover, UiStrong,
     data_dir, guard_account_id, remove_socket, socket_identity, socket_path,
@@ -743,7 +744,9 @@ fn serve_session(
         guards,
     )
     .with_workspace(Box::new(workspace))
-    .with_policy_source(policy_source);
+    .with_policy_source(policy_source)
+    // The bridge serves the same hub to the extension (`agent_wait`).
+    .with_browser(Box::new(HubBrowser { hub: agent_hub() }));
     let input = ChannelReader {
         rx: mcp_rx,
         buf: held.replay,

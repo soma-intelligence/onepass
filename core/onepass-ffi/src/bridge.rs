@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use onepass_bridge::agent::AgentHub;
 use onepass_bridge::audit::{AuditEvent, AuditSink};
 use onepass_bridge::host::{Approval, Approver, Conn, Journal, Limits, PairingStore, spawn_reader};
 use onepass_bridge::pairing::PairingRecord;
@@ -139,6 +140,9 @@ struct Shared {
     answers: Mutex<HashMap<u64, Option<bool>>>,
     next_request: AtomicU64,
     audit_path: PathBuf,
+    /// The agent fills of `fill_in_browser`: every session may poll it
+    /// (`agent_wait`); the MCP host fills through the same one.
+    agent: Arc<AgentHub>,
 }
 
 impl Shared {
@@ -506,6 +510,7 @@ fn serve_stream(
         pairings: &mut pairings,
         approver: &mut approver,
         audit: Some(Box::new(FileAudit(shared.audit_path.clone()))),
+        agent: Some(shared.agent.clone()),
         rx: spawn_reader(reader),
         out: &stream,
     };
@@ -545,6 +550,7 @@ impl BridgeServer {
                 answers: Mutex::new(HashMap::new()),
                 next_request: AtomicU64::new(1),
                 audit_path: PathBuf::from(audit_path),
+                agent: crate::developer::agent_hub(),
             }),
             #[cfg(target_os = "macos")]
             server: Mutex::new(None),
@@ -699,6 +705,14 @@ impl BridgeServer {
                 ..p.clone()
             })
             .collect()
+    }
+}
+
+impl BridgeServer {
+    /// The hub the sessions of this server serve agent fills through: the
+    /// process's one, shared with the MCP host.
+    pub fn agent_hub(&self) -> Arc<AgentHub> {
+        self.shared.agent.clone()
     }
 }
 

@@ -150,6 +150,8 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
         pairings: &mut pairings,
         approver: &mut approver,
         audit: Some(Box::new(FileAudit::new(&cfg.data_dir))),
+        // No agent fills through the development host.
+        agent: None,
         rx: spawn_reader(std::io::stdin()),
         out: std::io::stdout(),
     };

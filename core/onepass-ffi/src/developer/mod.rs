@@ -13,12 +13,15 @@
 //! servers are only started by the Mac app.
 
 mod admin;
+mod browser;
 mod mcp;
 mod ssh;
 
 pub use admin::*;
 pub use mcp::*;
 pub use ssh::*;
+
+pub(crate) use browser::agent_hub;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -12,12 +12,14 @@
 //! sent by the extension (names, ids, frame content).
 
 use std::io::{Read, Write};
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
+use crate::agent::AgentHub;
 use crate::audit::AuditSink;
 use crate::framing::{read_frame, write_frame};
 use crate::pairing::{HostPairing, PAIRING_TIMEOUT_SECS, PairingRecord};
@@ -183,6 +185,10 @@ pub struct Conn<'a, W: Write> {
     pub approver: &'a mut dyn Approver,
     /// Journal of the session's disclosures, moved into its service.
     pub audit: Option<Box<dyn AuditSink>>,
+    /// The agent hub the session's service serves `agent_wait` and the
+    /// `agent` context through (spec 2026-11-07 5). `None`: those requests
+    /// get `not_allowed`.
+    pub agent: Option<Arc<AgentHub>>,
     pub rx: Receiver<Frame>,
     pub out: W,
 }
@@ -434,6 +440,9 @@ impl<W: Write> Conn<'_, W> {
             return Err(Close);
         };
         let mut service = Service::new(vault, audit);
+        if let Some(hub) = self.agent.clone() {
+            service = service.with_agent_hub(hub);
+        }
 
         loop {
             let f = match self.rx.recv_timeout(self.limits.poll) {
@@ -711,6 +720,7 @@ mod tests {
                 pairings: &mut pairings,
                 approver,
                 audit: Some(Box::new(MemoryAudit::new())),
+                agent: None,
                 rx,
                 out: FrameOut {
                     buf: Vec::new(),

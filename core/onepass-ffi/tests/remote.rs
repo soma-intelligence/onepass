@@ -876,6 +876,9 @@ fn agent_only_session_refused_by_browser_bridge() {
     assert_eq!(st["ok"]["locked"], true, "{st}");
     let v = ext.request(&mut ch, json!({"id": 2, "op": "vaults"}));
     assert_eq!(v["err"]["code"], "locked", "{v}");
+    // No agent fill through the browsers either (spec 2026-11-07 5).
+    let w = ext.request(&mut ch, json!({"id": 4, "op": "agent_wait"}));
+    assert_eq!(w["err"]["code"], "locked", "{w}");
     let u = ext.request(&mut ch, json!({"id": 3, "op": "unlock"}));
     assert_eq!(u["ok"]["locked"], true, "{u}");
     unlocks.recv_timeout(Duration::from_secs(30)).unwrap();
