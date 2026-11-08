@@ -216,9 +216,10 @@ private struct HomeCardHeader<Controls: View>: View {
                     VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(title).font(.headline).foregroundStyle(.primary)
                         if let subtitle {
+                            // A count ("3 éléments", "2 à moins de 2 km"): metadata.
                             Text(verbatim: subtitle)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
                                 .contentTransition(.numericText())
@@ -703,8 +704,9 @@ private struct HomeTile<Value: View>: View {
             HStack(alignment: .center) {
                 SymbolTile(symbol: symbol, color: color, size: 34)
                 Spacer(minLength: 4)
+                // A hero figure: rounded, fixed-width digits.
                 value
-                    .font(.title2.weight(.bold))
+                    .font(.system(.title2, design: .rounded, weight: .bold))
                     .monospacedDigit()
             }
             Text(title)

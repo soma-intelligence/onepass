@@ -171,7 +171,7 @@ struct TravelSettings: View {
                     if let at = status.enteredAt {
                         Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)) \(Self.vaultCount(status.hiddenCount))")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             } icon: {

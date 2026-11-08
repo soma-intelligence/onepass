@@ -187,7 +187,7 @@ struct ItemsTab: View {
                 Spacer(minLength: 8)
                 count()
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .monospacedDigit()
             }
         }

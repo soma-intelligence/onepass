@@ -159,7 +159,7 @@ struct SearchTab: View {
                             Text(scope.count, format: .number)
                                 .font(.caption)
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -235,7 +235,7 @@ struct SearchTab: View {
                 Text(count, format: .number)
                     .font(.subheadline)
                     .monospacedDigit()
-                    .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
                     .contentTransition(.numericText())
             }
             .padding(.leading, type == nil ? Theme.Space.l : Theme.Space.s)

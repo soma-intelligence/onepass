@@ -421,7 +421,8 @@ struct ItemDetailView: View {
             }
         }
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        // Dates: metadata.
+        .foregroundStyle(.tertiary)
         .padding(.horizontal, Theme.Space.l)
         .padding(.top, Theme.Space.xs)
         .task(id: TimelineKey(item: item, open: showDates)) {

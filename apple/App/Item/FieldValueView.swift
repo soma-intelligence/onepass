@@ -581,7 +581,7 @@ private struct PasskeyRow: View {
                 }
                 Text("item.created \(FieldDates.day(passkey.createdAt))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             Spacer(minLength: 0)
             Image(systemName: "person.badge.key.fill")

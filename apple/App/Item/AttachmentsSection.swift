@@ -117,7 +117,7 @@ struct ItemAttachmentsSection: View {
                             .truncationMode(.middle)
                         Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: attachment.size), countStyle: .file))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 0)
                 }
