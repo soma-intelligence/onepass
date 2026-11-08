@@ -406,7 +406,7 @@ struct ItemDetailView: View {
                         PasswordHistoryView(ref: ItemRef(vaultID: item.vaultId, itemID: item.id))
                     } label: {
                         HStack(spacing: Theme.Space.xs) {
-                            Image(systemName: "clock.arrow.circlepath")
+                            Image(systemName: "clock.arrow.circlepath").symbolRenderingMode(.hierarchical)
                             Text("item.viewPreviousVersions")
                             Text(verbatim: "(\(item.passwordHistoryCount))")
                             Image(systemName: "chevron.right").font(.caption2.weight(.bold))
@@ -449,6 +449,7 @@ struct ItemDetailView: View {
         EditorCard {
             VStack(spacing: Theme.Space.l) {
                 Image(systemName: "lock.shield")
+                    .symbolRenderingMode(.hierarchical)
                     .font(.system(size: 36))
                     .foregroundStyle(.tint)
                 Text(travelGuarded(item)
@@ -1208,6 +1209,7 @@ struct ItemTimelineView: View {
             .frame(width: 12)
             // The 3 pt top offsets set the first line level with the dot (7 pt line, 7 pt dot).
             Image(systemName: Self.icon(event.kind))
+                .symbolRenderingMode(.hierarchical)
                 .frame(width: 16)
                 .padding(.top, 3)
                 .accessibilityHidden(true)

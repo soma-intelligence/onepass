@@ -11,6 +11,13 @@ struct ItemHeader: View {
     var onIcon: (Data?) -> Void = { _ in }
     @State private var siteIcon: Data?
 
+    /// The site icon tile: 56 pt on iPhone and iPad, 64 pt on the Mac.
+    #if os(iOS)
+    private static let iconSize: CGFloat = 56
+    #else
+    private static let iconSize: CGFloat = 64
+    #endif
+
     private var iconData: Data? { siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title) }
 
     private var vault: FfiVault? { model.session.allVaults.first { $0.id == item.vaultId } }
@@ -42,8 +49,8 @@ struct ItemHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.l) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: 64, brand: item.cardBrandName)
-                .favoriteBadge(item.favorite, iconSize: 64)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: Self.iconSize, brand: item.cardBrandName)
+                .favoriteBadge(item.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                     Text(item.title)

@@ -330,6 +330,7 @@ struct ImportSheet: View {
         } label: {
             VStack(spacing: Theme.Space.m) {
                 Image(systemName: dropTargeted ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                    .symbolRenderingMode(.hierarchical)
                     .font(.system(size: 24, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 54, height: 54)
@@ -678,6 +679,7 @@ struct ImportSheet: View {
         EditorCard {
             HStack(spacing: Theme.Space.l) {
                 Image(systemName: "doc.text.fill")
+                    .symbolRenderingMode(.hierarchical)
                     .font(.system(size: 21))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 44, height: 44)

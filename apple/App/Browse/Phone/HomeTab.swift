@@ -566,14 +566,23 @@ extension View {
     }
 }
 
-/// The card's surface: the cell color, clipped to the card radius, a hairline.
+/// The card's surface: the cell color, clipped to the card radius, a hairline. Light: the card sits
+/// on one soft shadow. Dark: no shadow, the hairline holds the edge.
 private struct PhoneCardSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
+        let shadow = Theme.cardShadow
         return content
             .background(Theme.card, in: shape)
             .clipShape(shape)
             .overlay { shape.strokeBorder(Theme.cardHairline) }
+            // The shadow sits on a shape of its own behind the card, so the clip never cuts it.
+            .background {
+                shape.fill(Theme.card)
+                    .shadow(color: colorScheme == .dark ? .clear : shadow.color, radius: shadow.radius, y: shadow.y)
+            }
     }
 }
 

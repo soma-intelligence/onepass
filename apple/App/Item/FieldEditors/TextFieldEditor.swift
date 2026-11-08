@@ -53,6 +53,10 @@ struct EditorCard<Content: View>: View {
             // so a card reads the same in the lists, the detail and the editor.
             .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: Theme.Radius.card))
             .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.primary.opacity(0.06)) }
+            // Light: the same soft shadow as the home cards. Dark: none.
+            .shadow(
+                color: scheme == .dark ? .clear : Theme.cardShadow.color,
+                radius: Theme.cardShadow.radius, y: Theme.cardShadow.y)
             #else
             // Dark: see-through over the window, a hairline to hold the edge. Light: white cards
             // lifted off a soft gray page (`groupedScreen`) by a hairline and a faint shadow.
