@@ -47,8 +47,9 @@ struct ItemDetailView: View {
     @State private var timeline: [FfiTimelineEvent] = []
     /// "Copier en JSON" asks first: the JSON holds every secret of the item.
     @State private var confirmCopyJSON = false
-    /// The icon the header draws (iPhone and iPad): the identity wash behind it takes its color.
-    @State private var headerIcon: Data?
+    /// The identity color of the item shown (iPhone and iPad), computed once when the header
+    /// reports its icon and keyed to the item so a switch never shows the previous tint.
+    @State private var identity: (id: String, color: Color)?
     @Environment(\.colorScheme) private var colorScheme
 
     init(ref: ItemRef, standalone: Bool = false) {
@@ -129,13 +130,17 @@ struct ItemDetailView: View {
     // MARK: - Detail
 
     #if os(iOS)
-    /// The brand color of a card network, else the icon's average, else the category color, as a
-    /// 30% tall wash from the top edge (status bar included). Flat fallback is no wash at all.
-    private func identityWash(_ item: FfiItem) -> some View {
-        let color = IdentityTint.color(
+    /// The brand color of a card network, else the icon's average, else the category color.
+    private func identityColor(_ item: FfiItem, icon: Data?) -> Color {
+        IdentityTint.color(
             brand: item.itemType == .creditCard ? item.cardBrandName : nil,
-            siteIcon: headerIcon.flatMap(ItemIcon.drawnImage),
+            siteIcon: icon.flatMap(ItemIcon.filled),
             category: ItemCategory.of(item.itemType).color)
+    }
+
+    /// A 30% tall wash from the top edge (status bar included). Flat fallback is no wash at all.
+    private func identityWash(_ item: FfiItem) -> some View {
+        let color = identity.flatMap { $0.id == item.id ? $0.color : nil } ?? identityColor(item, icon: nil)
         return Color.clear
             .containerRelativeFrame(.vertical) { height, _ in height * 0.30 }
             .washBackground(
@@ -150,9 +155,16 @@ struct ItemDetailView: View {
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                ItemHeader(item: item) { headerIcon = $0 }
+                #if os(iOS)
+                ItemHeader(item: item) { identity = (item.id, identityColor(item, icon: $0)) }
+                    .id(item.id)
                     .padding(.horizontal, 4)
                     .padding(.bottom, 4)
+                #else
+                ItemHeader(item: item)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 4)
+                #endif
                 if let actionError {
                     EditorCard {
                         Label(actionError, systemImage: "exclamationmark.triangle.fill")
