@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
-import { GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
+import { CLIPBOARD_CLEAR_MS, GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
 import { FakeWorker, ManualTimers, type Reply, button, login, root, text } from "./helpers";
 
 
@@ -618,5 +618,80 @@ describe("popup: smart fill", () => {
       "Remplir l'adresse",
     ]);
     for (const l of lines) expect(l).not.toContain(String.fromCharCode(0x2014));
+  });
+});
+
+describe("popup clipboard (security review L2)", () => {
+  /** Timers that remember each timeout's delay, so the clipboard clear can be fired alone. */
+  class DelayTimers extends ManualTimers {
+    readonly delays = new Map<number, number>();
+    override setTimeout(fn: () => void, ms?: number) {
+      const id = super.setTimeout(fn);
+      this.delays.set(id, ms ?? 0);
+      return id;
+    }
+    /** Fires the pending timeouts of exactly `ms`. */
+    fire(ms: number) {
+      for (const [id, fn] of [...this.timeouts]) {
+        if (this.delays.get(id) !== ms) continue;
+        this.timeouts.delete(id);
+        fn();
+      }
+    }
+    pending(ms: number) {
+      return [...this.timeouts.keys()].filter((id) => this.delays.get(id) === ms).length;
+    }
+  }
+
+  async function popup() {
+    const r = root();
+    const timers = new DelayTimers();
+    const writes: string[] = [];
+    const handle = mountPopup(r, { send: worker().send, timers, copy: async (t) => void writes.push(t) });
+    await handle.ready;
+    return { r, timers, writes, handle };
+  }
+  const click = async (p: Awaited<ReturnType<typeof popup>>, el: HTMLButtonElement) => {
+    el.click();
+    await p.handle.settled();
+  };
+  const byLabel = (r: HTMLElement, label: string) => r.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+
+  it("follows the app: 90 s", () => {
+    expect(CLIPBOARD_CLEAR_MS).toBe(90_000);
+  });
+
+  it("clears a copied password after CLIPBOARD_CLEAR_MS, without ever reading the clipboard", async () => {
+    const read = vi.fn();
+    Object.defineProperty(navigator, "clipboard", { value: { readText: read }, configurable: true });
+    const p = await popup();
+    await click(p, byLabel(p.r, "Générateur de mot de passe"));
+    await click(p, button(p.r, "Copier"));
+    expect(p.writes).toEqual(["abcd7e.XYZ.wxyz4kq"]);
+    p.timers.fire(CLIPBOARD_CLEAR_MS);
+    expect(p.writes).toEqual(["abcd7e.XYZ.wxyz4kq", ""]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("a username copied after the password cancels the clear (the clipboard holds the username)", async () => {
+    const p = await popup();
+    await click(p, button(p.r, "Atlas Cloud"));
+    await click(p, byLabel(p.r, "Copier le mot de passe"));
+    expect(p.timers.pending(CLIPBOARD_CLEAR_MS)).toBe(1);
+    await click(p, byLabel(p.r, "Copier le nom d’utilisateur"));
+    expect(p.timers.pending(CLIPBOARD_CLEAR_MS)).toBe(0);
+    p.timers.fire(CLIPBOARD_CLEAR_MS);
+    expect(p.writes.at(-1)).not.toBe("");
+    expect(p.writes).toEqual(["pw-Secret-1", expect.any(String)]);
+  });
+
+  it("a second secret replaces the pending clear: one clear, of the last copy", async () => {
+    const p = await popup();
+    await click(p, button(p.r, "Atlas Cloud"));
+    await click(p, byLabel(p.r, "Copier le mot de passe"));
+    await click(p, byLabel(p.r, "Copier le code"));
+    expect(p.timers.pending(CLIPBOARD_CLEAR_MS)).toBe(1);
+    p.timers.fire(CLIPBOARD_CLEAR_MS);
+    expect(p.writes).toEqual(["pw-Secret-1", "703083", ""]);
   });
 });

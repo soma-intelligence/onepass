@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Layout } from "../../src/content/frames";
 import type { PageAnalysis } from "../../src/shared/messages";
-import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick } from "./harness";
+import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick, userClickIcon } from "./harness";
 
 const ORIGIN = "https://atlas-cloud.test";
 const SALT = "ab".repeat(32);
@@ -71,7 +71,7 @@ describe("touch layout", () => {
     await settle();
     expect(s.ext.ofType("open_menu")).toHaveLength(0);
     expect(s.cs.internals.root.querySelector("iframe")).toBeNull();
-    userClick(icons(s)[0]!);
+    userClickIcon(icons(s)[0]!);
     await settle();
     expect(s.ext.ofType("plan_context")).toHaveLength(1);
     expect(s.ext.ofType("open_menu")).toHaveLength(0);

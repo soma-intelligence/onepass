@@ -28,6 +28,7 @@
 // attached without any mutation the observer can see is found on the next
 // trusted focus or ArrowDown into its host.
 import { ext as browserExt, openOrClosedShadowRoot } from "../shared/browser";
+import { hasVisibilityV2 } from "../shared/click-guard";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FillHints, FrameKind, PageAnalysis } from "../shared/messages";
 import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
@@ -43,13 +44,14 @@ import {
   TreeListeners,
   WatchedRoots,
 } from "./detect/shadow";
-import { domGeometry, type Geometry } from "./detect/visibility";
+import { domGeometry, type FieldHitTest, type Geometry } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
 import { usernameFits } from "./username-fit";
 import { checkFrameUrl, createFrames, createShell, type Layout, type Shell, watchLayout } from "./frames";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
+import { domHitTest, type HitTest } from "./occlusion";
 import { createSubmitWatcher } from "./submit";
 import { cornerOccupants, knownOccupantsIn } from "./occupants";
 
@@ -89,6 +91,22 @@ export interface ContentOptions {
   shadowRootOf?: ShadowRootOf;
   /** The in-page layout (touch, bottom sheet); a live `watchLayout` of the window by default. */
   layout?: () => Layout;
+  /** Clock of the icons' click guard; `performance.now` by default. */
+  now?: () => number;
+  /** Topmost element at a viewport point; `document.elementFromPoint` by default. */
+  hitTest?: HitTest;
+  /** Topmost element at a point, seen from a field's own root (personal data fills); `elementFromPoint` there by default. */
+  fieldHitTest?: FieldHitTest;
+  /**
+   * Whether the content script watches its frames for covers (occlusion.ts). By default only where
+   * the frames lack IntersectionObserver v2 (Firefox, Safari); Chromium's frames guard themselves.
+   */
+  watchCovers?: boolean;
+  /**
+   * Whether the document's origin is opaque (a sandboxed frame without `allow-same-origin`, a
+   * document served with `CSP: sandbox`): `self.origin === "null"` by default.
+   */
+  opaqueOrigin?: () => boolean;
 }
 
 export interface ContentScript {
@@ -177,8 +195,17 @@ export function createContentScript(o: ContentOptions): ContentScript {
   // Dev-only form flow recorder: loaded only when the build defines it.
   let recorder: RecorderHooks | null = null;
 
-  /** Normalized origin of the frame right now (null when not HTTPS). */
+  /**
+   * An opaque origin (sandboxed frame, `CSP: sandbox`): the document is NOT its URL's origin. Its
+   * scripts are the isolated content a site serves from its own URL space, so it never gets that
+   * origin's logins. Firefox does not stamp `sender.origin` on messages, so the worker would take
+   * the URL's origin: the content script refuses here, as the passkey router does there.
+   */
+  const opaque = o.opaqueOrigin ?? (() => (view as (Window & { origin?: string }) | null)?.origin === "null");
+
+  /** Normalized origin of the frame right now (null when not HTTPS, or when the document's origin is opaque). */
   const currentOrigin = (): string | null => {
+    if (opaque()) return null;
     const p = parseOrigin(o.href());
     return p?.https ? p.origin : null;
   };
@@ -477,8 +504,21 @@ export function createContentScript(o: ContentOptions): ContentScript {
         layout = () => watch.current();
       }
       const currentLayout = layout;
-      const frames = createFrames({ shell: sh, doc, geometry, layout: currentLayout, occupants: () => cornerOccupants(doc, own) });
+      const hitTest = o.hitTest ?? domHitTest(doc);
+      const scopes = () => watched.roots();
+      const covers = (o.watchCovers ?? !hasVisibilityV2()) ? { hitTest, scopes } : undefined;
+      const frames = createFrames({
+        shell: sh,
+        doc,
+        geometry,
+        layout: currentLayout,
+        occupants: () => cornerOccupants(doc, own),
+        ...(covers ? { covers } : {}),
+      });
       const icons = createIcons({
+        hitTest,
+        scopes,
+        ...(o.now ? { now: o.now } : {}),
         shell: sh,
         doc,
         refs,
@@ -536,6 +576,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         onFill: (el, role) => recorder?.noteFilled(el, role),
         activeElement: () => deepActiveElement(doc, shadowRootOf, isOwnHost),
         lang: () => doc.documentElement?.lang ?? null,
+        isOwn: (el) => sh.isHost(el),
+        ...(o.fieldHitTest ? { hitTest: o.fieldHitTest } : {}),
       });
       const submit = createSubmitWatcher({
         doc,
@@ -584,7 +626,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
             } else if (e.key === "Enter" && menuArmed) {
               e.preventDefault();
               e.stopPropagation();
-              void send({ type: "menu_key", key: "enter" });
+              // A menu something covers (no IOv2 there to tell the frame): the key picks nothing.
+              if (!parts.frames.covered("menu")) void send({ type: "menu_key", key: "enter" });
             }
             return;
           }

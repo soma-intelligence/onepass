@@ -7,6 +7,7 @@
 import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import type { FrameKind } from "../shared/messages";
 import { type Geometry, type Rect } from "./detect/visibility";
+import { type HitTest, hostOnTop, rootHidden, type Scopes, topLayerOpen } from "./occlusion";
 import { stackInCorner } from "./occupants";
 
 /** Highest z-index a page can use. */
@@ -90,7 +91,9 @@ const STYLE = `
   transition: transform .12s ease, background-color .12s ease;
 }
 .icon:hover { background: #6765E2; transform: scale(1.08); }
-.icon:active { transform: scale(.94); }
+/* Pressed: a darker tile, not a smaller one (a downscale makes IntersectionObserver v2, the icon's
+   click guard on Chromium, report the icon as not visible). */
+.icon:active { background: #4A48C4; }
 .icon[hidden] { display: none; }
 /* Touch screens: a finger-sized icon, and the label above the focused field's icon. */
 .icon.touch { width: 28px; height: 28px; border-radius: 8px; }
@@ -257,6 +260,12 @@ export interface FramesOptions {
   layout?: () => Layout;
   /** Other password managers' boxes in the top right corner (occupants.ts): the save card stacks beside them. */
   occupants?: () => Rect[];
+  /**
+   * Browsers without IntersectionObserver v2 (Firefox, Safari): the frames cannot see a cover
+   * themselves, so the content script watches for one (`watchCovers`) and makes a covered frame
+   * inert. Off where the frames have IOv2 (Chromium keeps its own behaviour).
+   */
+  covers?: { hitTest: HitTest; scopes?: Scopes };
 }
 
 /**
@@ -331,6 +340,12 @@ export const MOVE_GUARD_MS = 300;
  * few pixels a frame; a page jumping the viewport moves more).
  */
 export const DRIFT_PX = 16;
+/**
+ * Without IntersectionObserver v2: how often a shown frame is checked for a cover (the same delay
+ * IOv2 is asked for in the frames), on top of the checks run on every top-layer toggle and every
+ * placement.
+ */
+export const COVER_POLL_MS = 100;
 
 export interface Frames {
   /** Shows (or replaces) the `kind` frame at an already checked extension URL. */
@@ -351,6 +366,11 @@ export interface Frames {
   reposition(): void;
   /** Rings the element (chain step), or clears the ring. */
   highlight(el: Element | null): void;
+  /**
+   * Without IOv2: the frame is covered right now (checked at once), so it is inert and a key the
+   * content script relays to it must not act either. Always false with IOv2 (the frame guards itself).
+   */
+  covered(kind: FrameKind): boolean;
   destroy(): void;
 }
 
@@ -382,7 +402,10 @@ export function createFrames(opts: FramesOptions): Frames {
       iframe,
       setTimeout(() => {
         guards.delete(iframe);
+        if (blocked.has(iframe)) return;
         iframe.style.removeProperty("pointer-events");
+        // Taking the pointer again: a cover the hit test can see blocks it at once, in this same task.
+        if (opts.covers && coveredNow(iframe)) block(iframe);
       }, MOVE_GUARD_MS),
     );
   };
@@ -390,8 +413,69 @@ export function createFrames(opts: FramesOptions): Frames {
     const t = guards.get(iframe);
     if (t !== undefined) clearTimeout(t);
     guards.delete(iframe);
+    blocked.delete(iframe);
     iframe.remove();
+    if (frames.size <= 1) stopPoll();
   };
+
+  // ---- covers (no IntersectionObserver v2: Firefox, Safari) ----
+
+  /** Frames made inert because something covers them. */
+  const blocked = new Set<HTMLIFrameElement>();
+  /**
+   * Covered right now: a top-layer element is open, the root element dims the page, or (while the
+   * frame takes the pointer) the hit test at its center finds something else than our host.
+   */
+  const coveredNow = (iframe: HTMLIFrameElement): boolean => {
+    const c = opts.covers;
+    if (!c) return false;
+    if (topLayerOpen(doc, c.scopes) || rootHidden(doc)) return true;
+    if (guards.has(iframe) || blocked.has(iframe)) return false;
+    const r = iframe.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return false;
+    return !hostOnTop(c.hitTest, (el) => shell.isHost(el), r.left + r.width / 2, r.top + r.height / 2);
+  };
+  /** Inert (no pointer, no focus, no key) until the cover is gone. */
+  const block = (iframe: HTMLIFrameElement) => {
+    blocked.add(iframe);
+    iframe.style.setProperty("pointer-events", "none");
+    iframe.setAttribute("inert", "");
+  };
+  /** The cover is gone: the frame comes back as if it had just appeared (the move guard). */
+  const unblock = (iframe: HTMLIFrameElement) => {
+    blocked.delete(iframe);
+    iframe.removeAttribute("inert");
+    guard(iframe);
+  };
+  const checkCovers = () => {
+    if (!opts.covers) return;
+    for (const f of frames.values()) {
+      const iframe = f.iframe;
+      if (blocked.has(iframe)) {
+        // Unblocked only when nothing that the hit test cannot see covers it; the hit test runs
+        // again when the move guard ends.
+        if (!coveredNow(iframe)) unblock(iframe);
+      } else if (coveredNow(iframe)) {
+        block(iframe);
+      }
+    }
+  };
+  let poll: ReturnType<typeof setInterval> | null = null;
+  const startPoll = () => {
+    if (!opts.covers || poll !== null) return;
+    poll = setInterval(checkCovers, COVER_POLL_MS);
+  };
+  const stopPoll = () => {
+    if (poll === null) return;
+    clearInterval(poll);
+    poll = null;
+  };
+  // A popover or a dialog shown or hidden (toggle does not bubble: caught while capturing), and fullscreen.
+  const onToggle = () => checkCovers();
+  if (opts.covers) {
+    doc.addEventListener("toggle", onToggle, true);
+    doc.addEventListener("fullscreenchange", onToggle, true);
+  }
   const show = (f: { iframe: HTMLIFrameElement; reveal: ReturnType<typeof setTimeout> | null }) => {
     if (f.reveal !== null) clearTimeout(f.reveal);
     f.reveal = null;
@@ -598,6 +682,11 @@ export function createFrames(opts: FramesOptions): Frames {
       const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
       f.reveal = setTimeout(() => show(f), REVEAL_TIMEOUT_MS);
       frames.set(kind, f);
+      if (opts.covers) {
+        // Shown over a cover already there: inert from the start.
+        if (coveredNow(iframe)) block(iframe);
+        startPoll();
+      }
     },
     removeFrame(kind) {
       const f = frames.get(kind);
@@ -623,7 +712,9 @@ export function createFrames(opts: FramesOptions): Frames {
       }
     },
     focus(kind) {
-      frames.get(kind)?.iframe.focus({ preventScroll: true });
+      const f = frames.get(kind);
+      if (!f || blocked.has(f.iframe)) return;
+      f.iframe.focus({ preventScroll: true });
     },
     anchorOf: (kind) => frames.get(kind)?.anchor ?? null,
     reposition() {
@@ -640,7 +731,14 @@ export function createFrames(opts: FramesOptions): Frames {
         }
         if (place(kind, f.iframe, f.anchor, f.height)) guard(f.iframe);
       }
+      checkCovers();
       placeRing();
+    },
+    covered(kind) {
+      const f = frames.get(kind);
+      if (!f || !opts.covers) return false;
+      checkCovers();
+      return blocked.has(f.iframe);
     },
     highlight(el) {
       ring?.box.remove();
@@ -658,6 +756,11 @@ export function createFrames(opts: FramesOptions): Frames {
         drop(f.iframe);
       }
       frames.clear();
+      stopPoll();
+      if (opts.covers) {
+        doc.removeEventListener("toggle", onToggle, true);
+        doc.removeEventListener("fullscreenchange", onToggle, true);
+      }
       ring?.box.remove();
       ring = null;
     },

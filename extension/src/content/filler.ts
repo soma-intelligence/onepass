@@ -19,15 +19,15 @@
 // codes and names (`geo/`), a tie picks nothing, the region is filled after
 // the country and, when the country changed, once the page reloaded its list
 // (bounded wait); ARIA comboboxes are typed into and their option pressed.
-import type { FieldInfo, FieldRole, FillHints, FormInfo, PageAnalysis } from "../shared/messages";
-import { NO_DOCUMENT_KINDS, isDocumentRole } from "../shared/messages";
+import type { FieldInfo, FieldRole, FillHints, FormInfo, FormKind, PageAnalysis } from "../shared/messages";
+import { FORMS_ROLES, NO_DOCUMENT_KINDS, isDocumentRole } from "../shared/messages";
 import { backingSelect, isCombobox, optionLike, optionsOf, press } from "./combobox";
 import { pickChoice } from "./choice";
 import { dateOption, datePart, dateText, leadingInt, monthOf } from "./date";
 import { type FieldElement, isFieldCandidate } from "./detect/fields";
 import { normalizeText } from "./detect/lexicon";
 import type { RefRegistry } from "./detect/refs";
-import { type Geometry, isVisible } from "./detect/visibility";
+import { type FieldHitTest, type Geometry, isPerceivable, isVisible } from "./detect/visibility";
 import { countryName, nameLangs, resolveCountry, resolveCountryValue } from "./geo/countries";
 import { demonym, demonymCountry } from "./geo/demonyms";
 import { type OptionLike, pickCountry, pickNationality, pickRegion, postalFallback, regionWanted } from "./geo/options";
@@ -243,6 +243,37 @@ function write(el: FieldElement, v: string, role: FieldRole, geo: GeoContext = D
   return true;
 }
 
+/**
+ * Personal data (security review M4): written only into a field the user can perceive
+ * (`isPerceivable`: in the viewport, at least 10x10 px, opacity at least 0.5, not covered), never
+ * into one a form hides below the fold or behind another element. Identity documents and loyalty
+ * numbers (`isDocumentRole`) are among them. Fields below the fold get a second fill once scrolled
+ * to.
+ */
+const PERSONAL_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>([
+  "given_name",
+  "family_name",
+  "full_name",
+  "tel",
+  "organization",
+  "bday",
+  "address_line1",
+  "address_line2",
+  "city",
+  "postal_code",
+  "region",
+  "country",
+  ...FORMS_ROLES,
+]);
+/** Where `email` is the account identifier, not personal data handed to a form: the login rules apply. */
+const IDENTIFIER_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "otp", "change_password"]);
+
+/** Whether a field of `role` in a form of `kind` takes the stricter `isPerceivable` rules. */
+export function needsPerceivable(role: FieldRole, kind: FormKind): boolean {
+  if (isDocumentRole(role) || PERSONAL_ROLES.has(role)) return true;
+  return role === "email" && !IDENTIFIER_KINDS.has(kind);
+}
+
 export interface FillerOptions {
   refs: RefRegistry;
   geometry: Geometry;
@@ -262,6 +293,10 @@ export interface FillerOptions {
   lang?: () => string | null;
   /** Bound of each wait for the page (region list reload, combobox options). Default 2000 ms. */
   settleMs?: number;
+  /** Hit test of `isPerceivable` (personal data); `elementFromPoint` of the field's root by default. */
+  hitTest?: FieldHitTest;
+  /** Our own host (its icon sits on a field and is not a cover). */
+  isOwn?: (el: Element) => boolean;
 }
 
 export interface FillResult {
@@ -311,12 +346,15 @@ interface Written {
 export function createFiller(opts: FillerOptions): Filler {
   const { refs, geometry } = opts;
 
-  const usable = (ref: string, container: Element): FieldElement | null => {
+  const perceivable = { ...(opts.hitTest ? { hitTest: opts.hitTest } : {}), ...(opts.isOwn ? { isOwn: opts.isOwn } : {}) };
+  /** `strict`: personal data, only into a field the user perceives (`needsPerceivable`). */
+  const usable = (ref: string, container: Element, strict = false): FieldElement | null => {
     const el = refs.get(ref);
     const radio = el instanceof HTMLInputElement && el.type === "radio";
     if (!el || !el.isConnected || !(isFieldCandidate(el) || radio)) return null;
     const owner = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.form : null;
     if (owner !== container && !(owner === null && container.contains(el))) return null;
+    if (strict) return isPerceivable(el, geometry, perceivable) ? el : null;
     return isVisible(el, geometry) ? el : null;
   };
 
@@ -460,7 +498,7 @@ export function createFiller(opts: FillerOptions): Filler {
         const ref = part === undefined ? fi.ref : fi.parts?.[part];
         if (ref === undefined) return { el: null, dead: false };
         if (!refs.get(ref)) return { el: null, dead: true };
-        return { el: usable(ref, container), dead: false };
+        return { el: usable(ref, container, needsPerceivable(slot.role, form.kind)), dead: false };
       };
       const target = (slot: Slot, part: number | undefined): FieldElement | null => {
         const r = lookup(slot, part);

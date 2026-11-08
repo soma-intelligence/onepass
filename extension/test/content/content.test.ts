@@ -12,6 +12,7 @@ import {
   type Started,
   TOKEN,
   userClick,
+  userClickIcon,
   userKey,
   useTimers,
 } from "./harness";
@@ -80,7 +81,7 @@ describe("shell and icon", () => {
     await flush();
     expect(s.ext.ofType("open_menu")).toHaveLength(0);
 
-    userClick(icon);
+    userClickIcon(icon);
     await flush();
     const open = s.ext.ofType("open_menu");
     expect(open).toHaveLength(1);
@@ -111,7 +112,7 @@ describe("shell and icon", () => {
     setPage(LOGIN);
     s = start();
     s.ext.reply = () => ({ ok: { url: `${EXT_BASE}menu.html#${TOKEN}` } });
-    userClick(icons(s)[0]!);
+    userClickIcon(icons(s)[0]!);
     await flush();
     expect(s.cs.internals.root.querySelector("iframe")).not.toBeNull();
     userKey(input("u"), "Escape");
@@ -204,14 +205,14 @@ describe("shell and icon", () => {
       `${EXT_BASE}menu.html`,
     ]) {
       s.ext.reply = () => ({ ok: { url } });
-      userClick(icons(s)[0]!);
+      userClickIcon(icons(s)[0]!);
       await flush();
       expect(s.cs.internals.root.querySelector("iframe")).toBeNull();
     }
     // Chromium use_dynamic_url: another extension id, but the very URL the worker returned.
     const dynamic = `chrome-extension://0123456789abcdef/menu.html#${TOKEN}`;
     s.ext.reply = () => ({ ok: { url: dynamic } });
-    userClick(icons(s)[0]!);
+    userClickIcon(icons(s)[0]!);
     await flush();
     expect(s.cs.internals.root.querySelector("iframe")?.getAttribute("src")).toBe(dynamic);
   });

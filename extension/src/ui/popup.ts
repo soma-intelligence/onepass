@@ -86,6 +86,17 @@ export interface PopupHandle {
 
 const MASK = "••••••••••••";
 const TOAST_MS = 1600;
+/**
+ * A copied password or one-time code leaves the clipboard this long after the copy: the rule of
+ * the OnePass app itself (VaultKit `Clipboard`, 90 s, cleared only if unchanged). The clipboard is
+ * never read (that needs a permission and makes browsers prompt): while the timer lives, the popup
+ * is the only writer it knows of, so it clears only when its own last copy is still that secret.
+ * Any later copy from the popup, a username included, cancels the clear. Limit: the timer lives in the
+ * popup, which the browser closes when it loses the focus, and a write needs the focus too; a
+ * clear after that would need the worker (an offscreen document and clipboardWrite on Chromium),
+ * a permission change not made here.
+ */
+export const CLIPBOARD_CLEAR_MS = 90_000;
 const SEARCH_DEBOUNCE_MS = 150;
 /** TOTP period drawn by the ring (the bridge sends the seconds left only). */
 const TOTP_PERIOD = 30;
@@ -223,9 +234,29 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     container.append(el);
     toastTimer = timers.setTimeout(() => el.remove(), TOAST_MS);
   };
-  const copy = (value: string, done: string) =>
+  let clearTimer: unknown = null;
+  /** The last value this popup wrote to the clipboard (never read back from it). */
+  let lastCopy: string | null = null;
+  /** After a secret's copy: clears it in CLIPBOARD_CLEAR_MS, unless the popup copied something else since. */
+  const clearLater = (value: string) => {
+    clearTimer = timers.setTimeout(() => {
+      clearTimer = null;
+      if (lastCopy !== value) return;
+      lastCopy = null;
+      void copyText("").catch(() => undefined);
+    }, CLIPBOARD_CLEAR_MS);
+  };
+  /** `secret`: a password or a code, cleared from the clipboard later (CLIPBOARD_CLEAR_MS). */
+  const copy = (value: string, done: string, secret = true) =>
     copyText(value).then(
-      () => toast(done),
+      () => {
+        // Any copy replaces the pending clear: it would no longer clear our own value.
+        if (clearTimer !== null) timers.clearTimeout(clearTimer);
+        clearTimer = null;
+        lastCopy = value;
+        toast(done);
+        if (secret) clearLater(value);
+      },
       () => toast(t("popup.couldNotCopy"), "error"),
     );
 
@@ -776,7 +807,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         s.subtitle,
         s.kind === "login" && s.subtitle !== ""
           ? iconButton(t("popup.copyUsername"), "copy", () =>
-              void track(copy(s.subtitle, t("popup.usernameCopied"))),
+              void track(copy(s.subtitle, t("popup.usernameCopied"), false)),
             )
           : null,
       ),

@@ -142,3 +142,67 @@ export function isVisible(el: Element, geometry: Geometry = domGeometry): boolea
   if (el.matches(":disabled")) return false;
   return isRendered(el, geometry);
 }
+
+// ---- identity documents and personal data (security review M4) ----
+
+/**
+ * Thresholds of `isPerceivable`, stricter than `isRendered`'s (4x4 px, opacity 0.1, no limit
+ * downward), so a form cannot hide extra fields the user would never notice being filled:
+ * - at least 10x10 px of the field inside the viewport: a field the user can see and click
+ *   (the smallest native checkbox or radio is about 13 px);
+ * - cumulative opacity at least 0.5: a field faded to near nothing is not one the user reads;
+ * - the hit test at the center of that visible part finds the field itself (or its label, or our
+ *   own icon), not an element laid over it.
+ */
+export const PERCEIVABLE_MIN_PX = 10;
+export const PERCEIVABLE_MIN_OPACITY = 0.5;
+
+/** The topmost element at a viewport point, seen from `el`'s document or shadow root; undefined without hit testing. */
+export type FieldHitTest = (el: Element, x: number, y: number) => Element | null | undefined;
+
+/** `elementFromPoint` of the field's own root (a shadow root answers with its own elements). */
+export const domFieldHitTest: FieldHitTest = (el, x, y) => {
+  const root = el.getRootNode() as Partial<DocumentOrShadowRoot>;
+  return typeof root.elementFromPoint === "function" ? root.elementFromPoint(x, y) : undefined;
+};
+
+export interface PerceivableOptions {
+  hitTest?: FieldHitTest;
+  /** Our own host (its icon sits on the field). */
+  isOwn?: (el: Element) => boolean;
+}
+
+/** Cumulative opacity of `el` and its ancestors (across shadow roots), bounded. */
+function cumulativeOpacity(el: Element): number {
+  let opacity = 1;
+  let n: Element | null = el;
+  for (let i = 0; n && i < MAX_ANCESTORS; n = composedParent(n), i++) {
+    const s = styleOf(n);
+    const o = s ? Number.parseFloat(s.opacity) : Number.NaN;
+    if (Number.isFinite(o)) opacity *= o;
+  }
+  return opacity;
+}
+
+/**
+ * For identity documents (passport, licence, loyalty) and personal data: a fillable field
+ * (`isVisible`) that the user can perceive right now, by the PERCEIVABLE_* thresholds: in the
+ * viewport, large enough, opaque enough, and not covered.
+ */
+export function isPerceivable(el: Element, geometry: Geometry = domGeometry, opts: PerceivableOptions = {}): boolean {
+  if (!isVisible(el, geometry)) return false;
+  const view = el.ownerDocument.defaultView;
+  const vw = view?.innerWidth ?? 0;
+  const vh = view?.innerHeight ?? 0;
+  const seen = intersect(geometry(el).rect, { left: 0, top: 0, width: vw, height: vh });
+  if (seen.width < PERCEIVABLE_MIN_PX || seen.height < PERCEIVABLE_MIN_PX) return false;
+  if (cumulativeOpacity(el) < PERCEIVABLE_MIN_OPACITY) return false;
+  const hit = (opts.hitTest ?? domFieldHitTest)(el, seen.left + seen.width / 2, seen.top + seen.height / 2);
+  // No hit testing in this engine: the other rules only.
+  if (hit === undefined) return true;
+  if (hit === null) return false;
+  if (hit === el || el.contains(hit) || opts.isOwn?.(hit) === true) return true;
+  const labels = (el as Partial<HTMLInputElement>).labels;
+  return labels ? Array.from(labels).some((l) => l === hit || l.contains(hit)) : false;
+}
+

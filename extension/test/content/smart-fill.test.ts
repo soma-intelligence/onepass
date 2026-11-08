@@ -3,7 +3,7 @@
 // `smart_fill` and `plan_request`, and the re-check of a plan's submit.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
-import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick } from "./harness";
+import { EXT_BASE, flush, input, setPage, start, type Started, TOKEN, userClick, userClickIcon } from "./harness";
 
 const ORIGIN = "https://atlas-cloud.test";
 const SALT = "ab".repeat(32);
@@ -88,7 +88,7 @@ describe("triggers", () => {
     s = start();
     worker(s, { ok: { outcome: "filled" } });
     input("u").value = "alex@atlas.dev";
-    userClick(icons(s)[1]!);
+    userClickIcon(icons(s)[1]!);
     await settle();
     const f = formById(s, "login");
     expect(smartSent(s).map((m) => (m as { type: string }).type)).toEqual(["fill_salt", "plan_context"]);
@@ -108,7 +108,7 @@ describe("triggers", () => {
     setPage(LOGIN);
     s = start();
     worker(s, { ok: { outcome: "menu" } });
-    userClick(icons(s)[0]!);
+    userClickIcon(icons(s)[0]!);
     await settle();
     const f = formById(s, "login");
     expect(s.ext.ofType("open_menu")).toEqual([{ type: "open_menu", fieldRef: f.fields[0]!.ref, formRef: f.ref, formKind: "login" }]);
@@ -120,7 +120,7 @@ describe("triggers", () => {
       setPage(LOGIN);
       s = start();
       worker(s, reply);
-      userClick(icons(s)[0]!);
+      userClickIcon(icons(s)[0]!);
       await settle();
       expect(s.ext.ofType("plan_context")).toHaveLength(1);
       expect(s.ext.ofType("open_menu")).toHaveLength(1);
@@ -136,7 +136,7 @@ describe("triggers", () => {
     const base = s.ext.reply;
     s.ext.reply = (m) => ((m as { type: string }).type === "fill_salt" ? { err: "host_missing" } : base(m));
     input("u").value = "alex@atlas.dev";
-    userClick(icons(s)[0]!);
+    userClickIcon(icons(s)[0]!);
     await settle();
     expect((s.ext.ofType("plan_context")[0]!.context as { typed_username_hash: unknown }).typed_username_hash).toBeNull();
   });

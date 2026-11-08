@@ -31,6 +31,17 @@
 // Forms in shadow roots (spec D1, D2): the caller's `listen` also listens on
 // every watched root, so a gesture is read from its real target (a `submit`
 // never leaves its root); a button's own shadow root is crossed to its host.
+//
+// Where a submission goes (security review M3): OnePass never submits a form
+// itself (`submitForm`, the chain's and the plan's submit) when the browser
+// would send it to another site than the page's: the form's `action`, the
+// `formaction` of the control clicked, or of any submit control of the form
+// (Enter submits through the form's default button), resolving to another
+// registrable domain, to plain HTTP from an HTTPS page, or to a scheme other
+// than http(s) and `javascript:`. A scriptless injected `<form action=evil>`
+// would otherwise get the site's credentials posted out. The fill itself may
+// still happen; the submit reports "not submitted".
+import { parseOrigin, sameSite } from "../shared/domain";
 import {
   CARD_SUBMIT_ROLES,
   type CsToBg,
@@ -118,6 +129,63 @@ export interface SubmitWatcher {
 function isSubmitType(el: Element): boolean {
   if (el instanceof HTMLButtonElement) return el.type === "submit";
   return el instanceof HTMLInputElement && (el.type === "submit" || el.type === "image");
+}
+
+// Read through the prototypes: a form's named controls shadow its own properties
+// (`<input name="action">` makes `form.action` that input, DOM clobbering).
+const getAttr = Element.prototype.getAttribute;
+const formElements = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, "elements")?.get;
+
+/** The controls of `form` (its `elements`, unclobbered). */
+function controlsOf(form: HTMLFormElement): Element[] {
+  const c = formElements?.call(form) as HTMLFormControlsCollection | undefined;
+  return c ? Array.from(c) : [];
+}
+
+/**
+ * Whether a submission to the URL in attribute `raw` (an `action` or `formaction`) stays on the
+ * page's site: same registrable domain, no HTTPS to HTTP downgrade. Only a missing or exactly empty
+ * attribute means the page itself (`page`); any other value, whitespace included, is resolved as the
+ * browser does, against the document base URL (`base`, which a `<base href>` sets). `javascript:`
+ * posts nothing anywhere. Any other scheme, or an unparsable URL, is refused.
+ */
+export function submitTargetAllowed(raw: string | null, base: string, page: string): boolean {
+  if (raw === null || raw === "") return true;
+  let u: URL;
+  try {
+    u = new URL(raw, base);
+  } catch {
+    return false;
+  }
+  if (u.protocol === "javascript:") return true;
+  const to = parseOrigin(u.href);
+  const from = parseOrigin(page);
+  if (!to || !from) return false;
+  if (from.https && !to.https) return false;
+  return sameSite(u.href, page);
+}
+
+/**
+ * The forms a native submission from `button` (or from `container`, or Enter in `field`) may send,
+ * and the URLs it may send them to: every one must stay on the page's site.
+ */
+function submissionStaysOnSite(doc: Document, container: Element, button: Element | null, field: Element | null): boolean {
+  const base = doc.baseURI;
+  const page = doc.URL;
+  const forms = new Set<HTMLFormElement>();
+  if (container instanceof HTMLFormElement) forms.add(container);
+  for (const el of [button, field]) {
+    const owner = el instanceof HTMLButtonElement || el instanceof HTMLInputElement ? el.form : null;
+    if (owner) forms.add(owner);
+  }
+  const controls = new Set<Element>();
+  if (button && isSubmitType(button)) controls.add(button);
+  for (const form of forms) {
+    if (!submitTargetAllowed(getAttr.call(form, "action"), base, page)) return false;
+    for (const c of controlsOf(form)) if (isSubmitType(c)) controls.add(c);
+  }
+  for (const c of controls) if (!submitTargetAllowed(getAttr.call(c, "formaction"), base, page)) return false;
+  return true;
 }
 
 /** The form's chosen submit control, or any rendered button of it, reads as pay or create. */
@@ -413,6 +481,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       const button = f.submitRef !== undefined ? refs.get(f.submitRef) : null;
       // The page may have relabelled a button since the plan: read them again, at click time.
       if (planned && payOrCreate(container, button, geometry)) return false;
+      const lastField = [...f.fields].reverse().map((x) => refs.get(x.parts?.at(-1) ?? x.ref)).find((el) => el instanceof HTMLElement) ?? null;
+      // Read at submit time too: the browser would post to another site (M3). Not submitted.
+      if (!submissionStaysOnSite(doc, container, button instanceof HTMLElement ? button : null, lastField)) return false;
       if (button instanceof HTMLElement && isRendered(button, geometry)) {
         button.click();
         return true;
@@ -425,7 +496,6 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
           // Invalid form: fall through to Enter.
         }
       }
-      const lastField = [...f.fields].reverse().map((x) => refs.get(x.parts?.at(-1) ?? x.ref)).find((el) => el instanceof HTMLElement);
       if (!(lastField instanceof HTMLElement)) return false;
       for (const type of ["keydown", "keypress", "keyup"]) {
         lastField.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));

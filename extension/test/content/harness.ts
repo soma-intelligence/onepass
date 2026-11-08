@@ -3,6 +3,7 @@
 import { vi } from "vitest";
 import { testGeometry } from "../detect/helpers";
 import { type ContentExt, type ContentOptions, type ContentScript, createContentScript } from "../../src/content/index";
+import { CLICK_GUARD_MS } from "../../src/shared/click-guard";
 
 export const EXT_ID = "onepassextensionid";
 export const EXT_BASE = `chrome-extension://${EXT_ID}/`;
@@ -50,6 +51,20 @@ export function asUser<E extends Event>(target: EventTarget, e: E): E {
 export const userClick = (el: Element) =>
   asUser(el, new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
 
+/**
+ * The icons' click guard clock (content/icon.ts): real time plus what `pastIconGuard` added, so a
+ * test clicks an icon the way a user does, some time after it appeared.
+ */
+let skew = 0;
+export const harnessNow = (): number => performance.now() + skew;
+/** Moves the guard clock past CLICK_GUARD_MS. */
+export const pastIconGuard = (): void => void (skew += CLICK_GUARD_MS + 1);
+/** A user's click on an icon that has been on screen a while (past the click guard). */
+export const userClickIcon = (el: Element) => {
+  pastIconGuard();
+  return userClick(el);
+};
+
 export const userKey = (el: Element, key: string) =>
   asUser(el, new KeyboardEvent("keydown", { key, bubbles: true, composed: true, cancelable: true }));
 
@@ -71,6 +86,7 @@ export function start(href = PAGE, extra: Partial<ContentOptions> = {}): Started
     geometry: testGeometry,
     isTrusted: (e) => e.isTrusted || trusted.has(e),
     raf: (cb) => setTimeout(cb, 0),
+    now: harnessNow,
     ...extra,
   });
   cs.start();

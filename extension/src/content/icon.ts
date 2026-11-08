@@ -3,11 +3,21 @@
 // menu when the plan cannot choose) only when the browser vouches for it
 // (`isTrusted`): a page cannot start a fill nor open the menu with a
 // synthetic click (S2).
+//
+// Anti-clickjacking: one click may fill and sign in, so the icon follows the
+// frames' rules (ClickGuard). A click counts only CLICK_GUARD_MS after the icon
+// was shown or moved (or the host put back), only while IntersectionObserver v2
+// (Chromium) does not report it covered, and only when no top-layer element
+// (popover, modal dialog, fullscreen) is open over the icon, the root element does not dim
+// the page, and the topmost element at the click point is our own host
+// (occlusion.ts). A page that covers the icon with a decoy gets nothing.
+import { ClickGuard, type ObserveVisibility, observeVisibility } from "../shared/click-guard";
 import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry, Rect } from "./detect/visibility";
 import { type Layout, readLayout, type Shell } from "./frames";
+import { domHitTest, type HitTest, hostOnTop, rootHidden, type Scopes, topLayerOpen } from "./occlusion";
 
 /** Roles that carry an icon. */
 export const ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>([
@@ -64,6 +74,14 @@ export interface IconsOptions {
    * 2026-11-03-ios-safari-autofill 5). Read at every placement; `readLayout` by default.
    */
   layout?: () => Layout;
+  /** Clock of the click guard; `performance.now` by default. */
+  now?: () => number;
+  /** Topmost element at a point; `document.elementFromPoint` by default. */
+  hitTest?: HitTest;
+  /** Shadow roots we can read, where a top-layer element may sit too. */
+  scopes?: Scopes;
+  /** IntersectionObserver v2 visibility of an icon (Chromium); the real observer by default. */
+  observe?: ObserveVisibility;
 }
 
 /** Icon side on a touch screen. */
@@ -107,6 +125,10 @@ function glyph(doc: Document): SVGElement {
 
 export function createIcons(opts: IconsOptions): Icons {
   const { shell, doc, refs, geometry, isTrusted, onOpen } = opts;
+  const now = opts.now ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
+  const hit = opts.hitTest ?? domHitTest(doc);
+  const observe = opts.observe ?? observeVisibility;
+  let destroyed = false;
   const layout = opts.layout ?? (() => readLayout(doc.defaultView));
   /** Touch or not, as of the last placement (a trackpad may come or go). */
   let touch = layout().touch;
@@ -158,11 +180,40 @@ export function createIcons(opts: IconsOptions): Icons {
     size = touch ? TOUCH_ICON_SIZE : ICON_SIZE;
     for (const e of byField.values()) e.icon.classList.toggle("touch", touch);
   };
-  const byField = new Map<Element, { icon: HTMLElement; target: IconTarget; anchor: Element }>();
+  interface Entry {
+    icon: HTMLElement;
+    target: IconTarget;
+    anchor: Element;
+    guard: ClickGuard;
+    unobserve: (() => void) | void;
+    /** Where the icon is on the screen (`placeAt`), null while hidden. */
+    screen: string | null;
+  }
+  const byField = new Map<Element, Entry>();
+  // The host moved back (the page removed or covered it): every icon appeared anew.
+  shell.onReattach(() => {
+    if (destroyed) return;
+    for (const e of byField.values()) e.guard.reset();
+  });
   const RO = (doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null)?.ResizeObserver;
   const resize = RO ? new RO(() => opts.onLayout()) : null;
 
-  const makeIcon = (getTarget: () => IconTarget | undefined): HTMLElement => {
+  /** Whether a click on an icon may act: the guard's delay and visibility, then the cover checks. */
+  const accepts = (entry: Entry, e: MouseEvent): boolean => {
+    if (!entry.guard.accepts(e)) return false;
+    // Only a top-layer element over the icon refuses it (one elsewhere on the page covers nothing here).
+    let box: DOMRect | null = null;
+    try {
+      box = entry.icon.getBoundingClientRect();
+    } catch {
+      box = null;
+    }
+    const near = box && box.width > 0 && box.height > 0 ? box : undefined;
+    if (topLayerOpen(doc, opts.scopes, near) || rootHidden(doc)) return false;
+    return hostOnTop(hit, (el) => shell.isHost(el), e.clientX, e.clientY);
+  };
+
+  const makeIcon = (getEntry: () => Entry | undefined): HTMLElement => {
     const icon = doc.createElement("div");
     icon.className = touch ? "icon touch" : "icon";
     icon.setAttribute("role", "button");
@@ -174,13 +225,27 @@ export function createIcons(opts: IconsOptions): Icons {
       e.preventDefault();
       e.stopPropagation();
       if (!isTrusted(e)) return;
-      const t = getTarget();
-      if (t && t.el.isConnected) onOpen(t);
+      const entry = getEntry();
+      if (!entry || !accepts(entry, e)) return;
+      const t = entry.target;
+      if (t.el.isConnected) onOpen(t);
     });
     return icon;
   };
 
-  const place = (icon: HTMLElement, anchor: Element) => {
+  /**
+   * Places the icon on its field; showing it, or moving it on the screen, re-arms its click guard.
+   * The screen position is the client one (iOS: the visual viewport's), so a pan that keeps the
+   * field where it is on the screen is no move.
+   */
+  const place = (entry: Entry) => {
+    const was = entry.icon.hidden ? null : entry.screen;
+    entry.screen = placeAt(entry.icon, entry.anchor);
+    if (entry.screen !== null && entry.screen !== was) entry.guard.reset();
+  };
+
+  /** Puts the icon in place; its client position and size (a key), or null when hidden. */
+  const placeAt = (icon: HTMLElement, anchor: Element): string | null => {
     const r = geometry(anchor).rect;
     const view = doc.defaultView;
     const vw = view?.innerWidth ?? Infinity;
@@ -188,7 +253,7 @@ export function createIcons(opts: IconsOptions): Icons {
     const off =
       !anchor.isConnected || r.width < 4 || r.height < 4 || r.top + r.height < 0 || r.left + r.width < 0 || r.top > vh || r.left > vw;
     icon.hidden = off;
-    if (off) return;
+    if (off) return null;
     let left = r.width < NARROW_FIELD ? r.left + r.width + ICON_INSET : r.left + r.width - size - ICON_INSET;
     const top = r.top + (r.height - size) / 2;
     if (opts.avoid) {
@@ -205,6 +270,7 @@ export function createIcons(opts: IconsOptions): Icons {
     const o = shell.origin();
     icon.style.setProperty("left", `${Math.round(left - o.left)}px`);
     icon.style.setProperty("top", `${Math.round(top - o.top)}px`);
+    return `${Math.round(left)} ${Math.round(top)} ${size}`;
   };
 
   return {
@@ -237,6 +303,7 @@ export function createIcons(opts: IconsOptions): Icons {
       for (const [el, entry] of byField) {
         if (wanted.has(el)) continue;
         entry.icon.remove();
+        entry.unobserve?.();
         resize?.unobserve(entry.anchor);
         byField.delete(el);
       }
@@ -249,20 +316,27 @@ export function createIcons(opts: IconsOptions): Icons {
             resize?.observe(w.anchor);
             known.anchor = w.anchor;
           }
-          place(known.icon, known.anchor);
+          place(known);
           continue;
         }
-        const entry = { icon: null as unknown as HTMLElement, target: w.target, anchor: w.anchor };
-        entry.icon = makeIcon(() => byField.get(el)?.target);
+        const entry: Entry = {
+          icon: makeIcon(() => byField.get(el)),
+          target: w.target,
+          anchor: w.anchor,
+          guard: new ClickGuard({ now, trusted: isTrusted }),
+          unobserve: undefined,
+          screen: null,
+        };
         byField.set(el, entry);
         shell.layer.appendChild(entry.icon);
+        entry.unobserve = observe(entry.icon, (v) => entry.guard.setVisibility(v));
         resize?.observe(w.anchor);
-        place(entry.icon, entry.anchor);
+        place(entry);
       }
     },
     reposition() {
       relayout();
-      for (const e of byField.values()) place(e.icon, e.anchor);
+      for (const e of byField.values()) place(e);
       placeTip();
     },
     targetOf(el) {
@@ -273,11 +347,15 @@ export function createIcons(opts: IconsOptions): Icons {
       return [...byField.values()].map((e) => e.target);
     },
     destroy() {
+      destroyed = true;
       doc.removeEventListener("focusin", onFocusIn, true);
       doc.removeEventListener("focusout", onFocusOut, true);
       tip?.remove();
       resize?.disconnect();
-      for (const e of byField.values()) e.icon.remove();
+      for (const e of byField.values()) {
+        e.icon.remove();
+        e.unobserve?.();
+      }
       byField.clear();
     },
   };
