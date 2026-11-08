@@ -25,7 +25,7 @@ mod fill;
 mod page;
 mod socket;
 
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod fake;
 
 pub use fill::FillStep;
@@ -46,6 +46,9 @@ pub enum CdpError {
     OriginChanged,
     /// The top frame holds no field to fill (MCP `no_fields`).
     NoFields,
+    /// The field is a select or a checkbox, which typed text cannot set
+    /// (MCP `no_fields`).
+    Unsupported,
     /// A command took more than 5 s, or a fill more than 30 s (MCP `timeout`).
     Timeout,
 }
@@ -58,6 +61,7 @@ impl fmt::Display for CdpError {
             Self::Protocol => "the browser gave an answer that cannot be used",
             Self::OriginChanged => "the page moved to another origin",
             Self::NoFields => "no field to fill in the top frame",
+            Self::Unsupported => "this field cannot be filled by typing",
             Self::Timeout => "the browser did not answer in time",
         })
     }
@@ -73,19 +77,27 @@ impl CdpFiller {
     /// or `ws://[::1]:<port>/...`. [`CdpError::NotLocal`] for any other host,
     /// before any socket is opened.
     pub fn connect(ws_url: &str) -> Result<CdpPage, CdpError> {
-        Self::connect_with(ws_url, socket::COMMAND_TIMEOUT, fill::FILL_TIMEOUT)
+        connect(ws_url, socket::COMMAND_TIMEOUT, fill::FILL_TIMEOUT)
     }
 
-    /// [`CdpFiller::connect`] with other time limits (tests).
-    #[doc(hidden)]
+    /// [`CdpFiller::connect`] with other time limits (tests only).
+    #[cfg(any(test, feature = "testing"))]
     pub fn connect_with(
         ws_url: &str,
         command: std::time::Duration,
         whole_fill: std::time::Duration,
     ) -> Result<CdpPage, CdpError> {
-        let sock = socket::Socket::connect(ws_url, command)?;
-        Ok(CdpPage::new(sock, whole_fill))
+        connect(ws_url, command, whole_fill)
     }
+}
+
+fn connect(
+    ws_url: &str,
+    command: std::time::Duration,
+    whole_fill: std::time::Duration,
+) -> Result<CdpPage, CdpError> {
+    let sock = socket::Socket::connect(ws_url, command)?;
+    Ok(CdpPage::new(sock, whole_fill))
 }
 
 /// The `backendNodeId` a `field_ref` or `button_ref` of this crate's page

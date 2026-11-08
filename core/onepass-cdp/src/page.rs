@@ -82,6 +82,9 @@ pub struct CdpPage {
     /// nodes typed into or clicked.
     fields: HashSet<i64>,
     targets: HashSet<i64>,
+    /// Fields of the last page context that text cannot fill (selects,
+    /// checkboxes): `type_into` refuses them.
+    untypable: HashSet<i64>,
 }
 
 /// The ASCII origin of `url`, `None` when opaque (about:, data:, file:).
@@ -220,11 +223,23 @@ fn parse_doc(doc: &Value, strings: &[Value]) -> Result<Doc, CdpError> {
         let element = ntype[i].as_i64() == Some(1);
         let name = string_at(strings, &nname[i]).to_ascii_lowercase();
         let mut attrs = Vec::new();
+        // `value` is read only for button inputs (their label): on any
+        // other control it is a server-rendered value, never kept.
+        let button_input = name == "input"
+            && attributes[i].as_array().is_some_and(|a| {
+                a.chunks(2).any(|p| {
+                    matches!(p, [k, v] if string_at(strings, k).eq_ignore_ascii_case("type")
+                    && matches!(
+                        string_at(strings, v).trim().to_ascii_lowercase().as_str(),
+                        "submit" | "button" | "reset"
+                    ))
+                })
+            });
         if element && let Some(a) = attributes[i].as_array() {
             for pair in a.chunks(2) {
                 if let [k, v] = pair {
                     let k = string_at(strings, k).to_ascii_lowercase();
-                    if KEPT_ATTRS.contains(&k.as_str()) {
+                    if KEPT_ATTRS.contains(&k.as_str()) && (k != "value" || button_input) {
                         let v: String = string_at(strings, v)
                             .chars()
                             .take(classify::MAX_SOURCE_CHARS)
@@ -802,6 +817,7 @@ impl CdpPage {
             pinned: None,
             fields: HashSet::new(),
             targets: HashSet::new(),
+            untypable: HashSet::new(),
         }
     }
 
@@ -813,25 +829,26 @@ impl CdpPage {
         &mut self.sock
     }
 
-    /// The top frame's id and URL (`Page.getFrameTree`).
-    fn frame(&mut self) -> Result<(String, String), CdpError> {
+    /// The top frame's id, loader id (new for every document) and URL
+    /// (`Page.getFrameTree`).
+    fn frame(&mut self) -> Result<(String, String, String), CdpError> {
         let r = self.sock.call("Page.getFrameTree", json!({}))?;
         let f = &r["frameTree"]["frame"];
-        let id = f["id"].as_str().ok_or(CdpError::Protocol)?.to_owned();
-        let url = f["url"].as_str().ok_or(CdpError::Protocol)?.to_owned();
-        Ok((id, url))
+        let field = |k: &str| f[k].as_str().map(str::to_owned).ok_or(CdpError::Protocol);
+        Ok((field("id")?, field("loaderId")?, field("url")?))
     }
 
     /// Reads the top frame and holds its origin to the first one read.
-    fn checked_frame(&mut self) -> Result<(String, String, String), CdpError> {
-        let (id, url) = self.frame()?;
+    /// Returns the frame id, the loader id, the URL and the origin.
+    fn checked_frame(&mut self) -> Result<(String, String, String, String), CdpError> {
+        let (id, loader, url) = self.frame()?;
         let origin = origin_of(&url).ok_or(CdpError::OriginChanged)?;
         match &self.pinned {
             None => self.pinned = Some(origin.clone()),
             Some(p) if *p != origin => return Err(CdpError::OriginChanged),
             Some(_) => {}
         }
-        Ok((id, url, origin))
+        Ok((id, loader, url, origin))
     }
 
     /// The origin pinned by the first read of the top frame.
@@ -843,7 +860,7 @@ impl CdpPage {
     /// The first call pins its origin for every later step; this call
     /// itself never fails on a changed origin.
     pub fn main_frame_url(&mut self) -> Result<String, CdpError> {
-        let (_, url) = self.frame()?;
+        let (_, _, url) = self.frame()?;
         if self.pinned.is_none() {
             self.pinned = origin_of(&url);
         }
@@ -864,7 +881,7 @@ impl CdpPage {
     /// backend node ids. [`CdpError::NoFields`] when the top frame holds no
     /// field; [`CdpError::OriginChanged`] when the origin moved.
     pub fn page_context(&mut self) -> Result<PageContext, CdpError> {
-        let (frame_id, url, origin) = self.checked_frame()?;
+        let (frame_id, loader, url, origin) = self.checked_frame()?;
         let snap = self.sock.call(
             "DOMSnapshot.captureSnapshot",
             json!({"computedStyles": STYLES}),
@@ -876,9 +893,11 @@ impl CdpPage {
             .ok_or(CdpError::Protocol)?;
         let doc = parse_doc(top, strings)?;
         drop(snap);
-        // The page may have moved while it was read.
-        let (id_after, _, _) = self.checked_frame()?;
-        if id_after != frame_id {
+        // The page may have moved while it was read: another origin, or
+        // another document (a new loader id, even on the same origin), and
+        // the snapshot's node ids are stale.
+        let (_, loader_after, _, _) = self.checked_frame()?;
+        if loader_after != loader {
             return Err(CdpError::OriginChanged);
         }
         let (ctx, fields, targets) = build_context(&doc, &origin, &url);
@@ -886,22 +905,54 @@ impl CdpPage {
             return Err(CdpError::NoFields);
         }
         ctx.validate().map_err(|_| CdpError::Protocol)?;
+        self.untypable = doc
+            .nodes
+            .iter()
+            .filter(|n| fields.contains(&n.backend))
+            .filter(|n| matches!(control_type(n).as_str(), "select" | "checkbox"))
+            .map(|n| n.backend)
+            .collect();
         self.fields = fields;
         self.targets = targets;
         Ok(ctx)
     }
 
-    /// Types `value` into a field of the last page context: the top frame's
-    /// origin is read again first, then `DOM.focus`, the origin once more
-    /// (a focus handler can navigate), then `Input.insertText`.
-    /// A node not in that context is [`CdpError::Protocol`].
-    pub fn type_into(&mut self, backend_node_id: i64, value: &str) -> Result<(), CdpError> {
+    /// Whether `type_into` can fill this field of the last page context:
+    /// [`CdpError::Unsupported`] for a select or a checkbox, which text
+    /// cannot set, [`CdpError::Protocol`] for a node not in that context.
+    pub fn check_typable(&self, backend_node_id: i64) -> Result<(), CdpError> {
         if !self.fields.contains(&backend_node_id) {
             return Err(CdpError::Protocol);
         }
+        if self.untypable.contains(&backend_node_id) {
+            return Err(CdpError::Unsupported);
+        }
+        Ok(())
+    }
+
+    /// Types `value` into a field of the last page context, replacing what
+    /// it holds: the top frame's origin is read again first, then
+    /// `DOM.focus`, a select-all (`Input.dispatchKeyEvent` Meta+A then
+    /// Control+A, each with the `selectAll` editing command), the origin
+    /// once more (a focus or key handler can navigate), then
+    /// `Input.insertText`, which replaces the selection.
+    /// See [`CdpPage::check_typable`] for the fields it refuses.
+    pub fn type_into(&mut self, backend_node_id: i64, value: &str) -> Result<(), CdpError> {
+        self.check_typable(backend_node_id)?;
         self.checked_frame()?;
         self.sock
             .call("DOM.focus", json!({"backendNodeId": backend_node_id}))?;
+        // Meta is 4, Control is 2 (`Input.dispatchKeyEvent` modifiers).
+        for modifiers in [4, 2] {
+            for kind in ["keyDown", "keyUp"] {
+                let mut p = json!({"type": kind, "modifiers": modifiers, "key": "a",
+                    "code": "KeyA", "windowsVirtualKeyCode": 65});
+                if kind == "keyDown" {
+                    p["commands"] = json!(["selectAll"]);
+                }
+                self.sock.call("Input.dispatchKeyEvent", p)?;
+            }
+        }
         self.checked_frame()?;
         self.sock.insert_text(value)
     }
@@ -941,5 +992,48 @@ impl CdpPage {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fake::{FakeDocument, el, snapshot, text};
+
+    #[test]
+    fn value_attribute_is_kept_for_button_inputs_only() {
+        let doc = FakeDocument {
+            url: "https://example.com/".into(),
+            title: "t".into(),
+            frame_id: "MAIN".into(),
+            root: el(
+                "form",
+                &[],
+                vec![
+                    el(
+                        "input",
+                        &[("value", "server-secret"), ("type", "password")],
+                        vec![],
+                    )
+                    .id(1),
+                    el("input", &[("type", "text"), ("value", "prefill")], vec![]).id(2),
+                    el("input", &[("type", "SUBMIT"), ("value", "Log in")], vec![]).id(3),
+                    el("button", &[("value", "x")], vec![text("Go")]).id(4),
+                ],
+            ),
+        };
+        let snap = snapshot(&[doc]);
+        let strings = snap["strings"].as_array().unwrap();
+        let d = parse_doc(&snap["documents"][0], strings).unwrap();
+        let node = |id: i64| d.nodes.iter().find(|n| n.backend == id).unwrap();
+        assert_eq!(node(1).attr("value"), None);
+        assert_eq!(node(1).attr("type"), Some("password"));
+        assert_eq!(node(2).attr("value"), None);
+        assert_eq!(node(3).attr("value"), Some("Log in"));
+        assert_eq!(node(4).attr("value"), None);
+        for n in &d.nodes {
+            assert!(n.attrs.iter().all(|(_, v)| v != "server-secret"));
+            assert!(n.text != "server-secret");
+        }
     }
 }

@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
-use onepass_cdp::fake::{FakeCdp, card_page, login_page};
+use onepass_cdp::fake::{FakeCdp, card_page, card_page_with_select, login_page, set_value};
 use onepass_cdp::{CdpError, CdpFiller, FillStep, Zeroizing, backend_node_id};
 use onepass_core::fill_plan::context::{
     ButtonClass, ButtonContext, FieldContext, FieldRole, FormContext, FrameKind, IntentHints,
@@ -308,4 +308,77 @@ fn a_page_without_fields_is_no_fields() {
     let f = FakeCdp::start(URL, "t", vec![doc]);
     let mut page = CdpFiller::connect(&f.ws_url()).unwrap();
     assert_eq!(page.page_context(), Err(CdpError::NoFields));
+}
+
+#[test]
+fn a_select_in_the_fill_fails_it_with_nothing_typed_or_clicked() {
+    let url = "https://shop.example/checkout";
+    let f = FakeCdp::start(url, "Checkout", card_page_with_select(url));
+    let mut page = CdpFiller::connect(&f.ws_url()).unwrap();
+    let ctx = page.page_context().unwrap();
+    // The select is still in the context for the planner.
+    assert!(ctx.forms[0].fields.iter().any(|f| f.field_ref == "33"));
+    assert_eq!(page.check_typable(33), Err(CdpError::Unsupported));
+    let before = f.commands().len();
+    let err = page
+        .fill(
+            vec![
+                FillStep::new(31, Zeroizing::new("4111111111111111".to_owned())),
+                FillStep::new(33, Zeroizing::new("02".to_owned())),
+            ],
+            Some(35),
+        )
+        .unwrap_err();
+    assert_eq!(err, CdpError::Unsupported);
+    // Refused before any command: nothing focused, typed or clicked.
+    assert_eq!(f.commands().len(), before);
+    assert!(f.inserted().is_empty());
+    assert_eq!(page.type_into(33, "02"), Err(CdpError::Unsupported));
+    assert_eq!(f.commands().len(), before);
+}
+
+#[test]
+fn a_field_holding_text_is_cleared_before_typing() {
+    let mut docs = login_page(URL);
+    set_value(&mut docs, 11, "old-user");
+    let f = FakeCdp::start(URL, "Example sign in", docs);
+    let mut page = CdpFiller::connect(&f.ws_url()).unwrap();
+    let ctx = page.page_context().unwrap();
+    assert_eq!(ctx.forms[0].fields[0].prefilled, Prefilled::Typed);
+    page.fill(
+        vec![FillStep::new(11, Zeroizing::new("alice".to_owned()))],
+        None,
+    )
+    .unwrap();
+    assert_eq!(f.field_text(11).as_deref(), Some("alice"));
+    let cmds = f.commands();
+    let pos = |pred: &dyn Fn(&serde_json::Value) -> bool| cmds.iter().position(pred).unwrap();
+    let focus = pos(&|c| c["method"] == "DOM.focus");
+    let select_all = pos(&|c| {
+        c["method"] == "Input.dispatchKeyEvent"
+            && c["params"]["type"] == "keyDown"
+            && c["params"]["commands"][0] == "selectAll"
+    });
+    let insert = pos(&|c| c["method"] == "Input.insertText");
+    assert!(focus < select_all && select_all < insert, "{cmds:?}");
+    // Meta+A then Control+A.
+    let mods: Vec<i64> = cmds
+        .iter()
+        .filter(|c| c["method"] == "Input.dispatchKeyEvent" && c["params"]["type"] == "keyDown")
+        .map(|c| c["params"]["modifiers"].as_i64().unwrap())
+        .collect();
+    assert_eq!(mods, [4, 2]);
+    assert!(f.methods().iter().all(|m| !m.starts_with("Runtime.")));
+}
+
+#[test]
+fn navigation_on_focus_sends_no_text() {
+    let f = fake();
+    let mut page = CdpFiller::connect(&f.ws_url()).unwrap();
+    page.main_frame_url().unwrap();
+    page.page_context().unwrap();
+    f.navigate_on_focus("https://evil.example/");
+    assert_eq!(page.type_into(11, "alice"), Err(CdpError::OriginChanged));
+    assert!(f.methods().contains(&"DOM.focus".to_owned()));
+    assert!(f.inserted().is_empty());
 }

@@ -2,7 +2,7 @@
 //! It answers the commands this crate sends from a scripted page and
 //! records every command it receives.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -219,6 +219,39 @@ pub fn card_page(url: &str) -> Vec<FakeDocument> {
     }]
 }
 
+/// The checkout of [`card_page`] with the expiry as a select (33) instead
+/// of a text field.
+pub fn card_page_with_select(url: &str) -> Vec<FakeDocument> {
+    let mut docs = card_page(url);
+    let form = &mut docs[0].root.children[0].children[0];
+    let row = &mut form.children[3];
+    row.children[1] = el(
+        "select",
+        &[("name", "f3")],
+        vec![
+            el("option", &[("value", "01")], vec![text("01")]),
+            el("option", &[("value", "02")], vec![text("02")]),
+        ],
+    )
+    .id(33);
+    docs
+}
+
+/// Sets the current value of the node with `backend_id` in `docs`.
+pub fn set_value(docs: &mut [FakeDocument], backend_id: i64, value: &str) {
+    fn walk(n: &mut FakeNode, id: i64, v: &str) {
+        if n.backend_id == Some(id) {
+            n.value = v.to_owned();
+        }
+        for c in &mut n.children {
+            walk(c, id, v);
+        }
+    }
+    for d in docs {
+        walk(&mut d.root, backend_id, value);
+    }
+}
+
 /// A `DOMSnapshot.captureSnapshot` result for these documents, with
 /// `computedStyles: ["display", "visibility", "opacity"]`.
 pub fn snapshot(docs: &[FakeDocument]) -> Value {
@@ -322,7 +355,30 @@ struct Shared {
     log: Vec<Value>,
     inserts: usize,
     navigate_after: Option<(usize, String)>,
+    navigate_on_focus: Option<String>,
     silent: HashSet<String>,
+    /// Bumped on every navigation, as Chrome's loader id.
+    loader: u64,
+    /// Text of each control with a backend id, as typing leaves it.
+    values: HashMap<i64, String>,
+    focused: Option<i64>,
+    selected: bool,
+}
+
+impl Shared {
+    fn go(&mut self, url: String) {
+        self.url = url;
+        self.loader += 1;
+    }
+}
+
+fn collect_values(n: &FakeNode, out: &mut HashMap<i64, String>) {
+    if let Some(id) = n.backend_id {
+        out.insert(id, n.value.clone());
+    }
+    for c in &n.children {
+        collect_values(c, out);
+    }
 }
 
 /// The fake server. Accepts any number of connections, one thread each.
@@ -351,7 +407,8 @@ fn answer(shared: &Mutex<Shared>, method: &str, params: &Value) -> Option<Result
                     "loaderId": "L", "url": d.url, "mimeType": "text/html"}}));
             }
             Ok(json!({"frameTree": {
-                "frame": {"id": "MAIN", "loaderId": "L", "url": s.url, "mimeType": "text/html"},
+                "frame": {"id": "MAIN", "loaderId": format!("L{}", s.loader), "url": s.url,
+                    "mimeType": "text/html"},
                 "childFrames": children,
             }}))
         }
@@ -360,13 +417,40 @@ fn answer(shared: &Mutex<Shared>, method: &str, params: &Value) -> Option<Result
             "attached": true, "canAccessOpener": false,
         }})),
         "DOMSnapshot.captureSnapshot" => Ok(snapshot(&s.docs)),
-        "DOM.focus" | "DOM.scrollIntoViewIfNeeded" | "Input.dispatchMouseEvent" => Ok(json!({})),
+        "DOM.focus" => {
+            s.focused = params.get("backendNodeId").and_then(Value::as_i64);
+            s.selected = false;
+            if let Some(url) = s.navigate_on_focus.take() {
+                s.go(url);
+            }
+            Ok(json!({}))
+        }
+        "DOM.scrollIntoViewIfNeeded" | "Input.dispatchMouseEvent" => Ok(json!({})),
+        "Input.dispatchKeyEvent" => {
+            let select_all = params["commands"]
+                .as_array()
+                .is_some_and(|c| c.iter().any(|c| c == "selectAll"));
+            if params["type"] == "keyDown" && select_all {
+                s.selected = true;
+            }
+            Ok(json!({}))
+        }
         "Input.insertText" => {
             s.inserts += 1;
+            let text = params["text"].as_str().unwrap_or("").to_owned();
+            let selected = std::mem::take(&mut s.selected);
+            if let Some(id) = s.focused {
+                let v = s.values.entry(id).or_default();
+                if selected {
+                    v.clear();
+                }
+                v.push_str(&text);
+            }
             if let Some((n, url)) = s.navigate_after.clone()
                 && s.inserts >= n
             {
-                s.url = url;
+                s.navigate_after = None;
+                s.go(url);
             }
             Ok(json!({}))
         }
@@ -399,6 +483,10 @@ impl FakeCdp {
     pub fn start(url: &str, title: &str, docs: Vec<FakeDocument>) -> FakeCdp {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
+        let mut values = HashMap::new();
+        for d in &docs {
+            collect_values(&d.root, &mut values);
+        }
         let shared = Arc::new(Mutex::new(Shared {
             url: url.to_owned(),
             title: title.to_owned(),
@@ -406,7 +494,12 @@ impl FakeCdp {
             log: vec![],
             inserts: 0,
             navigate_after: None,
+            navigate_on_focus: None,
             silent: HashSet::new(),
+            loader: 0,
+            values,
+            focused: None,
+            selected: false,
         }));
         let sh = shared.clone();
         thread::spawn(move || {
@@ -492,7 +585,18 @@ impl FakeCdp {
 
     /// The top frame moves to `url` now.
     pub fn navigate(&self, url: &str) {
-        self.shared.lock().unwrap().url = url.to_owned();
+        self.shared.lock().unwrap().go(url.to_owned());
+    }
+
+    /// The top frame moves to `url` on the next `DOM.focus`.
+    pub fn navigate_on_focus(&self, url: &str) {
+        self.shared.lock().unwrap().navigate_on_focus = Some(url.to_owned());
+    }
+
+    /// The text a control holds now: its initial value, then what typing
+    /// did to it (a select-all then insert replaces, an insert alone appends).
+    pub fn field_text(&self, backend_id: i64) -> Option<String> {
+        self.shared.lock().unwrap().values.get(&backend_id).cloned()
     }
 
     /// `method` is never answered.

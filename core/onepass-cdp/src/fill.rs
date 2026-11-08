@@ -41,6 +41,11 @@ impl CdpPage {
         let outer = self.socket().deadline;
         self.socket().deadline = Some(outer.map_or(end, |o| o.min(end)));
         let r = (|| {
+            // Every field is checked before the first one is typed: a select
+            // in the plan fails the whole fill with nothing typed or clicked.
+            for s in &steps {
+                self.check_typable(s.backend_node_id)?;
+            }
             for s in &steps {
                 self.type_into(s.backend_node_id, &s.value)?;
             }
