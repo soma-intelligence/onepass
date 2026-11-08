@@ -381,6 +381,9 @@ paired("menu_keyboard_from_the_field", async ({ ext }) => {
   await page.keyboard.press("ArrowDown");
   await expect(menu.locator("button.row.active .t1")).toHaveText("Atlas Cloud (multi)");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("email");
+  // Return follows the click guard: a highlight that scrolled the list, or a
+  // visibility change, re-arms its delay. Wait past it, as the click tests do.
+  await ext.settle();
   await page.keyboard.press("Enter");
   // Return picked the highlighted row (not the page's empty form): signed in as that login.
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
