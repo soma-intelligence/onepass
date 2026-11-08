@@ -3,7 +3,7 @@ resolver = "3"
 members = ["onepass-core", "onepass-mailbox-proto", "onepass-mailbox", "onepass-pairnet", "onepass-sync", "onepass-cli", "onepass-ffi", "onepass-guard", "onepass-mcp", "onepass-mcp-relay", "onepass-peer", "onepass-ssh-agent", "onepass-bridge", "onepass-native-host", "onepass-relay", "onepass-bench", "onepass-wifi", "onepass-cdp"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 publish = false

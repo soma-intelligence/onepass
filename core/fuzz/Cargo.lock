@@ -1148,7 +1148,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "onepass-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-guard"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "block2",
@@ -1211,7 +1211,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mailbox-proto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "data-encoding",
  "postcard",
@@ -1221,12 +1221,13 @@ dependencies = [
 
 [[package]]
 name = "onepass-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
  "onepass-core",
  "onepass-guard",
+ "psl",
  "serde",
  "serde_json",
  "tempfile",
@@ -1235,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-peer"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "core-foundation",
@@ -1248,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-ssh-agent"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "bcrypt-pbkdf",

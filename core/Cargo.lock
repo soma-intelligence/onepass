@@ -2012,7 +2012,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "onepass-bench"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "data-encoding",
  "onepass-core",
@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-bridge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2043,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-cdp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "onepass-cdp",
  "onepass-core",
@@ -2056,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-guard"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "block2",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mailbox"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2183,7 +2183,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mailbox-proto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2197,7 +2197,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2212,7 +2212,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-mcp-relay"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "onepass-mcp",
  "onepass-peer",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-native-host"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-pairnet"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "if-addrs",
  "mdns-sd",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-peer"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "core-foundation",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-relay"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "onepass-bridge",
@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-ssh-agent"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "bcrypt-pbkdf",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-sync"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "onepass-core",
  "onepass-mailbox",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "onepass-wifi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
