@@ -1172,7 +1172,7 @@ private struct ImportSourceGlyph: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: size / 4, style: .continuous)
-            .fill(color.gradient)
+            .fill(color)
             .frame(width: size, height: size)
             .overlay {
                 if let symbol {

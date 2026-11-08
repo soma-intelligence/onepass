@@ -430,7 +430,7 @@ private struct BrowserExtensionsSection: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(Self.color(paired.browser).gradient, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                .background(Self.color(paired.browser), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {

@@ -523,7 +523,7 @@ private struct NewItemTile: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 28, height: 28)
-                    .background(category.color.gradient, in: .rect(cornerRadius: 7))
+                    .background(category.color.gradient, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 Text(category.singular)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
