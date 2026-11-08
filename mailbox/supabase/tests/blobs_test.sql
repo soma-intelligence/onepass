@@ -519,6 +519,10 @@ select onepass_test.ok(
         array(select onepass_test.sha(100000 + i) from generate_series(19001, 20000) i)) where status = 'ok'$$) = 1000,
     'largest_lookup_batch_answers_every_blob');
 reset role;
+-- The measured times, so a slow run shows how slow.
+do $$ declare r record; begin
+    for r in select name, round(ms) as ms from t_clock order by name loop raise notice 'blob batch % took % ms', r.name, r.ms; end loop;
+end $$;
 select onepass_test.ok(
     (select bool_and(ms < 2000) from t_clock) and (select count(*) = 2 from t_clock),
     'largest_blob_batches_take_under_two_seconds');

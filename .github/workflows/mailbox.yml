@@ -69,6 +69,15 @@ jobs:
             echo "$untracked"
             exit 1
           fi
+      # The bytes differ between build hosts: on drift, keep this runner's
+      # module so it can be committed as is.
+      - name: Keep the rebuilt module
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proto-wasm-rebuilt
+          path: mailbox/supabase/functions/_shared/proto/
+          if-no-files-found: ignore
 
   sql:
     name: SQL tests (Postgres 17)

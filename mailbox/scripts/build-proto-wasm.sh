@@ -15,6 +15,11 @@
 # wasm-bindgen crate in core/Cargo.lock:
 #   rustup target add wasm32-unknown-unknown
 #   cargo install wasm-bindgen-cli --version '=<that version>' --locked
+#
+# The bytes differ between build hosts (macOS, a Linux arm64 container and a
+# Linux x86_64 container each gave other bytes than the CI runner), and CI
+# checks them on its own runner. When the mailbox workflow reports drift, commit the
+# module from its proto-wasm-rebuilt artifact.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
