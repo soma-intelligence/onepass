@@ -149,3 +149,28 @@ Il n'empêche pas un agent malveillant qui contrôle la page de lire la valeur. 
 - Identités et adresses (`FillIdentity`) : même chemin plus tard.
 - Navigateurs dans le cloud.
 - Création de compte par un agent (`create_login` existe déjà côté MCP, pas d'enregistrement automatique depuis la page).
+
+## 10. Écarts
+
+Où la version construite diffère de ce spec.
+
+1. **Canal Chrome.** Pas de poussée : l'extension ouvre une seconde session native qui interroge `agent_wait` en requête longue (25 s). Elle est rouverte au réveil du service worker et par une alarme `chrome.alarms` de 30 s (permission `alarms` ajoutée).
+2. **Chromium seulement en v1** (Chrome, Edge, Brave, Arc). Firefox ne donne pas de `documentId`, sa boucle est désactivée. Safari reste hors périmètre.
+3. **Cadre principal seulement.** Les sous-cadres du même site sont refusés aussi, pas seulement ceux d'un autre site.
+4. **`filled` donne les noms des champs de l'élément**, pas les rôles du formulaire.
+5. **La clé de fenêtre d'autorisation inclut la cible navigateur.** Chrome et CDP ne partagent jamais une fenêtre.
+6. **CDP.**
+   - Seules les adresses littérales `127.0.0.1` ou `[::1]` passent. Le nom `localhost` est refusé (pas de DNS).
+   - `ws://` seulement, `wss://` refusé.
+   - Les champs sont saisis par `DOM.focus`, sélection de tout, puis `Input.insertText`. Jamais de `Runtime.evaluate`.
+   - Les champs `select` et les cases à cocher sont refusés (`no_fields`) plutôt que laissés vides.
+   - Le cliché de page garde brièvement en mémoire les valeurs vivantes des champs.
+   - Un script qui déplace le focus entre le `focus` et la saisie peut rediriger la valeur vers un autre champ de la même origine. Cela reste dans la limite de la section 7.
+7. **Limites connues laissées pour plus tard.**
+   - Avec deux navigateurs Chromium ouverts, une demande peut atteindre le mauvais et échouer sans rien remplir.
+   - La sonde et le remplissage ouvrent deux sockets CDP séparés.
+   - Sur une page dont le seul bouton est « Suivant », le formulaire est rempli mais pas soumis.
+8. **Résultats de la tâche 1** (détail dans `docs/superpowers/reviews/2026-11-07-agent-fill-spike.md`).
+   - Durée de vie du port du service worker : observé sur Chrome for Testing 151, port natif resté ouvert 6 min 39 et 9 min 33 dans deux essais sur trois ; un essai a vu l'hôte fermé à 30 s, sans cause établie. Déduit : le port est une optimisation, la reconnexion sur réveil est obligatoire (d'où l'alarme du point 1).
+   - WebSocket du bac à sable : observé, `network.client` suffit pour une connexion vers `127.0.0.1` ; sans lui, refus. La connexion CDP est faite par le processus de l'app. Non rejoué sur la build Debug signée.
+

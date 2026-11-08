@@ -15,7 +15,17 @@ Name a secret with an `onepass://vault/item/field` reference, for example `onepa
 
 1. `run_with_secrets`: run a command with references in its environment. OnePass puts the values in, runs the command and masks them in the output. Prefer this for anything that needs a credential at run time.
 2. `fill_template`: render a file from a template that holds references. Prefer this for config and `.env` files.
-3. `reveal_secret`: returns the value to you. Last resort, only when the two tools above cannot do the job. Say why you need it.
+3. `reveal_secret`: returns the value to you. Last resort, only when the two tools above cannot do the job. Say why you need it. Never use it to type a secret into a web page.
+
+## Sign in or pay on a web page
+
+Use `fill_in_browser`. Never use `reveal_secret` to type a secret into a page.
+
+- Arguments: `item_id` or `query` (the one item of that kind for the page's site), `url` (the page, HTTPS only), `kind` (`login` or `card`), `submit` (optional), `target` (`{"browser":"chrome"}` for the user's Chromium browser, or `{"cdp":"ws://127.0.0.1:<port>/devtools/page/<id>"}` for a browser you drive over CDP).
+- The result is `{"filled":[...],"submitted":bool}`: the names of the item fields filled (`username`, `password`, `totp`, `cardholder`, `number`, `expiry`, `cvv`), never values.
+- `submit: true` presses the sign-in button on a login or one-time-code form only. A card is never submitted: you click pay yourself, OnePass never does.
+- The user approves in the OnePass panel. A login approval may cover the same item and site for a few minutes. A card is approved every time.
+- Errors: `not_https`, `no_item`, `ambiguous_item` (pick one with `item_id`), `scope_denied` (the vault has no web fill, tell the user), `denied`, `timeout`, `no_browser`, `tab_mismatch` (the page is not the one in front), `origin_mismatch` (the item is not for this site), `cross_site_frame`, `no_fields`, `submit_not_allowed`, `cdp_not_local`. Do not retry in a loop.
 
 ## Never write a value to disk
 
