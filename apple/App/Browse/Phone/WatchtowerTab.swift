@@ -234,7 +234,6 @@ private struct PhoneWatchtowerCard: View {
                     Text(card.title).font(.headline)
                     Text(card.message)
                         .font(.subheadline)
-                        .opacity(0.9)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(Theme.Space.l)
@@ -266,7 +265,7 @@ private struct PhoneWatchtowerCard: View {
         func body(content: Content) -> some View {
             let fill = PhoneWatchtowerCard.fill(card)
             let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
-            if PhoneWatchtowerCard.isAlert(card) {
+            if card.isAlert {
                 content.washBackground(Theme.Wash.alert(fill), flat: fill, in: shape)
             } else {
                 content.background(fill, in: shape)
@@ -274,17 +273,11 @@ private struct PhoneWatchtowerCard: View {
         }
     }
 
-    static let alertIDs = WatchtowerCard.alertIDs
-
-    static func isAlert(_ card: WatchtowerCard) -> Bool {
-        card.isAlert
-    }
-
     /// Issues in red or orange, chances to do better (passkeys, codes) in the accent or blue, each a
     /// shade deep enough for white text (4.5:1).
     static func fill(_ card: WatchtowerCard) -> Color {
-        switch card.id {
-        case _ where alertIDs.contains(card.id): WatchtowerCard.alertFill
+        if card.isAlert { return WatchtowerCard.alertFill }
+        return switch card.id {
         case "duplicate": Color(red: 0.38, green: 0.38, blue: 0.42)
         case "passkey": Theme.accent
         case "2fa": Color(red: 0.04, green: 0.39, blue: 0.78)
