@@ -42,8 +42,8 @@ const FAST: FfiKdfParams = FfiKdfParams {
     t: 1,
     p: 1,
 };
-/// Longest wait for any one step (the machine may be loaded).
-const STEP: Duration = Duration::from_secs(60);
+/// Longest wait for any one step: shared CI runners can take over a minute for one step in a debug build.
+const STEP: Duration = Duration::from_secs(240);
 
 fn now() -> i64 {
     i64::try_from(

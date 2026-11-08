@@ -11,6 +11,11 @@ rust-version.workspace = true
 # and the core fill_plan engine on public login and signup pages (or their pruned recordings),
 # and scores detection and fill. Never submits anything.
 
+# The library has no doc examples; rustdoc cannot see onepass-core on CI runners, so skip doctests.
+[lib]
+path = "src/lib.rs"
+doctest = false
+
 [[bin]]
 name = "onepass-bench"
 path = "src/main.rs"
