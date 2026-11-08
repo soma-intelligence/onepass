@@ -914,10 +914,10 @@ mod mcp {
     fn gate_refuses_unverified_peer() {
         let fx = fixture();
         let (ui, _answers) = gate_ui();
-        // The relay the gate expects is /usr/bin/true: this test is not it.
+        // The relay the gate expects is `true`: this test is not it.
         let gate = McpGate::start(
             fx.mcp_socket(),
-            "/usr/bin/true".into(),
+            super::TRUE_PROGRAM.into(),
             fx.data(),
             ui.clone(),
         )

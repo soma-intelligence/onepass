@@ -374,7 +374,13 @@ fn device_kinds_appended() {
     }
     // A roster entry of the frozen rotation vectors still decodes and
     // re-encodes byte for byte.
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/lineage");
+    // `ONEPASS_CORE_VECTORS`: the copy pushed to the Android emulator.
+    let dir = std::env::var_os("ONEPASS_CORE_VECTORS")
+        .map_or_else(
+            || std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors"),
+            std::path::PathBuf::from,
+        )
+        .join("lineage");
     for name in ["genesis.hex", "rotation.hex"] {
         let text = std::fs::read_to_string(dir.join(name)).unwrap();
         let hex = text

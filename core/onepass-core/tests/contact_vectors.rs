@@ -545,8 +545,18 @@ fn pair_id_symmetric_and_prefixed() {
 
 // ---------------------------------------------------------------- vectors
 
+/// The vector directory. `ONEPASS_CORE_VECTORS` points at a copy of
+/// `tests/vectors` when the test runs away from the source tree (the Android
+/// emulator, see android/scripts/test-core-emulator.sh).
+fn vectors_root() -> PathBuf {
+    std::env::var_os("ONEPASS_CORE_VECTORS").map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors"),
+        PathBuf::from,
+    )
+}
+
 fn vectors_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/contact")
+    vectors_root().join("contact")
 }
 
 fn read_vector(name: &str) -> BTreeMap<String, String> {

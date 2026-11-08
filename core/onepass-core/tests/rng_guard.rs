@@ -228,6 +228,10 @@ fn scan() -> BTreeMap<String, usize> {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "android",
+    ignore = "scans the source tree, absent on the device"
+)]
 fn randomness_for_secrets_goes_through_the_hedged_source() {
     let hits = scan();
     let allowed: BTreeMap<&str, usize> = ALLOWED.iter().map(|(p, n, _)| (*p, *n)).collect();

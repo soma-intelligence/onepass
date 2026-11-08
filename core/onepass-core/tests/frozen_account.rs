@@ -155,7 +155,7 @@ fn frozen_account_refuses_a_wrong_password() {
 /// secret.
 #[test]
 fn opk2_still_opens() {
-    let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/frozen-account-opk2");
+    let d = dir().with_file_name("frozen-account-opk2");
     let read = |name: &str| fs::read(d.join(name)).unwrap();
     let text = |name: &str| String::from_utf8(read(name)).unwrap().trim().to_owned();
     let keyset = read("keyset.bin");

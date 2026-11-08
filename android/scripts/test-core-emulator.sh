@@ -91,15 +91,17 @@ if [ "$("$adb" shell id -u | tr -d '\r')" = 0 ]; then
   adb_uid 2000
 fi
 "$adb" shell "rm -rf $remote && mkdir -p $remote/bin $remote/tmp"
-# frozen_account reads its fixture at run time (ONEPASS_CORE_FIXTURES).
+# frozen_account reads its fixtures at run time (ONEPASS_CORE_FIXTURES), the
+# lineage and contact tests their vectors (ONEPASS_CORE_VECTORS).
 "$adb" push "$repo_root/core/onepass-core/tests/fixtures" "$remote/" >/dev/null
+"$adb" push "$repo_root/core/onepass-core/tests/vectors" "$remote/" >/dev/null
 
 # The adb shell SELinux domain may not create Unix sockets under
 # /data/local/tmp (avc: denied { create } ... tclass=sock_file), unlike an
-# app in its own data directory. The developer tests bind the SSH agent and
-# MCP sockets, so they run with SELinux permissive, on non-user emulator
+# app in its own data directory. The developer, remote and agent_fill tests
+# bind the SSH agent and MCP sockets, so they run with SELinux permissive, on non-user emulator
 # builds only, still as the shell user. Every other binary runs enforcing.
-needs_sockets='^developer-'
+needs_sockets='^(developer|remote|agent_fill)-'
 selinux() {
   "$adb" root >/dev/null
   adb_uid 0
@@ -145,7 +147,7 @@ for exe in "${binaries[@]}"; do
   fi
   out="$(mktemp)"
   set +e
-  "$adb" shell "cd $remote && TMPDIR=$remote/tmp ONEPASS_CORE_FIXTURES=$remote/fixtures RUST_BACKTRACE=1 ./bin/$name $*" 2>&1 | tee "$out"
+  "$adb" shell "cd $remote && TMPDIR=$remote/tmp ONEPASS_CORE_FIXTURES=$remote/fixtures ONEPASS_CORE_VECTORS=$remote/vectors RUST_BACKTRACE=1 ./bin/$name $*" 2>&1 | tee "$out"
   status="${PIPESTATUS[0]}"
   set -e
   restore_enforcing

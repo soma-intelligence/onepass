@@ -449,6 +449,10 @@ impl FfiDeveloperUi for ApprovingApp {
 // ---- the test
 
 #[test]
+#[cfg_attr(
+    target_os = "android",
+    ignore = "builds the relay with cargo, absent on the device"
+)]
 fn locked_mac_phone_unlocks_and_approves_run_with_secrets() {
     let relay = relay_binary();
     let (mac, phone) = mac_and_phone();
