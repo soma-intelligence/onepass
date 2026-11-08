@@ -52,7 +52,9 @@ jobs:
           path-to-document: https://github.com/soma-intelligence/onepass/blob/main/CLA.md
           path-to-signatures: signatures/version1/cla.json
           branch: cla-signatures
-          allowlist: dependabot[bot],github-actions[bot]
+          # Soma Labs: the project's own commits (opensource@somalabs.me), whose author
+          # is not linked to a GitHub account, so it could never sign by comment.
+          allowlist: dependabot[bot],github-actions[bot],Soma Labs
           custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
           create-file-commit-message: Create the CLA signature file
           signed-commit-message: $contributorName signed the CLA in $owner/$repo
