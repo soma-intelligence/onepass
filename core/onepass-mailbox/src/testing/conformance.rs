@@ -695,7 +695,7 @@ fn blob_round_trip(t: &mut dyn ConformanceTarget) {
         size: 20_000,
     };
     match c.fetch_body(&other) {
-        Err(MailboxError::Server(ErrorCode::NotFound)) => {}
+        Err(MailboxError::BlobMissing) => {}
         other => panic!("unreferenced blob: {other:?}"),
     }
 }

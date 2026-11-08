@@ -19,10 +19,11 @@
 //!   batch applied in part): `unconfirmed` names it and the driver sends
 //!   the local copy again. Writes only (a lost deletion leaves a record the
 //!   other devices still read, nothing lost). Kept in memory: a restart of
-//!   the app forgets it.
+//!   the app forgets it. A write answered with a seq above the head that
+//!   fetch reached is a mailbox that went back: fetch from scratch.
 //! - Blob bodies are resolved (`fetch_body`, checked against their hash)
-//!   before a change leaves the transport; a body that fails its check is
-//!   `RecordUnreadable`.
+//!   before a change leaves the transport; a body that fails its check, or
+//!   that Storage no longer has (`BlobMissing`), is `RecordUnreadable`.
 //! - A record of an unknown kind is skipped.
 //! - Send: one commit per batch, blob bodies announced and uploaded first;
 //!   `Applied` saves each change with its seq, `Conflict` returns the
@@ -158,7 +159,9 @@ pub fn transport_error(e: MailboxError) -> TransportError {
         },
         MailboxError::Stale => TransportError::Stale,
         MailboxError::IncarnationChanged { .. } => TransportError::ZoneReset,
-        MailboxError::Integrity(_) => TransportError::RecordUnreadable,
+        // A blob Storage lost is a record that cannot be read yet, never a
+        // revocation: the vault must not turn access-refused (read-only).
+        MailboxError::Integrity(_) | MailboxError::BlobMissing => TransportError::RecordUnreadable,
         MailboxError::Server(ErrorCode::Quota) => TransportError::Quota,
         MailboxError::Server(
             ErrorCode::RevokedCredential | ErrorCode::UnknownCredential | ErrorCode::NotFound,
@@ -204,6 +207,13 @@ impl<A: MailboxApi> Transport for MailboxTransport<A> {
             // Seqs below the cursor would never be read again: fetch from
             // scratch, the core refuses what is older than its copy.
             Ok(p) if p.head < after || head.is_some_and(|h| p.head < h) => None,
+            // The last page of an incremental fetch, below a seq a commit
+            // answered: rounds run one after the other, so that seq is at or
+            // below the head of any later fetch. The server claimed writes
+            // it never made, maybe the whole batch (manifests and other
+            // kinds alike): as for a head that went back, fetch from
+            // scratch, which queues again what the server lacks.
+            Ok(p) if !full && !p.more && self.awaiting.values().any(|s| *s > p.head) => None,
             Ok(p) => {
                 self.saw(&p.records);
                 if p.more {
@@ -215,15 +225,10 @@ impl<A: MailboxApi> Transport for MailboxTransport<A> {
                     Some(p)
                 } else {
                     // Past the head: an own write still awaited is one the
-                    // server never made.
-                    let h = p.head;
-                    let lost = &mut self.lost;
-                    self.awaiting.retain(|k, s| {
-                        if *s <= h {
-                            lost.push(*k);
-                        }
-                        *s > h
-                    });
+                    // server never made (every seq is at most the head, see
+                    // above).
+                    self.lost
+                        .extend(std::mem::take(&mut self.awaiting).into_keys());
                     Some(p)
                 }
             }
@@ -374,5 +379,64 @@ impl<A: MailboxApi> Transport for MailboxTransport<A> {
             max_records: COMMIT_OPS_MAX,
             max_bytes: COMMIT_BODY_MAX - BODY_MARGIN,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use onepass_core::sync::Change;
+    use onepass_mailbox::Credential;
+    use onepass_mailbox::testing::FakeMailbox;
+
+    fn write(id: u8) -> Outgoing {
+        Outgoing {
+            change: Change {
+                kind: RecordKind::Item,
+                id: Id([id; 16]),
+                version: 1,
+                data: Some(vec![id; 32]),
+            },
+            server_meta: None,
+        }
+    }
+
+    #[test]
+    fn write_answered_above_head_restarts_from_scratch() {
+        let fake = FakeMailbox::new();
+        let mut api = fake.client(Credential::generate().unwrap());
+        api.create(None, b"").unwrap();
+        let mut t = MailboxTransport::new(api);
+        t.binding().unwrap();
+        let first = t.fetch(None).unwrap();
+        t.send(&[write(1)]).unwrap();
+        // The server answers seqs no head will reach and writes nothing.
+        fake.faults().apply_above_head();
+        let saved = t.send(&[write(2), write(3)]).unwrap();
+        assert!(matches!(saved[0], SendResult::Saved { .. }));
+        // The next fetch reaches a head below those seqs: the mailbox went
+        // back, the fetch starts from scratch (the core then queues what
+        // the server lacks) and nothing is awaited any more.
+        let page = t.fetch(first.cursor.as_deref()).unwrap();
+        assert!(page.restarted_from_scratch);
+        assert!(!page.more);
+        assert!(t.awaiting.is_empty());
+        let again = t.fetch(page.cursor.as_deref()).unwrap();
+        assert!(!again.restarted_from_scratch);
+    }
+
+    #[test]
+    fn missing_blob_is_unreadable_not_revoked() {
+        // A blob Storage lost must never mark a shared vault access-refused
+        // (the core then makes it read-only): it is a record that cannot be
+        // read yet, retried and reported after a few rounds.
+        assert_eq!(
+            transport_error(MailboxError::BlobMissing),
+            TransportError::RecordUnreadable
+        );
+        assert_eq!(
+            transport_error(MailboxError::Server(ErrorCode::NotFound)),
+            TransportError::Revoked
+        );
     }
 }

@@ -68,6 +68,11 @@ pub enum MailboxError {
     Tls(String),
     /// A blob read back does not have the size or SHA-256 it was named by.
     Integrity(&'static str),
+    /// Storage has no object for a blob: the mailbox gave no download URL,
+    /// or Storage answered `404`. Says nothing about the credential (never
+    /// read it as a revocation): the blob may come back (a Storage incident)
+    /// or stay lost (an upload that never landed).
+    BlobMissing,
     /// A record body above 900 KiB, a request body above 4 MiB, or a
     /// `413 too_large` from the server.
     TooLarge,
@@ -104,6 +109,7 @@ impl fmt::Display for MailboxError {
             Self::Malformed(w) => write!(f, "malformed mailbox exchange: {w}"),
             Self::Tls(w) => write!(f, "TLS configuration: {w}"),
             Self::Integrity(w) => write!(f, "integrity check failed: {w}"),
+            Self::BlobMissing => f.write_str("blob missing from storage"),
             Self::TooLarge => f.write_str("too large for the mailbox"),
             Self::InviteRequired => f.write_str("this mailbox server needs an invite"),
             Self::Forbidden => f.write_str("this credential's role does not allow it"),

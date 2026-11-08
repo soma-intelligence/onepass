@@ -1966,11 +1966,32 @@ pub fn read_password(prompt: &str) -> Result<Zeroizing<String>, CliError> {
     {
         return Ok(Zeroizing::new(p));
     }
-    if !std::io::stdin().is_terminal() {
+    if !can_prompt() {
         return Err(CliError::usage("no terminal to read the password from"));
     }
     let p = rpassword::prompt_password(prompt)?;
     Ok(Zeroizing::new(p))
+}
+
+/// Whether a masked prompt can be answered. The prompt reads the
+/// controlling terminal (`/dev/tty`), not stdin, so a release build also
+/// prompts when stdin is a pipe (`printf ... | onepass item create
+/// --field-stdin ...`). A debug build (tests) asks only when stdin itself
+/// is a terminal: the terminal of the developer running the tests may
+/// still be reachable.
+pub fn can_prompt() -> bool {
+    if std::io::stdin().is_terminal() {
+        return true;
+    }
+    #[cfg(unix)]
+    if !cfg!(debug_assertions) {
+        return fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .is_ok();
+    }
+    false
 }
 
 /// The test switch letting secrets come from the environment.
@@ -2007,7 +2028,7 @@ pub fn read_secret(prompt: &str, env_var: &str) -> Result<Zeroizing<String>, Cli
     {
         return Ok(Zeroizing::new(p));
     }
-    if !std::io::stdin().is_terminal() {
+    if !can_prompt() {
         return Err(CliError::usage("no terminal to read the secret from"));
     }
     let p = rpassword::prompt_password(prompt)?;

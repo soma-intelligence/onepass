@@ -264,6 +264,34 @@ fn partial_batch_detected() {
 }
 
 #[test]
+fn commit_answered_above_head_detected() {
+    let (fake, mut a, mut b, _sk, items) = two_sides(&["x"]);
+    a.dev.save(&edited(&items[0], "x.a", T0 + 10));
+    let item = pending_item_records(&a)[0];
+    // The server stores nothing and answers seqs no head will ever reach.
+    fake.faults().apply_above_head();
+    assert_eq!(a.round().status, RoundStatus::Idle);
+    assert!(a.pending().is_empty(), "A believes it all landed");
+    let on_server = |a: &Side| {
+        a.driver
+            .transport()
+            .inner
+            .api()
+            .record(RecordKind::Item.code(), item.0)
+            .unwrap()
+    };
+    assert!(on_server(&a).is_none());
+
+    // A's next fetch reaches the head below the seqs it was answered: the
+    // batch is lost, A sends its copy again.
+    a.settle();
+    assert!(on_server(&a).is_some_and(|r| r.body.is_some()));
+    b.settle();
+    assert_eq!(users(&b.dev.items()), ["x.a"]);
+    assert_eq!(b.dev.items(), a.dev.items());
+}
+
+#[test]
 fn rewound_mailbox_detected() {
     let (fake, mut a, mut b, _sk, items) = two_sides(&["x"]);
     let v = vault(&mut b);

@@ -420,6 +420,41 @@ fn revoked_credential_goes_to_core() {
 }
 
 #[test]
+fn missing_blob_is_not_a_refusal() {
+    let fake = FakeMailbox::new();
+    let net = Net::with(&fake);
+    let (mut a, mut b, fam) = shared_pair(&net, Role::Write);
+    // A record above the inline cap: its body goes through Storage.
+    let va = shared(&mut a.acct.dev, fam);
+    let mut item = login(fam, "big", NOW + 10);
+    item.notes = "n".repeat(40 * 1024);
+    a.acct.dev.repo().save_item(&va, item).unwrap();
+    a.round();
+    // Storage loses the object before Bob reads it.
+    fake.faults().lose_objects();
+    let r = b.round();
+    assert!(r.refusals.is_empty(), "{r:?}");
+    assert_ne!(status_of(&r, Zone::Vault(fam)), Some(RoundStatus::Idle));
+    let st = b.acct.dev.store().share_state(fam).unwrap().unwrap();
+    assert!(st.access_refused.is_none(), "the vault must stay writable");
+    // Bob's own edits still queue for the zone.
+    let vb = shared(&mut b.acct.dev, fam);
+    b.acct
+        .dev
+        .repo()
+        .save_item(&vb, login(fam, "bob", NOW + 20))
+        .unwrap();
+    assert!(
+        !b.acct
+            .dev
+            .store()
+            .zone_pending(Zone::Vault(fam))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn unreachable_zone_does_not_stop_others() {
     let fake = FakeMailbox::new();
     let other = FakeMailbox::new();

@@ -107,6 +107,11 @@ pub struct AgentTicket {
     pub item_id: String,
     pub origin: String,
     pub kind: AgentKind,
+    /// A login fill may also give the current one-time code: the agent
+    /// holds the `totp` scope and the user approved this very fill with
+    /// its strong gesture (the tool decides). Otherwise the host leaves
+    /// the code out.
+    pub totp: bool,
     pub expires_at: u64,
     /// The listener that owns the request.
     pub owner: u64,
@@ -447,6 +452,7 @@ impl AgentHub {
         origin: &str,
         kind: AgentKind,
         submit: bool,
+        totp: bool,
         document_id: &str,
         timeout: Duration,
     ) -> Result<FillResult, AgentError> {
@@ -490,6 +496,7 @@ impl AgentHub {
                 item_id: item_id.to_owned(),
                 origin: origin.to_owned(),
                 kind,
+                totp: totp && kind == AgentKind::Login,
                 expires_at: now.saturating_add(TICKET_TTL.as_secs()),
                 owner,
             },
@@ -675,15 +682,30 @@ impl AgentHub {
         origin: &str,
         kind: AgentKind,
     ) -> bool {
+        self.redeem_ticket(listener, request_id, item_id, origin, kind)
+            .is_some()
+    }
+
+    /// [`AgentHub::redeem`], handing back the ticket spent (what it
+    /// allows, such as the one-time code).
+    pub fn redeem_ticket(
+        &self,
+        listener: u64,
+        request_id: u64,
+        item_id: &str,
+        origin: &str,
+        kind: AgentKind,
+    ) -> Option<AgentTicket> {
         let mut state = self.lock();
         state.expire((self.clock)());
         let good = state.tickets.get(&request_id).is_some_and(|t| {
             t.owner == listener && t.item_id == item_id && t.origin == origin && t.kind == kind
         });
         if good {
-            state.tickets.remove(&request_id);
+            state.tickets.remove(&request_id)
+        } else {
+            None
         }
-        good
     }
 }
 
@@ -721,6 +743,17 @@ impl AgentListener {
 
     pub fn redeem(&self, request_id: u64, item_id: &str, origin: &str, kind: AgentKind) -> bool {
         self.hub.redeem(self.id, request_id, item_id, origin, kind)
+    }
+
+    pub fn redeem_ticket(
+        &self,
+        request_id: u64,
+        item_id: &str,
+        origin: &str,
+        kind: AgentKind,
+    ) -> Option<AgentTicket> {
+        self.hub
+            .redeem_ticket(self.id, request_id, item_id, origin, kind)
     }
 }
 
@@ -893,6 +926,7 @@ mod tests {
                 &page.origin,
                 AgentKind::Login,
                 true,
+                false,
                 &page.document_id,
                 LONG,
             )
@@ -922,6 +956,7 @@ mod tests {
                 "item-1",
                 "https://github.com",
                 AgentKind::Card,
+                false,
                 false,
                 "doc-9",
                 LONG,
@@ -962,6 +997,7 @@ mod tests {
                 "item-1",
                 &origin,
                 AgentKind::Login,
+                false,
                 false,
                 "doc",
                 LONG,
@@ -1009,6 +1045,7 @@ mod tests {
                 "https://github.com",
                 AgentKind::Login,
                 false,
+                false,
                 "doc",
                 LONG,
             )
@@ -1038,6 +1075,7 @@ mod tests {
                 "item-1",
                 "https://github.com",
                 AgentKind::Login,
+                false,
                 false,
                 "doc",
                 LONG,
@@ -1071,6 +1109,7 @@ mod tests {
                 "https://github.com",
                 AgentKind::Login,
                 false,
+                false,
                 "doc",
                 LONG,
             )
@@ -1095,6 +1134,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "d",
             SHORT,
         );
@@ -1110,6 +1150,7 @@ mod tests {
             "item-1",
             "https://gitlab.com",
             AgentKind::Login,
+            false,
             false,
             "d",
             SHORT,
@@ -1137,6 +1178,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "d",
             SHORT,
         );
@@ -1150,6 +1192,7 @@ mod tests {
             "item-1",
             "https://github.com",
             AgentKind::Login,
+            false,
             false,
             "d",
             SHORT,
@@ -1216,6 +1259,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "d",
             LONG,
         );
@@ -1271,6 +1315,7 @@ mod tests {
             "i",
             "https://github.com",
             AgentKind::Login,
+            false,
             false,
             "d",
             SHORT,
@@ -1340,6 +1385,7 @@ mod tests {
                 "item-1",
                 "https://github.com",
                 AgentKind::Login,
+                false,
                 false,
                 "doc",
                 LONG,
@@ -1455,6 +1501,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "doc",
             LONG,
         );
@@ -1501,6 +1548,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "doc",
             LONG,
         );
@@ -1525,6 +1573,7 @@ mod tests {
             "https://github.com",
             AgentKind::Login,
             false,
+            false,
             "doc",
             SHORT,
         );
@@ -1539,6 +1588,7 @@ mod tests {
             "item-1",
             "https://github.com",
             AgentKind::Login,
+            false,
             false,
             "doc",
             LONG,

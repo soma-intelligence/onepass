@@ -412,8 +412,18 @@ impl<P: VaultPort> McpTools<P> {
             .browser
             .as_ref()
             .ok_or_else(|| browser_refusal(BrowserError::NoBrowser))?;
+        // The one-time code goes only where `totp_code` would give it: the
+        // `totp` scope on the vault, and a prompt with its strong gesture
+        // answered for this very call (`fill_gate` ran both unless a grant
+        // covered the call). `fill` alone, or a remembered window, fills
+        // the login and password only.
+        let with_totp = kind == FillKind::Login
+            && call.decision != "remembered"
+            && self.require(&vault, Scope::Totp).is_ok();
         let out = browser
-            .fill(&client_id, &target, &probe, &item, vault.id, kind, submit)
+            .fill(
+                &client_id, &target, &probe, &item, vault.id, kind, submit, with_totp,
+            )
             .map_err(browser_refusal)?;
         call.field = Some(if out.submitted { "submitted" } else { "filled" }.to_owned());
         // Only the item field names of spec 3 reach the agent, once each.
@@ -580,6 +590,8 @@ mod tests {
     struct BrowserLog {
         probes: Vec<String>,
         fills: Vec<(Id, FillKind, bool, String)>,
+        /// `with_totp` of each fill, in order.
+        totp: Vec<bool>,
         cancels: Vec<u64>,
     }
 
@@ -630,12 +642,13 @@ mod tests {
             _vault_id: Id,
             kind: FillKind,
             submit: bool,
+            with_totp: bool,
         ) -> Result<FillOutcome, BrowserError> {
-            self.log
-                .lock()
-                .unwrap()
-                .fills
+            let mut log = self.log.lock().unwrap();
+            log.fills
                 .push((item.id, kind, submit, probe.handle.clone()));
+            log.totp.push(with_totp);
+            drop(log);
             if let Some(e) = self.fill_error {
                 return Err(e);
             }
@@ -1027,6 +1040,45 @@ mod tests {
         assert_eq!(f.approver.calls().len(), 2);
         assert_eq!(f.log.lock().unwrap().fills.len(), 3);
         assert!(f.log.lock().unwrap().cancels.is_empty());
+    }
+
+    /// A login fill writes the one-time code under the rules of
+    /// `totp_code`: the `totp` scope on the vault, and an approval with its
+    /// strong gesture on this very call. A remembered window, or `fill`
+    /// alone, fills the login and password only.
+    #[test]
+    fn login_fill_writes_the_code_only_with_totp_scope_and_a_fresh_gesture() {
+        let mut f = fx(vec![
+            Decision::AllowFor(Duration::from_secs(300)),
+            Decision::AllowOnce,
+        ]);
+        let args = login_args(&f.github.clone());
+        ok(f.call(args.clone()));
+        // Within the window: no prompt, so no code.
+        ok(f.call(args.clone()));
+        assert_eq!(f.entries()[1].decision, "remembered");
+        // Asked again, but the vault no longer grants `totp`.
+        let no_totp: BTreeSet<Scope> = Scope::ALL
+            .into_iter()
+            .filter(|s| *s != Scope::Totp)
+            .collect();
+        f.tools
+            .policy
+            .vaults
+            .insert(f.agents.id.to_string(), no_totp);
+        f.clock.advance(Duration::from_secs(301));
+        ok(f.call(args));
+        assert_eq!(f.approver.calls().len(), 2);
+        assert_eq!(f.log.lock().unwrap().totp, vec![true, false, false]);
+    }
+
+    /// A card never carries a one-time code.
+    #[test]
+    fn card_fill_never_asks_for_a_code() {
+        let mut f = fx(vec![Decision::AllowOnce]);
+        f.set_browser("https://shop.test", None);
+        ok(f.call(card_args(&f.card.clone(), "https://shop.test/pay")));
+        assert_eq!(f.log.lock().unwrap().totp, vec![false]);
     }
 
     #[test]

@@ -11,7 +11,7 @@ use onepass_mailbox_proto::{
 
 use crate::client::{MailboxClient, expect, read};
 use crate::http::{Method, Response, check_url};
-use crate::{MailboxApi, MailboxError};
+use crate::{MailboxApi, MailboxError, RETRY_AFTER_MAX};
 
 const OCTETS: &str = "application/octet-stream";
 
@@ -62,10 +62,7 @@ impl MailboxClient {
         )?;
         let urls: BlobUrls = read(r)?;
         check_answers(&urls, &[sha256])?;
-        let url = urls.urls[0]
-            .1
-            .as_deref()
-            .ok_or(MailboxError::Server(ErrorCode::NotFound))?;
+        let url = urls.urls[0].1.as_deref().ok_or(MailboxError::BlobMissing)?;
         check_url(url, true).map_err(|_| MailboxError::Malformed("blob url"))?;
         let r = match self
             .http()
@@ -269,9 +266,11 @@ fn duplicate_body(body: &[u8]) -> bool {
 fn storage_status(r: Response, ok: &[u16]) -> Result<Response, MailboxError> {
     match r.status {
         s if ok.contains(&s) => Ok(r),
-        404 => Err(MailboxError::Server(ErrorCode::NotFound)),
+        // Storage's 404 is about the object, never the credential: the
+        // signed mailbox routes keep `Server(NotFound)` for a gone mailbox.
+        404 => Err(MailboxError::BlobMissing),
         429 => Err(MailboxError::Retry {
-            after: r.retry_after,
+            after: r.retry_after.map(|s| s.min(RETRY_AFTER_MAX)),
         }),
         500..=599 => Err(MailboxError::Retry { after: None }),
         300..=399 => Err(MailboxError::Malformed("redirect")),
@@ -290,6 +289,38 @@ mod tests {
             retry_after: None,
             body: body.as_bytes().to_vec(),
         }
+    }
+
+    #[test]
+    fn storage_404_is_a_missing_blob_not_a_revocation() {
+        // A blob Storage lost says nothing about this credential: it must
+        // never read as `Server(NotFound)` (a gone mailbox, revoked access).
+        assert_eq!(
+            storage_status(answer(404, ""), &[200]).err(),
+            Some(MailboxError::BlobMissing)
+        );
+        assert_eq!(
+            upload_status(answer(404, "")).err(),
+            Some(MailboxError::BlobMissing)
+        );
+    }
+
+    #[test]
+    fn storage_retry_after_is_capped() {
+        let mut r = answer(429, "");
+        r.retry_after = Some(999_999_999);
+        assert_eq!(
+            storage_status(r, &[200]).err(),
+            Some(MailboxError::Retry {
+                after: Some(RETRY_AFTER_MAX)
+            })
+        );
+        let mut r = answer(429, "");
+        r.retry_after = Some(30);
+        assert_eq!(
+            storage_status(r, &[200]).err(),
+            Some(MailboxError::Retry { after: Some(30) })
+        );
     }
 
     #[test]

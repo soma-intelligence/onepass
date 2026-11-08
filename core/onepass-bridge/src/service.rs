@@ -962,7 +962,9 @@ impl<V: VaultAccess> Service<V> {
 
     /// For the agent context: spends the ticket of `request` for this
     /// item, origin and kind, or `not_allowed`. Called once the origin
-    /// checks of the request passed. Other contexts pass.
+    /// checks of the request passed. Other contexts pass. `true` when the
+    /// fill may give the one-time code: always outside the agent context,
+    /// for an agent only when its ticket says so.
     fn agent_ticket(
         &self,
         ctx: Ctx,
@@ -970,15 +972,16 @@ impl<V: VaultAccess> Service<V> {
         item_id: &str,
         o: &str,
         kind: AgentKind,
-    ) -> OpResult<()> {
+    ) -> OpResult<bool> {
         if ctx != Ctx::Agent {
-            return Ok(());
+            return Ok(true);
         }
         let request = request.ok_or(AppErrorCode::NotAllowed)?;
-        if !self.hub()?.redeem(request, item_id, o, kind) {
-            return Err(AppErrorCode::NotAllowed);
-        }
-        Ok(())
+        let ticket = self
+            .hub()?
+            .redeem_ticket(request, item_id, o, kind)
+            .ok_or(AppErrorCode::NotAllowed)?;
+        Ok(ticket.totp)
     }
 
     fn fill_login(
@@ -998,9 +1001,16 @@ impl<V: VaultAccess> Service<V> {
         if item_match(&item, &page).is_none() {
             return Err(AppErrorCode::OriginMismatch);
         }
-        self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Login)?;
+        let with_totp = self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Login)?;
         self.reprompt(&item)?;
-        let out = login_secrets(&item, fields, now);
+        // An agent without the right to the code fills login and password
+        // only, whatever fields the page asked for.
+        let fields: Vec<FillField> = fields
+            .iter()
+            .copied()
+            .filter(|f| with_totp || *f != FillField::Totp)
+            .collect();
+        let out = login_secrets(&item, &fields, now);
         self.record("fill_login", item.id, Some(o), ctx, now);
         Ok(out)
     }

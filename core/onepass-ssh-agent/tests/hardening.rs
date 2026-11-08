@@ -155,6 +155,15 @@ fn bind_request(host: &AgentKey, forwarding: bool) -> Request {
     }
 }
 
+/// A userauth request with key `t` for the session `bind_request` binds.
+fn auth_req(t: KeyType) -> Request {
+    Request::Sign {
+        key_blob: key(t).public_blob(),
+        data: userauth_data(&BOUND_SESSION, &key(t).public_blob(), None),
+        flags: 0,
+    }
+}
+
 fn bound_conn(f: &Fixture, host: &AgentKey) -> ConnState {
     let mut conn = ConnState::default();
     let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), bind_request(host, false));
@@ -326,11 +335,7 @@ fn key_with_hosts_refused_for_other_host() {
         |_| {},
     );
     let mut conn = bound_conn(&f, &host);
-    let r = f.handle(
-        &mut conn,
-        &peer("/usr/bin/ssh"),
-        sign_req(KeyType::Ed25519, b"session"),
-    );
+    let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
     assert_eq!(r.response, Response::Failure);
     assert_eq!(f.asked(), 0);
     let e = f.audit.entries().pop().unwrap();
@@ -342,11 +347,7 @@ fn key_with_hosts_refused_for_other_host() {
     // A host key unknown to known_hosts is refused the same way.
     let stranger_host = AgentKey::generate(KeyType::Ed25519).unwrap();
     let mut conn = bound_conn(&f, &stranger_host);
-    let r = f.handle(
-        &mut conn,
-        &peer("/usr/bin/ssh"),
-        sign_req(KeyType::Ed25519, b"session"),
-    );
+    let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
     assert_eq!(r.response, Response::Failure);
     assert_eq!(f.asked(), 0);
 }
@@ -363,15 +364,12 @@ fn key_with_hosts_signs_for_bookmarked_host() {
         |_| {},
     );
     let mut conn = bound_conn(&f, &host);
-    let r = f.handle(
-        &mut conn,
-        &peer("/usr/bin/ssh"),
-        sign_req(KeyType::Ed25519, b"session"),
-    );
+    let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
     let Response::Signature(sig) = r.response else {
         panic!("expected a signature, got {:?}", r.response);
     };
-    verify_signature(&key(KeyType::Ed25519).public_blob(), b"session", &sig).unwrap();
+    let blob = key(KeyType::Ed25519).public_blob();
+    verify_signature(&blob, &userauth_data(&BOUND_SESSION, &blob, None), &sig).unwrap();
     let e = f.audit.entries().pop().unwrap();
     assert_eq!(e.outcome, "ok");
     assert_eq!(

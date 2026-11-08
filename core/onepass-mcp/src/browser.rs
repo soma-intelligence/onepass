@@ -135,6 +135,9 @@ pub trait BrowserFill: Send {
 
     /// Fills `item` (of `vault_id`) into the probed page, once, after the
     /// user approved. `submit` presses the sign-in button (logins only).
+    /// `with_totp`: a login may also get the current one-time code (the
+    /// client holds the `totp` scope and the user approved this very call
+    /// with its strong gesture); otherwise the code is never written.
     #[allow(clippy::too_many_arguments)]
     fn fill(
         &self,
@@ -145,6 +148,7 @@ pub trait BrowserFill: Send {
         vault_id: Id,
         kind: FillKind,
         submit: bool,
+        with_totp: bool,
     ) -> Result<FillOutcome, BrowserError>;
 
     /// Drops a probe that will not be filled (refused, denied, failed).

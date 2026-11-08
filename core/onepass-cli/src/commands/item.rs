@@ -1,10 +1,18 @@
 //! `onepass item ...` and the helpers other commands share to find items.
 //!
-//! Field input is `--field id=value`. The value is read according to the
+//! Field input is `--field id=value`, or `--field-stdin id` for a secret:
+//! a value on the command line stays in the shell history and can be read
+//! by other processes of the user while the command runs (`ps`), so a
+//! secret field (password, concealed, one-time code, recovery phrase) given
+//! with `--field` gets a warning. `--field-stdin id` reads the value with a
+//! masked prompt on a terminal, otherwise one line of stdin per
+//! `--field-stdin`, in order. The value is read according to the
 //! kind of the template field it targets. Kinds with a structured value
 //! (File, Passkey, SshKey, Location, Address, Barcode, ItemLink, Money)
 //! cannot be typed on a command line and are refused for now. If an item has
 //! several fields with the same id (repeatable ones), the first is set.
+
+use std::io::{BufRead, IsTerminal};
 
 use clap::Subcommand;
 use onepass_core::Id;
@@ -46,9 +54,14 @@ pub enum ItemCmd {
         item_type: ItemType,
         #[arg(long)]
         title: String,
-        /// `id=value`, repeatable.
+        /// `id=value`, repeatable. A secret given here leaks to the shell
+        /// history and `ps`: use --field-stdin for those.
         #[arg(long = "field")]
         fields: Vec<String>,
+        /// Field id whose value is read from stdin (masked prompt on a
+        /// terminal, else one line per id, in order), repeatable.
+        #[arg(long = "field-stdin", value_name = "ID")]
+        stdin_fields: Vec<String>,
         /// Target vault (default: Personnel, or the only vault).
         #[arg(long)]
         vault: Option<String>,
@@ -56,9 +69,14 @@ pub enum ItemCmd {
     /// Change fields of an item.
     Edit {
         key: String,
-        /// `id=value`, repeatable.
-        #[arg(long = "field", required = true)]
+        /// `id=value`, repeatable. A secret given here leaks to the shell
+        /// history and `ps`: use --field-stdin for those.
+        #[arg(long = "field", required_unless_present = "stdin_fields")]
         fields: Vec<String>,
+        /// Field id whose value is read from stdin (masked prompt on a
+        /// terminal, else one line per id, in order), repeatable.
+        #[arg(long = "field-stdin", value_name = "ID")]
+        stdin_fields: Vec<String>,
         #[arg(long)]
         vault: Option<String>,
     },
@@ -108,6 +126,13 @@ fn parse_type(s: &str) -> Result<ItemType, String> {
 }
 
 pub fn run(ctx: &Ctx, cmd: ItemCmd) -> Result<(), CliError> {
+    // Read before the session opens: no prompt runs while the store is held.
+    let from_stdin = match &cmd {
+        ItemCmd::Create { stdin_fields, .. } | ItemCmd::Edit { stdin_fields, .. } => {
+            read_stdin_fields(stdin_fields)?
+        }
+        _ => Vec::new(),
+    };
     with_session(ctx, |repo| match cmd {
         ItemCmd::List { vault, item_type } => list(ctx, repo, vault.as_deref(), item_type),
         ItemCmd::Get { key, vault, reveal } => get(ctx, repo, &key, vault.as_deref(), reveal),
@@ -116,8 +141,19 @@ pub fn run(ctx: &Ctx, cmd: ItemCmd) -> Result<(), CliError> {
             title,
             fields,
             vault,
-        } => create(ctx, repo, item_type, &title, &fields, vault.as_deref()),
-        ItemCmd::Edit { key, fields, vault } => edit(repo, &key, &fields, vault.as_deref()),
+            ..
+        } => create(
+            ctx,
+            repo,
+            item_type,
+            &title,
+            &fields,
+            &from_stdin,
+            vault.as_deref(),
+        ),
+        ItemCmd::Edit {
+            key, fields, vault, ..
+        } => edit(repo, &key, &fields, &from_stdin, vault.as_deref()),
         ItemCmd::Delete { key, vault } => {
             let vaults = all(repo)?;
             let (vi, item) = find_item(repo, &vaults, vault.as_deref(), &key)?;
@@ -362,6 +398,7 @@ fn create(
     item_type: ItemType,
     title: &str,
     fields: &[String],
+    from_stdin: &[(String, Zeroizing<String>)],
     vault: Option<&str>,
 ) -> Result<(), CliError> {
     let vaults = all(repo)?;
@@ -371,9 +408,7 @@ fn create(
             .or_else(|e| if vaults.len() == 1 { Ok(0) } else { Err(e) })?,
     };
     let mut item = new_item(item_type, vaults[vi].id, title);
-    for spec in fields {
-        apply_field(&mut item, spec)?;
-    }
+    apply_fields(&mut item, fields, from_stdin)?;
     let id = item.id;
     stored(repo.save_item(&vaults[vi], item))?;
     if ctx.json {
@@ -388,28 +423,94 @@ fn edit(
     repo: &mut Repository<SqliteStore>,
     key: &str,
     fields: &[String],
+    from_stdin: &[(String, Zeroizing<String>)],
     vault: Option<&str>,
 ) -> Result<(), CliError> {
     let vaults = all(repo)?;
     let (vi, mut item) = find_item(repo, &vaults, vault, key)?;
-    for spec in fields {
-        apply_field(&mut item, spec)?;
-    }
+    apply_fields(&mut item, fields, from_stdin)?;
     item.updated_at = OffsetDateTime::now_utc();
     stored(repo.save_item(&vaults[vi], item))?;
     Ok(())
 }
 
-/// Set the field named by an `id=value` argument.
-fn apply_field(item: &mut Item, spec: &str) -> Result<(), CliError> {
-    let (id, raw) = spec
-        .split_once('=')
-        .ok_or_else(|| CliError::usage("a field must be written id=value"))?;
+/// The `--field id=value` arguments, then the values read from stdin.
+fn apply_fields(
+    item: &mut Item,
+    fields: &[String],
+    from_stdin: &[(String, Zeroizing<String>)],
+) -> Result<(), CliError> {
+    for spec in fields {
+        let (id, raw) = spec
+            .split_once('=')
+            .ok_or_else(|| CliError::usage("a field must be written id=value"))?;
+        if set_field(item, id, raw)? {
+            eprintln!(
+                "warning: the secret field '{id}' was given on the command line, where the \
+                 shell history and other processes can read it; use --field-stdin {id}"
+            );
+        }
+    }
+    for (id, raw) in from_stdin {
+        set_field(item, id, raw)?;
+    }
+    Ok(())
+}
+
+/// Sets field `id` from `raw`. `true` when the field holds a secret.
+fn set_field(item: &mut Item, id: &str, raw: &str) -> Result<bool, CliError> {
     let field = item
         .field_mut(id)
         .ok_or_else(|| CliError::usage(format!("this item has no field '{id}'")))?;
     field.value = parse_value(field.kind, id, raw)?;
-    Ok(())
+    Ok(matches!(
+        field.kind,
+        FieldType::Password | FieldType::Concealed | FieldType::Otp | FieldType::Mnemonic
+    ))
+}
+
+/// The values of `ids`, never from argv: a masked prompt each on a
+/// terminal, otherwise one line of stdin each, in order (the line ending
+/// is not kept). Stdin ending early is a usage error.
+fn read_stdin_fields(ids: &[String]) -> Result<Vec<(String, Zeroizing<String>)>, CliError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    for (n, id) in ids.iter().enumerate() {
+        if ids[..n].contains(id) {
+            return Err(CliError::usage(format!(
+                "--field-stdin {id} is given more than once"
+            )));
+        }
+    }
+    let stdin = std::io::stdin();
+    let terminal = stdin.is_terminal();
+    let mut lines = stdin.lock();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let value = if terminal {
+            Zeroizing::new(rpassword::prompt_password(format!("{id}: "))?)
+        } else {
+            let mut line = Zeroizing::new(String::new());
+            let read = lines
+                .read_line(&mut line)
+                .map_err(|_| CliError::usage("cannot read stdin"))?;
+            if read == 0 {
+                return Err(CliError::usage(format!(
+                    "stdin ended before the value of field '{id}'"
+                )));
+            }
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+            line
+        };
+        out.push((id.clone(), value));
+    }
+    Ok(out)
 }
 
 fn parse_value(kind: FieldType, id: &str, raw: &str) -> Result<FieldValue, CliError> {

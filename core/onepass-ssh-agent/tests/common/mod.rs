@@ -393,3 +393,35 @@ pub fn parse_signature(body: &[u8]) -> Vec<u8> {
     r.finish().unwrap();
     sig
 }
+
+/// The session id the tests' `session-bind@openssh.com` requests bind.
+pub const BOUND_SESSION: [u8; 32] = [9u8; 32];
+
+/// What an SSH client signs to authenticate with `key_blob` (RFC 4252
+/// section 7): `session_id`, then the userauth request. With `hostbound`,
+/// the OpenSSH `publickey-hostbound-v00@openssh.com` method naming that
+/// host key.
+pub fn userauth_data(session_id: &[u8], key_blob: &[u8], hostbound: Option<&[u8]>) -> Vec<u8> {
+    let mut w = onepass_ssh_agent::wire::SshWriter::new();
+    let method: &[u8] = if hostbound.is_some() {
+        b"publickey-hostbound-v00@openssh.com"
+    } else {
+        b"publickey"
+    };
+    let alg = {
+        let mut r = onepass_ssh_agent::wire::SshReader::new(key_blob);
+        r.string().unwrap().to_vec()
+    };
+    w.string(session_id)
+        .u8(50)
+        .string(b"git")
+        .string(b"ssh-connection")
+        .string(method)
+        .u8(1)
+        .string(&alg)
+        .string(key_blob);
+    if let Some(h) = hostbound {
+        w.string(h);
+    }
+    w.into_vec()
+}

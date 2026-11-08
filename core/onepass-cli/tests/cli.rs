@@ -201,6 +201,91 @@ fn edit_move_delete_flow() {
     assert!(!run(d, &["item", "list"]).stdout.contains("GitHub"));
 }
 
+/// `run` with `input` on stdin (not a terminal).
+fn run_with_stdin(dir: &Path, args: &[&str], input: &str) -> Out {
+    let o = onepass(dir, PASSWORD)
+        .args(args)
+        .write_stdin(input)
+        .output()
+        .unwrap();
+    Out {
+        code: o.status.code().unwrap(),
+        stdout: String::from_utf8(o.stdout).unwrap(),
+        stderr: String::from_utf8(o.stderr).unwrap(),
+    }
+}
+
+#[test]
+fn secret_fields_from_stdin_never_on_argv() {
+    let tmp = fresh();
+    let d = tmp.path();
+    // One line per `--field-stdin`, in order; the newline is not kept.
+    let created = run_with_stdin(
+        d,
+        &[
+            "item",
+            "create",
+            "login",
+            "--title",
+            "Bank",
+            "--field",
+            "username=me",
+            "--field-stdin",
+            "password",
+        ],
+        "s3cret from stdin\n",
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    assert!(
+        !created.stderr.contains("--field-stdin"),
+        "{}",
+        created.stderr
+    );
+    assert_eq!(
+        run(d, &["read", "onepass://Personnel/Bank/password"]).stdout,
+        "s3cret from stdin"
+    );
+    // `item edit` takes it alone.
+    let edited = run_with_stdin(
+        d,
+        &["item", "edit", "Bank", "--field-stdin", "password"],
+        "n3w\r\n",
+    );
+    assert_eq!(edited.code, 0, "{}", edited.stderr);
+    assert_eq!(
+        run(d, &["read", "onepass://Personnel/Bank/password"]).stdout,
+        "n3w"
+    );
+    // Stdin ends before every value was read: nothing is saved.
+    let short = run_with_stdin(
+        d,
+        &[
+            "item",
+            "edit",
+            "Bank",
+            "--field-stdin",
+            "username",
+            "--field-stdin",
+            "password",
+        ],
+        "only-one\n",
+    );
+    assert_eq!(short.code, 1, "{}", short.stderr);
+    assert_eq!(
+        run(d, &["read", "onepass://Personnel/Bank/password"]).stdout,
+        "n3w"
+    );
+    // A secret on argv still works, with a warning that it leaks.
+    let argv = run(d, &["item", "edit", "Bank", "--field", "password=leaky"]);
+    assert_eq!(argv.code, 0);
+    assert!(argv.stderr.contains("--field-stdin"), "{}", argv.stderr);
+    assert!(!argv.stderr.contains("leaky"));
+    // A plain field on argv does not warn.
+    let plain = run(d, &["item", "edit", "Bank", "--field", "username=you"]);
+    assert_eq!(plain.code, 0);
+    assert!(!plain.stderr.contains("--field-stdin"), "{}", plain.stderr);
+}
+
 #[test]
 fn totp_and_usage_errors() {
     let tmp = fresh();

@@ -221,6 +221,7 @@ fn cdp_fill(
     item: &Item,
     kind: FillKind,
     submit: bool,
+    with_totp: bool,
 ) -> Result<FillOutcome, BrowserError> {
     let mut page = CdpFiller::connect(ws_url).map_err(cdp_error)?;
     let origin = https_origin(&page.main_frame_url().map_err(cdp_error)?);
@@ -254,7 +255,11 @@ fn cdp_fill(
         .ok_or(BrowserError::NoFields)?;
     let mut roles: Vec<FieldRole> = Vec::new();
     for (_, r) in &group.fields {
-        if item_field(kind, *r).is_some() && !roles.contains(r) {
+        // The one-time code only when the tool allowed it (`with_totp`).
+        if item_field(kind, *r).is_some()
+            && !roles.contains(r)
+            && (with_totp || *r != FieldRole::Otp)
+        {
             roles.push(*r);
         }
     }
@@ -365,6 +370,7 @@ impl BrowserFill for HubBrowser {
         _vault_id: Id,
         kind: FillKind,
         submit: bool,
+        with_totp: bool,
     ) -> Result<FillOutcome, BrowserError> {
         match target {
             BrowserTarget::Chrome => {
@@ -379,6 +385,7 @@ impl BrowserFill for HubBrowser {
                         &probe.origin,
                         agent_kind(kind),
                         submit,
+                        with_totp,
                         &probe.handle,
                         FILL_TIMEOUT,
                     )
@@ -388,7 +395,7 @@ impl BrowserFill for HubBrowser {
                     submitted: done.submitted,
                 })
             }
-            BrowserTarget::Cdp(ws_url) => cdp_fill(ws_url, probe, item, kind, submit),
+            BrowserTarget::Cdp(ws_url) => cdp_fill(ws_url, probe, item, kind, submit, with_totp),
         }
     }
 

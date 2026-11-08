@@ -113,6 +113,14 @@ impl Fixture {
     }
 }
 
+/// A userauth request with key `t` for the session the tests bind.
+fn auth_req(t: KeyType) -> Request {
+    sign_data(
+        t,
+        userauth_data(&BOUND_SESSION, &key(t).public_blob(), None),
+    )
+}
+
 fn detail<'a>(req: &'a ApprovalRequest, label: &str) -> Option<&'a str> {
     req.details
         .iter()
@@ -418,22 +426,20 @@ fn grant_per_destination(mut f: Fixture) {
     let mut a = ConnState::default();
     bind(&mut f, &mut a, &one, false);
     assert!(is_signature(
-        &f.handle(&mut a, &ssh, sign_req(KeyType::Ed25519, b"d"))
-            .response
+        &f.handle(&mut a, &ssh, auth_req(KeyType::Ed25519)).response
     ));
     assert_eq!(f.asked(), 1);
     let mut again = ConnState::default();
     bind(&mut f, &mut again, &one, false);
     assert!(is_signature(
-        &f.handle(&mut again, &ssh, sign_req(KeyType::Ed25519, b"d"))
+        &f.handle(&mut again, &ssh, auth_req(KeyType::Ed25519))
             .response
     ));
     assert_eq!(f.asked(), 1);
     let mut b = ConnState::default();
     bind(&mut f, &mut b, &two, false);
     assert!(is_signature(
-        &f.handle(&mut b, &ssh, sign_req(KeyType::Ed25519, b"d"))
-            .response
+        &f.handle(&mut b, &ssh, auth_req(KeyType::Ed25519)).response
     ));
     assert_eq!(f.asked(), 2);
 }
@@ -506,6 +512,8 @@ fn lock_unlock() {
             .response,
         Response::Failure
     );
+    // A wrong passphrase holds the next attempt back a moment.
+    f.env.advance(1);
     assert_eq!(
         f.handle(&mut conn, &p, Request::Unlock(pass("pw")))
             .response,
@@ -594,11 +602,7 @@ fn session_bind_ok_then_destination_in_prompt() {
         assert_eq!(bound.host_key, host.public_blob());
         assert!(!bound.forwarded);
 
-        let r = f.handle(
-            &mut conn,
-            &peer("/usr/bin/ssh"),
-            sign_req(KeyType::Ed25519, b"d"),
-        );
+        let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
         assert!(is_signature(&r.response));
         let call = f.last_call();
         let destination = detail(&call, "destination").unwrap();
@@ -631,12 +635,8 @@ fn unbookmarked_destination_refused() {
     let mut conn = ConnState::default();
     bind(&mut f, &mut conn, &host, false);
     assert_eq!(
-        f.handle(
-            &mut conn,
-            &peer("/usr/bin/ssh"),
-            sign_req(KeyType::Ed25519, b"d")
-        )
-        .response,
+        f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519))
+            .response,
         Response::Failure
     );
     assert_eq!(f.asked(), 0);
@@ -652,7 +652,7 @@ fn unbookmarked_destination_refused() {
         &f.handle(
             &mut conn,
             &peer("/usr/bin/ssh"),
-            sign_req(KeyType::EcdsaP256, b"d")
+            auth_req(KeyType::EcdsaP256)
         )
         .response
     ));
@@ -681,12 +681,8 @@ fn open_agent_warns_on_unbookmarked_destination() {
     let mut conn = ConnState::default();
     bind(&mut f, &mut conn, &host, false);
     assert!(is_signature(
-        &f.handle(
-            &mut conn,
-            &peer("/usr/bin/ssh"),
-            sign_req(KeyType::Ed25519, b"d")
-        )
-        .response
+        &f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519))
+            .response
     ));
     let call = f.last_call();
     assert_eq!(
@@ -746,11 +742,7 @@ fn forwarded_session_refused_by_default_and_never_remembered_when_allowed() {
     let mut conn = ConnState::default();
     bind(&mut f, &mut conn, &host, true);
     assert!(conn.bound.as_ref().unwrap().forwarded);
-    let r = f.handle(
-        &mut conn,
-        &peer("/usr/bin/ssh"),
-        sign_req(KeyType::Ed25519, b"d"),
-    );
+    let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
     assert_eq!(r.response, Response::Failure);
     assert_eq!(f.asked(), 0);
     assert_eq!(f.audit.entries()[0].outcome, "refused");
@@ -767,11 +759,7 @@ fn forwarded_session_refused_by_default_and_never_remembered_when_allowed() {
     let mut conn = ConnState::default();
     bind(&mut f, &mut conn, &host, true);
     for n in 1..=2 {
-        let r = f.handle(
-            &mut conn,
-            &peer("/usr/bin/ssh"),
-            sign_req(KeyType::Ed25519, b"d"),
-        );
+        let r = f.handle(&mut conn, &peer("/usr/bin/ssh"), auth_req(KeyType::Ed25519));
         assert!(is_signature(&r.response));
         assert_eq!(f.asked(), n);
         let call = f.last_call();
@@ -946,4 +934,181 @@ fn other_requests_fail() {
             }
         );
     }
+}
+
+fn sign_data(t: KeyType, data: Vec<u8>) -> Request {
+    Request::Sign {
+        key_blob: key(t).public_blob(),
+        data,
+        flags: flags_for(t),
+    }
+}
+
+/// A bound connection signs only a userauth request for the session it was
+/// bound to (OpenSSH agent protocol, `session-bind@openssh.com`): the bind
+/// must not lend its destination to data for another server.
+#[test]
+fn bound_connection_signs_only_its_own_session() {
+    let mut f = fixture(vec![Decision::AllowOnce; 8]);
+    let host = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let other = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let blob = key(KeyType::Ed25519).public_blob();
+    let ssh = peer("/usr/bin/ssh");
+    let mut conn = ConnState::default();
+    bind(&mut f, &mut conn, &host, false);
+    assert_eq!(conn.bound.as_ref().unwrap().session_id, BOUND_SESSION);
+
+    let ok = |f: &mut Fixture, conn: &mut ConnState, data: Vec<u8>| {
+        f.handle(conn, &ssh, sign_data(KeyType::Ed25519, data))
+            .response
+    };
+    // Its own session, plain and host-bound to the bound host.
+    let r = ok(
+        &mut f,
+        &mut conn,
+        userauth_data(&BOUND_SESSION, &blob, None),
+    );
+    assert!(is_signature(&r), "{r:?}");
+    let own = userauth_data(&BOUND_SESSION, &blob, Some(&host.public_blob()));
+    assert!(is_signature(&ok(&mut f, &mut conn, own)));
+    let asked = f.asked();
+
+    // Another session, another host, another key, or no userauth at all:
+    // refused before anyone is asked.
+    for data in [
+        userauth_data(&[7u8; 32], &blob, None),
+        userauth_data(&BOUND_SESSION, &blob, Some(&other.public_blob())),
+        userauth_data(&BOUND_SESSION, &key(KeyType::EcdsaP256).public_blob(), None),
+        b"data to sign".to_vec(),
+        [&BOUND_SESSION[..], b"\x32trailing"].concat(),
+    ] {
+        assert_eq!(ok(&mut f, &mut conn, data), Response::Failure);
+    }
+    assert_eq!(f.asked(), asked);
+    let audit = f.audit.entries();
+    assert_eq!(audit.last().unwrap().outcome, "session_mismatch");
+}
+
+/// A forwarded hop binds again: the last bind's session is the one signed.
+#[test]
+fn forwarded_hop_signs_its_latest_session() {
+    let config = AgentConfig {
+        allow_forwarded: true,
+        ..AgentConfig::default()
+    };
+    let mut f = fixture_with(FakeSource::all(), vec![Decision::AllowOnce; 2], config);
+    let first = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let second = AgentKey::generate(KeyType::Ed25519).unwrap();
+    let blob = key(KeyType::Ed25519).public_blob();
+    let ssh = peer("/usr/bin/ssh");
+    let mut conn = ConnState::default();
+    bind(&mut f, &mut conn, &first, true);
+    // The second hop's session id.
+    let session = [5u8; 32];
+    let mut w = SshWriter::new();
+    w.string(&second.public_blob())
+        .string(&session)
+        .string(&second.sign(&session, 0).unwrap())
+        .u8(1);
+    let r = f.handle(
+        &mut conn,
+        &ssh,
+        Request::Extension {
+            name: "session-bind@openssh.com".into(),
+            contents: w.into_vec(),
+        },
+    );
+    assert_eq!(r.response, Response::Success);
+    let bound = conn.bound.clone().unwrap();
+    assert_eq!(bound.session_id, session);
+    assert!(bound.forwarded);
+    let stale = userauth_data(&BOUND_SESSION, &blob, None);
+    assert_eq!(
+        f.handle(&mut conn, &ssh, sign_data(KeyType::Ed25519, stale))
+            .response,
+        Response::Failure
+    );
+    let fresh = userauth_data(&session, &blob, None);
+    assert!(is_signature(
+        &f.handle(&mut conn, &ssh, sign_data(KeyType::Ed25519, fresh))
+            .response
+    ));
+}
+
+/// `ssh` binds every connection before it authenticates (OpenSSH 8.9 and
+/// later). A userauth signature from `ssh` on an unbound connection is an
+/// older local `ssh` or an agent forwarded without a bind: it still signs
+/// (older distributions ship such an `ssh`) but never counts as local.
+#[test]
+fn unbound_userauth_from_ssh_is_not_local() {
+    let blob = key(KeyType::Ed25519).public_blob();
+    let data = userauth_data(&[3u8; 32], &blob, None);
+    let ssh = peer("/usr/bin/ssh");
+
+    // Asked every time, shown as forwarded, never remembered, even when
+    // the prompt offers to remember.
+    let mut f = fixture(vec![
+        Decision::AllowFor(Duration::from_secs(300)),
+        Decision::AllowOnce,
+    ]);
+    for _ in 0..2 {
+        assert!(is_signature(
+            &f.handle(
+                &mut ConnState::default(),
+                &ssh,
+                sign_data(KeyType::Ed25519, data.clone())
+            )
+            .response
+        ));
+        assert_eq!(detail(&f.last_call(), "forwarded"), Some("yes"));
+    }
+    assert_eq!(f.asked(), 2);
+
+    // Other data from `ssh`, or userauth from another program, is unchanged.
+    let mut f = fixture(vec![Decision::AllowOnce; 2]);
+    assert!(is_signature(&f.sign(KeyType::Ed25519, "/usr/bin/ssh")));
+    assert!(is_signature(
+        &f.handle(
+            &mut ConnState::default(),
+            &peer("/usr/bin/git"),
+            sign_data(KeyType::Ed25519, data)
+        )
+        .response
+    ));
+}
+
+/// Wrong unlock passphrases wait longer and longer: a client cannot guess
+/// a short lock passphrase at full speed.
+#[test]
+fn unlock_attempts_are_limited() {
+    let mut f = fixture(vec![]);
+    let mut conn = ConnState::default();
+    let p = peer("/usr/bin/ssh-add");
+    let pass = |s: &str| Zeroizing::new(s.as_bytes().to_vec());
+    let mut unlock =
+        |f: &mut Fixture, s: &str| f.handle(&mut conn, &p, Request::Unlock(pass(s))).response;
+    assert_eq!(
+        f.handle(&mut ConnState::default(), &p, Request::Lock(pass("pw")))
+            .response,
+        Response::Success
+    );
+    assert_eq!(unlock(&mut f, "wrong"), Response::Failure);
+    // Right after a failure even the right passphrase is refused.
+    assert_eq!(unlock(&mut f, "pw"), Response::Failure);
+    f.env.advance(1);
+    assert_eq!(unlock(&mut f, "wrong"), Response::Failure);
+    // The second failure waits longer than the first.
+    f.env.advance(1);
+    assert_eq!(unlock(&mut f, "pw"), Response::Failure);
+    f.env.advance(1);
+    assert_eq!(unlock(&mut f, "pw"), Response::Success);
+    // Success resets the count.
+    assert_eq!(
+        f.handle(&mut ConnState::default(), &p, Request::Lock(pass("pw")))
+            .response,
+        Response::Success
+    );
+    assert_eq!(unlock(&mut f, "wrong"), Response::Failure);
+    f.env.advance(1);
+    assert_eq!(unlock(&mut f, "pw"), Response::Success);
 }

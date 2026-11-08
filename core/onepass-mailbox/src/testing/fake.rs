@@ -326,6 +326,9 @@ struct Hostile {
     /// The next commit drops its first `n` writing operations and answers
     /// `Applied` for all.
     partial: Option<usize>,
+    /// The next commit writes nothing and answers `Applied` with seqs
+    /// above any head the mailbox will reach.
+    above_head: bool,
 }
 
 fn random16() -> [u8; 16] {
@@ -677,6 +680,20 @@ impl State {
             return refused(ErrorCode::Quota);
         }
 
+        if std::mem::take(&mut self.hostile.above_head) {
+            // Hostile: rising seqs no fetch will ever reach, nothing written.
+            let mut next = i64::MAX as u64 - ops.len() as u64;
+            let seqs = writes
+                .iter()
+                .map(|w| {
+                    w.then(|| {
+                        next += 1;
+                        next
+                    })
+                })
+                .collect();
+            return Ok((CommitResponse::Applied { seqs }, 200));
+        }
         let partial = self.hostile.partial.take();
         let mut seqs = Vec::with_capacity(ops.len());
         for (i, (o, w)) in ops.iter().zip(writes).enumerate() {
@@ -1479,6 +1496,19 @@ impl FaultHandle {
         self.lock().hostile.partial = Some(n);
     }
 
+    /// The next commit writes nothing and answers `Applied` with seqs far
+    /// above the head (rising, so the answer passes the client's checks):
+    /// a batch the server claims and that no fetch will ever reach.
+    pub fn apply_above_head(&self) {
+        self.lock().hostile.above_head = true;
+    }
+
+    /// Storage loses every object (records and blob rows stay): each blob
+    /// body now reads as missing.
+    pub fn lose_objects(&self) {
+        self.lock().objects.clear();
+    }
+
     /// Every account mailbox of this server now holds what the first
     /// account mailbox of `other` holds (records, blobs, seqs), under its
     /// own id and incarnation: another mailbox served in place of this one.
@@ -1636,12 +1666,13 @@ impl FakeMailboxClient {
         let Some(name) = name else {
             return Ok(None);
         };
-        // Storage answers 404 for an object that is gone.
+        // Storage answers 404 for an object that is gone: the real client
+        // reads it as `BlobMissing`.
         s.objects
             .get(&name)
             .cloned()
             .map(Some)
-            .ok_or(MailboxError::Server(ErrorCode::NotFound))
+            .ok_or(MailboxError::BlobMissing)
     }
 }
 
@@ -2007,9 +2038,7 @@ impl MailboxApi for FakeMailboxClient {
             BodyRef::Inline(d) => return Ok(d.to_vec()),
             BodyRef::Blob { sha256, size } => (sha256, size),
         };
-        let data = self
-            .lookup(sha256)?
-            .ok_or(MailboxError::Server(ErrorCode::NotFound))?;
+        let data = self.lookup(sha256)?.ok_or(MailboxError::BlobMissing)?;
         check_blob(sha256, size, &data)?;
         Ok(data)
     }

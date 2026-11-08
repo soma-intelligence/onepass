@@ -2786,6 +2786,18 @@ mod agent {
         origin: &str,
         kind: AgentKind,
     ) -> (u64, Filler) {
+        ticket_with(h, hub, item, origin, kind, false)
+    }
+
+    /// `ticket`, the tool allowing the one-time code or not.
+    fn ticket_with(
+        h: &mut H,
+        hub: &Arc<AgentHub>,
+        item: Id,
+        origin: &str,
+        kind: AgentKind,
+        totp: bool,
+    ) -> (u64, Filler) {
         // Another browser listens too, idle: the service polls first.
         assert!(hub.wait_job(hub.register(), Duration::ZERO).is_none());
         let tool = Arc::clone(hub);
@@ -2814,7 +2826,7 @@ mod agent {
         let o = origin.to_owned();
         let filler = thread::spawn(move || {
             tool.fill(
-                "claude", request_id, &item_id, &o, kind, true, "doc-1", LONG,
+                "claude", request_id, &item_id, &o, kind, true, totp, "doc-1", LONG,
             )
         });
         let v = h.call(wait());
@@ -2878,6 +2890,29 @@ mod agent {
         let out = finish(&mut h, rid, filler).unwrap();
         assert_eq!(out.filled, vec!["username", "password"]);
         assert!(out.submitted);
+    }
+
+    /// The extension asks for the code too: an agent gets it only when the
+    /// tool's ticket allows it (the `totp` scope and a fresh gesture).
+    #[test]
+    fn agent_ctx_fill_gives_the_code_only_when_the_ticket_allows_it() {
+        let ask = |item: Id, rid: u64| {
+            json!({"op":"fill_login","ctx":"agent","item_id":id(item),"origin":ATLAS,
+                   "fields":["username","password","totp"],"agent_request":rid})
+        };
+        for allowed in [false, true] {
+            let (mut h, hub) = with_hub();
+            let atlas = h.ids.atlas;
+            let (rid, filler) = ticket_with(&mut h, &hub, atlas, ATLAS, AgentKind::Login, allowed);
+            let v = h.call(ask(atlas, rid));
+            assert!(ok(&v)["password"].is_string(), "{v}");
+            if allowed {
+                assert_eq!(ok(&v)["totp"], expected_totp(NOW), "{v}");
+            } else {
+                assert!(ok(&v)["totp"].is_null(), "{v}");
+            }
+            finish(&mut h, rid, filler).unwrap();
+        }
     }
 
     #[test]
@@ -3105,6 +3140,7 @@ mod agent {
                 &item,
                 ATLAS,
                 AgentKind::Login,
+                false,
                 false,
                 "doc-2",
                 LONG,

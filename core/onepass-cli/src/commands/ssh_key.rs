@@ -7,7 +7,7 @@
 //! a directory of the user's choosing and never touches `~/.ssh`.
 
 use std::fs;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -279,7 +279,7 @@ fn read_passphrase() -> Result<Zeroizing<String>, CliError> {
     if dev && std::env::var("ONEPASS_DEV_NO_TTY").as_deref() == Ok("1") {
         return Err(no_tty());
     }
-    if !std::io::stdin().is_terminal() {
+    if !crate::session::can_prompt() {
         return Err(no_tty());
     }
     let p = rpassword::prompt_password("Key passphrase: ").map_err(|_| no_tty())?;

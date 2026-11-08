@@ -12,7 +12,10 @@
 //!   through `onepass-peer`) and the agent reads the client registry at
 //!   every request. A sign request goes through, in this order: uid,
 //!   control channel, identity, pairing, lock, key known and allowed for the
-//!   client, RSA SHA-1 refusal, forwarding, host binding (with the `git`
+//!   client, RSA SHA-1 refusal, bound session (on a bound connection, a
+//!   userauth request for the bound session id and host only, except the
+//!   `git` exception), forwarding (an unbound userauth signature from `ssh`
+//!   counts as forwarded), host binding (with the `git`
 //!   exception), audit log ready, signature rate limit, grant (signed
 //!   grants file), prompt rate limit, prompt (identical requests
 //!   coalesced), strong authentication (`--strong`), then the signature.
@@ -20,6 +23,9 @@
 //!   clients): every client of this user is asked, no rate limit, grants in
 //!   memory, and a key whose bookmarks the destination does not match is
 //!   asked about with a warning instead of refused.
+//!
+//! In both modes a wrong `SSH_AGENTC_UNLOCK` passphrase holds the next
+//! attempt back for a delay that doubles at each failure (up to 60 s).
 //!
 //! In both modes a grant is keyed by the client's code identity (never the
 //! path of a pid), the key and the destination the connection is bound to,
@@ -64,6 +70,15 @@ const ACTION_LOCK: &str = "ssh_lock";
 /// Client name when the peer's executable is unknown.
 const UNKNOWN_PROCESS: &str = "unknown process";
 const SESSION_BIND: &str = "session-bind@openssh.com";
+/// Audit outcome of a sign request on a bound connection whose data is not
+/// a userauth request for the bound session and host.
+const OUTCOME_SESSION_MISMATCH: &str = "session_mismatch";
+/// `SSH_MSG_USERAUTH_REQUEST` (RFC 4252).
+const SSH_MSG_USERAUTH_REQUEST: u8 = 50;
+/// The OpenSSH method that names the server's host key in the request.
+const HOSTBOUND_METHOD: &[u8] = b"publickey-hostbound-v00@openssh.com";
+/// Longest wait after wrong unlock passphrases.
+const MAX_UNLOCK_DELAY: Duration = Duration::from_secs(60);
 /// SSHSIG namespace that may sign without a host binding (commit signing),
 /// for keys whose `git_signing` is yes.
 const GIT_NAMESPACE: &str = "git";
@@ -262,11 +277,15 @@ pub struct ConnState {
     pub bound: Option<BoundHost>,
 }
 
-/// A verified `session-bind@openssh.com`.
+/// A verified `session-bind@openssh.com` (the latest one of a forwarded
+/// chain).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundHost {
     /// Host key blob of the destination.
     pub host_key: Vec<u8>,
+    /// The SSH session id the host key signed. A sign request on this
+    /// connection must be a userauth request for this very session.
+    pub session_id: Vec<u8>,
     /// Whether the connection is a forwarded agent.
     pub forwarded: bool,
 }
@@ -596,6 +615,10 @@ struct Inner<K: KeySource> {
     audit: Box<dyn AuditSink + Send>,
     /// SHA-256 of the lock passphrase while locked.
     locked: Option<Zeroizing<Vec<u8>>>,
+    /// Wrong unlock passphrases since the last lock or unlock, and the
+    /// instant before which no attempt is checked.
+    unlock_failures: u32,
+    unlock_not_before: Option<Instant>,
     /// Wall time of the last LOCK: grants created at or before it are not
     /// used (a grant lasts at most until LOCK).
     lock_floor: Option<i64>,
@@ -652,6 +675,8 @@ impl<K: KeySource> Agent<K> {
                 source,
                 audit,
                 locked: None,
+                unlock_failures: 0,
+                unlock_not_before: None,
                 lock_floor: None,
                 pairing: guards.pairing,
                 memory_grants: HashMap::new(),
@@ -747,6 +772,8 @@ impl<K: KeySource> Agent<K> {
             return Reply::failure();
         }
         st.locked = Some(digest(pass));
+        st.unlock_failures = 0;
+        st.unlock_not_before = None;
         // Spec 6.3: a grant lasts at most until LOCK.
         st.lock_floor = Some(self.clock.now_unix());
         st.memory_grants.clear();
@@ -761,11 +788,25 @@ impl<K: KeySource> Agent<K> {
         let Some(expected) = &st.locked else {
             return Reply::failure();
         };
+        // After a wrong passphrase, attempts are refused unchecked for a
+        // delay that doubles at each failure (1 s, 2 s, 4 s, up to 60 s):
+        // a client cannot guess a short passphrase at full speed. A refused
+        // attempt does not count, so it cannot push the delay out.
+        let now = self.clock.monotonic();
+        if st.unlock_not_before.is_some_and(|t| now < t) {
+            return Reply::failure();
+        }
         let given = digest(pass);
         if aws_lc_rs::constant_time::verify_slices_are_equal(expected, &given).is_err() {
+            st.unlock_failures = st.unlock_failures.saturating_add(1);
+            let delay = Duration::from_secs(1u64 << st.unlock_failures.min(7).saturating_sub(1))
+                .min(MAX_UNLOCK_DELAY);
+            st.unlock_not_before = Some(now + delay);
             return Reply::failure();
         }
         st.locked = None;
+        st.unlock_failures = 0;
+        st.unlock_not_before = None;
         Reply::send(Response::Success)
     }
 
@@ -804,6 +845,7 @@ impl<K: KeySource> Agent<K> {
             Some(_) => {
                 conn.bound = Some(BoundHost {
                     host_key,
+                    session_id,
                     forwarded: true,
                 });
                 Reply::send(Response::Success)
@@ -811,6 +853,7 @@ impl<K: KeySource> Agent<K> {
             None => {
                 conn.bound = Some(BoundHost {
                     host_key,
+                    session_id,
                     forwarded,
                 });
                 Reply::send(Response::Success)
@@ -899,7 +942,30 @@ impl<K: KeySource> Agent<K> {
         {
             return Err(refuse(st, Some(&key), &ctx, "refused"));
         }
+        let userauth = parse_userauth(data, &key.public_blob);
+        // `ssh` (OpenSSH 8.9 and later) binds a connection before it signs
+        // to authenticate. A userauth signature from `ssh` on an unbound
+        // connection is either a local `ssh` older than 8.9 or an agent
+        // forwarded by a client that sent no bind: the agent cannot tell.
+        // It is not refused (older Linux distributions still ship such an
+        // `ssh`), but it never counts as local: asked every time, shown as
+        // forwarded, never remembered.
+        let unbound_ssh_auth = conn.bound.is_none() && userauth.is_some() && peer_is_ssh(peer);
         let forwarded = conn.bound.as_ref().is_some_and(|b| b.forwarded);
+        let git_exception = key.git_signing && ctx.namespace.as_deref() == Some(GIT_NAMESPACE);
+        // A bound connection signs a userauth request for the bound session
+        // only, and for a host-bound request only the bound host (as
+        // OpenSSH's agent): the bind must not lend its destination to data
+        // meant for another server. The git exception stays.
+        if let Some(b) = &conn.bound {
+            let same_session = userauth.as_ref().is_some_and(|u| {
+                u.session_id == b.session_id.as_slice()
+                    && u.host_key.is_none_or(|h| h == b.host_key.as_slice())
+            });
+            if !same_session && !git_exception {
+                return Err(refuse(st, Some(&key), &ctx, OUTCOME_SESSION_MISMATCH));
+            }
+        }
         let matched = conn.bound.as_ref().map(|b| {
             let hosts = self.bookmarked_hosts(&b.host_key, &key.hosts);
             let fp = fingerprint_of_blob(&b.host_key);
@@ -917,7 +983,6 @@ impl<K: KeySource> Agent<K> {
         // only for a connection bound to one of them, except a commit
         // signature by a `git_signing` key. An open agent asks with a
         // warning instead.
-        let git_exception = key.git_signing && ctx.namespace.as_deref() == Some(GIT_NAMESPACE);
         if self.paired && !key.hosts.is_empty() && matched != Some(true) && !git_exception {
             return Err(refuse(st, Some(&key), &ctx, OUTCOME_HOST_NOT_BOUND));
         }
@@ -934,6 +999,7 @@ impl<K: KeySource> Agent<K> {
         let rememberable = self.config.confirm == Confirm::Session
             && !key.confirm_each_use
             && !forwarded
+            && !unbound_ssh_auth
             && client.id.is_some();
         let destination = conn
             .bound
@@ -945,7 +1011,15 @@ impl<K: KeySource> Agent<K> {
                 .as_deref()
                 .filter(|_| rememberable)
                 .map(|id| grant_key(id, &key.fingerprint, destination.as_deref())),
-            req: self.approval_request(conn, &client, peer, &key, &ctx, forwarded, rememberable),
+            req: self.approval_request(
+                conn,
+                &client,
+                peer,
+                &key,
+                &ctx,
+                forwarded || unbound_ssh_auth,
+                rememberable,
+            ),
             who,
             client,
             key,
@@ -1389,6 +1463,59 @@ fn digest(pass: &[u8]) -> Zeroizing<Vec<u8>> {
             .as_ref()
             .to_vec(),
     )
+}
+
+/// What a userauth request to sign names (RFC 4252 section 7).
+struct Userauth<'a> {
+    session_id: &'a [u8],
+    /// The server host key of a `publickey-hostbound-v00@openssh.com`
+    /// request.
+    host_key: Option<&'a [u8]>,
+}
+
+/// `data` as a public key userauth request for `key_blob`: `string
+/// session_id, byte 50, string user, string service, string method,
+/// boolean TRUE, string algorithm, string key` and, for the host-bound
+/// method, `string host_key`, nothing after. `None` for anything else.
+fn parse_userauth<'a>(data: &'a [u8], key_blob: &[u8]) -> Option<Userauth<'a>> {
+    let mut r = SshReader::new(data);
+    let session_id = r.string().ok()?;
+    if session_id.is_empty() || r.u8().ok()? != SSH_MSG_USERAUTH_REQUEST {
+        return None;
+    }
+    r.string().ok()?;
+    r.string().ok()?;
+    let method = r.string().ok()?;
+    let hostbound = match method {
+        b"publickey" => false,
+        HOSTBOUND_METHOD => true,
+        _ => return None,
+    };
+    if r.u8().ok()? != 1 {
+        return None;
+    }
+    r.string().ok()?;
+    if r.string().ok()? != key_blob {
+        return None;
+    }
+    let host_key = if hostbound {
+        Some(r.string().ok()?)
+    } else {
+        None
+    };
+    r.finish().ok()?;
+    Some(Userauth {
+        session_id,
+        host_key,
+    })
+}
+
+/// Whether the peer runs OpenSSH's `ssh` client (by executable name).
+fn peer_is_ssh(peer: &PeerInfo) -> bool {
+    peer.exe
+        .as_deref()
+        .and_then(|e| std::path::Path::new(e).file_name())
+        .is_some_and(|n| n == "ssh")
 }
 
 fn is_rsa(public_blob: &[u8]) -> bool {

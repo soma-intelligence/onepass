@@ -193,6 +193,11 @@ impl Message for ChangesPage {
         if self.records.len() > PAGE_MAX_RECORDS as usize {
             return Err(ProtoError::TooLarge("page records"));
         }
+        // Seqs are Postgres bigints. Every record seq is at most the head,
+        // so bounding the head bounds them all.
+        if self.head > i64::MAX as u64 {
+            return Err(ProtoError::Format("head"));
+        }
         let mut prev: Option<u64> = None;
         for r in &self.records {
             r.check()?;
@@ -1362,6 +1367,30 @@ mod tests {
         );
         assert!(decode::<ChangesPage>(&encode(&page(&[1, 2], 1))).is_err());
         assert!(decode::<ChangesPage>(&encode(&page(&[], 77))).is_ok());
+    }
+
+    #[test]
+    fn page_head_and_seqs_fit_a_bigint() {
+        // Seqs are Postgres bigints: a head or seq above i64::MAX names no
+        // seq, and a cursor saved from it would jam every later query.
+        let page = |head: u64, seqs: &[u64]| ChangesPage {
+            incarnation: 1,
+            min_cursor: 0,
+            head,
+            records: seqs.iter().map(|&s| rec(s)).collect(),
+            next_after: seqs.last().copied().unwrap_or(0),
+            more: false,
+        };
+        let max = i64::MAX as u64;
+        assert!(decode::<ChangesPage>(&encode(&page(max, &[max]))).is_ok());
+        assert_eq!(
+            decode::<ChangesPage>(&encode(&page(max + 1, &[]))),
+            Err(ProtoError::Format("head"))
+        );
+        assert_eq!(
+            decode::<ChangesPage>(&encode(&page(u64::MAX, &[u64::MAX]))),
+            Err(ProtoError::Format("head"))
+        );
     }
 
     #[test]

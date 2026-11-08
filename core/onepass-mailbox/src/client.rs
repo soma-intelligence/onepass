@@ -600,7 +600,8 @@ fn check_applied(ops: &[CommitOp], seqs: &[Option<u64>]) -> Result<(), MailboxEr
             (None, Op::Delete) => {}
             (None, Op::Put { .. }) => return Err(bad),
             (Some(s), _) => {
-                if *s <= last {
+                // Seqs are Postgres bigints: one above i64::MAX names no seq.
+                if *s <= last || *s > i64::MAX as u64 {
                     return Err(bad);
                 }
                 last = *s;
@@ -871,4 +872,31 @@ pub struct FeedPage {
     pub full_done: bool,
     /// Call `next_changes` again: there is more to read now.
     pub more: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn put() -> CommitOp {
+        CommitOp {
+            kind: 1,
+            id: [1; 16],
+            version: 1,
+            op: Op::Put {
+                expected: None,
+                body: onepass_mailbox_proto::Body::Inline(vec![1]),
+            },
+        }
+    }
+
+    #[test]
+    fn applied_seqs_fit_a_bigint() {
+        let max = i64::MAX as u64;
+        assert!(check_applied(&[put()], &[Some(max)]).is_ok());
+        assert_eq!(
+            check_applied(&[put()], &[Some(max + 1)]),
+            Err(MailboxError::Malformed("commit seqs"))
+        );
+    }
 }
