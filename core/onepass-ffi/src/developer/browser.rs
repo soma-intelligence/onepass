@@ -20,7 +20,8 @@ use onepass_mcp::browser::{
 };
 
 /// The agent hub of this process, made on first use, clocked in Unix
-/// seconds.
+/// seconds. One per process is safe: the bridge and the agent servers
+/// both stay on the primary account (AppModel.swift, ruling P7).
 pub(crate) fn agent_hub() -> Arc<AgentHub> {
     static HUB: OnceLock<Arc<AgentHub>> = OnceLock::new();
     HUB.get_or_init(|| {

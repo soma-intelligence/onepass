@@ -710,7 +710,9 @@ impl BridgeServer {
 
 impl BridgeServer {
     /// The hub the sessions of this server serve agent fills through: the
-    /// process's one, shared with the MCP host.
+    /// process's one, shared with the MCP host. One hub per process is
+    /// safe because the bridge and the agent servers both stay on the
+    /// primary account (AppModel.swift, ruling P7).
     pub fn agent_hub(&self) -> Arc<AgentHub> {
         self.shared.agent.clone()
     }

@@ -259,10 +259,11 @@ fn mcp_stdio_end_to_end() {
         "generate_password",
         "totp_code",
         "reveal_secret",
+        "fill_in_browser",
     ] {
         assert!(names.contains(&tool), "{tool} missing from {names:?}");
     }
-    assert_eq!(names.len(), 10);
+    assert_eq!(names.len(), 11);
 
     let items = s.call("list_items", json!({}));
     assert_eq!(items["isError"], false, "{items}");

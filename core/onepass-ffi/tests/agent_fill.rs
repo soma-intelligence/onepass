@@ -4,6 +4,9 @@
 //! plays the Chrome extension over a real encrypted session), meeting in
 //! the process's agent hub.
 //! Run with `--features dev-fast-kdf`.
+//!
+//! The hub is one per process: every test here that uses it (any bridge
+//! session or MCP fill) must hold [`one_at_a_time`] for its whole run.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -277,8 +280,8 @@ fn extension(rig: &Rig, on_fill: OnFill) -> thread::JoinHandle<Seen> {
         loop {
             id += 1;
             let w = ext.request(json!({"id": id, "op": "agent_wait"}));
-            let job = w["ok"]["job"].clone();
             assert!(w.get("ok").is_some(), "{w}");
+            let job = w["ok"]["job"].clone();
             match job["job"].as_str() {
                 None => continue,
                 Some("probe") => {
@@ -442,6 +445,14 @@ fn mcp_fill_reaches_the_extension_through_the_bridge() {
     let asked = rig.ui.asked.lock().unwrap();
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].action, "fill_login");
+    assert!(
+        asked[0]
+            .details
+            .iter()
+            .any(|d| d.label == "tab" && d.value == "Atlas Cloud - Sign in"),
+        "{:?}",
+        asked[0].details
+    );
     drop(asked);
     // The ticket was good once: the hub holds nothing more.
     let request = seen.fill_job["request_id"].as_u64().unwrap();
