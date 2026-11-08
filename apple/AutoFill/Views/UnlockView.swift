@@ -93,9 +93,9 @@ struct UnlockView: View {
         let initials = name.split(whereSeparator: { $0.isWhitespace || $0 == "-" })
             .prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
         HStack(spacing: 8) {
-            Circle()
-                .fill(Theme.accent.gradient)
+            Color.clear
                 .frame(width: 24, height: 24)
+                .washBackground(Theme.Wash.accent, flat: Theme.accent, in: Circle())
                 .overlay {
                     if initials.isEmpty {
                         Image(systemName: "person.fill").font(.system(size: 11)).foregroundStyle(.white)

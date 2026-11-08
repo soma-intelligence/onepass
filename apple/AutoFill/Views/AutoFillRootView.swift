@@ -156,17 +156,12 @@ struct AutoFillScaffold<Content: View>: View {
 
 // MARK: - Design (the app's iPhone cards)
 
-/// The screen behind the cards: grouped background, a faint accent glow on top (iOS); the
+/// The screen behind the cards: the plain grouped background, like the app's own (iOS); the
 /// window's own material on the Mac.
 struct AutoFillBackground: View {
     var body: some View {
         #if os(iOS)
         Color(uiColor: .systemGroupedBackground)
-            .overlay(alignment: .top) {
-                LinearGradient(
-                    colors: [Theme.accent.opacity(0.10), Theme.accent.opacity(0)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 260)
-            }
             .ignoresSafeArea()
         #else
         Color.clear
