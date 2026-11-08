@@ -38,15 +38,55 @@ struct ItemListColumn: View {
     @State private var choosingCategory = false
     /// Mac: the search field under the header, shown or hidden by its icon (⌘F always shows it).
     @AppStorage("onepass.browse.searchShown", store: AppModel.browseDefaults) private var searchShown = true
+    #if os(macOS)
+    /// Mac: two or more rows picked at once (⌘ or ⇧ click, ⌘A). Empty while one item is shown in
+    /// the detail column: that one lives in `model.selectedItem`.
+    @State private var multiSelection: Set<ItemRef> = []
+    @State private var selectAllMonitor: Any?
+    #endif
 
     private var session: VaultSession { model.session }
     private var sort: ItemSort { sortByDate ? .updated : .title }
 
+    #if os(macOS)
+    /// Mac: one row shows its item in the detail column; several rows form a batch (moved or
+    /// trashed together from the bar under the list). No batch while an editor is open.
+    private var rowSelection: Binding<Set<ItemRef>> {
+        Binding(
+            get: {
+                if multiSelection.count > 1 { return multiSelection }
+                return model.selectedItem.map { [$0] } ?? []
+            },
+            set: { refs in
+                if refs.count > 1 {
+                    guard !model.isEditing else { return }
+                    multiSelection = refs
+                    if model.selectedItem != nil { model.perform(.select(nil)) }
+                } else {
+                    multiSelection = []
+                    model.perform(.select(refs.first))
+                }
+            })
+    }
+
+    /// ⌘A picks every listed row (from the search field once a search is typed, or from the list).
+    private func selectAllListed() {
+        guard !model.isEditing else { return }
+        let refs = Set(listedItems.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) })
+        rowSelection.wrappedValue = refs
+    }
+
+    /// The batch, in list order.
+    private var batch: [ItemRef] {
+        listedItems.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }.filter { multiSelection.contains($0) }
+    }
+    #else
     private var rowSelection: Binding<ItemRef?> {
         Binding(
             get: { model.selectedItem },
             set: { model.perform(.select($0)) })
     }
+    #endif
 
     private var isNearby: Bool { model.selection == .nearby }
 
@@ -119,7 +159,14 @@ struct ItemListColumn: View {
         .focusedValue(\.itemListFocused, true)
         #if os(macOS)
         // Delete key on the focused list (Edit > Supprimer): same as ⌘⌫, never from a text field.
-        .onDeleteCommand { model.trashSelection() }
+        .onDeleteCommand {
+            if multiSelection.count > 1 { trashBatch() } else { model.trashSelection() }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if multiSelection.count > 1 { batchBar }
+        }
+        .onAppear { installSelectAllMonitor() }
+        .onDisappear { removeSelectAllMonitor() }
         #endif
         .overlay {
             if items.isEmpty { emptyState }
@@ -133,6 +180,15 @@ struct ItemListColumn: View {
         // Filter, search or remote reload: a selection no longer listed goes away (M2, M3).
         .onChange(of: items.map(\.id), initial: true) { _, ids in
             model.keepSelection(in: Set(ids))
+            #if os(macOS)
+            let listed = Set(ids)
+            multiSelection = multiSelection.filter { listed.contains($0.itemID) }
+            if multiSelection.count == 1 {
+                let only = multiSelection.first
+                multiSelection = []
+                model.perform(.select(only))
+            }
+            #endif
         }
         .navigationTitle(model.watchtowerFilter?.title ?? title)
         #if os(macOS)
@@ -325,6 +381,18 @@ struct ItemListColumn: View {
     }
 
     @ViewBuilder private func contextMenu(_ summary: FfiItemSummary) -> some View {
+        #if os(macOS)
+        if multiSelection.count > 1, multiSelection.contains(ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
+            batchActions
+        } else {
+            singleContextMenu(summary)
+        }
+        #else
+        singleContextMenu(summary)
+        #endif
+    }
+
+    @ViewBuilder private func singleContextMenu(_ summary: FfiItemSummary) -> some View {
         if summary.trashedAt == nil {
             Button(
                 summary.favorite ? "Retirer des favoris" : "Ajouter aux favoris",
@@ -341,6 +409,127 @@ struct ItemListColumn: View {
             .disabled(model.isEditing && model.selectedItem == ItemRef(vaultID: summary.vaultId, itemID: summary.id))
         }
     }
+
+    #if os(macOS)
+    // MARK: - Batch (Mac)
+
+    /// The batch's vaults: one when every picked item sits in the same vault.
+    private var batchVaultID: String {
+        let vaults = Set(batch.map(\.vaultID))
+        return vaults.count == 1 ? vaults.first ?? "" : ""
+    }
+
+    @ViewBuilder private var batchActions: some View {
+        MoveToVaultMenu(currentVaultID: batchVaultID) { moveBatch(to: $0) }
+        Divider()
+        Button("browse.moveToTrash", systemImage: "trash", role: .destructive) { trashBatch() }
+    }
+
+    /// Under the list while several rows are picked: the count, "Déplacer vers", the trash, and
+    /// a way out.
+    private var batchBar: some View {
+        HStack(spacing: Theme.Space.m) {
+            Text("browse.selectedCount \(multiSelection.count)")
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .accessibilityIdentifier("list.batch.count")
+            Spacer(minLength: 4)
+            Menu {
+                Section("item.moveTo") {
+                    ForEach(session.vaults.filter { $0.id != batchVaultID }, id: \.id) { vault in
+                        Button(vault.meta.name) { moveBatch(to: vault) }
+                            .accessibilityIdentifier("list.batch.move.\(vault.id)")
+                    }
+                }
+            } label: {
+                Image(systemName: "folder")
+            }
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(Text("item.moveTo"))
+            .accessibilityLabel(Text("item.moveTo"))
+            .accessibilityIdentifier("list.batch.move")
+            Button(role: .destructive) {
+                trashBatch()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help(Text("browse.moveToTrash"))
+            .accessibilityLabel(Text("browse.moveToTrash"))
+            .accessibilityIdentifier("list.batch.trash")
+            Button {
+                multiSelection = []
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help(Text("browse.clearSelection"))
+            .accessibilityLabel(Text("browse.clearSelection"))
+            .accessibilityIdentifier("list.batch.clear")
+        }
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.s)
+        .background(.bar)
+    }
+
+    /// Each picked item not already there goes to `vault`, one after the other; a failure stops
+    /// the run and says why.
+    private func moveBatch(to vault: FfiVault) {
+        let refs = batch.filter { $0.vaultID != vault.id }
+        guard !refs.isEmpty else { return }
+        Task {
+            for ref in refs {
+                do {
+                    try await session.move(itemID: ref.itemID, from: ref.vaultID, to: vault.id)
+                } catch {
+                    model.showToast(VaultError(error).localizedMessage, kind: .error)
+                    return
+                }
+            }
+            multiSelection = []
+            model.showToast(String(localized: "app.movedTo \(vault.meta.name)"))
+        }
+    }
+
+    private func trashBatch() {
+        let refs = batch
+        guard !refs.isEmpty, !model.isEditing else { return }
+        Task {
+            for ref in refs {
+                do {
+                    try await session.trash(itemID: ref.itemID, vaultID: ref.vaultID)
+                } catch {
+                    model.showToast(VaultError(error).localizedMessage, kind: .error)
+                    return
+                }
+            }
+            multiSelection = []
+            model.showToast(String(localized: "browse.trashedItems \(refs.count)"))
+        }
+    }
+
+    /// ⌘A reaches the Edit menu before any view: a local monitor takes it when the search field
+    /// holds a search, or when the list itself has the focus. Other fields keep their own ⌘A.
+    private func installSelectAllMonitor() {
+        guard selectAllMonitor == nil else { return }
+        selectAllMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command, event.charactersIgnoringModifiers?.lowercased() == "a" else { return event }
+            let responder = event.window?.firstResponder
+            let inSearch = searchFocused && !query.isEmpty
+            let inList = responder is NSTableView
+            guard inSearch || inList, !listedItems.isEmpty, !model.isEditing else { return event }
+            selectAllListed()
+            return nil
+        }
+    }
+
+    private func removeSelectAllMonitor() {
+        if let selectAllMonitor { NSEvent.removeMonitor(selectAllMonitor) }
+        selectAllMonitor = nil
+    }
+    #endif
 
     // MARK: - Labels
 
